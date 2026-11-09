@@ -15,7 +15,9 @@
   const app = createDesktopController();
 
   $effect(() => {
-    if (!app.feedback || app.busy) return;
+    if (!app.feedback || app.busy) {
+      return;
+    }
     const timeout = setTimeout(
       () => (app.feedback = ""),
       app.failed ? 10000 : 5000,

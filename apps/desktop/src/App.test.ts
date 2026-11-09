@@ -71,7 +71,9 @@ test.each([
   render(App);
   await screen.findByText('Ready to help');
   await fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
-  if (failed) vi.mocked(request).mockRejectedValueOnce(new Error('Could not save settings'));
+  if (failed) {
+    vi.mocked(request).mockRejectedValueOnce(new Error('Could not save settings'));
+  }
   vi.useFakeTimers();
   try {
     await fireEvent.click(screen.getByRole('button', { name: 'Save search settings' }));
