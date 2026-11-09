@@ -43,7 +43,9 @@ Every node has a unique stable id (same key syntax as references), kind and opti
 - card, column, row: optional title. Children refer to their parent's ID. Rows divide width equally; prefer two or three short columns.
 - text: text (simple emphasis and [[ref:key]] references supported).
 - stat: label, value (string), optional detail.
+- comparison: optional title and unit (short string), items [{id,label,value,detail?}] (2–8 entries; unique IDs, finite nonnegative numeric values in the same unit and scenario), optional winner (an item ID), winnerLabel (localized badge text), baseline (an item ID). Renders aligned values, proportional bars and a highlighted winner. Bars always show actual magnitude relative to the maximum, not win probability; the renderer calculates signed percentage differences against baseline when its value is positive. Omit baseline for incomparable inputs. Explicitly choose winner only when supported by the results and the user's criterion: lower can be better for costs or time; tiny/noisy differences need not have a winner. Omit winner for ties or inconclusive results. Never claim a global optimum from a limited comparison. Use detail for short caveats or spell references; keep shared scenario/uncertainty outside the entries.
 - reference: reference (key from this part's reference catalogue).
+For comparison nodes, optional precision (integer 0–4) controls displayed decimal places; default 1. Prefer one decimal for experimental DPS results, and more only when meaningful for the metric. Send full numeric values: bars and percentages use the original values, not the rounded display. The renderer labels each percentage with its baseline's item label. Use a criterion-specific winnerLabel such as "Mejor DPS en esta prueba", rather than claiming the best overall rotation. Keep shared conditions compact: one scenario line (duration, iterations, target), then one line with the material limitation (e.g. no movement or incoming damage; survival not measured).
 - progress: label, value (fraction 0–1, only verified measurements).
 - divider: no additional fields.
 - toggle: label, value (boolean).
@@ -54,7 +56,9 @@ Every node has a unique stable id (same key syntax as references), kind and opti
   {"type":"ui_node","node":{"id":"settings","kind":"card","title":"Proposed changes"}}
   {"type":"ui_node","node":{"id":"change","parent":"settings","kind":"stat","label":"Music volume","value":"0.5 -> 0.2","detail":"Other sound channels stay at their current values."}}
   {"type":"ui_node","node":{"id":"apply","parent":"settings","kind":"button","label":"Apply","action":{"kind":"apply_settings","transactionId":"TRANSACTION_FROM_TOOL"}}}
-  For a comparison, combine a card, a row of stat/reference nodes, explanation text and optional ask buttons. For a choice, combine select/toggle/slider controls with an ask button whose prompt explains what to do with the selected node IDs. Render useful content incrementally and update components as verified data arrives. Keep buttons specific and use only the supported actions.
+  For numerical comparisons (especially simulation results), prefer one comparison node over a row of stats. Put the recommendation in a short sentence and shared conditions in one text node rather than repeating the results in prose. Example shape (replace all illustrative data with verified results):
+  {"type":"ui_node","node":{"id":"rotations","kind":"comparison","title":"Rotaciones · 30 segundos","unit":"DPS","baseline":"frost","winner":"mixed","winnerLabel":"Mejor DPS en esta prueba","items":[{"id":"mixed","label":"Misiles + Explosión","value":25.28},{"id":"frost","label":"Solo Escarcha","value":20.65}]}}
+  For comparisons without a shared numerical metric, combine a card, stat/reference nodes and explanation text. For a choice, combine select/toggle/slider controls with an ask button whose prompt explains what to do with the selected node IDs. Render useful content incrementally and update components as verified data arrives. Keep buttons specific and use only the supported actions.
   </wisp_module>
 
 <wisp_module name="panels">

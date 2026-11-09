@@ -14,6 +14,27 @@ export const uiNode = z.discriminatedUnion('kind', [
   z.object({ ...base, kind: z.literal('column'), title }),
   z.object({ ...base, kind: z.literal('row'), title }),
   z.object({ ...base, kind: z.literal('card'), title }),
+  z.object({
+    ...base,
+    kind: z.literal('comparison'),
+    title,
+    unit: z.string().max(24).optional(),
+    precision: z.number().int().min(0).max(4).optional(),
+    items: z
+      .array(
+        z.object({
+          id: key,
+          label: z.string().min(1).max(200),
+          value: z.number().finite().nonnegative(),
+          detail: z.string().max(300).optional(),
+        }),
+      )
+      .min(2)
+      .max(8),
+    winner: key.optional(),
+    winnerLabel: z.string().min(1).max(60).optional(),
+    baseline: key.optional(),
+  }),
   z.object({ ...base, kind: z.literal('text'), text: z.string().max(3000) }),
   z.object({
     ...base,
@@ -59,6 +80,16 @@ export const uiNode = z.discriminatedUnion('kind', [
 ]);
 export type UINode = z.infer<typeof uiNode>;
 export function validateNode(node: UINode, nodes: UINode[]) {
+  if (node.kind === 'comparison') {
+    const ids = new Set(node.items.map((item) => item.id));
+    if (
+      ids.size !== node.items.length ||
+      (node.winner !== undefined && !ids.has(node.winner)) ||
+      (node.baseline !== undefined && !ids.has(node.baseline))
+    ) {
+      throw new Error('Invalid comparison item reference');
+    }
+  }
   if (node.parent === node.id) {
     throw new Error('UI cycle');
   }

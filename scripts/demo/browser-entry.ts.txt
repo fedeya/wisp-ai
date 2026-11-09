@@ -49,10 +49,20 @@ Object.assign(window, {
 });
 if (new URLSearchParams(location.search).has('controls')) {
   document.body.classList.add('interactive');
+  const showScene = (index: number) => {
+    runtime.slash(`/run WispDemoStage(${index})`);
+    document.getElementById('scene-title')!.textContent = index >= 8
+      ? 'Comparación de rotaciones · Preview de componentes'
+      : 'Wisp AI · Offline addon demo';
+  };
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-scene]')) {
     button.disabled = false;
     button.addEventListener('click', () => {
-      runtime.slash(`/run WispDemoStage(${Number(button.dataset.scene)})`);
+      showScene(Number(button.dataset.scene));
     });
+  }
+  const scene = Number(new URLSearchParams(location.search).get('scene'));
+  if (Number.isInteger(scene) && scene >= 0 && scene <= 9) {
+    showScene(scene);
   }
 }

@@ -25,6 +25,7 @@ C.Capture = function()
         location = { zone = "Westfall" },
     }
 end
+C.CaptureTurn = C.Capture
 C.connected = true
 C.modelCatalog = {
     defaultModel = "demo",
@@ -156,6 +157,57 @@ function WispDemoStage(stage)
                 id = "q3",
                 role = "assistant",
                 text = "Let us group the objectives from your quest log before you set off.\n\nStart with the nearby objectives, then head back to the quest giver when you are ready to turn them in.\n\nI can look up an NPC destination if you need a hand finding your next stop.",
+            },
+        }
+    elseif stage == 8 or stage == 9 then
+        chat.title = "Comparación de rotaciones"
+        WispAIWindow:SetSize(stage == 9 and 580 or 1000, 650)
+        chat.messages = {
+            {
+                id = "sim-user",
+                role = "user",
+                text = "Compará estas tres rotaciones para mi mago.",
+            },
+            {
+                id = "sim-result",
+                role = "assistant",
+                text = "Misiles + Explosión obtuvo el mayor DPS en este escenario.",
+                ui = {
+                    {
+                        id = "rotations",
+                        kind = "comparison",
+                        title = "Nivel 12 · Comparación experimental",
+                        unit = "DPS",
+                        precision = 1,
+                        baseline = "frost",
+                        winner = "mixed",
+                        winnerLabel = "Mejor DPS en esta prueba",
+                        items = {
+                            {
+                                id = "mixed",
+                                label = "Misiles + Explosión de Fuego",
+                                value = 25.28,
+                                detail = "Completar cada canal antes de la siguiente acción.",
+                            },
+                            {
+                                id = "frost_blast",
+                                label = "Escarcha + Explosión de Fuego",
+                                value = 20.69,
+                                detail = "La diferencia frente a solo Escarcha es mínima.",
+                            },
+                            {
+                                id = "frost",
+                                label = "Solo Descarga de Escarcha",
+                                value = 20.65,
+                            },
+                        },
+                    },
+                    {
+                        id = "conditions",
+                        kind = "text",
+                        text = "Ejemplo · 30 s · 500 iter. · Objetivo nivel 12, 20 m\nSin movimiento ni daño recibido; no mide supervivencia.",
+                    },
+                },
             },
         }
     elseif stage >= 5 then

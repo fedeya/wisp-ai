@@ -14,6 +14,51 @@ three bag-count states. The addon window itself supports the simulator's mouse
 and text-input interactions. Arbitrary questions do not call an AI backend;
 use the prepared scenes for the presentation.
 
+For component development, open
+`http://127.0.0.1:3011/wisp.html?controls&scene=8` after `pnpm demo:dev`.
+The **Simulación** and **Angosta** buttons show the current Lua comparison renderer
+with the same sample DPS results at wide and narrow chat widths. This exercises
+winner badges, relative bars, percentage deltas and text wrapping without game
+or model calls. Edit `scripts/demo/fixture.lua` to change sample results, then
+restart `pnpm demo:dev` and reload the browser to load changed Lua modules/fixtures.
+
+## Native Forever preview (Windows)
+
+```powershell
+pwsh -File scripts/demo/native-preview.ps1
+pwsh -File scripts/demo/native-preview.ps1 -Screenshot
+pwsh -File scripts/demo/native-preview.ps1 -Screenshot -Narrow
+```
+
+This downloads the official `Osso/wow-ui-sim` **v0.1.40 Forever Windows ZIP** if
+needed, verifies GitHub's SHA-256 digest and stages the production UI modules
+with the same offline sample scene. Game assets come from the installation in
+`config.local.json`, or pass `-WowPath` with the root containing `Data/data`.
+Only staged Wisp UI files load; transport/model calls are replaced by fixtures.
+The simulator writes its session state under `artifacts/wow-ui-sim-preview/WTF`,
+and screenshots next to it. Game SavedVariables are not imported.
+
+On installed build **1.60.1.70862**, the stock release expects UI build 70707;
+its supported `--allow-ui-version-mismatch` option is used. Local extraction
+also failed on the enUS `Blizzard_LoadLocale/LoadLocale.lua` file and fell back
+to a very slow CDN index scan. To reproduce the successful workaround, run once:
+
+```powershell
+pwsh -File scripts/demo/native-preview.ps1 -PrepareSourceSnapshot -Screenshot
+```
+
+That explicitly provisions the simulator's Forever UI cache from the complete
+Gethe UI source snapshot for **the same build 70862**, revision
+`9dc84f0d3bbae1768ac3405b3716000bd93eda06`. It checks both the installed and
+snapshot versions and records the actual source in the cache provenance. This
+is a manual source-snapshot setup, not a successful stock CASC synchronization.
+It replaces matching files in the simulator's Forever source cache; it does not
+modify the WoW installation. Other builds require a matching snapshot.
+
+The native comparison rendered successfully. Wisp reported zero addon-load
+errors; the simulator still reported errors in Blizzard's `SocialToast.lua`.
+Use this as an additional visual preview, with final verification in-game.
+
 ## How it works
 
 - `render.mjs` obtains the external [WoW Addon Sandbox](https://github.com/srrmke/wow-addons-sandbox)
