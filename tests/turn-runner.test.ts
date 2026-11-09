@@ -24,6 +24,7 @@ function fixture(titlesEnabled = true) {
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
   const log = vi.fn();
   const flushFirstText = vi.fn();
+  const onSuccessfulReply = vi.fn();
   const run = createTurnRunner({
     client,
     models: { models, prepare: async () => {} },
@@ -42,6 +43,7 @@ function fixture(titlesEnabled = true) {
     changed: () => {},
     log,
     flushFirstText,
+    onSuccessfulReply,
   });
   return {
     chat,
@@ -51,6 +53,7 @@ function fixture(titlesEnabled = true) {
     models,
     log,
     flushFirstText,
+    onSuccessfulReply,
     changeCharacter: () => {
       transport = 'two';
     },
@@ -64,6 +67,7 @@ test('a complete turn projects streamed content and settles once', async () => {
   const f = fixture();
   await f.run(f.chat, 'Question');
   expect(f.chat.status).toBe('done');
+  expect(f.onSuccessfulReply).toHaveBeenCalledOnce();
   expect(
     f.chat.messages
       .filter((m) => m.role === 'assistant')
@@ -79,6 +83,27 @@ test('a complete turn projects streamed content and settles once', async () => {
   );
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
+});
+
+test.each(['failed', 'cancelled', 'awaiting-input'])(
+  '%s replies do not count as successful usage',
+  async (status) => {
+    const f = fixture();
+    const response = await f.send('');
+    f.send.mockResolvedValueOnce({
+      ...response,
+      result: async () => ({ status, sessionEnded: false, error: { message: 'failed' } }),
+    });
+    await f.run(f.chat, 'Question');
+    expect(f.onSuccessfulReply).not.toHaveBeenCalled();
+  },
+);
+
+test('proactive replies do not count as user activity', async () => {
+  const f = fixture();
+  f.chat.proactive = true;
+  await f.run(f.chat, 'Question');
+  expect(f.onSuccessfulReply).not.toHaveBeenCalled();
 });
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {
@@ -104,6 +129,7 @@ test('old assistant messages cannot count as the first text of a new turn', asyn
     ),
   );
   expect(timing).not.toHaveProperty('firstTextMs');
+  expect(f.onSuccessfulReply).not.toHaveBeenCalled();
 });
 
 test('a turn keeps its quest reading available to tools without inserting it into model input', async () => {

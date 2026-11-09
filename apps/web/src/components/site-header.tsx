@@ -107,7 +107,12 @@ export function SiteHeader({ locale }: { locale: Locale }) {
           </nav>
           <div className="header-actions">
             <LanguageSwitch locale={locale} />
-            <a className="button nav-download" href={site.download}>
+            <a
+              className="button nav-download"
+              href={site.download}
+              data-rybbit-event="download_clicked"
+              data-rybbit-prop-source="header"
+            >
               {t('Get Wisp ')}
               <Icon name="download" size={15} />
             </a>

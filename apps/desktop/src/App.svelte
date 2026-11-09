@@ -4,6 +4,7 @@
   import Icon from "./Icon.svelte";
   import McpDialog from "./McpDialog.svelte";
   import Updates from "./Updates.svelte";
+  import UsageStatistics from "./UsageStatistics.svelte";
   import logo from "../../../assets/wisp.png";
   import Overview from "./pages/Overview.svelte";
   import Connections from "./pages/Connections.svelte";
@@ -72,6 +73,11 @@
       locked={!!app.busy}
       openSettings={() => (app.page = "Settings")}
       onBusy={(label) => (app.busy = label)}
+    />
+    <UsageStatistics
+      info={app.info}
+      status={app.status}
+      showSettings={app.page === "Settings"}
     />
     {#if app.page === "Overview"}<Overview {app} />
     {:else if app.page === "Connections"}<Connections {app} />

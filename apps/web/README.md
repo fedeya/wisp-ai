@@ -67,7 +67,9 @@ first-party `/_fm/` proxy to `https://rybbit.fedeminaya.com/api/`, matching the
 portfolio integration. Development and Vercel previews do not load the tracker.
 Enable **First-Party Proxy** in Rybbit Site Settings → Privacy & Security so
 forwarded visitor IPs are interpreted correctly. Only tracking endpoints are
-exposed; the dashboard and administrative API are not proxied.
+exposed; the dashboard and administrative API are not proxied. Download buttons
+record `download_clicked` with their placement. See [telemetry and download metrics](../../docs/telemetry.md)
+for desktop opt-in, GitHub counters and dashboard setup.
 
 The immersive hero uses a generated illustrative background and locally cached
 WoW icons. Equipment, tooltips, auctions, bags and action bars are native React

@@ -24,7 +24,12 @@ export default async function Setup({ params }: LocalePageProps) {
         <p className="guide-lead">
           {t('You’ll need Windows, WoW: Forever and your choice of AI connection.')}
         </p>
-        <a className="button primary" href={site.download}>
+        <a
+          className="button primary"
+          href={site.download}
+          data-rybbit-event="download_clicked"
+          data-rybbit-prop-source="setup"
+        >
           <Icon name="windows" size={17} />
           {t('Download for Windows')}
           <Icon name="download" size={17} />

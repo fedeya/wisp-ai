@@ -39,7 +39,12 @@ const baseFaqs = [
 function InstallLink({ locale }: { locale: Locale }) {
   const t = getTranslator(locale);
   return (
-    <a className="button primary" href={site.download}>
+    <a
+      className="button primary"
+      href={site.download}
+      data-rybbit-event="download_clicked"
+      data-rybbit-prop-source="landing"
+    >
       <Icon name="windows" size={17} />
       {t('Download for Windows')}
       <Icon name="arrow" size={17} />

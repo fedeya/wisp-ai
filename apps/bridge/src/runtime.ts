@@ -251,7 +251,11 @@ export async function startBridge(options: BridgeOptions = {}) {
       return state.chats.find((c) => c.id === id);
     }
     let shutdownRequested = false;
+    let lastSuccessfulReplyAt: number | undefined;
     const run = createTurnRunner({
+      onSuccessfulReply: () => {
+        lastSuccessfulReplyAt = Date.now();
+      },
       client,
       models: connections,
       capabilitySettings,
@@ -434,6 +438,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     function desktopStatus(): Status {
       return {
         ready: eveReady,
+        lastSuccessfulReplyAt,
         gameConnected: Boolean(
           state.activeTransport &&
           state.firstReadyRevision &&

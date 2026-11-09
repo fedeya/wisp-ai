@@ -49,6 +49,7 @@ export const statusSchema = z.object({
   gameConnected: z.boolean(),
   model: z.string(),
   activeTurns: z.number().int().nonnegative(),
+  lastSuccessfulReplyAt: z.number().nonnegative().optional(),
   auth: authStateSchema,
   connections: z.array(connectionView).default([]),
   modelConnected: z.boolean().optional(),

@@ -23,6 +23,7 @@ interface TurnDependencies {
   changed: () => void;
   log: (message: string) => void;
   flushFirstText?: () => void;
+  onSuccessfulReply?: () => void;
 }
 export function createTurnRunner(deps: TurnDependencies) {
   const {
@@ -149,6 +150,13 @@ export function createTurnRunner(deps: TurnDependencies) {
             ? 'cancelled'
             : 'done',
       );
+      if (
+        chat.status === 'done' &&
+        !chat.proactive &&
+        [...parts.streams.values()].some((s) => s.reply.view().text.trim())
+      ) {
+        deps.onSuccessfulReply?.();
+      }
       chat.unread = chat.id !== activeChat();
       if (!parts.streams.size && chat.status === 'done' && !chat.proactive) {
         chat.messages.push({ role: 'system', text: 'The turn completed without a text response.' });
