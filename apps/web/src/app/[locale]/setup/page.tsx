@@ -12,7 +12,7 @@ export default async function Setup({ params }: LocalePageProps) {
   const t = getTranslator(locale);
   return (
     <>
-      <main id="main" className="guide container">
+      <main id="main" className="guide site-container">
         <PageSchema
           title={t('Get started')}
           description={t('Install Wisp for WoW: Forever on Windows and choose an AI connection.')}

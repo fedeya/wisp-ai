@@ -5,7 +5,7 @@ import { site } from '../site';
 export function SiteFooter({ locale }: { locale: Locale }) {
   const t = getTranslator(locale);
   return (
-    <footer className="site-footer container">
+    <footer className="site-footer site-container">
       <div>
         <a href={site.repository}>
           {t('Source code ')}

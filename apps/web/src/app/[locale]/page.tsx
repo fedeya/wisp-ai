@@ -2,6 +2,7 @@ import { getTranslator, translateData, localizedPath, type Locale } from '../../
 import { resolveLocale, type LocalePageProps } from '../../i18n/server';
 import { localizedMetadata } from '../../seo';
 import Image from 'next/image';
+import { HeroMotion } from '../../components/hero-motion';
 import { Demo } from '../../components/demo';
 import { RoutineScene } from '../../components/routine-scene';
 import { GearVisual, BagsVisual, Item } from '../../components/game-ui';
@@ -87,8 +88,8 @@ export default async function Home({ params }: LocalePageProps) {
             unoptimized
           />
           <div className="hero-shade" />
-          <div className="hero-inner container">
-            <div className="hero-copy">
+          <HeroMotion>
+            <div className="hero-copy" data-hero-copy>
               <a className="release-badge" href={`${site.repository}/releases`}>
                 <i />
                 {t('FOR WOW: FOREVER ')}
@@ -109,12 +110,12 @@ export default async function Home({ params }: LocalePageProps) {
               <InstallLink locale={locale} />
               <span className="download-note">{t('Windows x64 · Choose your AI connection')}</span>
             </div>
-            <div className="hero-product">
+            <div className="hero-product" data-hero-product>
               <Demo locale={locale} />
             </div>
-          </div>
+          </HeroMotion>
         </section>
-        <section className="features container" id="features" aria-labelledby="features-title">
+        <section className="features site-container" id="features" aria-labelledby="features-title">
           <div className="section-intro">
             <span className="eyebrow">{t('A LITTLE HELP GOES A LONG WAY')}</span>
             <h2 id="features-title">
@@ -309,7 +310,7 @@ export default async function Home({ params }: LocalePageProps) {
           </div>
         </section>
         <section className="setup-section" id="start">
-          <div className="container">
+          <div className="site-container">
             <span className="eyebrow">{t('BACK TO YOUR ADVENTURE')}</span>
             <h2>{t('A few steps to summon Wisp.')}</h2>
             <ol className="setup-steps">
@@ -338,7 +339,7 @@ export default async function Home({ params }: LocalePageProps) {
             </a>
           </div>
         </section>
-        <section className="faq-section container">
+        <section className="faq-section site-container">
           <h2>{t('Before you set out.')}</h2>
           <div className="faq-list">
             {faqs.map(([question, answer]) => (
@@ -352,7 +353,7 @@ export default async function Home({ params }: LocalePageProps) {
             ))}
           </div>
         </section>
-        <section className="install-section container">
+        <section className="install-section site-container">
           <Image src="/wisp.png" width={70} height={70} alt="" />
           <h2>
             {t('A little company.')}

@@ -26,7 +26,7 @@
   });
 </script>
 
-<div class="app-shell">
+<div class="flex min-h-screen">
   <aside>
     <div class="brand">
       <img src={logo} alt="" />

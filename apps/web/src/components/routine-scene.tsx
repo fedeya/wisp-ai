@@ -2,6 +2,7 @@
 import { getTranslator, type Locale } from '../i18n';
 import Image from 'next/image';
 import { useEffect, useRef, useState } from 'react';
+import { useSceneMotion } from './use-scene-motion';
 import { Icon } from './icon';
 import { Item } from './game-ui';
 const baseAdvice =
@@ -30,9 +31,14 @@ export function RoutineScene({ locale }: { locale: Locale }) {
   const [reduced, setReduced] = useState(false);
   const [paused, setPaused] = useState(false);
   const [visible, setVisible] = useState(true);
-  const section = useRef<HTMLElement>(null);
   const activeText = step === 7 ? talentAdvice : advice;
   const finishedWriting = letters >= activeText.length;
+  const stopped = reduced || paused || !inView || !visible;
+  const [section, animate, write] = useSceneMotion(stopped, reduced);
+  const progress = useRef(0);
+  useEffect(() => {
+    progress.current = letters;
+  }, [letters]);
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)');
     const motion = () => setReduced(media.matches);
@@ -52,7 +58,7 @@ export function RoutineScene({ locale }: { locale: Locale }) {
       media.removeEventListener('change', motion);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, []);
+  }, [section]);
   useEffect(() => {
     if (!inView || reduced || paused || !visible || ([4, 7].includes(step) && !finishedWriting)) {
       return;
@@ -67,18 +73,132 @@ export function RoutineScene({ locale }: { locale: Locale }) {
     return () => clearTimeout(timer);
   }, [step, finishedWriting, inView, reduced, paused, visible]);
   useEffect(() => {
-    if (![4, 7].includes(step) || finishedWriting || !inView || reduced || paused || !visible) {
+    if (![4, 7].includes(step) || reduced) {
       return;
     }
-    const timer = setInterval(
-      () => setLetters((value) => Math.min(value + 4, activeText.length)),
-      44,
+    const from = Math.min(progress.current, activeText.length);
+    return write(from, activeText.length, ((activeText.length - from) / 4) * 0.044, (value) =>
+      setLetters(Math.floor(value)),
     );
-    return () => clearInterval(timer);
-  }, [step, activeText, finishedWriting, inView, reduced, paused, visible]);
+  }, [write, step, activeText, reduced]);
   const shown = reduced ? 5 : step;
   const complete = reduced || step > 4 || (step === 4 && finishedWriting);
-  const stopped = reduced || paused || !inView || !visible;
+  const reached = shown >= 3;
+  const replyVisible = shown >= 4 && shown < 6;
+  const fading = step === 9 && !reduced;
+  useEffect(() => {
+    const stops = [
+      animate(
+        '.level-event',
+        {
+          opacity: reached ? 1 : 0.2,
+          transform: reached ? 'translateY(0px)' : 'translateY(5px)',
+        },
+        { duration: 0.7 },
+      ),
+    ];
+    stops.push(
+      animate(
+        '.level-medallion',
+        {
+          boxShadow:
+            reached && !reduced
+              ? ['0 0 0 #d6af5000', '0 0 32px #d6af5055', '0 0 16px #d6af5010']
+              : 'none',
+        },
+        { duration: 1.3 },
+      ),
+    );
+    stops.push(
+      animate(
+        '.level-rays',
+        {
+          opacity: reached && !reduced ? [0, 1, 0] : 0,
+          transform: reached && !reduced ? ['scale(0.5)', 'scale(1)', 'scale(1.8)'] : 'none',
+        },
+        { duration: 1.4 },
+      ),
+    );
+    return () => stops.forEach((stop) => stop());
+  }, [animate, reached, reduced]);
+  useEffect(
+    () =>
+      animate(
+        '.routine-feed',
+        {
+          opacity: fading ? 0 : 1,
+          transform: fading ? 'translateY(-7px)' : 'none',
+        },
+        { duration: 0.5 },
+      ),
+    [animate, fading],
+  );
+  useEffect(
+    () =>
+      animate(
+        '.routine-reply',
+        {
+          opacity: replyVisible ? 1 : 0,
+          transform: replyVisible ? 'translateY(0px)' : 'translateY(10px)',
+        },
+        { duration: 0.6 },
+      ),
+    [animate, replyVisible],
+  );
+  useEffect(
+    () =>
+      animate(
+        '.routine-next-actions',
+        {
+          opacity: complete ? 1 : 0,
+          transform: complete ? 'translateY(0px)' : 'translateY(5px)',
+        },
+        { duration: 0.5 },
+      ),
+    [animate, complete],
+  );
+  useEffect(() => {
+    const stops: Array<() => void> = [];
+    if (shown === 2) {
+      for (const [index, selector] of ['path:first-child', 'path:last-child'].entries()) {
+        stops.push(
+          animate(
+            '.routine-connection ' + selector,
+            {
+              opacity: [0.2, 1, 0.5],
+              transform: ['translateX(-3px)', 'translateX(0px)'],
+            },
+            { duration: 0.5, delay: index * 0.12 },
+          ),
+        );
+      }
+    }
+    if (!reduced && shown === 6) {
+      stops.push(
+        animate(
+          '.routine-followup-scene',
+          {
+            opacity: [0, 1],
+            transform: ['translateY(7px)', 'translateY(0px)'],
+          },
+          { duration: 0.5 },
+        ),
+      );
+    }
+    if (!reduced && shown === 7) {
+      stops.push(
+        animate(
+          '.routine-talent-answer',
+          {
+            opacity: [0, 1],
+            transform: ['translateY(9px)', 'translateY(0px)'],
+          },
+          { duration: 0.4 },
+        ),
+      );
+    }
+    return () => stops.forEach((stop) => stop());
+  }, [animate, shown, reduced]);
   return (
     <section
       className={`routine-section ${stopped ? 'routine-stopped' : ''}`}
@@ -144,7 +264,7 @@ export function RoutineScene({ locale }: { locale: Locale }) {
         </div>
         <div className="routine-outcome">
           <span className="routine-moment">{t('THEN, WHILE YOU PLAY')}</span>
-          <div className={`level-event ${shown >= 3 ? 'level-reached' : ''}`}>
+          <div className="level-event">
             <div className="level-medallion">20</div>
             <div>
               <span>{t('LEVEL UP')}</span>
@@ -152,11 +272,8 @@ export function RoutineScene({ locale }: { locale: Locale }) {
             </div>
             <div className="level-rays" aria-hidden="true" />
           </div>
-          <div className={`routine-feed ${step === 9 && !reduced ? 'routine-fading' : ''}`}>
-            <div
-              className={`routine-reply ${shown >= 4 && shown < 6 ? 'reply-visible' : ''}`}
-              aria-hidden={shown < 4 || shown >= 6}
-            >
+          <div className="routine-feed">
+            <div className="routine-reply" aria-hidden={shown < 4 || shown >= 6}>
               <div className="routine-reply-heading">
                 <Image src="/wisp.png" alt="" width={24} height={24} />
                 <strong>{t(' Wisp')}</strong>
@@ -171,7 +288,7 @@ export function RoutineScene({ locale }: { locale: Locale }) {
                   {!complete && <span className="writing-caret" />}
                 </span>
               </p>
-              <div className={`routine-next-actions ${complete ? 'actions-visible' : ''}`}>
+              <div className="routine-next-actions">
                 <div>
                   <Item icon="frost" name={t('Spell upgrades')} />
                   <span>{t('Review spell upgrades')}</span>
@@ -184,9 +301,9 @@ export function RoutineScene({ locale }: { locale: Locale }) {
             </div>
             {!reduced && step >= 6 && (
               <div className="routine-followup-scene">
-                <p className="routine-followup message-enter">{followup}</p>
+                <p className="routine-followup">{followup}</p>
                 {!reduced && step >= 7 && (
-                  <div className="routine-talent-answer message-enter">
+                  <div className="routine-talent-answer">
                     <div className="routine-reply-heading">
                       <Image src="/wisp.png" alt="" width={24} height={24} />
                       <strong>{t(' Wisp')}</strong>

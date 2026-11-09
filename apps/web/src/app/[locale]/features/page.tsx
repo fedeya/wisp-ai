@@ -149,7 +149,7 @@ export default async function Features({ params }: LocalePageProps) {
   const t = getTranslator(locale);
   const features = translateData(baseFeatures, locale);
   return (
-    <main id="main" className="feature-reference container">
+    <main id="main" className="feature-reference site-container">
       <PageSchema
         title={t('Features')}
         description="Explore Wisp’s capabilities, example prompts, requirements and limits."

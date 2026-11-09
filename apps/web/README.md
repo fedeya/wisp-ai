@@ -14,6 +14,37 @@ pnpm web:dev
 
 Open http://127.0.0.1:3000. Production check: `pnpm web:build`.
 
+## Styling and motion
+
+Tailwind CSS 4 runs through PostCSS. `src/app/globals.css` defines the web's
+theme tokens and reusable component styles with `@apply`. Custom scene artwork,
+responsive adjustments and game effects remain CSS in the `components` layer;
+Tailwind utilities can override them locally. Preflight is intentionally omitted
+to preserve existing typography and native controls. Use `site-container` for the
+site's content width, rather than Tailwind's built-in `container` utility.
+
+The language menu uses Base UI for keyboard navigation, dismissal and focus
+restoration. `HeroMotion` uses Motion's mini animation API to stagger hero content
+without hiding server-rendered text. The chat demo and level-up routine also use
+Motion for message entrances, scene exits, the level-20 glow and the follow-up
+sequence. `useSceneMotion` pauses and resumes in-flight animations alongside the
+scene timers when paused, off screen or in a hidden tab. Motion also animates the
+visible character count for the typewriter; React renders the corresponding text
+slice. Reduced motion shows a static completed example. Keep simple hover effects,
+the typing caret and thinking dots in CSS.
+
+For a separate worktree preview, choose an unused port:
+
+```sh
+pnpm --filter @wisp/web exec next dev --hostname 127.0.0.1 --port 3037
+pnpm --filter @wisp/desktop exec vite --host 127.0.0.1 --port 1437
+```
+
+The desktop command starts a design preview only, without Tauri or the bridge.
+Its Tailwind theme lives in `apps/desktop/src/style.css`, using the Vite plugin.
+Both themes require modern browsers supported by Tailwind 4 (Chrome/Edge 111+,
+Safari 16.4+, Firefox 128+); desktop previews use the current WebView2 runtime.
+
 ## Vercel
 
 1. Import this GitHub repository into Vercel.

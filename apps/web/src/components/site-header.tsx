@@ -61,7 +61,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
       <div
         className={`site-header-shell ${scrolled ? 'is-scrolled' : ''} ${menuOpen ? 'nav-open' : ''}`}
       >
-        <header className="site-header container">
+        <header className="site-header site-container">
           <Link
             href={localizedPath(locale, '/')}
             className="wordmark"

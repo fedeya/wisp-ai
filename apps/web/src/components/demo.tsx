@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Item, Money } from './game-ui';
 import { Icon } from './icon';
+import { useSceneMotion } from './use-scene-motion';
 const baseScenes = [
   {
     prompt: 'Which piece of my gear should I upgrade first?',
@@ -38,7 +39,6 @@ export function Demo({ locale }: { locale: Locale }) {
   const [reduced, setReduced] = useState(false);
   const [visible, setVisible] = useState(true);
   const [inView, setInView] = useState(false);
-  const container = useRef<HTMLDivElement>(null);
   const transcript = useRef<HTMLDivElement>(null);
   const progress = useRef(0);
   const current = scenes[scene];
@@ -52,6 +52,8 @@ export function Demo({ locale }: { locale: Locale }) {
           ? followupReply
           : current.reply;
   const stopped = paused || reduced || !visible || !inView;
+  const [container, animate, write] = useSceneMotion(stopped, reduced);
+  const finishedWriting = characters >= text.length;
   useEffect(() => {
     progress.current = characters;
   }, [characters]);
@@ -74,15 +76,13 @@ export function Demo({ locale }: { locale: Locale }) {
       media.removeEventListener('change', update);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, []);
+  }, [container]);
   useEffect(() => {
-    if (stopped) {
+    if (stopped || (typing && !finishedWriting)) {
       return;
     }
-    const increment = stage === 0 || stage === 4 ? 2 : 4;
-    const cadence = 40;
     const delay = typing
-      ? Math.ceil((text.length - progress.current) / increment) * cadence + 500
+      ? 500
       : stage === 8
         ? 420
         : stage === 3
@@ -92,11 +92,6 @@ export function Demo({ locale }: { locale: Locale }) {
             : stage === 1 || stage === 5
               ? 1000
               : 500;
-    const writingTimer = typing
-      ? window.setInterval(() => {
-          setCharacters((value) => Math.min(value + increment, text.length));
-        }, cadence)
-      : undefined;
     const timer = window.setTimeout(() => {
       setCharacters(0);
       if (stage === 8) {
@@ -110,9 +105,18 @@ export function Demo({ locale }: { locale: Locale }) {
     }, delay);
     return () => {
       clearTimeout(timer);
-      clearInterval(writingTimer);
     };
-  }, [scene, stage, typing, text, stopped]);
+  }, [scene, stage, typing, finishedWriting, stopped]);
+  useEffect(() => {
+    if (!typing || reduced) {
+      return;
+    }
+    const increment = stage === 0 || stage === 4 ? 2 : 4;
+    const from = Math.min(progress.current, text.length);
+    return write(from, text.length, ((text.length - from) / increment) * 0.04, (value) =>
+      setCharacters(Math.floor(value)),
+    );
+  }, [write, scene, stage, typing, text, reduced]);
   useEffect(() => {
     const element = transcript.current;
     if (element) {
@@ -130,6 +134,55 @@ export function Demo({ locale }: { locale: Locale }) {
   const reply = reduced || stage > 2 ? current.reply : current.reply.slice(0, characters);
   const writingPrompt = !reduced && (stage === 0 || stage === 4);
   const waiting = shownStage === 1 || shownStage === 5;
+  useEffect(() => {
+    const stops = [
+      animate(
+        '.chat-thread',
+        {
+          opacity: stage === 8 && !reduced ? 0 : 1,
+          transform: stage === 8 && !reduced ? 'translateY(-9px)' : 'none',
+        },
+        { duration: 0.42 },
+      ),
+    ];
+    const enter = (selector: string) =>
+      animate(
+        selector,
+        {
+          opacity: [0, 1],
+          transform: ['translateY(9px)', 'translateY(0px)'],
+        },
+        { duration: 0.4 },
+      );
+    if (shownStage === 1 || reduced) {
+      stops.push(enter('[data-motion="question"]'));
+    }
+    if (shownStage === 2 || reduced) {
+      stops.push(enter('[data-motion="answer"]'));
+    }
+    if (shownStage >= 2) {
+      stops.push(
+        animate(
+          '[data-motion="result"]',
+          {
+            opacity: shownStage >= 3 ? 1 : 0,
+            transform: shownStage >= 3 ? 'translateY(0px) scale(1)' : 'translateY(7px) scale(0.98)',
+          },
+          { duration: 0.55 },
+        ),
+      );
+    }
+    if (scene === 0 && shownStage === 5) {
+      stops.push(enter('[data-motion="followup"]'));
+    }
+    if (scene === 0 && shownStage === 6) {
+      stops.push(enter('[data-motion="followup-answer"]'));
+    }
+    if (waiting) {
+      stops.push(enter('.thinking'));
+    }
+    return () => stops.forEach((stop) => stop());
+  }, [animate, scene, stage, shownStage, reduced, waiting]);
   return (
     <div
       ref={container}
@@ -145,15 +198,15 @@ export function Demo({ locale }: { locale: Locale }) {
           </span>
           <Icon name="minus" size={13} />
         </div>
-        <div
-          className={`chat-content ${stage === 8 && !reduced ? 'chat-leaving' : ''}`}
-          ref={transcript}
-          aria-live="off"
-        >
+        <div className="chat-content" ref={transcript} aria-live="off">
           <div className="chat-thread" key={scene}>
-            {shownStage >= 1 && <p className="chat-question message-enter">{current.prompt}</p>}
+            {shownStage >= 1 && (
+              <p className="chat-question" data-motion="question">
+                {current.prompt}
+              </p>
+            )}
             {shownStage >= 2 && (
-              <div className="chat-answer message-enter">
+              <div className="chat-answer" data-motion="answer">
                 <p className="streaming-text">
                   <span className="streaming-measure" aria-hidden="true">
                     {current.reply}
@@ -164,7 +217,10 @@ export function Demo({ locale }: { locale: Locale }) {
                   </span>
                 </p>
                 {shownStage >= 2 && (
-                  <div className={shownStage >= 3 ? 'result-enter' : 'result-pending'}>
+                  <div
+                    data-motion="result"
+                    className={shownStage >= 3 ? undefined : 'result-pending'}
+                  >
                     {scene === 0 && (
                       <div className="chat-item">
                         <Item name={t('Barbaric Linen Vest')} icon="vest" rarity="uncommon" />
@@ -220,10 +276,12 @@ export function Demo({ locale }: { locale: Locale }) {
               </div>
             )}
             {scene === 0 && shownStage >= 5 && (
-              <p className="chat-question followup message-enter">{followupPrompt}</p>
+              <p className="chat-question followup" data-motion="followup">
+                {followupPrompt}
+              </p>
             )}
             {scene === 0 && shownStage >= 6 && (
-              <div className="chat-answer message-enter">
+              <div className="chat-answer" data-motion="followup-answer">
                 <div className="chat-prices">
                   <span>
                     {t('Loaded listing ')}
@@ -246,7 +304,7 @@ export function Demo({ locale }: { locale: Locale }) {
               </div>
             )}
             {waiting && (
-              <div className="thinking message-enter" aria-label={t('Wisp is thinking')}>
+              <div className="thinking" aria-label={t('Wisp is thinking')}>
                 <Image src="/wisp.png" width={18} height={18} alt="" />
                 <span />
                 <span />
