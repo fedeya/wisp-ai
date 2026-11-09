@@ -33,12 +33,22 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-test('disabled by default and never sends in development/preview', () => {
+test('enabled by default in packaged desktop and persists the installation ID', () => {
   const telemetry = createTelemetry(localStorage, true);
+  expect(telemetry.enabled).toBe(true);
   telemetry.observe(info, status(Date.now()));
-  expect(fetch).not.toHaveBeenCalled();
+  expect(fetch).toHaveBeenCalled();
+  const id = payloads()[0].user_id;
+  createTelemetry(localStorage, true).observe(info, null);
+  expect(payloads().at(-1).user_id).toBe(id);
+});
+
+test('development and browser previews neither send nor create an installation ID', () => {
+  const telemetry = createTelemetry(localStorage, false);
   telemetry.setEnabled(true);
-  createTelemetry(localStorage, false).observe(info, status(Date.now()));
+  telemetry.observe(info, status(Date.now()));
+  expect(telemetry.enabled).toBe(false);
+  expect(localStorage.length).toBe(0);
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -62,7 +72,7 @@ test('persists installation ID, deduplicates milestones and only sends allowed m
   expect(payloads().at(-1).user_id).toBe(id);
 });
 
-test('counts new active days, ignores replies before consent, and revokes immediately', () => {
+test('counts new active days, ignores historical replies, and persists opt-out across restarts', () => {
   const telemetry = createTelemetry(localStorage, true);
   telemetry.setEnabled(true);
   telemetry.observe(info, status(Date.now() - 1000));
@@ -75,12 +85,32 @@ test('counts new active days, ignores replies before consent, and revokes immedi
   const signal = vi.mocked(fetch).mock.calls[0][1]?.signal;
   telemetry.setEnabled(false);
   expect(signal?.aborted).toBe(true);
-  expect(localStorage.length).toBe(0);
+  expect(localStorage.getItem('wisp.telemetry.v1')).toBe('{"enabled":false}');
   telemetry.observe(info, status(Date.now()));
+  const restarted = createTelemetry(localStorage, true);
+  expect(restarted.enabled).toBe(false);
+  restarted.observe(info, status(Date.now()));
   expect(payloads()).toHaveLength(count);
   telemetry.setEnabled(true);
   telemetry.observe(info, null);
   expect(payloads().at(-1).user_id).not.toBe(oldId);
+});
+
+test('unavailable or corrupt storage leaves telemetry disabled', () => {
+  localStorage.setItem('wisp.telemetry.v1', '{broken');
+  const corrupt = createTelemetry(localStorage, true);
+  expect(corrupt.enabled).toBe(false);
+  const unavailable = createTelemetry(
+    {
+      getItem() {
+        throw Error('unavailable');
+      },
+    } as unknown as Storage,
+    true,
+  );
+  expect(unavailable.enabled).toBe(false);
+  unavailable.observe(info, null);
+  expect(fetch).not.toHaveBeenCalled();
 });
 
 test('offline ingestion never rejects into the app', async () => {

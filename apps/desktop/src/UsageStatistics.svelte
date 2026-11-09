@@ -24,7 +24,9 @@
     return () => telemetry?.dispose();
   });
   $effect(() => {
-    if (enabled) telemetry?.observe(info, status);
+    if (enabled) {
+      telemetry?.observe(info, status);
+    }
   });
 </script>
 
@@ -59,8 +61,9 @@
       Share usage statistics (optional)
     </label>
     <p class="field-hint">
-      Off by default. Turning this off stops sending and removes the local
-      installation ID; previously sent statistics remain on the server.
+      On by default. You can turn it off at any time. Turning this off stops
+      sending and removes the local installation ID; previously sent statistics
+      remain on the server.
     </p>
     {#if error}<p role="alert">{error}</p>{/if}
   </section>

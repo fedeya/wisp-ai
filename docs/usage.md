@@ -59,7 +59,7 @@ Each message includes available character name/realm, level, class, race, factio
 
 The bridge holds the ChatGPT grant and proxies model requests with `store: false`; this does not mean the provider receives no data or retains nothing. Neither the agent nor desktop webview receives the ChatGPT credentials. Windows credentials use DPAPI for the current user, so changing Windows users requires signing in again. See [OpenAI’s sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
-Optional desktop **Settings > Usage statistics** shares app opens, setup milestones and active days with our Rybbit instance. It is off by default. Events include a random installation ID, app version and platform; no conversations, credentials, character names or local paths are sent. The server receives your IP as part of the connection. Turning sharing off removes the local ID and stops sending, but does not remove previously received events. See [telemetry details](telemetry.md).
+Optional desktop **Settings > Usage statistics** shares app opens, setup milestones and active days with our Rybbit instance. It is on by default and can be disabled at any time. Events include a random installation ID, app version and platform; no conversations, credentials, character names or local paths are sent. The server receives your IP as part of the connection. Turning sharing off removes the local ID and stops sending, but does not remove previously received events. See [telemetry details](telemetry.md).
 
 ### Local data and deletion
 

@@ -8,13 +8,18 @@ export function createTelemetry(storage: Storage, available: boolean) {
   let saved: Saved | undefined;
   const pending = new Set<AbortController>();
   try {
-    const value = JSON.parse(storage.getItem(storageKey) || 'null');
+    const raw = available ? storage.getItem(storageKey) : null;
+    const value = JSON.parse(raw || 'null');
     if (
       typeof value?.id === 'string' &&
       typeof value.since === 'number' &&
       Array.isArray(value.milestones)
     ) {
       saved = value;
+    } else if (available && raw === null) {
+      const initial = { id: crypto.randomUUID(), since: Date.now(), milestones: [] };
+      storage.setItem(storageKey, JSON.stringify(initial));
+      saved = initial;
     }
   } catch {
     /* Unavailable or corrupt storage means disabled. */
@@ -81,8 +86,8 @@ export function createTelemetry(storage: Storage, available: boolean) {
         saved = undefined;
         opened = false;
         pending.forEach((controller) => controller.abort());
-        // Stop immediately even when storage becomes unavailable after opting in.
-        storage.removeItem(storageKey);
+        // Keep the opt-out across restarts without retaining the installation ID.
+        storage.setItem(storageKey, JSON.stringify({ enabled: false }));
       }
     },
     observe(info: DesktopInfo | null, status: Status | null) {
