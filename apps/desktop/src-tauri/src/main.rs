@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod game_detection;
 mod update_trace;
 mod updates;
 mod vault;
@@ -522,6 +523,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             bridge_request,
             desktop_info,
+            game_detection::detect_game_folders,
             start_bridge,
             stop_bridge,
             pick_folder,

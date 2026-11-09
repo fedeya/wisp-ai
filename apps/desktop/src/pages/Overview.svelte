@@ -5,6 +5,15 @@
   import { desktop, native } from "../api";
   let { app }: { app: DesktopController } = $props();
   let editingInstallation = $state(false);
+  let choosingFolder = $derived(app.busy === "Choosing folder");
+  function chooseFolder() {
+    void app.work(
+      "Choosing folder",
+      app.chooseFolder,
+      undefined,
+      "folder-picker",
+    );
+  }
   let installationOpen = $derived(
     !app.info?.configured || !!app.info?.addonOutdated || editingInstallation,
   );
@@ -12,7 +21,9 @@
     app.loading
       ? "loading"
       : !app.info?.configured
-        ? "install"
+        ? app.detectingGame
+          ? "searching"
+          : "install"
         : app.info?.addonOutdated
           ? "update"
           : !app.status
@@ -28,6 +39,10 @@
                   : "ready",
   );
   const steps = {
+    searching: {
+      title: "Finding WoW Forever",
+      description: "Searching for your game installation.",
+    },
     loading: {
       title: "Checking Wisp…",
       description: "Checking your installation and connections.",
@@ -82,25 +97,7 @@
     </div>
   </div>
   <div class="actions status-actions">
-    {#if next === "install"}<button
-        class="primary"
-        disabled={!native || app.locked}
-        onclick={() =>
-          app.wow
-            ? app.install()
-            : app.work(
-                "Choosing folder",
-                app.chooseFolder,
-                undefined,
-                "installation",
-              )}
-        >{app.busy === "Installing addon"
-          ? "Installing…"
-          : app.wow
-            ? "Install addon"
-            : "Choose game folder"}</button
-      >
-    {:else if next === "update"}<button
+    {#if next === "update"}<button
         class="primary"
         disabled={!native || app.locked || !app.wow}
         onclick={app.install}
@@ -125,7 +122,8 @@
     {:else if next === "ready"}<span class="badge good"
         ><span class="live-dot online"></span>Ready to help</span
       >
-    {:else}<span class="spinner"></span>{/if}
+    {:else if next !== "searching" && next !== "install"}<span class="spinner"
+      ></span>{/if}
   </div>
   <div class="connection-summary">
     <div>
@@ -196,11 +194,9 @@
         <Icon name="folder" size={20} />
         <div>
           <h2>Game installation</h2>
-          <p class="installation-path">
-            {app.info?.configured
-              ? app.info.wow || app.wow
-              : "Choose the Forever client folder containing Wow.exe."}
-          </p>
+          {#if app.info?.configured}<p class="installation-path">
+              {app.info.wow || app.wow}
+            </p>{/if}
         </div>
       </div>
       {#if app.info?.configured}<div class="installation-controls">
@@ -216,32 +212,81 @@
               ? "Done"
               : "Manage installation"}</button
           >
-        </div>{/if}
+        </div>{:else}<button
+          class="quiet"
+          disabled={!native || app.locked || app.detectingGame}
+          onclick={app.searchInstallations}
+          aria-label="Search again"
+          title="Search again"
+          ><Icon name="refresh" size={17} />Search again</button
+        >{/if}
     </div>
     {#if installationOpen}
-      <div class="folder-field">
-        <input
-          aria-label="WoW client folder"
-          bind:value={app.wow}
-          placeholder="Choose your World of Warcraft folder"
-          disabled={!!app.busy}
-        /><button
-          onclick={() =>
-            app.work(
-              "Choosing folder",
-              app.chooseFolder,
-              undefined,
-              "installation",
-            )}
-          disabled={!!app.busy || !native}
-          ><Icon name="folder" size={17} />Choose folder</button
-        >
-      </div>
+      {#if !app.info?.configured && app.detectingGame}
+        <p class="field-hint installation-search" role="status">
+          <span class="spinner"></span>Searching for installation…
+        </p>
+      {:else}
+        {#if !app.info?.configured && app.detectedFolders.length > 1}
+          <label class="field-hint" for="detected-game"
+            >Found multiple Forever installations</label
+          >
+          <select
+            id="detected-game"
+            aria-label="Detected Forever installations"
+            bind:value={app.wow}
+            disabled={!!app.busy}
+          >
+            {#if app.wow && !app.detectedFolders.includes(app.wow)}<option
+                value={app.wow}>{app.wow}</option
+              >{/if}
+            {#each app.detectedFolders as folder}<option value={folder}
+                >{folder}</option
+              >{/each}
+          </select>
+        {:else if !app.info?.configured && app.detectedFolders.length === 0}
+          <p class="field-hint">
+            {app.detectionFailed
+              ? "Couldn't search automatically. Choose your folder or search again."
+              : "No WoW Forever installation found. Choose your folder or search again."}
+          </p>
+        {/if}
+        <div class="folder-field">
+          {#if app.info?.configured || app.detectedFolders.length < 2}
+            <input
+              class="folder-picker"
+              aria-label="WoW client folder"
+              bind:value={app.wow}
+              placeholder="Choose your World of Warcraft folder"
+              disabled={!!app.busy || !native}
+              readonly
+              aria-haspopup="dialog"
+              onclick={chooseFolder}
+              onkeydown={(event) => {
+                if (event.key === "Enter") chooseFolder();
+              }}
+            />{/if}<button
+            onclick={chooseFolder}
+            disabled={!!app.busy || !native}
+            aria-busy={choosingFolder}
+            >{#if choosingFolder}<span class="spinner"
+              ></span>Choosing…{:else}<Icon name="folder" size={17} />Choose
+              folder{/if}</button
+          >
+        </div>
+      {/if}
       {#if app.info?.addonOutdated}<p class="field-hint">
           Update the addon, then type /reload in WoW.
         </p>{/if}
       <div class="actions">
-        {#if app.info?.configured && next !== "update"}<button
+        {#if !app.info?.configured && !app.detectingGame}<button
+            class="primary"
+            onclick={app.install}
+            disabled={app.locked || !app.wow || !native}
+            >{app.busy === "Installing addon"
+              ? "Installing…"
+              : "Install addon"}</button
+          >{:else if app.info?.configured && next !== "update"}<button
             class:primary={app.info?.configured}
             onclick={app.install}
             disabled={app.locked || !app.wow || !native}
@@ -250,10 +295,10 @@
               : "Install / update addon"}</button
           >{/if}<ActionProgress {app} target="installation" />
       </div>
-      {#if !app.info?.configured}<button
+      {#if !app.info?.configured && !app.detectingGame}<button
           class="text-button import"
           onclick={app.importPrevious}
-          disabled={!!app.busy || !native}
+          disabled={!!app.busy || !native || app.detectingGame}
           >Already using Wisp? Import your previous installation.</button
         >{/if}
     {/if}

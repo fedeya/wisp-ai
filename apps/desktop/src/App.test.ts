@@ -3,12 +3,14 @@ import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/sv
 import App from './App.svelte';
 import { desktop, request, type Status } from './api';
 import { listen } from '@tauri-apps/api/event';
+import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 vi.mock('./api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
 }));
 let status: Status;
 beforeEach(() => {
+  mockIPC(() => null);
   vi.clearAllMocks();
   vi.mocked(listen).mockResolvedValue(() => {});
   status = {
@@ -31,6 +33,9 @@ beforeEach(() => {
     routineRuns: [],
   };
   vi.mocked(desktop).mockImplementation(async (command) => {
+    if (command === 'detect_game_folders') {
+      return [] as never;
+    }
     if (command === 'desktop_info') {
       return {
         configured: true,
@@ -62,7 +67,10 @@ beforeEach(() => {
     return { ok: true, count: 3 } as never;
   });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  clearMocks();
+});
 
 test.each([
   { failed: false, duration: 5000 },
@@ -87,6 +95,141 @@ test.each([
     cleanup();
     vi.useRealTimers();
   }
+});
+
+function mockUnconfiguredDetection(result: Promise<string[]>) {
+  const fallback = vi.mocked(desktop).getMockImplementation()!;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'desktop_info') {
+      return { configured: false, wow: null } as never;
+    }
+    if (command === 'detect_game_folders') {
+      return (await result) as never;
+    }
+    if (command === 'pick_folder') {
+      return 'F:\\My Games\\Forever' as never;
+    }
+    return fallback(command, args);
+  });
+}
+
+test('detects a single Forever installation without installing or saving it', async () => {
+  mockUnconfiguredDetection(Promise.resolve(['E:\\Blizzard\\World of Warcraft\\_forever_']));
+  render(App);
+  const input = (await screen.findByLabelText('WoW client folder')) as HTMLInputElement;
+  await waitFor(() => expect(input.value).toBe('E:\\Blizzard\\World of Warcraft\\_forever_'));
+  expect(desktop).not.toHaveBeenCalledWith('install_addon', expect.anything());
+  expect(input.readOnly).toBe(true);
+  expect(screen.getByText('WoW Forever found.').closest('.notification')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Choose folder' })).toBeTruthy();
+  await fireEvent.click(input);
+  await waitFor(() => expect(desktop).toHaveBeenCalledWith('pick_folder'));
+  await waitFor(() => expect(input.value).toBe('F:\\My Games\\Forever'));
+});
+
+test('additional installations keep the first selection and offer alternatives', async () => {
+  mockUnconfiguredDetection(Promise.resolve(['D:\\Forever', 'E:\\Forever']));
+  render(App);
+  const choices = await screen.findByLabelText('Detected Forever installations');
+  expect(
+    screen.getByText('Found 2 WoW Forever installations.').closest('.notification'),
+  ).toBeTruthy();
+  expect((choices as HTMLSelectElement).value).toBe('D:\\Forever');
+  await fireEvent.change(choices, { target: { value: 'E:\\Forever' } });
+  expect((choices as HTMLSelectElement).value).toBe('E:\\Forever');
+});
+
+test('search hides selection until all results are ready', async () => {
+  let finish!: (folders: string[]) => void;
+  mockUnconfiguredDetection(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(App);
+  await screen.findByText('Finding WoW Forever');
+  await waitFor(() =>
+    expect(desktop).toHaveBeenCalledWith('detect_game_folders', expect.anything()),
+  );
+  const args = vi.mocked(desktop).mock.calls.find(([name]) => name === 'detect_game_folders')![1]!;
+  const progress = args.onFound as { onmessage: (folder: string) => void };
+  progress.onmessage('E:\\Forever');
+  expect(screen.queryByLabelText('WoW client folder')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Choose folder' })).toBeNull();
+  expect((screen.getByRole('button', { name: 'Search again' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(screen.queryByRole('button', { name: 'Install addon' })).toBeNull();
+  progress.onmessage('D:\\Forever');
+  finish(['E:\\Forever', 'D:\\Forever']);
+  const choices = (await screen.findByLabelText(
+    'Detected Forever installations',
+  )) as HTMLSelectElement;
+  expect(choices.value).toBe('E:\\Forever');
+  expect((screen.getByRole('button', { name: 'Search again' }) as HTMLButtonElement).disabled).toBe(
+    false,
+  );
+  expect(screen.getAllByRole('option', { name: 'E:\\Forever' })).toHaveLength(1);
+});
+
+test('unsuccessful search enables manual selection and can be retried', async () => {
+  let finish!: (folders: string[]) => void;
+  mockUnconfiguredDetection(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(App);
+  await screen.findByText('Finding WoW Forever');
+  finish([]);
+  await fireEvent.click(await screen.findByRole('button', { name: 'Choose folder' }));
+  const input = screen.getByLabelText('WoW client folder') as HTMLInputElement;
+  await waitFor(() => expect(input.value).toBe('F:\\My Games\\Forever'));
+  expect(input.value).toBe('F:\\My Games\\Forever');
+  await fireEvent.click(screen.getByRole('button', { name: 'Search again' }));
+  await waitFor(() =>
+    expect(
+      vi.mocked(desktop).mock.calls.filter(([name]) => name === 'detect_game_folders'),
+    ).toHaveLength(2),
+  );
+  expect(((await screen.findByLabelText('WoW client folder')) as HTMLInputElement).value).toBe('');
+});
+
+test('configured installations skip detection', async () => {
+  render(App);
+  await screen.findByText('Ready to help');
+  expect(desktop).not.toHaveBeenCalledWith('detect_game_folders', expect.anything());
+});
+
+test('search again waits for fresh results and ignores updates from the previous search', async () => {
+  mockUnconfiguredDetection(Promise.resolve([]));
+  render(App);
+  await screen.findByText(/No WoW Forever installation found/);
+  const previous = vi
+    .mocked(desktop)
+    .mock.calls.find(([name]) => name === 'detect_game_folders')![1]!.onFound as {
+    onmessage: (folder: string) => void;
+  };
+  let finish!: (folders: string[]) => void;
+  const result = new Promise<string[]>((resolve) => {
+    finish = resolve;
+  });
+  const fallback = vi.mocked(desktop).getMockImplementation()!;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'detect_game_folders') {
+      return (await result) as never;
+    }
+    return fallback(command, args);
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Search again' }));
+  await screen.findByText('Finding WoW Forever');
+  expect(screen.queryByLabelText('WoW client folder')).toBeNull();
+  previous.onmessage('D:\\Stale');
+  finish(['E:\\Forever']);
+  const folder = (await screen.findByLabelText('WoW client folder')) as HTMLInputElement;
+  expect(folder.value).toBe('E:\\Forever');
+  expect(folder.readOnly).toBe(true);
+  expect(screen.queryByLabelText('Detected Forever installations')).toBeNull();
 });
 
 test('search settings keep Exa separate from model connections and do not reveal saved keys', async () => {
@@ -501,7 +644,7 @@ test('first-time setup leads from choosing a folder to installing the addon', as
     return original(command, args);
   });
   render(App);
-  await fireEvent.click(await screen.findByRole('button', { name: 'Choose game folder' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Choose folder' }));
   await fireEvent.click(await screen.findByRole('button', { name: 'Install addon' }));
   await waitFor(() => expect(desktop).toHaveBeenCalledWith('install_addon', { wow: 'D:\\WoW' }));
 });

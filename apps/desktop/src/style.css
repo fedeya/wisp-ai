@@ -340,6 +340,14 @@ textarea {
   animation: spin 0.8s linear infinite;
   flex-shrink: 0;
 }
+.installation-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.folder-picker {
+  cursor: pointer;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

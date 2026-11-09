@@ -1,6 +1,7 @@
 import { characterLabel } from '@wisp/protocol/character-key';
 import { onMount } from 'svelte';
 import { listen } from '@tauri-apps/api/event';
+import { Channel } from '@tauri-apps/api/core';
 import {
   desktop,
   request,
@@ -74,6 +75,10 @@ export function createDesktopController() {
   let feedback = $state('');
   let failed = $state(false);
   let wow = $state('');
+  let detectedFolders = $state<string[]>([]);
+  let detectingGame = $state(false);
+  let detectionFailed = $state(false);
+  let disposed = false;
   let models = $state<Model[]>([]);
   let model = $state('');
   let account = $state('');
@@ -177,6 +182,9 @@ export function createDesktopController() {
     );
   }
   async function chooseFolder() {
+    if (detectingGame) {
+      return;
+    }
     const folder = await desktop<string | null>('pick_folder');
     if (folder) {
       wow = folder;
@@ -199,6 +207,9 @@ export function createDesktopController() {
     }
   }
   async function install() {
+    if (detectingGame) {
+      return;
+    }
     await work(
       'Installing addon',
       async () => {
@@ -273,8 +284,45 @@ export function createDesktopController() {
         ),
     };
   }
+  async function searchInstallations() {
+    if (!native || disposed || info?.configured || detectingGame || locked) {
+      return;
+    }
+    detectingGame = true;
+    detectionFailed = false;
+    feedback = '';
+    failed = false;
+    const previous = wow;
+    const folders = new Set<string>();
+    let accepting = true;
+    const addFolder = (folder: string) => {
+      if (accepting && !disposed && !info?.configured) {
+        folders.add(folder);
+      }
+    };
+    try {
+      const onFound = new Channel<string>();
+      onFound.onmessage = addFolder;
+      (await desktop<string[]>('detect_game_folders', { onFound })).forEach(addFolder);
+    } catch {
+      detectionFailed = true;
+    } finally {
+      accepting = false;
+      if (!disposed) {
+        detectedFolders = [...folders];
+        wow = folders.has(previous) ? previous : detectedFolders[0] || '';
+        detectingGame = false;
+        if (detectedFolders.length && !busy && !feedback) {
+          failed = false;
+          feedback =
+            detectedFolders.length === 1
+              ? 'WoW Forever found.'
+              : `Found ${detectedFolders.length} WoW Forever installations.`;
+        }
+      }
+    }
+  }
   onMount(() => {
-    let disposed = false;
     let unsubscribe: (() => void) | undefined;
     if (!native) {
       loading = false;
@@ -282,7 +330,13 @@ export function createDesktopController() {
     }
     void (async () => {
       info = await desktop<DesktopInfo>('desktop_info');
+      if (disposed) {
+        return;
+      }
       wow = info.wow || '';
+      if (!info.configured) {
+        void searchInstallations();
+      }
       if (info.configured) {
         starting = true;
         try {
@@ -391,6 +445,15 @@ export function createDesktopController() {
     set wow(value: typeof wow) {
       wow = value;
     },
+    get detectedFolders() {
+      return detectedFolders;
+    },
+    get detectingGame() {
+      return detectingGame;
+    },
+    get detectionFailed() {
+      return detectionFailed;
+    },
     get models() {
       return models;
     },
@@ -448,6 +511,7 @@ export function createDesktopController() {
     loadModels,
     signIn,
     chooseFolder,
+    searchInstallations,
     start,
     install,
     importPrevious,
