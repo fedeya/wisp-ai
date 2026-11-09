@@ -53,8 +53,7 @@ Drafts and prereleases do not change GitHub's latest stable release destination.
 
 The hero is a native React reconstruction of the chat interface. It loops through
 a macro, a gear conversation with an auction-price follow-up, and material advice.
-Examples are inspired by actual usage, with sample data and condensed replies;
-they make no live game or AI calls. The demo includes pause/play, pauses when the
+Examples use sample data and make no live game or AI calls. The demo includes pause/play, pauses when the
 tab is hidden, and starts static for reduced-motion users. No video or simulator
 is loaded by the landing.
 
@@ -62,8 +61,7 @@ Stable capabilities are listed explicitly. Panels and trackers are marked Beta;
 combat simulation is Experimental, without claiming complete class coverage.
 SEO, canonical URL, sitemap, robots and a generated 1200×630 PNG social card are
 included. Production pages load Rybbit for site `61b021a9d037` through the
-first-party `/_fm/` proxy to `https://rybbit.fedeminaya.com/api/`, matching the
-portfolio integration. Development and Vercel previews do not load the tracker.
+first-party `/_fm/` proxy to `https://rybbit.fedeminaya.com/api/`. Development and Vercel previews do not load the tracker.
 Enable **First-Party Proxy** in Rybbit Site Settings → Privacy & Security so
 forwarded visitor IPs are interpreted correctly. Only tracking endpoints are
 exposed; the dashboard and administrative API are not proxied.
@@ -75,7 +73,7 @@ and CSS, not a flattened mockup or video. See [asset provenance](ASSETS.md).
 The setup guide and troubleshooting live at `/setup`, with local privacy/control
 information at `/setup#privacy`. The hero types prompts and replies, shows a
 thinking indicator, fades between conversations, and keeps its outer bounds
-fixed throughout the loop. The decorative character equipment panel was removed.
+fixed throughout the loop.
 
 SEO metadata, structured data, robots/sitemap behavior, asset delivery and local
 Lighthouse measurements are documented in [SEO and performance](SEO.md).

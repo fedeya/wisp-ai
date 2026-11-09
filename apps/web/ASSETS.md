@@ -1,12 +1,16 @@
-# Landing visual assets
+# Website assets
 
-`public/barrens.webp` is an illustrative background generated with the built-in
-image generation tool, then converted to WebP (121 KB). It is not a game capture
-or a live 3D scene. All chat, equipment, bags and auction UI are React/CSS.
+## Background and app icon
 
-Generation prompt:
+`public/barrens-hero-v1.avif` is a generated illustrative background,
+1536 × 1024, 348,836 bytes. It is encoded from `barrens-crisp.webp` with
+Sharp AVIF quality 85 / effort 6. Next Image serves it unoptimized, eager
+and high priority. The chat interface is rendered with React and CSS.
 
-> Create a wide 1536x1024 game environment background asset for a World of Warcraft Classic companion website. No text, no logos, no user interface, no frames. Authentic early 2000s low polygon MMORPG in-game aesthetic, hand painted terrain textures, angular simple geometry, restrained detail, not photorealistic, not glossy modern illustration. The Crossroads in the Barrens at sunset: golden dry grassland, ochre dirt trail leading toward a few recognizable squat Horde huts and a wooden lookout tower in middle right distance, broad flat topped acacia trees, layered hazy mesas, warm desaturated amber sky. A small robed adventurer seen from behind at center-right, occupying only 20 percent of frame height, purple and blue robe, simple staff with small blue glowing crystal. Wide cinematic establishing view with the left 45 percent very dark in tree shadow, suitable as background behind white website text. Rightmost 25 percent quiet landscape to allow HTML interface overlay later. Bottom fades naturally into nearly black brown. Warm restrained palette, atmospheric depth, composition rather than excessive detail. No floating objects, no decorative borders.
+`wisp.png` is the original generated Wisp app icon. The favicon and Apple
+touch icons are resized derivatives.
+
+## Item icons
 
 `public/items/*.jpg` are WoW item/spell icons served by the Wowhead/ZAM CDN,
 locally cached so visitors do not request that CDN. Blizzard game artwork is
@@ -21,32 +25,10 @@ robe=inv_chest_cloth_04, staff=inv_staff_13, ring=inv_jewelry_ring_03,
 book=inv_misc_book_09.
 
 Item stats and auction amounts in the landing are illustrative Forever examples,
-not live prices or a complete item database. Original chat examples remain the
-basis for the copy. No extracted game models are included.
+not live prices or a complete item database. No extracted game models are included.
 
-## Current hero revision
-
-The landing now uses `public/barrens-crisp.webp`: 1536 × 1024, lossless WebP,
-1,833,090 bytes. It is served directly (`unoptimized` on Next Image) to avoid a
-second lossy encode. The source is still 1536 pixels wide, not a native 4K asset.
-The older `barrens.webp` is retained as the previous variant.
-
-The built-in image tool edited the original background using this prompt:
-
-> Edit this existing website background. Preserve the exact scene, composition, camera position, placement and size of the robed adventurer, the Crossroads huts, tower, acacia tree, sunset palette and dark left side. Render the same image as a high resolution 3840x2560 landscape asset with much crisper hand-painted game textures, clean low-poly geometry edges, well resolved grass, earth path and architecture. It should feel like a sharp World of Warcraft Classic game screenshot rather than a blurry watercolor. Remove softness and compression artifacts, preserve atmospheric haze only on far mountains. Do not add objects, text, UI, borders or extra characters. Keep the subdued warm golden sunset and deep shadowed left side. This is a fidelity improvement of the input, not a scene redesign.
-
-The tool returned 1536 × 1024 despite the requested dimensions. No artificial
-upscale is claimed. The icon aliases `vest` and `feather` use the filenames
-`vest-fur.jpg` and `feather-light.jpg` to avoid stale optimized-image caches.
-
-## Performance delivery variant
-
-The current hero is `public/barrens-hero-v1.avif` (1536 × 1024, 348,836 bytes),
-encoded once from `barrens-crisp.webp` with Sharp AVIF quality 85 / effort 6.
-Pixel PSNR against that source is about 41.8dB. The source scene and dimensions
-are preserved. Next Image serves this file unoptimized, eager and high priority.
-`barrens-optimized.webp` is an unused alternative, not requested by the page.
-Small favicon and Apple touch icons are resized derivatives of `wisp.png`.
+The aliases `vest` and `feather` use `vest-fur.jpg` and `feather-light.jpg`.
+Use new filenames when replacing icons to invalidate optimized-image caches.
 
 ## AI provider marks
 
