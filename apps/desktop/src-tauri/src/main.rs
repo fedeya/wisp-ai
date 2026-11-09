@@ -521,6 +521,7 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Updates::default())
         .invoke_handler(tauri::generate_handler![
+            updates::update_channel,
             bridge_request,
             desktop_info,
             game_detection::detect_game_folders,

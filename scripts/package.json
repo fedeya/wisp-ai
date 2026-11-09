@@ -11,6 +11,7 @@
     "@wisp/agent": "workspace:*",
     "@wisp/bridge": "workspace:*",
     "@wisp/protocol": "workspace:*",
+    "@wisp/releases": "workspace:*",
     "@yao-pkg/pkg": "6.24.0",
     "esbuild": "0.28.2",
     "eve": "1.0.0-rc.6",

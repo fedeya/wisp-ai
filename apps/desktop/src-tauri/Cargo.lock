@@ -5329,6 +5329,7 @@ dependencies = [
  "prost",
  "reqwest 0.12.28",
  "security-framework",
+ "semver",
  "serde",
  "serde_json",
  "sha2",

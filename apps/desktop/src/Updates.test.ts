@@ -16,7 +16,12 @@ const props = () => ({
 });
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(desktop).mockResolvedValue({ supported: true, update: release });
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'update_channel') {
+      return (args?.channel || 'stable') as never;
+    }
+    return { supported: true, update: release } as never;
+  });
 });
 afterEach(() => {
   cleanup();
@@ -82,7 +87,10 @@ test('installation locks app operations, reports waiting, and can retry after fa
 });
 
 test('unsupported builds offer no installer', async () => {
-  vi.mocked(desktop).mockResolvedValue({ supported: false, update: null });
+  vi.mocked(desktop).mockImplementation(
+    async (command) =>
+      (command === 'update_channel' ? 'stable' : { supported: false, update: null }) as never,
+  );
   render(Updates, props());
   await screen.findByText('Updates are available in the installed Windows x64 release.');
   expect(screen.queryByRole('button', { name: 'Update and restart' })).toBeNull();
@@ -92,10 +100,45 @@ test('checks every six hours and stops checking when the app is unmounted', asyn
   vi.useFakeTimers();
   const view = render(Updates, props());
   await vi.advanceTimersByTimeAsync(0);
-  expect(desktop).toHaveBeenCalledTimes(1);
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'check_update'),
+  ).toHaveLength(1);
   await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
-  expect(desktop).toHaveBeenCalledTimes(2);
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'check_update'),
+  ).toHaveLength(2);
   view.unmount();
   await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
-  expect(desktop).toHaveBeenCalledTimes(2);
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'check_update'),
+  ).toHaveLength(2);
+});
+
+test('switching channels persists the choice and checks the new feed', async () => {
+  render(Updates, props());
+  await screen.findByText(release.notes);
+  await fireEvent.change(screen.getByRole('combobox', { name: 'Update channel' }), {
+    target: { value: 'nightly' },
+  });
+  await waitFor(() =>
+    expect(desktop).toHaveBeenCalledWith('update_channel', { channel: 'nightly' }),
+  );
+  await screen.findByText('Experimental builds from main. Features may change or break.');
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'check_update'),
+  ).toHaveLength(2);
+});
+
+test('a failed check after switching cannot offer the previous channel installer', async () => {
+  render(Updates, props());
+  await screen.findByText(release.notes);
+  vi.mocked(desktop).mockImplementation(async (command) => {
+    if (command === 'update_channel') {
+      return 'nightly' as never;
+    }
+    throw Error('Nightly feed unavailable');
+  });
+  await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'nightly' } });
+  await screen.findByRole('alert');
+  expect(screen.queryByRole('button', { name: 'Update and restart' })).toBeNull();
 });

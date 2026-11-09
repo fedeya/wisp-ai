@@ -89,7 +89,7 @@ export default async function Home({ params }: LocalePageProps) {
           <div className="hero-shade" />
           <div className="hero-inner container">
             <div className="hero-copy">
-              <a className="release-badge" href={`${site.repository}/releases`}>
+              <a className="release-badge" href={localizedPath(locale, '/changelog')}>
                 <i />
                 {t('FOR WOW: FOREVER ')}
                 {release && <span>v{release.version}</span>}

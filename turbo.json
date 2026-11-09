@@ -6,7 +6,8 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**", "!.next/dev/**"],
-      "env": ["NEXT_PUBLIC_*", "VERCEL_ENV", "VERCEL", "VERCEL_URL", "VITE_*", "CI"]
+      "env": ["NEXT_PUBLIC_*", "VERCEL_ENV", "VERCEL", "VERCEL_URL", "VITE_*", "CI"],
+      "passThroughEnv": ["GITHUB_RELEASES_TOKEN"]
     },
     "typecheck": {
       "dependsOn": ["^build"],

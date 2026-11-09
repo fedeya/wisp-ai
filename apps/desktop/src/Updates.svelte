@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { desktop, native } from "./api";
+  import { renderReleaseNotes } from "@wisp/releases";
 
   let {
     showSettings,
@@ -31,9 +32,27 @@
   let dismissed = $state("");
   let lastChecked = $state("");
   let progress = $state("Preparing update…");
+  let channel = $state("stable");
+  let channelLoaded = $state(!native);
+  let changingChannel = $state(false);
+  async function changeChannel(event: Event) {
+    const next = (event.target as HTMLSelectElement).value;
+    changingChannel = true;
+    release = null;
+    dismissed = "";
+    try {
+      channel = await desktop<string>("update_channel", { channel: next });
+      await check();
+    } catch (e) {
+      (event.target as HTMLSelectElement).value = channel;
+      error = `Could not change update channel: ${String(e)}`;
+    } finally {
+      changingChannel = false;
+    }
+  }
 
   async function check() {
-    if (!native || checking || installing) {
+    if (!native || !channelLoaded || checking || installing) {
       return;
     }
     checking = true;
@@ -106,7 +125,21 @@
       .catch(() => {
         error = "Update progress is unavailable. Restart Wisp to try again.";
       });
-    void check();
+    void desktop<string>("update_channel")
+      .then((saved) => {
+        if (disposed) {
+          return;
+        }
+        channel = saved;
+        channelLoaded = true;
+        return check();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        error = "Could not load the update channel. Restart Wisp to try again.";
+      });
     const timer = setInterval(
       () => {
         void check();
@@ -139,7 +172,7 @@
       </div>
       <button
         onclick={check}
-        disabled={!native || checking || installing || locked}
+        disabled={!native || !channelLoaded || checking || installing || locked}
       >
         {checking ? "Checking…" : "Check for updates"}
       </button>
@@ -148,13 +181,49 @@
       Wisp checks automatically at startup and every six hours. You choose when
       to install.
     </p>
+    <label>
+      Update channel
+      <select
+        value={channel}
+        onchange={changeChannel}
+        disabled={!native ||
+          !channelLoaded ||
+          checking ||
+          installing ||
+          changingChannel ||
+          locked}
+      >
+        <option value="stable">Stable</option>
+        <option value="nightly">Nightly</option>
+      </select>
+    </label>
+    {#if channel === "nightly"}
+      <p class="field-hint">
+        Experimental builds from main. Features may change or break.
+      </p>
+    {:else if version.includes("-nightly.")}
+      <p class="field-hint">
+        Returning to Stable can install an older version. Your chats and
+        settings are kept.
+      </p>
+    {/if}
+    <p>
+      <a
+        href={`https://wisp.fedeya.sh/changelog${channel === "nightly" ? "?channel=nightly" : ""}`}
+        target="_blank"
+        rel="noreferrer">View all updates ↗</a
+      >
+    </p>
     {#if lastChecked}<p class="field-hint">Last checked: {lastChecked}</p>{/if}
     <p role="status">{installing ? progress : message}</p>
     {#if error}<p class="banner error" role="alert">{error}</p>{/if}
     {#if release}
       <h3>Wisp {release.version}</h3>
-      <pre class="release-notes">{release.notes ||
-          "This release has no notes."}</pre>
+      <div class="release-notes">
+        {@html renderReleaseNotes(
+          release.notes || "This release has no notes.",
+        )}
+      </div>
       <div class="actions">
         <button
           class="primary"
@@ -176,11 +245,27 @@
 
 <style>
   .release-notes {
-    white-space: pre-wrap;
     overflow-wrap: anywhere;
     font: inherit;
     color: var(--muted);
     max-height: 280px;
     overflow-y: auto;
+  }
+  .release-notes :global(img) {
+    max-width: 100%;
+    border-radius: 8px;
+  }
+  .release-notes :global(h1) {
+    font-size: 1.35rem;
+  }
+  .release-notes :global(h2) {
+    font-size: 1.1rem;
+    margin-top: 1.25rem;
+  }
+  .release-notes :global(a) {
+    color: var(--accent);
+  }
+  select {
+    margin-left: 12px;
   }
 </style>

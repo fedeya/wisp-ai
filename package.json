@@ -5,6 +5,8 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
+    "release": "release-it",
+    "release:dry": "release-it --dry-run",
     "web:dev": "turbo run dev --filter=@wisp/web",
     "web:build": "turbo run build --filter=@wisp/web",
     "start": "turbo run start --filter=@wisp/bridge",
@@ -37,6 +39,7 @@
     "oxlint": "1.92.0",
     "prettier": "3.9.10",
     "prettier-plugin-svelte": "4.1.1",
+    "release-it": "21.1.2",
     "turbo": "2.11.10",
     "typescript": "5.9.3",
     "vitest": "5.1.0"
