@@ -71,6 +71,8 @@ test('installation locks app operations, reports waiting, and can retry after fa
   const callback = vi.mocked(listen).mock.calls[0][1];
   callback({ event: 'update-progress', id: 0, payload: { phase: 'waiting' } });
   await screen.findByText('Waiting for the active reply to finish…');
+  callback({ event: 'update-progress', id: 0, payload: { phase: 'installing' } });
+  await screen.findByText('Opening the Windows updater. Wisp will close and reopen automatically…');
   reject(Error('signature verification failed'));
   await screen.findByRole('alert');
   expect(options.onBusy).toHaveBeenLastCalledWith('');

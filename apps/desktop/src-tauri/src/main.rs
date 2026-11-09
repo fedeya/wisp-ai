@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod update_trace;
 mod updates;
 mod vault;
 use serde_json::{json, Value};
@@ -345,7 +346,7 @@ fn open_logs(app: tauri::AppHandle, host: tauri::State<'_, Host>) -> Result<(), 
 fn read_logs(host: tauri::State<'_, Host>) -> String {
     use std::io::{Read, Seek, SeekFrom};
     let mut output = String::new();
-    for name in ["bridge.log", "eve.log"] {
+    for name in ["bridge.log", "eve.log", "update.log"] {
         if let Ok(mut file) = fs::File::open(host.data.join("runtime").join(name)) {
             let len = file.metadata().map(|m| m.len()).unwrap_or(0);
             let _ = file.seek(SeekFrom::Start(len.saturating_sub(12000)));
@@ -535,6 +536,7 @@ fn main() {
         ])
         .setup(|app| {
             let data = app.path().app_data_dir()?;
+            update_trace::append(&data, "app-opened");
             fs::create_dir_all(data.join("runtime"))?;
             let payload = std::env::var_os("WISP_PAYLOAD_ROOT")
                 .map(PathBuf::from)

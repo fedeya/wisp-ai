@@ -88,7 +88,8 @@
       if (payload.phase === "waiting") {
         progress = "Waiting for the active reply to finish…";
       } else if (payload.phase === "installing") {
-        progress = "Installing update and restarting Wisp…";
+        progress =
+          "Opening the Windows updater. Wisp will close and reopen automatically…";
       } else {
         progress = payload.total
           ? `Downloading update… ${Math.min(100, Math.round(((payload.downloaded || 0) / payload.total) * 100))}%`
@@ -165,8 +166,9 @@
       </div>
       <p class="field-hint">
         Wisp downloads and verifies the update, waits for any active reply, then
-        restarts. Your chats and settings are kept. Use Install / update addon
-        in Overview after updating, then /reload in WoW.
+        opens the Windows updater. Wisp closes during installation and reopens
+        automatically when it is ready. Your chats and settings are kept. Use
+        Install / update addon in Overview after updating, then /reload in WoW.
       </p>
     {/if}
   </section>

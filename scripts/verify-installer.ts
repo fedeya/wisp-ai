@@ -146,8 +146,30 @@ try {
   await mkdir(path.join(payload, 'tests'), { recursive: true });
   await writeFile(path.join(payload, 'tests/retired-file.txt'), 'obsolete application resource');
   const upgradeStarted = performance.now();
-  await exec(installer, ['/S', '/D=' + target], { windowsHide: true, timeout: 180000 });
+  await exec(installer, ['/S', '/UPDATE', '/D=' + target], {
+    env,
+    windowsHide: true,
+    timeout: 180000,
+  });
   const upgradeMilliseconds = performance.now() - upgradeStarted;
+  const updateStages = (await readFile(path.join(data, 'runtime/update.log'), 'utf8'))
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => {
+      const [milliseconds, stage] = line.split(' ');
+      return { milliseconds: Number(milliseconds), stage };
+    });
+  if (
+    ![
+      'installer-ready',
+      'helper-extracted',
+      'bridge-stopped',
+      'copying-files',
+      'files-installed',
+    ].every((stage) => updateStages.some((entry) => entry.stage === stage))
+  ) {
+    throw Error('Upgrade did not record all installer stages.');
+  }
   try {
     await access(path.join(payload, 'tests/retired-file.txt'));
     throw Error('Upgrade retained a retired application resource.');
@@ -173,6 +195,7 @@ try {
     payloadFiles,
     installMilliseconds,
     upgradeMilliseconds,
+    updateStages,
     agentReady: true,
     independentSignIn: true,
     noPersonalData: true,
