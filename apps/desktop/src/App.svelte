@@ -13,6 +13,15 @@
   import Routines from "./pages/Routines.svelte";
   import Diagnostics from "./pages/Diagnostics.svelte";
   const app = createDesktopController();
+
+  $effect(() => {
+    if (!app.feedback || app.busy) return;
+    const timeout = setTimeout(
+      () => (app.feedback = ""),
+      app.failed ? 10000 : 5000,
+    );
+    return () => clearTimeout(timeout);
+  });
 </script>
 
 <div class="app-shell">

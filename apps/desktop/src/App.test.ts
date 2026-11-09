@@ -63,6 +63,30 @@ beforeEach(() => {
   });
 });
 afterEach(cleanup);
+
+test.each([
+  { failed: false, duration: 5000 },
+  { failed: true, duration: 10000 },
+])('notifications expire after $duration ms (failed: $failed)', async ({ failed, duration }) => {
+  render(App);
+  await screen.findByText('Ready to help');
+  await fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
+  if (failed) vi.mocked(request).mockRejectedValueOnce(new Error('Could not save settings'));
+  vi.useFakeTimers();
+  try {
+    await fireEvent.click(screen.getByRole('button', { name: 'Save search settings' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.queryByRole('button', { name: 'Dismiss notification' })).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(duration - 1);
+    expect(screen.queryByRole('button', { name: 'Dismiss notification' })).toBeTruthy();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(screen.queryByRole('button', { name: 'Dismiss notification' })).toBeNull();
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});
+
 test('search settings keep Exa separate from model connections and do not reveal saved keys', async () => {
   status.search = { provider: 'auto', hasExaKey: true };
   render(App);
