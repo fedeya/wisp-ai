@@ -5,8 +5,6 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "demo:render": "node scripts/demo/render.mjs",
-    "demo:dev": "node scripts/demo/render.mjs --serve",
     "web:dev": "turbo run dev --filter=@wisp/web",
     "web:build": "turbo run build --filter=@wisp/web",
     "start": "turbo run start --filter=@wisp/bridge",

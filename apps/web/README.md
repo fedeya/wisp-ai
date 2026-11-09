@@ -56,8 +56,7 @@ a macro, a gear conversation with an auction-price follow-up, and material advic
 Examples are inspired by actual usage, with sample data and condensed replies;
 they make no live game or AI calls. The demo includes pause/play, pauses when the
 tab is hidden, and starts static for reduced-motion users. No video or simulator
-is loaded by the landing. Optional earlier recording tools remain documented in
-[the offline recording workflow](../../scripts/demo/README.md).
+is loaded by the landing.
 
 Stable capabilities are listed explicitly. Panels and trackers are marked Beta;
 combat simulation is Experimental, without claiming complete class coverage.
