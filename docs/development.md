@@ -33,6 +33,15 @@ excluded explicitly, following Eve's own optional-engine setup; installs do not
 need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
 `turbo prune @wisp/web` can export an isolated web workspace from the same lockfile.
 
+### Pull request descriptions
+
+Use the [visual-pr contributor skill](../.agents/skills/visual-pr/SKILL.md) when
+creating or updating a pull request: explain why, highlight reviewer notes, show
+the smallest useful structural outline, and collapse checks and limitations under
+Verification. This is a contributor workflow; it does not register an in-game tool.
+[OpenCode documents `.agents/skills` project discovery](https://opencode.ai/docs/skills/#discovery);
+with other agents, read the skill and its linked references explicitly.
+
 ## Tests
 
 Vitest projects keep each environment separate:
