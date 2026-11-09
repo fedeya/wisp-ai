@@ -63,11 +63,8 @@ const publicDir = path.join(sandbox, 'public');
 await mkdir(publicDir, { recursive: true });
 const files = [
   'Core.lua',
-  'ChatHistory.lua',
   'RichUI.lua',
   'Widgets.lua',
-  'EmojiData.lua',
-  'Emoji.lua',
   'MessageFormat.lua',
   'ModelControls.lua',
   'MessageRows.lua',
