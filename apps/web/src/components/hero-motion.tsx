@@ -1,4 +1,5 @@
 'use client';
+import { containerClassName } from './ui';
 
 import { useAnimate } from 'motion/react-mini';
 import { stagger, useReducedMotion } from 'motion/react';
@@ -36,7 +37,10 @@ export function HeroMotion({ children }: { children: ReactNode }) {
   }, [animate, reducedMotion]);
 
   return (
-    <div ref={scope} className="hero-inner site-container">
+    <div
+      ref={scope}
+      className={`${containerClassName} hero-inner gap-[0] relative grid min-h-[0] grid-cols-[1fr] items-center pt-[45px] pb-[25px] md:gap-[22px] md:min-h-[668px] md:grid-cols-[repeat(2,minmax(0,1fr))] md:pb-[65px] lg:gap-[60px] 2xl:min-h-[758px]`}
+    >
       {children}
     </div>
   );

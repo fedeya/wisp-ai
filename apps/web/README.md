@@ -16,12 +16,18 @@ Open http://127.0.0.1:3000. Production check: `pnpm web:build`.
 
 ## Styling and motion
 
-Tailwind CSS 4 runs through PostCSS. `src/app/globals.css` defines the web's
-theme tokens and reusable component styles with `@apply`. Custom scene artwork,
-responsive adjustments and game effects remain CSS in the `components` layer;
-Tailwind utilities can override them locally. Preflight is intentionally omitted
-to preserve existing typography and native controls. Use `site-container` for the
-site's content width, rather than Tailwind's built-in `container` utility.
+Tailwind CSS 4 runs through PostCSS. `src/app/globals.css` contains only theme
+tokens, typography defaults, resets and global accessibility preferences. Layout,
+spacing, text styles and responsive states live in component utility classes;
+there are no web `@apply` rules. `components/ui.ts` shares the content-width and
+navigation-link utilities. The named breakpoints preserve the original layouts:
+`sm` starts at 371px, `md` at 761px, `lg` at 1101px and `2xl` at 1600px.
+
+Gradients, shadows, decorative effects and a few cross-component scene adjustments
+use colocated CSS Modules. Semantic class hooks let these local selectors style
+children rendered by `Item` and `Money` without exposing module internals. Keep
+these hooks when editing a scene. Preflight is intentionally omitted to preserve
+existing typography and native controls.
 
 The language menu uses Base UI for keyboard navigation, dismissal and focus
 restoration. `HeroMotion` uses Motion's mini animation API to stagger hero content

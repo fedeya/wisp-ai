@@ -1,0 +1,46 @@
+.text-link:hover {
+  color: var(--gold);
+}
+.button {
+  transition:
+    filter 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+.button:hover {
+  filter: brightness(1.06);
+  border-color: #e8cc92;
+}
+.primary {
+  background: linear-gradient(180deg, #e7c88b, #c5a467);
+  box-shadow: 0 3px 18px #0005;
+}
+.primary:hover {
+  box-shadow: 0 4px 22px #0007;
+}
+.item-icon {
+  box-shadow:
+    inset 0 0 0 2px #000,
+    0 3px 8px #0006;
+  background: #171714;
+}
+.item-icon:global(.uncommon) {
+  border-color: #62983e;
+}
+.item-icon:global(.rare) {
+  border-color: #4b86be;
+}
+.writing-caret {
+  background: #d6b777;
+  animation: caret-blink 850ms steps(1) infinite;
+}
+@keyframes caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}

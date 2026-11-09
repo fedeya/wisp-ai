@@ -1,4 +1,7 @@
 'use client';
+import styles from './demo.module.css';
+import sharedStyles from './shared.module.css';
+
 import { getTranslator, translateData, type Locale } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
@@ -186,63 +189,92 @@ export function Demo({ locale }: { locale: Locale }) {
   return (
     <div
       ref={container}
-      className={`live-demo ${stopped ? 'demo-stopped' : ''}`}
+      className={`live-demo m-0 w-[min(370px,_100%)] relative z-[1] max-w-full md:w-[370px] ${stopped ? `demo-stopped ${styles['demo-stopped']}` : ``}`}
       data-scene={scene}
       data-stage={shownStage}
     >
-      <div className="wisp-window">
-        <div className="window-heading">
+      <div
+        className={`wisp-window border border-solid border-[#897c675e] rounded-[8px] overflow-hidden h-[431px] grid grid-rows-[42px_minmax(0,_1fr)_71px] ${styles['wisp-window']}`}
+      >
+        <div
+          className={`window-heading px-[15px] py-0 h-[42px] flex justify-between items-center border-b-[1px] [border-bottom-style:solid] border-b-[#c4ad8124] text-[#b5aa95] text-[15px] ${styles['window-heading']}`}
+        >
           <span>
             <Image src="/wisp.png" width={23} height={23} alt="" />
             {t(' Wisp')}
           </span>
           <Icon name="minus" size={13} />
         </div>
-        <div className="chat-content" ref={transcript} aria-live="off">
-          <div className="chat-thread" key={scene}>
+        <div
+          className={`chat-content p-[17px] min-h-[0] h-[auto] overflow-y-auto [overscroll-behavior:contain] [overflow-anchor:none] ${styles['chat-content']}`}
+          ref={transcript}
+          aria-live="off"
+        >
+          <div className="chat-thread min-h-full" key={scene}>
             {shownStage >= 1 && (
-              <p className="chat-question" data-motion="question">
+              <p
+                className={`chat-question border border-solid border-[#c2b8a51b] px-[12px] py-[10px] rounded-[8px_8px_2px_8px] mt-0 mr-0 mb-[15px] ml-[24px] text-[12px] leading-[1.5] text-[#eee6d9] ${styles['chat-question']}`}
+                data-motion="question"
+              >
                 {current.prompt}
               </p>
             )}
             {shownStage >= 2 && (
-              <div className="chat-answer" data-motion="answer">
-                <p className="streaming-text">
-                  <span className="streaming-measure" aria-hidden="true">
+              <div
+                className={`chat-answer text-[12px] leading-[1.65] text-[#c8c1b5] ${styles['chat-answer']}`}
+                data-motion="answer"
+              >
+                <p className="streaming-text grid">
+                  <span
+                    className="streaming-measure [visibility:hidden] pointer-events-none [grid-area:1_/_1]"
+                    aria-hidden="true"
+                  >
                     {current.reply}
                   </span>
-                  <span>
+                  <span className="[grid-area:1_/_1]">
                     {reply}
-                    {stage === 2 && !reduced && <span className="writing-caret" />}
+                    {stage === 2 && !reduced && (
+                      <span
+                        className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] ${sharedStyles['writing-caret']}`}
+                      />
+                    )}
                   </span>
                 </p>
                 {shownStage >= 2 && (
                   <div
                     data-motion="result"
-                    className={shownStage >= 3 ? undefined : 'result-pending'}
+                    className={shownStage >= 3 ? undefined : `result-pending [visibility:hidden]`}
                   >
                     {scene === 0 && (
-                      <div className="chat-item">
+                      <div
+                        className={`chat-item gap-[11px] border border-solid border-[#a8a09220] p-[10px] mx-0 flex items-center rounded-[4px] mt-[10px] mb-[14px] ${styles['chat-item']}`}
+                      >
                         <Item name={t('Barbaric Linen Vest')} icon="vest" rarity="uncommon" />
                         <div>
-                          <b className="uncommon">{t('Barbaric Linen Vest')}</b>
-                          <small>{t('+2 Stamina \u00B7 +2 Spell Power')}</small>
+                          <b className="uncommon text-[#69c64d] font-medium text-[12px]">
+                            {t('Barbaric Linen Vest')}
+                          </b>
+                          <small className="block text-[#a7a397] text-[10px] leading-[1.5] mt-[2px]">
+                            {t('+2 Stamina \u00B7 +2 Spell Power')}
+                          </small>
                         </div>
                       </div>
                     )}
                     {scene === 1 && (
                       <>
-                        <div className="chat-item">
+                        <div
+                          className={`chat-item gap-[11px] border border-solid border-[#a8a09220] p-[10px] mx-0 flex items-center rounded-[4px] mt-[10px] mb-[14px] ${styles['chat-item']}`}
+                        >
                           <Item name={t('Wand Shot')} icon="wand" rarity="rare" />
                           <div>
-                            <b>{t('Wand Shot')}</b>
-                            <small className="uncommon">
+                            <b className="font-medium text-[12px]">{t('Wand Shot')}</b>
+                            <small className="uncommon text-[#a7a397] block text-[10px] leading-[1.5] mt-[2px]">
                               <Icon name="check" size={12} />
                               {t(' New macro created')}
                             </small>
                           </div>
                         </div>
-                        <pre>
+                        <pre className="border border-solid border-[#c5ad8222] p-[13px] mx-0 my-[12px] rounded-[4px] text-[12px] text-[#e7d7b8] leading-[1.8]">
                           <code>
                             {t('#showtooltip Shoot')}
                             {'\n'}
@@ -253,20 +285,26 @@ export function Demo({ locale }: { locale: Locale }) {
                     )}
                     {scene === 2 && (
                       <>
-                        <div className="bag-advice">
+                        <div
+                          className={`bag-advice gap-[10px] flex items-center mt-[13px] ${styles['bag-advice']}`}
+                        >
                           <Item name={t('Linen Cloth')} icon="linen" />
                           <p>
-                            <b>{t('Linen Cloth')}</b>
-                            <small>
+                            <b className="text-[11px] font-medium">{t('Linen Cloth')}</b>
+                            <small className="block text-[#a7a397] text-[10px] leading-[1.5] mt-[2px]">
                               {t('Sell unless you\u2019re planning First Aid or Tailoring.')}
                             </small>
                           </p>
                         </div>
-                        <div className="bag-advice">
+                        <div
+                          className={`bag-advice gap-[10px] flex items-center mt-[13px] ${styles['bag-advice']}`}
+                        >
                           <Item name={t('Light Feather')} icon="feather" />
                           <p>
-                            <b>{t('Light Feather')}</b>
-                            <small>{t('Keep. It\u2019s a spell reagent.')}</small>
+                            <b className="text-[11px] font-medium">{t('Light Feather')}</b>
+                            <small className="block text-[#a7a397] text-[10px] leading-[1.5] mt-[2px]">
+                              {t('Keep. It\u2019s a spell reagent.')}
+                            </small>
                           </p>
                         </div>
                       </>
@@ -276,54 +314,84 @@ export function Demo({ locale }: { locale: Locale }) {
               </div>
             )}
             {scene === 0 && shownStage >= 5 && (
-              <p className="chat-question followup" data-motion="followup">
+              <p
+                className={`chat-question followup border border-solid border-[#c2b8a51b] px-[12px] py-[10px] rounded-[8px_8px_2px_8px] mt-[14px] mr-0 mb-[15px] ml-[24px] text-[12px] leading-[1.5] text-[#eee6d9] ${styles['chat-question']}`}
+                data-motion="followup"
+              >
                 {followupPrompt}
               </p>
             )}
             {scene === 0 && shownStage >= 6 && (
-              <div className="chat-answer" data-motion="followup-answer">
-                <div className="chat-prices">
-                  <span>
+              <div
+                className={`chat-answer text-[12px] leading-[1.65] text-[#c8c1b5] ${styles['chat-answer']}`}
+                data-motion="followup-answer"
+              >
+                <div className="chat-prices gap-[15px] flex flex-wrap pb-[12px] text-[10px] text-[#a79d8b]">
+                  <span className="gap-[6px] flex items-center">
                     {t('Loaded listing ')}
                     <Money silver={3} locale={locale} />
                   </span>
-                  <span>
+                  <span className="gap-[6px] flex items-center">
                     {t('Your gold ')}
                     <Money silver={14} copper={63} locale={locale} />
                   </span>
                 </div>
-                <p className="streaming-text">
-                  <span className="streaming-measure" aria-hidden="true">
+                <p className="streaming-text grid">
+                  <span
+                    className="streaming-measure [visibility:hidden] pointer-events-none [grid-area:1_/_1]"
+                    aria-hidden="true"
+                  >
                     {followupReply}
                   </span>
-                  <span>
+                  <span className="[grid-area:1_/_1]">
                     {stage === 6 ? followupReply.slice(0, characters) : followupReply}
-                    {stage === 6 && <span className="writing-caret" />}
+                    {stage === 6 && (
+                      <span
+                        className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] ${sharedStyles['writing-caret']}`}
+                      />
+                    )}
                   </span>
                 </p>
               </div>
             )}
             {waiting && (
-              <div className="thinking" aria-label={t('Wisp is thinking')}>
-                <Image src="/wisp.png" width={18} height={18} alt="" />
-                <span />
-                <span />
-                <span />
+              <div
+                className={`thinking gap-[5px] px-0 flex items-center h-[31px] pt-[1px] pb-[5px] ${styles['thinking']}`}
+                aria-label={t('Wisp is thinking')}
+              >
+                <Image
+                  src="/wisp.png"
+                  width={18}
+                  height={18}
+                  alt=""
+                  className="mr-[5px] opacity-[0.8]"
+                />
+                <span className="w-[4px] h-[4px] rounded-[50%]" />
+                <span className="w-[4px] h-[4px] rounded-[50%]" />
+                <span className="w-[4px] h-[4px] rounded-[50%]" />
               </div>
             )}
           </div>
         </div>
-        <div className={`chat-composer ${writingPrompt ? 'composer-writing' : ''}`}>
-          <span>
+        <div
+          className={`chat-composer gap-[12px] border border-solid border-[#baab8d28] p-[10px] mx-[12px] mt-0 mb-[12px] rounded-[4px] text-[#837d70] text-[11px] flex justify-between min-h-[0] items-center leading-[1.5] h-[59px] overflow-hidden ${styles['chat-composer']} ${writingPrompt ? `composer-writing ${styles['composer-writing']}` : ``}`}
+        >
+          <span className="text-[#c7b78f]">
             {writingPrompt ? text.slice(0, characters) : t('Ask a follow-up\u2026')}
-            {writingPrompt && <span className="writing-caret" />}
+            {writingPrompt && (
+              <span
+                className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] text-[#c7b78f] ${sharedStyles['writing-caret']}`}
+              />
+            )}
           </span>
           <Icon name="enter" size={13} />
         </div>
       </div>
-      <div className="demo-caption">
-        <span>
-          <i />
+      <div
+        className={`demo-caption mx-[3px] flex justify-between items-center text-[#b8ad99] text-[10px] mt-[13px] mb-0 ${styles['demo-caption']}`}
+      >
+        <span className="gap-[7px] flex items-center">
+          <i className="w-[5px] h-[5px] rounded-[50%]" />
           {current.label}
         </span>
         <button
@@ -332,6 +400,7 @@ export function Demo({ locale }: { locale: Locale }) {
             setReduced(false);
           }}
           aria-label={paused || reduced ? t('Play demo') : t('Pause demo')}
+          className="gap-[5px] border border-solid border-[#d8c5a52a] px-[9px] py-[6px] text-[#c3b79e] rounded-[3px] text-[10px] cursor-pointer min-h-[28px] inline-flex items-center"
         >
           <Icon name={paused || reduced ? 'play' : 'pause'} size={12} />
           {paused || reduced ? t('Play') : t('Pause')}

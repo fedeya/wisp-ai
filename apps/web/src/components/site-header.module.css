@@ -1,0 +1,14 @@
+.shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: #12110ff2;
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.opaque::before {
+  opacity: 1;
+}

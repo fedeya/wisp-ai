@@ -1,0 +1,115 @@
+.routine-story {
+  background:
+    radial-gradient(ellipse at 85% 20%, #bd893515, transparent 55%),
+    linear-gradient(130deg, #211f191f, #1b19143b);
+}
+.saved-guide :global(.item-icon) {
+  width: 46px;
+  height: 46px;
+  transform: rotate(-5deg);
+}
+.routine-confirmations > span {
+  transition:
+    opacity 500ms,
+    background 500ms,
+    border-color 500ms;
+}
+.routine-confirmations > :global(.confirmed) {
+  opacity: 1;
+  border-color: #819b5c45;
+  background: #8dba4a08;
+}
+.routine-confirmations svg {
+  color: #9db579;
+}
+.routine-connection {
+  transition: opacity 800ms;
+}
+.routine-connection:global(.connected) {
+  opacity: 1;
+}
+.level-event {
+  transform: translateY(5px);
+}
+.level-medallion {
+  outline: 1px solid #b99b4f26;
+  outline-offset: 4px;
+  background: radial-gradient(circle, #765b232e, #1e1b15 75%);
+  text-shadow: 0 0 15px #e9b94740;
+}
+.level-rays {
+  background: radial-gradient(circle, #d6af5040, transparent 68%);
+}
+.routine-reply {
+  background: linear-gradient(130deg, #28271ff0, #1c1c18);
+  transform: translateY(10px);
+}
+.routine-next-actions {
+  transform: translateY(5px);
+}
+.routine-next-actions :global(.item-icon) {
+  width: 28px;
+  height: 28px;
+}
+.routine-bottom button {
+  background: transparent;
+}
+.routine-stopped * {
+  animation-play-state: paused;
+}
+.routine-stopped *::after {
+  animation-play-state: paused;
+}
+@media (max-width: 760px) {
+  .routine-connection svg {
+    transform: rotate(90deg);
+  }
+}
+.routine-followup {
+  background: #b49c7020;
+}
+.routine-talent-answer {
+  background: #24251e;
+}
+@media (min-width: 761px) {
+  .routine-connection {
+    transform: translate(-50%, -50%);
+  }
+}
+
+@media (max-width: 760px) {
+  .routine-connection > svg {
+    transform: rotate(90deg);
+  }
+}
+:lang(es) .routine-confirmations > span {
+  font-size: 8px;
+}
+:lang(es) .routine-reply-heading > span {
+  font-size: 7px;
+}
+@media (max-width: 760px) {
+  :lang(es) .routine-heading h2 {
+    font-size: 41px;
+  }
+}
+@media (max-width: 760px) {
+  :lang(es) .routine-feed {
+    height: 290px;
+  }
+}
+@media (max-width: 370px) {
+  :lang(es) .routine-heading h2 {
+    font-size: 37px;
+  }
+}
+@media (max-width: 370px) {
+  :lang(es) .routine-feed {
+    height: 325px;
+  }
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  :lang(es) .routine-feed {
+    height: 255px;
+  }
+}

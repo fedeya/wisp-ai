@@ -1,0 +1,39 @@
+.guide-steps {
+  counter-reset: setup;
+}
+.guide-steps li {
+  counter-increment: setup;
+}
+.guide-steps li::before {
+  content: '0' counter(setup);
+  position: absolute;
+  left: 0;
+  top: 3px;
+  color: var(--gold);
+  font:
+    22px Georgia,
+    serif;
+}
+.guide p:not(:global(.guide-lead)) {
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.guide strong svg {
+  display: inline-block;
+  vertical-align: -0.15em;
+}
+.guide :global(.connection-options) details:last-child {
+  border-bottom: 0;
+}
+.connection-options summary::-webkit-details-marker {
+  display: none;
+}
+.connection-options summary svg {
+  flex-shrink: 0;
+  color: #ae9564;
+}
+.connection-options details[open] summary svg {
+  transform: rotate(45deg);
+}

@@ -1,0 +1,108 @@
+.hero-shade {
+  background:
+    linear-gradient(90deg, #12110ff2 0%, #12110f9c 30%, #12110f05 68%, #12110f42),
+    linear-gradient(0deg, #12110f 0%, #12110f08 32%, #12110f00 72%, #12110fb3 100%);
+}
+.release-badge i {
+  background: var(--gold);
+  box-shadow: 0 0 8px #d6b77780;
+}
+.hero h1 {
+  text-shadow: 0 2px 18px #0004;
+}
+.feature-scene + :global(.feature-scene) {
+  border-top: 1px solid var(--line);
+}
+.prompt-chip span {
+  background: #bd955b08;
+}
+.abilities :global(.item-icon) {
+  width: 37px;
+  height: 37px;
+  filter: saturate(0.6);
+}
+.setup-section {
+  background: linear-gradient(180deg, #a8853910, transparent);
+}
+.faq-list summary::-webkit-details-marker {
+  display: none;
+}
+.faq-list summary svg {
+  flex-shrink: 0;
+  color: #a48e69;
+}
+.faq-list details[open] summary svg {
+  transform: rotate(45deg);
+}
+.install-section > img {
+  filter: drop-shadow(0 0 22px #7eabda40);
+}
+@media (max-width: 760px) {
+  .hero-shade {
+    background:
+      linear-gradient(90deg, #12110fd9, #12110f30),
+      linear-gradient(0deg, #12110f 0%, #12110f05 60%, #12110f65);
+  }
+}
+@media (max-width: 370px) {
+  .hero-copy > :global(.button) {
+    font-size: 12px;
+    padding: 0 15px;
+  }
+}
+.more-capabilities :global(.abilities) article {
+  background: #c6ad7b05;
+}
+.more-capabilities :global(.abilities) :global(.item-icon) {
+  filter: none;
+}
+.gear-scene :global(.gear-visual) {
+  width: min(calc(100% - 32px), 420px);
+  margin-left: 32px;
+  justify-self: start;
+}
+@media (max-width: 760px) {
+  .gear-scene :global(.gear-visual) {
+    width: min(100%, 390px);
+    margin-left: 0;
+    justify-self: center;
+  }
+}
+:lang(es) .hero h1 {
+  font-size: clamp(52px, 5vw, 72px);
+}
+:lang(es) .hero-copy > :global(.button) {
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  :lang(es) .hero h1 {
+    font-size: clamp(39px, 12.3vw, 58px);
+  }
+}
+@media (max-width: 760px) {
+  :lang(es) .feature-copy h2 {
+    font-size: 41px;
+  }
+}
+@media (max-width: 370px) {
+  :lang(es) .feature-copy h2 {
+    font-size: 37px;
+  }
+}
+.ai-provider-list li {
+  background: linear-gradient(130deg, #c7a4670a, #c7a46702);
+}
+.ai-provider-list span {
+  display: block;
+  margin-top: 8px;
+  color: #a7997d;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.local-provider > svg {
+  flex-shrink: 0;
+  color: #bfa26c;
+}
+.provider-logo-mono {
+  filter: brightness(0) invert(0.9);
+}
