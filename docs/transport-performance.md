@@ -176,7 +176,7 @@ then validate real chat.
   loss, redundancy and calibration. This is an invented configuration showing
   capacity, not a benchmark. Capture/scaling and GPU/CPU cost still matter.
   [LibSerpix's specification](https://github.com/alex-berliner/LibSerpix) describes
-  outbound-only RGB encoding. The user's visual constraint excludes it and any
+  outbound-only RGB encoding. Visible transport marks exclude it and any
   pixel/mailbox hybrid from product candidates.
 - **Logs:** a callable append API with a timely external disk sink could reduce
   bit mutations and write amplification. Live probes did not establish that

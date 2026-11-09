@@ -17,7 +17,7 @@ Research date: 2026-11-08, America/Argentina/Buenos_Aires. The live result is
 timestamped 2026-11-09T00:37:04.245Z. Client: WoW Forever 1.60.1, build 70862,
 interface 16001. Product constraints: the entire chat interface stays in the
 addon; no visible transport pixels and no required change to the game's window
-mode. The user explicitly rejected the optical transport during follow-up.
+mode.
 
 For the subsequent workload comparison and quantitative scheduling hypotheses,
 see [transport performance](transport-performance.md). That analysis treats the
@@ -92,21 +92,19 @@ required when disabling it for the experiment.
 
 ## Candidate comparison
 
-The search covered three areas: reusable addon APIs, asset-based inbound
-channels, and optical/native alternatives. Exa searches requested 85 result
-slots before deduplication; primary source code and author experiment records
-were used to evaluate the candidates. Search result counts are not evidence of
-compatibility; the live client test is the evidence for this mailbox.
+Candidates include reusable addon APIs, asset-based inbound channels, and
+optical/native alternatives. Compatibility of the mailbox is established by
+the live client test; source references for other candidates are listed below.
 
-| Mechanism                                     | Finding                                                                                                                                                                          | Disposition                                                                                                                                                                                                             |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing `LoadAddOn` reply files              | One publication consumes a previously unloaded helper. The current bank is finite between UI reloads. Large payloads fit in one file.                                            | Retain during migration; replace as the normal inbound channel.                                                                                                                                                         |
-| `ResetAddOns` plus helper enable states       | The same bank carried all 50 packets in the running client, with zero helper loads.                                                                                              | Preferred candidate; reduce synchronous work and complete duplex semantics.                                                                                                                                             |
-| Font metrics as inbound bytes                 | The author's live records show stale bytes when reusing a font path within one process, with successful reuse only after a full client restart.                                  | Does not solve same-session recycling. See [font experiment](https://github.com/0xinuarashi/wow-forever-codex/blob/main/docs/font-recycling.md).                                                                        |
-| Pixels plus Windows capture as outbound bytes | An implemented outbound carrier, not an inbound channel. Requires capture and visible transport marks. Microsoft's HWND sample explicitly excludes capture of minimized windows. | Excluded by the user's visual requirements, including a mailbox/pixel hybrid. See [Microsoft sample](https://github.com/microsoft/Windows.UI.Composition-Win32-Samples/blob/master/cpp/ScreenCaptureforHWND/README.md). |
-| `C_Texture.SetURLTexture` to localhost        | A live probe produced `ADDON_ACTION_FORBIDDEN`; the local HTTP probe received no request. A successful `pcall` alone was misleading.                                             | Unavailable to this addon in the tested client.                                                                                                                                                                         |
-| `C_UIFileAsset.IsKnownFile`                   | Describes whether the client knows a file, not a fresh readable content channel or reliable filesystem existence probe.                                                          | No demonstrated reusable payload channel. See [exported API](https://github.com/Atraeau/WoW-Addons/blob/main/docs/api/UI-Systems-Input/C_UIFileAsset.md).                                                               |
-| External chat overlay                         | User explicitly requires the interface inside the addon.                                                                                                                         | Excluded.                                                                                                                                                                                                               |
+| Mechanism                                     | Finding                                                                                                                                                                          | Disposition                                                                                                                                                                                                                      |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing `LoadAddOn` reply files              | One publication consumes a previously unloaded helper. The current bank is finite between UI reloads. Large payloads fit in one file.                                            | Retain during migration; replace as the normal inbound channel.                                                                                                                                                                  |
+| `ResetAddOns` plus helper enable states       | The same bank carried all 50 packets in the running client, with zero helper loads.                                                                                              | Preferred candidate; reduce synchronous work and complete duplex semantics.                                                                                                                                                      |
+| Font metrics as inbound bytes                 | The author's live records show stale bytes when reusing a font path within one process, with successful reuse only after a full client restart.                                  | Does not solve same-session recycling. See [font experiment](https://github.com/0xinuarashi/wow-forever-codex/blob/main/docs/font-recycling.md).                                                                                 |
+| Pixels plus Windows capture as outbound bytes | An implemented outbound carrier, not an inbound channel. Requires capture and visible transport marks. Microsoft's HWND sample explicitly excludes capture of minimized windows. | Excluded by the requirement for invisible transport, including a mailbox/pixel hybrid. See [Microsoft sample](https://github.com/microsoft/Windows.UI.Composition-Win32-Samples/blob/master/cpp/ScreenCaptureforHWND/README.md). |
+| `C_Texture.SetURLTexture` to localhost        | A live probe produced `ADDON_ACTION_FORBIDDEN`; the local HTTP probe received no request. A successful `pcall` alone was misleading.                                             | Unavailable to this addon in the tested client.                                                                                                                                                                                  |
+| `C_UIFileAsset.IsKnownFile`                   | Describes whether the client knows a file, not a fresh readable content channel or reliable filesystem existence probe.                                                          | No demonstrated reusable payload channel. See [exported API](https://github.com/Atraeau/WoW-Addons/blob/main/docs/api/UI-Systems-Input/C_UIFileAsset.md).                                                                        |
+| External chat overlay                         | The chat interface must remain inside the addon.                                                                                                                                 | Excluded.                                                                                                                                                                                                                        |
 
 The exported Blizzard addon-list UI uses `SaveAddOns` when saving and
 `ResetAddOns` when cancelling. That source supports the existence and normal UI
@@ -114,12 +112,7 @@ usage of the APIs; it does **not** document external file rereading as an IPC
 contract. Rereading from a timer is our empirical observation on the build above.
 See [pinned addon-list source](https://github.com/Gethe/wow-ui-source/blob/70ef1b2fd78061a73f886c4a1e79dc5b5cff6d5e/Interface/AddOns/Blizzard_AddOnList/AddonList.lua).
 
-## Follow-up: other mechanisms and protocol limits
-
-An additional Exa pass requested 39 result slots across reusable inbound IPC,
-logging/CVars, and asset-cache behavior. It did not establish another reusable,
-invisible inbound carrier that is superior on the tested client. This is a
-bounded research finding, not proof that no other mechanism can exist.
+## Other mechanisms and protocol limits
 
 The **carrier** and the **packet protocol** are separate decisions. Reset/read
 of helper states is the candidate carrier. The diagnostic's 80-byte data frame,
@@ -133,10 +126,9 @@ than payload density alone.
 The known optical alternative serializes addon data into a visible pixel strip;
 the author's [LibSerpix implementation](https://github.com/alex-berliner/LibSerpix)
 explicitly describes it as outbound only. A mailbox inbound plus pixels outbound
-combination is technically a separate candidate, but the user's rejection of
-visible transport pixels excludes that combination too. The research did not
+combination also violates the requirement for invisible transport. The research did not
 establish that every optical implementation requires borderless window mode;
-the visual objection alone is sufficient to exclude it.
+visible transport marks are sufficient to exclude it.
 
 `C_Log` was also investigated as a potentially cheaper outbound carrier. The
 exported [Log API](https://github.com/Gethe/wow-ui-source/blob/297d7aaaa736f346b3e036f38ee088eaf7f8c07f/Interface/AddOns/Blizzard_APIDocumentationGenerated/LogDocumentation.lua)
