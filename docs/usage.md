@@ -68,11 +68,15 @@ Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from applicati
 | Data                                   | Path relative to the data root                   |
 | -------------------------------------- | ------------------------------------------------ |
 | Configuration                          | `config.local.json`                              |
-| Conversations                          | `runtime/chats.json`                             |
+| Conversations and messages             | `runtime/chats.sqlite`                           |
 | Routine definitions and run history    | `runtime/routines.json`                          |
 | Shared preferences and character plans | `runtime/memory/`                                |
 | Tool choices / custom MCP metadata     | `runtime/capabilities.json` / `runtime/mcp.json` |
 | Agent log                              | `runtime/eve.log`                                |
+
+On the first launch after upgrading, Wisp validates the complete legacy `runtime/chats.json`, creates a byte-for-byte `runtime/chats.pre-sqlite-<sha256>.json` backup and imports conversations and messages in one transaction. The original JSON is preserved. After a successful import, SQLite is authoritative: the old JSON is no longer updated or reimported, including after deleting every conversation. Invalid legacy data or an unsupported/corrupt database stops startup rather than replacing history with an empty store. Retain the original and backup until the imported history has been checked.
+
+SQLite stores conversations and ordered messages separately and updates only changed rows. Wisp still loads the conversation list and messages into the current bridge session; lazy history loading and cross-worktree sharing are separate changes. Stop Wisp before manually copying its data. When backing up an open database, use SQLite's backup API so committed WAL data is included; copying only `chats.sqlite` can miss recent changes.
 
 WoW stores UI preferences and drafts in the `WispAIDB` SavedVariables. Logs may contain conversations and tool data: redact them before sharing, and never share credential stores, tokens or private configuration.
 

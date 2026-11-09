@@ -9,10 +9,20 @@ const mode = process.argv[2] || 'src/main.ts';
 if (mode === '--version') {
   console.log(`Wisp engine (Node ${process.versions.node})`);
 } else if (mode === '--self-test') {
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(':memory:');
+  db.exec('CREATE TABLE wisp_sqlite_probe(value TEXT) STRICT');
+  db.prepare('INSERT INTO wisp_sqlite_probe VALUES (?)').run('ok');
+  if (db.prepare('SELECT value FROM wisp_sqlite_probe').get().value !== 'ok') {
+    throw Error('SQLite is unavailable in the packaged engine.');
+  }
+  db.close();
   const metadata = JSON.parse(
     readFileSync(fileURLToPath(new URL('./eve/package.json', import.meta.url)), 'utf8'),
   );
-  console.log(JSON.stringify({ engine: true, node: process.versions.node, eve: metadata.name }));
+  console.log(
+    JSON.stringify({ engine: true, sqlite: true, node: process.versions.node, eve: metadata.name }),
+  );
 } else if (mode === '--eve') {
   process.env.NITRO_HOST = '127.0.0.1';
   process.env.NITRO_PORT = process.argv[3] || '43186';

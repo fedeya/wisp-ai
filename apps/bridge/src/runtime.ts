@@ -209,11 +209,17 @@ export async function startBridge(options: BridgeOptions = {}) {
         (!tool || capabilitySettings.enabled('mcp_tool:' + name + ':' + tool)),
     );
     resources.defer(() => mcpRelay.close());
-    const chatStore = new ChatStore(path.join(runtime, 'chats.json'), (error) =>
+    const chatStore = new ChatStore(path.join(runtime, 'chats.sqlite'), (error) =>
       log('Conversation save failed: ' + errorMessage(error)),
     );
     const state = createSessionState(await chatStore.load());
-    resources.defer(() => chatStore.flush(state.chats));
+    resources.defer(async () => {
+      try {
+        await chatStore.flush(state.chats);
+      } finally {
+        await chatStore.close();
+      }
+    });
     const snapshots = new SnapshotGate();
     let eveReady = false;
     let contextWindowTokens: number | undefined;

@@ -28,6 +28,9 @@ try {
     'config.local.json',
     '.eve',
     'runtime/chats.json',
+    'runtime/chats.sqlite',
+    'runtime/chats.sqlite-wal',
+    'runtime/chats.sqlite-shm',
     'runtime/chatgpt-host.json',
     'secrets',
     'tests',
@@ -180,7 +183,7 @@ try {
   }
   await exec(executable, ['--self-test'], { env, windowsHide: true, timeout: 30000 });
   await access(path.join(data, 'config.local.json'));
-  await access(path.join(data, 'runtime/chats.json'));
+  await access(path.join(data, 'runtime/chats.sqlite'));
   await exec(path.join(target, 'uninstall.exe'), ['/S', '_?=' + target], {
     windowsHide: true,
     timeout: 120000,

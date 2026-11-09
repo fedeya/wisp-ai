@@ -1,6 +1,8 @@
 import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { DatabaseSync, backup } from 'node:sqlite';
+import { ChatStore } from './chat-store.ts';
 
 async function stopPreviousBridge(source: string) {
   let identity: { port?: number; token?: string };
@@ -76,6 +78,24 @@ export async function migrateDesktop(
   }
   await stopPreviousBridge(source);
   await mkdir(path.join(destination, 'runtime'), { recursive: true });
+  // Use SQLite's snapshot API so committed WAL pages are included as well.
+  const databaseFile = path.join(destination, 'runtime/chats.sqlite');
+  let sourceDatabase: DatabaseSync | undefined;
+  try {
+    await access(path.join(source, 'runtime/chats.sqlite'));
+    await writeFile(databaseFile, '', { flag: 'wx', mode: 0o600 });
+    sourceDatabase = new DatabaseSync(path.join(source, 'runtime/chats.sqlite'), {
+      readOnly: true,
+      timeout: 5000,
+    });
+    await backup(sourceDatabase, databaseFile);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  } finally {
+    sourceDatabase?.close();
+  }
   const allowed = [
     'chats.json',
     'memory',
@@ -100,24 +120,39 @@ export async function migrateDesktop(
       }
     }
   }
-  const chatsFile = path.join(destination, 'runtime/chats.json');
-  try {
-    const chats = JSON.parse(await readFile(chatsFile, 'utf8'));
-    if (!Array.isArray(chats)) {
-      throw Error('Invalid conversation history.');
-    }
-    for (const chat of chats) {
-      if (chat && typeof chat === 'object') {
-        delete chat.eveId;
-        if (chat.status === 'working') {
-          chat.status = 'interrupted';
+  if (!sourceDatabase) {
+    const chatsFile = path.join(destination, 'runtime/chats.json');
+    try {
+      const chats = JSON.parse(await readFile(chatsFile, 'utf8'));
+      if (!Array.isArray(chats)) {
+        throw Error('Invalid conversation history.');
+      }
+      for (const chat of chats) {
+        if (chat && typeof chat === 'object') {
+          delete chat.eveId;
+          if (chat.status === 'working') {
+            chat.status = 'interrupted';
+          }
         }
       }
+      await writeFile(chatsFile, JSON.stringify(chats, null, 2));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
-    await writeFile(chatsFile, JSON.stringify(chats, null, 2));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
+  }
+  // The copied database is authoritative when both formats are present.
+  if (sourceDatabase) {
+    const store = new ChatStore(databaseFile, () => {});
+    try {
+      const chats = await store.load();
+      for (const chat of chats) {
+        delete chat.eveId;
+      }
+      await store.flush(chats);
+    } finally {
+      await store.close();
     }
   }
   if (localAppData) {

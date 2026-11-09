@@ -4,8 +4,67 @@ import { promisify } from 'node:util';
 import { copyFile, mkdir, mkdtemp, writeFile, readFile, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { ChatStore } from '@wisp/bridge/chat-store';
+import { newChat } from '@wisp/bridge/chat-lifecycle';
 
 const exec = promisify(execFile);
+test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
+  'packaged engine supports SQLite and imports committed database history',
+  { timeout: 60_000 },
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'wisp-packaged-sqlite-'));
+    const previous = path.join(root, 'previous');
+    const destination = path.join(root, 'imported');
+    const source = new ChatStore(path.join(previous, 'runtime/chats.sqlite'), () => {});
+    try {
+      await source.load();
+      const chat = {
+        ...newChat('history', 'game'),
+        eveId: 'old-session',
+        messages: [{ role: 'user' as const, text: 'History survives packaging 🧙' }],
+      };
+      await source.flush([chat]);
+      await writeFile(
+        path.join(previous, 'config.local.json'),
+        JSON.stringify({ wow: 'fixture-wow' }),
+      );
+      const executable = process.env.WISP_TEST_ENGINE_EXECUTABLE!;
+      const env = {
+        ...process.env,
+        WISP_DATA_DIR: destination,
+        LOCALAPPDATA: path.join(root, 'local'),
+      };
+      const selfTest = await exec(executable, ['--self-test'], {
+        env,
+        windowsHide: true,
+        timeout: 30000,
+      });
+      expect(JSON.parse(selfTest.stdout).sqlite).toBe(true);
+      await exec(executable, ['scripts/migrate-desktop.ts', previous], {
+        env,
+        windowsHide: true,
+        timeout: 30000,
+      });
+      const db = new DatabaseSync(path.join(destination, 'runtime/chats.sqlite'), {
+        readOnly: true,
+      });
+      try {
+        expect(
+          JSON.parse(String(db.prepare('SELECT content FROM messages').get()!.content)).text,
+        ).toBe(chat.messages[0].text);
+        expect(
+          JSON.parse(String(db.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId,
+        ).toBeUndefined();
+      } finally {
+        db.close();
+      }
+    } finally {
+      await source.close();
+      await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    }
+  },
+);
 test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
   'packaged install and migration forward their positional folder arguments',
   { timeout: 60_000 },

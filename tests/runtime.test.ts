@@ -220,11 +220,12 @@ test('the assembled runtime serves validated status, receives packets, persists 
       packetSchema.parse({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }),
     );
     await bridge.stop();
-    const saved = JSON.parse(
-      await readFile(path.join(f.dataDirectory, 'runtime/chats.json'), 'utf8'),
-    );
+    const { ChatStore } = await import('@wisp/bridge/chat-store');
+    const store = new ChatStore(path.join(f.dataDirectory, 'runtime/chats.sqlite'), () => {});
+    const saved = await store.load();
+    await store.close();
     expect(saved.map((chat: { id: string }) => chat.id)).toContain('chat');
-    expect(saved.find((chat: { id: string }) => chat.id === 'chat').messages).toEqual([
+    expect(saved.find((chat: { id: string }) => chat.id === 'chat')!.messages).toEqual([
       { role: 'user', text: 'Hello' },
     ]);
     expect(saved.map((chat: { id: string }) => chat.id)).not.toContain('draft');
