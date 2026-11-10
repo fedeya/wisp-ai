@@ -37,6 +37,27 @@ it("uses the same AST text formatting in prose, headings and table cells", funct
     assert.equal("*literal* & ||", view.ui[1].rows[1][2])
 end)
 
+it("applies the profile's entities and hard breaks to native UI labels too", function()
+    local env, C = setup()
+    local expected = "AT&T <tag> ||"
+    assert.equal(expected, C.FormatText("AT&amp;T &lt;tag&gt; &#124;"))
+    assert.equal("first\nsecond", C.FormatText("first  \nsecond"))
+    local view = settled(
+        C,
+        message("AT&amp;T &lt;tag&gt; &#124;\n\nA|B\n---|---\nAT&amp;T &lt;tag&gt; &#124;|x")
+    )
+    assert.equal(expected, view.parts[1].text)
+    assert.equal(expected, view.ui[1].rows[1][1])
+    local host = env.CreateFrame("Frame")
+    C.RenderRichUI(
+        host,
+        {},
+        { ui = { { id = "label", kind = "text", text = "AT&amp;T &lt;tag&gt; &#124;" } } },
+        300
+    )
+    assert.equal(expected, host.widgets.label.title:GetText())
+end)
+
 it("preserves canonical source, native component ordering and reference data", function()
     local _, C = setup()
     local source = "Before.\r\n\r\nA|B\r\n---|---\r\n[[ref:robe]]|Equipped\r\n\r\nAfter ñ."

@@ -115,7 +115,7 @@ end
 
 local function formatted(value, references, fromUser, streaming)
     value = tostring(value or "")
-    if not value:find("[%*_%~`%[%]\\<|]") then
+    if not value:find("[%*_%~`%[%]\\<|&\n\r]") then
         return C.Emoji.render(escaped(value))
     end
     local tree, _, pending = C.MarkdownCache.get(value, true, streaming)
