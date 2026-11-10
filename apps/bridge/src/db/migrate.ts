@@ -4,7 +4,6 @@ import { drizzle } from 'drizzle-orm/node-sqlite';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
-import { validateLegacyChats } from './legacy-schema.ts';
 
 const journal = sqliteTable('wisp_migrations', {
   name: text().primaryKey(),
@@ -16,14 +15,14 @@ export const migrationsFolder = fileURLToPath(new URL('./migrations/', import.me
 
 // Drizzle Kit owns the SQL and snapshots. Apply them under one immediate lock:
 // worktrees can start together, and divergent migration histories must not mix.
-export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
+export function migrateDatabase(client: DatabaseSync, folder = migrationsFolder) {
   const db = drizzle({ client });
   const migrations = readMigrationFiles({ migrationsFolder: folder });
   db.transaction(
     (tx) => {
       const version = Number(client.prepare('PRAGMA user_version').get()!.user_version);
-      if (version > 4) {
-        throw Error(`Unsupported conversation database version: ${version}`);
+      if (version > 1) {
+        throw Error(`Unsupported application database version: ${version}`);
       }
       tx.run(sql`CREATE TABLE IF NOT EXISTS wisp_migrations (
       name TEXT PRIMARY KEY, hash TEXT NOT NULL, applied_at INTEGER NOT NULL
@@ -32,13 +31,10 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
       for (const [index, entry] of applied.entries()) {
         const expected = migrations[index];
         if (!expected || expected.name !== entry.name || expected.hash !== entry.hash) {
-          throw Error('Conversation migrations differ from this version of Wisp.');
+          throw Error('Application migrations differ from this version of Wisp.');
         }
       }
       for (const migration of migrations.slice(applied.length)) {
-        if (migration.name === '20261110001924_normalize-conversations') {
-          validateLegacyChats(client);
-        }
         for (const statement of migration.sql) {
           if (statement.trim()) {
             tx.run(sql.raw(statement));
@@ -49,9 +45,9 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
           .run();
       }
       if (client.prepare('PRAGMA foreign_key_check').all().length) {
-        throw Error('Conversation migration violated foreign key constraints.');
+        throw Error('Application migration violated foreign key constraints.');
       }
-      tx.run(sql`PRAGMA user_version = 4`);
+      tx.run(sql`PRAGMA user_version = 1`);
     },
     { behavior: 'immediate' },
   );

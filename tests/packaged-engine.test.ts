@@ -7,7 +7,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
-import { migrationsFolder } from '@wisp/bridge/db/migrate';
+import { ChatStore, conversationInstanceId } from '@wisp/bridge/chat-store';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 
 const exec = promisify(execFile);
@@ -19,28 +19,16 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
     const previous = path.join(root, 'previous');
     const destination = path.join(root, 'imported');
     await mkdir(path.join(previous, 'runtime'), { recursive: true });
-    const source = new DatabaseSync(path.join(previous, 'runtime/chats.sqlite'));
+    const source = new ChatStore(path.join(previous, 'runtime/chats.sqlite'), () => {});
     try {
-      source.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL');
-      source.exec(
-        await readFile(
-          path.join(migrationsFolder, '20261109234044_initial-chat-schema/migration.sql'),
-          'utf8',
-        ),
-      );
+      await source.load();
       const chat = {
         ...newChat('history', 'game'),
         eveId: 'old-session',
         messages: [{ role: 'user' as const, text: 'History survives packaging 🧙' }],
       };
-      const { messages, ...metadata } = chat;
-      source
-        .prepare('INSERT INTO chats VALUES(?,?,?,?,?,?)')
-        .run(chat.id, 0, null, 0, 0, JSON.stringify(metadata));
-      source
-        .prepare('INSERT INTO messages VALUES(?,?,?)')
-        .run(chat.id, 0, JSON.stringify(messages[0]));
-      source.exec("INSERT INTO metadata VALUES('initialized','1'); PRAGMA user_version=1");
+      await source.flush([chat]);
+      expect((await readFile(source.file + '-wal')).length).toBeGreaterThan(0);
       const routine = savedRoutine.parse({
         id: 'review',
         title: 'Review',
@@ -118,10 +106,14 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
-        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(3);
-        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
+        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
+        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(1);
         expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
-        expect(db.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id).toBeNull();
+        expect(
+          db
+            .prepare('SELECT eve_id FROM chat_instance_state WHERE instance_id = ?')
+            .get(conversationInstanceId(path.join(destination, 'runtime')))!.eve_id,
+        ).toBeNull();
         expect(db.prepare('SELECT title FROM routines').get()!.title).toBe('Review');
         expect(db.prepare('SELECT summary FROM routine_runs').get()!.summary).toBe('Keep history');
         expect(db.prepare('SELECT title FROM panels').get()!.title).toBe('Goal');
@@ -141,14 +133,19 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
           ).toBe(content);
         }
         expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-        expect(
-          JSON.parse(String(source.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId,
-        ).toBe('old-session');
+        const original = new DatabaseSync(source.file, { readOnly: true });
+        try {
+          expect(original.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id).toBe(
+            'old-session',
+          );
+        } finally {
+          original.close();
+        }
       } finally {
         db.close();
       }
     } finally {
-      source.close();
+      await source.close();
       await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   },

@@ -6,52 +6,58 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { migrateChats, migrationsFolder } from '@wisp/bridge/db/migrate';
+import { migrateDatabase, migrationsFolder } from '@wisp/bridge/db/migrate';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { ChatStore } from '@wisp/bridge/chat-store';
 
-test('Drizzle adopts existing v1 rows, is repeatable, rejects drift and rolls back failed upgrades', async () => {
+test('one initial migration creates the complete schema, is repeatable and rejects drift', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-migrations-'));
-  const database = new DatabaseSync(path.join(root, 'v1.sqlite'));
+  const file = path.join(root, 'wisp.sqlite');
+  const database = new DatabaseSync(file);
   try {
     const names = (await readdir(migrationsFolder)).sort();
-    const initial = path.join(names[0], 'migration.sql');
-    database.exec(await readFile(path.join(migrationsFolder, initial), 'utf8'));
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/_initial$/);
+    migrateDatabase(database);
+    expect(database.prepare('PRAGMA user_version').get()!.user_version).toBe(1);
+    const tables = database
+      .prepare('PRAGMA table_list')
+      .all()
+      .filter((table) => !String(table.name).startsWith('sqlite_'));
+    expect(tables.map((table) => table.name).sort()).toEqual([
+      'chat_instance_state',
+      'chats',
+      'memory_entries',
+      'memory_scopes',
+      'messages',
+      'metadata',
+      'panels',
+      'routine_runs',
+      'routines',
+      'wisp_migrations',
+    ]);
+    expect(tables.every((table) => table.strict === 1)).toBe(true);
     const chat = {
       ...newChat('existing', 'game'),
-      messages: [{ role: 'user', text: 'Keep this 🧙' }],
+      messages: [{ role: 'user' as const, text: 'Keep this 🧙' }],
     };
-    const { messages, ...metadata } = chat;
-    database
-      .prepare('INSERT INTO chats VALUES (?, ?, ?, ?, ?, ?)')
-      .run(chat.id, 0, null, 0, 7, JSON.stringify(metadata));
-    database
-      .prepare('INSERT INTO messages VALUES (?, ?, ?)')
-      .run(chat.id, 0, JSON.stringify(messages[0]));
-    database.exec("INSERT INTO metadata VALUES ('initialized', '1'); PRAGMA user_version=1");
-    migrateChats(database);
-    const before = database.prepare('SELECT * FROM chats').all();
-    migrateChats(database);
-    expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
-    expect(database.prepare('SELECT role, text FROM messages').get()).toEqual(messages[0]);
-    expect(database.prepare('SELECT title, revision FROM chats').get()).toEqual({
-      title: chat.title,
-      revision: 7,
-    });
-    const reader = new ChatStore(path.join(root, 'v1.sqlite'), () => {});
+    const store = new ChatStore(file, () => {});
     try {
-      expect((await reader.load())[0]).toMatchObject(chat);
+      await store.load();
+      await store.flush([chat]);
     } finally {
-      await reader.close();
+      await store.close();
     }
-    expect(database.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(
-      names.length,
-    );
+    const before = database.prepare('SELECT * FROM chats').all();
+    migrateDatabase(database);
+    expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
+    expect(database.prepare('SELECT role, text FROM messages').get()).toEqual(chat.messages[0]);
+    expect(database.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
     const folder = path.join(root, 'migrations');
     await cp(migrationsFolder, folder, { recursive: true });
-    const migration = path.join(folder, initial);
+    const migration = path.join(folder, names[0], 'migration.sql');
     await writeFile(migration, (await readFile(migration, 'utf8')) + '\n-- changed');
-    expect(() => migrateChats(database, folder)).toThrow('migrations differ');
+    expect(() => migrateDatabase(database, folder)).toThrow('migrations differ');
     await cp(migrationsFolder, folder, { recursive: true });
     const failing = path.join(folder, '20990101000000_failure');
     await mkdir(failing);
@@ -59,17 +65,57 @@ test('Drizzle adopts existing v1 rows, is repeatable, rejects drift and rolls ba
       path.join(failing, 'migration.sql'),
       'CREATE TABLE should_rollback(id INTEGER);\n--> statement-breakpoint\nINVALID SQL;',
     );
-    expect(() => migrateChats(database, folder)).toThrow();
+    expect(() => migrateDatabase(database, folder)).toThrow();
     expect(
       database.prepare("SELECT name FROM sqlite_master WHERE name='should_rollback'").get(),
     ).toBeUndefined();
-    expect(database.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(
-      names.length,
-    );
+    expect(database.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
   } finally {
     database.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('a failed initial migration rolls back every table and can retry', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-initial-rollback-'));
+  const database = new DatabaseSync(path.join(root, 'wisp.sqlite'));
+  try {
+    const folder = path.join(root, 'migrations');
+    await cp(migrationsFolder, folder, { recursive: true });
+    const [name] = await readdir(folder);
+    const file = path.join(folder, name, 'migration.sql');
+    await writeFile(
+      file,
+      (await readFile(file, 'utf8')) + '\n--> statement-breakpoint\nINVALID SQL;',
+    );
+    expect(() => migrateDatabase(database, folder)).toThrow();
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([]);
+    expect(database.prepare('PRAGMA user_version').get()!.user_version).toBe(0);
+    migrateDatabase(database);
+    expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(database.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
+  } finally {
+    database.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('unrecognized pre-release tables are preserved instead of being adopted or replaced', async () => {
+  const database = new DatabaseSync(':memory:');
+  try {
+    database.exec(
+      "CREATE TABLE chats(id TEXT PRIMARY KEY, metadata TEXT); INSERT INTO chats VALUES('keep', 'original'); PRAGMA user_version=1",
+    );
+    expect(() => migrateDatabase(database)).toThrow();
+    expect(database.prepare('SELECT * FROM chats').all()).toEqual([
+      { id: 'keep', metadata: 'original' },
+    ]);
+    expect(database.prepare("SELECT name FROM sqlite_master WHERE type='table'").all()).toEqual([
+      { name: 'chats' },
+    ]);
+  } finally {
+    database.close();
   }
 });
 
@@ -91,10 +137,7 @@ test('three processes can migrate and import the same database simultaneously', 
         promisify(execFile)(
           process.execPath,
           ['--input-type=module', '-e', source, path.join(root, 'wisp.sqlite')],
-          {
-            cwd: fileURLToPath(new URL('.', import.meta.url)),
-            windowsHide: true,
-          },
+          { cwd: fileURLToPath(new URL('.', import.meta.url)), windowsHide: true },
         ),
       ),
     );

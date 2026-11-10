@@ -9,11 +9,11 @@ import { z } from 'zod';
 import { savedRoutine, routineRun, type Routine, type RoutineRun } from '@wisp/protocol/routines';
 import { panelContent, type Panel } from '@wisp/protocol/panels';
 import { memoryEntry } from '@wisp/protocol/agent-rpc';
-import { migrateChats } from './migrate.ts';
+import { migrateDatabase } from './migrate.ts';
 import { preparePrivateDatabase } from './private-file.ts';
 import { routines, routineRuns, panels, memoryScopes, memoryEntries, metadata } from './schema.ts';
 
-type Orm = ReturnType<typeof migrateChats>;
+type Orm = ReturnType<typeof migrateDatabase>;
 export type MemorySlot = 'preferences' | 'character';
 export type MemoryEntry = z.infer<typeof memoryEntry>;
 const savedPanel = panelContent.safeExtend({
@@ -261,7 +261,7 @@ export class ProductDatabase {
     await preparePrivateDatabase(this.file);
     const client = this.open();
     try {
-      const db = migrateChats(client);
+      const db = migrateDatabase(client);
       if (db.select().from(metadata).where(eq(metadata.key, marker)).get()) {
         return;
       }

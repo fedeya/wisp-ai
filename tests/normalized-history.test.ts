@@ -1,16 +1,12 @@
 import { test, expect } from 'vitest';
-import { mkdtemp, readFile, writeFile, cp, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { ChatStore } from '@wisp/bridge/chat-store';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { migrateChats, migrationsFolder } from '@wisp/bridge/db/migrate';
 import type { Chat } from '@wisp/bridge/chat';
 
-const initial = '20261109234044_initial-chat-schema';
-const normalized = '20261110001924_normalize-conversations';
 function history(): Chat {
   return {
     ...newChat('rich', 'old-game'),
@@ -63,87 +59,52 @@ function inspect<T>(file: string, read: (db: DatabaseSync) => T): T {
     db.close();
   }
 }
-async function oldDatabase(file: string, version: number, chat: Chat) {
-  const sql = await readFile(path.join(migrationsFolder, initial, 'migration.sql'), 'utf8');
-  const db = new DatabaseSync(file);
-  db.exec(sql);
-  const { messages, ...metadata } = chat;
-  db.prepare('INSERT INTO chats VALUES(?,?,?,?,?,?)').run(
-    chat.id,
-    0,
-    chat.characterKey ?? null,
-    chat.lastActivityAt ?? 0,
-    9,
-    JSON.stringify(metadata),
-  );
-  messages.forEach((message, index) =>
-    db.prepare('INSERT INTO messages VALUES(?,?,?)').run(chat.id, index, JSON.stringify(message)),
-  );
-  db.exec("INSERT INTO metadata VALUES('initialized','1')");
-  if (version === 2) {
-    db.exec(
-      'CREATE TABLE wisp_migrations(name TEXT PRIMARY KEY,hash TEXT NOT NULL,applied_at INTEGER NOT NULL) STRICT',
+test('JSON import preserves rich history and assigns stable storage IDs', async () => {
+  const f = await fixture();
+  const original = {
+    ...history(),
+    futureMetadata: { keep: true },
+    messages: history().messages.map((m) => ({ ...m, futureField: ['keep', 1] })),
+  };
+  await writeFile(path.join(f.root, 'chats.json'), JSON.stringify([original]));
+  try {
+    const store = f.store();
+    const loaded = await store.load();
+    expect(loaded[0]).toMatchObject(original);
+    expect(loaded[0].messages).toEqual(original.messages);
+    const ids = inspect(f.file, (db) =>
+      db.prepare('SELECT id FROM messages ORDER BY position').all(),
     );
-    db.prepare('INSERT INTO wisp_migrations VALUES(?,?,?)').run(
-      initial,
-      createHash('sha256').update(sql).digest('hex'),
-      0,
+    expect(new Set(ids.map((r) => r.id)).size).toBe(4);
+    expect(
+      inspect(f.file, (db) =>
+        db.prepare('SELECT title,status,character_key,last_used_at,extras FROM chats').get(),
+      ),
+    ).toMatchObject({
+      title: original.title,
+      status: 'idle',
+      character_key: 'character',
+      last_used_at: 123.25,
+    });
+    const extras = JSON.parse(
+      String(inspect(f.file, (db) => db.prepare('SELECT extras FROM chats').get()!.extras)),
     );
+    expect(extras).toEqual({ activity: [], futureMetadata: { keep: true } });
+    expect(
+      inspect(f.file, (db) =>
+        db.prepare('SELECT source_id FROM messages ORDER BY position').all(),
+      ).map((r) => r.source_id),
+    ).toEqual([null, 'duplicate', 'duplicate', '']);
+    await store.flush(loaded);
+    await store.close();
+    expect((await f.store().load())[0]).toMatchObject(original);
+    expect(
+      inspect(f.file, (db) => db.prepare('SELECT id FROM messages ORDER BY position').all()),
+    ).toEqual(ids);
+  } finally {
+    await f.close();
   }
-  db.exec(`PRAGMA user_version=${version}`);
-  return db;
-}
-
-test.each([1, 2])(
-  'SQLite v%i normalization preserves rich history and assigns stable storage IDs',
-  async (version) => {
-    const f = await fixture();
-    const original = {
-      ...history(),
-      futureMetadata: { keep: true },
-      messages: history().messages.map((m) => ({ ...m, futureField: ['keep', 1] })),
-    };
-    const old = await oldDatabase(f.file, version, original);
-    old.close();
-    try {
-      const store = f.store();
-      const loaded = await store.load();
-      expect(loaded[0]).toMatchObject(original);
-      expect(loaded[0].messages).toEqual(original.messages);
-      const ids = inspect(f.file, (db) =>
-        db.prepare('SELECT id FROM messages ORDER BY position').all(),
-      );
-      expect(new Set(ids.map((r) => r.id)).size).toBe(4);
-      expect(
-        inspect(f.file, (db) =>
-          db.prepare('SELECT title,status,character_key,last_used_at,extras FROM chats').get(),
-        ),
-      ).toMatchObject({
-        title: original.title,
-        status: 'idle',
-        character_key: 'character',
-        last_used_at: 123.25,
-      });
-      const extras = JSON.parse(
-        String(inspect(f.file, (db) => db.prepare('SELECT extras FROM chats').get()!.extras)),
-      );
-      expect(extras).toEqual({ activity: [], futureMetadata: { keep: true } });
-      expect(
-        inspect(f.file, (db) =>
-          db.prepare('SELECT source_id FROM messages ORDER BY position').all(),
-        ).map((r) => r.source_id),
-      ).toEqual([null, 'duplicate', 'duplicate', '']);
-      await store.flush(loaded);
-      await store.close();
-      expect((await f.store().load())[0]).toMatchObject(original);
-      expect(
-        inspect(f.file, (db) => db.prepare('SELECT id FROM messages ORDER BY position').all()),
-      ).toEqual(ids);
-    } finally {
-      await f.close();
-    }
-  },
-);
+});
 
 test('message identities survive edits, insertion, reordering, deletion and reopening', async () => {
   const f = await fixture();
@@ -228,48 +189,12 @@ test('engine sessions and connection settings are private to each instance', asy
   }
 });
 
-test('a failed normalization rolls back table replacements and retries without losing rows', async () => {
-  const f = await fixture();
-  const original = history();
-  const db = await oldDatabase(f.file, 2, original);
-  try {
-    const folder = path.join(f.root, 'migrations');
-    await cp(migrationsFolder, folder, { recursive: true });
-    const target = path.join(folder, normalized, 'migration.sql');
-    const sql = await readFile(target, 'utf8');
-    await writeFile(
-      target,
-      sql.replace('CREATE INDEX chats_character_activity', 'INVALID INDEX SYNTAX'),
-    );
-    expect(() => migrateChats(db, folder)).toThrow();
-    expect(db.prepare('SELECT count(*) AS n FROM messages').get()!.n).toBe(
-      original.messages.length,
-    );
-    expect(JSON.parse(String(db.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId).toBe(
-      original.eveId,
-    );
-    expect(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '__new_%'").all()).toEqual(
-      [],
-    );
-    expect(
-      db.prepare("SELECT name FROM sqlite_master WHERE name='chat_instance_state'").get(),
-    ).toBeUndefined();
-    expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(2);
-    migrateChats(db);
-    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-  } finally {
-    db.close();
-    await f.close();
-  }
-});
-
 test.each([true, false, null, 'text', [1, { nested: true }]])(
-  'legacy private JSON values survive normalization: %j',
+  'private JSON values survive import: %j',
   async (value) => {
     const f = await fixture();
     const original = { ...history(), lastUIResult: value };
-    const db = await oldDatabase(f.file, 2, original);
-    db.close();
+    await writeFile(path.join(f.root, 'chats.json'), JSON.stringify([original]));
     try {
       expect((await f.store().load())[0].lastUIResult).toEqual(value);
     } finally {
@@ -277,22 +202,3 @@ test.each([true, false, null, 'text', [1, { nested: true }]])(
     }
   },
 );
-
-test('invalid legacy rows abort normalization instead of coercing their content', async () => {
-  const f = await fixture();
-  const db = await oldDatabase(f.file, 2, history());
-  try {
-    db.prepare('UPDATE messages SET content=? WHERE position=0').run(
-      JSON.stringify({ role: 'user', text: 42 }),
-    );
-    expect(() => migrateChats(db)).toThrow();
-    expect(
-      JSON.parse(String(db.prepare('SELECT content FROM messages WHERE position=0').get()!.content))
-        .text,
-    ).toBe(42);
-    expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(2);
-  } finally {
-    db.close();
-    await f.close();
-  }
-});

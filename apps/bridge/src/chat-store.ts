@@ -7,7 +7,7 @@ import type { drizzle } from 'drizzle-orm/node-sqlite';
 import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
-import { migrateChats } from './db/migrate.ts';
+import { migrateDatabase } from './db/migrate.ts';
 import { preparePrivateDatabase } from './db/private-file.ts';
 import { chats as chatTable, messages as messageTable, chatInstanceState } from './db/schema.ts';
 import {
@@ -52,8 +52,8 @@ export class ChatStore {
     this.file = file;
     this.legacyFile = legacyFile;
     this.instanceId = options.instanceId ?? conversationInstanceId(path.dirname(file));
-    if (!this.instanceId || this.instanceId === '__legacy__') {
-      throw Error('Choose a non-reserved conversation instance identity.');
+    if (!this.instanceId) {
+      throw Error('Choose a conversation instance identity.');
     }
     this.options = options;
     this.onError = onError;
@@ -67,18 +67,14 @@ export class ChatStore {
       await preparePrivateDatabase(this.file);
       this.db = new DatabaseSync(this.file, { timeout: 5000 });
       const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
-      if (version > 4) {
+      if (version > 1) {
         throw Error(`Unsupported conversation database version: ${version}`);
       }
       this.db.exec(
         'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;',
       );
-      this.orm = migrateChats(this.db);
+      this.orm = migrateDatabase(this.db);
       this.transaction(() => {
-        this.orm!.update(chatInstanceState)
-          .set({ instanceId: this.instanceId })
-          .where(eq(chatInstanceState.instanceId, '__legacy__'))
-          .run();
         // Installation imports explicitly inherit private state in the copy.
         // An ordinary instance never reads another instance's engine session.
         if (this.options.inheritInstanceId) {
