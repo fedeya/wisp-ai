@@ -78,6 +78,8 @@ On the first launch after upgrading, Wisp validates the complete legacy `runtime
 
 SQLite stores conversations and ordered messages separately and updates only changed rows. Wisp still loads the conversation list and messages into the current bridge session; lazy history loading and cross-worktree sharing are separate changes. Stop Wisp before manually copying its data. When backing up an open database, use SQLite's backup API so committed WAL data is included; copying only `chats.sqlite` can miss recent changes.
 
+Schema changes use Drizzle ORM and Drizzle Kit, both pinned to `1.0.0-rc.5`, with Node's built-in SQLite driver. Generate a migration with `pnpm --filter @wisp/bridge db:generate --name <description>` and review/commit its SQL and snapshot. The initial SQL deliberately retains STRICT tables and adopts the previous v1 schema without replacing existing rows. Startup applies pending migrations in an immediate transaction, recording names and SHA-256 hashes in `wisp_migrations`. A failed migration rolls back; an unknown, changed or divergent migration history stops startup. Existing migration files are immutable. Do not use schema push against durable history.
+
 WoW stores UI preferences and drafts in the `WispAIDB` SavedVariables. Logs may contain conversations and tool data: redact them before sharing, and never share credential stores, tokens or private configuration.
 
 Use **Settings > Memory** to view, edit or forget notes. Deleting a chat does not delete memory; disabling memory tools preserves notes and the editor. Memory stores preferences/plans, not current character state.

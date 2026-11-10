@@ -44,6 +44,7 @@
     "./agent-server": "./src/agent-server.ts",
     "./desktop-handler": "./src/desktop-handler.ts",
     "./chat-store": "./src/chat-store.ts",
+    "./db/migrate": "./src/db/migrate.ts",
     "./chat-lifecycle": "./src/chat-lifecycle.ts",
     "./chat-projection": "./src/chat-projection.ts",
     "./game-requests": "./src/game-requests.ts",
@@ -60,6 +61,7 @@
     "./web-search": "./src/web-search.ts"
   },
   "scripts": {
+    "db:generate": "drizzle-kit generate",
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -67,12 +69,14 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@wisp/agent": "workspace:*",
     "@wisp/protocol": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5",
     "eve": "1.0.0-rc.6",
     "jose": "6.2.15",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
+    "drizzle-kit": "1.0.0-rc.5",
     "typescript": "5.9.3"
   }
 }

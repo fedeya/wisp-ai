@@ -25,6 +25,14 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         messages: [{ role: 'user' as const, text: 'History survives packaging 🧙' }],
       };
       await source.flush([chat]);
+      // Simulate the first SQLite release: rows already exist, but Drizzle's
+      // migration journal does not yet exist.
+      const previousDb = new DatabaseSync(path.join(previous, 'runtime/chats.sqlite'));
+      try {
+        previousDb.exec('DROP TABLE wisp_migrations; PRAGMA user_version = 1');
+      } finally {
+        previousDb.close();
+      }
       await writeFile(
         path.join(previous, 'config.local.json'),
         JSON.stringify({ wow: 'fixture-wow' }),
@@ -50,6 +58,8 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
+        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
+        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(2);
         expect(
           JSON.parse(String(db.prepare('SELECT content FROM messages').get()!.content)).text,
         ).toBe(chat.messages[0].text);

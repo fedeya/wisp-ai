@@ -54,6 +54,9 @@ export async function buildEngine() {
     },
   });
   await cp(path.join(root, 'scripts/engine-entry.mjs'), path.join(directory, 'engine.mjs'));
+  await cp(path.join(root, 'apps/bridge/src/db/migrations'), path.join(directory, 'migrations'), {
+    recursive: true,
+  });
   await writeFile(
     path.join(directory, 'package.json'),
     JSON.stringify(
@@ -64,7 +67,7 @@ export async function buildEngine() {
         type: 'module',
         bin: 'engine.mjs',
         pkg: {
-          assets: ['*.mjs', 'eve/**/*', 'node_modules/**/*', 'npm/**/*'],
+          assets: ['*.mjs', 'migrations/**/*', 'eve/**/*', 'node_modules/**/*', 'npm/**/*'],
           sea: true,
           compress: 'GZip',
           targets: [`node${process.versions.node}-win-x64`],

@@ -2,11 +2,11 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { migrateChats } from './db/migrate.ts';
 import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
 
-const SCHEMA_VERSION = 1;
 interface StoredChat {
   id: string;
   metadata: string;
@@ -57,30 +57,11 @@ export class ChatStore {
     try {
       const db = (this.db = new DatabaseSync(this.file, { timeout: 5000 }));
       const version = Number(db.prepare('PRAGMA user_version').get()!.user_version);
-      if (version !== 0 && version !== SCHEMA_VERSION) {
+      if (version < 0 || version > 2) {
         throw Error(`Unsupported conversation database version: ${version}`);
       }
       db.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;');
-      if (version === 0) {
-        this.transaction(() =>
-          db.exec(`
-          CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
-          CREATE TABLE IF NOT EXISTS chats (
-            id TEXT PRIMARY KEY, sort_index INTEGER NOT NULL, character_key TEXT,
-            last_activity REAL NOT NULL, revision INTEGER NOT NULL CHECK (revision >= 0),
-            metadata TEXT NOT NULL CHECK (json_valid(metadata))
-          ) STRICT;
-          CREATE INDEX IF NOT EXISTS chats_character_activity ON chats(character_key, last_activity);
-          CREATE TABLE IF NOT EXISTS messages (
-            chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
-            position INTEGER NOT NULL CHECK (position >= 0),
-            content TEXT NOT NULL CHECK (json_valid(content)),
-            PRIMARY KEY (chat_id, position)
-          ) STRICT;
-          PRAGMA user_version = 1;
-        `),
-        );
-      }
+      migrateChats(db);
       await this.importLegacy();
       const chats = this.readChats();
       this.writable = true;
