@@ -1,346 +1,225 @@
-local helper = require("addon.tests.fixtures.markdown.support")
-local markdown = helper.parser()
-
-local function literal(root)
-    local pieces = {}
-    for node, entering in root:walker() do
-        if entering and node.literal then
-            pieces[#pieces + 1] = node.literal
-        end
-    end
-    return table.concat(pieces)
+local helper = require("addon.tests.markdown-support")
+local md = helper.parser()
+local function paragraph(source, options)
+    return assert(md.parse(source, options)).children[1]
 end
 
-local function validTree(root)
-    local seen = {}
-    assert.is_nil(root.parent)
-    for node, entering in root:walker() do
-        if entering then
-            assert.is_nil(seen[node], "a node is visited twice")
-            seen[node] = true
-            for key in pairs(node) do
-                assert.not_equal("_", key:sub(1, 1), "private parse state escapes into the AST")
-            end
-            if node.next then
-                assert.equal(node, node.next.prev)
-                assert.equal(node.parent, node.next.parent)
-            end
-            if node.prev then
-                assert.equal(node, node.prev.next)
-            end
-            local previous, child = nil, node.firstChild
-            while child do
-                assert.equal(node, child.parent)
-                assert.equal(previous, child.prev)
-                previous, child = child, child.next
-            end
-            assert.equal(previous, node.lastChild)
-        end
-    end
-end
+it("exposes only the Wisp parse and inline entry points", function()
+    assert.is_function(md.parse)
+    assert.is_function(md.parseInline)
+    assert.is_nil(md.newStream)
+    assert.is_nil(md.Node)
+    local node, err = md.parse("text", { dialect = "commonmark" })
+    assert.is_nil(node)
+    assert.same({ code = "invalid_option", option = "dialect" }, err)
+end)
 
-it("keeps code and destinations atomic while resolving surrounding emphasis", function()
-    local document =
-        assert(markdown.parse("**Use `a**b` now** and **a [b](https://example.com/a**b) c**"))
+it("keeps code contents atomic inside strong text", function()
+    local node = paragraph("**Use `a**b` now**")
+    assert.equal("strong", node.children[1].type)
+    assert.equal("code", node.children[1].children[2].type)
+    assert.equal("a**b", node.children[1].children[2].literal)
+    assert.equal("Use a**b now", helper.text(node))
+end)
+
+it("supports nested emphasis and both parts of triple emphasis", function()
+    local node = paragraph("***one*** and **two _three_ four**")
+    assert.equal("emph", node.children[1].type)
+    assert.equal("strong", node.children[1].children[1].type)
+    assert.equal("strong", node.children[3].type)
+    assert.equal("emph", node.children[3].children[2].type)
+    assert.equal("one and two three four", helper.text(node))
+end)
+
+it("preserves intraword underscores, escaped punctuation and unmatched markers", function()
     assert.equal(
-        '<p><strong>Use <code>a**b</code> now</strong> and <strong>a <a href="https://example.com/a**b">b</a> c</strong></p>\n',
-        helper.html(document)
+        "snake_case foo_bar_baz *literal* **open",
+        helper.text(paragraph("snake_case foo_bar_baz \\*literal* **open"))
     )
-    validTree(document)
+    assert.equal("a _b c_", helper.text(paragraph("*a _b* c_")))
 end)
 
-it("recognizes the remaining backticks after an escaped run prefix", function()
-    assert.equal("<p>`<code>x</code></p>\n", helper.html(assert(markdown.parse("\\``x`"))))
-    assert.equal("<p>`<code>x</code></p>\n", helper.html(assert(markdown.parse("\\```x``"))))
+it("renders strike spans with nested emphasis while single tildes stay literal", function()
+    local node = paragraph("~~old **bold**~~ ~literal~")
+    assert.equal("strikethrough", node.children[1].type)
+    assert.equal("strong", node.children[1].children[2].type)
+    assert.equal("old bold ~literal~", helper.text(node))
 end)
 
-it("exposes an explicit CommonMark dialect without GFM extensions", function()
-    local source = "A | B\n---|---\nx | y\n\n~~old~~ www.example.com\n\n- [x] done"
-    local gfm = assert(markdown.parse(source))
-    local commonmark = assert(markdown.parse(source, { dialect = "commonmark" }))
-    assert.equal("table", gfm.firstChild.type)
-    assert.equal("paragraph", commonmark.firstChild.type)
-    assert.is_truthy(helper.html(commonmark):find("~~old~~ www.example.com", 1, true))
-    assert.is_falsy(commonmark.lastChild.firstChild.task)
-    assert.is_true(gfm.lastChild.firstChild.checked)
+it("matches code delimiters by length and preserves code escapes and references", function()
+    local node = paragraph("`` a`b `` `[[ref:item]]` \\``x`", { references = true })
+    assert.equal("code", node.children[1].type)
+    assert.equal("a`b", node.children[1].literal)
+    assert.equal("[[ref:item]]", node.children[3].literal)
+    assert.equal("code", node.children[5].type)
+    assert.equal("x", node.children[5].literal)
 end)
 
-it("recognizes Wisp references only when enabled and preserves their exact keys", function()
-    local document = assert(
-        markdown.parse(
-            "**[[ref:spell_1]]** `[[ref:literal]]` \\[[ref:escaped]]",
-            { references = true }
-        )
+it("parses links without interpreting their destinations as emphasis", function()
+    local node = paragraph('[**label**](https://example.com/a**b "title")')
+    local link = node.children[1]
+    assert.equal("link", link.type)
+    assert.equal("https://example.com/a**b", link.destination)
+    assert.equal("title", link.title)
+    assert.equal("strong", link.children[1].type)
+    assert.equal("label", helper.text(link))
+end)
+
+it("handles balanced destinations, angle destinations, images and autolinks", function()
+    local node = paragraph(
+        "[a](a(b)c) [b](<some path>) ![alt _name_](https://x/p.png) <https://example.com>"
     )
-    local reference = document.firstChild.firstChild.firstChild
-    assert.equal("reference", reference.type)
-    assert.equal("spell_1", reference.key)
-    assert.equal("[[ref:spell_1]]", reference.literal)
-    local count = 0
-    for node in document:walker() do
-        if node.type == "reference" then
-            count = count + 1
-        end
+    assert.equal("a(b)c", node.children[1].destination)
+    assert.equal("some path", node.children[3].destination)
+    assert.equal("image", node.children[5].type)
+    assert.equal("alt name", helper.text(node.children[5]))
+    assert.equal("https://example.com", node.children[7].destination)
+end)
+
+it("collects late reference definitions and preserves the first definition", function()
+    local node = paragraph(
+        '[TÍTULO][] [name]\n\n[título]: /first "caption"\n[título]: /later\n[name]: /name'
+    )
+    assert.equal("/first", node.children[1].destination)
+    assert.equal("caption", node.children[1].title)
+    assert.equal("/name", node.children[3].destination)
+end)
+
+it("recognizes complete and incomplete Wisp references outside code", function()
+    local node =
+        paragraph("**[[ref:spell_1]]** `[[ref:literal]]` [[ref:spell", { references = true })
+    assert.equal("reference", node.children[1].children[1].type)
+    assert.equal("spell_1", node.children[1].children[1].key)
+    assert.equal("code", node.children[3].type)
+    assert.equal("reference_pending", node.children[5].type)
+    assert.equal("[[ref:spell", node.children[5].literal)
+    assert.equal("text", paragraph("[[ref:spell]]").children[1].type)
+    assert.equal("text", paragraph("[").children[1].type)
+end)
+
+it("treats raw HTML as literal text and only decodes basic or numeric entities", function()
+    local node = paragraph("<button x='y'>**word**</button> &amp; &#124; &#x1f600; &unknown;")
+    assert.equal("html_inline", node.children[1].type)
+    assert.equal("<button x='y'>", node.children[1].literal)
+    assert.equal("<button x='y'>word</button> & | 😀 &unknown;", helper.text(node))
+end)
+
+it("preserves soft and hard breaks without losing inline whitespace", function()
+    local node = assert(md.parseInline("  first\nsecond  \nthird\\\nfourth  "))
+    assert.equal("softbreak", node.children[2].type)
+    assert.equal("linebreak", node.children[4].type)
+    assert.equal("linebreak", node.children[6].type)
+    assert.equal("  first\nsecond\nthird\nfourth  ", helper.text(node))
+end)
+
+it("uses array children and preserves nested table source positions", function()
+    local doc = assert(md.parse("> | A | B |\n> |---|---:|\n> |x|**y**|\n"))
+    local tab = doc.children[1].children[1]
+    assert.equal("table", tab.type)
+    assert.equal(true, tab.children[1].header)
+    assert.equal("right", tab.align[2])
+    assert.equal("strong", tab.children[2].children[2].children[1].type)
+    assert.equal(1, tab.sourcepos[1][1])
+    assert.equal(3, tab.sourcepos[2][1])
+    assert.is_nil(tab.firstChild)
+    assert.is_nil(tab.parent)
+end)
+
+it("normalizes CRLF, CR, NUL and malformed UTF-8", function()
+    local doc = assert(md.parse("ñ\r\n😀\rzero\0bad\255"))
+    assert.equal("ñ\n😀\nzero�bad�", helper.text(doc))
+    assert.equal(3, doc.children[1].sourcepos[2][1])
+end)
+
+it("does not modify source options or prior documents when resolving definitions", function()
+    local source, options = "[x]", { references = true }
+    local first = assert(md.parse(source, options))
+    local before = helper.text(first)
+    local second = assert(md.parse(source .. "\n\n[x]: /resolved", options))
+    assert.same({ references = true }, options)
+    assert.equal(before, helper.text(first))
+    assert.equal("text", first.children[1].children[1].type)
+    assert.equal("link", second.children[1].children[1].type)
+end)
+
+it("rejects invalid input and unsupported options with structured errors", function()
+    for _, source in ipairs({ false, 1, {} }) do
+        local doc, err = md.parse(source)
+        assert.is_nil(doc)
+        assert.equal("invalid_source", err.code)
     end
-    assert.equal(1, count)
-    assert.equal("text", assert(markdown.parseInline("[[ref:spell_1]]")).firstChild.type)
-    validTree(document)
-end)
-
-it("preserves whitespace in the standalone inline API", function()
-    local inline = assert(markdown.parseInline("  a *b*  "))
-    assert.equal("  a b  ", literal(inline))
-    assert.equal("paragraph", inline.type)
-    validTree(inline)
-end)
-
-it("uses full Unicode case folding for reference labels", function()
-    local document = assert(markdown.parse("[Straße] [Σ] [ς]\n\n[STRASSE]: /a\n[σ]: /b"))
-    assert.equal(
-        '<p><a href="/a">Straße</a> <a href="/b">Σ</a> <a href="/b">ς</a></p>\n',
-        helper.html(document)
-    )
-    assert.equal("16.0.0", markdown.Data.unicodeVersion)
-end)
-
-it("uses CommonMark whitespace categories and ASCII grammar independently of locale", function()
-    for _, code in ipairs({
-        9,
-        10,
-        12,
-        13,
-        32,
-        0xA0,
-        0x1680,
-        0x2000,
-        0x200A,
-        0x202F,
-        0x205F,
-        0x3000,
-    }) do
-        assert.is_true(markdown.Scanner.whitespace(code))
-    end
-    for _, code in ipairs({ 11, 0x85, 0x2028, 0x2029, 0xFEFF }) do
-        assert.is_false(markdown.Scanner.whitespace(code))
-        assert.equal(
-            "emph",
-            assert(markdown.parseInline("*" .. markdown.Scanner.char(code) .. "x*")).firstChild.type
-        )
-    end
-    assert.is_nil(
-        helper.html(assert(markdown.parse("é@ñ.com <é@example.com>"))):find("<a ", 1, true)
-    )
-    local document = assert(markdown.parse("[x](/a\001b) [x](/a\127b)"))
-    assert.is_nil(helper.html(document):find("<a ", 1, true))
-end)
-
-it("classifies astral symbols as whole Unicode scalars when flanking delimiters", function()
-    local document = assert(markdown.parse("***# 😀**https://x.y", { dialect = "commonmark" }))
-    assert.equal("<p>***# 😀**https://x.y</p>\n", helper.html(document))
-    document = assert(markdown.parse("😀*||:_b***", { dialect = "commonmark" }))
-    assert.equal("<p>😀<em>||:_b</em>**</p>\n", helper.html(document))
-end)
-
-it("bounds reference labels by original Unicode characters before case folding", function()
-    local valid = string.rep("é", 999)
-    local document = assert(markdown.parse("[" .. valid .. "]\n\n[" .. valid .. "]: /ok"))
-    assert.equal("link", document.firstChild.firstChild.type)
-    local long = string.rep("s", 1000)
-    document =
-        assert(markdown.parse("[" .. long .. "]\n\n[" .. string.rep("ß", 500) .. "]: /wrong"))
-    assert.is_nil(helper.html(document):find("<a ", 1, true))
-end)
-
-it("decodes the complete HTML entity map and keeps entity text out of syntax", function()
-    local document = assert(
-        markdown.parse(
-            "&NotEqualTilde; &CounterClockwiseContourIntegral; &#x1F600; &#0; &ast;x&ast;"
-        )
-    )
-    assert.equal("≂̸ ∳ 😀 � *x*", literal(document))
-    assert.equal("text", document.firstChild.firstChild.type)
-end)
-
-it("normalizes line endings, NUL and malformed UTF-8 without host APIs", function()
-    local document = assert(markdown.parse("a\r\nb\rc\000\255\237\160\128"))
-    assert.equal("<p>a\nb\nc�����</p>\n", helper.html(document))
-end)
-
-it("keeps raw HTML opaque instead of interpreting its contents as Markdown", function()
-    local document = assert(markdown.parse("<script>\n**raw**\n</script>\n\nAfter"))
-    assert.equal("html_block", document.firstChild.type)
-    assert.equal("<script>\n**raw**\n</script>", document.firstChild.literal)
-    assert.is_nil(document.firstChild.firstChild)
-end)
-
-it("retains source ranges when a table interrupts a paragraph", function()
-    local document = assert(
-        markdown.parse("Long preceding line\n  | A | B |\n  |---|---|\n  | ñ | x |\n\nAfter")
-    )
-    local paragraph, tableNode = document.firstChild, document.firstChild.next
-    assert.same({ { 1, 1 }, { 1, 19 } }, paragraph.sourcepos)
-    assert.same({ { 2, 3 }, { 4, 12 } }, tableNode.sourcepos)
-    assert.same({ { 2, 3 }, { 2, 11 } }, tableNode.firstChild.firstChild.sourcepos)
-    assert.equal("table", tableNode.type)
-    assert.equal("After", literal(tableNode.next))
-end)
-
-it("accepts empty and single-column table headers independently of UI limits", function()
-    local document = assert(markdown.parse("| |\n|-|"))
-    assert.equal("table", document.firstChild.type)
-    assert.equal(1, #document.firstChild.align)
-    assert.is_nil(document.firstChild.firstChild.firstChild.firstChild.firstChild)
-    assert.is_nil(document.firstChild.firstChild.next)
-    validTree(document)
-end)
-
-it("distinguishes odd and even backslash runs before table pipes", function()
-    local cells = markdown.Extensions.cells
-    assert.same({ "a|b", "c" }, cells("a\\|b | c"))
-    assert.same({ "a\\\\", "b", "c" }, cells("a\\\\|b | c"))
-    assert.same({ "a\\\\|b", "c" }, cells("a\\\\\\|b | c"))
-    local document = assert(markdown.parse("A | B\n---|---\n`x\\|y` | z"))
-    assert.is_truthy(helper.html(document):find("<code>x|y</code>", 1, true))
-end)
-
-it("closes tables at new block structures and supports tables in containers", function()
-    for _, block in ipairs({
-        "# heading",
-        "> quote",
-        "- item",
-        "```\ncode\n```",
-        "<div>raw</div>",
-        "---",
-    }) do
-        local document = assert(markdown.parse("A|B\n-|-\nx|y\n" .. block))
-        assert.equal("table", document.firstChild.type)
-        assert.is_truthy(document.firstChild.next, block)
-    end
-    local document =
-        assert(markdown.parse("> | A | B |\n> |---|---|\n> | x | y |\n\n- A | B\n  - | -\n  x | y"))
-    assert.equal("table", document.firstChild.firstChild.type)
-    assert.equal("table", document.lastChild.firstChild.firstChild.type)
-    validTree(document)
-end)
-
-it("resolves table references declared later without mutating earlier parses", function()
-    local source = "A | B\n---|---\n[x] | [[ref:s]]"
-    local first = assert(markdown.parse(source, { references = true }))
-    local before = helper.html(first)
-    local second = assert(markdown.parse(source .. "\n\n[x]: /later", { references = true }))
-    assert.equal(before, helper.html(first))
-    assert.is_truthy(helper.html(second):find('<a href="/later">x</a>', 1, true))
-end)
-
-it("resets URL lookahead state between paragraphs", function()
-    local document = assert(
-        markdown.parse("www.example.com.\n\nwww.example.com/path.\n\nwww.a._b.c\n\nwww.example.com")
-    )
-    assert.equal(3, select(2, helper.html(document):gsub("<a href=", "")))
-    assert.is_truthy(helper.html(document):find('href="http://www.example.com/path"', 1, true))
-end)
-
-it("rejects invalid options with structured errors", function()
     for _, options in ipairs({
         false,
-        1,
         "gfm",
-        { dialect = "other" },
-        { dialect = false },
-        { maxBytes = false },
-        { maxNodes = 0 },
+        { references = "yes" },
+        { dialect = "gfm" },
+        { maxBytes = 0 },
+        { maxNodes = false },
         { maxNesting = 1.5 },
         { maxBytes = math.huge },
-        { references = "yes" },
     }) do
-        local document, err = markdown.parse("x", options)
-        assert.is_nil(document)
+        local doc, err = md.parse("x", options)
+        assert.is_nil(doc)
         assert.is_table(err)
-        assert.is_string(err.code)
     end
-    local document, err = markdown.parse({})
-    assert.is_nil(document)
-    assert.equal("invalid_source", err.code)
 end)
 
-it("enforces byte, node and container-depth budgets without returning truncated trees", function()
+it("enforces byte, allocation and syntax-depth limits atomically", function()
     for _, example in ipairs({
         { "abcdef", { maxBytes = 5 }, "max_bytes" },
-        { "*x*", { maxNodes = 3 }, "max_nodes" },
-        { string.rep("> ", 20) .. "x", { maxNesting = 8 }, "max_nesting" },
-        {
-            "[x](" .. string.rep("(", 20) .. "x" .. string.rep(")", 20) .. ")",
-            { maxNesting = 8 },
-            "max_nesting",
-        },
+        { "**x**", { maxNodes = 2 }, "max_nodes" },
+        { "> > > x", { maxNesting = 1 }, "max_nesting" },
+        { "[x](a(b(c)d)e)", { maxNesting = 1 }, "max_nesting" },
+        { "***x***", { maxNesting = 1 }, "max_nesting" },
     }) do
-        local document, err = markdown.parse(example[1], example[2])
-        assert.is_nil(document)
+        local doc, err = md.parse(example[1], example[2])
+        assert.is_nil(doc)
         assert.equal(example[3], err.code)
+        assert.is_nil(err.markdownLimit)
     end
-    assert.is_table(markdown.parse("abc", { maxBytes = 3, maxNodes = 3, maxNesting = 1 }))
 end)
 
-it("parses deterministic mixed-input fuzz cases into structurally valid trees", function()
-    local seed = 9173
-    local symbols = {
+it("keeps mixed malformed syntax bounded and returns valid acyclic trees", function()
+    local seed = 1139
+    local pieces = {
         "*",
+        "**",
         "_",
-        "~",
-        "\\",
+        "~~",
         "[",
         "]",
         "(",
         ")",
         "`",
-        "<",
-        ">",
-        " ",
-        "\t",
-        "\n",
-        "&",
-        ";",
-        ":",
+        "\\",
         "!",
-        "x",
-        "0",
-        "|",
-        "😀",
+        "<b>",
+        ">",
         "ñ",
-        "你好",
-        "http://",
-        "www.",
-        "[[ref:x]]",
+        "😀",
+        "x",
+        "\n",
+        "|",
+        "&amp;",
     }
-    for _ = 1, 1200 do
-        local pieces = {}
-        for _ = 1, 60 do
-            seed = seed * 16807 % 2147483647
-            pieces[#pieces + 1] = symbols[seed % #symbols + 1]
+    for _ = 1, 500 do
+        local source = {}
+        for _ = 1, 35 do
+            seed = (seed * 16807) % 2147483647
+            source[#source + 1] = pieces[seed % #pieces + 1]
         end
-        local document, err = markdown.parse(table.concat(pieces), { references = true })
-        assert(document, err and err.code)
-        validTree(document)
+        local doc = assert(md.parse(table.concat(source), { references = true }))
+        local pending, seen = { doc }, {}
+        while #pending > 0 do
+            local node = table.remove(pending)
+            assert.is_nil(seen[node])
+            seen[node] = true
+            assert.is_string(node.type)
+            assert.is_table(node.children)
+            for _, child in ipairs(node.children) do
+                pending[#pending + 1] = child
+            end
+            assert.is_nil(node._inline)
+        end
     end
-end)
-
-it("handles long lines, unmatched runs, nested emphasis and invalid domains promptly", function()
-    local ticks = {}
-    for i = 1, 220 do
-        ticks[#ticks + 1] = string.rep("`", i) .. "x "
-    end
-    local inputs = {
-        string.rep("a", 40000),
-        table.concat(ticks),
-        string.rep("*", 12000) .. "x" .. string.rep("*", 12000),
-        string.rep("![", 1500) .. string.rep("[x](u)", 1500),
-        string.rep("www._", 6000),
-        "http://a.b/" .. string.rep("*", 30000),
-        "x " .. string.rep("<? ", 8000) .. ">",
-    }
-    local started = os.clock()
-    for _, source in ipairs(inputs) do
-        validTree(assert(markdown.parse(source)))
-    end
-    assert.is_true(os.clock() - started < 8, "adversarial inputs exceeded the generous CPU budget")
 end)

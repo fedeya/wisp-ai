@@ -20,14 +20,9 @@ Character.lua
 Locations.lua
 AddonAdapters.lua
 Settings.lua
-Markdown\Node.lua
-Markdown\Data.lua
-Markdown\Scanner.lua
-Markdown\Inline.lua
-Markdown\Extensions.lua
+Markdown\Syntax.lua
 Markdown\Block.lua
 Markdown\Parser.lua
-Markdown\Stream.lua
 RichUI.lua
 Widgets.lua
 EmojiData.lua

@@ -1,636 +1,888 @@
--- Container continuation, lazy paragraphs and tab columns follow commonmark.js.
--- See Markdown/LICENSE-commonmark.txt for the upstream BSD license.
 local _, C = ...
 local M = C.Markdown
-local U = M.Scanner
-local Block = {}
-Block.__index = Block
 
-local htmlNames = {}
-for name in
-    (
-        "address article aside base basefont blockquote body caption center col colgroup dd details dialog dir div dl dt "
-        .. "fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hr html iframe legend li link "
-        .. "main menu menuitem nav noframes ol optgroup option p param section search summary table tbody td tfoot th thead title tr track ul"
-    ):gmatch("%S+")
-do
-    htmlNames[name] = true
-end
-
-local function isBlank(s)
-    return not s:find("[^ \t\r\n]")
-end
-local function space(c)
-    return c == " " or c == "\t"
-end
-local function accepts(node)
-    return node.type == "paragraph" or node.type == "code_block" or node.type == "html_block"
-end
-local function contains(parent, kind)
-    return (parent.type == "document" or parent.type == "block_quote" or parent.type == "item")
-            and kind ~= "item"
-        or parent.type == "list" and kind == "item"
-end
-
-local function content(node)
-    if node._content == nil then
-        node._content = #node._lines > 0 and table.concat(node._lines, "\n") .. "\n" or ""
-    end
-    return node._content
-end
-
-local function htmlStart(line, pos)
-    if line:sub(pos, pos) ~= "<" then
-        return
-    end
-    local name = line:match("^<([A-Za-z]+)", pos)
-    if name then
-        local lower, after = name:lower(), line:sub(pos + #name + 1, pos + #name + 1)
-        if
-            (lower == "script" or lower == "pre" or lower == "textarea" or lower == "style")
-            and (after == "" or after == ">" or after:match("%s"))
-        then
-            return 1
+-- Wisp's block grammar is deliberately small. Each recursive container keeps
+-- records pointing into the original document, so stripping a quote or list
+-- prefix never loses the location of its contents.
+function M._blocks(source, context)
+    local work = 0
+    local function tick()
+        work = work + 1
+        if work >= 32 then
+            work = 0
+            context.checkpoint()
         end
     end
-    if line:sub(pos, pos + 3) == "<!--" then
-        return 2
-    end
-    if line:sub(pos, pos + 1) == "<?" then
-        return 3
-    end
-    if line:find("^<![A-Za-z]", pos) then
-        return 4
-    end
-    if line:sub(pos, pos + 8) == "<![CDATA[" then
-        return 5
-    end
-    local _, last, tag = line:find("^</?([A-Za-z][A-Za-z0-9%-]*)", pos)
-    if tag and htmlNames[tag:lower()] then
-        local rest = line:sub(last + 1)
-        if rest == "" or rest:match("^[ \t]") or rest:match("^/?>") then
-            return 6
-        end
-    end
-    local finish = U.htmlTag(line, pos)
-    if finish and isBlank(line:sub(finish)) then
-        return 7
-    end
-end
 
-local function htmlEnd(kind, line, pos)
-    if kind == 1 then
-        local lower = line:sub(pos):lower()
-        return lower:find("</script>", 1, true)
-            or lower:find("</pre>", 1, true)
-            or lower:find("</textarea>", 1, true)
-            or lower:find("</style>", 1, true)
+    local function blank(text)
+        return text:match("^[ \t]*$") ~= nil
     end
-    local marker = ({ [2] = "-->", [3] = "?>", [4] = ">", [5] = "]]>" })[kind]
-    return marker and line:find(marker, pos, true)
-end
 
-function Block.new(options, newNode)
-    local self = setmetatable({ options = options, newNode = newNode }, Block)
-    self.inline = M.Inline.new(options, newNode)
-    self.refmap = {}
-    self.doc = self:newNode("document", { { 1, 1 }, { 0, 0 } })
-    self.doc._depth = 0
-    self.tip, self.lineNumber, self.lastLength = self.doc, 0, 0
-    return self
-end
+    local function trim(text)
+        return (text:gsub("^[ \t]+", ""):gsub("[ \t]+$", ""))
+    end
 
-function Block:advance(count, columns)
-    while count > 0 and self.offset <= #self.line do
-        local char = self.line:sub(self.offset, self.offset)
-        if char == "\t" then
-            local toTab = 4 - self.column % 4
-            if columns then
-                local consumed = math.min(toTab, count)
-                self.partialTab = toTab > count
-                self.column, count = self.column + consumed, count - consumed
-                if not self.partialTab then
-                    self.offset = self.offset + 1
-                end
+    local function indent(text, column)
+        local width, p = 0, 1
+        while p <= #text do
+            local ch = text:sub(p, p)
+            if ch == " " then
+                width = width + 1
+            elseif ch == "\t" then
+                width = width + 4 - ((column or 1) - 1 + width) % 4
             else
-                self.partialTab = false
-                self.column, self.offset, count = self.column + toTab, self.offset + 1, count - 1
-            end
-        else
-            self.partialTab = false
-            self.offset, self.column, count = self.offset + 1, self.column + 1, count - 1
-        end
-    end
-end
-
-function Block:findNonspace()
-    local pos, column = self.offset, self.column
-    while pos <= #self.line do
-        local char = self.line:sub(pos, pos)
-        if char == " " then
-            column, pos = column + 1, pos + 1
-        elseif char == "\t" then
-            column, pos = column + 4 - column % 4, pos + 1
-        else
-            break
-        end
-    end
-    self.nonspace, self.nonspaceColumn = pos, column
-    self.blank = pos > #self.line
-    self.indent = column - self.column
-    self.indented = self.indent >= 4
-end
-
-function Block:advanceNonspace()
-    self.offset, self.column, self.partialTab = self.nonspace, self.nonspaceColumn, false
-end
-
-function Block:addLine()
-    local line = self.line:sub(self.offset)
-    if self.partialTab then
-        line = string.rep(" ", 4 - self.column % 4) .. self.line:sub(self.offset + 1)
-    end
-    self.tip._lines[#self.tip._lines + 1] = line
-    self.tip._lineSource = self.tip._lineSource or {}
-    self.tip._lineSource[#self.tip._lineSource + 1] = { column = self.offset, length = #self.line }
-    self.tip._content = nil
-end
-
-function Block:addChild(kind, offset)
-    while not contains(self.tip, kind) do
-        self:finalize(self.tip, self.lineNumber - 1)
-    end
-    local node = self:newNode(kind, { { self.lineNumber, offset }, { 0, 0 } })
-    node._lines = {}
-    node._depth = self.tip._depth + 1
-    if node._depth > self.options.maxNesting then
-        error({ markdownLimit = true, code = "max_nesting", line = self.lineNumber }, 0)
-    end
-    self.tip:appendChild(node)
-    self.tip = node
-    return node
-end
-
-function Block:closeUnmatched()
-    if not self.allClosed then
-        while self.oldTip ~= self.lastMatched do
-            local parent = self.oldTip.parent
-            self:finalize(self.oldTip, self.lineNumber - 1)
-            self.oldTip = parent
-        end
-        self.allClosed = true
-    end
-end
-
-function Block:stripDefinitions(node)
-    local value, offset, lines = content(node), 1, 0
-    while value:sub(offset, offset) == "[" do
-        local consumed = self.inline:parseReference(value:sub(offset), self.refmap)
-        if consumed == 0 then
-            break
-        end
-        local _, count = value:sub(offset, offset + consumed - 1):gsub("\n", "")
-        lines, offset = lines + count, offset + consumed
-    end
-    node._content = value:sub(offset)
-    node._lines = node._content == "" and {} or nil
-    if node._lineSource and node._lineSource[lines + 1] then
-        node.sourcepos[1][2] = node._lineSource[lines + 1].column
-    end
-    node._lineSource = node._content == "" and {} or nil
-    node.sourcepos[1][1] = node.sourcepos[1][1] + lines
-    return offset > 1
-end
-
-local function endsBlank(node)
-    return node.next and node.sourcepos[2][1] ~= node.next.sourcepos[1][1] - 1
-end
-
-function Block:finalize(node, lineNumber)
-    local parent = node.parent
-    node._open = false
-    node.sourcepos[2] = { lineNumber, self.lastLength }
-    if node.type == "document" then
-        local empty = {}
-        for child, entering in node:walker() do
-            if
-                entering
-                and child.type == "paragraph"
-                and self:stripDefinitions(child)
-                and isBlank(child._content)
-            then
-                empty[#empty + 1] = child
-            end
-        end
-        for _, child in ipairs(empty) do
-            child:unlink()
-        end
-    elseif node.type == "list" then
-        local item = node.firstChild
-        while item do
-            if endsBlank(item) then
-                node.listTight = false
                 break
             end
-            local child = item.firstChild
-            while child do
-                if endsBlank(child) then
-                    node.listTight = false
+            p = p + 1
+            tick()
+        end
+        return width, p
+    end
+
+    local function endColumn(text, start)
+        local col = start or 1
+        for p = 1, #text do
+            if text:sub(p, p) == "\t" then
+                col = col + 4 - (col - 1) % 4
+            else
+                col = col + 1
+            end
+            tick()
+        end
+        return math.max(start or 1, col - 1)
+    end
+
+    local function strip(record, count)
+        local width, p = 0, 1
+        local text = record.text
+        while width < count and p <= #text do
+            local ch = text:sub(p, p)
+            local nextWidth
+            if ch == " " then
+                nextWidth = width + 1
+            elseif ch == "\t" then
+                nextWidth = width + 4 - (record.column - 1 + width) % 4
+            else
+                break
+            end
+            p = p + 1
+            if nextWidth > count then
+                return {
+                    text = string.rep(" ", nextWidth - count) .. text:sub(p),
+                    line = record.line,
+                    column = record.column + count,
+                    finish = record.finish,
+                }
+            end
+            width = nextWidth
+            tick()
+        end
+        return {
+            text = text:sub(p),
+            line = record.line,
+            column = record.column + width,
+            finish = record.finish,
+        }
+    end
+
+    local function shift(record, bytes)
+        return {
+            text = record.text:sub(bytes + 1),
+            line = record.line,
+            column = record.column + bytes,
+            finish = record.finish,
+        }
+    end
+
+    local function position(first, last, offset)
+        local start = first.column + (offset or 0)
+        return {
+            { first.line, start },
+            { last.line, math.max(last.column, last.finish) },
+        }
+    end
+
+    local function node(kind, fields, first, last, offset)
+        fields = fields or {}
+        fields.children = fields.children or {}
+        if first then
+            fields.sourcepos = position(first, last or first, offset)
+        end
+        tick()
+        return context.node(kind, fields)
+    end
+
+    local records = {}
+    source = source:gsub("\r\n", "\n"):gsub("\r", "\n"):gsub("%z", "\239\191\189")
+    local start, line = 1, 1
+    while start <= #source do
+        local stop = source:find("\n", start, true)
+        local text = source:sub(start, stop and stop - 1 or #source)
+        records[#records + 1] =
+            { text = text, line = line, column = 1, finish = endColumn(text, 1) }
+        if not stop then
+            break
+        end
+        start, line = stop + 1, line + 1
+        tick()
+    end
+
+    local function core(record)
+        local width, p = indent(record.text, record.column)
+        if width > 3 then
+            return nil
+        end
+        return record.text:sub(p), width
+    end
+
+    local function thematic(record)
+        local text = core(record)
+        if not text then
+            return false
+        end
+        text = text:gsub("[ \t]", "")
+        local ch = text:sub(1, 1)
+        return #text >= 3
+            and (ch == "-" or ch == "*" or ch == "_")
+            and text == string.rep(ch, #text)
+    end
+
+    local function setext(record)
+        local text = core(record)
+        if not text then
+            return nil
+        end
+        text = trim(text)
+        if text:match("^=+$") then
+            return 1
+        end
+        if text:match("^-+$") then
+            return 2
+        end
+    end
+
+    local function heading(record)
+        local text, width = core(record)
+        if not text then
+            return nil
+        end
+        local hashes, tail = text:match("^(#+)(.*)$")
+        if not hashes or #hashes > 6 or (tail ~= "" and not tail:match("^[ \t]")) then
+            return nil
+        end
+        tail = tail:gsub("[ \t]+#+[ \t]*$", "")
+        return #hashes, trim(tail), width
+    end
+
+    local function fence(record)
+        local text, width = core(record)
+        if not text then
+            return nil
+        end
+        local ch = text:sub(1, 1)
+        if ch ~= "`" and ch ~= "~" then
+            return nil
+        end
+        local p = 1
+        while text:sub(p, p) == ch do
+            p = p + 1
+            tick()
+        end
+        if p <= 3 then
+            return nil
+        end
+        local info = trim(text:sub(p))
+        if ch == "`" and info:find("`", 1, true) then
+            return nil
+        end
+        return ch, p - 1, info, width
+    end
+
+    local function closesFence(record, ch, length)
+        local text = core(record)
+        if not text then
+            return false
+        end
+        local p = 1
+        while text:sub(p, p) == ch do
+            p = p + 1
+            tick()
+        end
+        return p - 1 >= length and blank(text:sub(p))
+    end
+
+    local function quote(record)
+        local text, width = core(record)
+        if not text or text:sub(1, 1) ~= ">" then
+            return nil
+        end
+        local result = shift(strip(record, width), 1)
+        if result.text:match("^[ \t]") then
+            result = strip(result, 1)
+        end
+        return result, width
+    end
+
+    local function marker(record)
+        local text, width = core(record)
+        if not text then
+            return nil
+        end
+        local symbol = text:sub(1, 1)
+        local ordered, number, markerWidth, delimiter
+        if symbol == "-" or symbol == "+" or symbol == "*" then
+            ordered, markerWidth, delimiter = false, 1, symbol
+        else
+            local digits, ending = text:match("^(%d+)([.)])")
+            if not digits or #digits > 9 then
+                return nil
+            end
+            ordered, number, markerWidth, delimiter = true, tonumber(digits), #digits + 1, ending
+        end
+        local after = text:sub(markerWidth + 1)
+        if after ~= "" and not after:match("^[ \t]") then
+            return nil
+        end
+        local whitespace, p = 0, 1
+        while p <= #after do
+            local ch = after:sub(p, p)
+            if ch == " " then
+                whitespace = whitespace + 1
+            elseif ch == "\t" then
+                whitespace = whitespace
+                    + 4
+                    - (record.column - 1 + width + markerWidth + whitespace) % 4
+            else
+                break
+            end
+            p = p + 1
+            tick()
+        end
+        local padding = whitespace >= 1 and whitespace <= 4 and whitespace or 1
+        local contentIndent = width + markerWidth + padding
+        local content = strip(record, width)
+        content = shift(content, markerWidth)
+        content = strip(content, padding)
+        if after == "" then
+            content.column = record.column + contentIndent
+        end
+        return {
+            ordered = ordered,
+            start = number,
+            delimiter = delimiter,
+            indent = width,
+            contentIndent = contentIndent,
+            content = content,
+            empty = blank(after),
+        }
+    end
+
+    local function interrupts(record, inParagraph)
+        if heading(record) or fence(record) or quote(record) or thematic(record) then
+            return true
+        end
+        local item = marker(record)
+        if
+            item and (not inParagraph or (not item.empty and (not item.ordered or item.start == 1)))
+        then
+            return true
+        end
+        return false
+    end
+
+    local escapes = {}
+    for p = 33, 126 do
+        local ch = string.char(p)
+        if not ch:match("[%w]") then
+            escapes[ch] = true
+        end
+    end
+    local function decode(text)
+        text = text:gsub("\\(.)", function(ch)
+            return escapes[ch] and ch or "\\" .. ch
+        end)
+        return (
+            text:gsub("&([%a]+);", function(name)
+                return ({ amp = "&", lt = "<", gt = ">", quot = '"', apos = "'" })[name]
+                    or "&" .. name .. ";"
+            end)
+        )
+    end
+
+    local function title(text)
+        local opening = text:sub(1, 1)
+        local closing = opening == "(" and ")" or opening
+        if opening ~= '"' and opening ~= "'" and opening ~= "(" then
+            return nil
+        end
+        local p, escaped = 2, false
+        while p <= #text do
+            local ch = text:sub(p, p)
+            if not escaped and ch == closing then
+                if blank(text:sub(p + 1)) then
+                    return decode(text:sub(2, p - 1))
+                end
+                return nil
+            end
+            if ch == "\\" and not escaped then
+                escaped = true
+            else
+                escaped = false
+            end
+            p = p + 1
+            tick()
+        end
+    end
+
+    local function reference(rows, index)
+        local text = core(rows[index])
+        if not text or text:sub(1, 1) ~= "[" then
+            return nil
+        end
+        local close, p, escaped = nil, 2, false
+        while p <= #text and p <= 1001 do
+            local ch = text:sub(p, p)
+            if ch == "]" and not escaped then
+                close = p
+                break
+            end
+            if ch == "[" and not escaped then
+                return nil
+            end
+            if ch == "\\" and not escaped then
+                escaped = true
+            else
+                escaped = false
+            end
+            p = p + 1
+            tick()
+        end
+        if not close or text:sub(close + 1, close + 1) ~= ":" then
+            return nil
+        end
+        local label = text:sub(2, close - 1)
+        if blank(label) then
+            return nil
+        end
+        local rest, consumed = trim(text:sub(close + 2)), 1
+        if rest == "" and rows[index + 1] and not blank(rows[index + 1].text) then
+            rest, consumed = trim(rows[index + 1].text), 2
+        end
+        local destination, tail
+        if rest:sub(1, 1) == "<" then
+            local q, slash = 2, false
+            while q <= #rest do
+                local ch = rest:sub(q, q)
+                if ch == ">" and not slash then
+                    destination, tail = rest:sub(2, q - 1), trim(rest:sub(q + 1))
                     break
                 end
-                child = child.next
+                if ch == "<" and not slash then
+                    return nil
+                end
+                if ch == "\\" and not slash then
+                    slash = true
+                else
+                    slash = false
+                end
+                q = q + 1
+                tick()
             end
-            item = item.next
-        end
-        node.sourcepos[2] = node.lastChild.sourcepos[2]
-    elseif node.type == "item" then
-        if node.lastChild then
-            node.sourcepos[2] = node.lastChild.sourcepos[2]
         else
-            node.sourcepos[2] =
-                { node.sourcepos[1][1], node.sourcepos[1][2] + node._list.markerLength - 1 }
-        end
-    elseif node.type == "code_block" then
-        local lines = node._lines
-        if node._fenced then
-            node.info = U.unescape(U.trim(lines[1] or ""))
-            node.literal = #lines > 1 and table.concat(lines, "\n", 2) .. "\n" or ""
-        else
-            while #lines > 0 and isBlank(lines[#lines]) do
-                table.remove(lines)
+            local q, balance, slash = 1, 0, false
+            while q <= #rest do
+                local ch = rest:sub(q, q)
+                if not slash then
+                    if ch:match("[ \t]") then
+                        break
+                    end
+                    if ch == "(" then
+                        balance = balance + 1
+                    end
+                    if ch == ")" then
+                        balance = balance - 1
+                    end
+                    if balance < 0 or balance > 32 or ch == "<" or ch:byte() < 32 then
+                        return nil
+                    end
+                end
+                if ch == "\\" and not slash then
+                    slash = true
+                else
+                    slash = false
+                end
+                q = q + 1
+                tick()
             end
-            node.literal = table.concat(lines, "\n") .. "\n"
-            node.sourcepos[2] = {
-                node.sourcepos[1][1] + #lines - 1,
-                node._lineSource[#lines].length,
+            if q > 1 and balance == 0 then
+                destination, tail = rest:sub(1, q - 1), trim(rest:sub(q))
+            end
+        end
+        if not destination then
+            return nil
+        end
+        local caption
+        if tail ~= "" then
+            caption = title(tail)
+            if caption == nil then
+                return nil
+            end
+        elseif rows[index + consumed] then
+            caption = title(trim(rows[index + consumed].text))
+            if caption ~= nil then
+                consumed = consumed + 1
+            end
+        end
+        local key
+        if context.referenceLabel then
+            key = context.referenceLabel(label)
+        else
+            key = label:lower():gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
+        end
+        if not key or key == "" then
+            return nil
+        end
+        context.references = context.references or {}
+        if not context.references[key] then
+            context.references[key] = { destination = decode(destination), title = caption or "" }
+        end
+        return consumed
+    end
+
+    -- A pipe escaped by an odd backslash run belongs to its cell, including
+    -- inside a code span. Remove that one escape before the inline pass.
+    local function cells(record)
+        local text, parts, buffer = record.text, {}, {}
+        local p, startAt, hasPipe = 1, 1, false
+        local function finish(stop)
+            local raw = table.concat(buffer)
+            local leading = #(raw:match("^[ \t]*") or "")
+            parts[#parts + 1] = {
+                text = trim(raw),
+                column = record.column + startAt - 1 + leading,
+                finish = record.column + math.max(startAt - 1, stop - 1),
+                line = record.line,
             }
+            buffer = {}
         end
-        node._lines, node._content = nil, nil
-    elseif node.type == "html_block" then
-        node.literal = content(node):gsub("\n$", "")
-        node._lines, node._content = nil, nil
+        while p <= #text do
+            local ch = text:sub(p, p)
+            if ch == "\\" then
+                local q = p
+                while text:sub(q, q) == "\\" do
+                    q = q + 1
+                    tick()
+                end
+                local count = q - p
+                if text:sub(q, q) == "|" and count % 2 == 1 then
+                    buffer[#buffer + 1] = string.rep("\\", count - 1) .. "|"
+                    p = q + 1
+                else
+                    buffer[#buffer + 1] = text:sub(p, q - 1)
+                    p = q
+                end
+            elseif ch == "|" then
+                hasPipe = true
+                finish(p - 1)
+                p, startAt = p + 1, p + 1
+            else
+                buffer[#buffer + 1] = ch
+                p = p + 1
+            end
+            tick()
+        end
+        finish(#text)
+        if hasPipe and text:match("^[ \t]*|") then
+            table.remove(parts, 1)
+        end
+        if hasPipe and text:match("|[ \t]*$") and parts[#parts].text == "" then
+            table.remove(parts)
+        end
+        return parts, hasPipe
     end
-    self.tip = parent
-end
 
-function Block:continues(node)
-    if node.type == "document" or node.type == "list" then
-        return 0
-    elseif node.type == "block_quote" then
-        if not self.indented and self.line:sub(self.nonspace, self.nonspace) == ">" then
-            self:advanceNonspace()
-            self:advance(1, false)
-            if space(self.line:sub(self.offset, self.offset)) then
-                self:advance(1, true)
-            end
-            return 0
+    local function tableHeader(rows, index)
+        if not rows[index + 1] then
+            return nil
         end
-        return 1
-    elseif node.type == "item" then
-        if self.blank then
-            if not node.firstChild then
-                return 1
-            end
-            self:advanceNonspace()
-        elseif self.indent >= node._list.markerOffset + node._list.padding then
-            self:advance(node._list.markerOffset + node._list.padding, true)
-        else
-            return 1
+        local header, headerPipe = cells(rows[index])
+        local separator, separatorPipe = cells(rows[index + 1])
+        if not (headerPipe or separatorPipe) or #header == 0 or #header ~= #separator then
+            return nil
         end
-        return 0
-    elseif node.type == "heading" or node.type == "thematic_break" then
-        return 1
-    elseif node.type == "code_block" then
-        if node._fenced then
-            local marker = self.line:match("^([`~]+)[ \t]*$", self.nonspace)
+        local alignment = {}
+        for p = 1, #separator do
+            local text = separator[p].text
+            local middle = text:gsub("^:", ""):gsub(":$", "")
+            if #middle < 3 or not middle:match("^%-+$") then
+                return nil
+            end
+            local left, right = text:sub(1, 1) == ":", text:sub(-1) == ":"
+            alignment[p] = left and right and "center"
+                or left and "left"
+                or right and "right"
+                or false
+            tick()
+        end
+        return header, alignment
+    end
+
+    -- Lazy container continuations are permitted only while its last block is
+    -- a paragraph. Remember opaque code and tables while collecting records;
+    -- their ordinary-looking lines must not reopen that permission.
+    local function lazyTracker()
+        local state = { paragraph = false }
+        function state.consume(record)
+            if state.fenceChar then
+                if closesFence(record, state.fenceChar, state.fenceSize) then
+                    state.fenceChar = nil
+                end
+                state.paragraph, state.previous = false, nil
+                return
+            end
+            if blank(record.text) then
+                state.paragraph, state.tableActive, state.previous = false, false, nil
+                return
+            end
+            if state.tableActive then
+                if not interrupts(record, false) and indent(record.text, record.column) < 4 then
+                    return
+                end
+                state.tableActive = false
+            end
+            local ch, size = fence(record)
+            if ch then
+                state.fenceChar, state.fenceSize, state.paragraph, state.previous =
+                    ch, size, false, nil
+                return
+            end
+            if state.previous and tableHeader({ state.previous, record }, 1) then
+                state.paragraph, state.tableActive, state.previous = false, true, nil
+                return
+            end
             if
-                self.indent <= 3
-                and marker
-                and marker:sub(1, 1) == node._fenceChar
-                and not marker:find("[^" .. node._fenceChar .. "]")
-                and #marker >= node._fenceLength
+                interrupts(record, false)
+                or (indent(record.text, record.column) >= 4 and not state.paragraph)
             then
-                self.lastLength = self.nonspace - 1 + #marker
-                self:finalize(node, self.lineNumber)
-                return 2
+                state.paragraph, state.previous = false, nil
+                return
             end
-            local count = node._fenceOffset
-            while count > 0 and space(self.line:sub(self.offset, self.offset)) do
-                self:advance(1, true)
-                count = count - 1
+            if state.paragraph and setext(record) then
+                state.paragraph, state.previous = false, nil
+                return
             end
-        elseif self.indent >= 4 then
-            self:advance(4, true)
-        elseif self.blank then
-            self:advanceNonspace()
-        else
-            return 1
-        end
-        return 0
-    elseif node.type == "table" then
-        if self.blank then
-            return 1
-        end
-        local rest = self.line:sub(self.nonspace)
-        if not self.indented then
-            local hashes = rest:match("^(#+)[ \t]")
-            local fence = rest:match("^(```+)") or rest:match("^(~~~+)")
-            local list = rest:match("^[*+%-][ \t]") or rest:match("^%d+[.)][ \t]")
-            local compact = rest:gsub("[ \t]", "")
-            local rule = #compact >= 3
-                and (compact:match("^%*+$") or compact:match("^%-+$") or compact:match("^_+$"))
-            if
-                rest:sub(1, 1) == ">"
-                or (hashes and #hashes <= 6)
-                or fence
-                or list
-                or rule
-                or htmlStart(self.line, self.nonspace)
-            then
-                return 1
+            local text = core(record)
+            if text and text:match("^%[.-%]:") then
+                state.paragraph, state.previous = false, nil
+                return
             end
+            state.paragraph, state.previous = true, record
         end
-        M.Extensions.tableRow(
-            self,
-            node,
-            M.Extensions.cells(rest),
-            false,
-            self.lineNumber,
-            self.nonspace
-        )
-        self.lastLength = #self.line
-        return 2
-    elseif node.type == "html_block" then
-        return self.blank and node._htmlType >= 6 and 1 or 0
-    elseif node.type == "paragraph" then
-        return self.blank and 1 or 0
+        return state
     end
-    return 1
-end
 
-function Block:listMarker(container)
-    if self.indent >= 4 then
-        return
-    end
-    local start = self.nonspace
-    local bullet = self.line:match("^([*+%-])", start)
-    local number, delimiter
-    if not bullet then
-        number, delimiter = self.line:match("^(%d+)([.)])", start)
-    end
-    if
-        not bullet
-        and (not number or #number > 9 or (container.type == "paragraph" and tonumber(number) ~= 1))
-    then
-        return
-    end
-    local length = bullet and 1 or #number + 1
-    local after = self.line:sub(start + length, start + length)
-    if after ~= "" and not space(after) then
-        return
-    end
-    if container.type == "paragraph" and isBlank(self.line:sub(start + length)) then
-        return
-    end
-    local data = {
-        type = bullet and "bullet" or "ordered",
-        bullet = bullet,
-        start = number and tonumber(number),
-        delimiter = delimiter,
-        markerOffset = self.indent,
-        markerLength = length,
-    }
-    self:advanceNonspace()
-    self:advance(length, true)
-    local column, offset = self.column, self.offset
-    repeat
-        self:advance(1, true)
-    until self.column - column >= 5 or not space(self.line:sub(self.offset, self.offset))
-    local blank = self.offset > #self.line
-    local padding = self.column - column
-    if padding >= 5 or padding < 1 or blank then
-        data.padding = length + 1
-        self.column, self.offset = column, offset
-        if space(self.line:sub(self.offset, self.offset)) then
-            self:advance(1, true)
+    local maxNesting = context.options and context.options.maxNesting or 64
+    local parse
+    parse = function(rows, depth)
+        local result, i = {}, 1
+        local function append(value)
+            result[#result + 1] = value
         end
-    else
-        data.padding = length + padding
+        while i <= #rows do
+            tick()
+            local record = rows[i]
+            if blank(record.text) then
+                i = i + 1
+            else
+                local refCount = reference(rows, i)
+                local level, text, headingIndent = heading(record)
+                local fenceChar, fenceSize, info, fenceIndent = fence(record)
+                local quoted, quoteIndent = quote(record)
+                local itemMarker = marker(record)
+                local header, alignment
+                if rows[i + 1] and not blank(rows[i + 1].text) then
+                    header, alignment = tableHeader(rows, i)
+                end
+                if refCount then
+                    i = i + refCount
+                elseif fenceChar then
+                    local j, lines, last = i + 1, {}, record
+                    while j <= #rows and not closesFence(rows[j], fenceChar, fenceSize) do
+                        lines[#lines + 1] = strip(rows[j], fenceIndent).text .. "\n"
+                        last, j = rows[j], j + 1
+                        tick()
+                    end
+                    if j <= #rows then
+                        last, j = rows[j], j + 1
+                    end
+                    append(
+                        node(
+                            "code_block",
+                            { literal = table.concat(lines), info = decode(info) },
+                            record,
+                            last,
+                            fenceIndent
+                        )
+                    )
+                    i = j
+                elseif level then
+                    append(
+                        node(
+                            "heading",
+                            { level = level, _inline = text },
+                            record,
+                            record,
+                            headingIndent
+                        )
+                    )
+                    i = i + 1
+                elseif thematic(record) then
+                    local _, initial = core(record)
+                    append(node("thematic_break", nil, record, record, initial))
+                    i = i + 1
+                elseif quoted then
+                    if depth >= maxNesting then
+                        error({ markdownLimit = true, code = "max_nesting", limit = maxNesting }, 0)
+                    end
+                    local inside, j, tracker = {}, i, lazyTracker()
+                    while j <= #rows do
+                        local content = quote(rows[j])
+                        if content then
+                            inside[#inside + 1] = content
+                            tracker.consume(content)
+                        elseif
+                            tracker.paragraph
+                            and not blank(rows[j].text)
+                            and not interrupts(rows[j], true)
+                        then
+                            inside[#inside + 1] = rows[j]
+                            tracker.consume(rows[j])
+                        else
+                            break
+                        end
+                        j = j + 1
+                        tick()
+                    end
+                    append(
+                        node(
+                            "block_quote",
+                            { children = parse(inside, depth + 1) },
+                            record,
+                            rows[j - 1],
+                            quoteIndent
+                        )
+                    )
+                    i = j
+                elseif itemMarker then
+                    if depth >= maxNesting then
+                        error({ markdownLimit = true, code = "max_nesting", limit = maxNesting }, 0)
+                    end
+                    local list = node(
+                        "list",
+                        { ordered = itemMarker.ordered, start = itemMarker.start, tight = true },
+                        record,
+                        record,
+                        itemMarker.indent
+                    )
+                    local listMarker, j, last = itemMarker, i, record
+                    while j <= #rows do
+                        local current = marker(rows[j])
+                        if
+                            not current
+                            or current.indent ~= listMarker.indent
+                            or current.ordered ~= listMarker.ordered
+                            or current.delimiter ~= listMarker.delimiter
+                        then
+                            break
+                        end
+                        local first, inside, k = rows[j], { current.content }, j + 1
+                        local hadBlank, tracker = false, lazyTracker()
+                        tracker.consume(current.content)
+                        local lastContent = first
+                        while k <= #rows do
+                            local nextRecord = rows[k]
+                            local nextMarker = marker(nextRecord)
+                            local width = indent(nextRecord.text, nextRecord.column)
+                            if nextMarker and nextMarker.indent <= listMarker.indent then
+                                break
+                            end
+                            if blank(nextRecord.text) then
+                                inside[#inside + 1] = nextRecord
+                                hadBlank = true
+                                tracker.consume(nextRecord)
+                            elseif width >= current.contentIndent then
+                                local content = strip(nextRecord, current.contentIndent)
+                                inside[#inside + 1] = content
+                                lastContent, hadBlank = nextRecord, false
+                                tracker.consume(content)
+                            elseif
+                                not hadBlank
+                                and tracker.paragraph
+                                and not interrupts(nextRecord, true)
+                            then
+                                inside[#inside + 1] = nextRecord
+                                lastContent = nextRecord
+                                tracker.consume(nextRecord)
+                            else
+                                break
+                            end
+                            k = k + 1
+                            tick()
+                        end
+                        local nextMarker = rows[k] and marker(rows[k])
+                        local sibling = nextMarker
+                            and nextMarker.indent == listMarker.indent
+                            and nextMarker.ordered == listMarker.ordered
+                            and nextMarker.delimiter == listMarker.delimiter
+                        if hadBlank and sibling then
+                            list.tight = false
+                        end
+                        while #inside > 1 and blank(inside[#inside].text) do
+                            table.remove(inside)
+                        end
+                        local state, rest = inside[1].text:match("^%[([ xX])%]([ \t].*)$")
+                        if not state then
+                            state = inside[1].text:match("^%[([ xX])%]$")
+                            rest = state and "" or nil
+                        end
+                        local fields = {}
+                        if state then
+                            local removed = 3 + #(rest:match("^[ \t]*") or "")
+                            inside[1] = shift(inside[1], removed)
+                            fields.task, fields.checked = true, state ~= " "
+                        end
+                        fields.children = parse(inside, depth + 1)
+                        local scan = 1
+                        for childIndex = 2, #fields.children do
+                            local before = fields.children[childIndex - 1].sourcepos[2][1]
+                            local after = fields.children[childIndex].sourcepos[1][1]
+                            while inside[scan] and inside[scan].line < after do
+                                if inside[scan].line > before and blank(inside[scan].text) then
+                                    list.tight = false
+                                end
+                                scan = scan + 1
+                                tick()
+                            end
+                        end
+                        list.children[#list.children + 1] =
+                            node("item", fields, first, lastContent, current.indent)
+                        last, j = lastContent, k
+                        if not sibling then
+                            break
+                        end
+                    end
+                    list.sourcepos = position(record, last, listMarker.indent)
+                    append(list)
+                    i = j
+                elseif indent(record.text, record.column) >= 4 then
+                    local lines, j, last, lastNonblank = {}, i, record, 0
+                    while j <= #rows do
+                        if blank(rows[j].text) then
+                            lines[#lines + 1] = "\n"
+                        elseif indent(rows[j].text, rows[j].column) >= 4 then
+                            lines[#lines + 1] = strip(rows[j], 4).text .. "\n"
+                            lastNonblank, last = #lines, rows[j]
+                        else
+                            break
+                        end
+                        j = j + 1
+                        tick()
+                    end
+                    while #lines > lastNonblank do
+                        table.remove(lines)
+                    end
+                    append(
+                        node(
+                            "code_block",
+                            { literal = table.concat(lines), info = "" },
+                            strip(record, 4),
+                            last
+                        )
+                    )
+                    i = j
+                elseif header then
+                    local tableNode = node("table", { align = alignment }, record, rows[i + 1])
+                    local function addRow(parts, rowRecord, isHeader)
+                        local row = node("table_row", { header = isHeader }, rowRecord, rowRecord)
+                        for p = 1, #alignment do
+                            local cell = parts[p]
+                                or {
+                                    text = "",
+                                    line = rowRecord.line,
+                                    column = rowRecord.finish,
+                                    finish = rowRecord.finish,
+                                }
+                            row.children[#row.children + 1] = node("table_cell", {
+                                _inline = cell.text,
+                                header = isHeader,
+                                align = alignment[p],
+                            }, cell, cell)
+                            tick()
+                        end
+                        tableNode.children[#tableNode.children + 1] = row
+                    end
+                    addRow(header, record, true)
+                    local j, last = i + 2, rows[i + 1]
+                    while
+                        j <= #rows
+                        and not blank(rows[j].text)
+                        and not interrupts(rows[j], false)
+                        and indent(rows[j].text, rows[j].column) < 4
+                    do
+                        local parts = cells(rows[j])
+                        addRow(parts, rows[j], false)
+                        last, j = rows[j], j + 1
+                        tick()
+                    end
+                    tableNode.sourcepos = position(record, last)
+                    append(tableNode)
+                    i = j
+                else
+                    local lines, j, last, underline = {}, i, record, nil
+                    while j <= #rows and not blank(rows[j].text) do
+                        if j > i then
+                            underline = setext(rows[j])
+                            if underline then
+                                break
+                            end
+                            if interrupts(rows[j], true) then
+                                break
+                            end
+                            if rows[j + 1] and tableHeader(rows, j) then
+                                break
+                            end
+                        end
+                        local width = indent(rows[j].text, rows[j].column)
+                        lines[#lines + 1] = strip(rows[j], math.min(width, 3)).text
+                        last, j = rows[j], j + 1
+                        tick()
+                    end
+                    local width = indent(record.text, record.column)
+                    local first = strip(record, math.min(width, 3))
+                    if underline then
+                        append(
+                            node(
+                                "heading",
+                                { level = underline, _inline = table.concat(lines, "\n") },
+                                first,
+                                rows[j]
+                            )
+                        )
+                        i = j + 1
+                    else
+                        append(
+                            node("paragraph", { _inline = table.concat(lines, "\n") }, first, last)
+                        )
+                        i = j
+                    end
+                end
+            end
+        end
+        return result
     end
-    return data
-end
 
-function Block:starts(container)
-    local char = self.line:sub(self.nonspace, self.nonspace)
-    if not self.indented and char == ">" then
-        local start = self.nonspace
-        self:advanceNonspace()
-        self:advance(1, false)
-        if space(self.line:sub(self.offset, self.offset)) then
-            self:advance(1, true)
-        end
-        self:closeUnmatched()
-        self:addChild("block_quote", start)
-        return 1
-    end
-    if not self.indented and char == "#" then
-        local hashes, following = self.line:match("^(#+)(.*)$", self.nonspace)
-        if #hashes <= 6 and (following == "" or following:match("^[ \t]")) then
-            local start = self.nonspace
-            self:advanceNonspace()
-            self:advance(#hashes, false)
-            while space(self.line:sub(self.offset, self.offset)) do
-                self:advance(1, false)
-            end
-            self:closeUnmatched()
-            local heading = self:addChild("heading", start)
-            heading.level = #hashes
-            heading._content =
-                self.line:sub(self.offset):gsub("^[ \t]*#+[ \t]*$", ""):gsub("[ \t]+#+[ \t]*$", "")
-            self:advance(#self.line - self.offset + 1, false)
-            return 2
-        end
-    end
-    if not self.indented and (char == "`" or char == "~") then
-        local marker = self.line:match(char == "`" and "^(`+)" or "^(~+)", self.nonspace)
-        if
-            marker
-            and #marker >= 3
-            and (char ~= "`" or not self.line:find("`", self.nonspace + #marker, true))
-        then
-            self:closeUnmatched()
-            local node = self:addChild("code_block", self.nonspace)
-            node._fenced, node._fenceLength, node._fenceChar, node._fenceOffset =
-                true, #marker, char, self.indent
-            self:advanceNonspace()
-            self:advance(#marker, false)
-            return 2
-        end
-    end
-    if not self.indented and char == "<" then
-        local kind = htmlStart(self.line, self.nonspace)
-        local lazy = not self.allClosed and not self.blank and self.tip.type == "paragraph"
-        if kind and (kind < 7 or (container.type ~= "paragraph" and not lazy)) then
-            self:closeUnmatched()
-            self:addChild("html_block", self.offset)._htmlType = kind
-            return 2
-        end
-    end
-    if self.options.gfm and not self.indented and M.Extensions.startTable(self, container) then
-        return 2
-    end
-    if
-        not self.indented
-        and container.type == "paragraph"
-        and (
-            self.line:match("^=+[ \t]*$", self.nonspace)
-            or self.line:match("^%-+[ \t]*$", self.nonspace)
-        )
-    then
-        self:closeUnmatched()
-        self:stripDefinitions(container)
-        if #container._content > 0 then
-            local heading = self:newNode("heading", container.sourcepos)
-            heading.level = char == "=" and 1 or 2
-            heading._content, heading._depth = container._content, container._depth
-            container:insertAfter(heading)
-            container:unlink()
-            self.tip = heading
-            self:advance(#self.line - self.offset + 1, false)
-            return 2
-        end
-    end
-    if not self.indented and (char == "*" or char == "_" or char == "-") then
-        local compact = self.line:sub(self.nonspace):gsub("[ \t]", "")
-        if
-            #compact >= 3
-            and not compact:find(
-                "[^" .. (char == "-" and "%-" or char == "*" and "%*" or char) .. "]"
-            )
-        then
-            self:closeUnmatched()
-            self:addChild("thematic_break", self.nonspace)
-            self:advance(#self.line - self.offset + 1, false)
-            return 2
-        end
-    end
-    if not self.indented or container.type == "list" then
-        local data = self:listMarker(container)
-        if data then
-            self:closeUnmatched()
-            local old = container._list
-            if
-                self.tip.type ~= "list"
-                or not old
-                or old.type ~= data.type
-                or old.delimiter ~= data.delimiter
-                or old.bullet ~= data.bullet
-            then
-                local node = self:addChild("list", self.nonspace)
-                node._list, node.listType, node.listStart, node.listDelimiter, node.listTight =
-                    data, data.type, data.start, data.delimiter, true
-            end
-            self:addChild("item", self.nonspace)._list = data
-            return 1
-        end
-    end
-    if self.indented and self.tip.type ~= "paragraph" and not self.blank then
-        self:advance(4, true)
-        self:closeUnmatched()
-        self:addChild("code_block", self.offset)
-        return 2
-    end
-    return 0
+    local document = node("document", { children = parse(records, 0) })
+    document.sourcepos = #records > 0 and position(records[1], records[#records])
+        or { { 1, 1 }, { 1, 1 } }
+    return document
 end
-
-function Block:lineAt(line)
-    local container, allMatched = self.doc, true
-    self.oldTip = self.tip
-    self.offset, self.column, self.blank, self.partialTab = 1, 0, false, false
-    self.lineNumber, self.line = self.lineNumber + 1, line
-    while container.lastChild and container.lastChild._open do
-        container = container.lastChild
-        self:findNonspace()
-        local result = self:continues(container)
-        if result == 2 then
-            return
-        end
-        if result == 1 then
-            allMatched = false
-            container = container.parent
-            break
-        end
-    end
-    self.allClosed, self.lastMatched = container == self.oldTip, container
-    local matchedLeaf = container.type ~= "paragraph" and accepts(container)
-    while not matchedLeaf do
-        self:findNonspace()
-        local char = self.line:sub(self.nonspace, self.nonspace)
-        local tableCandidate = self.options.gfm
-            and container.type == "paragraph"
-            and char:find("[|:%-]")
-        if not tableCandidate and not self.indented and not char:find("[#`~*+_=<>%d%-]") then
-            self:advanceNonspace()
-            break
-        end
-        local result = self:starts(container)
-        if result == 0 then
-            self:advanceNonspace()
-            break
-        end
-        container = self.tip
-        matchedLeaf = result == 2
-    end
-    if not self.allClosed and not self.blank and self.tip.type == "paragraph" then
-        self:addLine()
-    else
-        self:closeUnmatched()
-        if accepts(container) then
-            self:addLine()
-            if
-                container.type == "html_block" and htmlEnd(container._htmlType, line, self.offset)
-            then
-                self.lastLength = #line
-                self:finalize(container, self.lineNumber)
-            end
-        elseif self.offset <= #line and not self.blank then
-            self:addChild("paragraph", self.offset)
-            self:advanceNonspace()
-            self:addLine()
-        end
-    end
-    self.lastLength = #line
-end
-
-function Block:parse(source)
-    local pos = 1
-    while true do
-        local newline = source:find("\n", pos, true)
-        if not newline then
-            if pos <= #source or #source == 0 then
-                self:lineAt(source:sub(pos))
-            end
-            break
-        end
-        self:lineAt(source:sub(pos, newline - 1))
-        pos = newline + 1
-    end
-    while self.tip do
-        self:finalize(self.tip, self.lineNumber)
-    end
-    self.inline.refmap = self.refmap
-    for node, entering in self.doc:walker() do
-        if
-            not entering
-            and (node.type == "paragraph" or node.type == "heading" or node.type == "table_cell")
-        then
-            if self.options.gfm then
-                M.Extensions.task(node)
-            end
-            self.inline:parse(node)
-        end
-    end
-    return self.doc
-end
-
-M.Block = Block

@@ -76,7 +76,7 @@ tests keep their existing skips when the required binaries are absent.
 ### Lua addon tests
 
 The [Markdown parser contract](markdown.md) documents its renderer-independent
-AST, pinned standards corpus and offline conformance checks.
+AST, supported product syntax and offline parser checks.
 
 Install Lua 5.1 and LuaRocks using your platform's package manager, then install
 [Busted](https://lunarmodules.github.io/busted/) with
