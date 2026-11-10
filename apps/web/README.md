@@ -99,16 +99,23 @@ needed for subsequent releases.
 
 The **Refresh release website** workflow runs when a public release is published,
 edited or deleted, and can also be run manually. It expires the shared GitHub data
-cache and rendered pages through an authenticated POST, then warms the English and
-Spanish landing, both changelog channels, social images and the published release's
-detail pages. The refresh fails if the release detail is still unavailable, with
-bounded retries for GitHub propagation. The Windows release workflow calls the same
+cache and rendered pages through a single authenticated POST, with bounded retries
+for transient failures. CI does not request public pages. Immediate expiration with
+`{ expire: 0 }` makes the next visit wait for fresh data instead of serving the old
+release while refreshing in the background. The Windows release workflow calls the same
 script directly after publishing a Nightly: events produced by `GITHUB_TOKEN` do
 not start another release-event workflow. Stable drafts wait until publication.
 
-To refresh manually outside Actions, set `WEB_REVALIDATION_SECRET` in the shell
-and run `node scripts/revalidate-web.ts`. `WEB_URL` overrides the target for an
-isolated preview; `RELEASE_TAG` optionally verifies and warms a specific release.
+If Vercel's protection challenges the POST, create a **Protection Bypass for
+Automation** secret in Vercel's Deployment Protection settings and store it as the
+GitHub Actions secret `VERCEL_AUTOMATION_BYPASS_SECRET`. Both workflows pass it in
+the `x-vercel-protection-bypass` header when configured. This is separate from
+`WEB_REVALIDATION_SECRET`, which still authenticates the application endpoint.
+See [Vercel's automation bypass documentation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation).
+
+To refresh manually outside Actions, set `WEB_REVALIDATION_SECRET` and, if needed,
+`VERCEL_AUTOMATION_BYPASS_SECRET` in the shell, then run
+`node scripts/revalidate-web.ts`. `WEB_URL` overrides the target for an isolated preview.
 
 `/download` returns a temporary, non-cacheable redirect to the installer from the
 manifest. If the manifest is unavailable or invalid, it redirects to GitHub's

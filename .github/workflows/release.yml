@@ -131,4 +131,4 @@ jobs:
         run: node scripts/revalidate-web.ts
         env:
           WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

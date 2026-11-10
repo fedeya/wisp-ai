@@ -1,64 +1,48 @@
 import { expect, test, vi } from 'vitest';
 import { revalidateWeb } from '../revalidate-web.ts';
 
-test('publication invalidates before warming both languages, channels and release details', async () => {
-  const fetch = vi
-    .fn()
-    .mockImplementation(async (_url, options) =>
-      options?.method === 'POST'
-        ? Response.json({ revalidated: true })
-        : new Response('Published v0.1.1-nightly.42.1'),
-    );
-  await revalidateWeb('https://wisp.test', 'secret', 'v0.1.1-nightly.42.1', fetch);
+test('publication only sends the invalidation POST without requesting public pages', async () => {
+  const fetch = vi.fn().mockResolvedValue(Response.json({ revalidated: true }));
+  await revalidateWeb('https://wisp.test', 'secret', undefined, fetch);
+  expect(fetch).toHaveBeenCalledTimes(1);
   expect(fetch.mock.calls[0][0].href).toBe('https://wisp.test/api/revalidate');
   expect(fetch.mock.calls[0][1]).toMatchObject({
     method: 'POST',
     headers: { Authorization: 'Bearer secret' },
     redirect: 'error',
   });
-  for (const locale of ['en', 'es']) {
-    for (const path of [
-      '',
-      '/changelog',
-      '/changelog?channel=nightly',
-      '/opengraph-image',
-      '/changelog/0.1.1-nightly.42.1',
-    ]) {
-      expect(
-        fetch.mock.calls.some(([url]) => url.href === `https://wisp.test/${locale}${path}`),
-      ).toBe(true);
-    }
-  }
-  expect(fetch.mock.calls.slice(1).every(([, options]) => !options.headers)).toBe(true);
+  expect(fetch.mock.calls[0][1].headers).not.toHaveProperty('x-vercel-protection-bypass');
 });
 
-test('missing secret, failed invalidation and stale release pages fail the refresh', async () => {
+test('configured Vercel automation bypass is sent together with application authorization', async () => {
+  const fetch = vi.fn().mockResolvedValue(Response.json({ revalidated: true }));
+  await revalidateWeb('https://wisp.test', 'app-secret', 'vercel-secret', fetch);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(fetch.mock.calls[0][1].headers).toEqual({
+    Authorization: 'Bearer app-secret',
+    'x-vercel-protection-bypass': 'vercel-secret',
+  });
+});
+
+test('missing application secret fails before any request', async () => {
   const fetch = vi.fn();
-  await expect(revalidateWeb('https://wisp.test', '', undefined, fetch)).rejects.toThrow(
+  await expect(revalidateWeb('https://wisp.test', '', 'vercel-secret', fetch)).rejects.toThrow(
     'Configure',
   );
   expect(fetch).not.toHaveBeenCalled();
-  fetch.mockResolvedValue(new Response(null, { status: 401 }));
-  await expect(revalidateWeb('https://wisp.test', 'secret', undefined, fetch)).rejects.toThrow(
-    '401',
-  );
-  expect(fetch).toHaveBeenCalledTimes(1);
-  fetch
-    .mockReset()
-    .mockImplementation(async (_url, options) =>
-      options?.method === 'POST' ? Response.json({ revalidated: true }) : new Response('old data'),
-    );
-  await expect(revalidateWeb('https://wisp.test', 'secret', 'v0.1.0', fetch)).rejects.toThrow(
-    'not visible',
-  );
 });
 
-test('a failed warmup does not report success', async () => {
-  const fetch = vi
-    .fn()
-    .mockResolvedValueOnce(Response.json({ revalidated: true }))
-    .mockResolvedValueOnce(new Response(null, { status: 503 }));
+test.each([401, 403, 503])('HTTP %s fails the invalidation', async (status) => {
+  const fetch = vi.fn().mockResolvedValue(new Response(null, { status }));
   await expect(revalidateWeb('https://wisp.test', 'secret', undefined, fetch)).rejects.toThrow(
-    'Warming /en failed',
+    `Web revalidation failed (${status})`,
+  );
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+test('an unexpected success response does not report successful invalidation', async () => {
+  const fetch = vi.fn().mockResolvedValue(Response.json({ revalidated: false }));
+  await expect(revalidateWeb('https://wisp.test', 'secret', undefined, fetch)).rejects.toThrow(
+    'Web revalidation failed',
   );
 });
