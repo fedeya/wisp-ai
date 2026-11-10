@@ -277,7 +277,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       log,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
-      defaultModel: () => config.model || 'gpt-6-luna',
+      defaultModel: () => config.model || 'gpt-6.1-sol',
       isReady: () => eveReady,
       isStopping: () => shutdownRequested,
       accountBusy: () => accountBusy,
@@ -349,7 +349,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         simulator,
         getChats: () => state.chats,
         currentTransport: () => state.activeTransport,
-        defaultModel: () => config.model || 'gpt-6-luna',
+        defaultModel: () => config.model || 'gpt-6.1-sol',
         readSimulationCharacter,
         memorySnapshot,
         setMemoryView: (view) => {
@@ -461,7 +461,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         connections: connections.list(),
         modelConnected: connections.connected(config.model || ''),
         search: webSearch.state(),
-        model: config.model || 'gpt-6-luna',
+        model: config.model || 'gpt-6.1-sol',
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
         integrations: capabilitySettings.snapshot(),
         mcps: mcpManager.list().map((s) => ({
@@ -553,7 +553,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         },
         modelCatalog: {
           models: state.modelCatalog,
-          defaultModel: config.model || 'gpt-6-luna',
+          defaultModel: config.model || 'gpt-6.1-sol',
           error: state.modelCatalogError,
         },
         acks: state.acknowledgments,

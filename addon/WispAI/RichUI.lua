@@ -163,6 +163,104 @@ local function comparison(w, node, available, rendered)
     end
     return y - 6
 end
+local function tableUI(w, node, available, rendered)
+    w.tableRows = w.tableRows or {}
+    local y = line(w.title, rendered(node.title or ""), available, 0, 0)
+    if y > 0 then
+        y = y + 10
+    end
+    local count, padding, gap = #node.columns, 10, 12
+    local wide = available >= math.max(340, count * 120)
+    local columnWidth = math.max(1, (available - padding * 2 - gap * (count - 1)) / count)
+    for index = 1, #node.rows + 1 do
+        local header = index == 1
+        local row = w.tableRows[index]
+        if not row then
+            row = frame(w)
+            row.cells, row.labels = {}, {}
+            row.background = row:CreateTexture(nil, "BACKGROUND")
+            row.background:SetAllPoints()
+            if C.LinkWidget then
+                C.LinkWidget(row)
+            end
+            w.tableRows[index] = row
+        end
+        row:SetWidth(available)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -y)
+        if header and not wide then
+            row:Hide()
+        else
+            row.background:SetColorTexture(
+                0.20,
+                0.18,
+                0.13,
+                header and 0.9 or (index % 2 == 0 and 0.42 or 0.18)
+            )
+            local height, top = 0, padding
+            for column, spec in ipairs(node.columns) do
+                local value = header and spec.label or node.rows[index - 1][column]
+                local cell = row.cells[column]
+                if not cell then
+                    cell = font(row)
+                    row.cells[column] = cell
+                    row.labels[column] = font(row, "GameFontHighlightSmall")
+                    row.labels[column]:SetTextColor(0.75, 0.67, 0.48)
+                end
+                local label = row.labels[column]
+                cell:SetJustifyH(wide and string.upper(spec.align or "left") or "LEFT")
+                cell:SetTextColor(
+                    header and 0.95 or 0.89,
+                    header and 0.83 or 0.85,
+                    header and 0.52 or 0.75
+                )
+                if wide then
+                    label:Hide()
+                    height = math.max(
+                        height,
+                        line(
+                            cell,
+                            rendered(value),
+                            columnWidth,
+                            padding + (column - 1) * (columnWidth + gap),
+                            padding
+                        )
+                    )
+                else
+                    top = top
+                        + line(
+                            label,
+                            rendered(spec.label),
+                            math.max(1, available - padding * 2),
+                            padding,
+                            top
+                        )
+                        + 3
+                    top = top
+                        + line(
+                            cell,
+                            rendered(value),
+                            math.max(1, available - padding * 2),
+                            padding,
+                            top
+                        )
+                        + 9
+                end
+            end
+            for column = count + 1, #row.cells do
+                row.cells[column]:Hide()
+                row.labels[column]:Hide()
+            end
+            row:SetHeight(wide and (height + padding * 2) or (top + padding - 9))
+            row:Show()
+            y = y + row:GetHeight() + 1
+        end
+    end
+    for index = #node.rows + 2, #w.tableRows do
+        w.tableRows[index]:Hide()
+    end
+    return y
+end
 function C.PanelAction(chat, message, node, values)
     if message.panelId and C.AskPanel then
         C.AskPanel(message.panelId, node, values)
@@ -186,6 +284,9 @@ function C.PanelAction(chat, message, node, values)
     end
 end
 function C.RenderRichUI(host, chat, message, width)
+    if not host.widgets and C.LinkWidget then
+        C.LinkWidget(host)
+    end
     host.widgets, host.values, host.sourceValues =
         host.widgets or {}, host.values or {}, host.sourceValues or {}
     local widgets, values, children, nodes, used = host.widgets, host.values, {}, {}, {}
@@ -285,6 +386,8 @@ function C.RenderRichUI(host, chat, message, width)
                 end
             end
             height = (node.kind == "row" and y + tallest or y) + padding
+        elseif node.kind == "table" then
+            height = tableUI(w, node, available, rendered)
         elseif node.kind == "comparison" then
             height = comparison(w, node, available, rendered)
         elseif node.kind == "stat" then

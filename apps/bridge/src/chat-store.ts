@@ -91,6 +91,11 @@ export class ChatStore {
         .filter((chat) => !isEmptyDraft(chat))
         .map((chat) => ({
           ...chat,
+          messages: chat.messages.map((message) =>
+            message.streaming && message.rawReply !== undefined && this.saved.get(chat.id)?.state
+              ? { ...message, streaming: false }
+              : message,
+          ),
           lastActivityAt: chat.lastActivityAt ?? chat.lastUsedAt ?? 0,
           status:
             chat.status === 'working' && this.saved.get(chat.id)?.state

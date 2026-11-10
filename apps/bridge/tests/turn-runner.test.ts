@@ -3,6 +3,9 @@ import type { Client } from 'eve/client';
 import { createTurnRunner } from '@wisp/bridge/turn-runner';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { queryCharacterSections } from '@wisp/bridge/context';
+import { projectChats } from '@wisp/bridge/chat-projection';
+import { createSessionState } from '@wisp/bridge/session-state';
+import { SnapshotGate } from '@wisp/bridge/snapshots';
 
 function fixture(titlesEnabled = true) {
   const chat = newChat('chat', 'one');
@@ -24,6 +27,7 @@ function fixture(titlesEnabled = true) {
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
   const log = vi.fn();
   const flushFirstText = vi.fn();
+  const changed = vi.fn();
   const run = createTurnRunner({
     client,
     models: { models, prepare: async () => {} },
@@ -39,7 +43,7 @@ function fixture(titlesEnabled = true) {
     isStopping: () => false,
     accountBusy: () => false,
     isCurrent: () => current,
-    changed: () => {},
+    changed,
     log,
     flushFirstText,
   });
@@ -51,6 +55,7 @@ function fixture(titlesEnabled = true) {
     models,
     log,
     flushFirstText,
+    changed,
     changeCharacter: () => {
       transport = 'two';
     },
@@ -79,6 +84,87 @@ test('a complete turn projects streamed content and settles once', async () => {
   );
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
+});
+
+test('plain source schedules persistence before a reply can be rendered', async () => {
+  const f = fixture();
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {
+      const before = f.changed.mock.calls.length;
+      yield {
+        type: 'content.delta',
+        data: { partId: 'reply', kind: 'text', delta: 'Primera parte' },
+      };
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+        'Primera parte',
+      );
+      expect(f.changed.mock.calls.length).toBeGreaterThan(before);
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe('');
+      yield {
+        type: 'content.completed',
+        data: { partId: 'reply', kind: 'text', value: 'Primera parte completa' },
+      };
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  }));
+  await f.run(f.chat, 'Question');
+  expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+    'Primera parte completa',
+  );
+  expect(f.send).toHaveBeenCalledTimes(1);
+});
+
+test('source persistence through the runner does not publish beyond the preview budget', async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  try {
+    const f = fixture();
+    const state = createSessionState([f.chat]);
+    state.activeChat = f.chat.id;
+    const gate = new SnapshotGate();
+    let publications = 0,
+      previews = 0,
+      completed = 0;
+    f.changed.mockImplementation(() => {
+      const snapshot = gate.next(projectChats(state));
+      if (snapshot) {
+        publications++;
+        expect(JSON.stringify(snapshot)).not.toContain('rawReply');
+      }
+    });
+    const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
+    f.send.mockImplementationOnce(async () => ({
+      stream: async function* () {
+        const baseline = publications;
+        for (let index = 0; index < 100; index++) {
+          vi.setSystemTime((index + 1) * 1000);
+          const changes = f.changed.mock.calls.length;
+          yield {
+            type: 'content.delta',
+            data: { partId: 'reply', kind: 'text', delta },
+          };
+          expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
+        }
+        expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+          delta.repeat(100),
+        );
+        previews = publications - baseline;
+        yield {
+          type: 'content.completed',
+          data: { partId: 'reply', kind: 'text', value: delta.repeat(100) },
+        };
+        completed = publications - baseline;
+        expect(projectChats(state).chats[0].messages?.at(-1)?.text).toBe('a'.repeat(100));
+      },
+      result: async () => ({ status: 'completed', sessionEnded: false }),
+    }));
+    await f.run(f.chat, 'Question');
+    expect(previews).toBe(8);
+    expect(completed).toBe(9);
+    expect(f.chat.status).toBe('done');
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {

@@ -65,10 +65,17 @@ export function applyEvent(chat: Chat, rawEvent: unknown, parts: ReplyProjection
       parts.kinds.set(id, data.kind);
     }
     if (parts.kinds.get(id) === 'text' && typeof data.delta === 'string') {
+      parts.capture(chat, id, data.delta, true);
       parts.stream(id).reply.feed(data.delta);
       return parts.flush(chat);
     }
   } else if (event.type === 'content.completed' && data.kind === 'text') {
+    parts.capture(
+      chat,
+      String(data.partId),
+      typeof data.value === 'string' ? data.value : undefined,
+      false,
+    );
     const state = parts.stream(String(data.partId));
     if (typeof data.value === 'string') {
       state.reply = new ReplyStream();

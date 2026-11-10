@@ -1,8 +1,10 @@
 import { ReplyProjection } from '@wisp/bridge/reply-stream';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { applyEvent, type Chat } from '@wisp/bridge/events';
 import { SnapshotGate } from '@wisp/bridge/snapshots';
+import { projectChats } from '@wisp/bridge/chat-projection';
+import { createSessionState } from '@wisp/bridge/session-state';
 
 test('invisible stream events and unchanged snapshots do not spend revisions', () => {
   const chat: Chat = {
@@ -65,4 +67,50 @@ test('invisible stream events and unchanged snapshots do not spend revisions', (
   );
   gate.invalidate();
   assert.equal(gate.next(view())?.rev, 104, 'a failed disk write must remain retryable');
+});
+
+test('saving raw deltas does not bypass the preview budget or expose source in snapshots', () => {
+  vi.useFakeTimers();
+  try {
+    const chat: Chat = {
+      id: 'chat',
+      owner: 'game',
+      title: 'Test',
+      status: 'working',
+      activity: [],
+      messages: [],
+    };
+    const state = createSessionState([chat]);
+    state.activeChat = chat.id;
+    const projection = new ReplyProjection(),
+      gate = new SnapshotGate();
+    const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
+    let updates = 0;
+    for (let index = 0; index < 100; index++) {
+      vi.setSystemTime(index * 1000);
+      applyEvent(
+        chat,
+        { type: 'content.delta', data: { partId: 'answer', kind: 'text', delta } },
+        projection,
+      );
+      if (gate.next(projectChats(state))) {
+        updates++;
+      }
+    }
+    assert.equal(updates, 8);
+    assert.equal(chat.messages[0].rawReply, delta.repeat(100));
+    assert.ok(!JSON.stringify(projectChats(state)).includes('rawReply'));
+    applyEvent(
+      chat,
+      {
+        type: 'content.completed',
+        data: { partId: 'answer', kind: 'text', value: delta.repeat(100) },
+      },
+      projection,
+    );
+    assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(100));
+    assert.ok(gate.next(projectChats(state)));
+  } finally {
+    vi.useRealTimers();
+  }
 });

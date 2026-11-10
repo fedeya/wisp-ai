@@ -198,6 +198,14 @@ test('context blocks cannot be closed by game strings or user text, and history 
   );
   assert.equal((packed.match(/<game_context>/g) || []).length, 1);
   assert.equal(visibleUserText(packed), text);
+  const withIntegrations = turnInput(text, undefined, chat, []);
+  assert.equal(visibleUserText(withIntegrations), text);
+  assert.equal(
+    rebuildHistory(chat, [
+      { type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: withIntegrations }] } },
+    ])?.[0].text,
+    text,
+  );
   assert.equal(visibleUserText('old unwrapped message'), 'old unwrapped message');
   assert.doesNotMatch(packed, /needsTitle/);
   assert.doesNotMatch(turnInput('hi', undefined, { ...chat, titleGenerated: true }), /needsTitle/);
