@@ -142,9 +142,35 @@ test('lane publication preserves the uplink and unrelated CRLF settings, validat
   expect(UPLINK_HELPERS.at(-1)).toBe('WispAI_S1024');
   expect(readDownlink(updated + '\r\nWispAI_B001: disabled')).toBeNull();
   expect(readUplink(updated + '\r\nWispAI_S0257: nonsense')).toBeNull();
-  expect(readUplink(updated.replace('WispAI_S1024: enabled', ''))).toBeNull();
+  expect(readUplink(updated.replace('WispAI_S1024: enabled', ''))).toEqual(readUplink(updated));
   expect(() => replaceDownlink(updated + '\r\nWispAI_B001: invalid', frame)).toThrow();
-  expect(() => replaceDownlink(updated.replace(/^WispAI_B001:[^\r\n]*/m, ''), frame)).toThrow();
+  expect(
+    readDownlink(replaceDownlink(updated.replace(/^WispAI_B001:[^\r\n]*/m, ''), frame)),
+  ).toEqual(frame);
+});
+
+test('omitted enabled helpers decode a valid uplink and missing downlink lines are created', () => {
+  const frame = encodeMessage(Buffer.from('fresh hello'), UPLINK_KIND, 7)[0];
+  // WoW may persist only explicit overrides; omitted helpers default to enabled.
+  const sparse = [
+    'Other: disabled',
+    ...UPLINK_HELPERS.flatMap((name, index) =>
+      frame[index >> 3] & (1 << (index % 8)) ? [] : [`${name}: disabled`],
+    ),
+    'Tail: enabled',
+  ].join('\r\n');
+  expect(readUplink(sparse)).toEqual(frame);
+  expect(decodeFrame(readUplink(sparse)!)).toMatchObject({ generation: 7 });
+  expect(readUplink('')).toEqual(Buffer.alloc(96, 255));
+  expect(decodeFrame(readUplink('')!)).toBeNull();
+  const response = encodeMessage(Buffer.from('ready'), DOWNLINK_KIND, 9)[0];
+  for (const text of [sparse, sparse + '\r\n', '', 'Other: disabled\n']) {
+    const updated = replaceDownlink(text, response);
+    expect(updated.startsWith(text)).toBe(true);
+    expect(readDownlink(updated)).toEqual(response);
+    expect(readUplink(updated)).toEqual(readUplink(text));
+    expect(replaceDownlink(updated, response)).toBe(updated);
+  }
 });
 
 test('multilingual compression survives frame duplication and uint16 sequence wrap', () => {

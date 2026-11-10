@@ -25,11 +25,14 @@ import {
 } from '@wisp/protocol/mailbox';
 import { applyDownlink } from '@wisp/protocol/downlink';
 
-async function fixture(receive: (packet: Packet, bridge: DiskTransport) => void = () => {}) {
+async function fixture(
+  receive: (packet: Packet, bridge: DiskTransport) => void = () => {},
+  realm = 'realm',
+) {
   const base = path.resolve('runtime');
   await mkdir(base, { recursive: true });
   const root = await mkdtemp(path.join(base, 'transport-v2-'));
-  const file = path.join(root, 'WTF/Account/account/realm/character/AddOns.txt');
+  const file = path.join(root, 'WTF/Account/account', realm, 'character/AddOns.txt');
   const payload = path.join(root, 'Interface/AddOns/WispAI_Payload/Payload.lua');
   await mkdir(path.dirname(file), { recursive: true });
   const original = [
@@ -92,6 +95,34 @@ async function waitFor(predicate: () => Promise<boolean>, timeout = 2500) {
   }
   assert.fail('Timed out waiting for the transport');
 }
+
+test('fresh sparse AddOns.txt in a numeric realm connects and receives its first downlink', async () => {
+  const f = await fixture(undefined, '91');
+  try {
+    await writeFile(f.file, 'Other: disabled\r\n');
+    await f.bridge.scan(true);
+    const [frame] = encodeMessage(Buffer.from(JSON.stringify(f.hello)), UPLINK_KIND, 77);
+    const sparse = [
+      'Other: disabled',
+      ...UPLINK_HELPERS.flatMap((name, index) =>
+        frame[index >> 3] & (1 << (index % 8)) ? [] : [`${name}: disabled`],
+      ),
+    ].join('\r\n');
+    await writeFile(f.file, sparse);
+    await f.bridge.read(f.file, false);
+    assert.equal(f.packets.length, 1);
+    assert.equal(f.packets[0].type, 'hello');
+    await f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'first connection' });
+    const current = await readFile(f.file, 'utf8');
+    assert.deepEqual(readUplink(current), frame);
+    assert.deepEqual(JSON.parse(decodeFrame(readDownlink(current)!)!.payload.toString()), { r: 1 });
+    assert.ok(current.startsWith(sparse + '\r\n'));
+    assert.ok((await readFile(f.payload, 'utf8')).includes('first connection'));
+    assert.deepEqual(f.errors, []);
+  } finally {
+    await f.close();
+  }
+});
 
 test('initial scan baselines a cached hello and fresh hello retry preserves negotiation across session reset', async () => {
   const f = await fixture((packet, bridge) => {

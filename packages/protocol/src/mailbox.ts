@@ -138,7 +138,9 @@ export function decodeFrame(input: Uint8Array): MailboxFrame | null {
 }
 
 function readLane(text: string, indices: ReadonlyMap<string, number>): Buffer | null {
-  const bytes = Buffer.alloc(indices.size / 8);
+  // Helpers are enabled by default in their TOCs. WoW can omit entries whose
+  // state has never been explicitly changed from that default.
+  const bytes = Buffer.alloc(indices.size / 8, 255);
   const seen = new Set<number>();
   for (const match of text.matchAll(/^([^:\r\n]+):([^\r\n]*)/gm)) {
     const index = indices.get(match[1]);
@@ -150,11 +152,11 @@ function readLane(text: string, indices: ReadonlyMap<string, number>): Buffer | 
       return null;
     }
     seen.add(index);
-    if (state === 'enabled') {
-      bytes[index >> 3] |= 1 << (index % 8);
+    if (state === 'disabled') {
+      bytes[index >> 3] &= ~(1 << (index % 8));
     }
   }
-  return seen.size === indices.size ? bytes : null;
+  return bytes;
 }
 
 export const readUplink = (text: string) => readLane(text, uplinkIndices);
@@ -165,7 +167,7 @@ function replaceLane(text: string, frame: Uint8Array, indices: ReadonlyMap<strin
     throw Error('Wrong Wisp mailbox frame size');
   }
   const seen = new Set<number>();
-  const result = text.replace(/^([^:\r\n]+):[^\r\n]*/gm, (line, name: string) => {
+  let result = text.replace(/^([^:\r\n]+):[^\r\n]*/gm, (line, name: string) => {
     const index = indices.get(name);
     if (index === undefined) {
       return line;
@@ -176,8 +178,14 @@ function replaceLane(text: string, frame: Uint8Array, indices: ReadonlyMap<strin
     seen.add(index);
     return `${name}: ${frame[index >> 3] & (1 << (index % 8)) ? 'enabled' : 'disabled'}`;
   });
-  if (seen.size !== indices.size) {
-    throw Error('Wisp mailbox helpers are missing');
+  const newline = text.includes('\r\n') ? '\r\n' : '\n';
+  for (const [name, index] of indices) {
+    if (!seen.has(index)) {
+      if (result && !result.endsWith('\n')) {
+        result += newline;
+      }
+      result += `${name}: ${frame[index >> 3] & (1 << (index % 8)) ? 'enabled' : 'disabled'}${newline}`;
+    }
   }
   return result;
 }
