@@ -8,6 +8,7 @@ Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.
 
 ```sh
 pnpm install --frozen-lockfile
+python scripts/setup-lua.py
 pnpm build
 pnpm check
 pnpm test
@@ -16,7 +17,7 @@ pnpm test
 `build` runs workspace builds through Turborepo, including the protocol, agent,
 desktop frontend and website. It does not build the native host, simulator or
 installer. `check` runs formatting, lint and type checks; `pnpm test` runs all
-TypeScript tests with Vitest (core, addon and desktop UI). Simulator engine tests
+TypeScript tests with Vitest (core, addon and desktop UI) and Lua specs with Busted. Simulator engine tests
 require its binary—offline input tests alone do not validate the engine.
 
 Turborepo resolves prerequisites from the declared workspace dependencies and
@@ -48,9 +49,9 @@ Vitest projects keep each environment separate:
 
 | Command           | Scope                                                                |
 | ----------------- | -------------------------------------------------------------------- |
-| `pnpm test`       | All TypeScript tests                                                 |
+| `pnpm test`       | All TypeScript tests and Busted Lua specs                            |
 | `pnpm test:core`  | Bridge, agent, protocol and integration tests in `tests/` (Node)     |
-| `pnpm test:addon` | Addon tests and WoW stubs in `addon/tests/` (Node + Fengari for Lua) |
+| `pnpm test:addon` | Busted Lua specs and TS integration tests in `addon/tests/`          |
 | `pnpm test:ui`    | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)   |
 | `pnpm test:watch` | Watch all projects; Lua source and fixture changes rerun addon tests |
 
@@ -61,6 +62,31 @@ Existing schema assertions in addon tests
 also verify the TypeScript contracts consumed by Lua. Native Rust tests remain on Cargo;
 see the CI workflow for their build prerequisites and command. Simulator and native-helper
 tests keep their existing skips when the required binaries are absent.
+
+### Lua addon tests
+
+Run `python scripts/setup-lua.py` once per worktree before running addon tests.
+It requires Python 3 and a C compiler (Visual Studio C++ build tools on Windows,
+`cc`/`gcc` on macOS/Linux), and installs Lua 5.3.6, LuaRocks 3.13.0 and Busted
+2.3.0 into the ignored `runtime/lua/` directory. The installer pins the hererocks
+source revision and leaves global Lua installations alone. CI uses the same script.
+
+Write addon-only cases in `addon/tests/*_spec.lua`, using Busted's `it`, assertions
+and hooks. `support.lua` creates private WoW globals for each scenario and loads
+the real addon files, including the UI dependency order. The existing WoW API
+stubs remain fixtures; these specs run outside the game.
+
+```sh
+pnpm --filter @wisp/addon test:lua
+pnpm --filter @wisp/addon test:lua addon/tests/settings_spec.lua
+```
+
+`pnpm test:addon` runs both Busted and the remaining TypeScript tests. A small
+Vitest adapter launches Busted per spec file, preserving the workspace commands
+and rerunning specs when Lua sources or fixtures change in watch mode. Failures
+report the Lua filename and line number. Protocol/schema checks, binary asset
+checks and tests exchanging frames between Lua and TypeScript stay in `.test.ts`;
+the frame integration tests still use Fengari.
 
 Core tests also launch the real Eve agent against a local model fixture. This checks
 agent compilation, dependency resolution, model middleware and streamed replies without

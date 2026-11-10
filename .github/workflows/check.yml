@@ -67,6 +67,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+      - run: python scripts/setup-lua.py
       - run: pnpm test:addon
   ui-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id

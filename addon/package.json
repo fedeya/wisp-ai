@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "cd .. && vitest run --config addon/vitest.config.ts",
+    "test:lua": "node scripts/test-lua.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

@@ -9,5 +9,11 @@ export default defineConfig({
     environment: 'node',
     include: ['addon/tests/**/*.test.ts'],
     maxWorkers: 2,
+    watchTriggerPatterns: [
+      {
+        pattern: /(?:^|\/)addon\/(?:WispAI\/.*|tests\/.*)\.lua$/,
+        testsToRun: () => ['addon/tests/lua.test.ts'],
+      },
+    ],
   },
 });
