@@ -72,7 +72,7 @@ Safari 16.4+, Firefox 128+); desktop previews use the current WebView2 runtime.
 4. Add `wisp.fedeya.sh` in the project's Domains settings and apply the DNS record
    Vercel provides.
 
-No environment variables are required. Download buttons use `/download`, which
+Download buttons use `/download`, which
 resolves the current stable Windows installer automatically. `NEXT_PUBLIC_INSTALL_URL`
 is an optional explicit override; leave it unset to follow new releases.
 
@@ -87,7 +87,28 @@ workspace and lockfile from the shared graph; do not maintain a second lockfile.
 manifest published for the desktop updater. The displayed version, structured
 data and social card use that manifest too. Release data and versioned pages
 revalidate every five minutes as requests arrive, without a new deployment.
-The first request after expiry can receive cached data while Next.js refreshes it.
+The five-minute timer is a fallback: the first request after expiry can receive
+cached data while Next.js refreshes it.
+
+### Refresh automatically after publication
+
+Set the same random `WEB_REVALIDATION_SECRET` in the Vercel project's **Production**
+environment and the GitHub repository's **Actions secrets**, then deploy the web
+once to activate `/api/revalidate`. Keep the secret server-side. No deployment is
+needed for subsequent releases.
+
+The **Refresh release website** workflow runs when a public release is published,
+edited or deleted, and can also be run manually. It expires the shared GitHub data
+cache and rendered pages through an authenticated POST, then warms the English and
+Spanish landing, both changelog channels, social images and the published release's
+detail pages. The refresh fails if the release detail is still unavailable, with
+bounded retries for GitHub propagation. The Windows release workflow calls the same
+script directly after publishing a Nightly: events produced by `GITHUB_TOKEN` do
+not start another release-event workflow. Stable drafts wait until publication.
+
+To refresh manually outside Actions, set `WEB_REVALIDATION_SECRET` in the shell
+and run `node scripts/revalidate-web.ts`. `WEB_URL` overrides the target for an
+isolated preview; `RELEASE_TAG` optionally verifies and warms a specific release.
 
 `/download` returns a temporary, non-cacheable redirect to the installer from the
 manifest. If the manifest is unavailable or invalid, it redirects to GitHub's

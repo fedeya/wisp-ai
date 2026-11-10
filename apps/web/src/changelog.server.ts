@@ -1,5 +1,6 @@
 import { releaseChannel, type ReleaseChannel } from '@wisp/releases';
 import { site } from './site.ts';
+import { RELEASE_CACHE_TAG } from './release-cache.ts';
 
 export type PublishedRelease = {
   version: string;
@@ -67,7 +68,7 @@ async function github(path: string) {
         ? { Authorization: `Bearer ${process.env.GITHUB_RELEASES_TOKEN}` }
         : {}),
     },
-    next: { revalidate: 300 },
+    next: { revalidate: 300, tags: [RELEASE_CACHE_TAG] },
     signal: AbortSignal.timeout(8000),
   };
   return fetch(`https://api.github.com/repos/fedeya/wisp-ai/releases${path}`, options);

@@ -37,7 +37,7 @@ test('download follows the published manifest as new releases arrive', async () 
   }
   expect(fetch).toHaveBeenCalledWith(
     `${repository}/releases/latest/download/latest.json`,
-    expect.objectContaining({ next: { revalidate: 300 } }),
+    expect.objectContaining({ next: { revalidate: 300, tags: ['github-releases'] } }),
   );
 });
 
