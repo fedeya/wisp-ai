@@ -106,8 +106,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
-        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
-        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(1);
+        expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
         expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
         expect(
           db

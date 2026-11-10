@@ -535,6 +535,9 @@ importers:
       ai:
         specifier: 7.0.164
         version: 7.0.164(zod@4.6.7)
+      drizzle-orm:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7)
       eve:
         specifier: 1.0.0-rc.6
         version: 1.0.0-rc.6(ai@7.0.164(zod@4.6.7))(just-bash@3.6.0)(next@16.4.5(@playwright/test@1.65.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)(svelte@5.57.3)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))

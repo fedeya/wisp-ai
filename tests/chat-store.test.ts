@@ -264,20 +264,30 @@ test('stale writes fail atomically instead of overwriting another connection', a
   }
 });
 
-test.each(['future schema', 'corrupt database'])(
+test.each(['incompatible schema', 'corrupt database'])(
   'refuses %s instead of silently falling back to JSON',
   async (kind) => {
     const f = await fixture();
     try {
-      if (kind === 'future schema') {
-        inspect(f.file, (db) => db.exec('PRAGMA user_version = 99'));
+      if (kind === 'incompatible schema') {
+        inspect(f.file, (db) =>
+          db.exec(
+            "CREATE TABLE chats(id TEXT PRIMARY KEY, title TEXT); INSERT INTO chats VALUES ('keep', 'original')",
+          ),
+        );
       } else {
         await writeFile(f.file, 'not a SQLite file');
       }
       const original = await readFile(f.file);
       await writeFile(f.legacy, JSON.stringify([chat()]));
       await expect(f.store().load()).rejects.toThrow('preserved');
-      expect(await readFile(f.file)).toEqual(original);
+      if (kind === 'incompatible schema') {
+        expect(inspect(f.file, (db) => db.prepare('SELECT * FROM chats').all())).toEqual([
+          { id: 'keep', title: 'original' },
+        ]);
+      } else {
+        expect(await readFile(f.file)).toEqual(original);
+      }
     } finally {
       await f.close();
     }

@@ -66,10 +66,6 @@ export class ChatStore {
     try {
       await preparePrivateDatabase(this.file);
       this.db = new DatabaseSync(this.file, { timeout: 5000 });
-      const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
-      if (version > 1) {
-        throw Error(`Unsupported conversation database version: ${version}`);
-      }
       this.db.exec(
         'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;',
       );

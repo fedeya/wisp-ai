@@ -123,7 +123,6 @@ test('imports all product data into the same database as chats, retaining exact 
       ).toBe(original);
     }
     inspect(file, (db) => {
-      expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(1);
       expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
       expect(
         JSON.parse(String(db.prepare('SELECT extras FROM memory_scopes').get()!.extras)),
