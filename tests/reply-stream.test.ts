@@ -241,13 +241,13 @@ test('completed Markdown tables become native UI between prose and keep transcri
   assert.deepEqual(view.parts, [
     { type: 'text', text: 'Antes.\n\n' },
     { type: 'ui', id: table.id },
-    { type: 'text', text: '\nDespués.' },
+    { type: 'text', text: '\n\nDespués.' },
   ]);
   assert.deepEqual(display(reply), view, 'projection must be deterministic');
 });
 
 test('table conversion handles escaped/code pipes, code fences, limits and existing component IDs', () => {
-  const wire = 'A | B\n--- | :---:\na\\|b | `x|y`\n';
+  const wire = 'A | B\n--- | :---:\na\\|b | `x\\|y`\n';
   const reply = new ReplyStream();
   reply.feed(
     record({
@@ -266,7 +266,13 @@ test('table conversion handles escaped/code pipes, code fences, limits and exist
   for (const raw of [
     '```text\n' + wire + '```',
     '~~~\n' + wire + '~~~',
-    'A | B\n--- | ---\n1 | 2 | 3\n',
+    '    A | B\n    --- | ---\n    1 | 2\n',
+    '> A | B\n> --- | ---\n> 1 | 2\n',
+    '- A | B\n  --- | ---\n  1 | 2\n',
+    '<pre>\n' + wire + '</pre>\n',
+    'A | B\n--- | ---\n',
+    'A | B | C | D | E | F | G\n---|---|---|---|---|---|---\n1|2|3|4|5|6|7\n',
+    'A | B\n--- | ---\n' + 'x'.repeat(301) + ' | 2\n',
     'A | B\n--- | ---\n' + '1 | 2\n'.repeat(21),
   ]) {
     const stream = new ReplyStream();
@@ -280,6 +286,29 @@ test('table conversion handles escaped/code pipes, code fences, limits and exist
   plain.feed(wire);
   plain.finish();
   assert.equal(display(plain).ui![0].kind, 'table', 'format recovery and table conversion compose');
+});
+
+test('table interpretation follows GFM delimiters and normalizes short or extra cells', () => {
+  const markdown = 'A | B\n:- | -:\n1\n2 | 3 | ignored\n4 | 5\n';
+  const reply = new ReplyStream();
+  reply.feed(text(markdown));
+  reply.finish();
+  const view = display(reply),
+    table = view.ui![0];
+  assert.equal(table.kind, 'table');
+  if (table.kind === 'table') {
+    assert.deepEqual(table.columns, [
+      { label: 'A', align: 'left' },
+      { label: 'B', align: 'right' },
+    ]);
+    assert.deepEqual(table.rows, [
+      ['1', ''],
+      ['2', '3'],
+      ['4', '5'],
+    ]);
+  }
+  assert.equal(reply.view().text, markdown);
+  assert.equal(view.text, markdown, 'the original text remains available, including extra cells');
 });
 test('migration preserves user links and tools, converts verified references, and is idempotent', () => {
   const c = chat();

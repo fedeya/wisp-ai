@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
 import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';
-import { conversationTitle } from './context.ts';
+import { conversationTitle } from './conversation-title.ts';
 import type { ReplyPart } from './reply-tables.ts';
 const keySchema = z
   .string()

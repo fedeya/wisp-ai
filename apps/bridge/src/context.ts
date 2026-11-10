@@ -2,6 +2,8 @@ import { integrationContext, type CapabilityView } from '@wisp/protocol/capabili
 import type { Chat, Message } from './events.ts';
 import { linkedReferences } from '@wisp/protocol/references';
 import { z } from 'zod';
+import { replyContent } from './reply-content.ts';
+export { conversationTitle } from './conversation-title.ts';
 
 const questSummary = z.object({
   status: z.literal('available'),
@@ -255,12 +257,13 @@ export function withConversationHistory(input: string, messages: Message[]): str
   const currentUser = messages.findLastIndex((message) => message.role === 'user');
   const history = messages
     .slice(0, currentUser < 0 ? messages.length : currentUser)
-    .filter(
-      (message) =>
-        (message.role === 'user' || message.role === 'assistant') &&
-        !message.streaming &&
-        message.text.trim(),
-    )
+    .flatMap((message) => {
+      if ((message.role !== 'user' && message.role !== 'assistant') || message.streaming) {
+        return [];
+      }
+      const content = message.role === 'assistant' ? replyContent(message) : message;
+      return content?.role === message.role && content.text.trim() ? [content] : [];
+    })
     .slice(-12)
     .map((message) => ({ role: message.role, text: message.text.slice(0, 2000) }));
   if (!history.length) {
@@ -283,19 +286,4 @@ export function visibleUserText(input: string) {
     } catch {}
   }
   return input;
-}
-export function conversationTitle(value: unknown): string | undefined {
-  if (typeof value !== 'string') {
-    return;
-  }
-  const title = [
-    ...value
-      // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
-      .replace(/[|`\u0000-\u001f\u007f]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim(),
-  ]
-    .slice(0, 60)
-    .join('');
-  return title || undefined;
 }
