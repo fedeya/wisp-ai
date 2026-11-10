@@ -29,7 +29,7 @@ test('one long text event becomes visible before its JSON string closes, with no
   reply.feed('" y un emoji: \\uD83D');
   assert.equal(reply.view().text, 'Ya podés leer esto.\nUna comilla: " y un emoji: ');
   reply.feed('\\uDE00. [[ref:');
-  assert.equal(reply.view().text, 'Ya podés leer esto.\nUna comilla: " y un emoji: 😀. ');
+  assert.equal(reply.view().text, 'Ya podés leer esto.\nUna comilla: " y un emoji: 😀. [[ref:');
   reply.feed(
     'nova]]"}\n' +
       record({ type: 'reference', key: 'nova', kind: 'spell', id: 122, label: 'Nova' }),
@@ -50,7 +50,14 @@ test('arbitrary stream boundaries preserve escapes, Unicode and late references 
     for (let i = 0; i < wire.length; i += split) {
       reply.feed(wire.slice(i, i + split));
       assert.ok(!reply.view().text.includes('"type"'));
-      assert.ok(!reply.view().text.endsWith('[[ref:'));
+      assert.equal(
+        reply
+          .view()
+          .parts.map((part) => (part.type === 'text' ? part.text : ''))
+          .join(''),
+        reply.view().text,
+        'preview parts preserve the same decoded source as message text',
+      );
     }
     reply.finish();
     assert.equal(reply.view().text, 'Sí, "usá" [[ref:nova]].\nDespués seguí.');
@@ -77,11 +84,33 @@ test('invalid references, conflicting keys and missing IDs fail once without gue
   );
   reply.finish();
   reply.finish();
-  assert.equal(reply.view().text, '(reference unavailable) [[ref:s]] `[[ref:example]]`');
+  assert.equal(reply.view().text, '[[ref:missing]] [[ref:s]] `[[ref:example]]`');
   const spell = reply.view().references.s;
   assert.equal(spell.kind === 'spell' && spell.id, 122);
   assert.equal(reply.view().references.pin, undefined);
   assert.equal(reply.errors.length, 3);
+});
+test('reference presentation never rewrites Markdown source in code, prose or partial tokens', () => {
+  const source =
+    '**[[ref:missing]]** `[[ref:code]]` ``tick ` [[ref:double]]``\n' +
+    '~~~text\n[[ref:fenced]]\n~~~\n\\[[ref:escaped]] [[ref:late]] unfinished [[ref:';
+  const reply = new ReplyStream();
+  reply.feed(text(source));
+  const before = reply.view();
+  assert.equal(before.text, source);
+  assert.deepEqual(before.parts, [{ type: 'text', text: source }]);
+  assert.deepEqual(before.references, {});
+  assert.equal(before.streaming, true);
+  reply.feed(record({ type: 'reference', key: 'late', kind: 'spell', id: 122, label: 'Nova' }));
+  const after = reply.view();
+  assert.equal(after.text, source, 'late metadata only updates the separate reference catalog');
+  assert.deepEqual(after.parts, before.parts);
+  assert.equal(after.references.late.kind, 'spell');
+  assert.deepEqual(before.references, {}, 'earlier snapshots remain independent');
+  reply.finish();
+  assert.equal(reply.view().text, source);
+  assert.deepEqual(reply.view().parts, before.parts);
+  assert.equal(reply.view().streaming, false);
 });
 test('long replies keep refreshing at a bounded cadence, complete, and never leak reasoning', () => {
   const c = chat(),

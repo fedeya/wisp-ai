@@ -80,3 +80,67 @@ it(
         assert(not window:IsShown())
     end
 )
+
+it(
+    "updates pending panel labels after syntax completion without invalidating settled labels",
+    function()
+        local env = helper.env()
+        helper.fixture("addon/tests/wow-ui-stub.lua", env)
+        env.C = { db = {}, MarkdownCache = { revision = 0 }, MarkdownText = {} }
+        env.UnitName = function()
+            return "Mage"
+        end
+        env.GetRealmName = function()
+            return "Realm"
+        end
+        env.C_EncodingUtil = {
+            DeserializeJSON = function()
+                return { "Forever", "Realm", "Mage" }
+            end,
+        }
+        local C, ready, calls = env.C, false, 0
+        local source = "**" .. string.rep("Long label ", 60) .. "**"
+        C.FormatText = function(value)
+            if value == source then
+                calls = calls + 1
+                C.MarkdownText.pending = not ready
+                return ready and "|cffe3c77eCompleted label|r" or source
+            end
+            return tostring(value)
+        end
+        helper.addon("RichUI.lua", env)
+        helper.addon("Panels.lua", env)
+        C.ReceivePanels({
+            {
+                id = "async",
+                characterKey = "owner",
+                title = "Async panel",
+                ui = { { id = "label", kind = "text", text = source } },
+            },
+        })
+        local window
+        for _, widget in ipairs(env.UI_TEST.widgets) do
+            if
+                widget.title
+                and type(widget.title) == "table"
+                and widget.title:GetText() == "Async panel"
+            then
+                window = widget
+            end
+        end
+        assert.is_truthy(window)
+        assert.equal(source, window.host.widgets.label.title:GetText())
+        assert.is_true(window.inlineMarkdownPending)
+        assert.equal(1, calls)
+        C.RefreshPanels()
+        assert.equal(1, calls, "unchanged pending revisions do not render repeatedly")
+        ready, C.MarkdownCache.revision = true, 1
+        C.RefreshPanels()
+        assert.equal("|cffe3c77eCompleted label|r", window.host.widgets.label.title:GetText())
+        assert.is_false(window.inlineMarkdownPending)
+        assert.equal(2, calls)
+        C.MarkdownCache.revision = 2
+        C.RefreshPanels()
+        assert.equal(2, calls, "another document's completion does not invalidate a settled panel")
+    end
+)

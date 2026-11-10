@@ -298,11 +298,16 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
         .. referenceSignature(message.references)
         .. "\31"
         .. (C.RichSignature and C.RichSignature({ message.ui, message.parts }) or "")
+        .. "\31"
+        .. tostring(message.streaming)
+    local formatSignature = contentSignature
+        .. "\31"
+        .. (row.markdownPending and C.MarkdownCache.revision or "")
     local signature = chat.id
         .. "\31"
         .. (message.id or "")
         .. "\31"
-        .. contentSignature
+        .. formatSignature
         .. "\31"
         .. (tool and tool.status or "")
         .. "\31"
@@ -313,13 +318,40 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
         .. tostring(showAuthor)
         .. "\31"
         .. tostring(message.groupKey)
+        .. "\31"
+        .. C.MarkdownView.revision
+        .. "\31"
+        .. (row.inlineMarkdownPending and C.MarkdownCache.revision or "")
     if row.signature ~= signature then
         row.signature = signature
-        if row.markdownSignature ~= contentSignature then
-            local view = C.MarkdownTables.project(message)
+        C.MarkdownText.pending = false
+        if row.markdownSignature ~= formatSignature then
+            local messageKey = chat.id .. ":" .. (message.id or "")
+            if row.markdownPending
+                and (row.markdownRequestedText ~= message.text or row.markdownMessageKey ~= messageKey)
+            then
+                for _, source in ipairs(row.markdownSources or {}) do
+                    C.MarkdownCache.cancel(source)
+                end
+            end
+            local view = C.MarkdownView.project(message)
+            local sameReply = row.markdownMessageKey == messageKey
+            local extends = row.markdownSource
+                and (message.text or ""):sub(1, #row.markdownSource) == row.markdownSource
+            if not (view._markdownPending and sameReply and extends and row.markdownUI) then
+                row.markdownUI = view ~= message and view.ui or nil
+                row.markdownParts = view ~= message and view.parts or nil
+                row.markdownSimple = view._markdownSimple
+            end
+            row.markdownMessageKey, row.markdownRequestedText = messageKey, message.text
+            row.markdownSources = view._markdownSources
+            row.markdownPending = view._markdownPending
             row.markdownSignature = contentSignature
-            row.markdownUI = view ~= message and view.ui or nil
-            row.markdownParts = view ~= message and view.parts or nil
+                .. "\31"
+                .. (row.markdownPending and C.MarkdownCache.revision or "")
+            if not view._markdownPending then
+                row.markdownSource = message.text or ""
+            end
         end
         if row.markdownUI then
             -- Cache presentation data, never a stale copy of message metadata.
@@ -327,7 +359,8 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
             for key, value in pairs(message) do
                 view[key] = value
             end
-            view.ui, view.parts = row.markdownUI, row.markdownParts
+            view.ui, view.parts, view._markdown = row.markdownUI, row.markdownParts, true
+            view._markdownSimple = row.markdownSimple
             message = view
         end
         row.speaker = message.role
@@ -379,14 +412,15 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
             row.icon:Hide()
             local interleaved = message.parts
                 and #message.parts > 0
-                and message.ui
-                and #message.ui > 0
+                and not message._markdownSimple
+                and (message._markdown or (message.ui and #message.ui > 0))
             row.text:SetPoint("TOPLEFT", padding, -top)
             row.text:SetWidth(width - padding * 2)
             row.text:SetTextColor(unpack(message.role == "system" and MUTED or TEXT))
             setText(
                 row.text,
                 interleaved and ""
+                    or (message._markdownSimple and message.parts[1].text)
                     or formatted(message.text, message.references, message.role == "user")
             )
             if message.role == "user" and not (message.ui and #message.ui > 0) then
@@ -420,6 +454,7 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
                 row.height = row.height + 8
             end
         end
+        row.inlineMarkdownPending = C.MarkdownText.pending
         local retry = chat.status == "error"
             and message.role == "system"
             and message == chat.messages[#chat.messages]

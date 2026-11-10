@@ -7,15 +7,6 @@ const keySchema = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
   .refine((value) => !['__proto__', 'constructor', 'prototype'].includes(value));
-export function outsideCode(text: string, transform: (text: string) => string): string {
-  let result = '',
-    cursor = 0;
-  for (const match of text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g)) {
-    result += transform(text.slice(cursor, match.index)) + match[0];
-    cursor = match.index! + match[0].length;
-  }
-  return result + transform(text.slice(cursor));
-}
 export class ReplyStream {
   buffer = '';
   text = '';
@@ -230,21 +221,6 @@ export class ReplyStream {
     }
   }
   view() {
-    const renderText = (value: string) =>
-      outsideCode(value, (prose) => {
-        let visible = prose.replace(/\[\[ref:([a-zA-Z][a-zA-Z0-9_-]{0,63})\]\]/g, (token, key) =>
-          this.references[key] ? token : this.finished ? '(reference unavailable)' : '...',
-        );
-        const start = visible.lastIndexOf('[[');
-        if (
-          start >= 0 &&
-          !visible.slice(start).includes(']]') &&
-          ('[[ref:'.startsWith(visible.slice(start)) || visible.slice(start).startsWith('[[ref:'))
-        ) {
-          visible = visible.slice(0, start);
-        }
-        return visible;
-      });
     const pending = this.pendingText().slice(0, 20000 - this.text.length);
     const parts = this.parts.map((part) => ({ ...part }));
     if (pending) {
@@ -255,12 +231,11 @@ export class ReplyStream {
         parts.push({ type: 'text', text: pending });
       }
     }
-    const visibleParts: ReplyPart[] = parts.map((part) =>
-      part.type === 'text' ? { ...part, text: renderText(part.text) } : part,
-    );
+    // Markdown and reference tokens stay source text. The addon owns syntax and
+    // resolves declared, missing and still-streaming references for presentation.
     return {
-      text: renderText(this.text + pending),
-      parts: visibleParts,
+      text: this.text + pending,
+      parts,
       references: { ...this.references },
       ui: this.ui.map((node) => ({ ...node })),
       streaming: !this.finished,

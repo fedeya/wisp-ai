@@ -131,36 +131,6 @@ local function nativeReference(key, references)
         .. "]|h|r"
     )
 end
-local function formatted(text, references, fromUser)
-    local links = {}
-    local function keep(link)
-        links[#links + 1] = link
-        return "\1" .. #links .. "\2"
-    end
-    text = tostring(text or "")
-    text = text:gsub("```.-```", function(code)
-        return keep(code:gsub("|", "||"))
-    end)
-    text = text:gsub("`[^`\n]+`", function(code)
-        return keep(code:gsub("|", "||"))
-    end)
-    if fromUser then
-        text = text:gsub("|cn[%w_]+:|H[^|]+|h.-|h|r", keep)
-        text = text:gsub("|c%x%x%x%x%x%x%x%x|H[^|]+|h.-|h|r", keep)
-        text = text:gsub("|H[^|]+|h.-|h", keep)
-    end
-    text = text:gsub("|", "||")
-    text = text:gsub("%[%[ref:([%w_-]+)%]%]", function(key)
-        return keep(nativeReference(key, references))
-    end)
-    text = text:gsub("%*%*([^*]+)%*%*", "|cffe3c77e%1|r")
-    text = text:gsub("%*([^*\n]+)%*", "%1"):gsub("_([^_\n]+)_", "%1")
-    text = text:gsub("%[([^%]]+)%]%(https?://[^%)]+%)", "%1")
-    return C.Emoji.render((text:gsub("\1(%d+)\2", function(index)
-        return links[tonumber(index)]
-    end)))
-end
-C.FormatText = formatted
 local function referenceSignature(references)
     local parts = {}
     for key, ref in pairs(references or {}) do

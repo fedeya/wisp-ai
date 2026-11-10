@@ -169,10 +169,16 @@ local function tableUI(w, node, available, rendered)
     if y > 0 then
         y = y + 10
     end
-    local count, padding, gap = #node.columns, 10, 12
+    local rows = node._markdown and node._markdownRows or node.rows
+    rows = rows or node.rows
+    local pages = node._markdown and math.max(1, math.ceil(#rows / 20)) or 1
+    w.page = math.min(pages, math.max(1, node._markdown and (w.page or 1) or 1))
+    local offset = node._markdown and (w.page - 1) * 20 or 0
+    local shown = node._markdown and math.min(20, #rows - offset) or #rows
+    local count, padding, gap = math.max(1, #node.columns), 10, 12
     local wide = available >= math.max(340, count * 120)
     local columnWidth = math.max(1, (available - padding * 2 - gap * (count - 1)) / count)
-    for index = 1, #node.rows + 1 do
+    for index = 1, shown + 1 do
         local header = index == 1
         local row = w.tableRows[index]
         if not row then
@@ -188,18 +194,18 @@ local function tableUI(w, node, available, rendered)
         row:SetWidth(available)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 0, -y)
-        if header and not wide and #node.rows > 0 then
+        if header and not wide and shown > 0 then
             row:Hide()
         else
             row.background:SetColorTexture(
                 0.20,
                 0.18,
                 0.13,
-                header and 0.9 or (index % 2 == 0 and 0.42 or 0.18)
+                header and 0.9 or ((offset + index) % 2 == 0 and 0.42 or 0.18)
             )
             local height, top = 0, padding
             for column, spec in ipairs(node.columns) do
-                local value = header and spec.label or node.rows[index - 1][column]
+                local value = header and spec.label or rows[offset + index - 1][column]
                 local cell = row.cells[column]
                 if not cell then
                     cell = font(row)
@@ -220,7 +226,7 @@ local function tableUI(w, node, available, rendered)
                         height,
                         line(
                             cell,
-                            rendered(value),
+                            rendered(value or ""),
                             columnWidth,
                             padding + (column - 1) * (columnWidth + gap),
                             padding
@@ -242,7 +248,7 @@ local function tableUI(w, node, available, rendered)
                     top = top
                         + line(
                             cell,
-                            rendered(value),
+                            rendered(value or ""),
                             math.max(1, available - padding * 2),
                             padding,
                             top
@@ -259,8 +265,59 @@ local function tableUI(w, node, available, rendered)
             y = y + row:GetHeight() + 1
         end
     end
-    for index = #node.rows + 2, #w.tableRows do
+    for index = shown + 2, #w.tableRows do
         w.tableRows[index]:Hide()
+    end
+    if pages > 1 then
+        if not w.pagerPrev then
+            w.pagerPrev = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
+            w.pagerNext = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
+            w.pagerLabel = font(w, "GameFontHighlightSmall")
+            w.pagerLabel:SetJustifyH("CENTER")
+            w.pagerPrev:SetSize(28, 24)
+            w.pagerNext:SetSize(28, 24)
+            text(w.pagerPrev, "<")
+            text(w.pagerNext, ">")
+        end
+        local function changePage(delta)
+            w.page = math.max(1, math.min(pages, w.page + delta))
+            if C.MarkdownView and C.MarkdownView.invalidate then
+                C.MarkdownView.invalidate()
+            end
+        end
+        w.pagerPrev:SetScript("OnClick", function()
+            changePage(-1)
+        end)
+        w.pagerNext:SetScript("OnClick", function()
+            changePage(1)
+        end)
+        w.pagerPrev:SetEnabled(w.page > 1)
+        w.pagerNext:SetEnabled(w.page < pages)
+        w.pagerPrev:ClearAllPoints()
+        w.pagerNext:ClearAllPoints()
+        w.pagerPrev:SetPoint("TOPLEFT", 0, -y)
+        w.pagerNext:SetPoint("TOPRIGHT", 0, -y)
+        w.pagerPrev:Show()
+        w.pagerNext:Show()
+        local height = line(
+            w.pagerLabel,
+            string.format("%d-%d / %d", offset + 1, offset + shown, #rows),
+            math.max(1, available - 72),
+            36,
+            y + 4
+        )
+        y = y + math.max(24, height + 8) + 8
+    elseif w.pagerPrev then
+        w.pagerPrev:Hide()
+        w.pagerNext:Hide()
+        w.pagerLabel:Hide()
+    end
+    if node.notice and node.notice ~= "" then
+        w.notice = w.notice or font(w, "GameFontHighlightSmall")
+        w.notice:SetTextColor(0.65, 0.63, 0.58)
+        y = y + 6 + line(w.notice, rendered(node.notice), available, 0, y + 6)
+    elseif w.notice then
+        w.notice:Hide()
     end
     return y
 end
@@ -547,28 +604,61 @@ function C.RenderRichUI(host, chat, message, width)
     local y = 0
     host.prose = host.prose or {}
     local proseCount = 0
-    local function root(node)
-        local h = build(node, host, width, 0)
+    local function indent(value)
+        return math.max(0, math.min(tonumber(value) or 0, math.max(0, width - 40)))
+    end
+    local function root(node, left)
+        left = indent(left)
+        local h = build(node, host, math.max(1, width - left), 0)
         local w = widgets[node.id]
         w:ClearAllPoints()
-        w:SetPoint("TOPLEFT", 0, -y)
+        w:SetPoint("TOPLEFT", left, -y)
         y = y + h + 8
     end
-    if message.parts and #message.parts > 0 and message.ui and #message.ui > 0 then
+    if
+        message.parts
+        and #message.parts > 0
+        and not message._markdownSimple
+        and (message._markdown or (message.ui and #message.ui > 0))
+    then
         for _, part in ipairs(message.parts) do
             if part.type == "ui" then
                 local node = nodes[part.id]
                 if node and not node.parent then
-                    root(node)
+                    root(node, part.indent)
                 end
             elseif part.type == "text" and part.text ~= "" then
                 proseCount = proseCount + 1
                 local f = host.prose[proseCount] or font(host)
                 host.prose[proseCount] = f
                 f:ClearAllPoints()
-                f:SetPoint("TOPLEFT", 0, -y)
-                f:SetWidth(width)
-                text(f, C.FormatText and C.FormatText(part.text, message.references) or part.text)
+                local left = indent(part.indent)
+                local style = "GameFontNormal"
+                if part.style == "heading" then
+                    style = (part.level or 1) == 1 and "GameFontNormalHuge" or "GameFontNormalLarge"
+                    f:SetTextColor(0.95, 0.83, 0.52)
+                elseif part.style == "code" then
+                    style = "GameFontHighlightSmall"
+                    f:SetTextColor(0.75, 0.79, 0.83)
+                elseif part.style == "quote" then
+                    f:SetTextColor(0.65, 0.63, 0.58)
+                else
+                    f:SetTextColor(0.89, 0.85, 0.75)
+                end
+                if f.markdownStyle ~= style then
+                    f:SetFontObject(_G[style] or style)
+                    f.markdownStyle = style
+                end
+                f:SetPoint("TOPLEFT", left, -y)
+                f:SetWidth(math.max(1, width - left))
+                text(
+                    f,
+                    part._markdown and part.text
+                        or (
+                            C.FormatText and C.FormatText(part.text, message.references)
+                            or part.text
+                        )
+                )
                 f:Show()
                 y = y + f:GetStringHeight() + 8
             end
