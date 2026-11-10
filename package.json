@@ -26,7 +26,7 @@
     "package:engine": "turbo run build --filter=@wisp/agent... && node scripts/build-engine.ts",
     "format": "oxfmt --write && stylua --verify .busted .luacheckrc addon tests && prettier --plugin prettier-plugin-svelte --write \"apps/desktop/src/**/*.{svelte,css,html}\"",
     "format:check": "oxfmt --check && stylua --check .busted .luacheckrc addon tests && prettier --plugin prettier-plugin-svelte --check \"apps/desktop/src/**/*.{svelte,css,html}\"",
-    "lint": "oxlint --deny-warnings apps packages scripts tests addon/tests addon/scripts vitest.config.ts && pnpm lint:addon",
+    "lint": "oxlint --deny-warnings apps packages scripts tests addon/tests vitest.config.ts && pnpm lint:addon",
     "lint:addon": "pnpm --filter @wisp/addon check:lua",
     "stage:desktop": "turbo run stage --filter=@wisp/desktop",
     "test:core": "turbo run test --concurrency=2 --filter=!@wisp/addon --filter=!@wisp/desktop",
