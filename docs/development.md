@@ -62,6 +62,8 @@ for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp
 (or `@wisp/agent`, `@wisp/protocol`, `@wisp/releases`, `@wisp/scripts`, `@wisp/web`).
 For a file, run `pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/routines.test.ts`.
 `pnpm test:watch` watches the task graph and rebuilds dependencies before rerunning tests.
+The root integration task includes addon Lua sources and transport fixtures as
+inputs, so addon changes also rerun the cross-language transport tests.
 Protocol schema assertions live in `packages/protocol/tests/`; the apps own their
 behavior tests in `apps/<app>/tests/` (desktop UI tests remain in `src/`). Release
 helpers own their tests in `packages/releases/tests/` and `scripts/tests/`.

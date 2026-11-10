@@ -22,6 +22,16 @@
       "cache": false,
       "passThroughEnv": ["*"]
     },
+    "@wisp/addon#test": {
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.busted"]
+    },
+    "@wisp/tests#test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/addon/WispAI/**",
+        "$TURBO_ROOT$/addon/tests/fixtures/**"
+      ]
+    },
     "dev": {
       "dependsOn": ["^build"],
       "cache": false,
