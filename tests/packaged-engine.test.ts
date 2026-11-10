@@ -60,7 +60,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         windowsHide: true,
         timeout: 30000,
       });
-      const db = new DatabaseSync(path.join(destination, 'runtime/chats.sqlite'), {
+      const db = new DatabaseSync(path.join(destination, 'runtime/wisp.sqlite'), {
         readOnly: true,
       });
       try {

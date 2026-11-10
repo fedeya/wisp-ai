@@ -15,6 +15,10 @@ export async function preparePrivateDatabase(file: string) {
       throw error;
     }
   }
+  await protectDatabasePermissions(file);
+}
+
+export async function protectDatabasePermissions(file: string) {
   if (process.platform !== 'win32') {
     await chmod(file, 0o600);
     for (const suffix of ['-wal', '-shm']) {

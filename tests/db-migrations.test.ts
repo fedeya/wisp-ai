@@ -69,7 +69,7 @@ test('Drizzle adopts existing v1 rows, is repeatable, rejects drift and rolls ba
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
   } finally {
     database.close();
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 
@@ -86,11 +86,11 @@ test('three processes can migrate and import the same database simultaneously', 
       try { console.log(JSON.stringify((await store.load()).map(c => c.id))); }
       finally { await store.close(); }
     `;
-    const results = await Promise.all(
+    const settled = await Promise.allSettled(
       [1, 2, 3].map(() =>
         promisify(execFile)(
           process.execPath,
-          ['--input-type=module', '-e', source, path.join(root, 'chats.sqlite')],
+          ['--input-type=module', '-e', source, path.join(root, 'wisp.sqlite')],
           {
             cwd: fileURLToPath(new URL('.', import.meta.url)),
             windowsHide: true,
@@ -98,12 +98,18 @@ test('three processes can migrate and import the same database simultaneously', 
         ),
       ),
     );
+    const results = settled.map((result) => {
+      if (result.status === 'rejected') {
+        throw result.reason;
+      }
+      return result.value;
+    });
     expect(results.map(({ stdout }) => JSON.parse(stdout))).toEqual([
       ['legacy'],
       ['legacy'],
       ['legacy'],
     ]);
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });

@@ -68,13 +68,15 @@ Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from applicati
 | Data                                   | Path relative to the data root                   |
 | -------------------------------------- | ------------------------------------------------ |
 | Configuration                          | `config.local.json`                              |
-| Conversations and messages             | `runtime/chats.sqlite`                           |
+| Application database (currently chats) | `runtime/wisp.sqlite`                            |
 | Routine definitions and run history    | `runtime/routines.json`                          |
 | Shared preferences and character plans | `runtime/memory/`                                |
 | Tool choices / custom MCP metadata     | `runtime/capabilities.json` / `runtime/mcp.json` |
 | Agent log                              | `runtime/eve.log`                                |
 
 On the first launch after upgrading, Wisp validates the complete legacy `runtime/chats.json`, creates a byte-for-byte `runtime/chats.pre-sqlite-<sha256>.json` backup and imports conversations and messages in one transaction. The original JSON is preserved. After a successful import, SQLite is authoritative: the old JSON is no longer updated or reimported, including after deleting every conversation. Invalid legacy data or an unsupported/corrupt database stops startup rather than replacing history with an empty store. Retain the original and backup until the imported history has been checked.
+
+Earlier SQLite previews used `runtime/chats.sqlite`. When `wisp.sqlite` is absent, startup takes a consistent SQLite snapshot of that database, including committed WAL pages, and publishes it under the new name only when the copy is complete. The old database is retained as a backup. An existing `wisp.sqlite` is authoritative, including when it is empty; a stale `chats.sqlite` is never reimported over it. Installation import accepts either name and prefers `wisp.sqlite`.
 
 SQLite stores conversation titles, status, character identity and activity timestamps in `chats` columns. `messages` stores role, text and ordering separately; each row has a stable internal ID independent of its position. `source_id` preserves the original optional message ID, including old missing or duplicate IDs. Rich content, references, UI and unknown extension fields remain in JSON `extras`, preserving their original values. Updates write only changed rows.
 
@@ -84,7 +86,7 @@ Engine session IDs, game transport ownership, unread state, model connection sel
 
 Schema changes use Drizzle ORM and Drizzle Kit, both pinned to `1.0.0-rc.5`, with Node's built-in SQLite driver. Generate a migration with `pnpm --filter @wisp/bridge db:generate --name <description>` and review/commit its SQL and snapshot. Startup applies pending migrations in an immediate transaction, recording names and SHA-256 hashes in `wisp_migrations`. The normalization migration validates complete v1/v2 histories before backfilling STRICT tables, preserves unknown fields and keeps foreign keys enabled throughout. A failed migration rolls back the table replacements; an unknown, changed or divergent migration history stops startup. Existing migration files are immutable. Do not use schema push against durable history.
 
-Wisp still loads the conversation list and messages into the current bridge session; lazy history loading and cross-worktree sharing are separate changes. Stop Wisp before manually copying its data. When backing up an open database, use SQLite's backup API so committed WAL data is included; copying only `chats.sqlite` can miss recent changes.
+Wisp still loads the conversation list and messages into the current bridge session; lazy history loading and cross-worktree sharing are separate changes. Stop Wisp before manually copying its data. When backing up an open database, use SQLite's backup API so committed WAL data is included; copying only `wisp.sqlite` can miss recent changes.
 
 WoW stores UI preferences and drafts in the `WispAIDB` SavedVariables. Logs may contain conversations and tool data: redact them before sharing, and never share credential stores, tokens or private configuration.
 

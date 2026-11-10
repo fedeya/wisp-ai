@@ -221,7 +221,7 @@ test('the assembled runtime serves validated status, receives packets, persists 
     );
     await bridge.stop();
     const { ChatStore } = await import('@wisp/bridge/chat-store');
-    const store = new ChatStore(path.join(f.dataDirectory, 'runtime/chats.sqlite'), () => {});
+    const store = new ChatStore(path.join(f.dataDirectory, 'runtime/wisp.sqlite'), () => {});
     const saved = await store.load();
     await store.close();
     expect(saved.map((chat: { id: string }) => chat.id)).toContain('chat');

@@ -37,7 +37,7 @@ function history(): Chat {
 }
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-normalized-'));
-  const file = path.join(root, 'chats.sqlite');
+  const file = path.join(root, 'wisp.sqlite');
   const stores: ChatStore[] = [];
   return {
     root,

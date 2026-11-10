@@ -1,8 +1,12 @@
 import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { DatabaseSync, backup } from 'node:sqlite';
 import { ChatStore, conversationInstanceId } from './chat-store.ts';
+import {
+  copyDatabaseSnapshot,
+  findApplicationDatabase,
+  DATABASE_NAME,
+} from './db/application-file.ts';
 
 async function stopPreviousBridge(source: string) {
   let identity: { port?: number; token?: string };
@@ -79,22 +83,10 @@ export async function migrateDesktop(
   await stopPreviousBridge(source);
   await mkdir(path.join(destination, 'runtime'), { recursive: true });
   // Use SQLite's snapshot API so committed WAL pages are included as well.
-  const databaseFile = path.join(destination, 'runtime/chats.sqlite');
-  let sourceDatabase: DatabaseSync | undefined;
-  try {
-    await access(path.join(source, 'runtime/chats.sqlite'));
-    await writeFile(databaseFile, '', { flag: 'wx', mode: 0o600 });
-    sourceDatabase = new DatabaseSync(path.join(source, 'runtime/chats.sqlite'), {
-      readOnly: true,
-      timeout: 5000,
-    });
-    await backup(sourceDatabase, databaseFile);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  } finally {
-    sourceDatabase?.close();
+  const databaseFile = path.join(destination, 'runtime', DATABASE_NAME);
+  const sourceDatabase = await findApplicationDatabase(path.join(source, 'runtime'));
+  if (sourceDatabase) {
+    await copyDatabaseSnapshot(sourceDatabase, databaseFile);
   }
   const allowed = [
     'chats.json',

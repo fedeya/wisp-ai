@@ -12,7 +12,7 @@ function chat(id = 'chat') {
 }
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-sqlite-'));
-  const file = path.join(root, 'chats.sqlite');
+  const file = path.join(root, 'wisp.sqlite');
   const legacy = path.join(root, 'chats.json');
   const stores: ChatStore[] = [];
   const store = () => {
@@ -302,7 +302,7 @@ test('installation import snapshots WAL data and detaches engine sessions only i
     await writeFile(path.join(source, 'config.local.json'), JSON.stringify({ wow: 'test' }));
     // No desktop endpoint: source DB remains open with committed WAL pages.
     await migrateDesktop(source, destination, '');
-    const imported = new ChatStore(path.join(destination, 'runtime/chats.sqlite'), () => {});
+    const imported = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
     try {
       const chats = await imported.load();
       expect(chats[0].eveId).toBeUndefined();

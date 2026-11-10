@@ -20,6 +20,7 @@ import { Client } from 'eve/client';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { DiskTransport } from './transport.ts';
 import { ChatStore } from './chat-store.ts';
+import { applicationDatabaseFile } from './db/application-file.ts';
 import { createTurnRunner } from './turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { MemoryStore } from './memory-store.ts';
@@ -216,7 +217,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         (!tool || capabilitySettings.enabled('mcp_tool:' + name + ':' + tool)),
     );
     resources.defer(() => mcpRelay.close());
-    const chatStore = new ChatStore(path.join(runtime, 'chats.sqlite'), (error) =>
+    const chatStore = new ChatStore(await applicationDatabaseFile(runtime), (error) =>
       log('Conversation save failed: ' + errorMessage(error)),
     );
     const state = createSessionState(await chatStore.load());

@@ -38,6 +38,9 @@ try {
     'runtime/chats.sqlite',
     'runtime/chats.sqlite-wal',
     'runtime/chats.sqlite-shm',
+    'runtime/wisp.sqlite',
+    'runtime/wisp.sqlite-wal',
+    'runtime/wisp.sqlite-shm',
     'runtime/chatgpt-host.json',
     'secrets',
     'tests',
@@ -200,7 +203,7 @@ try {
   }
   await exec(executable, ['--self-test'], { env, windowsHide: true, timeout: 30000 });
   await access(path.join(data, 'config.local.json'));
-  await access(path.join(data, 'runtime/chats.sqlite'));
+  await access(path.join(data, 'runtime/wisp.sqlite'));
   await exec(path.join(target, 'uninstall.exe'), ['/S', '_?=' + target], {
     windowsHide: true,
     timeout: 120000,

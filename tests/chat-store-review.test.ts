@@ -12,7 +12,7 @@ import { preparePrivateDatabase } from '@wisp/bridge/db/private-file';
 
 test('startup reads messages, private state and revisions from one snapshot during a concurrent commit', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-startup-snapshot-'));
-  const file = path.join(root, 'chats.sqlite');
+  const file = path.join(root, 'wisp.sqlite');
   const seed = new ChatStore(file, () => {});
   const reader = new ChatStore(file, () => {});
   let writer: DatabaseSync | undefined;
@@ -86,7 +86,7 @@ test('startup reads messages, private state and revisions from one snapshot duri
 
 test('preparing private file permissions never truncates an existing database', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-private-open-'));
-  const file = path.join(root, 'chats.sqlite');
+  const file = path.join(root, 'wisp.sqlite');
   const seed = new ChatStore(file, () => {});
   const reader = new ChatStore(file, () => {});
   try {
@@ -137,7 +137,7 @@ test.runIf(process.platform !== 'win32').each(['new', 'existing'])(
       `;
       const { stdout } = await promisify(execFile)(
         process.execPath,
-        ['--input-type=module', '-e', source, path.join(root, 'chats.sqlite'), kind],
+        ['--input-type=module', '-e', source, path.join(root, 'wisp.sqlite'), kind],
         {
           cwd: fileURLToPath(new URL('.', import.meta.url)),
           windowsHide: true,
