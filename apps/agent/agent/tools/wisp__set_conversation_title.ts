@@ -6,14 +6,14 @@ export default enabledTool(
   'set_conversation_title',
   defineTool({
     description:
-      'Assigns a descriptive conversation title when conversation_context.needsTitle=true, or renames it on an explicit user request. Summarize the topic in the user’s language rather than copying their message.',
+      'Assigns a conversation title before replying to the first user message when conversation_context.needsTitle=true, including greetings or unclear topics, or renames it on an explicit user request. Summarize the message in the user’s language without inventing a topic.',
     inputSchema: z.object({
       title: z
         .string()
         .min(1)
         .max(60)
         .describe(
-          'A natural title of 3–6 words about the topic; no quotes, markup, generic greeting or character-state dump.',
+          'A natural title in the user’s language based on the first message; prefer 3–6 words for a concrete topic, or a short greeting title when appropriate. No quotes, markup, invented topic or character-state dump.',
         ),
     }),
     label: { start: () => 'Naming conversation' },
