@@ -34,7 +34,12 @@ async function fixture() {
       return child;
     },
   };
-  return { dataDirectory, options, child: () => child };
+  return {
+    dataDirectory,
+    options,
+    agentStopped: () =>
+      child !== undefined && (child.exitCode !== null || child.signalCode !== null),
+  };
 }
 
 test('a fresh addon installation starts before a default model is selected', async () => {
@@ -229,7 +234,7 @@ test('the assembled runtime serves validated status, receives packets, persists 
       { role: 'user', text: 'Hello' },
     ]);
     expect(saved.map((chat: { id: string }) => chat.id)).not.toContain('draft');
-    await vi.waitFor(() => expect(f.child()?.exitCode).not.toBeNull());
+    await vi.waitFor(() => expect(f.agentStopped()).toBe(true));
     await bridge.stop();
   } finally {
     await bridge?.stop();
@@ -244,7 +249,7 @@ test('a late startup failure closes the agent and already-started runtime resour
   const port = (occupied.address() as { port: number }).port;
   try {
     await expect(startBridge({ ...f.options, desktopPort: port })).rejects.toThrow('EADDRINUSE');
-    await vi.waitFor(() => expect(f.child()?.exitCode).not.toBeNull());
+    await vi.waitFor(() => expect(f.agentStopped()).toBe(true));
   } finally {
     await new Promise<void>((resolve) => occupied.close(() => resolve()));
     await rm(f.dataDirectory, { recursive: true, force: true });
