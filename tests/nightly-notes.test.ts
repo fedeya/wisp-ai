@@ -9,13 +9,15 @@ const sha = 'a'.repeat(40);
 const authored =
   '# Next release\n\n<!-- private drafting note -->\n\n## Fixed\n\n- Conversations reconnect without restarting Wisp.\n';
 
-test('nightly notes contain an experimental notice and exact technical comparison', () => {
-  const notes = formatNightlyNotes(sha, 'v0.0.7');
+test('nightly release notes contain a technical list and exact comparison link', () => {
+  const notes = formatNightlyNotes(sha, 'v0.0.7', '- test: added regression coverage');
   expect(notes).toContain('Experimental build from main');
   expect(notes).not.toContain('## Fixed');
   expect(notes).toContain(
-    `[View technical changes on GitHub](https://github.com/fedeya/wisp-ai/compare/v0.0.7...${sha})`,
+    `[View full diff on GitHub](https://github.com/fedeya/wisp-ai/compare/v0.0.7...${sha})`,
   );
+  expect(notes).toContain('## Technical changes since v0.0.7');
+  expect(notes).toContain('- test: added regression coverage');
   expect(validateNotes(notes)).toBe(notes);
 });
 
@@ -30,7 +32,7 @@ test('malformed source identities fail explicitly', () => {
   expect(() => formatNightlyNotes(sha, 'nightly')).toThrow('identity');
 });
 
-test('nightly generation omits technical commits and compares against a stable ancestor', async () => {
+test('nightly generation includes technical commits through the exact build without authored notes', async () => {
   const root = await mkdtemp(join(tmpdir(), 'wisp-nightly-notes-'));
   if (!root.startsWith(resolve(tmpdir()) + sep)) {
     throw Error('Unsafe fixture directory.');
@@ -59,7 +61,12 @@ test('nightly generation omits technical commits and compares against a stable a
         message,
       );
     commit('Initial stable');
+    const initialSha = git('rev-parse', 'HEAD');
+    const withoutStable = await nightlyNotes(initialSha, root);
+    expect(withoutStable).toContain('- Initial stable');
+    expect(withoutStable).toContain(`/commit/${initialSha}`);
     git('tag', 'v0.0.7');
+    expect(await nightlyNotes(initialSha, root)).toContain('No commits in this comparison.');
     commit('test: added regression coverage');
     const buildSha = git('rev-parse', 'HEAD');
     commit('docs: update README');
@@ -68,7 +75,8 @@ test('nightly generation omits technical commits and compares against a stable a
     const notes = await nightlyNotes(buildSha, root);
     expect(notes).toContain(`/compare/v0.0.7...${buildSha}`);
     expect(notes).not.toContain('v9.0.0');
-    expect(notes).not.toContain('added regression');
+    expect(notes).toContain('test: added regression coverage');
+    expect(notes).toContain(`/commit/${buildSha}`);
     expect(notes).not.toContain('README');
     expect(notes).not.toContain('Conversations reconnect');
     expect(notes).toContain('Experimental build from main');

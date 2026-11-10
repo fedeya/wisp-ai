@@ -38,16 +38,18 @@ Every push to `main` runs the release pipeline. After checks pass, CI assigns
 `<current stable, next patch>-nightly.<run number>.<attempt>` only in the build
 checkout. No version commits are pushed back to `main`. Each installer has an
 immutable version tag targeting the exact source SHA. No notes need to be authored
-for a PR or Nightly build: merging is enough. Generated notes contain an
-experimental-build notice and a **View technical changes on GitHub** link to
-the comparison from the nearest stable ancestor tag to the exact source SHA
-(or the source commit if no stable tag exists). This comparison includes all
+for a PR or Nightly build: merging is enough. Generated GitHub release notes
+contain an experimental-build notice, the technical commit list since the nearest
+Stable ancestor, and a link to the full diff ending at the exact build SHA. If no
+Stable tag exists, the notes list up to 30 recent commits. This history includes
 changes since Stable, not just the latest PR. Nightly never reads `next.md` or
 copies pending Stable highlights into every build.
 
 The website lists Nightlies compactly: version, date, platform download and the
-technical link. The channel explains that builds are experimental; the version
-detail repeats that notice. GitHub and the updater use the same generated notes.
+technical link, which opens that build's GitHub release to read its notes. The
+commit list stays off the website, including version detail pages. The channel
+explains that builds are experimental; the version detail repeats that notice.
+GitHub and the updater use the same generated notes.
 
 The signed installer must pass installation/upgrade tests before the prerelease
 is published. The moving `nightly` prerelease holds only the latest updater

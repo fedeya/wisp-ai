@@ -70,7 +70,7 @@ export function ReleaseCard({
               {locale === 'es' ? 'Descargar para' : 'Download for'} {download.label}
             </ButtonLink>
           ))}
-          <a className={styles.textLink()} href={release.technicalUrl || release.url}>
+          <a className={styles.textLink()} href={release.url}>
             {nightly
               ? locale === 'es'
                 ? 'Ver cambios técnicos en GitHub'

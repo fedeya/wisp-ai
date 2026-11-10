@@ -31,7 +31,7 @@ export async function prepareNotes(version: string, root = process.cwd()) {
   }
   throw Error(`Release notes already exist for ${version}.`);
 }
-export function formatNightlyNotes(sha: string, previous?: string) {
+export function formatNightlyNotes(sha: string, previous?: string, changes = '') {
   if (!/^[a-f0-9]{40}$/.test(sha) || (previous && !/^v\d+\.\d+\.\d+$/.test(previous))) {
     throw Error('Invalid Nightly source identity.');
   }
@@ -39,7 +39,8 @@ export function formatNightlyNotes(sha: string, previous?: string) {
   const technical = previous
     ? `${repository}/compare/${previous}...${sha}`
     : `${repository}/commit/${sha}`;
-  return `# Nightly preview\n\n- Experimental build from main. It may contain bugs.\n\n[View technical changes on GitHub](${technical})\n`;
+  const heading = previous ? `Technical changes since ${previous}` : 'Technical changes';
+  return `# Nightly preview\n\n- Experimental build from main. It may contain bugs.\n\n## ${heading}\n\n${changes.trim() || '- No commits in this comparison.'}\n\n[View full diff on GitHub](${technical})\n`;
 }
 export async function nightlyNotes(sha: string, root = process.cwd()) {
   let previous: string | undefined;
@@ -61,7 +62,17 @@ export async function nightlyNotes(sha: string, root = process.cwd()) {
   } catch {
     // A repository without a stable tag can still link to the exact source.
   }
-  return formatNightlyNotes(sha, previous);
+  const changes = execFileSync(
+    'git',
+    [
+      'log',
+      '--no-merges',
+      '--format=- %s ([%h](https://github.com/fedeya/wisp-ai/commit/%H))',
+      ...(previous ? [`${previous}..${sha}`] : ['-30', sha]),
+    ],
+    { cwd: root, encoding: 'utf8', windowsHide: true },
+  );
+  return formatNightlyNotes(sha, previous, changes);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === 'check') {
