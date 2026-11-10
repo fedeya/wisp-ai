@@ -1,14 +1,16 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+local function setup(env)
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
 end
 
 it(
     "routine subscriptions debounce events, retain combat readings and stop unused listeners",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = { connected = true, chats = {} }
             sent, tickers = {}, {}
@@ -26,7 +28,7 @@ it(
                 return combat
             end
         end
-        helper.addon("Advice.lua", _ENV)
+        helper.addon("Advice.lua", env)
 
         C.InitAdvice()
         local events
@@ -66,8 +68,9 @@ it(
 it(
     "sidebar groups run conversations under their routine and excludes them from ordinary chats",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = {}
             SlashCmdList = {}
@@ -75,9 +78,9 @@ it(
                 return 1
             end
         end
-        helper.addon("Core.lua", _ENV)
-        helper.addon("RichUI.lua", _ENV)
-        helper.addon("UI.lua", _ENV)
+        helper.addon("Core.lua", env)
+        helper.addon("RichUI.lua", env)
+        helper.addon("UI.lua", env)
 
         C.db = { sidebar = true, showTools = true, drafts = {} }
         C.active, C.connected = "chat", true

@@ -1,7 +1,8 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+local function setup(env)
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
         C = {}
         SlashCmdList = {}
@@ -9,10 +10,10 @@ local function setup(_ENV)
             return 1
         end
     end
-    helper.addon("Core.lua", _ENV)
-    helper.addon("RichUI.lua", _ENV)
-    helper.addon("UI.lua", _ENV)
-    helper.addon("Inline.lua", _ENV)
+    helper.addon("Core.lua", env)
+    helper.addon("RichUI.lua", env)
+    helper.addon("UI.lua", env)
+    helper.addon("Inline.lua", env)
 end
 
 for _, surfaceName in ipairs({ "main", "inline" }) do
@@ -20,8 +21,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
         surfaceName
             .. " groups chronological tool calls and text under one assistant header per turn",
         function()
-            local _ENV = helper.env()
-            setup(_ENV)
+            local env = helper.env()
+            setfenv(1, env)
+            setup(env)
 
             C.db = { sidebar = true, showTools = true, drafts = {} }
             C.active = "chat"

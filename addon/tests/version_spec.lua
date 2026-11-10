@@ -1,7 +1,8 @@
 local helper = require("addon.tests.support")
 
 it("diag reports the loaded addon build, unknown bridge and actual version mismatches", function()
-    local _ENV = helper.env()
+    local env = helper.env()
+    setfenv(1, env)
     do
         logs = {}
         SlashCmdList = {}
@@ -24,7 +25,7 @@ it("diag reports the loaded addon build, unknown bridge and actual version misma
             end,
         }
     end
-    helper.addon("Core.lua", _ENV)
+    helper.addon("Core.lua", env)
 
     assert(C.VERSION == 1)
     SlashCmdList.WISPAI("diag")

@@ -1,17 +1,19 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+local function setup(env)
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
 end
 
 it("native layout places prose on both sides of a panel", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
     do
         C = {}
         host = CreateFrame("Frame")
     end
-    helper.addon("RichUI.lua", _ENV)
+    helper.addon("RichUI.lua", env)
 
     local message = {
         ui = { { id = "panel", kind = "card", title = "Panel" } },
@@ -33,8 +35,9 @@ end)
 it(
     "native components preserve local edits across snapshots and dispatch registered button IDs",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = { db = {}, workStarted = {} }
             function C.Capture()
@@ -77,7 +80,7 @@ it(
             }
             host = CreateFrame("Frame")
         end
-        helper.addon("RichUI.lua", _ENV)
+        helper.addon("RichUI.lua", env)
 
         local height = C.RenderRichUI(host, chat, message, 350)
         assert(height > 60)
@@ -112,8 +115,9 @@ it(
 )
 
 it("saved panels preserve controls after reload and can regroup or replace nodes", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
     do
         C = {}
         host = CreateFrame("Frame")
@@ -133,7 +137,7 @@ it("saved panels preserve controls after reload and can regroup or replace nodes
             },
         }
     end
-    helper.addon("RichUI.lua", _ENV)
+    helper.addon("RichUI.lua", env)
 
     C.RenderRichUI(host, chat, message, 300)
     assert(

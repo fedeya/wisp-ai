@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
         now = 0
         hooks = {}
@@ -39,14 +40,15 @@ local function setup(_ENV)
             end,
         }
     end
-    helper.addon("TransportMetrics.lua", _ENV)
+    helper.addon("TransportMetrics.lua", env)
 end
 
 it(
     "profiling stays opt-in, captures frame percentiles and stops without an idle OnUpdate",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         assert(created == 0 and next(hooks) == nil)
         C.RecordTransportOperation("ack", 900)
@@ -83,8 +85,9 @@ it(
 it(
     "benchmark state timing aggregates bounded fixture data without calling it visible text",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         C.StartTransportProfile("timing", 10)
         now = 0.1

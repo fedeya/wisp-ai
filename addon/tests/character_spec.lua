@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setupFrame(_ENV)
+local function setupFrame(env)
+    setfenv(1, env)
     do
         CreateFrame = function()
             return { RegisterEvent = function() end, SetScript = function() end }
@@ -8,7 +9,8 @@ local function setupFrame(_ENV)
     end
 end
 
-local function setupTalents(_ENV)
+local function setupTalents(env)
+    setfenv(1, env)
     do
         CreateFrame = function()
             return { RegisterEvent = function() end, SetScript = function() end }
@@ -78,10 +80,11 @@ local function setupTalents(_ENV)
             end,
         }
     end
-    helper.addon("Character.lua", _ENV)
+    helper.addon("Character.lua", env)
 end
 
-local function setupSnapshot(_ENV)
+local function setupSnapshot(env)
+    setfenv(1, env)
     do
         CreateFrame = function()
             return { RegisterEvent = function() end, SetScript = function() end }
@@ -105,10 +108,11 @@ local function setupSnapshot(_ENV)
             end,
         }
     end
-    helper.addon("Core.lua", _ENV)
+    helper.addon("Core.lua", env)
 end
 
-local function setupCore(_ENV)
+local function setupCore(env)
+    setfenv(1, env)
     do
         CreateFrame = function()
             return { RegisterEvent = function() end, SetScript = function() end }
@@ -129,14 +133,15 @@ local function setupCore(_ENV)
             end,
         }
     end
-    helper.addon("Core.lua", _ENV)
+    helper.addon("Core.lua", env)
 end
 
 it(
     "first visible text is measured once for the current message, excluding old or hidden rows",
     function()
-        local _ENV = helper.env()
-        setupFrame(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setupFrame(env)
         do
             C = {}
             SlashCmdList = {}
@@ -154,7 +159,7 @@ it(
                 end,
             }
         end
-        helper.addon("Core.lua", _ENV)
+        helper.addon("Core.lua", env)
 
         local sent = {}
         C.Send = function(p)
@@ -195,8 +200,9 @@ it(
 it(
     "talent points use the applied API count, distinguish previews, and deduplicate shared pools",
     function()
-        local _ENV = helper.env()
-        setupTalents(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setupTalents(env)
 
         local t = C.Capture({ "talents" }).sections.talents
         assert(t.status == "available")
@@ -225,8 +231,9 @@ it(
 it(
     "failed or ambiguous talent currencies remain unknown while selected talents stay available",
     function()
-        local _ENV = helper.env()
-        setupTalents(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setupTalents(env)
 
         C_Traits.GetTreeCurrencyInfo = function()
             error("not ready")
@@ -247,8 +254,9 @@ it(
 )
 
 it("character sections are read only on demand and every call is fresh", function()
-    local _ENV = helper.env()
-    setupFrame(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupFrame(env)
     do
         C = {}
         calls = 0
@@ -288,7 +296,7 @@ it("character sections are read only on demand and every call is fresh", functio
             return 100
         end
     end
-    helper.addon("Character.lua", _ENV)
+    helper.addon("Character.lua", env)
 
     assert(calls == 0)
     local s = C.Capture({ "character" })
@@ -301,8 +309,9 @@ it("character sections are read only on demand and every call is fresh", functio
 end)
 
 it("known spells are returned and missing talent APIs stay unknown, never zero", function()
-    local _ENV = helper.env()
-    setupFrame(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupFrame(env)
     do
         C = {}
         function UnitName()
@@ -324,7 +333,7 @@ it("known spells are returned and missing talent APIs stay unknown, never zero",
             end,
         }
     end
-    helper.addon("Character.lua", _ENV)
+    helper.addon("Character.lua", env)
 
     local s = C.Capture({ "spells", "talents" })
     assert(s.sections.spells.data.known[1].id == 122)
@@ -334,8 +343,9 @@ it("known spells are returned and missing talent APIs stay unknown, never zero",
 end)
 
 it("an older bridge snapshot cannot erase an optimistic message", function()
-    local _ENV = helper.env()
-    setupSnapshot(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupSnapshot(env)
 
     C.db = { drafts = {} }
     C.Refresh = function() end
@@ -386,8 +396,9 @@ it("an older bridge snapshot cannot erase an optimistic message", function()
 end)
 
 it("each sent message captures only character and location automatically", function()
-    local _ENV = helper.env()
-    setupFrame(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupFrame(env)
     do
         C = {}
         function time()
@@ -401,7 +412,7 @@ it("each sent message captures only character and location automatically", funct
         end
         SlashCmdList = {}
     end
-    helper.addon("Core.lua", _ENV)
+    helper.addon("Core.lua", env)
 
     C.db = { drafts = {} }
     C.Refresh = function() end
@@ -430,8 +441,9 @@ it("each sent message captures only character and location automatically", funct
 end)
 
 it("deleted conversations stay removed when an older snapshot arrives", function()
-    local _ENV = helper.env()
-    setupSnapshot(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupSnapshot(env)
 
     C.db = { drafts = { a = "draft" } }
     C.Refresh = function() end
@@ -466,8 +478,9 @@ end)
 it(
     "capability toggles preserve their pending state until the matching bridge acknowledgement",
     function()
-        local _ENV = helper.env()
-        setupCore(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setupCore(env)
 
         C.db = { drafts = {} }
         C.Send = function(packet)
@@ -524,8 +537,9 @@ it(
 it(
     "repeated action delivery executes once and returns its result through the reliable outbox",
     function()
-        local _ENV = helper.env()
-        setupCore(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setupCore(env)
 
         C.db = { drafts = {} }
         C.Send = function(packet)

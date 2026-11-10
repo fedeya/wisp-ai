@@ -3,13 +3,14 @@ local helper = require("addon.tests.support")
 it(
     "emoji images preserve complete sequences, formatting, localized text and native links",
     function()
-        local _ENV = helper.env()
+        local env = helper.env()
+        setfenv(1, env)
         do
             C = {}
         end
-        helper.addon("EmojiData.lua", _ENV)
-        helper.addon("Emoji.lua", _ENV)
-        helper.addon("MessageFormat.lua", _ENV)
+        helper.addon("EmojiData.lua", env)
+        helper.addon("Emoji.lua", env)
+        helper.addon("MessageFormat.lua", env)
 
         function image(text)
             local rendered = C.Emoji.render(text)
@@ -68,7 +69,11 @@ it(
         assert(rotation:find(" -> ", 1, true))
         assert(rotation:find("|Hspell:5143|h[Misiles Arcanos]|h", 1, true))
         for code = 0x2070, 0x2BFF do
-            local symbol = utf8.char(code)
+            local symbol = string.char(
+                0xE0 + math.floor(code / 4096),
+                0x80 + math.floor(code / 64) % 64,
+                0x80 + code % 64
+            )
             assert(
                 C.Emoji.render(symbol) ~= symbol,
                 "unhandled symbol U+" .. string.format("%04X", code)

@@ -1,8 +1,8 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
-        unpack = table.unpack
         C = { db = {}, session = "test" }
         function UnitName()
             return "Mage"
@@ -109,14 +109,15 @@ local function setup(_ENV)
             end
         end
     end
-    helper.addon("Settings.lua", _ENV)
+    helper.addon("Settings.lua", env)
 end
 
 it(
     "live settings discovery handles inherited Ace callbacks, dynamic choices, plugins and read-only options",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local o = find("ace:Test:enabled")
         assert(o.value == true and o.writable and o.type == "toggle")
@@ -140,8 +141,9 @@ it(
     "settings preview does not mutate, apply verifies values, undo preserves player changes and identity",
     function()
         do
-            local _ENV = helper.env()
-            setup(_ENV)
+            local env = helper.env()
+            setfenv(1, env)
+            setup(env)
 
             for _, before in ipairs({ true, false }) do
                 values.enabled = before
@@ -158,8 +160,9 @@ it(
             end
         end
         do
-            local _ENV = helper.env()
-            setup(_ENV)
+            local env = helper.env()
+            setfenv(1, env)
+            setup(env)
 
             local r = C.UpdateSettings({
                 operation = "preview",
@@ -192,8 +195,9 @@ it(
 it(
     "stale proposals, range/select/input validation, combat and partial callback failures are handled",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         for _, request in ipairs({
             { id = "ace:Test:size", value = 4 },
@@ -236,8 +240,9 @@ it(
 )
 
 it("settings requests are bounded and only preview/apply scalar setting changes", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     values.enabled = false
     assert(find("ace:Test:enabled").value == false)

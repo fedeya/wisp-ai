@@ -3,8 +3,9 @@ local helper = require("addon.tests.support")
 it(
     "native panels update bag counts locally, preserve unknowns and restore hidden windows",
     function()
-        local _ENV = helper.env()
-        helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        helper.fixture("addon/tests/wow-ui-stub.lua", env)
         do
             C = { db = {} }
             function UnitName()
@@ -30,8 +31,8 @@ it(
                 return 12345
             end
         end
-        helper.addon("RichUI.lua", _ENV)
-        helper.addon("Panels.lua", _ENV)
+        helper.addon("RichUI.lua", env)
+        helper.addon("Panels.lua", env)
 
         panel = {
             id = "materials",

@@ -1,14 +1,16 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+local function setup(env)
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
 end
 
 it(
     "chat placeholder distinguishes connecting, fetching history and an empty conversation",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         C = {
             db = { sidebar = true, showTools = true, drafts = {} },
             active = "chat",
@@ -18,7 +20,7 @@ it(
         function C.Current()
             return C.chats[1]
         end
-        helper.addon("UI.lua", _ENV)
+        helper.addon("UI.lua", env)
         C.BuildUI()
         local header = UI_TEST.frames.WispAISettingsButton.parent
         local setPoint = header.title.SetPoint
@@ -115,8 +117,9 @@ it(
 it(
     "context meter distinguishes unknown usage, measured context and compaction without adding a transcript row",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         C = {
             db = { sidebar = true, showTools = true, drafts = {} },
             active = "chat",
@@ -126,7 +129,7 @@ it(
         function C.Current()
             return C.chats[1]
         end
-        helper.addon("UI.lua", _ENV)
+        helper.addon("UI.lua", env)
         C.BuildUI()
         local meter = UI_TEST.frames.WispAIContextUsage
         assert(meter.text:GetText() == "Context --")
@@ -167,8 +170,9 @@ it(
 it(
     "native renderer reuses rows, has a visible scrollbar, and preserves a reader position",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = {
                 db = { sidebar = true, showTools = true, drafts = {} },
@@ -195,7 +199,7 @@ it(
                 return C.chats[1]
             end
         end
-        helper.addon("UI.lua", _ENV)
+        helper.addon("UI.lua", env)
         C.BuildUI()
         do
             C.capabilities = {
@@ -434,8 +438,9 @@ it(
 )
 
 it("macro references show the actual code and pick up by current name without executing", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
     do
         C = {
             db = { sidebar = true, showTools = true, drafts = {} },
@@ -480,7 +485,7 @@ it("macro references show the actual code and pick up by current name without ex
             return combat or false
         end
     end
-    helper.addon("UI.lua", _ENV)
+    helper.addon("UI.lua", env)
     C.BuildUI()
     local row
     for _, w in ipairs(UI_TEST.widgets) do
@@ -502,8 +507,9 @@ end)
 it(
     "structured skill replies use the declared skill and map references support hover and native clicks",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = {
                 db = { sidebar = true, showTools = true, drafts = {} },
@@ -557,7 +563,7 @@ it(
                 end,
             }
         end
-        helper.addon("UI.lua", _ENV)
+        helper.addon("UI.lua", env)
         C.BuildUI()
         local row
         for _, w in ipairs(UI_TEST.widgets) do
@@ -600,13 +606,14 @@ it(
 it(
     "prose around generated cards keeps spell and item hover, clicks and scrolling on its own frame",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = {}
         end
-        helper.addon("UI.lua", _ENV)
-        helper.addon("RichUI.lua", _ENV)
+        helper.addon("UI.lua", env)
+        helper.addon("RichUI.lua", env)
 
         local spell = "Use [[ref:spell]] first."
         local item = "Keep [[ref:item]] equipped."
@@ -673,8 +680,9 @@ it(
 it(
     "verified references support hover and quest clicks without reserving transcript space for progress",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         do
             C = {
                 db = { sidebar = true, showTools = true, drafts = {} },
@@ -730,7 +738,7 @@ it(
                 UI_TEST.openedQuest = id
             end
         end
-        helper.addon("UI.lua", _ENV)
+        helper.addon("UI.lua", env)
         C.BuildUI()
 
         local row

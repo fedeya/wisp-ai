@@ -8,7 +8,7 @@ Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.
 
 ```sh
 pnpm install --frozen-lockfile
-python scripts/setup-lua.py
+luarocks --lua-version=5.1 install busted 2.3.0-1
 pnpm build
 pnpm check
 pnpm test
@@ -65,11 +65,19 @@ tests keep their existing skips when the required binaries are absent.
 
 ### Lua addon tests
 
-Run `python scripts/setup-lua.py` once per worktree before running addon tests.
-It requires Python 3 and a C compiler (Visual Studio C++ build tools on Windows,
-`cc`/`gcc` on macOS/Linux), and installs Lua 5.3.6, LuaRocks 3.13.0 and Busted
-2.3.0 into the ignored `runtime/lua/` directory. The installer pins the hererocks
-source revision and leaves global Lua installations alone. CI uses the same script.
+Install Lua 5.1 and LuaRocks using your platform's package manager, then install
+[Busted](https://lunarmodules.github.io/busted/) with
+`luarocks --lua-version=5.1 install busted 2.3.0-1`. Put that installation's
+`lua` and `busted` commands on `PATH`. LuaRocks may require a C compiler and Lua
+development headers to build dependencies. CI uses the standard
+[Lua](https://github.com/leafo/gh-actions-lua) and
+[LuaRocks](https://github.com/leafo/gh-actions-luarocks) actions on Ubuntu.
+
+The addon specs run on Lua 5.1, matching WoW's language APIs; `.busted` rejects
+other interpreter versions. This follows the offline test setup used by
+[Questie](https://github.com/Questie/Questie/blob/master/.github/workflows/ci.yml)
+and [BetterBags](https://github.com/Cidan/BetterBags/blob/main/.github/workflows/test.yml):
+Busted installed through LuaRocks, real addon files and explicit WoW mocks.
 
 Write addon-only cases in `addon/tests/*_spec.lua`, using Busted's `it`, assertions
 and hooks. `support.lua` creates private WoW globals for each scenario and loads
@@ -77,16 +85,17 @@ the real addon files, including the UI dependency order. The existing WoW API
 stubs remain fixtures; these specs run outside the game.
 
 ```sh
-pnpm --filter @wisp/addon test:lua
-pnpm --filter @wisp/addon test:lua addon/tests/settings_spec.lua
+busted
+busted addon/tests/settings_spec.lua
+busted --filter "settings"
 ```
 
-`pnpm test:addon` runs both Busted and the remaining TypeScript tests. A small
-Vitest adapter launches Busted per spec file, preserving the workspace commands
-and rerunning specs when Lua sources or fixtures change in watch mode. Failures
-report the Lua filename and line number. Protocol/schema checks, binary asset
-checks and tests exchanging frames between Lua and TypeScript stay in `.test.ts`;
-the frame integration tests still use Fengari.
+Run these commands from the repository root; `.busted` selects `addon/tests/`.
+`pnpm test:addon` runs `busted` followed by the remaining TypeScript tests;
+`pnpm test:watch` reruns that command when addon files change. Direct Vitest runs
+cover only TypeScript tests. Protocol/schema checks, binary asset checks and tests
+exchanging frames between Lua and TypeScript stay in `.test.ts`; the frame
+integration tests still use Fengari.
 
 Core tests also launch the real Eve agent against a local model fixture. This checks
 agent compilation, dependency resolution, model middleware and streamed replies without

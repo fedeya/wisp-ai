@@ -1,7 +1,8 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+local function setup(env)
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
         C = {}
         SlashCmdList = {}
@@ -9,10 +10,10 @@ local function setup(_ENV)
             return 1
         end
     end
-    helper.addon("Core.lua", _ENV)
-    helper.addon("RichUI.lua", _ENV)
-    helper.addon("UI.lua", _ENV)
-    helper.addon("Inline.lua", _ENV)
+    helper.addon("Core.lua", env)
+    helper.addon("RichUI.lua", env)
+    helper.addon("UI.lua", env)
+    helper.addon("Inline.lua", env)
     do
         C.db = { sidebar = true, minimized = true, showTools = true, drafts = {} }
         C.connected = true
@@ -46,8 +47,9 @@ end
 it(
     "chat model controls select account options, wait for confirmation and isolate conversations",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         C.modelCatalog = {
             defaultModel = "luna",
@@ -123,8 +125,9 @@ it(
 )
 
 it("API reasoning defaults, toggle labels, and inline effort remain conversation-scoped", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     C.modelCatalog = {
         defaultModel = "api",
@@ -185,8 +188,9 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
 end)
 
 it("inline item questions preserve named quality colors and full item payloads", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local link = "|cnIQ2:|Hitem:275067::::::::12:1482:::::::::|h[Pergamino de Imbuir gelidaga]|h|r"
     GameTooltip.GetItem = function()
@@ -233,8 +237,9 @@ it("inline item questions preserve named quality colors and full item payloads",
 end)
 
 it("a completed reply lights the minimized window until it is opened", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local glow = UI_TEST.frames.WispAIReplyGlow
     local sounds = 0
@@ -284,8 +289,9 @@ end)
 it(
     "hover shortcut opens an inline query without switching or expanding the main chat, survives stale snapshots, and promotes on demand",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         C.OpenInline()
         assert(C.active == "main" and C.db.minimized and C.inlineId == nil)
@@ -352,8 +358,9 @@ it(
 it(
     "reference capture supports spells and units and binding setup preserves existing shortcuts",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         GameTooltip.GetItem = function() end
         GameTooltip.GetSpell = function()
@@ -412,8 +419,9 @@ it(
 )
 
 it("a mouse binding dispatches over bag UI and preserves the hovered item", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local base = { BUTTON4 = "WISPAI_INLINE", ["ALT-BUTTON5"] = "WISPAI_INLINE" }
     local overrides = {}
@@ -493,8 +501,9 @@ end)
 it(
     "inline binding captures mouse buttons and wheel with modifiers, conflicts and combat guards",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         bindings = { ["CTRL-J"] = "WISPAI_INLINE", ["ALT-SHIFT-BUTTON4"] = "OTHER_ACTION" }
         local saves = 0

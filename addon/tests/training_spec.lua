@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
         C = {}
         UnitClass = function()
@@ -24,13 +25,14 @@ local function setup(_ENV)
         }
         Enum = { SpellBookSpellBank = { Player = 0 } }
     end
-    helper.addon("TrainingData.lua", _ENV)
-    helper.addon("Training.lua", _ENV)
+    helper.addon("TrainingData.lua", env)
+    helper.addon("Training.lua", env)
 end
 
 it("Forever mage localized lookup finds the actual catalog rank without a trainer", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local result = C.QueryTraining({ query = "descarga de escarcha" })
     assert(result.total == 1 and result.spells[1].spellId == 116)
@@ -39,8 +41,9 @@ it("Forever mage localized lookup finds the actual catalog rank without a traine
 end)
 
 it("all nine classes load, requirements and pagination survive", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local count = 0
     for token in pairs(C.TrainingData) do
@@ -67,8 +70,9 @@ it("all nine classes load, requirements and pagination survive", function()
 end)
 
 it("missing localized data is explicit and requests loading", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local requests = 0
     C_Spell.GetSpellInfo = function()

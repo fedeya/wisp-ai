@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cd .. && vitest run --config addon/vitest.config.ts",
-    "test:lua": "node scripts/test-lua.ts",
+    "test": "cd .. && busted && vitest run --config addon/vitest.config.ts",
+    "test:lua": "cd .. && busted",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

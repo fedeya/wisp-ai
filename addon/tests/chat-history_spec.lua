@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setupCapture(_ENV)
+local function setupCapture(env)
+    setfenv(1, env)
     do
         C = { db = { drafts = {} }, chats = {}, connected = false }
         now = 100
@@ -25,18 +26,19 @@ local function setupCapture(_ENV)
             }
         end
     end
-    helper.addon("ChatHistory.lua", _ENV)
+    helper.addon("ChatHistory.lua", env)
     do
         chatCapture = capture
     end
-    helper.addon("Character.lua", _ENV)
+    helper.addon("Character.lua", env)
     do
         capture = chatCapture
     end
 end
 
-local function setupUI(_ENV)
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+local function setupUI(env)
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
         C = { db = { drafts = {} }, chats = {}, connected = false }
         now = 100
@@ -51,13 +53,14 @@ local function setupUI(_ENV)
         end
         function C.Send() end
     end
-    helper.addon("ChatHistory.lua", _ENV)
-    helper.addon("UI.lua", _ENV)
+    helper.addon("ChatHistory.lua", env)
+    helper.addon("UI.lua", env)
 end
 
 it("chat buffer bounds, filters, expiry, disabling and clearing are enforced", function()
-    local _ENV = helper.env()
-    setupCapture(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupCapture(env)
 
     assert(C.ChatChannelEnabled("party") and not C.ChatChannelEnabled("whisper"))
     capture(nil, "CHAT_MSG_WHISPER", "private", "Friend")
@@ -114,8 +117,9 @@ it("chat buffer bounds, filters, expiry, disabling and clearing are enforced", f
 end)
 
 it("chat settings controls change channels and clear buffered messages", function()
-    local _ENV = helper.env()
-    setupUI(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupUI(env)
 
     C.BuildUI()
     assert(UI_TEST.frames.WispAIChatHistorySettings)
@@ -150,8 +154,9 @@ it("chat settings controls change channels and clear buffered messages", functio
 end)
 
 it("public channels require individual selection and follow names when numbers change", function()
-    local _ENV = helper.env()
-    setupCapture(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setupCapture(env)
 
     C.db.chatChannels = { channel = true }
     function GetChannelList()
@@ -218,8 +223,9 @@ end)
 it(
     "public channel settings refresh joined channels and preserve checkbox callbacks on reorder",
     function()
-        local _ENV = helper.env()
-        setupUI(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setupUI(env)
 
         function GetChannelList()
             return 1, "General", false, 2, "Trade", false, 3, "LookingForGroup", false

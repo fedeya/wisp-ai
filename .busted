@@ -1,0 +1,11 @@
+assert(
+    _VERSION == "Lua 5.1",
+    "Addon tests require Lua 5.1; install Busted with LuaRocks for Lua 5.1"
+)
+
+return {
+    default = {
+        ROOT = { "addon/tests" },
+        verbose = true,
+    },
+}

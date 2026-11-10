@@ -3,7 +3,8 @@ local helper = require("addon.tests.support")
 it(
     "Lua discovery distinguishes missing, wrong-version, partial and complete Questie providers",
     function()
-        local _ENV = helper.env()
+        local env = helper.env()
+        setfenv(1, env)
         do
             C = {}
             C_AddOns = {
@@ -12,7 +13,7 @@ it(
                 end,
             }
         end
-        helper.addon("Integrations.lua", _ENV)
+        helper.addon("Integrations.lua", env)
 
         assert(C.IntegrationReport().questie.status == "missing")
         LibQuestieDB = {

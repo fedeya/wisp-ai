@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
         C = {}
         function time()
@@ -16,14 +17,15 @@ local function setup(_ENV)
             return { RegisterEvent = function() end, SetScript = function() end }
         end
     end
-    helper.addon("Character.lua", _ENV)
+    helper.addon("Character.lua", env)
 end
 
 it(
     "turn snapshots revalidate quests but send an unchanged log only until its revision is acknowledged",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local complete, count, reads = false, 1, 0
         C_QuestLog = {
@@ -86,8 +88,9 @@ it(
 it(
     "quest reward XP survives live reads and synchronized snapshots, including zero and unavailable values",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local xp = 850
         C_QuestLog = {
@@ -139,8 +142,9 @@ it(
 it(
     "turn context sends only changed character identity and excludes unrelated live fields",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local level = 13
         C.Capture = function()
@@ -191,8 +195,9 @@ it(
 it(
     "reference reads distinguish loading from a missing item and expose real tooltip text",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local requested
         C_Item = {
@@ -229,8 +234,9 @@ it(
 )
 
 it("progression preserves false completion separately from unavailable data", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     C_QuestLog = {
         GetNumQuestLogEntries = function()
@@ -254,8 +260,9 @@ it("progression preserves false completion separately from unavailable data", fu
 end)
 
 it("trainer reads require an open window and use the Forever service return fields", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     assert(C.Inspect({ kind = "trainer" }).status == "unavailable")
     ClassTrainerFrame = {
@@ -287,8 +294,9 @@ end)
 it(
     "resource reads report collapsed skills and never turn unavailable bag space into zero",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         NUM_BAG_SLOTS = 1
         C_Container = {
@@ -323,8 +331,9 @@ it(
 )
 
 it("comparison considers both ring slots without converting raw deltas to DPS", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     C_Item = {
         GetItemInfo = function(id)
@@ -348,8 +357,9 @@ end)
 it(
     "auction reads require the AH, keep stack/unit prices separate, and expose partial coverage",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         assert(C.Inspect({ kind = "auctions" }).status == "unavailable")
         AuctionFrame = {
@@ -388,8 +398,9 @@ it(
 )
 
 it("target inspection uses the selected NPC identity and does not fabricate coordinates", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     UnitExists = function()
         return true
@@ -402,7 +413,7 @@ it("target inspection uses the selected NPC identity and does not fabricate coor
         for part in text:gmatch("[^-]+") do
             parts[#parts + 1] = part
         end
-        return table.unpack(parts)
+        return unpack(parts)
     end
     UnitLevel = function()
         return 11
@@ -434,8 +445,9 @@ it("target inspection uses the selected NPC identity and does not fabricate coor
 end)
 
 it("modern auction browse output stays labelled as cached partial data", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     AuctionHouseFrame = {
         IsShown = function()

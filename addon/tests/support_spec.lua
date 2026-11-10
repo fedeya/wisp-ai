@@ -3,7 +3,8 @@ local helper = require("addon.tests.support")
 it("scenario globals and compiled callbacks stay in their own WoW environment", function()
     local first, second = helper.env(), helper.env()
     first.C = { count = 0 }
-    local callback = assert(first.load("return function() _G.C.count = C.count + 1 end"))()
+    local callback =
+        setfenv(assert(loadstring("return function() _G.C.count = C.count + 1 end")), first)()
     callback()
     assert.equals(1, first.C.count)
     assert.is_nil(second.C)

@@ -1,8 +1,9 @@
 local helper = require("addon.tests.support")
 
 it("native comparison resizes, updates winners, handles zero results and reuses widgets", function()
-    local _ENV = helper.env()
-    helper.fixture("addon/tests/wow-ui-stub.lua", _ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
         C = {}
         host = CreateFrame("Frame")
@@ -10,10 +11,10 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
             w.linked = true
         end
     end
-    helper.addon("EmojiData.lua", _ENV)
-    helper.addon("Emoji.lua", _ENV)
-    helper.addon("MessageFormat.lua", _ENV)
-    helper.addon("RichUI.lua", _ENV)
+    helper.addon("EmojiData.lua", env)
+    helper.addon("Emoji.lua", env)
+    helper.addon("MessageFormat.lua", env)
+    helper.addon("RichUI.lua", env)
 
     local node = {
         id = "sim",

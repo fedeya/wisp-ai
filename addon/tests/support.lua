@@ -1,27 +1,23 @@
 local M = {}
 
--- Each former VM becomes a private WoW global environment. Addon closures and
--- callbacks keep this environment, including code compiled through load().
+-- WoW globals and callbacks belong to one scenario, using Lua 5.1 environments.
 function M.env()
     local env = {}
     for key, value in pairs(_G) do
         env[key] = value
     end
-    for _, key in ipairs({ "table", "string", "math", "os", "io", "utf8", "coroutine" }) do
+    for _, key in ipairs({ "table", "string", "math", "os", "io", "coroutine" }) do
         env[key] = {}
         for name, value in pairs(_G[key]) do
             env[key][name] = value
         end
     end
     env._G = env
-    env.load = function(source, name, mode, target)
-        return load(source, name, mode, target or env)
-    end
     return env
 end
 
 function M.fixture(path, env)
-    return assert(loadfile(path, "t", env))()
+    return setfenv(assert(loadfile(path)), env)()
 end
 
 function M.addon(name, env)
@@ -37,7 +33,7 @@ function M.addon(name, env)
             M.addon(dependency, env)
         end
     end
-    return assert(loadfile("addon/WispAI/" .. name, "t", env))("WispAI", env.C)
+    return setfenv(assert(loadfile("addon/WispAI/" .. name)), env)("WispAI", env.C)
 end
 
 return M

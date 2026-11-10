@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
         C = {}
         function UnitClass()
@@ -95,12 +96,13 @@ local function setup(_ENV)
             end,
         }
     end
-    helper.addon("Locations.lua", _ENV)
+    helper.addon("Locations.lua", env)
 end
 
 it("Forever class-trainer lookup returns native-map spawn references with provenance", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local result = C.FindNPCLocations({ mode = "class_trainers", class = "MAGE", mapId = 1454 })
     assert(result.status == "available" and result.total == 1)
@@ -117,8 +119,9 @@ it("Forever class-trainer lookup returns native-map spawn references with proven
 end)
 
 it("other versions, unknown maps and ambiguous coordinate frames never become pins", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     LibQuestieDB.flavor.expansion = "Classic"
     assert(not pcall(C.FindNPCLocations, { mode = "class_trainers" }))
@@ -140,8 +143,9 @@ it("other versions, unknown maps and ambiguous coordinate frames never become pi
 end)
 
 it("service lookup discovers transmog NPCs without a personal name", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     LibQuestieDB.Npc.IdsByName = function()
         error("A service query must not search a guessed NPC name")

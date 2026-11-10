@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
         C = {}
         function time()
@@ -13,16 +14,17 @@ local function setup(_ENV)
             return "Horde"
         end
     end
-    helper.addon("AddonAdapters.lua", _ENV)
-    helper.addon("Integrations.lua", _ENV)
-    helper.addon("Locations.lua", _ENV)
+    helper.addon("AddonAdapters.lua", env)
+    helper.addon("Integrations.lua", env)
+    helper.addon("Locations.lua", env)
 end
 
 it(
     "quest details retain requirement semantics, unknown fields and fresh flags without claiming eligibility",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local quests = {
             [1] = {
@@ -87,8 +89,9 @@ it(
 )
 
 it("quest graphs terminate on cycles and report depth, size and missing-record limits", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local quests = {
         [1] = { name = "First", preQuestGroup = { 2, 3 }, childQuests = { 4 } },
@@ -124,8 +127,9 @@ end)
 it(
     "Questie sparse objective tuples serialize as objects without losing positional meaning",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         -- Quest 5041 has only the item group (3), with a missing tuple slot (2).
         local objectives = { [3] = { { [1] = 12708, [3] = 0 } } }
@@ -192,8 +196,9 @@ it(
 it(
     "Syndicator uses scoped public cached reads and guild opt-in without mutating provider rows",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         local data = {
             characters = {
@@ -249,8 +254,9 @@ it(
 it(
     "Auctionator prices are unit copper values with coarse age, distinguishing unknown prices and ages",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         Auctionator = {
             API = {
@@ -298,8 +304,9 @@ it(
 )
 
 it("object spawns require verified native map frames and never query NPC-only fields", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     C_Map = {
         GetBestMapForUnit = function()

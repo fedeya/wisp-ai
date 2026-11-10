@@ -1,6 +1,7 @@
 local helper = require("addon.tests.support")
 
-local function setup(_ENV)
+local function setup(env)
+    setfenv(1, env)
     do
         C = { db = {} }
         function time()
@@ -89,14 +90,15 @@ local function setup(_ENV)
             return C.PerformAction({ kind = kind, args = args or {}, expectedCharacter = identity })
         end
     end
-    helper.addon("Character.lua", _ENV)
+    helper.addon("Character.lua", env)
 end
 
 it(
     "map actions convert percent coordinates, verify readback, and undo only their own pin",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
 
         waypoint = point(1, 0.1, 0.2)
         local r = act(
@@ -131,8 +133,9 @@ it(
 )
 
 it("Forever plain-coordinate waypoint readings preserve placement, metadata and undo", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     C_Map.GetBestMapForUnit = function()
         return 1
@@ -173,8 +176,9 @@ it("Forever plain-coordinate waypoint readings preserve placement, metadata and 
 end)
 
 it("malformed native waypoint coordinates block placement without overwriting the pin", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     local sets = 0
     C_Map.SetUserWaypoint = function()
@@ -191,8 +195,9 @@ it("malformed native waypoint coordinates block placement without overwriting th
 end)
 
 it("unsupported maps and character switches never apply actions", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     assert(
         act("set_waypoint", { mapId = 999, x = 10, y = 20, label = "No", source = "user" }).status
@@ -208,8 +213,9 @@ it("unsupported maps and character switches never apply actions", function()
 end)
 
 it("optional navigation failures do not hide a successfully placed and verified pin", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     C_SuperTrack = {
         SetSuperTrackedUserWaypoint = function() end,
@@ -235,8 +241,9 @@ end)
 it(
     "macro creation is verified, idempotent, never overwrites and respects combat/capacity",
     function()
-        local _ENV = helper.env()
-        setup(_ENV)
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
         local args = { name = "Nova", body = "#showtooltip\n/cast Frost Nova", perCharacter = true }
         local r = act("create_macro", args)
         assert(
@@ -279,8 +286,9 @@ it(
 )
 
 it("macro inventory hides code by default and includes it only when requested", function()
-    local _ENV = helper.env()
-    setup(_ENV)
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
 
     act("create_macro", { name = "Nova", body = "/cast Frost Nova", perCharacter = true })
     local r = C.Inspect({ kind = "macros", args = {} })
