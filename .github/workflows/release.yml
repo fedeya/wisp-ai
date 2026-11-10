@@ -1,10 +1,14 @@
 name: Windows release
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   validate:
     permissions:
@@ -18,7 +22,12 @@ jobs:
       CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: ./.github/actions/setup-workspace
+      - name: Prepare version and shared release notes
+        id: release
+        run: node scripts/prepare-release.ts
       - name: Validate release version and signing configuration
         shell: pwsh
         env:
@@ -29,7 +38,7 @@ jobs:
           $desktopVersion = (Get-Content apps/desktop/package.json | ConvertFrom-Json).version
           $tauriVersion = (Get-Content apps/desktop/src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $cargoVersion = (Select-String -Path apps/desktop/src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected a stable release version.' }
+          if ($version -notmatch '^\d+\.\d+\.\d+(-nightly\.\d+\.\d+)?$') { throw 'Expected a stable or nightly release version.' }
           if ($version -ne $desktopVersion -or $version -ne $tauriVersion -or $version -ne $cargoVersion) { throw 'App versions must match.' }
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Release tag must match app version.' }
       - uses: dtolnay/rust-toolchain@stable
@@ -91,17 +100,26 @@ jobs:
             dist/*.sig
             dist/latest.json
             dist/build-metrics.json
-      - if: startsWith(github.ref, 'refs/tags/v')
+            dist/release-notes.md
+      - name: Verify installer before publishing
+        run: node scripts/verify-installer.ts
+      - if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           draft: true
-          generate_release_notes: true
+          prerelease: ${{ steps.release.outputs.nightly == 'true' }}
+          body_path: dist/release-notes.md
           files: |
             dist/*-setup.exe
             dist/*.sha256
             dist/*.sig
       - name: Attach updater manifest with release notes
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         run: node scripts/finalize-release.ts
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_NIGHTLY: ${{ steps.release.outputs.nightly }}

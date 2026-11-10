@@ -59,6 +59,13 @@ export async function startBridge(options: BridgeOptions = {}) {
       process.env.WISP_RESOURCE_ROOT ||
       fileURLToPath(new URL('../../../', import.meta.url));
     const paths = appPaths(ROOT, options.dataDirectory);
+    const bridgeVersion = await readJson(
+      path.join(ROOT, 'package.json'),
+      z.object({ version: z.string().min(1) }),
+      () => ({ version: 'unknown' }),
+    )
+      .then((metadata) => metadata.version)
+      .catch(() => 'unknown');
     const runtime = paths.runtime;
     const simulator = new Simulator(ROOT, runtime);
     await prepareEngine(paths.agent, paths.engine);
@@ -531,6 +538,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         v: 1,
         session: state.activeTransport,
         connected: eveReady,
+        bridgeVersion,
         contextPolicy: {
           windowTokens:
             state.modelCatalog.find(

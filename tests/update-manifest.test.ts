@@ -14,5 +14,20 @@ test('the update manifest references the exact versioned release artifact and em
 
 test('unsigned and prerelease manifests cannot enter the stable update feed', () => {
   expect(() => updateManifest('0.3.0', ' ')).toThrow('signature');
-  expect(() => updateManifest('0.3.0-beta.1', 'signature')).toThrow('Stable');
+  expect(() => updateManifest('0.3.0-beta.1', 'signature')).toThrow();
+  expect(() => updateManifest('0.3.1-nightly.123.1', 'signature')).toThrow();
+  expect(() => updateManifest('0.3.0', 'signature', '', 'nightly')).toThrow();
+});
+
+test('nightly manifests reference immutable builds and carry shared notes', () => {
+  const manifest = updateManifest(
+    '0.3.1-nightly.123.1',
+    'signature',
+    '# Preview\n\n- New feature',
+    'nightly',
+  );
+  expect(manifest.platforms['windows-x86_64'].url).toContain(
+    '/v0.3.1-nightly.123.1/WispAI-0.3.1-nightly.123.1-windows-x64-setup.exe',
+  );
+  expect(manifest.notes).toContain('New feature');
 });

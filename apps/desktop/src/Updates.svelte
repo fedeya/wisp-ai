@@ -1,7 +1,11 @@
 <script lang="ts">
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
+  import Select from "./ui/Select.svelte";
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { desktop, native } from "./api";
+  import { renderReleaseNotes } from "@wisp/releases";
 
   let {
     showSettings,
@@ -31,9 +35,27 @@
   let dismissed = $state("");
   let lastChecked = $state("");
   let progress = $state("Preparing update…");
+  let channel = $state("stable");
+  let channelLoaded = $state(!native);
+  let changingChannel = $state(false);
+  async function changeChannel(event: Event) {
+    const next = (event.target as HTMLSelectElement).value;
+    changingChannel = true;
+    release = null;
+    dismissed = "";
+    try {
+      channel = await desktop<string>("update_channel", { channel: next });
+      await check();
+    } catch (e) {
+      (event.target as HTMLSelectElement).value = channel;
+      error = `Could not change update channel: ${String(e)}`;
+    } finally {
+      changingChannel = false;
+    }
+  }
 
   async function check() {
-    if (!native || checking || installing) {
+    if (!native || !channelLoaded || checking || installing) {
       return;
     }
     checking = true;
@@ -106,7 +128,21 @@
       .catch(() => {
         error = "Update progress is unavailable. Restart Wisp to try again.";
       });
-    void check();
+    void desktop<string>("update_channel")
+      .then((saved) => {
+        if (disposed) {
+          return;
+        }
+        channel = saved;
+        channelLoaded = true;
+        return check();
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        error = "Could not load the update channel. Restart Wisp to try again.";
+      });
     const timer = setInterval(
       () => {
         void check();
@@ -122,65 +158,105 @@
 </script>
 
 {#if release && dismissed !== release.version && !showSettings}
-  <div class="banner" role="status">
+  <div
+    class="banner mb-5 flex items-center gap-3 rounded-[9px] border border-solid border-[#355c56] bg-[#1c3330] px-4 py-3 text-xs leading-[1.5] text-[#b7e8db]"
+    role="status"
+  >
     <span>Wisp {release.version} is available.</span>
-    <button onclick={openSettings}>View update</button>
-    <button class="quiet" onclick={() => (dismissed = release!.version)}
-      >Later</button
+    <Button onclick={openSettings}>View update</Button>
+    <Button intent="quiet" onclick={() => (dismissed = release!.version)}
+      >Later</Button
     >
   </div>
 {/if}
 {#if showSettings}
-  <section class="card">
-    <div class="section-title">
+  <Card>
+    <div class="section-title flex items-center justify-between gap-[18px]">
       <div>
         <h2>App updates</h2>
-        <p>Installed version: {version}</p>
+        <p class="text-[13px] text-muted">Installed version: {version}</p>
       </div>
-      <button
+      <Button
         onclick={check}
-        disabled={!native || checking || installing || locked}
+        disabled={!native || !channelLoaded || checking || installing || locked}
       >
         {checking ? "Checking…" : "Check for updates"}
-      </button>
+      </Button>
     </div>
-    <p class="field-hint">
+    <p class="field-hint mt-3 text-[11px]! text-muted">
       Wisp checks automatically at startup and every six hours. You choose when
       to install.
     </p>
-    {#if lastChecked}<p class="field-hint">Last checked: {lastChecked}</p>{/if}
-    <p role="status">{installing ? progress : message}</p>
-    {#if error}<p class="banner error" role="alert">{error}</p>{/if}
+    <label class="mt-3 flex items-center text-[13px] text-muted">
+      Update channel
+      <Select
+        class="ml-3 w-auto"
+        value={channel}
+        onchange={changeChannel}
+        disabled={!native ||
+          !channelLoaded ||
+          checking ||
+          installing ||
+          changingChannel ||
+          locked}
+      >
+        <option value="stable">Stable</option>
+        <option value="nightly">Nightly</option>
+      </Select>
+    </label>
+    {#if channel === "nightly"}
+      <p class="field-hint mt-3 text-[11px]! text-muted">
+        Experimental builds from main. Features may change or break.
+      </p>
+    {:else if version.includes("-nightly.")}
+      <p class="field-hint mt-3 text-[11px]! text-muted">
+        Returning to Stable can install an older version. Your chats and
+        settings are kept.
+      </p>
+    {/if}
+    <p class="mt-3 text-[13px] text-accent">
+      <a
+        href={`https://wisp.fedeya.sh/changelog${channel === "nightly" ? "?channel=nightly" : ""}`}
+        target="_blank"
+        rel="noreferrer">View all updates ↗</a
+      >
+    </p>
+    {#if lastChecked}<p class="field-hint mt-3 text-[11px]! text-muted">
+        Last checked: {lastChecked}
+      </p>{/if}
+    <p class="text-[13px] text-muted" role="status">
+      {installing ? progress : message}
+    </p>
+    {#if error}<p
+        class="banner error mb-5 flex items-center gap-3 rounded-[9px] border border-solid border-[#70473f] bg-[#332522] px-4 py-3 text-[13px] leading-[1.5] text-[#f0b4aa]"
+        role="alert"
+      >
+        {error}
+      </p>{/if}
     {#if release}
       <h3>Wisp {release.version}</h3>
-      <pre class="release-notes">{release.notes ||
-          "This release has no notes."}</pre>
-      <div class="actions">
-        <button
-          class="primary"
+      <div
+        class="release-notes max-h-[280px] overflow-y-auto text-muted [overflow-wrap:anywhere] [&_img]:max-w-full [&_img]:rounded-lg [&_h1]:text-[1.35rem] [&_h2]:mt-5 [&_h2]:text-[1.1rem] [&_a]:text-accent"
+      >
+        {@html renderReleaseNotes(
+          release.notes || "This release has no notes.",
+        )}
+      </div>
+      <div class="actions mt-[22px] flex flex-wrap items-center gap-[10px]">
+        <Button
+          intent="primary"
           onclick={install}
           disabled={!supported || installing || checking || locked}
         >
           {installing ? "Updating…" : "Update and restart"}
-        </button>
+        </Button>
       </div>
-      <p class="field-hint">
+      <p class="field-hint mt-3 text-[11px]! text-muted">
         Wisp downloads and verifies the update, waits for any active reply, then
         opens the Windows updater. Wisp closes during installation and reopens
         automatically when it is ready. Your chats and settings are kept. Use
         Install / update addon in Overview after updating, then /reload in WoW.
       </p>
     {/if}
-  </section>
+  </Card>
 {/if}
-
-<style>
-  .release-notes {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font: inherit;
-    color: var(--muted);
-    max-height: 280px;
-    overflow-y: auto;
-  }
-</style>

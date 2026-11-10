@@ -3,7 +3,7 @@ import { site } from '../site';
 import { locales, localizedPath } from '../i18n/config';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return ['/', '/features', '/setup'].flatMap((path) =>
+  return ['/', '/features', '/setup', '/changelog'].flatMap((path) =>
     locales.map((locale) => ({
       url: `${site.url}${localizedPath(locale, path)}`,
       changeFrequency: 'monthly' as const,

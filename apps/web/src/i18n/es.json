@@ -305,6 +305,8 @@
   "Compatible endpoint": "Endpoint compatible",
   "The same Wisp. Your preferred connection.": "El mismo Wisp. La conexión que vos elijas.",
   "Choose a model with tool calling. Compatibility varies by model.": "Elegí un modelo que admita herramientas. La compatibilidad depende del modelo.",
+  "Use at your own risk.": "Usalo bajo tu responsabilidad.",
+  "We don’t know whether Blizzard permits Wisp or whether using it could lead to an account ban.": "No sabemos si Blizzard permite Wisp ni si usarlo podría resultar en un baneo de tu cuenta.",
   "Open navigation": "Abrir navegación",
   "Close navigation": "Cerrar navegación",
   "Choose a tool-calling model and configure its context window for API connections. API usage is billed by the provider; local servers must be running. Model capabilities vary.": "Elegí un modelo que admita herramientas y configurá su ventana de contexto para las conexiones por API. El proveedor cobra el uso de su API; los servidores locales deben estar abiertos. Las capacidades varían según el modelo.",

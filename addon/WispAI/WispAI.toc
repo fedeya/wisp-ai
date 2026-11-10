@@ -3,7 +3,7 @@
 ## IconTexture: Interface\AddOns\WispAI\Textures\Wisp.tga
 ## Notes: Ask about WoW with your character, Eve and your ChatGPT plan.
 ## Author: Personal project
-## Version: 0.1.0
+## Version: development
 ## SavedVariables: WispAIDB
 ## DefaultState: enabled
 ## OptionalDeps: QuestieDB, Questie, Syndicator, Auctionator

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/release-it@21/schema/release-it.json",
+  "git": {
+    "requireBranch": "main",
+    "requireCleanWorkingDir": true,
+    "addUntrackedFiles": false,
+    "tagMatch": "v[0-9]*.[0-9]*.[0-9]*",
+    "tagExclude": "*-nightly.*",
+    "commitMessage": "chore(release): v${version}",
+    "tagName": "v${version}",
+    "push": true
+  },
+  "npm": false,
+  "github": { "release": false },
+  "hooks": {
+    "before:init": ["node scripts/release-notes.ts check", "pnpm check", "pnpm test"],
+    "after:bump": [
+      "node scripts/release-notes.ts ${version}",
+      "node scripts/release-version.ts ${version}",
+      "pnpm install --lockfile-only --ignore-scripts",
+      "git add -- releases/${version}.md"
+    ]
+  }
+}
