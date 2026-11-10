@@ -98,14 +98,38 @@ jobs:
         run: New-Item -ItemType Directory -Path apps/desktop/src-tauri/resources/payload -Force | Out-Null
       - run: cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
       - run: cargo test --locked --features tauri/custom-protocol --manifest-path apps/desktop/src-tauri/Cargo.toml
+  release-build:
+    # A successful validation-only release has no installer to consume.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      built: ${{ steps.release.outputs.built }}
+    steps:
+      - name: Check whether the release built an installer
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          $result = gh api --paginate "repos/$env:GH_REPO/actions/runs/$env:RELEASE_RUN_ID/jobs" --jq '.jobs[] | select(.name == "windows") | .conclusion'
+          if ($LASTEXITCODE -ne 0 -or $result -notin @('success', 'skipped')) { throw 'Could not determine whether the release produced an installer.' }
+          "built=$($result -eq 'success')".ToLowerInvariant() >> $env:GITHUB_OUTPUT
   installer-tests:
     # Release artifacts are executable code. Only consume successful builds
     # originating in this repository, never an artifact supplied by a fork PR.
+    needs: release-build
     if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.release_run_id != '') ||
-      (github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_repository.full_name == github.repository)
+      !cancelled() &&
+      ((github.event_name == 'workflow_dispatch' && inputs.release_run_id != '') ||
+      (github.event_name == 'workflow_run' && needs.release-build.outputs.built == 'true'))
     runs-on: windows-latest
     permissions:
       contents: read

@@ -3,18 +3,6 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-    # Branch pushes only need an installer when app/build inputs change.
-    # GitHub does not apply path filters to tag pushes; manual builds also remain available.
-    paths-ignore:
-      - 'apps/web/**'
-      - 'docs/**'
-      - 'releases/**'
-      - '.agents/**'
-      - '.github/**'
-      - '**/AGENTS.md'
-      - '**/README.*'
-      - 'scripts/revalidate-web.ts'
-      - 'scripts/tests/revalidate-web.test.ts'
   workflow_dispatch:
 permissions:
   contents: write
@@ -22,13 +10,32 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  release-inputs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      app: ${{ steps.inputs.outputs.app }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.1'
+      - name: Determine whether app packaging is needed
+        id: inputs
+        run: node scripts/release-inputs.ts
+        env:
+          RELEASE_BASE_SHA: ${{ github.event.before }}
   validate:
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/check.yml
   windows:
-    needs: validate
+    needs: [validate, release-inputs]
+    if: needs.release-inputs.outputs.app == 'true'
     runs-on: windows-latest
     env:
       CARGO_INCREMENTAL: '0'

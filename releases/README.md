@@ -34,13 +34,14 @@ does not publish npm packages or automatically publish stable drafts.
 
 ## Nightly
 
-Pushes to `main` run the release pipeline unless all changed paths belong to the
+Pushes to `main` run validation once through the release workflow. App packaging
+is skipped when all changed paths belong to the
 website, documentation/release notes, contributor instructions, GitHub workflows
-or the website revalidation script and its tests. Regular CI still runs for those
+or the website revalidation script and its tests. Validation still runs for those
 changes. Mixed pushes that also change app code still build an installer. Shared
 dependencies, lockfiles and build scripts remain release inputs, as do the agent's
 runtime Markdown instructions and skills. Version tags and manual workflow runs
-bypass the path filter.
+bypass the packaging filter. The policy lives in `scripts/release-inputs.ts`.
 
 After checks pass, CI assigns
 `<current stable, next patch>-nightly.<run number>.<attempt>` only in the build

@@ -79,7 +79,9 @@ CI runs the general TypeScript suites on Ubuntu, excluding
 `apps/bridge/tests/simulation.test.ts`. A separate Windows job runs that complete
 file against the pinned simulator, so engine tests do not silently skip on Linux.
 Windows release calls the same validation workflow before packaging; pushes to
-`main` use that validation instead of starting a second copy of CI.
+`main` use that validation instead of starting a second copy of CI. The release
+input check gates only packaging, so web/docs-only pushes still receive all checks
+without building or publishing an installer. Tags and manual releases always package.
 
 The shared `setup-simulator` action caches the executable, manifest, class/item
 metadata and license for both validation and packaging. Its key includes the Go
@@ -175,7 +177,7 @@ Installed Windows x64 release builds check `https://github.com/fedeya/wisp-ai/re
 
 The updater public key is checked into `apps/desktop/src-tauri/tauri.conf.json`. Its private key is stored outside the repository at `%USERPROFILE%\.tauri\wisp-ai.key` on the machine where it was generated and in the repository's `TAURI_SIGNING_PRIVATE_KEY` Actions secret. Keep a secure backup: changing the public key breaks updates for existing installations. The generated key has no password; if using a password-protected replacement before the first public release, also configure `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
-To prepare a stable release, write user-facing notes in `releases/next.md`, commit your work and run `pnpm release patch` (or `minor` / an explicit version) from clean `main`. release-it synchronizes all workspace, Tauri and Cargo versions and pushes the release commit/tag. Actions builds, signs and verifies the installer, then creates a **draft** with the shared notes and updater manifest. Review and publish it as latest. Every successful app release build from `main` also publishes a separate Nightly prerelease; changes limited to the website, documentation or GitHub workflows skip that pipeline. Users opt into Nightly in App updates. Stable never receives nightly builds. See [the release guide](../releases/README.md) for notes, squash merges, channel switching and feeds. The repository and release assets must be public for distributed apps to download them.
+To prepare a stable release, write user-facing notes in `releases/next.md`, commit your work and run `pnpm release patch` (or `minor` / an explicit version) from clean `main`. release-it synchronizes all workspace, Tauri and Cargo versions and pushes the release commit/tag. Actions builds, signs and verifies the installer, then creates a **draft** with the shared notes and updater manifest. Review and publish it as latest. Every successful app release build from `main` also publishes a separate Nightly prerelease; changes limited to the website, documentation or GitHub workflows run validation and skip app packaging. Users opt into Nightly in App updates. Stable never receives nightly builds. See [the release guide](../releases/README.md) for notes, squash merges, channel switching and feeds. The repository and release assets must be public for distributed apps to download them.
 
 Local `pnpm build:desktop` builds remain unsigned unless `TAURI_SIGNING_PRIVATE_KEY` is set to the private key path or contents. Signed builds additionally emit `.sig` and `latest.json`. These updater signatures are independent of Windows Authenticode signing; they do not remove SmartScreen prompts.
 
