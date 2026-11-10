@@ -8,7 +8,7 @@ import { migrateReplies } from '@wisp/bridge/migrate-replies';
 
 // Run with Wisp stopped. The legacy JSON is imported by ChatStore if needed.
 const root = process.env.WISP_DATA_DIR || fileURLToPath(new URL('..', import.meta.url));
-const file = await applicationDatabaseFile(path.join(root, 'runtime'));
+const file = applicationDatabaseFile(path.join(root, 'runtime'));
 const store = new ChatStore(file, (error) => {
   throw error;
 });

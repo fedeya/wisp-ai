@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { RoutineStore } from '@wisp/bridge/routines';
+import { databaseScope } from './database-fixture.ts';
 import {
   routineDefinition,
   routineInput,
@@ -24,12 +25,17 @@ const definition = () =>
     ],
     cooldownSeconds: 60,
   });
-async function fixture(work: (store: RoutineStore, file: string) => Promise<void>) {
+async function fixture(
+  work: (store: RoutineStore, file: string, openStore: () => RoutineStore) => Promise<void>,
+) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routines-'));
+  const scope = databaseScope();
   try {
     const file = path.join(root, 'wisp.sqlite');
-    await work(new RoutineStore(file), file);
+    const openStore = () => new RoutineStore(scope.open(file));
+    await work(openStore(), file, openStore);
   } finally {
+    await scope.close();
     await rm(root, { recursive: true, force: true });
   }
 }
@@ -62,7 +68,7 @@ test('event definitions reject invented capabilities, invalid operators and exec
   ).toBe(false);
 });
 test('pending events survive restart, coalesce, respect cooldown and stay character scoped', async () =>
-  fixture(async (store, file) => {
+  fixture(async (store, file, openStore) => {
     const start = 1000000;
     await store.mutate(
       'mage',
@@ -74,7 +80,7 @@ test('pending events survive restart, coalesce, respect cooldown and stay charac
     expect(await store.claim('mage', start)).toBeNull();
     await store.observe('mage', { event: 'level_up', values: { level: 24 } }, start);
     await store.observe('mage', { event: 'level_up', values: { level: 26 } }, start + 1);
-    const restored = new RoutineStore(file);
+    const restored = openStore();
     await restored.load();
     const claims = await Promise.all([
       restored.claim('mage', start + 2),
@@ -90,9 +96,9 @@ test('pending events survive restart, coalesce, respect cooldown and stay charac
     const second = (await restored.claim('mage', start + 60002))!;
     expect(second.run.id).not.toBe(first.run.id);
     expect(second.previous).toEqual(['Train the verified spell.']);
-    const again = new RoutineStore(file);
+    const again = openStore();
     await again.load();
-    expect(again.runs.at(-1)?.status).toBe('interrupted');
+    expect(again.history().at(-1)?.status).toBe('interrupted');
     expect(await again.claim('mage', start + 200000)).toBeNull();
   }));
 
@@ -101,7 +107,7 @@ test.each([
   { name: 'least recently started', starts: [900000, 700000, 800000], order: ['b', 'c', 'a'] },
   { name: 'stable started ties', starts: [900000, 900000, 900000], order: ['a', 'b', 'c'] },
 ])('claims use $name without changing eligibility or saved order', async ({ starts, order }) =>
-  fixture(async (store, file) => {
+  fixture(async (store, file, openStore) => {
     const now = 1000000;
     const base = {
       ...definition(),
@@ -110,17 +116,17 @@ test.each([
       updatedAt: 100000,
       nextAt: 200000,
     };
-    store.routines = [
+    const seededRoutines = [
       { ...base, id: 'paused', enabled: false },
       { ...base, id: 'other', characterKey: 'other' },
       { ...base, id: 'not-due', nextAt: now + 1 },
       { ...base, id: 'cooldown', lastStartedAt: now - 1000 },
       ...['a', 'b', 'c'].map((id, index) => ({ ...base, id, lastStartedAt: starts[index] })),
     ].map((routine) => savedRoutine.parse(routine));
-    const savedOrder = store.routines.map((routine) => routine.id);
+    const savedOrder = seededRoutines.map((routine) => routine.id);
     await writeFile(
       path.join(path.dirname(file), 'routines.json'),
-      JSON.stringify({ routines: store.routines, runs: [] }),
+      JSON.stringify({ routines: seededRoutines, runs: [] }),
     );
     for (const id of order) {
       const claimed = (await store.claim('mage', now))!;
@@ -128,10 +134,10 @@ test.each([
       await store.finish(claimed.run.id, 'no_tip', '', now);
     }
     expect(await store.claim('mage', now)).toBeNull();
-    expect(store.routines.map((routine) => routine.id)).toEqual(savedOrder);
-    const restored = new RoutineStore(file);
+    expect(store.list().map((routine) => routine.id)).toEqual(savedOrder);
+    const restored = openStore();
     await restored.load();
-    expect(restored.routines.map((routine) => routine.id)).toEqual(savedOrder);
+    expect(restored.list().map((routine) => routine.id)).toEqual(savedOrder);
   }),
 );
 test('pause clears pending work; intervals coalesce offline time; once waits for a useful result', async () =>
@@ -172,7 +178,7 @@ test('dispatch deferred by a new user turn restores the pending one-shot without
     await store.observe('mage', { event: 'level_up', values: { level: 24 } }, now);
     const claimed = (await store.claim('mage', now + 1))!;
     await store.defer(claimed.run.id, claimed.event);
-    expect(store.runs).toHaveLength(0);
+    expect(store.history()).toHaveLength(0);
     expect(store.list('mage')[0].enabled).toBe(true);
     expect(await store.claim('mage', now + 2)).not.toBeNull();
   }));

@@ -120,5 +120,9 @@ CREATE TABLE `routines` (
 --> statement-breakpoint
 CREATE INDEX `chats_character_activity` ON `chats` (`character_key`,`last_activity_at`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `messages_chat_position` ON `messages` (`chat_id`,`position`);--> statement-breakpoint
-CREATE INDEX `routine_runs_history` ON `routine_runs` (`character_key`,`routine_id`,`started_at`);--> statement-breakpoint
+CREATE INDEX `routine_runs_order` ON `routine_runs` (`sort_index`);--> statement-breakpoint
+CREATE INDEX `routine_runs_history` ON `routine_runs` (`character_key`,`routine_id`,`sort_index`);--> statement-breakpoint
+CREATE INDEX `routine_runs_success` ON `routine_runs` (`character_key`,`routine_id`,`sort_index`) WHERE "routine_runs"."status" = 'done';--> statement-breakpoint
+CREATE INDEX `routine_runs_visible` ON `routine_runs` (`sort_index`) WHERE "routine_runs"."status" <> 'no_tip';--> statement-breakpoint
+CREATE INDEX `routine_runs_character_visible` ON `routine_runs` (`character_key`,`sort_index`) WHERE "routine_runs"."status" <> 'no_tip';--> statement-breakpoint
 CREATE INDEX `routines_due` ON `routines` (`character_key`,`enabled`,`next_at`);

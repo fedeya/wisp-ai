@@ -1,19 +1,16 @@
 import { createHash } from 'node:crypto';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { isDeepStrictEqual } from 'node:util';
-import { drizzle } from 'drizzle-orm/node-sqlite';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { savedRoutine, routineRun, type Routine, type RoutineRun } from '@wisp/protocol/routines';
 import { panelContent, type Panel } from '@wisp/protocol/panels';
 import { memoryEntry } from '@wisp/protocol/agent-rpc';
-import { migrateDatabase } from './migrate.ts';
-import { preparePrivateDatabase } from './private-file.ts';
+import type { ApplicationOrm } from './application-database.ts';
 import { routines, routineRuns, panels, memoryScopes, memoryEntries, metadata } from './schema.ts';
 
-type Orm = ReturnType<typeof migrateDatabase>;
+type Orm = ApplicationOrm;
 export type MemorySlot = 'preferences' | 'character';
 export type MemoryEntry = z.infer<typeof memoryEntry>;
 const savedPanel = panelContent.safeExtend({
@@ -46,29 +43,7 @@ function syncRows<T>(
   }
 }
 
-export function readRoutines(db: Orm): { routines: Routine[]; runs: RoutineRun[] } {
-  return {
-    routines: db
-      .select()
-      .from(routines)
-      .orderBy(routines.sortIndex)
-      .all()
-      .map(({ sortIndex: _sortIndex, content, ...row }) => ({ ...JSON.parse(content), ...row })),
-    runs: db
-      .select()
-      .from(routineRuns)
-      .orderBy(routineRuns.sortIndex)
-      .all()
-      .map(({ sortIndex: _sortIndex, extras, finishedAt, summary, ...row }) => ({
-        ...JSON.parse(extras),
-        ...row,
-        ...(finishedAt === null ? {} : { finishedAt }),
-        ...(summary === null ? {} : { summary }),
-      })),
-  };
-}
-
-export function saveRoutines(db: Orm, value: { routines: Routine[]; runs: RoutineRun[] }) {
+export function importRoutines(db: Orm, value: { routines: Routine[]; runs: RoutineRun[] }) {
   const nextRoutines = value.routines.map(
     ({ id, characterKey, title, enabled, nextAt, updatedAt, ...content }, sortIndex) => ({
       id,
@@ -233,169 +208,117 @@ export function saveMemory(
   );
 }
 
-// Short-lived connections avoid keeping extra SQLite handles alive beside the chat
-// store. Each change reloads its domain under the same immediate transaction.
-export class ProductDatabase {
-  private ready?: Promise<void>;
-  readonly file: string;
-  constructor(file: string) {
-    this.file = file;
+export async function importProductData(file: string, db: Orm) {
+  if (db.select().from(metadata).where(eq(metadata.key, marker)).get()) {
+    return;
   }
-  private open() {
-    const client = new DatabaseSync(this.file, { timeout: 5000 });
+  const sources: { file: string; original: Buffer }[] = [];
+  const read = async (file: string) => {
     try {
-      client.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
-      return client;
+      const original = await readFile(file);
+      sources.push({ file, original });
+      return JSON.parse(original.toString('utf8'));
     } catch (error) {
-      client.close();
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return undefined;
+      }
+      throw error;
+    }
+  };
+  const root = path.dirname(file);
+  const rawRoutines = await read(path.join(root, 'routines.json'));
+  const routineData = z
+    .object({ routines: z.array(savedRoutine), runs: z.array(routineRun) })
+    .parse(rawRoutines === undefined ? { routines: [], runs: [] } : rawRoutines);
+  if (rawRoutines) {
+    routineData.runs = routineData.runs.map((run, i) => ({ ...rawRoutines.runs[i], ...run }));
+  }
+  const rawPanels = await read(path.join(root, 'panels.json'));
+  const panelData = rawPanels === undefined ? [] : rawPanels;
+  const validatedPanels = z.array(savedPanel).parse(panelData);
+  const importedPanels = validatedPanels.map((panel, i) => ({
+    ...panelData[i],
+    bindings: panel.bindings,
+    references: panel.references,
+  }));
+  let names: string[] = [];
+  try {
+    names = await readdir(path.join(root, 'memory'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw error;
     }
   }
-  async initialize() {
-    await (this.ready ??= this.prepare().catch((error) => {
-      this.ready = undefined;
-      throw error;
-    }));
+  const memories: {
+    slot: MemorySlot;
+    owner: string;
+    entries: MemoryEntry[];
+    extras: string;
+  }[] = [];
+  for (const name of names.sort().filter((name) => /^[a-f0-9]{64}\.json$/.test(name))) {
+    const raw = await read(path.join(root, 'memory', name));
+    const parsed = z
+      .object({
+        slot: z.enum(['preferences', 'character']),
+        owner: z.string().min(1),
+        entries: z.array(memoryEntry),
+      })
+      .parse(raw);
+    const expected =
+      createHash('sha256')
+        .update(JSON.stringify([parsed.slot, parsed.owner]))
+        .digest('hex') + '.json';
+    if (expected !== name) {
+      throw Error('Memory source identity does not match its filename');
+    }
+    const { slot, owner, entries, ...extras } = raw;
+    memories.push({ slot, owner, entries, extras: JSON.stringify(extras) });
   }
-  private async prepare() {
-    await preparePrivateDatabase(this.file);
-    const client = this.open();
+  for (const { file, original } of sources) {
+    const digest = createHash('sha256').update(original).digest('hex');
+    const backup = file.replace(/\.json$/, `.pre-sqlite-${digest}.json`);
     try {
-      const db = migrateDatabase(client);
+      await writeFile(backup, original, { flag: 'wx', mode: 0o600 });
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
+        !(await readFile(backup)).equals(original)
+      ) {
+        throw error;
+      }
+    }
+  }
+  db.transaction(
+    () => {
       if (db.select().from(metadata).where(eq(metadata.key, marker)).get()) {
         return;
       }
-      const sources: { file: string; original: Buffer }[] = [];
-      const read = async (file: string) => {
-        try {
-          const original = await readFile(file);
-          sources.push({ file, original });
-          return JSON.parse(original.toString('utf8'));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-            return undefined;
-          }
-          throw error;
-        }
-      };
-      const root = path.dirname(this.file);
-      const rawRoutines = await read(path.join(root, 'routines.json'));
-      const routineData = z
-        .object({ routines: z.array(savedRoutine), runs: z.array(routineRun) })
-        .parse(rawRoutines === undefined ? { routines: [], runs: [] } : rawRoutines);
-      if (rawRoutines) {
-        routineData.runs = routineData.runs.map((run, i) => ({ ...rawRoutines.runs[i], ...run }));
+      if (
+        [routines, routineRuns, panels, memoryScopes, memoryEntries].some((table) =>
+          db.select().from(table).get(),
+        )
+      ) {
+        throw Error('Uninitialized product database already contains data');
       }
-      const rawPanels = await read(path.join(root, 'panels.json'));
-      const panelData = rawPanels === undefined ? [] : rawPanels;
-      const validatedPanels = z.array(savedPanel).parse(panelData);
-      const importedPanels = validatedPanels.map((panel, i) => ({
-        ...panelData[i],
-        bindings: panel.bindings,
-        references: panel.references,
-      }));
-      let names: string[] = [];
-      try {
-        names = await readdir(path.join(root, 'memory'));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw error;
-        }
+      importRoutines(db, routineData);
+      savePanels(db, importedPanels);
+      for (const memory of memories) {
+        saveMemory(db, memory.slot, memory.owner, memory.entries, memory.extras);
       }
-      const memories: {
-        slot: MemorySlot;
-        owner: string;
-        entries: MemoryEntry[];
-        extras: string;
-      }[] = [];
-      for (const name of names.sort().filter((name) => /^[a-f0-9]{64}\.json$/.test(name))) {
-        const raw = await read(path.join(root, 'memory', name));
-        const parsed = z
-          .object({
-            slot: z.enum(['preferences', 'character']),
-            owner: z.string().min(1),
-            entries: z.array(memoryEntry),
-          })
-          .parse(raw);
-        const expected =
-          createHash('sha256')
-            .update(JSON.stringify([parsed.slot, parsed.owner]))
-            .digest('hex') + '.json';
-        if (expected !== name) {
-          throw Error('Memory source identity does not match its filename');
-        }
-        const { slot, owner, entries, ...extras } = raw;
-        memories.push({ slot, owner, entries, extras: JSON.stringify(extras) });
-      }
-      for (const { file, original } of sources) {
-        const digest = createHash('sha256').update(original).digest('hex');
-        const backup = file.replace(/\.json$/, `.pre-sqlite-${digest}.json`);
-        try {
-          await writeFile(backup, original, { flag: 'wx', mode: 0o600 });
-        } catch (error) {
-          if (
-            (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
-            !(await readFile(backup)).equals(original)
-          ) {
-            throw error;
-          }
-        }
-      }
-      db.transaction(
-        () => {
-          if (db.select().from(metadata).where(eq(metadata.key, marker)).get()) {
-            return;
-          }
-          if (
-            [routines, routineRuns, panels, memoryScopes, memoryEntries].some((table) =>
-              db.select().from(table).get(),
-            )
-          ) {
-            throw Error('Uninitialized product database already contains data');
-          }
-          saveRoutines(db, routineData);
-          savePanels(db, importedPanels);
-          for (const memory of memories) {
-            saveMemory(db, memory.slot, memory.owner, memory.entries, memory.extras);
-          }
-          const { routines: _routines, runs: _runs, ...routineExtensions } = rawRoutines ?? {};
-          db.insert(metadata)
-            .values({
-              key: marker,
-              value: JSON.stringify({
-                sources: sources.map(({ file, original }) => ({
-                  file: path.relative(root, file),
-                  sha256: createHash('sha256').update(original).digest('hex'),
-                })),
-                routineExtensions,
-              }),
-            })
-            .run();
-        },
-        { behavior: 'immediate' },
-      );
-    } finally {
-      client.close();
-    }
-  }
-  async transaction<T>(work: (db: Orm) => T): Promise<T> {
-    await this.initialize();
-    const client = this.open();
-    try {
-      // Migration history was checked during initialization; ordinary operations
-      // need no filesystem reads of the bundled SQL assets.
-      const db = drizzle({ client });
-      client.exec('BEGIN IMMEDIATE');
-      try {
-        const result = work(db);
-        client.exec('COMMIT');
-        return result;
-      } catch (error) {
-        client.exec('ROLLBACK');
-        throw error;
-      }
-    } finally {
-      client.close();
-    }
-  }
+      const { routines: _routines, runs: _runs, ...routineExtensions } = rawRoutines ?? {};
+      db.insert(metadata)
+        .values({
+          key: marker,
+          value: JSON.stringify({
+            sources: sources.map(({ file, original }) => ({
+              file: path.relative(root, file),
+              sha256: createHash('sha256').update(original).digest('hex'),
+            })),
+            routineExtensions,
+          }),
+        })
+        .run();
+    },
+    { behavior: 'immediate' },
+  );
 }

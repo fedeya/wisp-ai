@@ -1,5 +1,5 @@
-import { ProductDatabase, readRoutines, saveRoutines } from './db/product-store.ts';
 import { randomUUID } from 'node:crypto';
+import { and, asc, desc, eq, lte, ne, or, sql } from 'drizzle-orm';
 import {
   matchesRoutineEvent,
   type Routine,
@@ -7,56 +7,98 @@ import {
   type RoutineEvent,
   type routineInput,
 } from '@wisp/protocol/routines';
-import { z } from 'zod';
+import type { z } from 'zod';
+import { ApplicationDatabase, type ApplicationOrm } from './db/application-database.ts';
+import { routines, routineRuns } from './db/schema.ts';
+import {
+  decodeRoutine,
+  decodeRun,
+  encodeRoutine,
+  encodeRun,
+  type RoutineRow,
+} from './db/routine-record.ts';
 
+interface HistoryOptions {
+  characterKey?: string;
+  routineId?: string;
+  includeSilent?: boolean;
+  limit?: number;
+}
 export class RoutineStore {
-  routines: Routine[] = [];
-  runs: RoutineRun[] = [];
-  private queue: Promise<unknown> = Promise.resolve();
-  readonly database: ProductDatabase;
-  constructor(file: string | ProductDatabase) {
-    this.database = typeof file === 'string' ? new ProductDatabase(file) : file;
+  readonly database: ApplicationDatabase;
+  constructor(database: ApplicationDatabase) {
+    this.database = database;
   }
   async load() {
-    await this.transact(() => {
-      this.runs = this.runs.map((run) =>
-        run.status === 'running' ? { ...run, status: 'interrupted', finishedAt: Date.now() } : run,
-      );
-    });
+    await this.database.initializeProducts();
+    await this.database.transaction((db) =>
+      db
+        .update(routineRuns)
+        .set({ status: 'interrupted', finishedAt: Date.now() })
+        .where(eq(routineRuns.status, 'running'))
+        .run(),
+    );
   }
-  list(characterKey: string) {
-    return this.routines.filter((r) => r.characterKey === characterKey);
+  list(characterKey?: string): Routine[] {
+    return this.database.orm
+      .select()
+      .from(routines)
+      .where(characterKey === undefined ? undefined : eq(routines.characterKey, characterKey))
+      .orderBy(routines.sortIndex)
+      .all()
+      .map(decodeRoutine);
   }
-  private transact<T>(change: () => T): Promise<T> {
-    const work = this.queue
-      .catch(() => {})
-      .then(async () => {
-        let before: string | undefined;
-        try {
-          return await this.database.transaction((db) => {
-            const stored = readRoutines(db);
-            this.routines = stored.routines;
-            this.runs = stored.runs;
-            before = JSON.stringify(stored);
-            const result = change();
-            const content = JSON.stringify({ routines: this.routines, runs: this.runs });
-            if (content === before) {
-              return result;
-            }
-            saveRoutines(db, { routines: this.routines, runs: this.runs });
-            return result;
-          });
-        } catch (e) {
-          if (before !== undefined) {
-            const old = JSON.parse(before);
-            this.routines = old.routines;
-            this.runs = old.runs;
-          }
-          throw e;
-        }
-      });
-    this.queue = work;
-    return work;
+  history({
+    characterKey,
+    routineId,
+    includeSilent = true,
+    limit = 200,
+  }: HistoryOptions = {}): RoutineRun[] {
+    return this.database.orm
+      .select()
+      .from(routineRuns)
+      .where(
+        and(
+          characterKey === undefined ? undefined : eq(routineRuns.characterKey, characterKey),
+          routineId === undefined ? undefined : eq(routineRuns.routineId, routineId),
+          includeSilent ? undefined : ne(routineRuns.status, 'no_tip'),
+        ),
+      )
+      .orderBy(desc(routineRuns.sortIndex))
+      .limit(Math.max(1, Math.min(200, Math.floor(limit))))
+      .all()
+      .reverse()
+      .map(decodeRun);
+  }
+  getRun(id: string, characterKey?: string): RoutineRun | undefined {
+    const row = this.database.orm
+      .select()
+      .from(routineRuns)
+      .where(
+        and(
+          eq(routineRuns.id, id),
+          characterKey === undefined ? undefined : eq(routineRuns.characterKey, characterKey),
+        ),
+      )
+      .get();
+    return row && decodeRun(row);
+  }
+  private row(db: ApplicationOrm, characterKey: string, id: string) {
+    return db
+      .select()
+      .from(routines)
+      .where(and(eq(routines.characterKey, characterKey), eq(routines.id, id)))
+      .get();
+  }
+  private update(db: ApplicationOrm, row: RoutineRow, value: Routine) {
+    db.update(routines)
+      .set(encodeRoutine(value, row.sortIndex))
+      .where(and(eq(routines.characterKey, row.characterKey), eq(routines.id, row.id)))
+      .run();
+  }
+  private async transact<T>(work: (db: ApplicationOrm) => T) {
+    await this.database.initializeProducts();
+    return this.database.transaction(work);
   }
   mutate(
     characterKey: string,
@@ -64,9 +106,10 @@ export class RoutineStore {
     sourceChatId?: string,
     now = Date.now(),
   ) {
-    return this.transact(() => {
+    return this.transact((db) => {
       if (input.operation === 'save') {
-        const old = this.list(characterKey).find((r) => r.id === input.routine.id);
+        const row = this.row(db, characterKey, input.routine.id);
+        const old = row && decodeRoutine(row);
         if (!old && this.list(characterKey).length >= 20) {
           throw Error('Keep at most 20 routines per character');
         }
@@ -79,22 +122,34 @@ export class RoutineStore {
           nextAt: now + this.interval(input.routine.triggers),
           lastStartedAt: old?.lastStartedAt,
         };
-        this.routines = this.routines.filter(
-          (r) => r.characterKey !== characterKey || r.id !== next.id,
+        const position = Number(
+          db
+            .select({ next: sql<number>`coalesce(max(${routines.sortIndex}), -1) + 1` })
+            .from(routines)
+            .get()!.next,
         );
-        this.routines.push(next);
+        const value = encodeRoutine(next, position);
+        db.insert(routines)
+          .values(value)
+          .onConflictDoUpdate({ target: [routines.characterKey, routines.id], set: value })
+          .run();
       } else if (['pause', 'resume', 'remove'].includes(input.operation) && 'id' in input) {
-        const routine = this.list(characterKey).find((r) => r.id === input.id);
-        if (!routine) {
+        const row = this.row(db, characterKey, input.id);
+        if (!row) {
           throw Error('Routine not found');
         }
         if (input.operation === 'remove') {
-          this.routines = this.routines.filter((r) => r !== routine);
+          db.delete(routines)
+            .where(and(eq(routines.characterKey, characterKey), eq(routines.id, input.id)))
+            .run();
         } else {
-          routine.enabled = input.operation === 'resume';
-          routine.pending = undefined;
-          routine.nextAt = now + this.interval(routine.triggers);
-          routine.updatedAt = now;
+          this.update(db, row, {
+            ...decodeRoutine(row),
+            enabled: input.operation === 'resume',
+            pending: undefined,
+            nextAt: now + this.interval(decodeRoutine(row).triggers),
+            updatedAt: now,
+          });
         }
       }
       return this.list(characterKey);
@@ -107,38 +162,54 @@ export class RoutineStore {
     );
   }
   observe(characterKey: string, event: RoutineEvent, now = Date.now()) {
-    return this.transact(() => {
-      for (const r of this.list(characterKey)) {
-        if (r.enabled && r.triggers.some((t) => matchesRoutineEvent(t, event))) {
-          // A burst replaces the pending reading, never creates a backlog of model calls.
-          r.pending = { event: event.event, values: event.values, at: now };
+    return this.transact((db) => {
+      const rows = db
+        .select()
+        .from(routines)
+        .where(and(eq(routines.characterKey, characterKey), eq(routines.enabled, true)))
+        .all();
+      for (const row of rows) {
+        const r = decodeRoutine(row);
+        if (r.triggers.some((t) => matchesRoutineEvent(t, event))) {
+          this.update(db, row, {
+            ...r,
+            pending: { event: event.event, values: event.values, at: now },
+          });
         }
       }
     });
   }
   claim(characterKey: string, now = Date.now()) {
-    return this.transact(() => {
-      const eligible = this.list(characterKey).filter(
-        (r) =>
-          r.enabled &&
-          (r.pending || r.nextAt <= now) &&
-          now - (r.lastStartedAt ?? 0) >= r.cooldownSeconds * 1000,
-      );
-      // Strict comparison preserves saved order for ties, including never-started routines.
-      const r = eligible.reduce<Routine | undefined>(
-        (oldest, candidate) =>
-          !oldest || (candidate.lastStartedAt ?? -Infinity) < (oldest.lastStartedAt ?? -Infinity)
-            ? candidate
-            : oldest,
-        undefined,
-      );
-      if (!r) {
+    return this.transact((db) => {
+      const row = db
+        .select()
+        .from(routines)
+        .where(
+          and(
+            eq(routines.characterKey, characterKey),
+            eq(routines.enabled, true),
+            or(
+              lte(routines.nextAt, now),
+              sql`json_type(${routines.content}, '$.pending') = 'object'`,
+            ),
+            sql`${now} - coalesce(json_extract(${routines.content}, '$.lastStartedAt'), 0) >= json_extract(${routines.content}, '$.cooldownSeconds') * 1000`,
+          ),
+        )
+        .orderBy(asc(sql`json_extract(${routines.content}, '$.lastStartedAt')`), routines.sortIndex)
+        .limit(1)
+        .get();
+      if (!row) {
         return null;
       }
+      const r = decodeRoutine(row);
       const event = r.pending || { event: 'interval', values: {}, at: now };
-      r.pending = undefined;
-      r.lastStartedAt = now;
-      r.nextAt = now + this.interval(r.triggers);
+      const next = {
+        ...r,
+        pending: undefined,
+        lastStartedAt: now,
+        nextAt: now + this.interval(r.triggers),
+      };
+      this.update(db, row, next);
       const run: RoutineRun = {
         id: 'routine-' + randomUUID(),
         routineId: r.id,
@@ -148,44 +219,65 @@ export class RoutineStore {
         event: event.event,
         status: 'running',
       };
-      this.runs.push(run);
-      const previous = this.runs
-        .filter(
-          (p) => p.characterKey === characterKey && p.routineId === r.id && p.status === 'done',
+      const position = Number(
+        db
+          .select({ next: sql<number>`coalesce(max(${routineRuns.sortIndex}), -1) + 1` })
+          .from(routineRuns)
+          .get()!.next,
+      );
+      db.insert(routineRuns).values(encodeRun(run, position)).run();
+      const previous = db
+        .select({ summary: routineRuns.summary })
+        .from(routineRuns)
+        .where(
+          and(
+            eq(routineRuns.characterKey, characterKey),
+            eq(routineRuns.routineId, r.id),
+            eq(routineRuns.status, 'done'),
+          ),
         )
-        .slice(-3)
+        .orderBy(desc(routineRuns.sortIndex))
+        .limit(3)
+        .all()
+        .reverse()
         .map((p) => p.summary)
         .filter(Boolean);
-      return { routine: { ...r }, run, event, previous };
+      return { routine: next, run, event, previous };
     });
   }
   finish(id: string, status: RoutineRun['status'], summary: string, now = Date.now()) {
-    return this.transact(() => {
-      const run = this.runs.find((r) => r.id === id);
-      if (run) {
-        run.status = status;
-        run.summary = summary.slice(0, 1500);
-        run.finishedAt = now;
-        const routine = this.list(run.characterKey).find((r) => r.id === run.routineId);
-        if (status === 'done' && routine?.once && routine.updatedAt <= run.startedAt) {
-          routine.enabled = false;
-          routine.pending = undefined;
-        }
+    return this.transact((db) => {
+      const run = this.getRun(id);
+      if (!run) {
+        return;
+      }
+      db.update(routineRuns)
+        .set({ status, summary: summary.slice(0, 1500), finishedAt: now })
+        .where(eq(routineRuns.id, id))
+        .run();
+      const row = this.row(db, run.characterKey, run.routineId);
+      const routine = row && decodeRoutine(row);
+      if (status === 'done' && row && routine?.once && routine.updatedAt <= run.startedAt) {
+        this.update(db, row, { ...routine, enabled: false, pending: undefined });
       }
     });
   }
   defer(id: string, event: NonNullable<Routine['pending']>) {
-    return this.transact(() => {
-      const run = this.runs.find((r) => r.id === id);
+    return this.transact((db) => {
+      const run = this.getRun(id);
       if (!run) {
         return;
       }
-      const routine = this.list(run.characterKey).find((r) => r.id === run.routineId);
-      if (routine && routine.updatedAt <= run.startedAt) {
-        routine.pending ??= event;
-        routine.lastStartedAt = undefined;
+      const row = this.row(db, run.characterKey, run.routineId);
+      const routine = row && decodeRoutine(row);
+      if (row && routine && routine.updatedAt <= run.startedAt) {
+        this.update(db, row, {
+          ...routine,
+          pending: routine.pending ?? event,
+          lastStartedAt: undefined,
+        });
       }
-      this.runs = this.runs.filter((r) => r.id !== id);
+      db.delete(routineRuns).where(eq(routineRuns.id, id)).run();
     });
   }
 }

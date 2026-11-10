@@ -7,7 +7,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { ProductDatabase } from '@wisp/bridge/db/product-store';
+import type { ApplicationDatabase } from '@wisp/bridge/db/application-database';
+import { databaseScope } from './database-fixture.ts';
 import { RoutineStore } from '@wisp/bridge/routines';
 import { PanelStore } from '@wisp/bridge/panels';
 import { MemoryStore } from '@wisp/bridge/memory-store';
@@ -59,11 +60,19 @@ const memoryName =
   createHash('sha256')
     .update(JSON.stringify([memory.slot, memory.owner]))
     .digest('hex') + '.json';
-async function fixture(work: (root: string, file: string) => Promise<void>) {
+async function fixture(
+  work: (
+    root: string,
+    file: string,
+    openDb: (file: string) => ApplicationDatabase,
+  ) => Promise<void>,
+) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-product-storage-'));
+  const scope = databaseScope();
   try {
-    await work(root, path.join(root, 'wisp.sqlite'));
+    await work(root, path.join(root, 'wisp.sqlite'), scope.open);
   } finally {
+    await scope.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
@@ -92,7 +101,7 @@ function inspect<T>(file: string, work: (db: DatabaseSync) => T): T {
 }
 
 test('imports all product data into the same database as chats, retaining exact sources, backups and extensions', async () =>
-  fixture(async (root, file) => {
+  fixture(async (root, file, openDb) => {
     const sources = await legacy(root);
     const chat = {
       ...newChat('history', 'game'),
@@ -105,15 +114,15 @@ test('imports all product data into the same database as chats, retaining exact 
     } finally {
       await chats.close();
     }
-    await new ProductDatabase(file).initialize();
-    const routines = new RoutineStore(file);
+    await openDb(file).initializeProducts();
+    const routines = new RoutineStore(openDb(file));
     await routines.load();
-    const panels = new PanelStore(file);
+    const panels = new PanelStore(openDb(file));
     await panels.load();
-    expect(routines.routines).toEqual([routine]);
-    expect(routines.runs).toEqual([run]);
+    expect(routines.list()).toEqual([routine]);
+    expect(routines.history()).toEqual([run]);
     expect(panels.panels).toEqual([panel]);
-    expect(await new MemoryStore(file).read('character', 'mage')).toEqual(memory.entries);
+    expect(await new MemoryStore(openDb(file)).read('character', 'mage')).toEqual(memory.entries);
     for (const [name, original] of sources) {
       const originalFile = path.join(root, name);
       expect(await readFile(originalFile, 'utf8')).toBe(original);
@@ -141,11 +150,11 @@ test('imports all product data into the same database as chats, retaining exact 
 test.each(['null', '{invalid', '[{}]'])(
   'invalid panels %s stop the whole import and retry succeeds after repair',
   async (invalid) =>
-    fixture(async (root, file) => {
+    fixture(async (root, file, openDb) => {
       await legacy(root);
       await writeFile(path.join(root, 'panels.json'), invalid);
-      const database = new ProductDatabase(file);
-      await expect(database.initialize()).rejects.toThrow();
+      const database = openDb(file);
+      await expect(database.initializeProducts()).rejects.toThrow();
       inspect(file, (db) => {
         expect(db.prepare('SELECT count(*) AS n FROM routines').get()!.n).toBe(0);
         expect(
@@ -154,15 +163,15 @@ test.each(['null', '{invalid', '[{}]'])(
       });
       expect(await readFile(path.join(root, 'panels.json'), 'utf8')).toBe(invalid);
       await writeFile(path.join(root, 'panels.json'), JSON.stringify([panel]));
-      await database.initialize();
-      expect(await new MemoryStore(file).read('character', 'mage')).toEqual(memory.entries);
+      await database.initializeProducts();
+      expect(await new MemoryStore(openDb(file)).read('character', 'mage')).toEqual(memory.entries);
     }),
 );
 
 test.each(['routines', 'runs', 'memory'])(
   'duplicate %s identities roll back all imported domains',
   async (domain) =>
-    fixture(async (root, file) => {
+    fixture(async (root, file, openDb) => {
       await legacy(root);
       if (domain === 'memory') {
         await writeFile(
@@ -178,7 +187,7 @@ test.each(['routines', 'runs', 'memory'])(
           }),
         );
       }
-      await expect(new ProductDatabase(file).initialize()).rejects.toThrow('Duplicate');
+      await expect(openDb(file).initializeProducts()).rejects.toThrow('Duplicate');
       inspect(file, (db) => {
         for (const table of [
           'routines',
@@ -194,13 +203,13 @@ test.each(['routines', 'runs', 'memory'])(
 );
 
 test('memory ownership mismatches fail closed; a conflicting backup is never overwritten', async () =>
-  fixture(async (root, file) => {
+  fixture(async (root, file, openDb) => {
     const sources = await legacy(root);
     await writeFile(
       path.join(root, 'memory', memoryName),
       JSON.stringify({ ...memory, owner: 'other' }),
     );
-    await expect(new ProductDatabase(file).initialize()).rejects.toThrow('identity');
+    await expect(openDb(file).initializeProducts()).rejects.toThrow('identity');
     await writeFile(
       path.join(root, 'memory', memoryName),
       sources.get(path.join('memory', memoryName))!,
@@ -209,36 +218,36 @@ test('memory ownership mismatches fail closed; a conflicting backup is never ove
     const digest = createHash('sha256').update(original).digest('hex');
     const backup = path.join(root, `routines.pre-sqlite-${digest}.json`);
     await writeFile(backup, 'unrelated backup');
-    await expect(new ProductDatabase(file).initialize()).rejects.toThrow();
+    await expect(openDb(file).initializeProducts()).rejects.toThrow();
     expect(await readFile(backup, 'utf8')).toBe('unrelated backup');
   }));
 
 test('deletions remain authoritative after restart even when legacy files are stale or invalid', async () =>
-  fixture(async (root, file) => {
+  fixture(async (root, file, openDb) => {
     await legacy(root);
-    const routines = new RoutineStore(file);
+    const routines = new RoutineStore(openDb(file));
     await routines.load();
     await routines.mutate('mage', { operation: 'remove', id: routine.id });
-    const panels = new PanelStore(file);
+    const panels = new PanelStore(openDb(file));
     await panels.load();
     await panels.mutate('mage', { operation: 'remove', id: panel.id });
-    await new MemoryStore(file).update('character', 'mage', 'guide');
+    await new MemoryStore(openDb(file)).update('character', 'mage', 'guide');
     await writeFile(path.join(root, 'routines.json'), 'invalid stale JSON');
     await writeFile(path.join(root, 'memory', memoryName), 'invalid stale JSON');
-    const reopened = new RoutineStore(file);
+    const reopened = new RoutineStore(openDb(file));
     await reopened.load();
-    expect(reopened.routines).toEqual([]);
-    expect(reopened.runs).toEqual([run]);
-    const reopenedPanels = new PanelStore(file);
+    expect(reopened.list()).toEqual([]);
+    expect(reopened.history()).toEqual([run]);
+    const reopenedPanels = new PanelStore(openDb(file));
     await reopenedPanels.load();
     expect(reopenedPanels.panels).toEqual([]);
-    expect(await new MemoryStore(file).read('character', 'mage')).toEqual([]);
+    expect(await new MemoryStore(openDb(file)).read('character', 'mage')).toEqual([]);
   }));
 
 test('independent stores preserve concurrent edits and a routine can only be claimed once', async () =>
-  fixture(async (_root, file) => {
-    const first = new RoutineStore(file),
-      second = new RoutineStore(file);
+  fixture(async (_root, file, openDb) => {
+    const first = new RoutineStore(openDb(file)),
+      second = new RoutineStore(openDb(file));
     await Promise.all([first.load(), second.load()]);
     await Promise.all([
       first.mutate('mage', { operation: 'save', routine }, undefined, 0),
@@ -246,17 +255,17 @@ test('independent stores preserve concurrent edits and a routine can only be cla
     ]);
     const claims = await Promise.all([first.claim('mage', 1000000), second.claim('mage', 1000000)]);
     expect(claims.filter(Boolean)).toHaveLength(1);
-    expect(second.routines).toHaveLength(2);
-    const p1 = new PanelStore(file),
-      p2 = new PanelStore(file);
+    expect(second.list()).toHaveLength(2);
+    const p1 = new PanelStore(openDb(file)),
+      p2 = new PanelStore(openDb(file));
     await Promise.all([
       p1.mutate('mage', { operation: 'save', panel }),
       p2.mutate('warrior', { operation: 'save', panel }),
     ]);
     await p1.load();
     expect(p1.panels).toHaveLength(2);
-    const m1 = new MemoryStore(file),
-      m2 = new MemoryStore(file);
+    const m1 = new MemoryStore(openDb(file)),
+      m2 = new MemoryStore(openDb(file));
     await Promise.all([
       m1.update('character', 'mage', 'one', 'first'),
       m2.update('character', 'mage', 'two', 'second'),
@@ -268,10 +277,14 @@ test('independent stores preserve concurrent edits and a routine can only be cla
   }));
 
 test("three processes import once and update memory without losing each other's entries", async () =>
-  fixture(async (root, file) => {
+  fixture(async (root, file, openDb) => {
     await legacy(root);
     const source = `import { MemoryStore } from '@wisp/bridge/memory-store';
-    await new MemoryStore(process.argv[1]).update('character', 'mage', process.argv[2], 'Concurrent entry');`;
+    import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
+    const database = new ApplicationDatabase(process.argv[1]);
+    try {
+    await new MemoryStore(database).update('character', 'mage', process.argv[2], 'Concurrent entry');
+    } finally { await database.close(); }`;
     const settled = await Promise.allSettled(
       ['one', 'two', 'three'].map((key) =>
         promisify(execFile)(process.execPath, ['--input-type=module', '-e', source, file, key], {
@@ -286,7 +299,9 @@ test("three processes import once and update memory without losing each other's 
       }
     }
     expect(
-      (await new MemoryStore(file).read('character', 'mage')).map((entry) => entry.key).sort(),
+      (await new MemoryStore(openDb(file)).read('character', 'mage'))
+        .map((entry) => entry.key)
+        .sort(),
     ).toEqual(['guide', 'one', 'three', 'two']);
     inspect(file, (db) =>
       expect(db.prepare('SELECT count(*) AS n FROM routine_runs').get()!.n).toBe(1),
@@ -297,8 +312,8 @@ test("three processes import once and update memory without losing each other's 
   }));
 
 test('a failed SQL mutation rolls back records and the next valid mutation still works', async () =>
-  fixture(async (_root, file) => {
-    const routines = new RoutineStore(file);
+  fixture(async (_root, file, openDb) => {
+    const routines = new RoutineStore(openDb(file));
     await routines.mutate('mage', { operation: 'save', routine }, undefined, 0);
     inspect(file, (db) =>
       db.exec(

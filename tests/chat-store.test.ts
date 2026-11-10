@@ -301,7 +301,7 @@ test('installation import snapshots WAL data and detaches engine sessions only i
   let sourceStore: ChatStore | undefined;
   try {
     await writeFile(path.join(f.root, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    sourceStore = new ChatStore(path.join(source, 'runtime/chats.sqlite'), () => {});
+    sourceStore = new ChatStore(path.join(source, 'runtime/wisp.sqlite'), () => {});
     await sourceStore.load();
     const original = { ...chat(), eveId: 'source-session', status: 'working' as const };
     await sourceStore.flush([original]);
@@ -323,7 +323,7 @@ test('installation import snapshots WAL data and detaches engine sessions only i
     }
     expect(
       inspect(
-        path.join(source, 'runtime/chats.sqlite'),
+        path.join(source, 'runtime/wisp.sqlite'),
         (db) => db.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id,
       ),
     ).toBe('source-session');

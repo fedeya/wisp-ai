@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "207af57f-8521-4509-98cc-47bbe763f0e5",
+  "id": "b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea",
   "prevIds": ["00000000-0000-0000-0000-000000000000"],
   "ddl": [
     {
@@ -732,6 +732,20 @@
     },
     {
       "table": "routine_runs",
+      "name": "routine_runs_order",
+      "columns": [
+        {
+          "value": "sort_index",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "routine_runs",
       "name": "routine_runs_history",
       "columns": [
         {
@@ -743,12 +757,66 @@
           "isExpression": false
         },
         {
-          "value": "started_at",
+          "value": "sort_index",
           "isExpression": false
         }
       ],
       "isUnique": false,
       "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "routine_runs",
+      "name": "routine_runs_success",
+      "columns": [
+        {
+          "value": "character_key",
+          "isExpression": false
+        },
+        {
+          "value": "routine_id",
+          "isExpression": false
+        },
+        {
+          "value": "sort_index",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"routine_runs\".\"status\" = 'done'",
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "routine_runs",
+      "name": "routine_runs_visible",
+      "columns": [
+        {
+          "value": "sort_index",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"routine_runs\".\"status\" <> 'no_tip'",
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "routine_runs",
+      "name": "routine_runs_character_visible",
+      "columns": [
+        {
+          "value": "character_key",
+          "isExpression": false
+        },
+        {
+          "value": "sort_index",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"routine_runs\".\"status\" <> 'no_tip'",
       "origin": "manual",
       "entityType": "indexes"
     },

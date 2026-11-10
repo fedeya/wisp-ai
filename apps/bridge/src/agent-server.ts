@@ -283,11 +283,11 @@ export function createAgentHandler(deps: AgentDependencies) {
               : input.operation === 'get'
                 ? {
                     routine: routines.find((r) => r.id === input.id) || null,
-                    runs: routineStore.runs
-                      .filter(
-                        (r) => r.characterKey === chat.characterKey && r.routineId === input.id,
-                      )
-                      .slice(-20),
+                    runs: routineStore.history({
+                      characterKey: chat.characterKey,
+                      routineId: input.id,
+                      limit: 20,
+                    }),
                   }
                 : { routines },
           ),

@@ -182,9 +182,8 @@ export function createDesktopHandler(deps: DesktopDependencies) {
     }
     if (method === 'POST' && url === '/routines/open') {
       const data = desktopInputs['/routines/open'].parse(raw);
-      const run = routineStore.runs.find(
-        (r) => r.id === data.id && r.characterKey === currentCharacterKey(),
-      );
+      const key = currentCharacterKey();
+      const run = key ? routineStore.getRun(data.id, key) : undefined;
       if (!run || !chatFor(run.id)) {
         throw Error('Log into the character first; the conversation must still exist');
       }

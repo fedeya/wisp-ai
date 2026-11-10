@@ -1,19 +1,15 @@
-import {
-  ProductDatabase,
-  readMemory,
-  saveMemory,
-  type MemorySlot,
-  type MemoryEntry,
-} from './db/product-store.ts';
+import { readMemory, saveMemory, type MemorySlot, type MemoryEntry } from './db/product-store.ts';
+import { ApplicationDatabase } from './db/application-database.ts';
 export type { MemorySlot, MemoryEntry } from './db/product-store.ts';
 
 export class MemoryStore {
-  readonly database: ProductDatabase;
-  constructor(file: string | ProductDatabase) {
-    this.database = typeof file === 'string' ? new ProductDatabase(file) : file;
+  readonly database: ApplicationDatabase;
+  constructor(database: ApplicationDatabase) {
+    this.database = database;
   }
   async read(slot: MemorySlot, owner: string): Promise<MemoryEntry[]> {
-    return this.database.transaction((db) => readMemory(db, slot, owner));
+    await this.database.initializeProducts();
+    return readMemory(this.database.orm, slot, owner);
   }
   async update(
     slot: MemorySlot,
@@ -27,6 +23,7 @@ export class MemoryStore {
     if (text !== undefined && (!text.trim() || text.length > 1000)) {
       throw Error('Memory entries require 1–1000 characters');
     }
+    await this.database.initializeProducts();
     return this.database.transaction((db) => {
       const entries = readMemory(db, slot, owner).filter((entry) => entry.key !== key);
       if (text !== undefined) {

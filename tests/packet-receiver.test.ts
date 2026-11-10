@@ -7,12 +7,14 @@ import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '@wisp/bridge/integration-state';
 import { MemoryStore } from '@wisp/bridge/memory-store';
 import { RoutineStore } from '@wisp/bridge/routines';
+import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
 import { PanelStore } from '@wisp/bridge/panels';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { packetSchema } from '@wisp/protocol/protocol';
 import type { AccountModel } from '@wisp/bridge/chat-model';
 
 function fixture() {
+  const database = new ApplicationDatabase('unused');
   const chat = { ...newChat('old', 'one'), eveId: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
   state.activeTransport = 'one';
@@ -37,9 +39,9 @@ function fixture() {
       'sessions'
     >,
     models: { models },
-    routineStore: new RoutineStore('unused'),
-    panelStore: new PanelStore('unused'),
-    memoryStore: new MemoryStore('unused'),
+    routineStore: new RoutineStore(database),
+    panelStore: new PanelStore(database),
+    memoryStore: new MemoryStore(database),
     transport: () => ({ resetSession: () => {}, setCursor: () => {} }),
     refreshModelCatalog: async () => {},
     setCapability: async () => {},

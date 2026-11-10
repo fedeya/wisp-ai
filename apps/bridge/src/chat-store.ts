@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import type { DatabaseSync } from 'node:sqlite';
 import { and, eq, sql } from 'drizzle-orm';
-import type { drizzle } from 'drizzle-orm/node-sqlite';
 import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
-import { migrateDatabase } from './db/migrate.ts';
-import { preparePrivateDatabase } from './db/private-file.ts';
+import { ApplicationDatabase, type ApplicationOrm } from './db/application-database.ts';
 import { chats as chatTable, messages as messageTable, chatInstanceState } from './db/schema.ts';
 import {
   encodeChat,
@@ -36,22 +34,26 @@ export class ChatStore {
   private options: StoreOptions;
   private onError: (error: unknown) => void;
   private db?: DatabaseSync;
-  private orm?: ReturnType<typeof drizzle>;
+  private orm?: ApplicationOrm;
   private queue: Promise<void> = Promise.resolve();
   private timer?: ReturnType<typeof setTimeout>;
   private saved = new Map<string, StoredChat>();
   private identities: MessageIdentities = new WeakMap();
   private writable = false;
+  readonly database: ApplicationDatabase;
+  private ownsDatabase: boolean;
 
   constructor(
-    file: string,
+    file: string | ApplicationDatabase,
     onError: (error: unknown) => void,
-    legacyFile = path.join(path.dirname(file), 'chats.json'),
+    legacyFile?: string,
     options: StoreOptions = {},
   ) {
-    this.file = file;
-    this.legacyFile = legacyFile;
-    this.instanceId = options.instanceId ?? conversationInstanceId(path.dirname(file));
+    this.ownsDatabase = typeof file === 'string';
+    this.database = typeof file === 'string' ? new ApplicationDatabase(file) : file;
+    this.file = this.database.file;
+    this.legacyFile = legacyFile ?? path.join(path.dirname(this.file), 'chats.json');
+    this.instanceId = options.instanceId ?? conversationInstanceId(path.dirname(this.file));
     if (!this.instanceId) {
       throw Error('Choose a conversation instance identity.');
     }
@@ -64,12 +66,9 @@ export class ChatStore {
       throw Error('Conversation store is already open.');
     }
     try {
-      await preparePrivateDatabase(this.file);
-      this.db = new DatabaseSync(this.file, { timeout: 5000 });
-      this.db.exec(
-        'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;',
-      );
-      this.orm = migrateDatabase(this.db);
+      await this.database.initialize();
+      this.db = this.database.connection;
+      this.orm = this.database.orm;
       this.transaction(() => {
         // Installation imports explicitly inherit private state in the copy.
         // An ordinary instance never reads another instance's engine session.
@@ -100,7 +99,9 @@ export class ChatStore {
           usage: chat.usage ? { ...chat.usage, compacting: false } : undefined,
         }));
     } catch (cause) {
-      this.db?.close();
+      if (this.ownsDatabase) {
+        await this.database.close();
+      }
       this.db = undefined;
       this.orm = undefined;
       this.saved.clear();
@@ -109,15 +110,7 @@ export class ChatStore {
   }
 
   private transaction(work: () => void) {
-    const db = this.db!;
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      work();
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
-    }
+    this.orm!.transaction(work, { behavior: 'immediate' });
   }
 
   private serialize(chat: Chat, position: number) {
@@ -390,7 +383,9 @@ export class ChatStore {
     this.timer = undefined;
     this.writable = false;
     await this.queue.catch(() => {});
-    this.db?.close();
+    if (this.ownsDatabase) {
+      await this.database.close();
+    }
     this.db = undefined;
     this.orm = undefined;
     this.saved.clear();

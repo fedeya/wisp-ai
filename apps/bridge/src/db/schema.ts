@@ -53,7 +53,17 @@ export const routineRuns = sqliteTable(
     extras: text().notNull(),
   },
   (t) => [
-    index('routine_runs_history').on(t.characterKey, t.routineId, t.startedAt),
+    index('routine_runs_order').on(t.sortIndex),
+    index('routine_runs_history').on(t.characterKey, t.routineId, t.sortIndex),
+    index('routine_runs_success')
+      .on(t.characterKey, t.routineId, t.sortIndex)
+      .where(sql`${t.status} = 'done'`),
+    index('routine_runs_visible')
+      .on(t.sortIndex)
+      .where(sql`${t.status} <> 'no_tip'`),
+    index('routine_runs_character_visible')
+      .on(t.characterKey, t.sortIndex)
+      .where(sql`${t.status} <> 'no_tip'`),
     check(
       'routine_runs_status',
       sql`${t.status} IN ('running','done','no_tip','error','cancelled','interrupted')`,

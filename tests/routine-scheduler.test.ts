@@ -2,6 +2,7 @@ import { test, expect, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
 import { RoutineStore } from '@wisp/bridge/routines';
 import { startRoutineScheduler } from '@wisp/bridge/routine-scheduler';
 import { createSessionState } from '@wisp/bridge/session-state';
@@ -18,6 +19,7 @@ function signal() {
 
 test('a 65-second automatic turn yields to the next routine without overlapping turns', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
+  const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   const releaseA = signal();
   const releaseB = signal();
@@ -25,7 +27,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
   try {
     const start = 1000000;
     vi.setSystemTime(start);
-    const store = new RoutineStore(path.join(root, 'wisp.sqlite'));
+    const store = new RoutineStore(database);
     for (const id of ['a', 'b']) {
       await store.mutate('mage', {
         operation: 'save',
@@ -83,7 +85,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     await vi.advanceTimersByTimeAsync(3000);
     await startedA.promise;
     expect(selected).toEqual(['a']);
-    expect(store.runs[0].startedAt).toBe(start + 60000);
+    expect(store.history()[0].startedAt).toBe(start + 60000);
 
     await vi.advanceTimersByTimeAsync(65000);
     expect(selected).toEqual(['a']);
@@ -92,23 +94,24 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     state.routinePresence = { ...state.routinePresence, at: Date.now() };
     releaseA.resolve();
     await settledA.promise;
-    expect(store.runs[0].finishedAt).toBe(start + 125000);
+    expect(store.history()[0].finishedAt).toBe(start + 125000);
 
     await vi.advanceTimersByTimeAsync(1000);
     await startedB.promise;
     expect(selected).toEqual(['a', 'b']);
     expect(active).toBe(1);
     expect(maxActive).toBe(1);
-    expect(store.runs.map((run) => run.routineId)).toEqual(['a', 'b']);
+    expect(store.history().map((run) => run.routineId)).toEqual(['a', 'b']);
     releaseB.resolve();
     await stop();
-    expect(store.runs.map((run) => run.status)).toEqual(['done', 'done']);
+    expect(store.history().map((run) => run.status)).toEqual(['done', 'done']);
     expect(log).not.toHaveBeenCalled();
   } finally {
     releaseA.resolve();
     releaseB.resolve();
     await stop?.();
     vi.useRealTimers();
+    await database.close();
     await rm(root, { recursive: true, force: true });
   }
 });

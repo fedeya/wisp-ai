@@ -19,7 +19,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
     const previous = path.join(root, 'previous');
     const destination = path.join(root, 'imported');
     await mkdir(path.join(previous, 'runtime'), { recursive: true });
-    const source = new ChatStore(path.join(previous, 'runtime/chats.sqlite'), () => {});
+    const source = new ChatStore(path.join(previous, 'runtime/wisp.sqlite'), () => {});
     try {
       await source.load();
       const chat = {

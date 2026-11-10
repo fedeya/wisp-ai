@@ -1,15 +1,17 @@
 import { z } from 'zod';
-import { ProductDatabase, readPanels, savePanels } from './db/product-store.ts';
+import { readPanels, savePanels } from './db/product-store.ts';
+import { ApplicationDatabase } from './db/application-database.ts';
 import { panelContent, panelInput, type Panel } from '@wisp/protocol/panels';
 export class PanelStore {
-  readonly database: ProductDatabase;
+  readonly database: ApplicationDatabase;
   panels: Panel[] = [];
   queue: Promise<unknown> = Promise.resolve();
-  constructor(file: string | ProductDatabase) {
-    this.database = typeof file === 'string' ? new ProductDatabase(file) : file;
+  constructor(database: ApplicationDatabase) {
+    this.database = database;
   }
   async load() {
-    this.panels = await this.database.transaction(readPanels);
+    await this.database.initializeProducts();
+    this.panels = readPanels(this.database.orm);
   }
   list(characterKey: string) {
     return this.panels.filter((p) => p.characterKey === characterKey);
@@ -18,6 +20,7 @@ export class PanelStore {
     const work = this.queue
       .catch(() => {})
       .then(async () => {
+        await this.database.initializeProducts();
         this.panels = await this.database.transaction((db) => {
           const next = readPanels(db).filter(
             (p) =>
