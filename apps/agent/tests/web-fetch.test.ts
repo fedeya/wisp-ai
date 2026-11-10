@@ -7,7 +7,6 @@ import definition from '../agent/tools/web_fetch.ts';
 import type { WebFetchInput } from '../src/web-fetch.ts';
 import { WebFetchPages } from '../src/web-fetch-pages.ts';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';
-import { filterModelTools, searchToolGroups } from '../src/model-tools.ts';
 import { publicWebAddresses } from '../src/public-web-tunnel.ts';
 import { publicWebTunnel } from '../src/public-web-tunnel.ts';
 import { request } from 'node:http';
@@ -55,7 +54,7 @@ test('fetch is registered independently of Wowhead search and respects its own s
     const file = path.join(directory, 'capabilities.json');
     vi.stubEnv('WOW_CAPABILITIES_FILE', file);
     await writeFile(file, JSON.stringify({ enabled: { 'tool:web_search': false } }));
-    expect(await dynamicEvaluate(definition)({} as never)).toBeTruthy();
+    expect(await dynamicEvaluate(definition)({} as never)).toMatchObject({ deferred: true });
     await writeFile(file, JSON.stringify({ enabled: { 'tool:web_fetch': false } }));
     expect(await dynamicEvaluate(definition)({} as never)).toBeNull();
     expect(publicToolName('web_fetch')).toBe('web_fetch');
@@ -123,31 +122,6 @@ test('cursor snapshots enforce conversation ownership, expiration and bounded re
   const second = pages.first(snapshot);
   pages.first(snapshot); // Exceeds the total cache budget, evicting the oldest.
   expect(() => pages.next(second.nextCursor!, snapshot.url, 'chat-a')).toThrow(/expired/i);
-});
-
-test('knowledge discovery and loading expose fetch to the model', () => {
-  expect(searchToolGroups('leer pagina URL').enabledGroups).toContain('knowledge');
-  const options: Parameters<typeof filterModelTools>[0] = {
-    prompt: [],
-    tools: ['wisp__load_tools', 'web_fetch'].map((name) => ({
-      type: 'function',
-      name,
-      inputSchema: { type: 'object' },
-    })),
-  };
-  expect(filterModelTools(options).tools!.map((t) => t.name)).not.toContain('web_fetch');
-  options.prompt.push({
-    role: 'tool',
-    content: [
-      {
-        type: 'tool-result',
-        toolCallId: 'load',
-        toolName: 'wisp__load_tools',
-        output: { type: 'json', value: { enabledGroups: ['knowledge'] } },
-      },
-    ],
-  });
-  expect(filterModelTools(options).tools!.map((t) => t.name)).toContain('web_fetch');
 });
 
 test('Impit converts HTML to Markdown without scripts and sends the working navigation headers', async () => {

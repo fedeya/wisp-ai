@@ -3,8 +3,6 @@ name: knowledge
 description: Research Forever game facts with catalogs, Everloot and web sources. Use when live readings or the training catalog do not answer the question.
 ---
 
-Tool schemas are separate from this skill. Load the knowledge group with wisp__load_tools when its tools are needed.
-
 Use these sources in order, complementing only missing coverage:
 
 1. TheWoWDB is the primary Forever catalog. Use thewowdb__get_database_entity for a verified ID, or thewowdb__search_database to resolve a name. Preserve localized labels even when the index is English. Cite links.html or the attribution URL and check the build; old beta records may differ from live behavior. Database zone/area IDs are not native UiMap IDs.

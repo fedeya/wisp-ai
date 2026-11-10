@@ -6,6 +6,7 @@ import { fetchWebPage, webFetchInput, webFetchOutput } from '../../src/web-fetch
 export default enabledTool(
   'web_fetch',
   defineTool({
+    deferred: true,
     ...webFetch,
     inputSchema: webFetchInput,
     outputSchema: webFetchOutput,

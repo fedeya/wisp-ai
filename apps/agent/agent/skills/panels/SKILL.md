@@ -3,8 +3,6 @@ name: panels
 description: Create or edit a saved tracker or panel for a character. Use when the user asks to keep a persistent tool or materials tracker.
 ---
 
-Tool schemas are separate from this skill. Load the panels group with wisp__load_tools when its tools are needed.
-
 Use wisp__manage_panel when asked to save a tracker or small tool for this character. List/get before editing, reuse its ID and preserve unrelated nodes/reference IDs. Rebuild compositions when requested. Users can move, minimize, hide and restore panels through Show saved panels; do not recreate a removed panel without a new request.
 
 Saved panels use the ui components. Persistent buttons support only ask actions. They may also use table nodes: optional title; columns [{label,align?}] (2–6, labels max 100 characters); rows [[string,...]] (1–20, one cell per column, max 300 characters each). Cells allow emphasis and declared [[ref:key]] references. Reply tables use Markdown. Split oversized tables.

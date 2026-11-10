@@ -33,6 +33,9 @@ The completed activity log recorded this sequence:
 2. Knowledge loading, TheWoWDB spell search and Everloot search.
 3. `web__web_search` → `web_fetch` on the returned Wowhead Forever spell page.
 
+That recorded run predates native tool discovery. Current runs find deferred tools
+with `eve__search` and call them through `eve__tool`.
+
 All listed calls completed and the turn finished normally. The answer reported
 that it could not confirm a normal learning level, rather than converting the
 page's level-99 item-effect metadata or a tome reference into a verified trainer

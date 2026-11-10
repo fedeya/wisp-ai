@@ -3,8 +3,6 @@ name: locations
 description: Find NPCs, city services or trainers and place requested map markers. Use for destination, coordinate and navigation requests.
 ---
 
-Tool schemas are separate from this skill. Load the locations group with wisp__load_tools when its tools are needed.
-
 Locate a destination before placing a marker:
 
 - Resolve a named city's native map ID with wow__inspect_map.

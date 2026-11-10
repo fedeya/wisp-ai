@@ -184,17 +184,17 @@ short frontmatter description stating when to use each skill. Eve advertises tho
 descriptions and returns the full instructions through `eve__skill`. Eve owns
 how loaded skill results are retained in history and compacted.
 
-Tool schemas are separate: `wisp__search_tools` / `wisp__load_tools` select the
-available groups for the current turn through `filterModelTools`. Loading a skill
-does not enable tools or change permissions. Dynamic capability definitions and
-bridge checks remain authoritative. Keep parameter details in tool schemas and
-enforceable constraints in code; preserve Forever evidence, authorization and
-verified-result requirements when editing skills.
+Specialized tools use Eve's native `deferred: true` definitions. `eve__search`
+returns their names and signatures; `eve__tool({ name, input })` executes them.
+Character reads, reference/target inspection and conversation naming stay directly
+listed. Skills and tool discovery do not change permissions: dynamic capability
+definitions and bridge checks remain authoritative. Keep parameter details in tool
+schemas and enforceable constraints in code.
 
-`tests/model-context.test.ts` checks tool selection without rewriting prompts.
 `tests/agent-integration.test.ts` exercises native skill discovery/activation,
-separate schema loading and follow-up turns with the real Eve agent and an offline
-model. Prompt edits still need gameplay evaluation before claiming better answers.
+native tool discovery/execution, permission denial and follow-up turns with the
+real Eve agent and an offline model. Prompt edits still need gameplay evaluation
+before claiming better answers.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
 Compressed snapshots and patches continue through the reusable lane after the
@@ -224,9 +224,9 @@ serves quests from a private turn-verified reading without a game round trip; mi
 requests fetch only other sections live. Missing/partial readings or `refresh=true`
 fall back to the addon. Automatic conversation titles
 are assigned from the first message before model preparation, without waiting for a response.
-Optional large tool schemas and their instruction modules load through
-`wisp__load_tools`, or after related read tools, without changing capability flags.
-Compaction keeps the full instruction set. Bridge logs record `Message delivery`
+Specialized tools stay in Eve's catalog until found with `eve__search` and
+called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
+history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
 and `Turn timing` entries for receipt, admission and first visible text latency.
 
 Interactive packets take priority over unsent background traffic; in-flight frames
@@ -249,9 +249,9 @@ serves quests from a private turn-verified reading without a game round trip; mi
 requests fetch only other sections live. Missing/partial readings or `refresh=true`
 fall back to the addon. Automatic conversation titles
 are assigned from the first message before model preparation, without waiting for a response.
-Optional large tool schemas and their instruction modules load through
-`wisp__load_tools`, or after related read tools, without changing capability flags.
-Compaction keeps the full instruction set. Bridge logs record `Message delivery`
+Specialized tools stay in Eve's catalog until found with `eve__search` and
+called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
+history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
 and `Turn timing` entries for receipt, admission and first visible text latency.
 
 ### Runtime boundaries

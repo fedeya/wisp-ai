@@ -5,6 +5,7 @@ import { settingsUndo } from '@wisp/protocol/settings';
 export default enabledTool(
   'undo_settings',
   defineTool({
+    deferred: true,
     description:
       'Undo a previously applied settings transaction for the same character. Checks that the current values still equal Wisp’s changes; never overwrites subsequent player changes. No code editing.',
     inputSchema: settingsUndo,

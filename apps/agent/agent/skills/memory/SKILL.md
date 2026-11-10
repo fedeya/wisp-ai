@@ -3,8 +3,6 @@ name: memory
 description: Save, update or forget lasting player preferences and explicitly chosen character guides, goals or plans.
 ---
 
-Tool schemas are separate from this skill. Load the memory group with wisp__load_tools when its tools are needed.
-
 Store stable facts in the appropriate slot:
 
 - preferences: this player's lasting play style and response preferences, shared across characters.

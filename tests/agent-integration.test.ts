@@ -36,6 +36,7 @@ test(
         enabled: {
           ...Object.fromEntries(defaultCapabilities().map((capability) => [capability.id, false])),
           'tool:get_settings': true,
+          'tool:query_character': true,
         },
       }),
     );
@@ -59,7 +60,7 @@ test(
       for await (const chunk of req) {
         body += chunk;
       }
-      if (req.url === '/panels') {
+      if (req.url === '/inspect') {
         if (req.headers.authorization !== 'Bearer offline-token') {
           res.writeHead(401).end();
           return;
@@ -67,21 +68,25 @@ test(
         toolCalls.push(JSON.parse(body));
         res
           .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ panels: [] }));
+          .end(JSON.stringify({ status: 'completed', data: { settings: [], verified: true } }));
         return;
       }
       requests.push(JSON.parse(body));
-      if (requests.length === 2 || requests.length === 3 || requests.length === 6) {
+      const plannedCalls: Record<number, { name: string; input: unknown }> = {
+        2: { name: 'eve__skill', input: { name: 'settings' } },
+        3: { name: 'eve__search', input: { query: 'wow__get_settings' } },
+        4: { name: 'eve__tool', input: { name: 'wow__get_settings', input: {} } },
+        7: { name: 'eve__skill', input: { name: 'missing-skill' } },
+        9: { name: 'eve__tool', input: { name: 'wow__update_settings', input: {} } },
+      };
+      const planned = plannedCalls[requests.length];
+      if (planned) {
         const item = {
           id: 'tool-item-' + requests.length,
           type: 'function_call',
           call_id: 'tool-call-' + requests.length,
-          name: requests.length === 3 ? 'wisp__search_tools' : 'eve__skill',
-          arguments: JSON.stringify(
-            requests.length === 3
-              ? { query: 'graphics settings' }
-              : { name: requests.length === 6 ? 'missing-skill' : 'settings' },
-          ),
+          name: planned.name,
+          arguments: JSON.stringify(planned.input),
         };
         const events = [
           {
@@ -271,7 +276,7 @@ test(
         /* Drain the real tool loop. */
       }
       expect((await next.result()).status).toBe('completed');
-      expect(requests).toHaveLength(4);
+      expect(requests).toHaveLength(5);
       const names = (i: number) =>
         (requests[i]!.tools as { name: string }[]).map((tool) => tool.name);
       expect(names(1)).not.toContain('wow__get_settings');
@@ -283,8 +288,34 @@ test(
       expect(systemInput.length).toBeGreaterThan(0);
       expect(JSON.stringify(systemInput)).not.toContain('To change a setting:');
       expect(JSON.stringify(requests[2])).not.toContain('Allowed kinds and fields');
-      expect(names(3)).toContain('wow__get_settings');
-      expect(names(3)).not.toContain('wow__update_settings');
+      const searchOutput = (
+        requests[3]!.input as { type?: string; call_id?: string; output?: string }[]
+      ).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-3',
+      )!.output!;
+      const searchResults = JSON.parse(searchOutput) as { results: { tool?: string }[] };
+      expect(searchResults.results).toContainEqual(
+        expect.objectContaining({ tool: 'wow__get_settings' }),
+      );
+      expect(searchResults.results.map((entry) => entry.tool)).not.toContain(
+        'wow__update_settings',
+      );
+      expect(names(3)).not.toContain('wow__get_settings');
+      expect(names(0)).toContain('wow__query_character');
+      expect(names(0)).toContain('eve__search');
+      expect(names(0)).toContain('eve__tool');
+      expect(toolCalls).toEqual([
+        expect.objectContaining({ inspection: expect.objectContaining({ kind: 'settings' }) }),
+      ]);
+      const settingsOutput = (
+        requests[4]!.input as { type?: string; call_id?: string; output?: string }[]
+      ).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-4',
+      )!.output!;
+      expect(JSON.parse(settingsOutput)).toMatchObject({
+        status: 'completed',
+        data: { verified: true },
+      });
       const followup = await session.send(
         turnInput('Continue', undefined, { ...chat, titleGenerated: true }),
         { signal: AbortSignal.timeout(15000) },
@@ -293,9 +324,9 @@ test(
         /* Native skill instructions remain in history across turns. */
       }
       expect((await followup.result()).status).toBe('completed');
-      expect(requests).toHaveLength(5);
-      expect(JSON.stringify(requests[4])).toContain('Settings capabilities:');
-      expect(names(4)).not.toContain('wow__get_settings');
+      expect(requests).toHaveLength(6);
+      expect(JSON.stringify(requests[5])).toContain('Settings capabilities:');
+      expect(names(5)).not.toContain('wow__get_settings');
       const missing = await session.send(
         turnInput('Load a missing skill', undefined, { ...chat, titleGenerated: true }),
         { signal: AbortSignal.timeout(15000) },
@@ -304,9 +335,19 @@ test(
         /* A failed activation must not enable any tool schemas. */
       }
       expect((await missing.result()).status).toBe('completed');
-      expect(requests).toHaveLength(7);
-      expect(JSON.stringify(requests[6])).toContain('No skill named');
-      expect(names(6)).not.toContain('wow__get_settings');
+      expect(requests).toHaveLength(8);
+      expect(JSON.stringify(requests[7])).toContain('No skill named');
+      const blocked = await session.send(
+        turnInput('Try a disabled tool', undefined, { ...chat, titleGenerated: true }),
+        { signal: AbortSignal.timeout(15000) },
+      );
+      for await (const _event of blocked.stream({ signal: AbortSignal.timeout(15000) })) {
+        /* Dynamic capability definitions reject a direct native call too. */
+      }
+      expect((await blocked.result()).status).toBe('completed');
+      expect(requests).toHaveLength(10);
+      expect(JSON.stringify(requests[9])).toContain('No tool named');
+      expect(toolCalls).toHaveLength(1);
       if (executable) {
         await stopEveProcess(child);
         child = start();

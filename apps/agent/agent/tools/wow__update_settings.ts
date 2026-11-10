@@ -5,6 +5,7 @@ import { settingsUpdate } from '@wisp/protocol/settings';
 export default enabledTool(
   'update_settings',
   defineTool({
+    deferred: true,
     description:
       'Preview a bounded settings proposal using exact IDs and typed values obtained from wow__get_settings. Returns before/after values and a transactionId; nothing is applied during preview. Apply an existing transaction only when requested by the user. The UI can offer an Apply button. Changes are checked for stale values, applied through APIs/setters and verified; failed changes attempt rollback. Never edits addon source code. No execute/reset/delete/profile operations.',
     inputSchema: settingsUpdate,
