@@ -559,15 +559,31 @@ function C.RenderRichUI(host, chat, message, width)
                     root(node)
                 end
             elseif part.type == "text" and part.text ~= "" then
-                proseCount = proseCount + 1
-                local f = host.prose[proseCount] or font(host)
-                host.prose[proseCount] = f
-                f:ClearAllPoints()
-                f:SetPoint("TOPLEFT", 0, -y)
-                f:SetWidth(width)
-                text(f, C.FormatText and C.FormatText(part.text, message.references) or part.text)
-                f:Show()
-                y = y + f:GetStringHeight() + 8
+                if C.MessageFormat then
+                    y, proseCount = C.MessageFormat.render(
+                        host,
+                        host.prose,
+                        part.text,
+                        message.references,
+                        width,
+                        y,
+                        proseCount
+                    )
+                    y = y + 8
+                else
+                    proseCount = proseCount + 1
+                    local f = host.prose[proseCount] or font(host)
+                    host.prose[proseCount] = f
+                    f:ClearAllPoints()
+                    f:SetPoint("TOPLEFT", 0, -y)
+                    f:SetWidth(width)
+                    text(
+                        f,
+                        C.FormatText and C.FormatText(part.text, message.references) or part.text
+                    )
+                    f:Show()
+                    y = y + f:GetStringHeight() + 8
+                end
             end
         end
     else
@@ -575,9 +591,13 @@ function C.RenderRichUI(host, chat, message, width)
             root(node)
         end
     end
-    for index, f in ipairs(host.prose) do
-        if index > proseCount then
-            f:Hide()
+    if C.MessageFormat then
+        C.MessageFormat.hide(host.prose, proseCount + 1)
+    else
+        for index, f in ipairs(host.prose) do
+            if index > proseCount then
+                f:Hide()
+            end
         end
     end
     for id, w in pairs(widgets) do

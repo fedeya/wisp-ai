@@ -11,6 +11,13 @@ local function linked(row)
     row:SetScript("OnHyperlinkEnter", function(self, link, text)
         C.hoverLink = text or ("|H" .. link .. "|h[Reference]|h")
         GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+        local url = C.Markdown.url(link)
+        if url then
+            GameTooltip:SetText(url:gsub("|", "||"), 0.5, 0.78, 0.94)
+            GameTooltip:AddLine("Click to copy this web address.", 0.65, 0.65, 0.65, true)
+            GameTooltip:Show()
+            return
+        end
         local zone = tonumber(link:match("^wispzone:(%d+)$"))
         if zone then
             local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(zone)
@@ -79,6 +86,27 @@ local function linked(row)
         GameTooltip:Hide()
     end)
     row:SetScript("OnHyperlinkClick", function(self, link, text, mouse)
+        local url = C.Markdown.url(link)
+        if url then
+            StaticPopupDialogs.WISPAI_COPY_URL = StaticPopupDialogs.WISPAI_COPY_URL
+                or {
+                    text = "Copy web address (Ctrl+C)",
+                    button2 = "Close",
+                    hasEditBox = true,
+                    maxLetters = 2048,
+                    OnShow = function(popup, value)
+                        local edit = popup.GetEditBox and popup:GetEditBox() or popup.editBox
+                        edit:SetText(value)
+                        edit:SetFocus()
+                        edit:HighlightText()
+                    end,
+                    timeout = 0,
+                    whileDead = true,
+                    hideOnEscape = true,
+                }
+            StaticPopup_Show("WISPAI_COPY_URL", nil, nil, url)
+            return
+        end
         if IsShiftKeyDown() then
             C.draft:Insert(text)
             C.draft:SetFocus()
@@ -312,6 +340,7 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
         .. tostring(message.groupKey)
     if row.signature ~= signature then
         row.signature = signature
+        C.MessageFormat.hide(row.markdown or {})
         row.speaker = message.role
         local padding = message.role == "user" and 8 or 0
         if message.role == "user" then
@@ -376,13 +405,24 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
                 and #message.parts > 0
                 and message.ui
                 and #message.ui > 0
-            row.text:SetShown(not interleaved)
-            row.height = top
-                + math.max(
-                    1,
-                    not interleaved and message.text ~= "" and row.text:GetStringHeight() or 0
+            local _, styled = C.MessageFormat.blocks(message.text)
+            local markdown = message.role == "assistant" and styled and not interleaved
+            row.text:SetShown(not interleaved and not markdown)
+            local textHeight = not interleaved and message.text ~= "" and row.text:GetStringHeight()
+                or 0
+            if markdown then
+                row.markdown = row.markdown or {}
+                local bottom = C.MessageFormat.render(
+                    row,
+                    row.markdown,
+                    message.text,
+                    message.references,
+                    width,
+                    top
                 )
-                + (message.role == "user" and padding or 10)
+                textHeight = bottom - top
+            end
+            row.height = top + math.max(1, textHeight) + (message.role == "user" and padding or 10)
             if C.RenderRichUI then
                 if not row.rich then
                     row.rich = CreateFrame("Frame", nil, row)

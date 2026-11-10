@@ -645,8 +645,8 @@ it(
             "interleaved replies use the rich prose, not the ordinary row text"
         )
         local first, second = row.rich.prose[1], row.rich.prose[2]
-        assert(first:GetText():find("|Hspell:2137|h[Explosión de Fuego]|h", 1, true))
-        assert(second:GetText():find("|Hitem:1733:0|h[Capa desgastada]|h", 1, true))
+        assert(helper.rendered(first):find("|Hspell:2137|h[Explosión de Fuego]|h", 1, true))
+        assert(helper.rendered(second):find("|Hitem:1733:0|h[Capa desgastada]|h", 1, true))
         for _, entry in ipairs({ { first, "spell:2137" }, { second, "item:1733:0" } }) do
             local owner, link = entry[1]:GetParent(), entry[2]
             assert(

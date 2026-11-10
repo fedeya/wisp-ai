@@ -54,12 +54,46 @@ end
 function methods:GetText()
     return self.text
 end
+function methods:SetFontObject(font)
+    if self.font == font then
+        return
+    end
+    self.font = font
+    self.fontPath, self.fontSize, self.fontFlags = "Fonts\\FRIZQT__.TTF", 14, ""
+end
+function methods:SetFont(path, size, flags)
+    self.fontPath, self.fontSize, self.fontFlags = path, size, flags
+end
+function methods:GetFont()
+    return self.fontPath, self.fontSize, self.fontFlags
+end
+local function visible(text)
+    return text:gsub("|T.-|t", "xx")
+        :gsub("|c%x%x%x%x%x%x%x%x", "")
+        :gsub("|H.-|h", "")
+        :gsub("|h", "")
+        :gsub("|r", "")
+end
 function methods:GetStringHeight()
-    return math.max(1, math.ceil(#self.text * 7 / math.max(1, self.width))) * 16
+    local size = self.fontSize or 14
+    local lines = 0
+    for line in (visible(self.text) .. "\n"):gmatch("(.-)\n") do
+        lines = lines + math.max(1, math.ceil(#line * size / 2 / math.max(1, self.width)))
+    end
+    return lines * (size + 2)
+end
+function methods:GetUnboundedStringWidth()
+    local plain = visible(self.text)
+    local maximum = 0
+    for line in (plain .. "\n"):gmatch("(.-)\n") do
+        maximum = math.max(maximum, #line * (self.fontSize or 14) / 2)
+    end
+    return maximum
 end
 function methods:IsShown()
     return self.shown
 end
+methods.GetStringWidth = methods.GetUnboundedStringWidth
 function methods:Show()
     self.shown = true
 end
@@ -158,7 +192,11 @@ end
 UIParent = widget("Frame", "UIParent")
 GameTooltip = widget("Frame", "GameTooltip")
 GameFontNormal = {}
-ChatFontNormal = {}
+ChatFontNormal = {
+    GetFont = function()
+        return "Fonts\\FRIZQT__.TTF", 14, ""
+    end,
+}
 C_Timer = { After = function() end }
 StaticPopupDialogs = {}
 function StaticPopup_Show(id, text, _, data)

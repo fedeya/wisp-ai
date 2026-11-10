@@ -25,6 +25,7 @@ Widgets.lua
 EmojiData.lua
 Emoji.lua
 MessageFormat.lua
+Markdown.lua
 ModelControls.lua
 MessageRows.lua
 UI.lua

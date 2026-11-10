@@ -27,6 +27,7 @@ function M.addon(name, env)
             "EmojiData.lua",
             "Emoji.lua",
             "MessageFormat.lua",
+            "Markdown.lua",
             "ModelControls.lua",
             "MessageRows.lua",
         }) do
@@ -34,6 +35,16 @@ function M.addon(name, env)
         end
     end
     return setfenv(assert(loadfile("addon/WispAI/" .. name)), env)("WispAI", env.C)
+end
+
+function M.rendered(font)
+    local text = font:IsShown() and font:GetText() or ""
+    for _, run in ipairs(font.runs or {}) do
+        if run:IsShown() then
+            text = text .. run:GetText()
+        end
+    end
+    return text
 end
 
 return M

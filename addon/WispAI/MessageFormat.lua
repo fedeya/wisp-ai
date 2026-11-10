@@ -161,7 +161,10 @@ local function formatted(text, references, fromUser)
         return links[tonumber(index)]
     end)))
 end
-C.FormatText = formatted
+C.FormatText = function(text, references, fromUser)
+    return C.Markdown and not fromUser and C.Markdown.format(text, references)
+        or formatted(text, references, fromUser)
+end
 local function referenceSignature(references)
     local parts = {}
     for key, ref in pairs(references or {}) do
@@ -177,6 +180,18 @@ local function referenceSignature(references)
 end
 
 C.MessageFormat = {
+    reference = formatted,
+    blocks = function(value)
+        return C.Markdown.blocks(value)
+    end,
+    render = function(...)
+        return C.Markdown.render(...)
+    end,
+    hide = function(...)
+        if C.Markdown then
+            return C.Markdown.hide(...)
+        end
+    end,
     refreshReferences = refreshReferences,
     signature = referenceSignature,
     mapLocation = mapLocation,

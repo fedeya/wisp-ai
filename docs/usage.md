@@ -98,6 +98,13 @@ Use **Settings > Memory** to view, edit or forget notes. Deleting a chat does no
 
 ### Reading the answers
 
+Replies render headings, ordered and nested lists, read-only task checkboxes,
+quotes, separators, bold/italic emphasis, strikethrough and inline/fenced code.
+Code preserves literal text in a shaded monospace block. Web links show their
+address on hover; click to select and copy the URL with Ctrl+C. Game references
+keep their native tooltips and actions. Formatting also applies when reopening
+older conversations, without regenerating or rewriting their replies.
+
 Missing readings and database coverage remain unknown, not zero or proof of absence. External references can be stale or from a different build; market estimates come from uploaded scans, not live listings. Trainer and auction readings need their windows open, and auctions expose only already-loaded partial results. Item comparisons report raw stat differences; [experimental simulations](reference.md#experimental-local-dps-simulations) compare supported class damage scenarios and equipment alternatives, not live combat or an optimal build.
 
 ## Troubleshooting
