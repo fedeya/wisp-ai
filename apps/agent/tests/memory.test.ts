@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
-import { localMemory } from '@wisp/agent/agent-memory';
+import { localMemory } from '../src/agent-memory.ts';
 test('native Eve memory recalls on a new session and character scope fails closed without identity', async () => {
   const originalFetch = globalThis.fetch;
   const entries = [{ key: 'guide', text: 'Guide A', updatedAt: '2026-11-07' }];

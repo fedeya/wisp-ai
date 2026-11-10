@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
-import { Simulator } from '@wisp/bridge/simulation';
+import { Simulator } from '../src/simulation.ts';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/protocol/simulation';
 import type { ClassMetadata } from '../src/simulation/adapters/types.ts';
 import { adapters } from '../src/simulation/adapters/index.ts';

@@ -7,7 +7,7 @@ import definition from '../agent/tools/web_fetch.ts';
 import type { WebFetchInput } from '../src/web-fetch.ts';
 import { WebFetchPages } from '../src/web-fetch-pages.ts';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';
-import { compactModelContext, searchToolGroups } from '@wisp/agent/model-tools';
+import { compactModelContext, searchToolGroups } from '../src/model-tools.ts';
 import { publicWebAddresses } from '../src/public-web-tunnel.ts';
 import { publicWebTunnel } from '../src/public-web-tunnel.ts';
 import { request } from 'node:http';

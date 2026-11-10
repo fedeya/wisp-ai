@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { resumeChat } from '@wisp/bridge/sessions';
+import { resumeChat } from '../src/sessions.ts';
 test('automatic login/resume never selects an inline conversation', () => {
   const main = {
     id: 'main',

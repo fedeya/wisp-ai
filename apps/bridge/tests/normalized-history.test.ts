@@ -3,9 +3,9 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '@wisp/bridge/chat-store';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import type { Chat } from '@wisp/bridge/chat';
+import { ChatStore } from '../src/chat-store.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
+import type { Chat } from '../src/chat.ts';
 
 function history(): Chat {
   return {

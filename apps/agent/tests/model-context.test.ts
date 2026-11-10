@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { compactModelContext, searchToolGroups } from '@wisp/agent/model-tools';
+import { compactModelContext, searchToolGroups } from '../src/model-tools.ts';
 
 type Options = Parameters<typeof compactModelContext>[0];
 const instructions = readFileSync('apps/agent/agent/instructions.md', 'utf8');

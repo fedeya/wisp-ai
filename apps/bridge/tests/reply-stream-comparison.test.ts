@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { uiNode, validateNode } from '@wisp/protocol/ui-schema';
-import { ReplyStream } from '@wisp/bridge/reply-stream';
+import { ReplyStream } from '../src/reply-stream.ts';
 const sample = {
   id: 'sim',
   kind: 'comparison',

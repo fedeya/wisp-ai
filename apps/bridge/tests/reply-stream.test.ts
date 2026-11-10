@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { ReplyProjection, ReplyStream } from '@wisp/bridge/reply-stream';
-import { applyEvent, type Chat } from '@wisp/bridge/events';
-import { migrateReplies } from '@wisp/bridge/migrate-replies';
-import { projectChats } from '@wisp/bridge/chat-projection';
-import { createSessionState } from '@wisp/bridge/session-state';
+import { ReplyProjection, ReplyStream } from '../src/reply-stream.ts';
+import { applyEvent, type Chat } from '../src/events.ts';
+import { migrateReplies } from '../src/migrate-replies.ts';
+import { projectChats } from '../src/chat-projection.ts';
+import { createSessionState } from '../src/session-state.ts';
 const record = (value: unknown) => JSON.stringify(value) + '\n';
 const text = (value: string) => record({ type: 'text_delta', text: value });
 const chat = (): Chat => ({

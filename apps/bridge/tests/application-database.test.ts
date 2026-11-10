@@ -2,16 +2,16 @@ import { test, expect } from 'vitest';
 import { mkdtemp, readFile, writeFile, readdir, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ChatStore } from '@wisp/bridge/chat-store';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { ChatStore } from '../src/chat-store.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
 import {
   applicationDatabaseFile,
   copyDatabaseSnapshot,
   findApplicationDatabase,
-} from '@wisp/bridge/db/application-file';
-import { MemoryStore } from '@wisp/bridge/memory-store';
-import { PanelStore } from '@wisp/bridge/panels';
-import { RoutineStore } from '@wisp/bridge/routines';
+} from '../src/db/application-file.ts';
+import { MemoryStore } from '../src/memory-store.ts';
+import { PanelStore } from '../src/panels.ts';
+import { RoutineStore } from '../src/routines.ts';
 import { databaseScope } from './database-fixture.ts';
 
 const chat = () => ({

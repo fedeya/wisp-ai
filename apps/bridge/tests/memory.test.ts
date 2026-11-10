@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
-import { MemoryStore } from '@wisp/bridge/memory-store';
-import { characterIdentity } from '@wisp/bridge/context';
+import { MemoryStore } from '../src/memory-store.ts';
+import { characterIdentity } from '../src/context.ts';
 
 test('memory survives new store instances, isolates characters, and serializes concurrent updates', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-memory-'));

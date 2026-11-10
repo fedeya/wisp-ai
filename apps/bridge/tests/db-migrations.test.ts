@@ -8,9 +8,9 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
-import { migrateDatabase, migrationsFolder } from '@wisp/bridge/db/migrate';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { ChatStore } from '@wisp/bridge/chat-store';
+import { migrateDatabase, migrationsFolder } from '../src/db/migrate.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
+import { ChatStore } from '../src/chat-store.ts';
 
 test('the official Drizzle migrator creates the complete schema and shares its journal with Wisp', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-migrations-'));

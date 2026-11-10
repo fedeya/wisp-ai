@@ -6,9 +6,9 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { ChatStore } from '@wisp/bridge/chat-store';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { preparePrivateDatabase } from '@wisp/bridge/db/private-file';
+import { ChatStore } from '../src/chat-store.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
+import { preparePrivateDatabase } from '../src/db/private-file.ts';
 
 test('startup reads messages, private state and revisions from one snapshot during a concurrent commit', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-startup-snapshot-'));

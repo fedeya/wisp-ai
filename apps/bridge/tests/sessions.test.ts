@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { resumeChat, isAutomaticEmptyChat } from '@wisp/bridge/sessions';
-import type { Chat } from '@wisp/bridge/events';
+import { resumeChat, isAutomaticEmptyChat } from '../src/sessions.ts';
+import type { Chat } from '../src/events.ts';
 const chat = (id: string, populated = true): Chat => ({
   id,
   title: populated ? 'Existing conversation' : 'New conversation',

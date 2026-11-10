@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
+import { normalizeModelError, safeErrorMessage } from '../src/model-errors.ts';
 
 test('subscription error details become SDK-readable messages without losing HTTP status', async () => {
   const error = await normalizeModelError(

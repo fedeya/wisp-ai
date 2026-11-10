@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { renderReleaseNotes, newerNightly } from '@wisp/releases';
+import { renderReleaseNotes, newerNightly } from '../src/index.ts';
 
 test('shared Markdown supports rich notes without executing HTML or unsafe URLs', () => {
   const html = renderReleaseNotes(

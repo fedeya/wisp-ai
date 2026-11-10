@@ -4,8 +4,8 @@ import {
   isForeverWowheadUrl,
   verifiedWowheadResult,
   searchWowhead,
-} from '@wisp/bridge/wowhead-search';
-import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
+} from '../src/wowhead-search.ts';
+import type { ChatGPTAuth } from '../src/chatgpt-auth.ts';
 
 const url = 'https://www.wowhead.com/forever/spell=122/frost-nova';
 function response(citation = url, source = url) {

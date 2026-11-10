@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
-import { PanelStore } from '@wisp/bridge/panels';
+import { PanelStore } from '../src/panels.ts';
 import { panelContent } from '@wisp/protocol/panels';
 const example = {
   id: 'materials',

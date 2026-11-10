@@ -1,10 +1,10 @@
-import { ReplyProjection } from '@wisp/bridge/reply-stream';
+import { ReplyProjection } from '../src/reply-stream.ts';
 import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
-import { applyEvent, type Chat } from '@wisp/bridge/events';
-import { SnapshotGate } from '@wisp/bridge/snapshots';
-import { projectChats } from '@wisp/bridge/chat-projection';
-import { createSessionState } from '@wisp/bridge/session-state';
+import { applyEvent, type Chat } from '../src/events.ts';
+import { SnapshotGate } from '../src/snapshots.ts';
+import { projectChats } from '../src/chat-projection.ts';
+import { createSessionState } from '../src/session-state.ts';
 
 test('invisible stream events and unchanged snapshots do not spend revisions', () => {
   const chat: Chat = {

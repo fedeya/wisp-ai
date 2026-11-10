@@ -3,9 +3,9 @@ import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '@wisp/bridge/chat-store';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { migrateDesktop } from '@wisp/bridge/desktop-migration';
+import { ChatStore } from '../src/chat-store.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
+import { migrateDesktop } from '../src/desktop-migration.ts';
 
 function chat(id = 'chat') {
   return { ...newChat(id, 'game'), messages: [{ role: 'user' as const, text: 'Hello' }] };

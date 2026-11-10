@@ -1,11 +1,11 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
-import { createTurnRunner } from '@wisp/bridge/turn-runner';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { queryCharacterSections } from '@wisp/bridge/context';
-import { projectChats } from '@wisp/bridge/chat-projection';
-import { createSessionState } from '@wisp/bridge/session-state';
-import { SnapshotGate } from '@wisp/bridge/snapshots';
+import { createTurnRunner } from '../src/turn-runner.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
+import { queryCharacterSections } from '../src/context.ts';
+import { projectChats } from '../src/chat-projection.ts';
+import { createSessionState } from '../src/session-state.ts';
+import { SnapshotGate } from '../src/snapshots.ts';
 
 function fixture(titlesEnabled = true) {
   const chat = newChat('chat', 'one');

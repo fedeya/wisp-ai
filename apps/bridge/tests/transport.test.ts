@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DiskTransport } from '@wisp/bridge/transport';
+import { DiskTransport } from '../src/transport.ts';
 test('a failed payload write can retry the same snapshot after the filesystem recovers', async () => {
   const root = await mkdtemp(path.resolve('runtime', 'transport-retry-'));
   const blocker = path.join(root, 'Interface');

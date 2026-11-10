@@ -1,7 +1,7 @@
 import { test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
-import { createAgentHandler } from '@wisp/bridge/agent-server';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { createAgentHandler } from '../src/agent-server.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
 
 test('simulation RPC skips game reads and transport freshness for hypothetical requests only', async () => {
   const chat = { ...newChat('sim', 'old-addon'), status: 'working' as const, eveId: 'eve' };

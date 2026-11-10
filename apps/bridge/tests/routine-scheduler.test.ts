@@ -2,11 +2,11 @@ import { test, expect, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
-import { RoutineStore } from '@wisp/bridge/routines';
-import { startRoutineScheduler } from '@wisp/bridge/routine-scheduler';
-import { createSessionState } from '@wisp/bridge/session-state';
-import { CapabilitySettings } from '@wisp/bridge/capabilities';
+import { ApplicationDatabase } from '../src/db/application-database.ts';
+import { RoutineStore } from '../src/routines.ts';
+import { startRoutineScheduler } from '../src/routine-scheduler.ts';
+import { createSessionState } from '../src/session-state.ts';
+import { CapabilitySettings } from '../src/capabilities.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 
 function signal() {

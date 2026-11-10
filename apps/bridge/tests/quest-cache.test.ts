@@ -1,8 +1,8 @@
 import { test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
-import { createAgentHandler } from '@wisp/bridge/agent-server';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { characterIdentity, rememberTurnQuests } from '@wisp/bridge/context';
+import { createAgentHandler } from '../src/agent-server.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
+import { characterIdentity, rememberTurnQuests } from '../src/context.ts';
 
 test('state RPC serves quests locally, fetches only missing sections, and respects refresh and permissions', async () => {
   const snapshot = {

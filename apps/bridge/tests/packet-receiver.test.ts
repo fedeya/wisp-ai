@@ -1,17 +1,17 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
-import { createPacketReceiver } from '@wisp/bridge/packet-receiver';
-import { createSessionState } from '@wisp/bridge/session-state';
-import { GameRequests } from '@wisp/bridge/game-requests';
-import { CapabilitySettings } from '@wisp/bridge/capabilities';
-import { IntegrationState } from '@wisp/bridge/integration-state';
-import { MemoryStore } from '@wisp/bridge/memory-store';
-import { RoutineStore } from '@wisp/bridge/routines';
-import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
-import { PanelStore } from '@wisp/bridge/panels';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { createPacketReceiver } from '../src/packet-receiver.ts';
+import { createSessionState } from '../src/session-state.ts';
+import { GameRequests } from '../src/game-requests.ts';
+import { CapabilitySettings } from '../src/capabilities.ts';
+import { IntegrationState } from '../src/integration-state.ts';
+import { MemoryStore } from '../src/memory-store.ts';
+import { RoutineStore } from '../src/routines.ts';
+import { ApplicationDatabase } from '../src/db/application-database.ts';
+import { PanelStore } from '../src/panels.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
-import type { AccountModel } from '@wisp/bridge/chat-model';
+import type { AccountModel } from '../src/chat-model.ts';
 
 function fixture() {
   const database = new ApplicationDatabase('unused');

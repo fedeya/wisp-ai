@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest';
-import { projectChats } from '@wisp/bridge/chat-projection';
-import { newChat, openChat } from '@wisp/bridge/chat-lifecycle';
-import { createSessionState } from '@wisp/bridge/session-state';
-import { chatSchema } from '@wisp/bridge/chat';
+import { projectChats } from '../src/chat-projection.ts';
+import { newChat, openChat } from '../src/chat-lifecycle.ts';
+import { createSessionState } from '../src/session-state.ts';
+import { chatSchema } from '../src/chat.ts';
 
 test('routine conversations hide generated input while preserving answers and follow-up messages', () => {
   const state = createSessionState();

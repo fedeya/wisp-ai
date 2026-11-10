@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { connectionModel } from '@wisp/agent/connection-model';
-import { modelReasoningEfforts } from '@wisp/agent/reasoning';
+import { connectionModel } from '../src/connection-model.ts';
+import { modelReasoningEfforts } from '../src/reasoning.ts';
 
 import type { ProviderId } from '@wisp/protocol/providers';
 afterEach(() => vi.unstubAllGlobals());

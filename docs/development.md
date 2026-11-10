@@ -47,6 +47,8 @@ with other agents, read the skill and its linked references explicitly.
 
 Each app or package owns its unit tests and Vitest configuration. The root
 `tests/` workspace contains cross-component integrations and repository-wide checks.
+Unit tests import their component's source directly; integration tests use package
+exports. This lets a package typecheck before its own build has produced `dist/`.
 
 | Command                 | Scope                                                                         |
 | ----------------------- | ----------------------------------------------------------------------------- |

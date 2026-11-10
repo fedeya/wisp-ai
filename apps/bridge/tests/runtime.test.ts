@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:http';
-import { startBridge, type BridgeOptions } from '@wisp/bridge/runtime';
+import { startBridge, type BridgeOptions } from '../src/runtime.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
 import { statusSchema } from '@wisp/protocol/desktop';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { newChat } from '../src/chat-lifecycle.ts';
 
 async function fixture() {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
@@ -220,7 +220,7 @@ test('the assembled runtime serves validated status, receives packets, persists 
       packetSchema.parse({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }),
     );
     await bridge.stop();
-    const { ChatStore } = await import('@wisp/bridge/chat-store');
+    const { ChatStore } = await import('../src/chat-store.ts');
     const store = new ChatStore(path.join(f.dataDirectory, 'runtime/wisp.sqlite'), () => {});
     const saved = await store.load();
     await store.close();

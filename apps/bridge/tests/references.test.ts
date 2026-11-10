@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { linkedReferences } from '@wisp/protocol/references';
-import { turnInput, visibleUserText } from '@wisp/bridge/context';
+import { turnInput, visibleUserText } from '../src/context.ts';
 test('user-linked skills retain their verified identity and exact localized label in model context', () => {
   const text =
     'por ahora lo mejor a subir es |cff71d5ff|Hspell:11070:0|h[Descarga de Escarcha mejorada]|h|r?';

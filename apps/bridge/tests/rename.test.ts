@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { migrateGameSaves, retireLegacyAddons } from '@wisp/bridge/rename-migration';
+import { migrateGameSaves, retireLegacyAddons } from '../src/rename-migration.ts';
 
 test('rename imports preferences and bindings once, retaining originals and newer Wisp data', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-rename-'));

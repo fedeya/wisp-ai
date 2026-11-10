@@ -1,4 +1,4 @@
-import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
+import { ApplicationDatabase } from '../src/db/application-database.ts';
 export function databaseScope() {
   const databases: ApplicationDatabase[] = [];
   return {

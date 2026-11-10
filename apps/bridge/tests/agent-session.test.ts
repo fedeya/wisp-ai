@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { SessionNotActiveError, type Client } from 'eve/client';
-import { sendChatTurn } from '@wisp/bridge/agent-session';
-import { turnInput, visibleUserText } from '@wisp/bridge/context';
-import type { Chat } from '@wisp/bridge/events';
+import { sendChatTurn } from '../src/agent-session.ts';
+import { turnInput, visibleUserText } from '../src/context.ts';
+import type { Chat } from '../src/events.ts';
 
 function fixture(error?: Error) {
   const chat: Chat = {

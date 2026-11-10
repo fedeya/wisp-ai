@@ -1,5 +1,5 @@
 import { test } from 'vitest';
-import { npcLocationsInput } from '@wisp/protocol/game-inspection';
+import { npcLocationsInput } from '../src/game-inspection.ts';
 import assert from 'node:assert/strict';
 test('NPC lookup inputs remain bounded and cannot select a different database version', () => {
   assert.ok(

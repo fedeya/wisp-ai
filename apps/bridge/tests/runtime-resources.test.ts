@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { RuntimeResources } from '@wisp/bridge/runtime-resources';
+import { RuntimeResources } from '../src/runtime-resources.ts';
 test('partial startup cleanup runs in reverse order, continues after failures and is idempotent', async () => {
   const resources = new RuntimeResources();
   const closed: string[] = [];

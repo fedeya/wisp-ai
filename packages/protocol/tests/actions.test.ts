@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { actionSchema, macroBodyError } from '@wisp/protocol/game-actions';
+import { actionSchema, macroBodyError } from '../src/game-actions.ts';
 test('action schemas reject invalid coordinates, arbitrary commands and overlong UTF-8 macro text', () => {
   assert.equal(
     macroBodyError('#showtooltip\n/cast [@mouseover,help,nodead][] Frostbolt'),

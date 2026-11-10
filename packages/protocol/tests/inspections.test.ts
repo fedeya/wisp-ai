@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { inspectionSchema } from '@wisp/protocol/game-inspection';
+import { inspectionSchema } from '../src/game-inspection.ts';
 test('inspection RPC accepts bounded read-only requests and rejects arbitrary commands', () => {
   assert.equal(inspectionSchema.parse({ kind: 'target', args: {} }).kind, 'target');
   assert.equal(

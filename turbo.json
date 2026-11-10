@@ -23,9 +23,15 @@
       "passThroughEnv": ["*"]
     },
     "@wisp/addon#test": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": ["*"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.busted"]
     },
     "@wisp/tests#test": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "passThroughEnv": ["*"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/addon/WispAI/**",

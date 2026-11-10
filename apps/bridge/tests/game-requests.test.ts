@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { GameRequests } from '@wisp/bridge/game-requests';
+import { GameRequests } from '../src/game-requests.ts';
 
 test('responses are scoped to both transport session and conversation', async () => {
   const requests = new GameRequests(() => {});

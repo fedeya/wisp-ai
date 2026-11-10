@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { ReplyStream } from '@wisp/bridge/reply-stream';
+import { ReplyStream } from '../src/reply-stream.ts';
 import { selectionValues } from '@wisp/protocol/ui-schema';
 test('reply preserves text and UI order, including updates and pending prose', () => {
   const r = new ReplyStream();

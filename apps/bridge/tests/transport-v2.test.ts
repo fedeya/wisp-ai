@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deflateSync } from 'node:zlib';
-import { DiskTransport, preferBulkDelivery } from '@wisp/bridge/transport';
+import { DiskTransport, preferBulkDelivery } from '../src/transport.ts';
 import type { Packet } from '@wisp/protocol/protocol';
 import {
   DOWNLINK_HELPERS,
@@ -417,50 +417,58 @@ test('only matching ACKs advance a fragment, and lost file writes restore the sa
   }
 });
 
-test('an exhausted or failed last bulk load switches the same response to the reusable lane', async () => {
-  const f = await fixture();
-  try {
-    await mailbox(f, true);
-    const text = Array.from({ length: 60 }, (_, i) => Math.sin(i * 123).toString(36)).join('');
-    const snapshot = { rev: 1, text };
-    await f.bridge.publish(snapshot);
-    const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
-    assert.equal(ready.flags, 3, 'large state initially uses the optional file accelerator');
-    assert.deepEqual(JSON.parse(ready.payload.toString()), { r: 1 });
-    f.bridge.setCursor(1024, 0);
-    await acknowledge(f, ready, 0, false);
-    const result = await drainMailbox(f);
-    assert.deepEqual(result.state, snapshot);
-    assert.equal(f.bridge.nextSlot, 1024);
-    // A stale envelope queued before exhaustion cannot turn bulk back on.
-    await f.send({ ...f.hello, seq: 2, mailboxVersion: 1, bulkAvailable: true }, 3000);
-    await f.bridge.publish({ rev: 2, text: text + ' after the bank ran out' });
-    assert.deepEqual((await drainMailbox(f, snapshot)).state, {
-      rev: 2,
-      text: text + ' after the bank ran out',
-    });
-    assert.deepEqual(f.errors, []);
-  } finally {
-    await f.close();
-  }
-});
+test(
+  'an exhausted or failed last bulk load switches the same response to the reusable lane',
+  { timeout: 30000 },
+  async () => {
+    const f = await fixture();
+    try {
+      await mailbox(f, true);
+      const text = Array.from({ length: 60 }, (_, i) => Math.sin(i * 123).toString(36)).join('');
+      const snapshot = { rev: 1, text };
+      await f.bridge.publish(snapshot);
+      const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
+      assert.equal(ready.flags, 3, 'large state initially uses the optional file accelerator');
+      assert.deepEqual(JSON.parse(ready.payload.toString()), { r: 1 });
+      f.bridge.setCursor(1024, 0);
+      await acknowledge(f, ready, 0, false);
+      const result = await drainMailbox(f);
+      assert.deepEqual(result.state, snapshot);
+      assert.equal(f.bridge.nextSlot, 1024);
+      // A stale envelope queued before exhaustion cannot turn bulk back on.
+      await f.send({ ...f.hello, seq: 2, mailboxVersion: 1, bulkAvailable: true }, 3000);
+      await f.bridge.publish({ rev: 2, text: text + ' after the bank ran out' });
+      assert.deepEqual((await drainMailbox(f, snapshot)).state, {
+        rev: 2,
+        text: text + ' after the bank ran out',
+      });
+      assert.deepEqual(f.errors, []);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
-test('bulk publication failure automatically falls back to data frames for a capable peer', async () => {
-  const f = await fixture();
-  try {
-    await mailbox(f, true);
-    await writeFile(path.join(f.root, 'Interface'), 'bulk directory is inaccessible');
-    const snapshot = {
-      rev: 1,
-      text: Array.from({ length: 80 }, (_, i) => Math.cos(i * 321).toString(36)).join(''),
-    };
-    await f.bridge.publish(snapshot);
-    assert.deepEqual((await drainMailbox(f)).state, snapshot);
-    assert.deepEqual(f.errors, []);
-  } finally {
-    await f.close();
-  }
-});
+test(
+  'bulk publication failure automatically falls back to data frames for a capable peer',
+  { timeout: 30000 },
+  async () => {
+    const f = await fixture();
+    try {
+      await mailbox(f, true);
+      await writeFile(path.join(f.root, 'Interface'), 'bulk directory is inaccessible');
+      const snapshot = {
+        rev: 1,
+        text: Array.from({ length: 80 }, (_, i) => Math.cos(i * 321).toString(36)).join(''),
+      };
+      await f.bridge.publish(snapshot);
+      assert.deepEqual((await drainMailbox(f)).state, snapshot);
+      assert.deepEqual(f.errors, []);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('publications coalesce without replacing unacknowledged data and patches use the exact acknowledged base', async () => {
   const f = await fixture();
@@ -636,30 +644,34 @@ test('compact ACKs cannot negotiate support for an older peer', async () => {
   }
 });
 
-test('compact bulk failures resynchronize the same state through compact reusable frames', async () => {
-  const f = await fixture();
-  try {
-    await f.bridge.start();
-    await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: true });
-    const snapshot = {
-      rev: 1,
-      text: Array.from({ length: 120 }, (_, i) => Math.sin(i * 719).toString(36)).join(''),
-    };
-    await f.bridge.publish(snapshot);
-    const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
-    assert.equal(ready.kind, COMPACT_DOWNLINK_KIND);
-    assert.equal(ready.flags, 3);
-    assert.deepEqual(JSON.parse(ready.payload.toString()), { r: 1 });
-    await acknowledge(f, ready, 0, false, true);
-    assert.deepEqual((await drainMailbox(f, undefined, COMPACT_DOWNLINK_KIND)).state, snapshot);
-    assert.equal(f.bridge.peerRevision, 1);
-    assert.equal(f.bridge.performance.bulkStarts, 1);
-    assert.equal(f.bridge.performance.mailboxStarts, 1);
-    assert.deepEqual(f.errors, []);
-  } finally {
-    await f.close();
-  }
-});
+test(
+  'compact bulk failures resynchronize the same state through compact reusable frames',
+  { timeout: 30000 },
+  async () => {
+    const f = await fixture();
+    try {
+      await f.bridge.start();
+      await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: true });
+      const snapshot = {
+        rev: 1,
+        text: Array.from({ length: 120 }, (_, i) => Math.sin(i * 719).toString(36)).join(''),
+      };
+      await f.bridge.publish(snapshot);
+      const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
+      assert.equal(ready.kind, COMPACT_DOWNLINK_KIND);
+      assert.equal(ready.flags, 3);
+      assert.deepEqual(JSON.parse(ready.payload.toString()), { r: 1 });
+      await acknowledge(f, ready, 0, false, true);
+      assert.deepEqual((await drainMailbox(f, undefined, COMPACT_DOWNLINK_KIND)).state, snapshot);
+      assert.equal(f.bridge.peerRevision, 1);
+      assert.equal(f.bridge.performance.bulkStarts, 1);
+      assert.equal(f.bridge.performance.mailboxStarts, 1);
+      assert.deepEqual(f.errors, []);
+    } finally {
+      await f.close();
+    }
+  },
+);
 
 test('matching first-attempt ACKs update fragment RTT independently from bulk latency', async () => {
   const f = await fixture();

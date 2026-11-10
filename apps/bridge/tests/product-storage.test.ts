@@ -7,13 +7,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import type { ApplicationDatabase } from '@wisp/bridge/db/application-database';
+import type { ApplicationDatabase } from '../src/db/application-database.ts';
 import { databaseScope } from './database-fixture.ts';
-import { RoutineStore } from '@wisp/bridge/routines';
-import { PanelStore } from '@wisp/bridge/panels';
-import { MemoryStore } from '@wisp/bridge/memory-store';
-import { ChatStore } from '@wisp/bridge/chat-store';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { RoutineStore } from '../src/routines.ts';
+import { PanelStore } from '../src/panels.ts';
+import { MemoryStore } from '../src/memory-store.ts';
+import { ChatStore } from '../src/chat-store.ts';
+import { newChat } from '../src/chat-lifecycle.ts';
 import { savedRoutine } from '@wisp/protocol/routines';
 
 const routine = savedRoutine.parse({

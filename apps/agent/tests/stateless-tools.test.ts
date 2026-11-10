@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
-import { subscriptionCallOptions } from '@wisp/agent/model-tools';
+import { subscriptionCallOptions } from '../src/model-tools.ts';
 
 test('a stateless tool round trip resends encrypted reasoning instead of referencing unpersisted items', async () => {
   const requests: { store?: boolean; include?: string[]; input: Record<string, unknown>[] }[] = [];

@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { RoutineStore } from '@wisp/bridge/routines';
+import { RoutineStore } from '../src/routines.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
 

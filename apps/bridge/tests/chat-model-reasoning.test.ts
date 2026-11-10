@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { chooseChatModel } from '@wisp/bridge/chat-model';
+import { chooseChatModel } from '../src/chat-model.ts';
 
 test('API chats preserve provider defaults, allow reverting, and reject unsupported efforts', () => {
   const catalog = [
