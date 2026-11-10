@@ -23,8 +23,8 @@ Releases, so drafts never appear in the public changelog.
    it is still a draft, so the release body and updater manifest stay identical.
 
 Squash merges are supported: stable notes and version increments do not depend on
-individual commit history or Conventional Commits. Keep a useful PR title because
-the squash commit message appears in automatic Nightly notes.
+individual commit history or Conventional Commits. Keep useful PR titles for the
+linked technical history.
 
 Do not publish from a checkout containing unfinished work. A failed preparation
 may leave local version/notes changes to inspect before retrying. Release tooling
@@ -35,8 +35,15 @@ does not publish npm packages or automatically publish stable drafts.
 Every push to `main` runs the release pipeline. After checks pass, CI assigns
 `<current stable, next patch>-nightly.<run number>.<attempt>` only in the build
 checkout. No version commits are pushed back to `main`. Each installer has an
-immutable version tag targeting the exact source SHA. Notes summarize squash/merge
-commits since the latest stable tag and link to the source commit.
+immutable version tag targeting the exact source SHA. Notes snapshot the curated
+`releases/next.md` from that checkout, shared unchanged by GitHub, the app and the
+website. Describe what users can try; do not copy commit subjects, test additions
+or maintenance work into public notes. These notes describe the changes being
+tested for the next Stable release, rather than a per-build commit list. If the
+file has no user-facing bullets yet, the Nightly says that no user-facing changes
+have been documented. A separate **View technical changes on GitHub** link opens
+the comparison from the nearest stable ancestor tag to the exact source SHA
+(or the source commit if no stable tag exists).
 
 The signed installer must pass installation/upgrade tests before the prerelease
 is published. The moving `nightly` prerelease holds only the latest updater

@@ -15,7 +15,7 @@ if (nightly) {
   throw Error('Release tag must match the app version.');
 }
 const notes = nightly
-  ? nightlyNotes(process.env.GITHUB_SHA!)
+  ? await nightlyNotes(process.env.GITHUB_SHA!)
   : validateNotes(await readFile(`releases/${version}.md`, 'utf8'));
 await mkdir('dist', { recursive: true });
 await writeFile('dist/release-notes.md', notes);

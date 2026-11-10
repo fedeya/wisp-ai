@@ -31,20 +31,47 @@ export async function prepareNotes(version: string, root = process.cwd()) {
   }
   throw Error(`Release notes already exist for ${version}.`);
 }
-export function nightlyNotes(sha: string) {
-  const previous = execFileSync('git', ['tag', '--list', 'v*', '--sort=-version:refname'], {
-    encoding: 'utf8',
-    windowsHide: true,
-  })
-    .trim()
-    .split(/\r?\n/)
-    .find((tag) => /^v\d+\.\d+\.\d+$/.test(tag));
-  const commits = execFileSync(
-    'git',
-    ['log', '--no-merges', '--format=- %s (%h)', ...(previous ? [`${previous}..HEAD`] : ['-30'])],
-    { encoding: 'utf8', windowsHide: true },
+export function formatNightlyNotes(content: string, sha: string, previous?: string) {
+  if (!/^[a-f0-9]{40}$/.test(sha) || (previous && !/^v\d+\.\d+\.\d+$/.test(previous))) {
+    throw Error('Invalid Nightly source identity.');
+  }
+  const authored = content.replace(/<!--[\s\S]*?-->/g, '').trim();
+  const changes = /^[-*] \S.+/m.test(authored)
+    ? validateNotes(authored)
+        .replace(/^# .+\r?\n/, '')
+        .trim()
+    : '## Changes to try\n\n- No user-facing changes have been documented for the next Stable release yet.';
+  const repository = 'https://github.com/fedeya/wisp-ai';
+  const technical = previous
+    ? `${repository}/compare/${previous}...${sha}`
+    : `${repository}/commit/${sha}`;
+  return `# Nightly preview\n\nChanges being tested for the next Stable release. This build is experimental and may contain bugs.\n\n${changes}\n\n[View technical changes on GitHub](${technical})\n`;
+}
+export async function nightlyNotes(sha: string, root = process.cwd()) {
+  let previous: string | undefined;
+  try {
+    previous = execFileSync(
+      'git',
+      [
+        'describe',
+        '--tags',
+        '--match',
+        'v[0-9]*.[0-9]*.[0-9]*',
+        '--exclude',
+        '*-*',
+        '--abbrev=0',
+        sha,
+      ],
+      { cwd: root, encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+    ).trim();
+  } catch {
+    // A repository without a stable tag can still link to the exact source.
+  }
+  return formatNightlyNotes(
+    await readFile(resolve(root, 'releases/next.md'), 'utf8'),
+    sha,
+    previous,
   );
-  return `# Nightly preview\n\nExperimental build from [${sha.slice(0, 7)}](https://github.com/fedeya/wisp-ai/commit/${sha}).\n\n## Changes since ${previous || 'recent history'}\n\n${commits}\n`;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === 'check') {
