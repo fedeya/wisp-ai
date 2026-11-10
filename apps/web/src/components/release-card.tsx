@@ -17,6 +17,7 @@ export function ReleaseCard({
 }) {
   const notes = release.notes.replace(/^# .+\r?\n/, '').trim();
   const styles = changelogStyles();
+  const nightly = release.channel === 'nightly';
   return (
     <article className={styles.entry()}>
       <aside className={styles.stamp()}>
@@ -43,11 +44,21 @@ export function ReleaseCard({
             </Link>
           </h2>
         )}
-        <div
-          className={styles.prose()}
-          dangerouslySetInnerHTML={{ __html: renderReleaseNotes(notes) }}
-        />
-        <div className={styles.links()}>
+        {nightly ? (
+          detail && (
+            <p className={styles.prose()}>
+              {locale === 'es'
+                ? 'Versión experimental de main. Puede contener errores.'
+                : 'Experimental build from main. It may contain bugs.'}
+            </p>
+          )
+        ) : (
+          <div
+            className={styles.prose()}
+            dangerouslySetInnerHTML={{ __html: renderReleaseNotes(notes) }}
+          />
+        )}
+        <div className={styles.links({ class: nightly && !detail ? 'mt-0' : undefined })}>
           {release.downloads.map((download) => (
             <ButtonLink
               intent="outline"
@@ -59,8 +70,13 @@ export function ReleaseCard({
               {locale === 'es' ? 'Descargar para' : 'Download for'} {download.label}
             </ButtonLink>
           ))}
-          <a className={styles.textLink()} href={release.url}>
-            GitHub <Icon name="external" size={16} />
+          <a className={styles.textLink()} href={release.technicalUrl || release.url}>
+            {nightly
+              ? locale === 'es'
+                ? 'Ver cambios técnicos en GitHub'
+                : 'View technical changes on GitHub'
+              : 'GitHub'}{' '}
+            <Icon name="external" size={16} />
           </a>
         </div>
       </div>

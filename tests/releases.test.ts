@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { nightlyBuildVersion, syncVersion } from '../scripts/release-version.ts';
-import { prepareNotes, validateNotes } from '../scripts/release-notes.ts';
+import { prepareNotes, validateNotes, formatNightlyNotes } from '../scripts/release-notes.ts';
 import { renderReleaseNotes, newerNightly } from '@wisp/releases';
 import {
   publishedRelease,
@@ -92,6 +92,22 @@ function release(version = '0.1.0', prerelease = false) {
     ],
   };
 }
+test('Nightly cards link to the build comparison and reject unrelated Markdown destinations', () => {
+  const sha = 'a'.repeat(40);
+  const value = release('0.1.1-nightly.123.1', true);
+  const notes = formatNightlyNotes(sha, 'v0.1.0');
+  expect(publishedRelease({ ...value, body: notes })?.technicalUrl).toBe(
+    `https://github.com/fedeya/wisp-ai/compare/v0.1.0...${sha}`,
+  );
+  expect(publishedRelease({ ...value, body: formatNightlyNotes(sha) })?.technicalUrl).toBe(
+    `https://github.com/fedeya/wisp-ai/commit/${sha}`,
+  );
+  expect(
+    publishedRelease({ ...value, body: '[View technical changes on GitHub](https://example.com/)' })
+      ?.technicalUrl,
+  ).toBeUndefined();
+  expect(publishedRelease({ ...release(), body: notes })?.technicalUrl).toBeUndefined();
+});
 test('web only shows published, complete releases in their matching channel', async () => {
   expect(publishedRelease(release())?.title).toBe('v0.1.0');
   const notes =

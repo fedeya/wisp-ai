@@ -31,21 +31,15 @@ export async function prepareNotes(version: string, root = process.cwd()) {
   }
   throw Error(`Release notes already exist for ${version}.`);
 }
-export function formatNightlyNotes(content: string, sha: string, previous?: string) {
+export function formatNightlyNotes(sha: string, previous?: string) {
   if (!/^[a-f0-9]{40}$/.test(sha) || (previous && !/^v\d+\.\d+\.\d+$/.test(previous))) {
     throw Error('Invalid Nightly source identity.');
   }
-  const authored = content.replace(/<!--[\s\S]*?-->/g, '').trim();
-  const changes = /^[-*] \S.+/m.test(authored)
-    ? validateNotes(authored)
-        .replace(/^# .+\r?\n/, '')
-        .trim()
-    : '## Changes to try\n\n- No user-facing changes have been documented for the next Stable release yet.';
   const repository = 'https://github.com/fedeya/wisp-ai';
   const technical = previous
     ? `${repository}/compare/${previous}...${sha}`
     : `${repository}/commit/${sha}`;
-  return `# Nightly preview\n\nChanges being tested for the next Stable release. This build is experimental and may contain bugs.\n\n${changes}\n\n[View technical changes on GitHub](${technical})\n`;
+  return `# Nightly preview\n\n- Experimental build from main. It may contain bugs.\n\n[View technical changes on GitHub](${technical})\n`;
 }
 export async function nightlyNotes(sha: string, root = process.cwd()) {
   let previous: string | undefined;
@@ -67,11 +61,7 @@ export async function nightlyNotes(sha: string, root = process.cwd()) {
   } catch {
     // A repository without a stable tag can still link to the exact source.
   }
-  return formatNightlyNotes(
-    await readFile(resolve(root, 'releases/next.md'), 'utf8'),
-    sha,
-    previous,
-  );
+  return formatNightlyNotes(sha, previous);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === 'check') {

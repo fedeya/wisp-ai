@@ -9,30 +9,25 @@ const sha = 'a'.repeat(40);
 const authored =
   '# Next release\n\n<!-- private drafting note -->\n\n## Fixed\n\n- Conversations reconnect without restarting Wisp.\n';
 
-test('nightly notes use curated product changes and a separate technical comparison', () => {
-  const notes = formatNightlyNotes(authored, sha, 'v0.0.7');
-  expect(notes).toContain('## Fixed\n\n- Conversations reconnect without restarting Wisp.');
-  expect(notes).toContain('experimental');
-  expect(notes).not.toContain('private drafting note');
-  expect(notes).not.toContain('# Next release');
+test('nightly notes contain an experimental notice and exact technical comparison', () => {
+  const notes = formatNightlyNotes(sha, 'v0.0.7');
+  expect(notes).toContain('Experimental build from main');
+  expect(notes).not.toContain('## Fixed');
   expect(notes).toContain(
     `[View technical changes on GitHub](https://github.com/fedeya/wisp-ai/compare/v0.0.7...${sha})`,
   );
   expect(validateNotes(notes)).toBe(notes);
 });
 
-test('an empty notes template states that no user-facing changes are documented', () => {
-  const notes = formatNightlyNotes('# Next release\n<!-- - TODO: write a test -->', sha);
-  expect(notes).toContain('No user-facing changes have been documented');
-  expect(notes).not.toContain('TODO');
+test('nightly notes link to their source when there is no Stable comparison base', () => {
+  const notes = formatNightlyNotes(sha);
   expect(notes).toContain(`/commit/${sha}`);
   expect(validateNotes(notes)).toBe(notes);
 });
 
-test('malformed source identities and authored notes fail explicitly', () => {
-  expect(() => formatNightlyNotes(authored, 'bad sha')).toThrow('identity');
-  expect(() => formatNightlyNotes(authored, sha, 'nightly')).toThrow('identity');
-  expect(() => formatNightlyNotes('- Missing title', sha)).toThrow('title');
+test('malformed source identities fail explicitly', () => {
+  expect(() => formatNightlyNotes('bad sha')).toThrow('identity');
+  expect(() => formatNightlyNotes(sha, 'nightly')).toThrow('identity');
 });
 
 test('nightly generation omits technical commits and compares against a stable ancestor', async () => {
@@ -69,12 +64,14 @@ test('nightly generation omits technical commits and compares against a stable a
     const buildSha = git('rev-parse', 'HEAD');
     commit('docs: update README');
     git('tag', 'v9.0.0');
+    await rm(join(root, 'releases/next.md'));
     const notes = await nightlyNotes(buildSha, root);
     expect(notes).toContain(`/compare/v0.0.7...${buildSha}`);
     expect(notes).not.toContain('v9.0.0');
     expect(notes).not.toContain('added regression');
     expect(notes).not.toContain('README');
-    expect(notes).toContain('Conversations reconnect');
+    expect(notes).not.toContain('Conversations reconnect');
+    expect(notes).toContain('Experimental build from main');
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -8,6 +8,7 @@ export type PublishedRelease = {
   notes: string;
   date: string;
   url: string;
+  technicalUrl?: string;
   download: string;
   downloads: { label: string; url: string }[];
 };
@@ -52,6 +53,12 @@ export function publishedRelease(value: GitHubRelease): PublishedRelease | null 
       notes: value.body || '',
       date: value.published_at,
       url: `${site.repository}/releases/tag/v${version}`,
+      technicalUrl:
+        channel === 'nightly'
+          ? value.body?.match(
+              /\[View technical changes on GitHub\]\((https:\/\/github\.com\/fedeya\/wisp-ai\/(?:compare\/v\d+\.\d+\.\d+\.\.\.[a-f0-9]{40}|commit\/[a-f0-9]{40}))\)/,
+            )?.[1]
+          : undefined,
       download,
       downloads: [{ label: 'Windows (x64)', url: download }],
     };

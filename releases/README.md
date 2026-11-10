@@ -6,10 +6,12 @@ Releases, so drafts never appear in the public changelog.
 
 ## Stable
 
-1. Add user-facing notes to `releases/next.md` while changes are developed. Use a
+1. Before cutting a Stable release, write user-facing notes in `releases/next.md`. Use a
    `# Title`, then `## New`, `## Improved`, or `## Fixed` and bullet points. Explain
    benefits and any action users need to take. Leave test coverage, CI changes and
    implementation details out of public notes. Images use absolute HTTPS URLs.
+   You can draft these at release time; individual PRs do not need notes files,
+   labels or Conventional Commit titles.
 2. Commit all work, update your local `main`, then run `pnpm release patch` or
    `pnpm release minor`. An explicit version also works: `pnpm release 0.1.0`.
    `pnpm release:dry patch` previews the commands without changing files or pushing.
@@ -35,15 +37,17 @@ does not publish npm packages or automatically publish stable drafts.
 Every push to `main` runs the release pipeline. After checks pass, CI assigns
 `<current stable, next patch>-nightly.<run number>.<attempt>` only in the build
 checkout. No version commits are pushed back to `main`. Each installer has an
-immutable version tag targeting the exact source SHA. Notes snapshot the curated
-`releases/next.md` from that checkout, shared unchanged by GitHub, the app and the
-website. Describe what users can try; do not copy commit subjects, test additions
-or maintenance work into public notes. These notes describe the changes being
-tested for the next Stable release, rather than a per-build commit list. If the
-file has no user-facing bullets yet, the Nightly says that no user-facing changes
-have been documented. A separate **View technical changes on GitHub** link opens
+immutable version tag targeting the exact source SHA. No notes need to be authored
+for a PR or Nightly build: merging is enough. Generated notes contain an
+experimental-build notice and a **View technical changes on GitHub** link to
 the comparison from the nearest stable ancestor tag to the exact source SHA
-(or the source commit if no stable tag exists).
+(or the source commit if no stable tag exists). This comparison includes all
+changes since Stable, not just the latest PR. Nightly never reads `next.md` or
+copies pending Stable highlights into every build.
+
+The website lists Nightlies compactly: version, date, platform download and the
+technical link. The channel explains that builds are experimental; the version
+detail repeats that notice. GitHub and the updater use the same generated notes.
 
 The signed installer must pass installation/upgrade tests before the prerelease
 is published. The moving `nightly` prerelease holds only the latest updater
