@@ -33,9 +33,10 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
     Auctionator={API={v1={GetAuctionPriceByItemID=function(_,id)if id==123 then return 450 end end,GetAuctionAgeByItemID=function(_,id)if id==123 then return 3 end end}}}
   `);
   for (const file of [
-    'Integrations/Locations.lua',
-    'Integrations/AddonAdapters.lua',
     'Integrations/Integrations.lua',
+    'Integrations/Questie.lua',
+    'Integrations/Syndicator.lua',
+    'Integrations/Auctionator.lua',
   ]) {
     run(
       `assert(load(${JSON.stringify(readFileSync(root + '/addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,

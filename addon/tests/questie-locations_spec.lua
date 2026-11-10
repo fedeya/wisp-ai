@@ -96,7 +96,8 @@ local function setup(env)
             end,
         }
     end
-    helper.addon("Integrations/Locations.lua", env)
+    helper.addon("Integrations/Integrations.lua", env)
+    helper.addon("Integrations/Questie.lua", env)
 end
 
 it("Forever class-trainer lookup returns native-map spawn references with provenance", function()

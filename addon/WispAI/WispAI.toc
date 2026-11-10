@@ -18,14 +18,15 @@ Transport\TransportMetrics.lua
 Transport\Downlink.lua
 Transport\Transport.lua
 Integrations\Integrations.lua
+Integrations\Questie.lua
+Integrations\Syndicator.lua
+Integrations\Auctionator.lua
 ChatHistory\ChatHistory.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
 Character\Inspect.lua
 Actions\Game.lua
-Integrations\Locations.lua
-Integrations\AddonAdapters.lua
 Settings\Settings.lua
 Markdown\Syntax.lua
 Markdown\Block.lua

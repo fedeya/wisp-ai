@@ -276,7 +276,8 @@ Vitest projects and native tests must pass before packaging and signing.
 ## Adding integrations
 
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
-implement its adapter and readiness checks, register live detection in
-`addon/WispAI/Integrations/Integrations.lua` / `apps/bridge/src/integration-state.ts`, and test
+implement its adapter and readiness checks together in a provider file under
+`addon/WispAI/Integrations/`, register it in `WispAI.toc` and the shared
+`Integrations.lua` coordinator / `apps/bridge/src/integration-state.ts`, and test
 missing/incompatible providers and disabled-tool admission. Integrations supply
 tools; reply panels and automatic suggestions remain separate features.

@@ -34,3 +34,11 @@ Helpers and widget state stay local to their owning file.
 
 See [the Lua guidelines](../docs/lua-guidelines.md) for naming, API boundaries,
 formatting, validation, performance practices and the required local checks.
+
+`Integrations/Integrations.lua` owns shared helpers, readiness aggregation and
+protected inspection dispatch. Each provider owns its readiness checks and reads
+in one file: `Questie.lua` (quests, chains and NPC/object locations),
+`Syndicator.lua` (cached inventory) and `Auctionator.lua` (cached prices).
+The manifest loads the coordinator before providers; callers keep using the
+`ns.Integrations` API. Provider tests live in their corresponding specs, with
+aggregation and dispatch covered by `integrations_spec.lua`.

@@ -14,9 +14,8 @@ local function setup(env)
             return "Horde"
         end
     end
-    helper.addon("Integrations/AddonAdapters.lua", env)
     helper.addon("Integrations/Integrations.lua", env)
-    helper.addon("Integrations/Locations.lua", env)
+    helper.addon("Integrations/Questie.lua", env)
 end
 
 it(
@@ -214,116 +213,6 @@ it(
     end
 )
 
-it(
-    "Syndicator uses scoped public cached reads and guild opt-in without mutating provider rows",
-    function()
-        local env = helper.env()
-        setfenv(1, env)
-        setup(env)
-
-        local data = {
-            characters = {
-                {
-                    character = "Alt",
-                    realmNormalized = "TestRealm",
-                    bags = 2,
-                    bank = 4,
-                    mail = 1,
-                    auctions = 3,
-                    equipped = 0,
-                },
-            },
-            guilds = { { guild = "Guild", realmNormalized = "TestRealm", bank = 9 } },
-        }
-        Syndicator = {
-            API = {
-                IsReady = function()
-                    return true
-                end,
-                GetInventoryInfoByItemID = function(id, realm, faction)
-                    assert(id == 123 and realm and faction)
-                    return data
-                end,
-            },
-        }
-        local result = ns.Integrations.FindStoredItem({ itemId = 123, limit = 20 })
-        assert(
-            result.cached
-                and result.totalCached == 10
-                and #result.matches == 1
-                and result.cacheAge == "unknown"
-        )
-        result = ns.Integrations.FindStoredItem({ itemId = 123, includeGuild = true, limit = 1 })
-        assert(
-            result.totalCached == 19
-                and result.truncated
-                and #result.matches == 1
-                and #data.characters == 1
-                and data.characters[1].bank == 4
-        )
-        Syndicator.API.IsReady = function()
-            return false
-        end
-        assert(
-            ns.Integrations.InspectIntegration({ kind = "stored_item", args = { itemId = 123 } }).status
-                == "unavailable"
-        )
-        assert(ns.Integrations.IntegrationReport().syndicator.status == "waiting")
-    end
-)
-
-it(
-    "Auctionator prices are unit copper values with coarse age, distinguishing unknown prices and ages",
-    function()
-        local env = helper.env()
-        setfenv(1, env)
-        setup(env)
-
-        Auctionator = {
-            API = {
-                v1 = {
-                    GetAuctionPriceByItemID = function(caller, id)
-                        assert(caller == "WispAI")
-                        if id == 1 then
-                            return 450
-                        elseif id == 3 then
-                            return 900
-                        end
-                    end,
-                    GetAuctionAgeByItemID = function(caller, id)
-                        if id == 1 then
-                            return 0
-                        end
-                    end,
-                },
-            },
-        }
-        local result = ns.Integrations.ReadAuctionatorPrices({ itemIds = { 1, 2, 3, 1 } })
-        assert(
-            #result.prices == 3
-                and result.prices[1].unitPriceCopper == 450
-                and result.prices[1].ageDays == 0
-                and result.prices[1].ageKnown
-        )
-        assert(result.prices[2].status == "unknown" and result.prices[2].unitPriceCopper == nil)
-        assert(
-            result.prices[3].unitPriceCopper == 900
-                and not result.prices[3].ageKnown
-                and result.prices[3].ageDays == nil
-        )
-        assert(result.realm == "TestRealm" and result.cached)
-        assert(ns.Integrations.IntegrationReport().auctionator.status == "ready")
-        Auctionator.API.v1.GetAuctionAgeByItemID = nil
-        assert(ns.Integrations.IntegrationReport().auctionator.status == "partial")
-        assert(not ns.Integrations.ReadAuctionatorPrices({ itemIds = { 1 } }).prices[1].ageKnown)
-        Auctionator = nil
-        assert(
-            ns.Integrations.InspectIntegration({ kind = "item_prices", args = { itemIds = { 1 } } }).status
-                == "unavailable"
-        )
-    end
-)
-
 it("object spawns require verified native map frames and never query NPC-only fields", function()
     local env = helper.env()
     setfenv(1, env)
@@ -378,3 +267,50 @@ it("object spawns require verified native map frames and never query NPC-only fi
     LibQuestieDB.flavor.expansion = "Classic"
     assert(not pcall(ns.Integrations.FindObjectLocations, { objectId = 99, mapId = 1454 }))
 end)
+
+it(
+    "Lua discovery distinguishes missing, wrong-version, partial and complete Questie providers",
+    function()
+        local env = helper.env()
+        setfenv(1, env)
+        do
+            ns = helper.namespace()
+            C_AddOns = {
+                GetAddOnMetadata = function()
+                    return "test"
+                end,
+            }
+        end
+        setup(env)
+
+        assert(ns.Integrations._QuestieReport().status == "missing")
+        LibQuestieDB = {
+            flavor = { expansion = "Classic" },
+            RequireContract = function()
+                return true
+            end,
+            Npc = { Get = function() end, Exists = function() end },
+        }
+        assert(ns.Integrations._QuestieReport().status == "incompatible")
+        LibQuestieDB.flavor.expansion = "Forever"
+        assert(ns.Integrations._QuestieReport().status == "partial")
+        Questie = { IsForever = true }
+        QuestieLoader = {
+            ImportModule = function()
+                error("not ready")
+            end,
+        }
+        assert(ns.Integrations._QuestieReport().status == "partial")
+        QuestieLoader.ImportModule = function()
+            return { GetClassTrainers = function() end, townsfolk = {} }
+        end
+        assert(ns.Integrations._QuestieReport().status == "partial")
+        LibQuestieDB.Quest = LibQuestieDB.Npc
+        LibQuestieDB.Object = LibQuestieDB.Npc
+        assert(ns.Integrations._QuestieReport().status == "ready")
+        LibQuestieDB.RequireContract = function()
+            error("contract mismatch")
+        end
+        assert(ns.Integrations._QuestieReport().status == "incompatible")
+    end
+)
