@@ -179,23 +179,25 @@ local function build(panel, index)
         .. tostring(state.hidden)
     local signature = sourceSignature
         .. "\31"
-        .. (w.inlineMarkdownPending and C.MarkdownCache.revision or "")
+        .. (w.inlineMarkdownPending and C.Markdown.Cache.revision or "")
     if w.signature ~= signature then
         w.title:SetText(panel.title:gsub("|", "||"))
         w.mini:SetText(state.minimized and "+" or "-")
-        if C.MarkdownText then
-            C.MarkdownText.pending = false
-        end
-        local height = C.RenderRichUI(w.host, { id = "panel:" .. panel.id, status = "idle" }, {
-            id = "persistent:" .. panel.id,
-            panelId = panel.id,
-            ui = view.ui,
-            references = view.references,
-        }, 265)
-        w.inlineMarkdownPending = C.MarkdownText and C.MarkdownText.pending or false
+        local height, pending = C.RenderRichUI(
+            w.host,
+            { id = "panel:" .. panel.id, status = "idle" },
+            {
+                id = "persistent:" .. panel.id,
+                panelId = panel.id,
+                ui = view.ui,
+                references = view.references,
+            },
+            265
+        )
+        w.inlineMarkdownPending = pending == true
         w.signature = sourceSignature
             .. "\31"
-            .. (w.inlineMarkdownPending and C.MarkdownCache.revision or "")
+            .. (w.inlineMarkdownPending and C.Markdown.Cache.revision or "")
         w.scroll:SetShown(not state.minimized)
         w:SetHeight(state.minimized and 35 or math.min(460, math.max(90, height + 55)))
     end

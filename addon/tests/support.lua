@@ -25,15 +25,16 @@ function M.addon(name, env)
         for _, dependency in ipairs({ "Syntax", "Block", "Parser" }) do
             M.addon("Markdown/" .. dependency .. ".lua", env)
         end
-        M.addon("MarkdownCache.lua", env)
+        M.addon("Markdown/Cache.lua", env)
     end
     if name == "UI.lua" then
         for _, dependency in ipairs({
+            "RichUI.lua",
             "Widgets.lua",
             "EmojiData.lua",
             "Emoji.lua",
             "MessageFormat.lua",
-            "MarkdownView.lua",
+            "Markdown/ReplyView.lua",
             "ModelControls.lua",
             "MessageRows.lua",
         }) do
@@ -42,7 +43,7 @@ function M.addon(name, env)
     end
     local result = setfenv(assert(loadfile("addon/WispAI/" .. name)), env)("WispAI", env.C)
     if name == "MessageFormat.lua" then
-        M.addon("MarkdownText.lua", env)
+        M.addon("Markdown/InlineRenderer.lua", env)
     end
     return result
 end

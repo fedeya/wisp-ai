@@ -34,7 +34,7 @@ local function setup(options)
             return parse(source, limits, inline)
         end)
     end
-    helper.addon("MarkdownCache.lua", env)
+    helper.addon("Markdown/Cache.lua", env)
     options = options or {}
     options.clock = function()
         return state.now
@@ -42,7 +42,7 @@ local function setup(options)
     options.onReady = options.onReady or function()
         state.ready = state.ready + 1
     end
-    return env.C.MarkdownCache.new(options), state, env
+    return env.C.Markdown.Cache.new(options), state, env
 end
 
 local function drain(cache)
@@ -281,7 +281,7 @@ it("starts a lazy frame scheduler and coalesces transcript, inline and panel ref
         panels = panels + 1
     end
     local before = #env.UI_TEST.widgets
-    local api = env.C.MarkdownCache
+    local api = env.C.Markdown.Cache
     local source = string.rep("x", 513)
     local _, _, pending = api.get(source)
     assert.is_true(pending)

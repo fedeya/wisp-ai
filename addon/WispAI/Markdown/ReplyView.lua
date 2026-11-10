@@ -50,7 +50,7 @@ local function project(message)
         end
     end
     local function format(node, limit)
-        return C.MarkdownText.render(node, message.references, message.streaming, limit)
+        return C.Markdown.InlineRenderer.render(node, message.references, message.streaming, limit)
     end
     local function tableView(node, indent)
         tables = tables + 1
@@ -172,13 +172,13 @@ local function project(message)
             parts[#parts + 1] = part
         elseif part.type == "text" and part.text ~= "" then
             sources[#sources + 1] = part.text
-            local tree, err, loading = C.MarkdownCache.get(part.text, false, message.streaming)
+            local tree, err, loading = C.Markdown.Cache.get(part.text, false, message.streaming)
             pending = pending or loading
             if tree then
                 document(tree)
             else
                 errorCode = err and err.code or errorCode
-                prose(C.MarkdownText.preview(part.text))
+                prose(C.Markdown.InlineRenderer.preview(part.text))
             end
         end
     end
@@ -197,5 +197,164 @@ local function project(message)
     return result
 end
 
+local function sources(message)
+    local result = {}
+    if message.role == "assistant" and not message._markdown then
+        for _, part in ipairs(sourceParts(message)) do
+            if part.type == "text" and part.text ~= "" then
+                result[#result + 1] = part.text
+            end
+        end
+    end
+    return result
+end
+
+local function snapshot(message)
+    local result = {}
+    for index, part in ipairs(sourceParts(message)) do
+        result[index] = { type = part.type, text = part.text, id = part.id }
+    end
+    return result
+end
+
+local function extends(previous, message)
+    local current = sourceParts(message)
+    if #previous > #current then
+        return false
+    end
+    for index, before in ipairs(previous) do
+        local after = current[index]
+        if before.type ~= after.type or before.id ~= after.id then
+            return false
+        end
+        if before.type == "text" then
+            local text, prefix = after.text or "", before.text or ""
+            if text:sub(1, #prefix) ~= prefix then
+                return false
+            end
+        end
+    end
+    return true
+end
+
+local function cancelObsolete(previous, current)
+    local keep = {}
+    for _, source in ipairs(current) do
+        keep[source] = true
+    end
+    for _, source in ipairs(previous or {}) do
+        if not keep[source] then
+            C.Markdown.Cache.cancel(source)
+        end
+    end
+end
+
+function view.new()
+    return { revision = 0 }
+end
+
+-- The row owns one state, but only this module knows how syntax work, compiled
+-- presentation and asynchronous label formatting affect its lifetime.
+function view.update(state, chatId, message)
+    local cache = C.Markdown.Cache
+    local identityChanged = state.chatId ~= chatId
+        or state.messageId ~= message.id
+        or state.role ~= message.role
+    local references = C.MessageFormat.signature(message.references)
+    local native = C.RichSignature(message.ui)
+    local dependencies = tostring(C.itemRevision) .. "\31" .. references .. "\31" .. native
+    local signature = (message.role or "")
+        .. "\31"
+        .. (message.text or "")
+        .. "\31"
+        .. dependencies
+        .. "\31"
+        .. C.RichSignature(message.parts)
+        .. "\31"
+        .. tostring(message.streaming)
+        .. "\31"
+        .. tostring(message._markdown)
+    local contentChanged = state.signature ~= signature
+    local syntaxChanged = state.pending and state.syntaxRevision ~= cache.revision
+    local inlineChanged = state.inlinePending and state.inlineRevision ~= cache.revision
+
+    if identityChanged or contentChanged then
+        state.inlinePending = false
+    end
+    if contentChanged or syntaxChanged or (identityChanged and state.pending) then
+        local currentSources = sources(message)
+        if state.pending then
+            cancelObsolete(state.sources, currentSources)
+        end
+        local projected = project(message)
+        local retain = projected._markdownPending
+            and not identityChanged
+            and state.stable
+            and state.stable.dependencies == dependencies
+            and extends(state.stable.parts, message)
+        if projected ~= message then
+            state.presentation = retain and state.stable.presentation
+                or {
+                    ui = projected.ui,
+                    parts = projected.parts,
+                    simple = projected._markdownSimple,
+                }
+        else
+            state.presentation = nil
+        end
+        state.pending, state.errorCode = projected._markdownPending, projected._markdownError
+        state.sources = currentSources
+        state.syntaxRevision = cache.revision
+        if not state.pending then
+            state.stable = state.presentation
+                    and {
+                        presentation = state.presentation,
+                        parts = snapshot(message),
+                        dependencies = dependencies,
+                    }
+                or nil
+        elseif identityChanged then
+            state.stable = nil
+        end
+    elseif identityChanged then
+        -- A complete projection can be reused across identities; a future
+        -- streaming revision must belong to this reply before retaining it.
+        state.stable = state.presentation
+                and {
+                    presentation = state.presentation,
+                    parts = snapshot(message),
+                    dependencies = dependencies,
+                }
+            or nil
+    end
+    if identityChanged or contentChanged or syntaxChanged or inlineChanged then
+        state.revision = state.revision + 1
+    end
+    state.chatId, state.messageId, state.role = chatId, message.id, message.role
+    state.signature = signature
+    state.inlineRevision = cache.revision
+    local key = state.revision .. ":" .. view.revision
+    if not state.presentation then
+        return message, key
+    end
+    -- Never retain a message object: action metadata and any future fields are
+    -- always taken from the current event, even when its presentation is reused.
+    local result = {}
+    for name, value in pairs(message) do
+        result[name] = value
+    end
+    result.ui, result.parts, result._markdown =
+        state.presentation.ui, state.presentation.parts, true
+    result._markdownSimple = state.presentation.simple
+    result._markdownPending, result._markdownError = state.pending, state.errorCode
+    result._markdownSources = state.sources
+    return result, key
+end
+
+function view.rendered(state, pending)
+    state.inlinePending = pending == true
+    state.inlineRevision = C.Markdown.Cache.revision
+end
+
 view.project = project
-C.MarkdownView = view
+C.Markdown.ReplyView = view

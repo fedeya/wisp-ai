@@ -86,7 +86,7 @@ it(
     function()
         local env = helper.env()
         helper.fixture("addon/tests/wow-ui-stub.lua", env)
-        env.C = { db = {}, MarkdownCache = { revision = 0 }, MarkdownText = {} }
+        env.C = { db = {}, Markdown = { Cache = { revision = 0 } } }
         env.UnitName = function()
             return "Mage"
         end
@@ -98,13 +98,14 @@ it(
                 return { "Forever", "Realm", "Mage" }
             end,
         }
-        local C, ready, calls = env.C, false, 0
+        local C, ready, calls, settledCalls = env.C, false, 0, 0
         local source = "**" .. string.rep("Long label ", 60) .. "**"
         C.FormatText = function(value)
             if value == source then
                 calls = calls + 1
-                C.MarkdownText.pending = not ready
-                return ready and "|cffe3c77eCompleted label|r" or source
+                return ready and "|cffe3c77eCompleted label|r" or source, not ready
+            elseif value == "Settled label" then
+                settledCalls = settledCalls + 1
             end
             return tostring(value)
         end
@@ -117,8 +118,14 @@ it(
                 title = "Async panel",
                 ui = { { id = "label", kind = "text", text = source } },
             },
+            {
+                id = "settled",
+                characterKey = "owner",
+                title = "Settled panel",
+                ui = { { id = "label", kind = "text", text = "Settled label" } },
+            },
         })
-        local window
+        local window, settledWindow
         for _, widget in ipairs(env.UI_TEST.widgets) do
             if
                 widget.title
@@ -126,21 +133,33 @@ it(
                 and widget.title:GetText() == "Async panel"
             then
                 window = widget
+            elseif
+                widget.title
+                and type(widget.title) == "table"
+                and widget.title:GetText() == "Settled panel"
+            then
+                settledWindow = widget
             end
         end
         assert.is_truthy(window)
+        assert.is_truthy(settledWindow)
         assert.equal(source, window.host.widgets.label.title:GetText())
         assert.is_true(window.inlineMarkdownPending)
+        assert.is_false(settledWindow.inlineMarkdownPending)
         assert.equal(1, calls)
+        assert.equal(1, settledCalls)
         C.RefreshPanels()
         assert.equal(1, calls, "unchanged pending revisions do not render repeatedly")
-        ready, C.MarkdownCache.revision = true, 1
+        assert.equal(1, settledCalls)
+        ready, C.Markdown.Cache.revision = true, 1
         C.RefreshPanels()
         assert.equal("|cffe3c77eCompleted label|r", window.host.widgets.label.title:GetText())
         assert.is_false(window.inlineMarkdownPending)
         assert.equal(2, calls)
-        C.MarkdownCache.revision = 2
+        assert.equal(1, settledCalls, "pending state does not leak between panels")
+        C.Markdown.Cache.revision = 2
         C.RefreshPanels()
         assert.equal(2, calls, "another document's completion does not invalidate a settled panel")
+        assert.equal(1, settledCalls)
     end
 )

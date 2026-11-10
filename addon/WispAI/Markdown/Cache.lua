@@ -333,4 +333,4 @@ function api.cancel(source, inline)
     api.revision = default.revision
     return cancelled
 end
-C.MarkdownCache = api
+C.Markdown.Cache = api

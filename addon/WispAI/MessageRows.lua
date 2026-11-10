@@ -3,7 +3,7 @@ local label, setText = C.Widgets.label, C.Widgets.setText
 local GOLD, TEXT, MUTED = C.Widgets.GOLD, C.Widgets.TEXT, C.Widgets.MUTED
 local mapLocation, macroNameFromLink =
     C.MessageFormat.mapLocation, C.MessageFormat.macroNameFromLink
-local formatted, referenceSignature = C.FormatText, C.MessageFormat.signature
+local formatted = C.FormatText
 C.itemRevision = 0
 local function linked(row)
     row:EnableMouse(true)
@@ -288,26 +288,15 @@ function C.MessageSpeaker(message)
     return (message.role == "tool" or message.role == "assistant") and "assistant" or message.role
 end
 function C.RenderMessageRow(row, chat, message, width, showAuthor)
+    row.replyView = row.replyView or C.Markdown.ReplyView.new()
+    local display, viewKey = C.Markdown.ReplyView.update(row.replyView, chat.id, message)
+    message = display
     local tool = message.tool
-    local contentSignature = (message.role or "")
-        .. "\31"
-        .. (message.text or "")
-        .. "\31"
-        .. C.itemRevision
-        .. "\31"
-        .. referenceSignature(message.references)
-        .. "\31"
-        .. (C.RichSignature and C.RichSignature({ message.ui, message.parts }) or "")
-        .. "\31"
-        .. tostring(message.streaming)
-    local formatSignature = contentSignature
-        .. "\31"
-        .. (row.markdownPending and C.MarkdownCache.revision or "")
     local signature = chat.id
         .. "\31"
         .. (message.id or "")
         .. "\31"
-        .. formatSignature
+        .. viewKey
         .. "\31"
         .. (tool and tool.status or "")
         .. "\31"
@@ -318,55 +307,9 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
         .. tostring(showAuthor)
         .. "\31"
         .. tostring(message.groupKey)
-        .. "\31"
-        .. C.MarkdownView.revision
-        .. "\31"
-        .. (row.inlineMarkdownPending and C.MarkdownCache.revision or "")
     if row.signature ~= signature then
         row.signature = signature
-        C.MarkdownText.pending = false
-        if row.markdownSignature ~= formatSignature then
-            local messageKey = chat.id .. ":" .. (message.id or "")
-            if
-                row.markdownPending
-                and (
-                    row.markdownRequestedText ~= message.text
-                    or row.markdownMessageKey ~= messageKey
-                )
-            then
-                for _, source in ipairs(row.markdownSources or {}) do
-                    C.MarkdownCache.cancel(source)
-                end
-            end
-            local view = C.MarkdownView.project(message)
-            local sameReply = row.markdownMessageKey == messageKey
-            local extends = row.markdownSource
-                and (message.text or ""):sub(1, #row.markdownSource) == row.markdownSource
-            if not (view._markdownPending and sameReply and extends and row.markdownUI) then
-                row.markdownUI = view ~= message and view.ui or nil
-                row.markdownParts = view ~= message and view.parts or nil
-                row.markdownSimple = view._markdownSimple
-            end
-            row.markdownMessageKey, row.markdownRequestedText = messageKey, message.text
-            row.markdownSources = view._markdownSources
-            row.markdownPending = view._markdownPending
-            row.markdownSignature = contentSignature
-                .. "\31"
-                .. (row.markdownPending and C.MarkdownCache.revision or "")
-            if not view._markdownPending then
-                row.markdownSource = message.text or ""
-            end
-        end
-        if row.markdownUI then
-            -- Cache presentation data, never a stale copy of message metadata.
-            local view = {}
-            for key, value in pairs(message) do
-                view[key] = value
-            end
-            view.ui, view.parts, view._markdown = row.markdownUI, row.markdownParts, true
-            view._markdownSimple = row.markdownSimple
-            message = view
-        end
+        local pending = false
         row.speaker = message.role
         local padding = message.role == "user" and 8 or 0
         if message.role == "user" then
@@ -410,7 +353,9 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
             row.text:SetTextColor(unpack(MUTED))
             local suffix = state == "running" and "  |cffe0c070Running|r"
                 or (state == "completed" and "" or "  |cffd98575Failed|r")
-            setText(row.text, formatted(tool and tool.label or message.text) .. suffix)
+            local text, waiting = formatted(tool and tool.label or message.text)
+            pending = waiting == true
+            setText(row.text, text .. suffix)
             row.height = top + math.max(18, row.text:GetStringHeight()) + 7
         else
             row.icon:Hide()
@@ -421,12 +366,15 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
             row.text:SetPoint("TOPLEFT", padding, -top)
             row.text:SetWidth(width - padding * 2)
             row.text:SetTextColor(unpack(message.role == "system" and MUTED or TEXT))
-            setText(
-                row.text,
-                interleaved and ""
-                    or (message._markdownSimple and message.parts[1].text)
-                    or formatted(message.text, message.references, message.role == "user")
-            )
+            local text
+            if interleaved then
+                text = ""
+            elseif message._markdownSimple then
+                text = message.parts[1].text
+            else
+                text, pending = formatted(message.text, message.references, message.role == "user")
+            end
+            setText(row.text, text)
             if message.role == "user" and not (message.ui and #message.ui > 0) then
                 local natural = row.text.GetUnboundedStringWidth
                     and row.text:GetUnboundedStringWidth()
@@ -451,14 +399,15 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
                 row.rich:Show()
                 row.rich:ClearAllPoints()
                 row.rich:SetPoint("TOPLEFT", padding, -(interleaved and top or row.height))
-                row.height = row.height
-                    + C.RenderRichUI(row.rich, chat, message, width - padding * 2)
+                local height, waiting = C.RenderRichUI(row.rich, chat, message, width - padding * 2)
+                row.height = row.height + height
+                pending = pending or waiting == true
             end
             if message.role ~= "user" then
                 row.height = row.height + 8
             end
         end
-        row.inlineMarkdownPending = C.MarkdownText.pending
+        C.Markdown.ReplyView.rendered(row.replyView, pending)
         local retry = chat.status == "error"
             and message.role == "system"
             and message == chat.messages[#chat.messages]

@@ -23,14 +23,14 @@ Settings.lua
 Markdown\Syntax.lua
 Markdown\Block.lua
 Markdown\Parser.lua
-MarkdownCache.lua
+Markdown\Cache.lua
 RichUI.lua
 Widgets.lua
 EmojiData.lua
 Emoji.lua
 MessageFormat.lua
-MarkdownText.lua
-MarkdownView.lua
+Markdown\InlineRenderer.lua
+Markdown\ReplyView.lua
 ModelControls.lua
 MessageRows.lua
 UI.lua

@@ -281,8 +281,8 @@ local function tableUI(w, node, available, rendered)
         end
         local function changePage(delta)
             w.page = math.max(1, math.min(pages, w.page + delta))
-            if C.MarkdownView and C.MarkdownView.invalidate then
-                C.MarkdownView.invalidate()
+            if C.Markdown.ReplyView and C.Markdown.ReplyView.invalidate then
+                C.Markdown.ReplyView.invalidate()
             end
         end
         w.pagerPrev:SetScript("OnClick", function()
@@ -350,6 +350,15 @@ function C.RenderRichUI(host, chat, message, width)
     host.widgets, host.values, host.sourceValues =
         host.widgets or {}, host.values or {}, host.sourceValues or {}
     local widgets, values, children, nodes, used = host.widgets, host.values, {}, {}, {}
+    local pending = false
+    local function rendered(value)
+        if not C.FormatText then
+            return tostring(value)
+        end
+        local formatted, awaiting = C.FormatText(value, message.references)
+        pending = pending or awaiting == true
+        return formatted
+    end
     for _, node in ipairs(message.ui or {}) do
         nodes[node.id] = node
         local parent = node.parent or "_root"
@@ -404,11 +413,6 @@ function C.RenderRichUI(host, chat, message, width)
         end
         used[node.id] = true
         w:SetWidth(available)
-        local rendered = C.FormatText
-                and function(value)
-                    return C.FormatText(value, message.references)
-                end
-            or tostring
         local height = 0
         if node.kind == "row" or node.kind == "column" or node.kind == "card" then
             local padding = node.kind == "card" and 10 or 0
@@ -651,14 +655,7 @@ function C.RenderRichUI(host, chat, message, width)
                 end
                 f:SetPoint("TOPLEFT", left, -y)
                 f:SetWidth(math.max(1, width - left))
-                text(
-                    f,
-                    part._markdown and part.text
-                        or (
-                            C.FormatText and C.FormatText(part.text, message.references)
-                            or part.text
-                        )
-                )
+                text(f, part._markdown and part.text or rendered(part.text))
                 f:Show()
                 y = y + f:GetStringHeight() + 8
             end
@@ -680,5 +677,5 @@ function C.RenderRichUI(host, chat, message, width)
     end
     host:SetWidth(width)
     host:SetHeight(math.max(1, y))
-    return y
+    return y, pending
 end

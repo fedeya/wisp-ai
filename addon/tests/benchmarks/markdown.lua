@@ -6,12 +6,12 @@ for _, name in ipairs({ "Syntax", "Block", "Parser" }) do
     assert(loadfile(root .. "/Markdown/" .. name .. ".lua"))("WispAI", C)
 end
 for _, name in ipairs({
-    "MarkdownCache",
+    "Markdown/Cache",
     "EmojiData",
     "Emoji",
     "MessageFormat",
-    "MarkdownText",
-    "MarkdownView",
+    "Markdown/InlineRenderer",
+    "Markdown/ReplyView",
 }) do
     assert(loadfile("addon/WispAI/" .. name .. ".lua"))("WispAI", C)
 end
@@ -48,8 +48,8 @@ for _, case in ipairs(cases) do
     local times = { {}, {}, {}, {}, {}, {} }
     for _ = 1, 7 do
         collectgarbage("collect")
-        local cache = C.MarkdownCache.new({ clock = os.clock })
-        C.MarkdownCache.get = function(...)
+        local cache = C.Markdown.Cache.new({ clock = os.clock })
+        C.Markdown.Cache.get = function(...)
             return cache:get(...)
         end
         local source, start = case[2], os.clock()
@@ -71,10 +71,10 @@ for _, case in ipairs(cases) do
         times[6][#times[6] + 1] = steps
         local message = { role = "assistant", text = source }
         start = os.clock()
-        C.MarkdownView.project(message)
+        C.Markdown.ReplyView.project(message)
         times[4][#times[4] + 1] = os.clock() - start
         start = os.clock()
-        C.MarkdownView.project(message)
+        C.Markdown.ReplyView.project(message)
         times[5][#times[5] + 1] = os.clock() - start
     end
     print(

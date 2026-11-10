@@ -5,7 +5,6 @@ local function setup()
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
     env.C = {}
     helper.addon("UI.lua", env)
-    helper.addon("RichUI.lua", env)
     return env, env.C
 end
 
@@ -15,11 +14,11 @@ end
 
 local function settled(C, original)
     for _ = 1, 2000 do
-        local view = C.MarkdownView.project(original)
+        local view = C.Markdown.ReplyView.project(original)
         if not view._markdownPending then
             return view
         end
-        C.MarkdownCache.step()
+        C.Markdown.Cache.step()
     end
     error("Markdown did not settle")
 end
@@ -88,7 +87,7 @@ it("preserves canonical source, native component ordering and reference data", f
     assert.equal("After ñ.", view.parts[3].text)
     assert.same({ type = "ui", id = "markdown_table_1" }, view.parts[4])
     assert.is_truthy(view.ui[2].rows[1][1]:find("|Hitem:100|h[Toga]|h", 1, true))
-    assert.equal(view, C.MarkdownView.project(view))
+    assert.equal(view, C.Markdown.ReplyView.project(view))
 end)
 
 it("renders lists, tasks, quotes and code through the shared document view", function()
@@ -199,8 +198,12 @@ it(
         settled(C, original)
         C.RenderMessageRow(row, chat, original, 600, true)
         assert.equal(widget, row.rich.widgets.markdown_table_1)
-        assert.equal(25, row.markdownUI[1].totalRows)
-        assert.equal(20, #row.markdownUI[1].rows)
+        assert.equal("1-20 / 25", widget.pagerLabel:GetText())
+        widget.pagerNext.scripts.OnClick()
+        C.RenderMessageRow(row, chat, original, 600, true)
+        assert.equal("21-25 / 25", widget.pagerLabel:GetText())
+        assert.is_true(widget.tableRows[6]:IsShown())
+        assert.is_false(widget.tableRows[7]:IsShown())
         assert.is_nil(original.ui)
         assert.is_nil(original.parts)
     end
@@ -232,22 +235,20 @@ it(
         local chat = { id = "chat", status = "working", messages = { original } }
         local row = C.MakeMessageRow(env.CreateFrame("Frame"))
         C.RenderMessageRow(row, chat, original, 600, true)
-        local parts = row.markdownParts
+        local tableWidget = row.rich.widgets.markdown_table_1
         original.text = original.text
             .. "\n\n"
             .. string.rep("**dense** `literal` [label](https://example.com) ", 180)
         C.RenderMessageRow(row, chat, original, 600, true)
-        assert.is_true(row.markdownPending)
-        assert.equal(
-            parts,
-            row.markdownParts,
-            "the last stable view survives a pending syntax revision"
-        )
+        local _, _, pending = C.Markdown.Cache.get(original.text)
+        assert.is_true(pending)
+        assert.equal(tableWidget, row.rich.widgets.markdown_table_1)
+        assert.is_true(tableWidget:IsShown())
+        assert.is_nil(row.rich.prose[1])
         settled(C, original)
         C.RenderMessageRow(row, chat, original, 600, true)
-        assert.is_false(row.markdownPending)
-        assert.are_not.equal(parts, row.markdownParts)
-        assert.equal(1, #row.markdownUI)
+        assert.is_true(tableWidget:IsShown())
+        assert.is_truthy(row.rich.prose[1]:GetText():find("dense", 1, true))
     end
 )
 
@@ -262,14 +263,15 @@ it("uses current metadata with a cached view and preserves user native links", f
         action = { current.id, node.label }
     end
     C.RenderMessageRow(row, chat, original, 600, true)
-    local projected = row.markdownUI
+    local tableWidget = row.rich.widgets.markdown_table_1
     original.id = "replacement"
     C.RenderMessageRow(row, chat, original, 600, true)
-    assert.equal(projected, row.markdownUI)
+    assert.equal(tableWidget, row.rich.widgets.markdown_table_1)
     row.rich.widgets.action.control.scripts.OnClick()
     assert.same({ "replacement", "Continue" }, action)
     local link = "|cff71d5ff|Hspell:122:0|h[Nova]|h|r"
     C.RenderMessageRow(row, chat, { role = "user", text = link }, 600, true)
     assert.equal(link, row.text:GetText())
-    assert.is_nil(row.markdownUI)
+    assert.is_false(tableWidget:IsShown())
+    assert.is_false(row.rich.widgets.action:IsShown())
 end)

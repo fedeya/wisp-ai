@@ -116,12 +116,12 @@ end
 local function formatted(value, references, fromUser, streaming)
     value = tostring(value or "")
     if not value:find("[%*_%~`%[%]\\<|&\n\r]") then
-        return C.Emoji.render(escaped(value))
+        return C.Emoji.render(escaped(value)), false
     end
-    local tree, _, pending = C.MarkdownCache.get(value, true, streaming)
-    C.MarkdownText.pending = C.MarkdownText.pending or pending
+    local tree, _, pending = C.Markdown.Cache.get(value, true, streaming)
     return tree and render(tree, references, streaming, nil, fromUser)
-        or C.MarkdownText.preview(value)
+        or C.Markdown.InlineRenderer.preview(value),
+        pending == true
 end
 
 local function preview(value)
@@ -129,5 +129,5 @@ local function preview(value)
     return C.Emoji.render(escaped(text)) .. (clipped and "\n..." or "")
 end
 
-C.MarkdownText = { render = render, literal = escaped, preview = preview }
+C.Markdown.InlineRenderer = { render = render, literal = escaped, preview = preview }
 C.FormatText = formatted

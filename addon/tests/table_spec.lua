@@ -114,7 +114,7 @@ it(
         local message =
             { _markdown = true, ui = { node }, parts = { { type = "ui", id = "gear" } } }
         local invalidations = 0
-        C.MarkdownView = {
+        C.Markdown.ReplyView = {
             invalidate = function()
                 invalidations = invalidations + 1
             end,
@@ -321,4 +321,79 @@ it("indents projected table roots without changing native UI root coordinates", 
     assert.equal(162, host.widgets["local"]:GetWidth())
     assert.equal(0, host.widgets.native.point[4])
     assert.equal(210, host.widgets.native:GetWidth())
+end)
+
+it("reports pending formatting for native cells and prose separately for each host", function()
+    local env, C = setup()
+    local host, other = env.CreateFrame("Frame"), env.CreateFrame("Frame")
+    local body = string.rep("Long cell ", 60) .. "end"
+    local source = "**" .. body .. "**"
+    local message = {
+        ui = {
+            {
+                id = "table",
+                kind = "table",
+                columns = { { label = "Item" } },
+                rows = { { source }, { "Settled cell" } },
+            },
+        },
+        parts = { { type = "text", text = "Settled prose" }, { type = "ui", id = "table" } },
+    }
+    local height, pending = C.RenderRichUI(host, {}, message, 400)
+    assert.is_true(height > 0)
+    assert.is_true(pending)
+    assert.equal(source, host.widgets.table.tableRows[2].cells[1]:GetText())
+    local _, otherPending = C.RenderRichUI(other, {}, {
+        ui = { { id = "label", kind = "text", text = "Settled label" } },
+    }, 400)
+    assert.is_false(otherPending)
+
+    message.ui[1].rows = { { "Settled cell" } }
+    message.parts[1].text = source
+    _, pending = C.RenderRichUI(host, {}, message, 400)
+    assert.is_true(pending, "unformatted surrounding prose participates in pending state")
+    assert.equal(source, host.prose[1]:GetText())
+    for _ = 1, 2000 do
+        local _, remaining = C.Markdown.Cache.step()
+        if remaining == 0 then
+            break
+        end
+    end
+    _, pending = C.RenderRichUI(host, {}, message, 400)
+    assert.is_false(pending)
+    assert.equal("|cffe3c77e" .. body .. "|r", host.prose[1]:GetText())
+end)
+
+it("keeps pending results local when formatting triggers a nested render", function()
+    local env, C = setup()
+    local host, nestedHost = env.CreateFrame("Frame"), env.CreateFrame("Frame")
+    local mode, nestedPending = "inner"
+    C.FormatText = function(value)
+        if value == "outer" then
+            local _
+            _, nestedPending = C.RenderRichUI(nestedHost, {}, {
+                ui = { { id = "nested", kind = "text", text = "inner" } },
+            }, 400)
+            return value, false
+        elseif value == "inner" then
+            return value, mode == "inner"
+        elseif value == "waiting" then
+            return value, mode == "outer"
+        end
+        return value
+    end
+    local message = {
+        ui = {
+            { id = "first", kind = "text", text = "waiting" },
+            { id = "second", kind = "text", text = "outer" },
+            { id = "last", kind = "text", text = "legacy formatter without pending return" },
+        },
+    }
+    local _, pending = C.RenderRichUI(host, {}, message, 400)
+    assert.is_false(pending, "a nested pending host does not mark the caller pending")
+    assert.is_true(nestedPending)
+    mode = "outer"
+    _, pending = C.RenderRichUI(host, {}, message, 400)
+    assert.is_true(pending, "a nested settled host does not clear the caller's pending result")
+    assert.is_false(nestedPending)
 end)
