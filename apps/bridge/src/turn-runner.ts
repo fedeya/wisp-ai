@@ -128,7 +128,10 @@ export function createTurnRunner(deps: TurnDependencies) {
           }
         }
         if (visibleChanged || parts.sourceRevision !== sourceRevision) {
-          chat.lastActivityAt = Date.now();
+          if (visibleChanged) {
+            chat.lastActivityAt = Date.now();
+          }
+          // Source-only deltas need persistence without changing the published view.
           changed();
         }
       }
