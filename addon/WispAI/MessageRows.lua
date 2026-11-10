@@ -327,8 +327,12 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
         C.MarkdownText.pending = false
         if row.markdownSignature ~= formatSignature then
             local messageKey = chat.id .. ":" .. (message.id or "")
-            if row.markdownPending
-                and (row.markdownRequestedText ~= message.text or row.markdownMessageKey ~= messageKey)
+            if
+                row.markdownPending
+                and (
+                    row.markdownRequestedText ~= message.text
+                    or row.markdownMessageKey ~= messageKey
+                )
             then
                 for _, source in ipairs(row.markdownSources or {}) do
                     C.MarkdownCache.cancel(source)

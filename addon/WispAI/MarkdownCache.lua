@@ -87,6 +87,13 @@ local function drop(self, entry)
     entry.task = nil
 end
 
+local function notify(self)
+    self.notification = true
+    if self.onSchedule then
+        self.onSchedule(self)
+    end
+end
+
 local function makeRoom(self, bytes, urgent)
     while self.count >= self.maxEntries or self.bytes + bytes > self.maxBytes do
         local candidate = self.oldest
@@ -98,6 +105,7 @@ local function makeRoom(self, bytes, urgent)
         elseif urgent and self.firstPending then
             drop(self, self.firstPending)
             self.revision = self.revision + 1
+            notify(self)
         else
             return false
         end
@@ -138,6 +146,7 @@ function Cache:get(source, inline, urgent)
         if urgent then
             drop(self, self.firstPending)
             self.revision = self.revision + 1
+            notify(self)
         else
             -- Retry admission after another document completes. No work is started
             -- or discarded on each refresh while the queue is already full.
@@ -228,11 +237,16 @@ function Cache:step()
             break
         end
     end
-    if completed > 0 and self.onReady then
-        local ok, err = pcall(self.onReady, self)
-        self.running = false
-        if not ok then
-            error(err, 0)
+    if completed > 0 or self.notification then
+        self.notification = false
+        if self.onReady then
+            local ok, err = pcall(self.onReady, self)
+            self.running = false
+            if not ok then
+                error(err, 0)
+            end
+        else
+            self.running = false
         end
     else
         self.running = false
@@ -250,6 +264,7 @@ function Cache:cancel(source, inline)
     end
     drop(self, entry)
     self.revision = self.revision + 1
+    notify(self)
     return true
 end
 
@@ -261,6 +276,7 @@ local function new(options)
         bytes = 0,
         pendingCount = 0,
         revision = 0,
+        notification = false,
         maxEntries = options.maxEntries or 128,
         maxBytes = options.maxBytes or 524288,
         maxPending = options.maxPending or 32,
@@ -280,7 +296,7 @@ local function wake()
         frame = CreateFrame("Frame")
         frame:SetScript("OnUpdate", function()
             local _, pending = api.step()
-            if pending == 0 then
+            if pending == 0 and not default.notification then
                 frame:Hide()
             end
         end)
@@ -315,9 +331,6 @@ end
 function api.cancel(source, inline)
     local cancelled = default:cancel(source, inline)
     api.revision = default.revision
-    if default.pendingCount == 0 and frame then
-        frame:Hide()
-    end
     return cancelled
 end
 C.MarkdownCache = api

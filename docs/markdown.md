@@ -30,8 +30,17 @@ Nodes have `type` and a `children` array. Text and code use `literal`; reference
 use `key`. Block `sourcepos` contains start/end line and column pairs. Treat
 returned trees as read-only.
 
+## Rendering
+
+Prose, tables and UI labels share the same formatter. Syntax is cached separately
+from layout and reference data; long responses are processed across frames.
+
+Tables show 20 rows per page, up to 6 columns and 200 rows per table. Notices
+identify clipped content.
+
 ## Checks
 
 ```sh
 pnpm test:addon
+lua addon/tests/benchmarks/markdown.lua
 ```

@@ -23,9 +23,9 @@ end
 
 -- A template contains static WoW text plus reference keys. Reformatting item
 -- data reuses both syntax and static text; no Markdown substitutions are used.
-local function compile(root, limit)
+local function compile(root, limit, fromUser)
     local cached = templates[root]
-    if cached and cached.limit == limit then
+    if cached and cached.limit == limit and cached.fromUser == fromUser then
         return cached.parts
     end
     local parts, colors, stack, remaining = {}, {}, { { node = root } }, limit
@@ -48,6 +48,10 @@ local function compile(root, limit)
             parts[#parts + 1] = { key = node.key, restore = colors[#colors] or "" }
         elseif kind == "reference_pending" then
             parts[#parts + 1] = { pending = true, literal = node.literal }
+        elseif kind == "native_link" then
+            parts[#parts + 1] = fromUser
+                    and (C.Emoji.render(node.literal) .. (colors[#colors] or ""))
+                or escaped(node.literal)
         elseif node.literal ~= nil then
             local value, cut = prefix(node.literal, remaining)
             remaining = remaining - #value
@@ -78,13 +82,14 @@ local function compile(root, limit)
             parts[#parts + 1] = "|r"
         end
     end
-    templates[root] = { limit = limit, parts = parts }
+    templates[root] = { limit = limit, parts = parts, fromUser = fromUser }
     return parts
 end
 
-local function render(node, references, streaming, limit)
+local function render(node, references, streaming, limit, fromUser)
+    fromUser = fromUser == true
     local result, bytes, maximum = {}, 0, math.max(4096, (limit or 65536) * 2)
-    for _, part in ipairs(compile(node, limit or 65536)) do
+    for _, part in ipairs(compile(node, limit or 65536, fromUser)) do
         local value
         if type(part) == "string" then
             value = part
@@ -108,42 +113,15 @@ local function render(node, references, streaming, limit)
     return table.concat(result)
 end
 
-local function userText(value)
-    local output, cursor = {}, 1
-    -- Native user links are an explicit WoW input format, independent of Markdown.
-    while cursor <= #value do
-        local first, after = value:find("|H[^|]+|h.-|h", cursor)
-        if not first then
-            output[#output + 1] = escaped(value:sub(cursor))
-            break
-        end
-        local start = first
-        local color = value:sub(cursor, first - 1):match("|c%x%x%x%x%x%x%x%x$")
-            or value:sub(cursor, first - 1):match("|cn[%w_]+:$")
-        if color then
-            start = first - #color
-        end
-        output[#output + 1] = escaped(value:sub(cursor, start - 1))
-        if value:sub(after + 1, after + 2) == "|r" then
-            after = after + 2
-        end
-        output[#output + 1] = value:sub(start, after)
-        cursor = after + 1
-    end
-    return C.Emoji.render(table.concat(output))
-end
-
 local function formatted(value, references, fromUser, streaming)
     value = tostring(value or "")
-    if fromUser then
-        return userText(value)
-    end
-    if not value:find("[%*_%~`%[%]\\<]") then
+    if not value:find("[%*_%~`%[%]\\<|]") then
         return C.Emoji.render(escaped(value))
     end
     local tree, _, pending = C.MarkdownCache.get(value, true, streaming)
     C.MarkdownText.pending = C.MarkdownText.pending or pending
-    return tree and render(tree, references, streaming) or C.MarkdownText.preview(value)
+    return tree and render(tree, references, streaming, nil, fromUser)
+        or C.MarkdownText.preview(value)
 end
 
 local function preview(value)

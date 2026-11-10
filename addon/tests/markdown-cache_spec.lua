@@ -214,6 +214,38 @@ it(
     end
 )
 
+it("defers cancellation notification so another consumer of shared syntax can retry", function()
+    local cache, state, retry
+    cache, state = setup({
+        syncBytes = 0,
+        onReady = function(current)
+            state.ready = state.ready + 1
+            if retry then
+                retry = false
+                local document, err, pending = current:get("shared")
+                assert.is_nil(document)
+                assert.is_nil(err)
+                assert.is_true(pending)
+            end
+        end,
+    })
+    cache:get("shared")
+    cache:get("shared")
+    assert.equal(1, cache.pendingCount, "both consumers share one syntax job")
+    retry = true
+    assert.is_true(cache:cancel("shared"))
+    assert.equal(0, cache.pendingCount)
+    assert.equal(0, state.ready, "cancellation must not refresh within the current render")
+    local completed, pending = cache:step()
+    assert.equal(0, completed)
+    assert.equal(1, pending, "a surviving consumer can enqueue again during the deferred refresh")
+    assert.equal(1, state.ready)
+    assert.equal(0, #state.resumed, "the abandoned coroutine was never resumed")
+    drain(cache)
+    assert.equal(1, #state.calls)
+    assert.equal("shared", cache:get("shared").source)
+end)
+
 it("batches completion callbacks and protects stepping from callback reentrancy", function()
     local cache, state
     cache, state = setup({
@@ -273,10 +305,13 @@ it("starts a lazy frame scheduler and coalesces transcript, inline and panel ref
     api.get(other)
     assert.is_true(frame:IsShown())
     assert.is_true(api.cancel(other))
-    assert.is_false(
-        frame:IsShown(),
-        "the scheduler stops immediately when its last job is cancelled"
-    )
+    assert.is_true(frame:IsShown(), "a deferred cancellation notification still needs one frame")
+    assert.equal(1, full, "cancellation must not refresh reentrantly")
+    frame.scripts.OnUpdate()
+    assert.is_false(frame:IsShown())
+    assert.equal(2, full)
+    assert.equal(2, inline)
+    assert.equal(2, panels)
     assert.equal(2, api.revision)
     assert.is_false(api.cancel(source), "cancellation preserves completed documents")
 end)
