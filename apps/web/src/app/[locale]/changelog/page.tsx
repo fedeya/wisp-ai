@@ -79,17 +79,17 @@ export default async function Changelog({
                 : 'We couldn’t load the updates'
               : channel === 'nightly' && page === 1
                 ? es
-                  ? 'Las próximas aventuras empiezan acá.'
-                  : 'The next adventure starts here.'
+                  ? 'Todavía no hay versiones Nightly'
+                  : 'No Nightly builds yet'
                 : es
                   ? 'Todavía no hay versiones para mostrar.'
                   : 'No releases to show yet.'}
           </h2>
-          <p>
+          <p className={styles.emptyCopy()}>
             {!history.unavailable && channel === 'nightly' && page === 1
               ? es
-                ? 'Cuando esté disponible la primera Nightly, vas a encontrarla acá. Mientras tanto, disfrutá de la última versión estable.'
-                : 'The first Nightly will appear here when it’s ready. Until then, the latest stable release is ready for your next adventure.'
+                ? 'Las versiones de prueba van a aparecer acá cuando se publiquen. Mientras tanto, podés ver las novedades de Stable.'
+                : 'Preview builds will appear here as they’re published. In the meantime, explore the latest Stable updates.'
               : es
                 ? 'Podés consultar las versiones publicadas en GitHub.'
                 : 'You can find published releases on GitHub.'}
