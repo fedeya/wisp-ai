@@ -15,10 +15,14 @@ it(
             id = "gear",
             kind = "table",
             title = "Equipo actual",
-            columns = { { label = "Pieza" }, { label = "Estado" }, {
-                label = "Armadura",
-                align = "right",
-            } },
+            columns = {
+                { label = "Pieza" },
+                { label = "Estado" },
+                {
+                    label = "Armadura",
+                    align = "right",
+                },
+            },
             rows = {
                 { "[[ref:robe]]", "Equipada", "12" },
                 { "[[ref:spell]]", string.rep("Explicación larga ", 8), "0" },
