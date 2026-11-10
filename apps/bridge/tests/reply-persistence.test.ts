@@ -111,11 +111,7 @@ test('SQLite preserves exact reply source on a display failure; only the view co
     await store.load();
     const chat = newChat('raw', 'game'),
       raw = '{"type":"text_delta","text":"unfinished source 🧙';
-    applyEvent(
-      chat,
-      { type: 'content.completed', data: { partId: 'answer', kind: 'text', value: raw } },
-      new ReplyProjection(),
-    );
+    chat.messages.push({ role: 'assistant', text: '', rawReply: raw });
     expect(chat.messages[0].rawReply).toBe(raw);
     expect(chat.messages[0].role).toBe('assistant');
     expect(chat.messages[0].text).toBe('');
@@ -144,6 +140,58 @@ test('SQLite preserves exact reply source on a display failure; only the view co
   }
 });
 
+test('SQLite preserves interleaved panels and interrupted plain text without presentation tool rows', async () => {
+  const f = await fixture();
+  try {
+    const store = f.store();
+    await store.load();
+    const chat = newChat('interleaved', 'game');
+    chat.status = 'working';
+    const projection = new ReplyProjection();
+    const emit = (type: string, data: Record<string, unknown>) =>
+      applyEvent(chat, { type, data }, projection);
+    emit('content.completed', { partId: 'before', kind: 'text', value: 'Antes.\n\n' });
+    emit('call.requested', {
+      callId: 'panel',
+      capability: { kind: 'tool', name: 'wisp__present_ui' },
+    });
+    emit('call.settled', {
+      callId: 'panel',
+      outcome: 'completed',
+      output: {
+        nodes: [{ id: 'dps', kind: 'stat', label: 'DPS', value: '20' }],
+        references: {},
+      },
+    });
+    emit('content.delta', {
+      partId: 'after',
+      kind: 'text',
+      delta: '\n\nDespués, todavía escribiendo.',
+    });
+    await store.flush([chat]);
+    const restored = await f.store().load();
+    expect(restored[0].status).toBe('interrupted');
+    expect(restored[0].messages).toHaveLength(1);
+    expect(restored[0].messages[0]).toMatchObject({
+      role: 'assistant',
+      replyFormat: 'text',
+      streaming: false,
+      parts: [
+        { type: 'text', text: 'Antes.\n\n' },
+        { type: 'ui', id: 'dps' },
+        { type: 'text', text: '\n\nDespués, todavía escribiendo.' },
+      ],
+    });
+    expect(restored[0].activity).toEqual([]);
+    const state = createSessionState(restored);
+    state.activeChat = chat.id;
+    expect(projectChats(state).chats[0].messages![0].parts).toEqual(restored[0].messages[0].parts);
+    expect(projectChats(state).chats[0].messages![0]).not.toHaveProperty('replyFormat');
+  } finally {
+    await f.close();
+  }
+});
+
 test('SQLite retains source beyond display limits, including interrupted and authoritative final output', async () => {
   const f = await fixture();
   try {
@@ -160,10 +208,10 @@ test('SQLite retains source beyond display limits, including interrupted and aut
       },
       projection,
     );
-    expect(chat.messages[0].rawReply).toBe(raw.slice(0, 15000));
+    expect(chat.messages[0].text).toBe(raw.slice(0, 15000));
     await store.flush([chat]);
     const interrupted = await f.store().load();
-    expect(interrupted[0].messages[0].rawReply).toBe(raw.slice(0, 15000));
+    expect(interrupted[0].messages[0].text).toBe(raw.slice(0, 15000));
     expect(interrupted[0].messages[0].streaming).toBe(false);
     applyEvent(
       chat,
@@ -174,7 +222,7 @@ test('SQLite retains source beyond display limits, including interrupted and aut
     const restored = await f.store().load(),
       state = createSessionState(restored);
     state.activeChat = chat.id;
-    expect(restored[0].messages[0].rawReply).toBe(raw);
+    expect(restored[0].messages[0].text).toBe(raw);
     expect(projectChats(state).chats[0].messages?.[0].text.length).toBeLessThanOrEqual(20000);
     expect(chat.messages).toHaveLength(1);
   } finally {

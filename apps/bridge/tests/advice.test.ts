@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { ReplyStream } from '../src/reply-stream.ts';
+import { LegacyReplyStream as ReplyStream } from '../src/legacy-reply.ts';
 
 test('a no-tip response carries no visible content or malformed JSON', () => {
   const reply = new ReplyStream();

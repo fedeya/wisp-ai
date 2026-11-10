@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { uiNode } from '@wisp/protocol/ui-schema';
-import { ReplyStream } from '../src/reply-stream.ts';
+import { LegacyReplyStream as ReplyStream } from '../src/legacy-reply.ts';
 const sample = {
   id: 'gear',
   kind: 'table',

@@ -15,7 +15,7 @@ function fixture(titlesEnabled = true) {
     stream: async function* (): AsyncGenerator<{ type: string; data: Record<string, unknown> }> {
       yield {
         type: 'content.delta',
-        data: { partId: 'reply', kind: 'text', delta: '{"type":"text_delta","text":"Hello"}\n' },
+        data: { partId: 'reply', kind: 'text', delta: 'Hello' },
       };
     },
     result: async () => ({ status: 'completed', sessionEnded: false }),
@@ -95,11 +95,13 @@ test('plain source schedules persistence before a reply can be rendered', async 
         type: 'content.delta',
         data: { partId: 'reply', kind: 'text', delta: 'Primera parte' },
       };
-      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
         'Primera parte',
       );
       expect(f.changed.mock.calls.length).toBeGreaterThan(before);
-      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe('');
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
+        'Primera parte',
+      );
       yield {
         type: 'content.completed',
         data: { partId: 'reply', kind: 'text', value: 'Primera parte completa' },
@@ -108,7 +110,7 @@ test('plain source schedules persistence before a reply can be rendered', async 
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
   await f.run(f.chat, 'Question');
-  expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+  expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
     'Primera parte completa',
   );
   expect(f.send).toHaveBeenCalledTimes(1);
@@ -132,7 +134,7 @@ test('source persistence through the runner does not publish beyond the preview 
         expect(JSON.stringify(snapshot)).not.toContain('rawReply');
       }
     });
-    const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
+    const delta = 'a';
     f.send.mockImplementationOnce(async () => ({
       stream: async function* () {
         const baseline = publications;
@@ -145,7 +147,7 @@ test('source persistence through the runner does not publish beyond the preview 
           };
           expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
         }
-        expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+        expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
           delta.repeat(100),
         );
         previews = publications - baseline;

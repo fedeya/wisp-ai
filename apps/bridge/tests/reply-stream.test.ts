@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { ReplyProjection, ReplyStream } from '../src/reply-stream.ts';
-import { applyEvent, type Chat } from '../src/events.ts';
+import { LegacyReplyStream as ReplyStream } from '../src/legacy-reply.ts';
+import { type Chat } from '../src/events.ts';
 import { migrateReplies } from '../src/migrate-replies.ts';
 import { projectChats } from '../src/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
@@ -83,98 +83,6 @@ test('invalid references, conflicting keys and missing IDs fail once without gue
   assert.equal(reply.view().references.pin, undefined);
   assert.equal(reply.errors.length, 3);
 });
-test('hundreds of text deltas spend at most eight partial updates, recover completion, and never leak reasoning', () => {
-  const c = chat(),
-    projection = new ReplyProjection();
-  applyEvent(
-    c,
-    {
-      type: 'content.delta',
-      data: { partId: 'secret', kind: 'reasoning', delta: text('private') },
-    },
-    projection,
-  );
-  applyEvent(
-    c,
-    { type: 'content.delta', data: { partId: 'secret', delta: text('private2') } },
-    projection,
-  );
-  const state = projection.stream('answer');
-  let updates = 0;
-  for (let i = 0; i < 500; i++) {
-    state.reply.feed(text('a'));
-    if (projection.flush(c, i * 2000)) {
-      updates++;
-    }
-  }
-  assert.equal(updates, 8);
-  assert.equal(c.messages.length, 1);
-  applyEvent(
-    c,
-    {
-      type: 'content.completed',
-      data: { partId: 'answer', kind: 'text', value: text('a'.repeat(500) + ' final') },
-    },
-    projection,
-  );
-  assert.equal(c.messages.length, 1);
-  assert.equal(c.messages[0].text, 'a'.repeat(500) + ' final');
-  assert.equal(c.messages[0].streaming, false);
-  assert.ok(!JSON.stringify(c).includes('private'));
-});
-
-test('legacy reply title metadata stays invisible and cannot rename a conversation', () => {
-  const c = chat(),
-    projection = new ReplyProjection();
-  const stream = projection.stream('answer').reply;
-  stream.feed(record({ type: 'conversation_title', title: 'Next quest in Ratchet' }));
-  projection.flush(c, 0);
-  assert.notEqual(c.title, 'Next quest in Ratchet');
-  assert.notEqual(c.titleGenerated, true);
-  assert.equal(c.messages.length, 0);
-  stream.feed(text('Turn in your completed quest.'));
-  projection.flush(c, 1);
-  assert.equal(c.messages[0].text, 'Turn in your completed quest.');
-  stream.feed(record({ type: 'conversation_title', title: 'Do not overwrite' }));
-  projection.flush(c, 2000);
-  assert.notEqual(c.title, 'Next quest in Ratchet');
-});
-
-test('plain assistant prose recovers only on completion without duplicate messages or tool replay', () => {
-  const c = chat(),
-    projection = new ReplyProjection();
-  const prose = 'Revisé tu equipo.\n\nCompará las estadísticas antes de reemplazarlo.';
-  let received = '';
-  for (const delta of [prose.slice(0, 15), prose.slice(15)]) {
-    received += delta;
-    applyEvent(
-      c,
-      { type: 'content.delta', data: { partId: 'reply', kind: 'text', delta } },
-      projection,
-    );
-    assert.equal(c.messages[0].rawReply, received);
-    const state = createSessionState([c]);
-    state.activeChat = c.id;
-    assert.equal(
-      projectChats(state).chats[0].messages?.length,
-      0,
-      'undecoded source stays hidden while streaming',
-    );
-  }
-  applyEvent(
-    c,
-    { type: 'content.completed', data: { partId: 'reply', kind: 'text', value: prose } },
-    projection,
-  );
-  assert.equal(c.messages.length, 1);
-  assert.equal(c.messages[0].role, 'assistant');
-  assert.equal(c.messages[0].text, prose);
-  assert.equal(c.messages[0].streaming, false);
-  assert.equal(projection.stream('reply').reply.recoveredPlainText, true);
-  assert.deepEqual(c.messages[0].references, {});
-  assert.equal(projection.flush(c, Date.now(), true), false);
-});
-
 test('plain-text recovery never exposes malformed protocol or reasoning and stays bounded', () => {
   for (const raw of [
     '{"type":"text_delta","text":"unfinished',
@@ -190,17 +98,6 @@ test('plain-text recovery never exposes malformed protocol or reasoning and stay
     assert.equal(reply.recoveredPlainText, false, raw);
     assert.equal(reply.view().text, '', raw);
   }
-  const c = chat(),
-    projection = new ReplyProjection();
-  applyEvent(
-    c,
-    {
-      type: 'content.completed',
-      data: { partId: 'secret', kind: 'reasoning', value: 'private prose' },
-    },
-    projection,
-  );
-  assert.equal(c.messages.length, 0);
   const reply = new ReplyStream();
   reply.feed('x'.repeat(19999) + '😀more');
   reply.finish();

@@ -17,6 +17,7 @@ export function rebuildHistory(
         .map((p) => p.text || '')
         .join('\n');
       if (text) {
+        parts.beginTurn();
         const original = users[userIndex++];
         if (!original || original.text !== visibleUserText(text)) {
           return null;
@@ -27,6 +28,8 @@ export function rebuildHistory(
       applyEvent(rebuilt, event, parts);
     }
   }
+  parts.finish();
+  parts.flush(rebuilt, Date.now(), true);
   // Never replace local history if a snapshot is incomplete or differs from it.
   if (userIndex !== users.length || !userIndex) {
     return null;

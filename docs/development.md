@@ -186,8 +186,8 @@ how loaded skill results are retained in history and compacted.
 
 Specialized tools use Eve's native `deferred: true` definitions. `eve__search`
 returns their names and signatures; `eve__tool({ name, input })` executes them.
-Character reads, reference/target inspection and conversation naming stay directly
-listed. Skills and tool discovery do not change permissions: dynamic capability
+Character reads, reference/target inspection, conversation naming and reply
+presentation stay directly listed. Skills and tool discovery do not change permissions: dynamic capability
 definitions and bridge checks remain authoritative. Keep parameter details in tool
 schemas and enforceable constraints in code.
 
@@ -255,6 +255,17 @@ history and compaction. Capability flags still control tool availability. Bridge
 and `Turn timing` entries for receipt, admission and first visible text latency.
 
 ### Runtime boundaries
+
+Replies stream as ordinary Markdown text. The Eve tool `wisp__present_ui`
+inserts a complete, schema-validated native panel or declares inline entity
+references. The bridge projects text and panels into ordered message parts;
+presentation calls stay in Eve diagnostics but never create tool/activity rows.
+The same projection rebuilds event history, while SQLite preserves complete
+canonical text and panel parts independently of the bounded streaming previews.
+Component contracts live in `packages/protocol/src/ui-schema.ts` and
+`reply-presentation.ts`; adding a component extends that contract and its native
+renderer. The historical NDJSON reader is isolated in `legacy-reply.ts` and is
+used only for saved replies from earlier versions.
 
 The bridge entrypoint only starts the runtime and handles process signals.
 `runtime.ts` composes services; `packet-receiver.ts` owns game-session coordination,

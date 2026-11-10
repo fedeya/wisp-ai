@@ -1,368 +1,245 @@
-import { z } from 'zod';
-import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
-import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';
-import { conversationTitle } from './conversation-title.ts';
+import { replyPresentation, type ReplyPresentation } from '@wisp/protocol/reply-presentation';
+import type { ReferenceCatalog } from '@wisp/protocol/rich-reference';
+import type { Chat, Message } from './chat.ts';
 import type { ReplyPart } from './reply-tables.ts';
-const keySchema = z
-  .string()
-  .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
-  .refine((value) => !['__proto__', 'constructor', 'prototype'].includes(value));
-export function outsideCode(text: string, transform: (text: string) => string): string {
-  let result = '',
-    cursor = 0;
-  for (const match of text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g)) {
-    result += transform(text.slice(cursor, match.index)) + match[0];
-    cursor = match.index! + match[0].length;
-  }
-  return result + transform(text.slice(cursor));
-}
+import { setReplyPreview } from './reply-content.ts';
+export { outsideCode } from './legacy-reply.ts';
+
 export class ReplyStream {
-  buffer = '';
   text = '';
-  references: ReferenceCatalog = Object.create(null);
-  ui: UINode[] = [];
-  parts: ReplyPart[] = [];
-  private rawText = '';
-  recoveredPlainText = false;
-  errors: string[] = [];
   finished = false;
-  records = 0;
-  noTip = false;
-  title?: string;
-  private error(reason: string) {
-    if (this.errors.length < 8) {
-      this.errors.push(reason);
-    }
-  }
-  private line(raw: string) {
-    if (!raw.trim()) {
-      return;
-    }
-    try {
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        // Preserve a complete typed event if generation adds junk after its closing brace.
-        // Never interpret prose, code fences or a partial object as a reply event.
-        const trimmed = raw.trimStart();
-        if (!trimmed.startsWith('{')) {
-          throw new Error('Not an event');
-        }
-        let depth = 0,
-          quoted = false,
-          escaped = false,
-          end = 0;
-        for (let i = 0; i < trimmed.length; i++) {
-          const char = trimmed[i];
-          if (quoted) {
-            if (escaped) {
-              escaped = false;
-            } else if (char === '\\') {
-              escaped = true;
-            } else if (char === '"') {
-              quoted = false;
-            }
-          } else if (char === '"') {
-            quoted = true;
-          } else if (char === '{') {
-            depth++;
-          } else if (char === '}' && --depth === 0) {
-            end = i + 1;
-            break;
-          }
-        }
-        if (!end) {
-          throw new Error('Incomplete event');
-        }
-        data = JSON.parse(trimmed.slice(0, end));
-        this.error('Ignored trailing data after reply event');
-      }
-      if (
-        data.type === 'text_delta' &&
-        typeof data.text === 'string' &&
-        data.text.length <= 20000
-      ) {
-        const delta = data.text.slice(0, 20000 - this.text.length);
-        this.text += delta;
-        const last = this.parts.at(-1);
-        if (last?.type === 'text') {
-          last.text += delta;
-        } else if (delta) {
-          this.parts.push({ type: 'text', text: delta });
-        }
-        this.records++;
-      } else if (data.type === 'reference') {
-        const key = keySchema.parse(data.key),
-          reference = referenceSchema.parse(data);
-        if (Object.keys(this.references).length >= 64 && !this.references[key]) {
-          throw new Error('Reference limit reached');
-        }
-        if (
-          this.references[key] &&
-          JSON.stringify(this.references[key]) !== JSON.stringify(reference)
-        ) {
-          throw new Error('Reference key changed meaning');
-        }
-        this.references[key] = reference;
-        this.records++;
-      } else if (data.type === 'conversation_title') {
-        const title = conversationTitle(data.title);
-        if (!title) {
-          throw new Error('Invalid title');
-        }
-        this.title = title;
-        this.records++;
-      } else if (data.type === 'no_tip') {
-        this.noTip = true;
-        this.records++;
-      } else if (data.type === 'ui_node') {
-        const node = uiNode.parse(data.node);
-        const index = this.ui.findIndex((n) => n.id === node.id);
-        if (index < 0 && this.ui.length >= 48) {
-          throw new Error('UI node limit');
-        }
-        if (
-          index >= 0 &&
-          (this.ui[index].kind !== node.kind || this.ui[index].parent !== node.parent)
-        ) {
-          throw new Error('UI identity changed');
-        }
-        validateNode(node, this.ui);
-        const proposed =
-          index < 0 ? [...this.ui, node] : this.ui.map((old, i) => (i === index ? node : old));
-        if (JSON.stringify(proposed).length > 24000) {
-          throw new Error('UI payload limit');
-        }
-        if (index < 0) {
-          this.ui.push(node);
-          if (!node.parent) {
-            this.parts.push({ type: 'ui', id: node.id });
-          }
-        } else {
-          this.ui[index] = node;
-        }
-        this.records++;
-      } else {
-        this.error('Unknown reply event');
-      }
-    } catch {
-      this.error('Invalid reply event');
-    }
-  }
   feed(chunk: string) {
-    if (this.finished) {
-      return;
-    }
-    this.rawText += chunk.slice(0, 20000 - this.rawText.length);
-    this.buffer += chunk;
-    let newline;
-    while ((newline = this.buffer.indexOf('\n')) >= 0) {
-      this.line(this.buffer.slice(0, newline));
-      this.buffer = this.buffer.slice(newline + 1);
-    }
-    if (this.buffer.length > 65536) {
-      this.buffer = '';
-      this.error('Reply event too large');
+    if (!this.finished) {
+      this.text += chunk;
     }
   }
   finish() {
-    if (!this.finished) {
-      this.line(this.buffer);
-      this.buffer = '';
-      // Recover final assistant prose without replaying a turn or interpreting
-      // invented links. Malformed protocol/JSON stays hidden; reasoning is never fed here.
-      if (
-        !this.records &&
-        this.rawText.trim() &&
-        !/(?:^|\n)\s*(?:[[{]|```(?:json|jsonl|ndjson)\b|"(?:type|text|node|key)"\s*:)/i.test(
-          this.rawText,
-        ) &&
-        !/"type"\s*:/.test(this.rawText)
-      ) {
-        this.text = this.rawText.replace(/[\uD800-\uDBFF]$/, '');
-        this.parts = [{ type: 'text', text: this.text }];
-        this.recoveredPlainText = true;
-      }
-      this.finished = true;
-    }
-  }
-  private pendingText() {
-    // Preview only a recognized text event, never raw JSON or reference metadata.
-    const prefix = this.buffer.match(/^\s*\{\s*"type"\s*:\s*"text_delta"\s*,\s*"text"\s*:\s*"/);
-    if (!prefix) {
-      return '';
-    }
-    const raw = this.buffer.slice(prefix[0].length);
-    let end = 0;
-    while (end < raw.length) {
-      const char = raw[end];
-      if (char === '"') {
-        break;
-      }
-      if (char === '\\') {
-        const escape = raw[end + 1];
-        if (!escape) {
-          break;
-        }
-        if (escape === 'u') {
-          if (!/^[\da-f]{4}$/i.test(raw.slice(end + 2, end + 6))) {
-            break;
-          }
-          end += 6;
-        } else if ('"\\/bfnrt'.includes(escape)) {
-          end += 2;
-        } else {
-          return '';
-        }
-      } else {
-        if (char.charCodeAt(0) < 32) {
-          return '';
-        }
-        end++;
-      }
-    }
-    try {
-      const decoded: string = JSON.parse('"' + raw.slice(0, end) + '"');
-      return /[\uD800-\uDBFF]$/.test(decoded) ? decoded.slice(0, -1) : decoded;
-    } catch {
-      return '';
-    }
+    this.finished = true;
   }
   view() {
-    const renderText = (value: string) =>
-      outsideCode(value, (prose) => {
-        let visible = prose.replace(/\[\[ref:([a-zA-Z][a-zA-Z0-9_-]{0,63})\]\]/g, (token, key) =>
-          this.references[key] ? token : this.finished ? '(reference unavailable)' : '...',
-        );
-        const start = visible.lastIndexOf('[[');
-        if (
-          start >= 0 &&
-          !visible.slice(start).includes(']]') &&
-          ('[[ref:'.startsWith(visible.slice(start)) || visible.slice(start).startsWith('[[ref:'))
-        ) {
-          visible = visible.slice(0, start);
-        }
-        return visible;
-      });
-    const pending = this.pendingText().slice(0, 20000 - this.text.length);
-    const parts = this.parts.map((part) => ({ ...part }));
-    if (pending) {
-      const last = parts.at(-1);
-      if (last?.type === 'text') {
-        last.text += pending;
-      } else {
-        parts.push({ type: 'text', text: pending });
-      }
-    }
-    const visibleParts: ReplyPart[] = parts.map((part) =>
-      part.type === 'text' ? { ...part, text: renderText(part.text) } : part,
-    );
-    return {
-      text: renderText(this.text + pending),
-      parts: visibleParts,
-      references: { ...this.references },
-      ui: this.ui.map((node) => ({ ...node })),
-      streaming: !this.finished,
-    };
+    return { text: this.text, streaming: !this.finished };
   }
 }
 
+type TextPart = Extract<ReplyPart, { type: 'text' }>;
+type Segment = TextPart | { type: 'presentation'; callId: string };
+interface Group {
+  message: Message;
+  segments: Segment[];
+  lastAt: number;
+  updates: number;
+  signature: string;
+  force: boolean;
+}
+interface Presentation {
+  group: Group;
+  pending: boolean;
+  value?: ReplyPresentation;
+}
+
+// Project Eve's ordered text/tool events into native message parts. Presentation
+// calls occupy a stable position but never become visible tool/activity rows.
 export class ReplyProjection {
   sourceRevision = 0;
+  noTip = false;
   kinds = new Map<string, string>();
-  streams = new Map<
-    string,
-    { reply: ReplyStream; lastAt: number; updates: number; signature: string }
-  >();
-  stream(partId: string) {
+  streams = new Map<string, { reply: ReplyStream; group: Group; part: TextPart }>();
+  private groups: Group[] = [];
+  private presentations = new Map<string, Presentation>();
+  private references: ReferenceCatalog = Object.create(null);
+  private skipCalls = new Set<string>();
+
+  beginTurn() {
+    this.finish();
+    for (const group of this.groups) {
+      setReplyPreview(group.message, { ...group.message });
+    }
+    this.groups = [];
+    this.streams.clear();
+    this.kinds.clear();
+    this.presentations.clear();
+    this.skipCalls.clear();
+    this.references = Object.create(null);
+    this.noTip = false;
+  }
+
+  requestSkipTip(callId: string, automatic: boolean) {
+    if (automatic) {
+      this.skipCalls.add(callId);
+    }
+  }
+
+  private group(chat: Chat, id: string): Group {
+    const current = this.groups.at(-1);
+    if (current && chat.messages.at(-1) === current.message) {
+      return current;
+    }
+    const message: Message = {
+      id,
+      role: 'assistant',
+      phase: 'reply',
+      replyFormat: 'text',
+      text: '',
+      parts: [],
+      ui: [],
+      references: { ...this.references },
+      streaming: true,
+    };
+    const group: Group = {
+      message,
+      segments: [],
+      lastAt: -Infinity,
+      updates: 0,
+      signature: '',
+      force: false,
+    };
+    this.groups.push(group);
+    chat.messages.push(message);
+    setReplyPreview(message, null);
+    return group;
+  }
+
+  text(chat: Chat, partId: string, value: string | undefined, append: boolean) {
     let state = this.streams.get(partId);
     if (!state) {
-      state = { reply: new ReplyStream(), lastAt: -Infinity, updates: 0, signature: '' };
+      const group = this.group(chat, 'text-' + partId);
+      const part: TextPart = { type: 'text', text: '' };
+      state = { reply: new ReplyStream(), group, part };
+      group.segments.push(part);
+      group.updates = 0;
+      group.lastAt = -Infinity;
       this.streams.set(partId, state);
     }
-    return state;
-  }
-  capture(
-    chat: {
-      messages: {
-        id?: string;
-        role: string;
-        text: string;
-        phase?: string;
-        rawReply?: string;
-        streaming?: boolean;
-      }[];
-    },
-    partId: string,
-    value: string | undefined,
-    append: boolean,
-  ) {
-    const id = 'text-' + partId;
-    let message = chat.messages.find((entry) => entry.id === id);
-    if (!message) {
-      message = { id, role: 'assistant', phase: 'reply', text: '', rawReply: '', streaming: true };
-      chat.messages.push(message);
-    }
-    const raw = append
-      ? (message.rawReply ?? '') + (value ?? '')
-      : (value ?? message.rawReply ?? '');
-    if (message.rawReply !== raw || (!append && message.streaming)) {
-      message.rawReply = raw;
-      if (!append) {
-        message.streaming = false;
+    if (append) {
+      state.reply.feed(value ?? '');
+    } else {
+      if (value !== undefined) {
+        state.reply.text = value;
       }
-      this.sourceRevision++;
+      state.reply.finish();
+    }
+    state.part.text = state.reply.text;
+    this.update(state.group);
+  }
+
+  requestPresentation(chat: Chat, callId: string) {
+    if (this.presentations.has(callId)) {
+      return;
+    }
+    const group = this.group(chat, 'presentation-' + callId);
+    this.presentations.set(callId, { group, pending: true });
+    group.segments.push({ type: 'presentation', callId });
+    this.update(group);
+  }
+
+  settlePresentation(callId: string, output: unknown, success: boolean) {
+    if (this.skipCalls.delete(callId) && success) {
+      this.noTip = true;
+    }
+    const presentation = this.presentations.get(callId);
+    if (!presentation || !presentation.pending) {
+      return;
+    }
+    presentation.pending = false;
+    const parsed = success && replyPresentation.safeParse(output);
+    if (parsed && parsed.success) {
+      const value = parsed.data;
+      const ui = presentation.group.message.ui ?? [];
+      const compatible =
+        value.nodes.every((node) => {
+          const old = ui.find((entry) => entry.id === node.id);
+          return !old || (old.kind === node.kind && old.parent === node.parent);
+        }) &&
+        Object.entries(value.references).every(
+          ([key, reference]) =>
+            !this.references[key] ||
+            JSON.stringify(this.references[key]) === JSON.stringify(reference),
+        );
+      const nodes = new Map([...ui, ...value.nodes].map((node) => [node.id, node]));
+      const references = { ...this.references, ...value.references };
+      if (
+        compatible &&
+        nodes.size <= 48 &&
+        Object.keys(references).length <= 64 &&
+        JSON.stringify({ nodes: [...nodes.values()], references }).length <= 24000
+      ) {
+        presentation.value = value;
+        this.references = references;
+      }
+    }
+    for (const group of this.groups) {
+      group.force = true;
+      this.update(group);
     }
   }
-  flush(
-    chat: {
-      title?: string;
-      titleGenerated?: boolean;
-      proactive?: boolean;
-      inline?: boolean;
-      messages: {
-        id?: string;
-        role: string;
-        text: string;
-        phase?: string;
-        references?: ReferenceCatalog;
-        ui?: UINode[];
-        streaming?: boolean;
-      }[];
-    },
-    now = Date.now(),
-    force = false,
-  ) {
+
+  private update(group: Group) {
+    const parts: ReplyPart[] = [];
+    const nodes = new Map<string, NonNullable<Message['ui']>[number]>();
+    for (const segment of group.segments) {
+      if (segment.type === 'text') {
+        parts.push({ ...segment });
+      } else {
+        for (const node of this.presentations.get(segment.callId)?.value?.nodes ?? []) {
+          if (!node.parent && !nodes.has(node.id)) {
+            parts.push({ type: 'ui', id: node.id });
+          }
+          nodes.set(node.id, node);
+        }
+      }
+    }
+    // Canonical prose is kept verbatim, including beyond display limits. The
+    // display layer bounds text and resolves references without rewriting history.
+    group.message.text = parts
+      .flatMap((part) => (part.type === 'text' ? [part.text] : []))
+      .join('');
+    group.message.parts = parts;
+    group.message.ui = [...nodes.values()];
+    group.message.references = { ...this.references };
+    group.message.streaming =
+      [...this.streams.values()].some((state) => state.group === group && !state.reply.finished) ||
+      [...this.presentations.values()].some((entry) => entry.group === group && entry.pending);
+    this.sourceRevision++;
+  }
+
+  get hasContent() {
+    return this.groups.some(({ message }) => message.text.trim() || message.ui?.length);
+  }
+
+  finish() {
+    for (const state of this.streams.values()) {
+      state.reply.finish();
+    }
+    for (const presentation of this.presentations.values()) {
+      presentation.pending = false;
+    }
+    for (const group of this.groups) {
+      this.update(group);
+    }
+  }
+
+  flush(_chat: Chat, now = Date.now(), force = false) {
     let changed = false;
-    for (const [partId, state] of this.streams) {
-      const view = state.reply.view();
-      if (state.reply.title && !view.text && !view.ui.length && !state.reply.errors.length) {
+    for (const group of this.groups) {
+      if (
+        !force &&
+        !group.force &&
+        group.message.streaming &&
+        (group.updates >= 8 || now - group.lastAt < 600)
+      ) {
         continue;
       }
-      if (!view.text && !view.ui.length && !state.reply.finished) {
+      const signature = JSON.stringify(group.message);
+      if (signature === group.signature) {
         continue;
       }
-      if (!force && !state.reply.finished && (state.updates >= 8 || now - state.lastAt < 600)) {
-        continue;
+      group.signature = signature;
+      group.lastAt = now;
+      if (group.message.streaming) {
+        group.updates++;
       }
-      const signature = JSON.stringify(view);
-      if (state.signature === signature) {
-        continue;
-      }
-      state.signature = signature;
-      state.lastAt = now;
-      if (!state.reply.finished) {
-        state.updates++;
-      }
-      const id = 'text-' + partId;
-      let message = chat.messages.find((message) => message.id === id);
-      if (!message) {
-        message = { id, role: 'assistant', phase: 'reply', text: '' };
-        chat.messages.push(message);
-      }
-      Object.assign(message, view);
-      // Display failures belong to the renderer, never to persisted reply content.
+      group.force = false;
+      setReplyPreview(group.message, { ...group.message });
       changed = true;
     }
     return changed;

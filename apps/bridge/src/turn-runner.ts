@@ -141,7 +141,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         chat.eveId = undefined;
       }
       if (chat.proactive) {
-        chat.tipSkipped = [...parts.streams.values()].some((s) => s.reply.noTip);
+        chat.tipSkipped = parts.noTip;
       }
       if (result.status === 'failed') {
         throw new Error(
@@ -157,7 +157,7 @@ export function createTurnRunner(deps: TurnDependencies) {
             : 'done',
       );
       chat.unread = chat.id !== activeChat();
-      if (!parts.streams.size && chat.status === 'done' && !chat.proactive) {
+      if (!parts.hasContent && chat.status === 'done' && !chat.proactive) {
         chat.messages.push({ role: 'system', text: 'The turn completed without a text response.' });
       }
     } catch (error) {
@@ -200,12 +200,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         if (chat.usage) {
           chat.usage.compacting = false;
         }
-        for (const state of parts.streams.values()) {
-          state.reply.finish();
-          if (state.reply.recoveredPlainText) {
-            log('Recovered plain-text reply: ' + chat.id);
-          }
-        }
+        parts.finish();
         if (isCurrent(chat) && currentTransport() === owner) {
           parts.flush(chat, Date.now(), true);
         }

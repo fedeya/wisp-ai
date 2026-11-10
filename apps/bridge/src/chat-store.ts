@@ -92,7 +92,9 @@ export class ChatStore {
         .map((chat) => ({
           ...chat,
           messages: chat.messages.map((message) =>
-            message.streaming && message.rawReply !== undefined && this.saved.get(chat.id)?.state
+            message.streaming &&
+            (message.rawReply !== undefined || message.replyFormat === 'text') &&
+            this.saved.get(chat.id)?.state
               ? { ...message, streaming: false }
               : message,
           ),

@@ -84,7 +84,7 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
     state.activeChat = chat.id;
     const projection = new ReplyProjection(),
       gate = new SnapshotGate();
-    const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
+    const delta = 'a';
     let updates = 0;
     for (let index = 0; index < 100; index++) {
       vi.setSystemTime(index * 1000);
@@ -98,7 +98,7 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
       }
     }
     assert.equal(updates, 8);
-    assert.equal(chat.messages[0].rawReply, delta.repeat(100));
+    assert.equal(chat.messages[0].text, delta.repeat(100));
     assert.ok(!JSON.stringify(projectChats(state)).includes('rawReply'));
     applyEvent(
       chat,
