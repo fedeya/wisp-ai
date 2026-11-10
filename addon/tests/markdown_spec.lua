@@ -114,7 +114,7 @@ it(
 )
 
 it(
-    "renders real emphasis fonts and decorations, preserves code and reuses every pooled widget",
+    "highlights emphasis with game fonts, uses JetBrains Mono for code and reuses widgets",
     function()
         local env = helper.env()
         setfenv(1, env)
@@ -129,11 +129,14 @@ it(
         C.RenderMessageRow(row, chat, message, 400, true)
         assert(not row.text:IsShown())
         local block = row.markdown[1]
-        assert(block.fontPath:find("NotoSans-Bold.ttf", 1, true))
+        assert(block.fontPath == "Fonts\\FRIZQT__.TTF")
+        assert(block.tint[1] == 227 / 255 and block.tint[2] == 199 / 255)
         local italic, mono, strike = false, false, false
         for _, run in ipairs(block.runs) do
-            italic = italic or run.fontPath:find("NotoSans-Italic.ttf", 1, true)
-            mono = mono or run.fontPath:find("NotoSans-Mono.ttf", 1, true)
+            if run:GetText() == "suave" then
+                italic = run.fontPath == "Fonts\\FRIZQT__.TTF"
+            end
+            mono = mono or run.fontPath:find("JetBrainsMono-Regular.ttf", 1, true)
         end
         for _, decoration in ipairs(block.decorations) do
             strike = strike or decoration.height == 1
@@ -228,7 +231,39 @@ it("streaming prefixes stay renderable and preserve localized references beside 
     assert(pool[1].fontPath == "Fonts\\FRIZQT__.TTF", "localized font survives emphasis")
     host.markdownMeasure.GetUnboundedStringWidth = false
     C.Markdown.render(host, pool, "*Compatible*", nil, 200, 0)
-    assert(pool[1].fontPath:find("NotoSans-Italic.ttf", 1, true))
+    assert(pool[1].fontPath == "Fonts\\FRIZQT__.TTF")
+end)
+
+it("code falls back to the game font for unsupported scripts and missing font files", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    local host, pool = CreateFrame("Frame"), {}
+    for _, sample in ipairs({
+        "こんにちは",
+        "العربية",
+        "ไทย",
+        "你好",
+        "한국어",
+    }) do
+        C.Markdown.render(host, pool, "`" .. sample .. "`", nil, 300, 0)
+        assert(pool[1].fontPath == "Fonts\\FRIZQT__.TTF")
+        assert(helper.rendered(pool[1]) == sample)
+    end
+    C.Markdown.render(host, pool, "`Explosión de Fuego`", nil, 300, 0)
+    assert(pool[1].fontPath:find("JetBrainsMono-Regular.ttf", 1, true))
+    local setFont = pool[1].SetFont
+    pool[1].SetFont = function(self, path, ...)
+        if path:find("JetBrainsMono", 1, true) then
+            return false
+        end
+        return setFont(self, path, ...)
+    end
+    C.Markdown.render(host, pool, "`/cast Fuego`", nil, 300, 0)
+    assert(
+        pool[1].fontPath == "Fonts\\FRIZQT__.TTF",
+        "failed code font must not retain an old face"
+    )
 end)
 
 it("lays out and reuses heading fonts, references and wrapped body text in message rows", function()

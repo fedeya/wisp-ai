@@ -63,6 +63,10 @@ function methods:SetFontObject(font)
 end
 function methods:SetFont(path, size, flags)
     self.fontPath, self.fontSize, self.fontFlags = path, size, flags
+    return true
+end
+function methods:SetTextColor(...)
+    self.tint = { ... }
 end
 function methods:GetFont()
     return self.fontPath, self.fontSize, self.fontFlags

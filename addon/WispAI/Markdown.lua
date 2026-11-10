@@ -403,21 +403,21 @@ function M.blocks(value)
     return result, not not changed
 end
 
-local fontRoot = "Interface\\AddOns\\WispAI\\Fonts\\NotoSans-"
+local codeFont = "Interface\\AddOns\\WispAI\\Fonts\\JetBrainsMono-Regular.ttf"
+local emphasisColor = { 227 / 255, 199 / 255, 126 / 255 }
 local headingSizes = { 7, 5, 3, 2, 1, 0 }
 local function styleFont(font, span, level)
     font:SetFontObject(ChatFontNormal)
     local path, size, flags = ChatFontNormal:GetFont()
-    local style = span.code and "Mono"
-        or (
-            (span.bold or level) and (span.italic and "BoldItalic" or "Bold")
-            or (span.italic and "Italic")
-        )
-    -- Preserve the localized game font for CJK glyphs absent from the bundled Latin fonts.
-    if style and not span.text:find("[\228-\239]") then
-        path = fontRoot .. style .. ".ttf"
+    local height = size + (level and headingSizes[level] or 0)
+    -- Emphasis and headings keep the localized game face. Conservatively restrict
+    -- code to Latin/Greek/Cyrillic; unsupported scripts keep the game font too.
+    if span.code and not span.text:find("[\212-\255]") then
+        if font:SetFont(codeFont, height, flags) then
+            return
+        end
     end
-    font:SetFont(path, size + (level and headingSizes[level] or 0), flags)
+    font:SetFont(path, height, flags)
 end
 
 function M.hide(pool, start)
@@ -520,8 +520,11 @@ function M.render(host, pool, value, references, width, y, count)
                 run:SetNonSpaceWrap(true)
                 run:SetSpacing(3)
                 local color = block.level and C.Widgets.GOLD
+                    or (span.bold and emphasisColor)
                     or (
-                        (block.kind == "quote" or span.strike) and C.Widgets.MUTED or C.Widgets.TEXT
+                        (block.kind == "quote" or span.strike or span.italic)
+                            and C.Widgets.MUTED
+                        or C.Widgets.TEXT
                     )
                 run:SetTextColor(unpack(color))
                 run:ClearAllPoints()

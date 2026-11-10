@@ -1,14 +1,12 @@
-# Markdown fonts
+# Code font
 
-Noto Sans Bold, Italic and Bold Italic provide inline emphasis; Noto Sans Mono
-provides code text. Ordinary prose keeps the player's ChatFontNormal. CJK text
-keeps the localized game font, including inside styled spans.
+JetBrains Mono Regular 2.305 provides inline and fenced code text. Prose,
+headings and emphasis retain the player's ChatFontNormal; strong emphasis uses
+the existing gold highlight instead of another typeface.
 
-Sources: [Noto Sans](https://github.com/google/fonts/tree/main/ofl/notosans) and
-[Noto Sans Mono](https://github.com/google/fonts/tree/main/ofl/notosansmono).
-Both families use the SIL Open Font License 1.1, included alongside the fonts.
+The unchanged static TrueType font comes from the
+[JetBrains Mono project](https://github.com/JetBrains/JetBrainsMono/blob/master/fonts/ttf/JetBrainsMono-Regular.ttf).
+Its SIL Open Font License 1.1 is included in `OFL-JetBrainsMono.txt`.
 
-These are static TrueType instances of the upstream variable fonts, generated
-with fontTools 4.68.0 `fontTools.varLib.instancer.instantiateVariableFont` at
-`wdth=100`, `wght=700` (Bold/BoldItalic) or `wght=400` (Italic/Mono). All original
-glyphs and license/name metadata are retained; no subsetting is applied.
+Code conservatively uses this face for Latin, Greek and Cyrillic text. Other
+scripts and a failed font load fall back to the localized game font.

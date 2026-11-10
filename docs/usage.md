@@ -99,9 +99,11 @@ Use **Settings > Memory** to view, edit or forget notes. Deleting a chat does no
 ### Reading the answers
 
 Replies render headings, ordered and nested lists, read-only task checkboxes,
-quotes, separators, bold/italic emphasis, strikethrough and inline/fenced code.
-Code preserves literal text in a shaded monospace block. Web links show their
-address on hover; click to select and copy the URL with Ctrl+C. Game references
+quotes, separators, highlighted emphasis, strikethrough and inline/fenced code.
+Headings and emphasis keep the game's typeface, with gold highlighting for strong
+emphasis. Code preserves literal text in a shaded JetBrains Mono block, falling
+back to the game font for unsupported scripts or an unavailable font. Web links
+show their address on hover; click to select and copy the URL with Ctrl+C. Game references
 keep their native tooltips and actions. Formatting also applies when reopening
 older conversations, without regenerating or rewriting their replies.
 
