@@ -4,12 +4,19 @@ import { mkdtemp, readFile, writeFile, access, mkdir, rm, readdir } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client } from 'eve/client';
+import { installerBuildVersion } from './installer-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {
   throw Error('Run installer verification in a disposable Windows CI profile.');
 }
-const version = JSON.parse(await readFile('package.json', 'utf8')).version;
-const installer = path.resolve(process.argv[2] || `dist/WispAI-${version}-windows-x64-setup.exe`);
+const sourceVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
+const installer = path.resolve(
+  process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
+);
+const version = installerBuildVersion(
+  installer,
+  JSON.parse(await readFile(path.join(path.dirname(installer), 'latest.json'), 'utf8')),
+);
 const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-installer-'));
 if (!temporary.startsWith(path.resolve(tmpdir()) + path.sep)) {
   throw Error('Unsafe test directory.');
@@ -197,6 +204,7 @@ try {
   });
   await access(path.join(data, 'preserve-on-uninstall.txt'));
   const report = {
+    version,
     installer: true,
     protectedCredentials: true,
     bundledNode: true,

@@ -7,6 +7,7 @@
   "scripts": {
     "release": "release-it",
     "release:dry": "release-it --dry-run",
+    "release:notes": "node scripts/sync-release-notes.ts",
     "web:dev": "turbo run dev --filter=@wisp/web",
     "web:build": "turbo run build --filter=@wisp/web",
     "start": "turbo run start --filter=@wisp/bridge",

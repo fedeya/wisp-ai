@@ -62,9 +62,14 @@ leave the previous feed intact. Re-running a workflow generates a distinct build
   `/changelog/<version>` is a permanent link. The website and app use the same
   restricted Markdown renderer (headings, lists, links, images, code; raw HTML is
   escaped). Release notes currently remain in their authored language.
-- To correct published notes, edit the GitHub release body and synchronize the
-  notes field in its updater manifest. Preserve every other manifest field,
-  including installer URLs and signatures, so the website and app agree.
+- To correct notes, edit the archived Markdown and run
+  `pnpm release:notes v0.0.8 releases/0.0.8.md` to preview the correction, then
+  repeat with `--apply`. The command synchronizes the GitHub release body and
+  updater notes, preserves all other manifest fields (including URLs and
+  signatures), verifies the result and attempts rollback on failure. For the
+  current Nightly it also updates the moving feed; older Nightlies leave that
+  feed untouched. Run one release maintenance operation at a time, outside an
+  active release publication. Commit the corrected Markdown for traceability.
 - The web uses the public GitHub Releases API, cached for five minutes, with
   ten releases per page within each channel and separate failure states.
   Optionally set `GITHUB_RELEASES_TOKEN` on the web
@@ -73,3 +78,13 @@ leave the previous feed intact. Re-running a workflow generates a distinct build
 Both channels require the existing `TAURI_SIGNING_PRIVATE_KEY` Actions secret
 (and its password secret if configured). Never replace the checked-in public key
 to add a channel. GitHub Actions must have permission to create releases/tags.
+
+## Verify a downloaded build
+
+The release workflow and its post-release installer check both verify the build
+version from the `latest.json` next to the installer. Keep both files together
+when downloading an artifact. The manifest version and installer filename must
+match before installation begins, even when the source checkout still contains
+the stable version. The installer report includes the verified build version.
+Run this check only in the disposable Windows CI profile, never against a local
+installation or real WoW addon directory.
