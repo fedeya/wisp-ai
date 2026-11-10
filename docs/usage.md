@@ -131,6 +131,10 @@ snapshots. Reports expire after three minutes and reset on reload. Availability 
 kept separate from saved choices. A compact `integrations_context` block tells the
 agent what is unavailable or disabled for the current turn.
 
+### Inspecting party buffs
+
+Ask “Who in my party is missing a buff I can supply?” Wisp can load the `group` tools and call `wow__inspect_group` for a fresh reading of yourself and up to four party members, then check your learned spells and spell references. It can display the result in an ordinary reply card. Only complete, readable helpful-aura enumeration establishes exact spell-ID absence; offline, hidden, restricted, changed or truncated readings remain unknown. Raids are unsupported. This does not cast buffs, send messages, infer equivalent ranks or roles, or keep a background roster.
+
 ### Reading WoW chat
 
 In the in-game Wisp Settings, open **WoW chat history** to choose channels or clear the buffer. Say, yell, party, raid, instance and guild are enabled initially; whispers (incoming and outgoing), officer and public/custom channels are optional. Public/custom channels have individual checkboxes showing their current number and name (for example /1 General and /3 LookingForGroup). Select only the channels Wisp should capture. Selections follow names when numbers change, and new channels start disabled. The previous all-public-channels switch is replaced by these individual selections; reselect public channels after upgrading. Disabling a channel also removes its buffered messages.

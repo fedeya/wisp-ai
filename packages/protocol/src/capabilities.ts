@@ -120,6 +120,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read active and completed quests, and your reputations.',
   ],
   inspect_target: ['Inspect target', 'Read the selected NPC or enemy.'],
+  inspect_group: [
+    'Inspect party',
+    'Read current party members and visible helpful aura spell IDs; unreadable or partial observations remain unknown. Raids are unsupported.',
+  ],
   read_chat: [
     'Read WoW chat',
     'Read recent messages from the game chat channels enabled in Wisp settings.',

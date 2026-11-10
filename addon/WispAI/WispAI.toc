@@ -16,6 +16,7 @@ Integrations.lua
 ChatHistory.lua
 TrainingData.lua
 Training.lua
+Group.lua
 Character.lua
 Locations.lua
 AddonAdapters.lua

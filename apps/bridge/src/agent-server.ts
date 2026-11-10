@@ -404,6 +404,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 reference: 'inspect_reference',
                 progression: 'query_progression',
                 target: 'inspect_target',
+                group: 'inspect_group',
                 trainer: 'inspect_trainer',
                 training: 'query_training',
                 chat: 'read_chat',

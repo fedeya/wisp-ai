@@ -72,6 +72,9 @@ export const referenceInput = z.object({
   kind: z.enum(['item', 'spell', 'quest', 'talent']),
   id: z.number().int().positive(),
 });
+export const groupInput = z.strictObject({
+  spellIds: z.array(z.number().int().positive().max(2147483647)).max(20).default([]),
+});
 export const progressionInput = z.object({
   questIds: z.array(z.number().int().positive()).max(40).default([]),
   factionIds: z.array(z.number().int().positive()).max(20).default([]),
@@ -142,6 +145,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('npc_locations'), args: npcLocationsInput }),
   z.object({ kind: z.literal('settings'), args: settingsRead }),
   z.object({ kind: z.literal('reference'), args: referenceInput }),
+  z.strictObject({ kind: z.literal('group'), args: groupInput }),
   z.object({ kind: z.literal('progression'), args: progressionInput }),
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),

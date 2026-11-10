@@ -438,6 +438,9 @@ function inspectors.reference(args)
         tooltip = tooltip("quest:" .. args.id),
     }
 end
+function inspectors.group(args)
+    return C.ReadGroup(args)
+end
 function inspectors.target()
     assert(UnitExists("target"), "No target selected")
     local guid = UnitGUID("target")
@@ -783,7 +786,7 @@ function C.Inspect(inspection)
     local ok, data = pcall(read, inspection.args or {})
     return {
         capturedAt = time(),
-        character = UnitName("player"),
+        character = inspection.kind ~= "group" and UnitName("player") or nil,
         source = inspection.kind == "training" and "Bundled What's Training? Forever catalog"
             or "WoW addon live API",
         status = ok and "available" or "unavailable",

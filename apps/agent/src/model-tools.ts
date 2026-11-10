@@ -11,6 +11,7 @@ export const toolGroupNames = [
   'routines',
   'ui',
   'quests',
+  'group',
   'locations',
   'inventory',
   'training',
@@ -26,6 +27,7 @@ const groupTools: Record<(typeof toolGroupNames)[number], string[]> = {
   routines: ['wisp__manage_routine'],
   ui: [],
   quests: ['questie__get_quest', 'questie__get_quest_chain', 'wow__query_progression'],
+  group: ['wow__inspect_group'],
   locations: [
     'wow__inspect_map',
     'questie__find_npc_locations',
@@ -67,6 +69,8 @@ const groupDescriptions: Record<(typeof toolGroupNames)[number], string> = {
   ui: 'rich ui components controls cards interfaz botones',
   quests:
     'quest quests mission missions mision misiones chain prerequisites reputation cadena requisitos reputacion',
+  group:
+    'group party roster members helpful aura auras buff buffs missing grupo miembros beneficios',
   locations:
     'map npc trainer coordinates city service waypoint transmog transmogrifier location travel mapa ubicacion ciudad coordenadas entrenador',
   inventory:
