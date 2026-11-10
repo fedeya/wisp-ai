@@ -271,14 +271,11 @@ export class ReplyStream {
 export class ReplyProjection {
   sourceRevision = 0;
   kinds = new Map<string, string>();
-  streams = new Map<
-    string,
-    { reply: ReplyStream; lastAt: number; updates: number; signature: string }
-  >();
+  streams = new Map<string, { reply: ReplyStream; lastAt: number; signature: string }>();
   stream(partId: string) {
     let state = this.streams.get(partId);
     if (!state) {
-      state = { reply: new ReplyStream(), lastAt: -Infinity, updates: 0, signature: '' };
+      state = { reply: new ReplyStream(), lastAt: -Infinity, signature: '' };
       this.streams.set(partId, state);
     }
     return state;
@@ -343,7 +340,7 @@ export class ReplyProjection {
       if (!view.text && !view.ui.length && !state.reply.finished) {
         continue;
       }
-      if (!force && !state.reply.finished && (state.updates >= 8 || now - state.lastAt < 600)) {
+      if (!force && !state.reply.finished && now - state.lastAt < 600) {
         continue;
       }
       const signature = JSON.stringify(view);
@@ -352,9 +349,6 @@ export class ReplyProjection {
       }
       state.signature = signature;
       state.lastAt = now;
-      if (!state.reply.finished) {
-        state.updates++;
-      }
       const id = 'text-' + partId;
       let message = chat.messages.find((message) => message.id === id);
       if (!message) {

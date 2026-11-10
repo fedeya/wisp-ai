@@ -83,7 +83,7 @@ test('invalid references, conflicting keys and missing IDs fail once without gue
   assert.equal(reply.view().references.pin, undefined);
   assert.equal(reply.errors.length, 3);
 });
-test('hundreds of text deltas spend at most eight partial updates, recover completion, and never leak reasoning', () => {
+test('long replies keep refreshing at a bounded cadence, complete, and never leak reasoning', () => {
   const c = chat(),
     projection = new ReplyProjection();
   applyEvent(
@@ -103,12 +103,19 @@ test('hundreds of text deltas spend at most eight partial updates, recover compl
   let updates = 0;
   for (let i = 0; i < 500; i++) {
     state.reply.feed(text('a'));
-    if (projection.flush(c, i * 2000)) {
+    if (projection.flush(c, i * 100)) {
       updates++;
     }
   }
-  assert.equal(updates, 8);
+  assert.equal(updates, 84);
   assert.equal(c.messages.length, 1);
+  assert.equal(c.messages[0].text, 'a'.repeat(499));
+  assert.equal(c.messages[0].streaming, true);
+  assert.equal(projection.flush(c, 49800), false, 'unchanged content is not republished');
+  assert.equal(projection.flush(c, 49900), false, 'deltas within 600 ms remain batched');
+  assert.equal(projection.flush(c, 50400), true, 'the last pending delta is published');
+  assert.equal(c.messages[0].text, 'a'.repeat(500));
+  assert.equal(projection.flush(c, 51000), false, 'identical views are not republished');
   applyEvent(
     c,
     {
@@ -216,7 +223,8 @@ test('completed Markdown tables become native UI between prose and keep transcri
     record({ type: 'reference', key: 'robe', kind: 'item', id: 100, label: 'Toga' }) +
       text(markdown),
   );
-  assert.equal(reply.view().ui.length, 0, 'partial tables must not change the layout');
+  assert.equal(reply.view().ui.length, 0, 'generated tables remain presentation only');
+  assert.equal(display(reply).ui![0].kind, 'table', 'tables render before completion');
   reply.finish();
   assert.equal(
     reply.view().ui.length,
@@ -244,6 +252,80 @@ test('completed Markdown tables become native UI between prose and keep transcri
     { type: 'text', text: '\n\nDespués.' },
   ]);
   assert.deepEqual(display(reply), view, 'projection must be deterministic');
+});
+
+test('tables grow within an unfinished text event after many partial updates without rewriting history', () => {
+  const c = chat(),
+    projection = new ReplyProjection(),
+    reply = projection.stream('answer').reply,
+    state = createSessionState([c]);
+  state.activeChat = c.id;
+  let now = 0;
+  const feed = (chunk: string) => {
+    projection.capture(c, 'answer', chunk, true);
+    reply.feed(chunk);
+    assert.equal(projection.flush(c, now), true);
+    now += 600;
+    const stored = JSON.stringify(c);
+    const view = projectChats(state).chats[0].messages![0];
+    assert.equal(JSON.stringify(c), stored, 'rendering does not modify the stored reply');
+    assert.equal(c.messages[0].ui?.length, 0);
+    assert.equal(view.streaming, true);
+    return view;
+  };
+  for (let i = 0; i < 9; i++) {
+    feed(text('Antes. '));
+  }
+  let markdown = '\n\n| Pieza | Estado |\n';
+  assert.equal(
+    feed('{"type":"text_delta","text":"' + JSON.stringify(markdown).slice(1, -1)).ui?.length,
+    0,
+  );
+  let tableId: string | undefined;
+  for (const [delta, rows] of [
+    ['| --- | --- |\n| To', [['To', '']]],
+    ['ga | Equi', [['Toga', 'Equi']]],
+    [
+      'pada |\n| Capa | En bol',
+      [
+        ['Toga', 'Equipada'],
+        ['Capa', 'En bol'],
+      ],
+    ],
+    [
+      'sas |\n\nDespués.',
+      [
+        ['Toga', 'Equipada'],
+        ['Capa', 'En bolsas'],
+      ],
+    ],
+  ] as const) {
+    markdown += delta;
+    const view = feed(JSON.stringify(delta).slice(1, -1));
+    const table = view.ui![0];
+    assert.equal(table.kind, 'table');
+    if (table.kind === 'table') {
+      assert.deepEqual(table.rows, rows);
+    }
+    tableId ??= table.id;
+    assert.equal(table.id, tableId, 'the table keeps its identity while cells grow');
+    assert.equal(view.text, 'Antes. '.repeat(9) + markdown);
+    assert.equal(view.parts?.filter((part) => part.type === 'ui').length, 1);
+  }
+  reply.feed('"}\n');
+  reply.finish();
+  projection.capture(c, 'answer', '"}\n', true);
+  assert.equal(projection.flush(c, now), true);
+  const view = projectChats(state).chats[0].messages![0];
+  assert.equal(view.streaming, false);
+  assert.equal(view.ui![0].id, tableId);
+  assert.deepEqual(view.parts, [
+    { type: 'text', text: 'Antes. '.repeat(9) + '\n\n' },
+    { type: 'ui', id: tableId },
+    { type: 'text', text: '\n\nDespués.' },
+  ]);
+  assert.equal(c.messages[0].text, 'Antes. '.repeat(9) + markdown);
+  assert.equal(c.messages[0].ui?.length, 0);
 });
 
 test('table conversion handles escaped/code pipes, code fences, limits and existing component IDs', () => {
@@ -277,6 +359,7 @@ test('table conversion handles escaped/code pipes, code fences, limits and exist
   ]) {
     const stream = new ReplyStream();
     stream.feed(text(raw));
+    assert.equal(display(stream).ui?.length ?? 0, 0, 'streaming follows the same GFM limits');
     stream.finish();
     assert.equal(display(stream).ui?.length ?? 0, 0);
     const first = stream.view().parts[0];

@@ -114,7 +114,7 @@ test('plain source schedules persistence before a reply can be rendered', async 
   expect(f.send).toHaveBeenCalledTimes(1);
 });
 
-test('source persistence through the runner does not publish beyond the preview budget', async () => {
+test('source persistence through the runner respects the preview cadence throughout a reply', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   try {
@@ -137,7 +137,7 @@ test('source persistence through the runner does not publish beyond the preview 
       stream: async function* () {
         const baseline = publications;
         for (let index = 0; index < 100; index++) {
-          vi.setSystemTime((index + 1) * 1000);
+          vi.setSystemTime((index + 1) * 100);
           const changes = f.changed.mock.calls.length;
           yield {
             type: 'content.delta',
@@ -159,8 +159,8 @@ test('source persistence through the runner does not publish beyond the preview 
       result: async () => ({ status: 'completed', sessionEnded: false }),
     }));
     await f.run(f.chat, 'Question');
-    expect(previews).toBe(8);
-    expect(completed).toBe(9);
+    expect(previews).toBe(17);
+    expect(completed).toBe(18);
     expect(f.chat.status).toBe('done');
   } finally {
     vi.useRealTimers();
