@@ -4,30 +4,31 @@ local function setup(env)
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
-        C = {}
+        ns = helper.namespace()
         SlashCmdList = {}
         function time()
             return 1
         end
     end
     helper.addon("Core.lua", env)
-    helper.addon("RichUI.lua", env)
-    helper.addon("UI.lua", env)
-    helper.addon("Inline.lua", env)
+    helper.addon("UI/RichUI.lua", env)
+    helper.addon("UI/Window.lua", env)
+    helper.addon("Inline/Inline.lua", env)
     do
-        C.db = { sidebar = true, minimized = true, showTools = true, drafts = {} }
-        C.connected = true
-        C.active = "main"
-        C.chats = { { id = "main", title = "Main", messages = {}, status = "idle", activity = {} } }
+        ns.db = { sidebar = true, minimized = true, showTools = true, drafts = {} }
+        ns.connected = true
+        ns.active = "main"
+        ns.chats =
+            { { id = "main", title = "Main", messages = {}, status = "idle", activity = {} } }
         packets = {}
-        function C.Send(p)
+        function ns.Transport.Send(p)
             packets[#packets + 1] = p
         end
-        function C.Acknowledge() end
-        function C.Log(t)
+        function ns.Transport.Acknowledge() end
+        function ns.Core.Log(t)
             notice = t
         end
-        function C.Capture(sections)
+        function ns.Character.Capture(sections)
             return { fresh = true, sections = sections }
         end
         C_EncodingUtil = {
@@ -35,8 +36,8 @@ local function setup(env)
                 return t
             end,
         }
-        C.BuildUI()
-        C.InitInline()
+        ns.UI.BuildUI()
+        ns.Inline.InitInline()
         GameTooltip.GetItem = function()
             return "Robe", "|cff00ff00|Hitem:100:0|h[Robe]|h|r"
         end
@@ -51,7 +52,7 @@ it(
         setfenv(1, env)
         setup(env)
 
-        C.modelCatalog = {
+        ns.modelCatalog = {
             defaultModel = "luna",
             models = {
                 {
@@ -80,7 +81,7 @@ it(
                 })
             end,
         }
-        C.Refresh()
+        ns.UI.Refresh()
         local controls = UI_TEST.frames.WispAIChatModelControls
         assert(controls.model:GetText() == "Luna" and controls.effort:GetText() == "Effort: medium")
         controls.model.scripts.OnClick(controls.model)
@@ -91,32 +92,32 @@ it(
             packet.type == "chat_model_set" and packet.chat == "main" and packet.data.model == "sol"
         )
         assert(not controls.model.enabled and controls.model:GetText() == "Saving...")
-        C.draft:SetText("Wait")
+        ns.draft:SetText("Wait")
         local count = #packets
-        C.Submit()
+        ns.Chat.Submit()
         assert(#packets == count, "sending must wait until settings have been confirmed")
-        local chat = C.Current()
+        local chat = ns.Chat.Current()
         chat.modelSettings = { model = "sol", effort = "medium" }
         chat.modelRequestId = packet.requestId
-        C.Refresh()
-        assert(not C.modelPending.main and controls.model:GetText() == "Sol")
+        ns.UI.Refresh()
+        assert(not ns.modelPending.main and controls.model:GetText() == "Sol")
         controls.effort.scripts.OnClick(controls.effort)
         assert(options.ultra and not options.high, "efforts come from the selected model")
         options.ultra.choose()
         assert(packets[#packets].data.effort == "ultra")
         chat.modelRequestId = packets[#packets].requestId
         chat.modelSettings.effort = "ultra"
-        C.Refresh()
+        ns.UI.Refresh()
         chat.status = "working"
-        C.Refresh()
+        ns.UI.Refresh()
         assert(not controls.model.enabled and not controls.effort.enabled)
         chat.status = "done"
-        C.OpenInline()
+        ns.Inline.OpenInline()
         local inline = UI_TEST.frames.WispAIInlineModelControls
         inline.model.scripts.OnClick(inline.model)
         options.Sol.choose()
         packet = packets[#packets]
-        assert(packet.data.inline and packet.chat == C.inlineId and packet.chat ~= "main")
+        assert(packet.data.inline and packet.chat == ns.inlineId and packet.chat ~= "main")
         assert(
             chat.modelSettings.effort == "ultra",
             "inline choices must not mutate the main conversation"
@@ -129,7 +130,7 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
     setfenv(1, env)
     setup(env)
 
-    C.modelCatalog = {
+    ns.modelCatalog = {
         defaultModel = "api",
         models = {
             {
@@ -158,7 +159,7 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
             })
         end,
     }
-    C.Refresh()
+    ns.UI.Refresh()
     local controls = UI_TEST.frames.WispAIChatModelControls
     assert(controls.effort:GetText() == "Effort: Default")
     controls.effort.scripts.OnClick(controls.effort)
@@ -166,24 +167,24 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
     options.high.choose()
     local packet = packets[#packets]
     assert(packet.data.effort == "high" and packet.chat == "main")
-    local chat = C.Current()
+    local chat = ns.Chat.Current()
     chat.modelSettings = { model = "api", effort = "high" }
     chat.modelRequestId = packet.requestId
-    C.Refresh()
-    C.OpenInline()
+    ns.UI.Refresh()
+    ns.Inline.OpenInline()
     local inline = UI_TEST.frames.WispAIInlineModelControls
     inline.model.scripts.OnClick(inline.model)
     options.Toggle.choose()
     packet = packets[#packets]
-    local inlineChat = C.InlineCurrent()
+    local inlineChat = ns.Inline.InlineCurrent()
     inlineChat.modelSettings = { model = "toggle", effort = "provider-default" }
     inlineChat.modelRequestId = packet.requestId
-    C.Refresh()
+    ns.UI.Refresh()
     inline.effort.scripts.OnClick(inline.effort)
     assert(options.On and options.Off and options.Default)
     options.On.choose()
     packet = packets[#packets]
-    assert(packet.data.effort == "enabled" and packet.chat == C.inlineId)
+    assert(packet.data.effort == "enabled" and packet.chat == ns.inlineId)
     assert(chat.modelSettings.effort == "high")
 end)
 
@@ -196,10 +197,10 @@ it("inline item questions preserve named quality colors and full item payloads",
     GameTooltip.GetItem = function()
         return "Pergamino de Imbuir gelidaga", link
     end
-    C.OpenInline()
+    ns.Inline.OpenInline()
     UI_TEST.frames.WispAIInlineInput:SetText("Vale la pena usar esto?")
-    C.SendInline()
-    local chat = C.InlineCurrent()
+    ns.Inline.SendInline()
+    local chat = ns.Inline.InlineCurrent()
     assert(chat.messages[1].text == "Vale la pena usar esto?\n\n" .. link)
     local found
     for _, row in ipairs(UI_TEST.widgets) do
@@ -220,18 +221,18 @@ it("inline item questions preserve named quality colors and full item payloads",
     found.scripts.OnHyperlinkEnter(found, payload, "[Pergamino de Imbuir gelidaga]")
     assert(UI_TEST.tooltipLink == payload, "hover must retain the exact item variant")
     assert(
-        C.FormatText(
+        ns.UI.FormatText(
             "|cnIQ1:|Hitem:2901::::::::12:1482::14:::::::|h[Pico de minero]|h|r",
             nil,
             true
         ) == "|cnIQ1:|Hitem:2901::::::::12:1482::14:::::::|h[Pico de minero]|h|r"
     )
     assert(
-        C.FormatText("Code: `" .. link .. "`", nil, true):find("||cnIQ2:", 1, true),
+        ns.UI.FormatText("Code: `" .. link .. "`", nil, true):find("||cnIQ2:", 1, true),
         "code stays literal"
     )
     assert(
-        C.FormatText(link, nil, false):find("||cnIQ2:", 1, true),
+        ns.UI.FormatText(link, nil, false):find("||cnIQ2:", 1, true),
         "assistant output still requires declared references"
     )
 end)
@@ -243,20 +244,20 @@ it("a completed reply lights the minimized window until it is opened", function(
 
     local glow = UI_TEST.frames.WispAIReplyGlow
     local sounds = 0
-    C.db.sound = true
+    ns.db.sound = true
     SOUNDKIT = { TELL_MESSAGE = 3081 }
     function PlaySound(id, channel)
         assert(id == SOUNDKIT.TELL_MESSAGE and channel == "Master")
         sounds = sounds + 1
     end
     assert(not glow:IsShown())
-    C.chats[1].status = "working"
-    C.Refresh()
+    ns.chats[1].status = "working"
+    ns.UI.Refresh()
     assert(not glow:IsShown(), "working is not a completed reply")
     local function completed(rev)
         WispAI_Receive({
-            v = C.VERSION,
-            session = C.session,
+            v = ns.VERSION,
+            session = ns.session,
             rev = rev,
             connected = true,
             chats = {
@@ -265,23 +266,23 @@ it("a completed reply lights the minimized window until it is opened", function(
         })
     end
     completed(1)
-    assert(C.unread and glow:IsShown())
+    assert(ns.unread and glow:IsShown())
     assert(sounds == 1)
     assert(glow.mouseEnabled == false, "the glow must not block dragging or expanding")
     completed(2)
     assert(glow:IsShown(), "later snapshots must preserve the unread notification")
     assert(sounds == 1, "snapshots must not replay the sound")
-    C.SetMinimized(false)
-    assert(not C.unread and not glow:IsShown())
-    C.SetMinimized(true)
+    ns.UI.SetMinimized(false)
+    assert(not ns.unread and not glow:IsShown())
+    ns.UI.SetMinimized(true)
     assert(not glow:IsShown(), "minimizing again must not relight a read reply")
-    C.SetMinimized(false)
-    C.chats[1].status = "working"
+    ns.UI.SetMinimized(false)
+    ns.chats[1].status = "working"
     completed(3)
-    assert(not C.unread and not glow:IsShown(), "visible replies do not notify")
+    assert(not ns.unread and not glow:IsShown(), "visible replies do not notify")
     assert(sounds == 2)
-    C.db.sound = false
-    C.chats[1].status = "working"
+    ns.db.sound = false
+    ns.chats[1].status = "working"
     completed(4)
     assert(sounds == 2, "the sound setting must be respected")
 end)
@@ -293,33 +294,36 @@ it(
         setfenv(1, env)
         setup(env)
 
-        C.OpenInline()
-        assert(C.active == "main" and C.db.minimized and C.inlineId == nil)
+        ns.Inline.OpenInline()
+        assert(ns.active == "main" and ns.db.minimized and ns.inlineId == nil)
         local input = UI_TEST.frames.WispAIInlineInput
         input:SetText("Is this good?")
-        C.SendInline()
-        local id = C.inlineId
+        ns.Inline.SendInline()
+        local id = ns.inlineId
         local packet = packets[#packets]
         assert(
             packet.type == "inline_say"
                 and packet.chat == id
                 and packet.text:find("|Hitem:100:0", 1, true)
                 and packet.context.fresh
-                and C.active == "main"
+                and ns.active == "main"
         )
-        assert(#C.InlineCurrent().messages == 1 and C.InlineCurrent().status == "working")
+        assert(
+            #ns.Inline.InlineCurrent().messages == 1
+                and ns.Inline.InlineCurrent().status == "working"
+        )
         WispAI_Receive({
             v = 1,
-            session = C.session,
+            session = ns.session,
             rev = 1,
             connected = true,
             chats = { { id = "main", title = "Main", messages = {}, status = "idle" } },
         })
         assert(
-            C.InlineCurrent() and C.InlineCurrent().messages[1].text == packet.text,
+            ns.Inline.InlineCurrent() and ns.Inline.InlineCurrent().messages[1].text == packet.text,
             "stale snapshots must retain the optimistic inline message"
         )
-        local quick = C.InlineCurrent()
+        local quick = ns.Inline.InlineCurrent()
         quick.status = "done"
         quick.messages[2] = {
             id = "answer",
@@ -330,7 +334,7 @@ it(
                 { id = "armor", parent = "card", kind = "stat", label = "Armor", value = "12" },
             },
         }
-        C.RefreshInline()
+        ns.Inline.RefreshInline()
         assert(UI_TEST.frames.WispAIInline:IsShown())
         local expand
         for _, w in ipairs(UI_TEST.widgets) do
@@ -340,8 +344,8 @@ it(
         end
         expand.scripts.OnClick()
         assert(
-            C.active == id
-                and not C.db.minimized
+            ns.active == id
+                and not ns.db.minimized
                 and not quick.inline
                 and not UI_TEST.frames.WispAIInline:IsShown()
         )
@@ -366,7 +370,7 @@ it(
         GameTooltip.GetSpell = function()
             return "Nova", 122
         end
-        assert(C.CaptureHover():find("spell:122", 1, true))
+        assert(ns.Inline.CaptureHover():find("spell:122", 1, true))
         GameTooltip.GetSpell = function() end
         GameTooltip.GetUnit = function()
             return "Wolf", "mouseover"
@@ -375,7 +379,7 @@ it(
             assert(unit == "mouseover")
             return "Creature-0-1-2-3-4-5"
         end
-        assert(C.CaptureHover():find("unit:Creature-", 1, true))
+        assert(ns.Inline.CaptureHover():find("unit:Creature-", 1, true))
         bindings = { ["CTRL-Q"] = "OTHER_ACTION" }
         function GetBindingAction(key)
             return bindings[key] or ""
@@ -399,7 +403,7 @@ it(
         function IsAltKeyDown()
             return false
         end
-        C.BindInline()
+        ns.Inline.BindInline()
         local dialog
         for _, w in ipairs(UI_TEST.widgets) do
             if w.scripts.OnKeyDown and w ~= UI_TEST.frames.WispAIWindow then
@@ -412,7 +416,7 @@ it(
         assert(
             saved
                 and bindings["CTRL-H"] == "WISPAI_INLINE"
-                and C.db.inlineBinding == "CTRL-H"
+                and ns.db.inlineBinding == "CTRL-H"
                 and not dialog:IsShown()
         )
     end
@@ -453,8 +457,8 @@ it("a mouse binding dispatches over bag UI and preserves the hovered item", func
         assert(owner == UI_TEST.frames.WispAIInlineHotkey and UI_TEST.frames[name] and priority)
         overrides[key] = "CLICK " .. name .. ":" .. button
     end
-    C.db.inlineBinding = "BUTTON4"
-    C.RefreshInlineBindings()
+    ns.db.inlineBinding = "BUTTON4"
+    ns.Inline.RefreshInlineBindings()
     assert(overrides.BUTTON4 == "CLICK WispAIInlineHotkey:LeftButton")
     local function event(name, button)
         for _, w in ipairs(UI_TEST.widgets) do
@@ -478,14 +482,14 @@ it("a mouse binding dispatches over bag UI and preserves the hovered item", func
     before = #packets
     UI_TEST.frames.WispAIInlineHotkey.scripts.OnClick()
     assert(#packets == before, "global mouse and native click dispatch must not activate twice")
-    C.CloseInline()
+    ns.Inline.CloseInline()
     UI_TEST.now = 1
     UI_TEST.frames.WispAIInlineHotkey.scripts.OnClick()
     assert(
         UI_TEST.frames.WispAIInline:IsShown(),
         "direct click target works without Bindings.xml dispatch"
     )
-    C.CloseInline()
+    ns.Inline.CloseInline()
     base.BUTTON4 = "OTHER_ACTION"
     combat = true
     event("UPDATE_BINDINGS")
@@ -537,7 +541,7 @@ it(
             return combat
         end
         local function open()
-            C.BindInline()
+            ns.Inline.BindInline()
             local dialog
             for _, w in ipairs(UI_TEST.widgets) do
                 if w.scripts.OnKeyDown and w ~= UI_TEST.frames.WispAIWindow then
@@ -557,7 +561,7 @@ it(
                 and bindings["ALT-SHIFT-BUTTON5"] == "WISPAI_INLINE"
                 and not bindings["CTRL-J"]
         )
-        assert(C.db.inlineBinding == "ALT-SHIFT-BUTTON5" and not dialog:IsShown())
+        assert(ns.db.inlineBinding == "ALT-SHIFT-BUTTON5" and not dialog:IsShown())
         dialog.scripts.OnHide()
         assert(not capture:IsShown())
         dialog = open()

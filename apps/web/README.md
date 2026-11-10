@@ -72,7 +72,7 @@ Safari 16.4+, Firefox 128+); desktop previews use the current WebView2 runtime.
 4. Add `wisp.fedeya.sh` in the project's Domains settings and apply the DNS record
    Vercel provides.
 
-No environment variables are required. Download buttons use `/download`, which
+Download buttons use `/download`, which
 resolves the current stable Windows installer automatically. `NEXT_PUBLIC_INSTALL_URL`
 is an optional explicit override; leave it unset to follow new releases.
 
@@ -87,7 +87,35 @@ workspace and lockfile from the shared graph; do not maintain a second lockfile.
 manifest published for the desktop updater. The displayed version, structured
 data and social card use that manifest too. Release data and versioned pages
 revalidate every five minutes as requests arrive, without a new deployment.
-The first request after expiry can receive cached data while Next.js refreshes it.
+The five-minute timer is a fallback: the first request after expiry can receive
+cached data while Next.js refreshes it.
+
+### Refresh automatically after publication
+
+Set the same random `WEB_REVALIDATION_SECRET` in the Vercel project's **Production**
+environment and the GitHub repository's **Actions secrets**, then deploy the web
+once to activate `/api/revalidate`. Keep the secret server-side. No deployment is
+needed for subsequent releases.
+
+The **Refresh release website** workflow runs when a public release is published,
+edited or deleted, and can also be run manually. It expires the shared GitHub data
+cache and rendered pages through a single authenticated POST, with bounded retries
+for transient failures. CI does not request public pages. Immediate expiration with
+`{ expire: 0 }` makes the next visit wait for fresh data instead of serving the old
+release while refreshing in the background. The Windows release workflow calls the same
+script directly after publishing a Nightly: events produced by `GITHUB_TOKEN` do
+not start another release-event workflow. Stable drafts wait until publication.
+
+If Vercel's protection challenges the POST, create a **Protection Bypass for
+Automation** secret in Vercel's Deployment Protection settings and store it as the
+GitHub Actions secret `VERCEL_AUTOMATION_BYPASS_SECRET`. Both workflows pass it in
+the `x-vercel-protection-bypass` header when configured. This is separate from
+`WEB_REVALIDATION_SECRET`, which still authenticates the application endpoint.
+See [Vercel's automation bypass documentation](https://vercel.com/docs/deployment-protection/methods-to-bypass-deployment-protection/protection-bypass-automation).
+
+To refresh manually outside Actions, set `WEB_REVALIDATION_SECRET` and, if needed,
+`VERCEL_AUTOMATION_BYPASS_SECRET` in the shell, then run
+`node scripts/revalidate-web.ts`. `WEB_URL` overrides the target for an isolated preview.
 
 `/download` returns a temporary, non-cacheable redirect to the installer from the
 manifest. If the manifest is unavailable or invalid, it redirects to GitHub's

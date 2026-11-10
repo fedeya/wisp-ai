@@ -4,16 +4,16 @@ local function setup(env)
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
-        C = {}
+        ns = helper.namespace()
         SlashCmdList = {}
         function time()
             return 1
         end
     end
     helper.addon("Core.lua", env)
-    helper.addon("RichUI.lua", env)
-    helper.addon("UI.lua", env)
-    helper.addon("Inline.lua", env)
+    helper.addon("UI/RichUI.lua", env)
+    helper.addon("UI/Window.lua", env)
+    helper.addon("Inline/Inline.lua", env)
 end
 
 for _, surfaceName in ipairs({ "main", "inline" }) do
@@ -25,10 +25,10 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             setfenv(1, env)
             setup(env)
 
-            C.db = { sidebar = true, showTools = true, drafts = {} }
-            C.active = "chat"
-            C.connected = true
-            C.chats = {
+            ns.db = { sidebar = true, showTools = true, drafts = {} }
+            ns.active = "chat"
+            ns.connected = true
+            ns.chats = {
                 {
                     id = "chat",
                     title = "Test",
@@ -61,18 +61,18 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                     },
                 },
             }
-            C.BuildUI()
-            C.InitInline()
+            ns.UI.BuildUI()
+            ns.Inline.InitInline()
             surface = surfaceName
             if surface == "inline" then
-                C.inlineId = "chat"
+                ns.inlineId = "chat"
                 UI_TEST.frames.WispAIInline:Show()
             end
             function refresh()
                 if surface == "main" then
-                    C.Refresh()
+                    ns.UI.Refresh()
                 else
-                    C.RefreshInline()
+                    ns.Inline.RefreshInline()
                 end
             end
             function visibleRows()
@@ -145,14 +145,14 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 )
                 assert(UI_TEST.frames.WispAIProgress:GetHeight() == 34)
             end
-            C.db.showTools = false
+            ns.db.showTools = false
             refresh()
             assert(
                 findRow("Checking gear").author:IsShown(),
                 "hiding tools must move the header onto visible text"
             )
             assert(findRow("Second answer").author:IsShown())
-            C.db.showTools = true
+            ns.db.showTools = true
             refresh()
             assert(findRow("Reading spells").author:IsShown())
             assert(not findRow("Checking gear").author:IsShown())
@@ -167,7 +167,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 "user bubbles sit on the right"
             )
             assert(user:GetWidth() < findRow("Checking gear"):GetWidth())
-            table.insert(C.chats[1].messages, 3, {
+            table.insert(ns.chats[1].messages, 3, {
                 id = "t1b",
                 role = "tool",
                 text = "Reading talents",
@@ -178,15 +178,15 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(
                 group.disclosure:IsShown() and not group.text:GetText():find("completed", 1, true)
             )
-            assert(#C.chats[1].messages == 9, "grouping must not rewrite saved history")
+            assert(#ns.chats[1].messages == 9, "grouping must not rewrite saved history")
             group.disclosure.scripts.OnClick()
             assert(group.text:GetText():find("Reading spells - completed", 1, true))
             assert(group.text:GetText():find("Reading talents - running", 1, true))
             group.disclosure.scripts.OnClick()
             assert(not group.text:GetText():find("Reading spells - completed", 1, true))
-            C.chats[1].messages =
+            ns.chats[1].messages =
                 { { id = "long", role = "assistant", text = string.rep("Long reply ", 1000) } }
-            C.chats[1].status = "done"
+            ns.chats[1].status = "done"
             refresh()
             local scroll, jump
             if surface == "main" then
@@ -204,7 +204,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             end
             refresh()
             assert(not jump:IsShown(), "scrolling up alone is not a new message")
-            C.chats[1].messages[1].text = C.chats[1].messages[1].text .. "New streamed text"
+            ns.chats[1].messages[1].text = ns.chats[1].messages[1].text .. "New streamed text"
             refresh()
             assert(
                 jump:IsShown() and scroll:GetVerticalScroll() == 0,

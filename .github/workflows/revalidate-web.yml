@@ -1,0 +1,27 @@
+name: Refresh release website
+on:
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: refresh-release-website
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.draft
+    runs-on: ubuntu-latest
+    steps:
+      # Use the maintained refresh script, including for releases with older tags.
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.22.1'
+      - name: Expire website release data
+        run: node scripts/revalidate-web.ts
+        env:
+          WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

@@ -17,7 +17,7 @@ local function setupTalents(env)
         end
     end
     do
-        C = {}
+        ns = helper.namespace()
         function UnitName()
             return "Testmage"
         end
@@ -80,7 +80,9 @@ local function setupTalents(env)
             end,
         }
     end
-    helper.addon("Character.lua", env)
+    helper.addon("Character/Capture.lua", env)
+    helper.addon("Character/Inspect.lua", env)
+    helper.addon("Actions/Game.lua", env)
 end
 
 local function setupSnapshot(env)
@@ -91,7 +93,7 @@ local function setupSnapshot(env)
         end
     end
     do
-        C = {}
+        ns = helper.namespace()
         function time()
             return 123
         end
@@ -119,7 +121,7 @@ local function setupCore(env)
         end
     end
     do
-        C = {}
+        ns = helper.namespace()
         function time()
             return 123
         end
@@ -143,7 +145,7 @@ it(
         setfenv(1, env)
         setupFrame(env)
         do
-            C = {}
+            ns = helper.namespace()
             SlashCmdList = {}
             now = 0
             function time()
@@ -162,7 +164,7 @@ it(
         helper.addon("Core.lua", env)
 
         local sent = {}
-        C.Send = function(p)
+        ns.Transport.Send = function(p)
             sent[#sent + 1] = p
         end
         local old = { role = "assistant", text = "old" }
@@ -180,19 +182,19 @@ it(
                 return visible
             end,
         }
-        C.BeginResponseTiming("chat", "m", 0)
-        C.responseTiming.chat.acknowledgedAt = 1
-        C.RecordFirstText(chat, old, row)
+        ns.Transport.BeginResponseTiming("chat", "m", 0)
+        ns.responseTiming.chat.acknowledgedAt = 1
+        ns.Transport.RecordFirstText(chat, old, row)
         assert(#callbacks == 0)
         now = 3
-        C.RecordFirstText(chat, answer, row)
+        ns.Transport.RecordFirstText(chat, answer, row)
         callbacks[1]()
         assert(#sent == 0, "hidden text is not displayed text")
         visible = true
-        C.RecordFirstText(chat, answer, row)
+        ns.Transport.RecordFirstText(chat, answer, row)
         callbacks[2]()
         assert(#sent == 1 and sent[1].data.totalMs == 3000 and sent[1].data.afterSendingMs == 2000)
-        C.RecordFirstText(chat, answer, row)
+        ns.Transport.RecordFirstText(chat, answer, row)
         assert(#callbacks == 2, "measure only the first display")
     end
 )
@@ -204,7 +206,7 @@ it(
         setfenv(1, env)
         setupTalents(env)
 
-        local t = C.Capture({ "talents" }).sections.talents
+        local t = ns.Character.Capture({ "talents" }).sections.talents
         assert(t.status == "available")
         local d = t.data
         assert(
@@ -222,7 +224,7 @@ it(
         )
         free = 0
         pending = false
-        d = C.Capture({ "talents" }).sections.talents.data
+        d = ns.Character.Capture({ "talents" }).sections.talents.data
         assert(d.unspentStatus == "known" and d.unspentPoints == 0, "zero is a valid fresh reading")
         assert(d.previewUnspentPoints == nil)
     end
@@ -238,17 +240,17 @@ it(
         C_Traits.GetTreeCurrencyInfo = function()
             error("not ready")
         end
-        local d = C.Capture({ "talents" }).sections.talents.data
+        local d = ns.Character.Capture({ "talents" }).sections.talents.data
         assert(d.unspentStatus == "unknown" and d.unspentPoints == nil and #d.selected == 1)
         C_Traits.GetTreeCurrencyInfo = function(config, tree)
             return { { traitCurrencyID = tree, quantity = 1, spent = 0, maxQuantity = 1 } }
         end
-        d = C.Capture({ "talents" }).sections.talents.data
+        d = ns.Character.Capture({ "talents" }).sections.talents.data
         assert(d.unspentStatus == "unknown" and d.unspentPoints == nil and #d.currencies == 2)
         C_Traits.GetTreeCurrencyInfo = function()
             return {}
         end
-        d = C.Capture({ "talents" }).sections.talents.data
+        d = ns.Character.Capture({ "talents" }).sections.talents.data
         assert(d.unspentStatus == "unknown" and d.unspentPoints == nil)
     end
 )
@@ -258,7 +260,7 @@ it("character sections are read only on demand and every call is fresh", functio
     setfenv(1, env)
     setupFrame(env)
     do
-        C = {}
+        ns = helper.namespace()
         calls = 0
         currentLevel = 10
         function UnitName()
@@ -296,14 +298,16 @@ it("character sections are read only on demand and every call is fresh", functio
             return 100
         end
     end
-    helper.addon("Character.lua", env)
+    helper.addon("Character/Capture.lua", env)
+    helper.addon("Character/Inspect.lua", env)
+    helper.addon("Actions/Game.lua", env)
 
     assert(calls == 0)
-    local s = C.Capture({ "character" })
+    local s = ns.Character.Capture({ "character" })
     assert(s.sections.character.data.level == 10)
     assert(calls == 1)
     currentLevel = 11
-    local t = C.Capture({ "character" })
+    local t = ns.Character.Capture({ "character" })
     assert(t.sections.character.data.level == 11)
     assert(calls == 2)
 end)
@@ -313,7 +317,7 @@ it("known spells are returned and missing talent APIs stay unknown, never zero",
     setfenv(1, env)
     setupFrame(env)
     do
-        C = {}
+        ns = helper.namespace()
         function UnitName()
             return "Testmage"
         end
@@ -333,9 +337,11 @@ it("known spells are returned and missing talent APIs stay unknown, never zero",
             end,
         }
     end
-    helper.addon("Character.lua", env)
+    helper.addon("Character/Capture.lua", env)
+    helper.addon("Character/Inspect.lua", env)
+    helper.addon("Actions/Game.lua", env)
 
-    local s = C.Capture({ "spells", "talents" })
+    local s = ns.Character.Capture({ "spells", "talents" })
     assert(s.sections.spells.data.known[1].id == 122)
     assert(s.sections.spells.data.known[1].name == "Frost Nova")
     assert(s.sections.talents.status == "unavailable")
@@ -347,37 +353,37 @@ it("an older bridge snapshot cannot erase an optimistic message", function()
     setfenv(1, env)
     setupSnapshot(env)
 
-    C.db = { drafts = {} }
-    C.Refresh = function() end
-    C.Send = function(p)
+    ns.db = { drafts = {} }
+    ns.UI.Refresh = function() end
+    ns.Transport.Send = function(p)
         SENT = p
     end
-    C.Acknowledge = function() end
-    C.active = "chat"
-    C.chats = { { id = "chat", title = "test", status = "idle", messages = {} } }
-    C.draft = {
+    ns.Transport.Acknowledge = function() end
+    ns.active = "chat"
+    ns.chats = { { id = "chat", title = "test", status = "idle", messages = {} } }
+    ns.draft = {
         GetText = function()
             return "hello"
         end,
         SetText = function() end,
     }
-    C.Submit()
+    ns.Chat.Submit()
     local id = SENT.messageId
-    assert(C.Current().messages[1].text == "hello")
+    assert(ns.Chat.Current().messages[1].text == "hello")
     SNAPSHOT = {
         v = 1,
-        session = C.session,
+        session = ns.session,
         rev = 1,
         chats = {
             { id = "chat", title = "test", status = "idle", messages = {} },
         },
     }
     WispAI_Receive("")
-    assert(C.Current().messages[1].text == "hello")
-    assert(C.pendingMessages[id])
+    assert(ns.Chat.Current().messages[1].text == "hello")
+    assert(ns.pendingMessages[id])
     SNAPSHOT = {
         v = 1,
-        session = C.session,
+        session = ns.session,
         rev = 2,
         chats = {
             {
@@ -391,8 +397,8 @@ it("an older bridge snapshot cannot erase an optimistic message", function()
         },
     }
     WispAI_Receive("")
-    assert(#C.Current().messages == 1)
-    assert(C.pendingMessages[id] == nil)
+    assert(#ns.Chat.Current().messages == 1)
+    assert(ns.pendingMessages[id] == nil)
 end)
 
 it("each sent message captures only character and location automatically", function()
@@ -400,7 +406,7 @@ it("each sent message captures only character and location automatically", funct
     setfenv(1, env)
     setupFrame(env)
     do
-        C = {}
+        ns = helper.namespace()
         function time()
             return 123
         end
@@ -414,29 +420,29 @@ it("each sent message captures only character and location automatically", funct
     end
     helper.addon("Core.lua", env)
 
-    C.db = { drafts = {} }
-    C.Refresh = function() end
-    C.active = "chat"
-    C.chats = { { id = "chat", title = "test", status = "idle", messages = {} } }
-    C.draft = {
+    ns.db = { drafts = {} }
+    ns.UI.Refresh = function() end
+    ns.active = "chat"
+    ns.chats = { { id = "chat", title = "test", status = "idle", messages = {} } }
+    ns.draft = {
         GetText = function()
             return "hello"
         end,
         SetText = function() end,
     }
     local captures = 0
-    C.Capture = function(sections)
+    ns.Character.Capture = function(sections)
         captures = captures + 1
         assert(#sections == 2 and sections[1] == "character" and sections[2] == "location")
         return { capturedAt = captures }
     end
-    C.Send = function(packet)
+    ns.Transport.Send = function(packet)
         SENT = packet
     end
-    C.Submit()
+    ns.Chat.Submit()
     assert(captures == 1 and SENT.context.capturedAt == 1)
-    C.Current().status = "done"
-    C.Submit()
+    ns.Chat.Current().status = "done"
+    ns.Chat.Submit()
     assert(captures == 2 and SENT.context.capturedAt == 2, "a new turn must carry a new snapshot")
 end)
 
@@ -445,24 +451,24 @@ it("deleted conversations stay removed when an older snapshot arrives", function
     setfenv(1, env)
     setupSnapshot(env)
 
-    C.db = { drafts = { a = "draft" } }
-    C.Refresh = function() end
-    C.Send = function(p)
+    ns.db = { drafts = { a = "draft" } }
+    ns.UI.Refresh = function() end
+    ns.Transport.Send = function(p)
         SENT = p
     end
-    C.Acknowledge = function() end
-    C.active = "a"
-    C.chats = {
+    ns.Transport.Acknowledge = function() end
+    ns.active = "a"
+    ns.chats = {
         { id = "a", messages = {}, status = "idle" },
         { id = "b", messages = {}, status = "idle" },
     }
-    C.DeleteChat("a")
-    assert(C.active == "b")
-    assert(C.db.drafts.a == nil)
+    ns.Chat.DeleteChat("a")
+    assert(ns.active == "b")
+    assert(ns.db.drafts.a == nil)
     assert(SENT.type == "delete" and SENT.chat == "a" and SENT.nextChat == "b")
     SNAPSHOT = {
         v = 1,
-        session = C.session,
+        session = ns.session,
         rev = 1,
         activeChat = "a",
         chats = {
@@ -471,8 +477,8 @@ it("deleted conversations stay removed when an older snapshot arrives", function
         },
     }
     WispAI_Receive("")
-    assert(#C.chats == 1 and C.chats[1].id == "b")
-    assert(C.active == "b")
+    assert(#ns.chats == 1 and ns.chats[1].id == "b")
+    assert(ns.active == "b")
 end)
 
 it(
@@ -482,17 +488,17 @@ it(
         setfenv(1, env)
         setupCore(env)
 
-        C.db = { drafts = {} }
-        C.Send = function(packet)
+        ns.db = { drafts = {} }
+        ns.Transport.Send = function(packet)
             SENT = packet
         end
-        C.Acknowledge = function() end
-        C.SetCapability("tool:inspect_target", false)
+        ns.Transport.Acknowledge = function() end
+        ns.Chat.SetCapability("tool:inspect_target", false)
         local id = SENT.requestId
         assert(SENT.type == "capability_set" and SENT.enabled == false)
         SNAPSHOT = {
             v = 1,
-            session = C.session,
+            session = ns.session,
             rev = 1,
             capabilities = {
                 entries = { { id = "tool:inspect_target", enabled = true } },
@@ -501,12 +507,12 @@ it(
         }
         WispAI_Receive("")
         assert(
-            C.capabilityPending["tool:inspect_target"].enabled == false,
+            ns.capabilityPending["tool:inspect_target"].enabled == false,
             "a stale authoritative checkbox must not undo a pending toggle"
         )
         SNAPSHOT = {
             v = 1,
-            session = C.session,
+            session = ns.session,
             rev = 2,
             capabilities = {
                 entries = { { id = "tool:inspect_target", enabled = false } },
@@ -515,12 +521,13 @@ it(
         }
         WispAI_Receive("")
         assert(
-            C.capabilityPending["tool:inspect_target"] == nil and C.capabilities[1].enabled == false
+            ns.capabilityPending["tool:inspect_target"] == nil
+                and ns.capabilities[1].enabled == false
         )
-        C.SetCapability("tool:inspect_target", true)
+        ns.Chat.SetCapability("tool:inspect_target", true)
         SNAPSHOT = {
             v = 1,
-            session = C.session,
+            session = ns.session,
             rev = 3,
             capabilities = {
                 entries = { { id = "tool:inspect_target", enabled = false } },
@@ -529,7 +536,8 @@ it(
         }
         WispAI_Receive("")
         assert(
-            C.capabilityPending["tool:inspect_target"] == nil and C.capabilityError == "Save failed"
+            ns.capabilityPending["tool:inspect_target"] == nil
+                and ns.capabilityError == "Save failed"
         )
     end
 )
@@ -541,19 +549,19 @@ it(
         setfenv(1, env)
         setupCore(env)
 
-        C.db = { drafts = {} }
-        C.Send = function(packet)
+        ns.db = { drafts = {} }
+        ns.Transport.Send = function(packet)
             SENT = packet
         end
-        C.Acknowledge = function() end
+        ns.Transport.Acknowledge = function() end
         local calls = 0
-        C.PerformAction = function(action)
+        ns.Actions.PerformAction = function(action)
             calls = calls + 1
             return { status = "completed" }
         end
         SNAPSHOT = {
             v = 1,
-            session = C.session,
+            session = ns.session,
             rev = 1,
             requests = {
                 { id = "action-1", chat = "chat", action = { kind = "create_macro", args = {} } },
@@ -564,7 +572,7 @@ it(
         SNAPSHOT.rev = 2
         WispAI_Receive("")
         assert(calls == 1, "transport replay must never repeat a mutation")
-        C.PerformAction = function()
+        ns.Actions.PerformAction = function()
             calls = calls + 1
             error("provider failed")
         end

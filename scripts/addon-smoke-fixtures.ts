@@ -11,7 +11,18 @@ export function addonSmokeFixtures(root: string) {
       throw Error(to_jsstring(lua.lua_tolstring(L, -1)));
     }
   };
-  run(`C={}; function time()return 123 end; function GetRealmName()return 'FixtureRealm'end; function UnitFactionGroup()return'Horde'end
+  run(`ns={Core = {},
+Chat = {},
+Transport = {},
+Character = {},
+Actions = {},
+Integrations = {},
+ChatHistory = {},
+Settings = {},
+UI = {},
+Inline = {},
+Panels = {},
+Advice = {}}; function time()return 123 end; function GetRealmName()return 'FixtureRealm'end; function UnitFactionGroup()return'Horde'end
     C_AddOns={GetAddOnMetadata=function()return'fixture'end}
     C_Map={GetBestMapForUnit=function()return 1454 end,GetMapInfo=function(id)if id==1454 then return{name='Orgrimmar'}end end,GetAreaInfo=function()return'Orgrimmar'end}
     local quests={ [600001]={name='Fixture quest',requiredLevel=10,preQuestGroup={600002},objectives={object={{99,'Fixture chest'}}}}, [600002]={name='Fixture prerequisite',childQuests={600001}} }
@@ -21,17 +32,21 @@ export function addonSmokeFixtures(root: string) {
     Syndicator={API={IsReady=function()return true end,GetInventoryInfoByItemID=function(id,realm,faction)assert(id==123 and realm and faction);return{characters={{character='FixtureAlt',realmNormalized='FixtureRealm',bags=2,bank=4,mail=1,equipped=0,auctions=3}},guilds={}}end}}
     Auctionator={API={v1={GetAuctionPriceByItemID=function(_,id)if id==123 then return 450 end end,GetAuctionAgeByItemID=function(_,id)if id==123 then return 3 end end}}}
   `);
-  for (const file of ['Locations.lua', 'AddonAdapters.lua', 'Integrations.lua']) {
+  for (const file of [
+    'Integrations/Locations.lua',
+    'Integrations/AddonAdapters.lua',
+    'Integrations/Integrations.lua',
+  ]) {
     run(
-      `assert(load(${JSON.stringify(readFileSync(root + '/addon/WispAI/' + file, 'utf8'))}))('WispAI',C)`,
+      `assert(load(${JSON.stringify(readFileSync(root + '/addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,
     );
   }
-  run(`RESULT={ report=C.IntegrationReport(), inspections={
-    questie_quest=C.InspectIntegration({kind='questie_quest',args={questId=600001}}),
-    questie_chain=C.InspectIntegration({kind='questie_chain',args={questId=600001,direction='both',maxDepth=2,limit=15}}),
-    object_locations=C.InspectIntegration({kind='object_locations',args={objectId=99,mapId=1454}}),
-    stored_item=C.InspectIntegration({kind='stored_item',args={itemId=123,includeGuild=false,limit=20}}),
-    item_prices=C.InspectIntegration({kind='item_prices',args={itemIds={123,999}}})
+  run(`RESULT={ report=ns.Integrations.IntegrationReport(), inspections={
+    questie_quest=ns.Integrations.InspectIntegration({kind='questie_quest',args={questId=600001}}),
+    questie_chain=ns.Integrations.InspectIntegration({kind='questie_chain',args={questId=600001,direction='both',maxDepth=2,limit=15}}),
+    object_locations=ns.Integrations.InspectIntegration({kind='object_locations',args={objectId=99,mapId=1454}}),
+    stored_item=ns.Integrations.InspectIntegration({kind='stored_item',args={itemId=123,includeGuild=false,limit=20}}),
+    item_prices=ns.Integrations.InspectIntegration({kind='item_prices',args={itemIds={123,999}}})
   } }`);
   function value(index: number): unknown {
     const type = lua.lua_type(L, index);

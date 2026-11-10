@@ -7,7 +7,7 @@ end
 
 it("every catalog entry points inside a shipped uncompressed RGBA atlas", function()
     local indices = {}
-    for index in read("addon/WispAI/EmojiData.lua"):gmatch(" = (%d+),") do
+    for index in read("addon/WispAI/UI/EmojiData.lua"):gmatch(" = (%d+),") do
         indices[#indices + 1] = tonumber(index)
     end
     assert.equals(4009, #indices)

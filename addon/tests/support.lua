@@ -20,20 +20,73 @@ function M.fixture(path, env)
     return setfenv(assert(loadfile(path)), env)()
 end
 
+function M.namespace(initial)
+    local ns = initial or {}
+    assert(loadfile("addon/WispAI/Namespace.lua"))("WispAI", ns)
+    return ns
+end
+
 function M.addon(name, env)
-    if name == "UI.lua" then
+    setfenv(assert(loadfile("addon/WispAI/Namespace.lua")), env)("WispAI", env.ns)
+    if name == "UI/MessageFormat.lua" and not env.ns.Markdown then
+        for _, dependency in ipairs({ "Syntax", "Block", "Parser" }) do
+            M.addon("Markdown/" .. dependency .. ".lua", env)
+        end
+        M.addon("Markdown/Cache.lua", env)
+    end
+    if name == "UI/Window.lua" then
         for _, dependency in ipairs({
-            "Widgets.lua",
-            "EmojiData.lua",
-            "Emoji.lua",
-            "MessageFormat.lua",
-            "ModelControls.lua",
-            "MessageRows.lua",
+            "UI/RichUI.lua",
+            "UI/Widgets.lua",
+            "UI/EmojiData.lua",
+            "UI/Emoji.lua",
+            "UI/MessageFormat.lua",
+            "Markdown/ReplyView.lua",
+            "Markdown/TextStyle.lua",
+            "UI/ModelControls.lua",
+            "UI/MessageRows.lua",
+            "UI/Capabilities.lua",
+            "UI/Memory.lua",
         }) do
             M.addon(dependency, env)
         end
     end
-    return setfenv(assert(loadfile("addon/WispAI/" .. name)), env)("WispAI", env.C)
+    local result = setfenv(assert(loadfile("addon/WispAI/" .. name)), env)("WispAI", env.ns)
+    if name == "UI/MessageFormat.lua" then
+        M.addon("Markdown/Links.lua", env)
+        M.addon("Markdown/InlineRenderer.lua", env)
+    elseif name == "Core.lua" then
+        for _, dependency in ipairs({
+            "Transport/ResponseTiming.lua",
+            "Chat/State.lua",
+            "Chat/Snapshot.lua",
+            "UI/Sound.lua",
+        }) do
+            M.addon(dependency, env)
+        end
+    end
+    return result
+end
+
+function M.rendered(font)
+    local text = font:IsShown() and font:GetText() or ""
+    for _, run in ipairs(font.runs or {}) do
+        if run:IsShown() then
+            text = text .. run:GetText()
+        end
+    end
+    return text
+end
+
+function M.rowText(row)
+    if row.text:IsShown() then
+        return row.text:GetText()
+    end
+    local parts = {}
+    for _, font in ipairs(row.rich and row.rich.prose or {}) do
+        parts[#parts + 1] = M.rendered(font)
+    end
+    return table.concat(parts)
 end
 
 return M

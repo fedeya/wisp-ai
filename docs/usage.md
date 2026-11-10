@@ -80,7 +80,7 @@ Routine definitions, routine run history, persistent panels and memory entries a
 
 SQLite stores conversation titles, status, character identity and activity timestamps in `chats` columns. `messages` stores role, text and ordering separately; each row has a stable internal ID independent of its position. `source_id` preserves the original optional message ID, including old missing or duplicate IDs. Rich content, references, UI and unknown extension fields remain in JSON `extras`, preserving their original values. Updates write only changed rows.
 
-Original assistant reply text is retained in each message's `rawReply` extension, including replies that cannot be displayed. Hidden model reasoning is excluded. Parsed text and UI are previews; rendering reads the original reply again when reopening a conversation. Recreated model sessions use the same source interpretation for their bounded conversation history, omitting display errors and unfinished replies. Display limits and formatting errors do not truncate or replace that stored source. Markdown tables are interpreted with Marked's GitHub Flavored Markdown lexer when preparing the view, including in older conversations; generated table layouts and display-error messages are not saved as the original reply.
+Original assistant reply text is retained in each message's `rawReply` extension, including replies that cannot be displayed. Hidden model reasoning is excluded. Decoded text and UI are previews; the bridge reads the original reply events again when reopening a conversation. Recreated model sessions use the same source interpretation for their bounded conversation history, omitting display errors and unfinished replies. Display limits and formatting errors do not truncate or replace that stored source. The addon displays replies using [Wisp's Markdown profile](markdown.md), including in older conversations. Prose, headings, lists, code and tables share its formatting rules. Tables show 20 rows per page; notices identify presentation limits. HTML remains literal text and images show their labels. Layouts stay local to the view and are not saved as the original reply.
 
 Startup reads messages, instance state and conversation revisions in one SQLite read transaction, so concurrent commits cannot mix different history versions. On POSIX, database files are created with mode `0600` before SQLite opens them; existing database and WAL/SHM permissions are tightened to the same owner-only mode. New sidecars inherit the private database mode, and the reply-maintenance script uses private database files for its backups too.
 
@@ -97,6 +97,15 @@ Use **Settings > Memory** to view, edit or forget notes. Deleting a chat does no
 **Connections** supports saved accounts, switching and disconnection. Disconnect attempts to revoke Wisp’s refresh token and clears local credentials, but leaves chats, memory and other applications’ sessions intact.
 
 ### Reading the answers
+
+Replies render headings, ordered and nested lists, read-only task checkboxes,
+quotes, separators, highlighted emphasis, strikethrough and inline/fenced code.
+Headings and emphasis keep the game's typeface, with gold highlighting for strong
+emphasis. Code preserves literal text in a shaded JetBrains Mono block, falling
+back to the game font for unsupported scripts or an unavailable font. Web links
+show their address on hover; click to select and copy the URL with Ctrl+C. Game references
+keep their native tooltips and actions. Formatting also applies when reopening
+older conversations, without regenerating or rewriting their replies.
 
 Missing readings and database coverage remain unknown, not zero or proof of absence. External references can be stale or from a different build; market estimates come from uploaded scans, not live listings. Trainer and auction readings need their windows open, and auctions expose only already-loaded partial results. Item comparisons report raw stat differences; [experimental simulations](reference.md#experimental-local-dps-simulations) compare supported class damage scenarios and equipment alternatives, not live combat or an optimal build.
 

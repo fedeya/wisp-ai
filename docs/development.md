@@ -8,6 +8,7 @@ Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.
 
 ```sh
 pnpm install --frozen-lockfile
+luarocks --lua-version=5.1 install luacheck 1.2.0-1
 luarocks --lua-version=5.1 install busted 2.3.0-1
 pnpm build
 pnpm check
@@ -56,6 +57,7 @@ exports. This lets a package typecheck before its own build has produced `dist/`
 | `pnpm test:core`        | All app/package TypeScript suites and root integrations, excluding desktop UI |
 | `pnpm test:integration` | Cross-component tests in `tests/`, including Lua/TS transport                 |
 | `pnpm test:addon`       | Busted Lua specs and WoW fixtures in `addon/tests/`                           |
+| `pnpm lint:addon`       | Luacheck against Lua 5.1 and the WoW API globals                              |
 | `pnpm test:ui`          | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)            |
 | `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
@@ -75,6 +77,15 @@ tests keep their existing skips when the required binaries are absent.
 
 ### Lua addon tests
 
+The [Lua guidelines](lua-guidelines.md) define coding practices; the
+[addon module map](../addon/README.md) describes subsystem ownership.
+StyLua formats Lua; `pnpm lint:addon` runs Luacheck. Install `luacheck 1.2.0-1`
+with LuaRocks alongside Busted. Review naming and module boundaries against
+the guidelines; the Busted source spec enforces Lua 5.1 compilation and `.toc` coverage.
+
+The [Markdown parser contract](markdown.md) documents its renderer-independent
+AST, supported product syntax and offline parser checks.
+
 Install Lua 5.1 and LuaRocks using your platform's package manager, then install
 [Busted](https://lunarmodules.github.io/busted/) with
 `luarocks --lua-version=5.1 install busted 2.3.0-1`. Put that installation's
@@ -91,8 +102,9 @@ Busted installed through LuaRocks, real addon files and explicit WoW mocks.
 
 Write addon-only cases in `addon/tests/*_spec.lua`, using Busted's `it`, assertions
 and hooks. `support.lua` creates private WoW globals for each scenario and loads
-the real addon files, including the UI dependency order. The existing WoW API
-stubs remain fixtures; these specs run outside the game.
+the real addon files, including the UI dependency order. A manifest smoke test
+recursively checks every Lua source and loads the real `.toc` in its actual order.
+The existing WoW API stubs remain fixtures; these specs run outside the game.
 
 ```sh
 busted
@@ -101,7 +113,7 @@ busted --filter "settings"
 ```
 
 Run these commands from the repository root; `.busted` selects `addon/tests/`.
-`pnpm test:addon` runs only `busted`; the binary emoji-atlas checks also run in Lua.
+`pnpm test:addon` runs Busted, including the binary emoji-atlas checks.
 `pnpm test:watch` reruns the addon suite when addon files change. Direct Vitest runs
 cover TypeScript suites. Tests exchanging frames between Lua and TypeScript live
 in `tests/addon/` and still use Fengari.
@@ -200,34 +212,8 @@ Game transport uses Wisp v2 checked frames in addon enable states in both direct
 Compressed snapshots and patches continue through the reusable lane after the
 optional load-on-demand bulk bank is exhausted. The unversioned transport and its
 decoder are removed; unsupported game APIs fail clearly rather than selecting
-another wire format. See [transport v2](transport-v2.md) and its
-[measured comparison](transport-optimization.md), plus [transport.ts](../apps/bridge/src/transport.ts)
-and the protocol source for the wire contract.
-
-Interactive packets take priority over unsent background traffic; in-flight frames
-are never interleaved. Polls coalesce, and acknowledged retries are removed. The
-Sending indicator follows the message's transport acknowledgement while keeping
-optimistic history until an authoritative snapshot arrives. Recent user actions
-temporarily poll more frequently; idle clients still consume no helper channels.
-Interactive acknowledgement reads start only after the message's final frame,
-using a short 250 ms polling window. Receipt requests an immediate snapshot publish
-instead of waiting for the normal 400 ms UI batch. Character identity travels by
-acknowledged revision; changed integration reports still accompany a message, and
-heartbeats keep availability fresh. Delivery metrics report compressed bytes,
-frame/retry counts, queue time, transmission time and acknowledgement wait.
-
-Manual turns revalidate a bounded quest summary locally. Quest-log events warm a
-session/character-scoped bridge cache, and acknowledged, unchanged summaries travel
-as revision references. Missing revisions fall back to normal game reads. The
-quest data stays out of `game_context`. When requested, `wow__query_character`
-serves quests from a private turn-verified reading without a game round trip; mixed
-requests fetch only other sections live. Missing/partial readings or `refresh=true`
-fall back to the addon. Automatic conversation titles
-are assigned from the first message before model preparation, without waiting for a response.
-Specialized tools stay in Eve's catalog until found with `eve__search` and
-called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
-history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
-and `Turn timing` entries for receipt, admission and first visible text latency.
+another wire format. The [transport contract](transport.md) documents the
+current wire format, recovery rules, source ownership and regression checks.
 
 Interactive packets take priority over unsent background traffic; in-flight frames
 are never interleaved. Polls coalesce, and acknowledged retries are removed. The
@@ -264,6 +250,9 @@ reference keys and aggregate payload budgets in the active turn before returning
 Successful `call.settled` events publish the reserved payload, so cancelled calls
 remain invisible. The bridge projects text and panels into ordered message parts;
 presentation calls stay in Eve diagnostics but never create tool/activity rows.
+Markdown and reference tokens travel unchanged, including in historical NDJSON
+replies. Lua's shared Markdown parser and `ReplyView` own formatting, reference
+resolution and table layout for every text part; the bridge only bounds previews.
 The same projection rebuilds event history, while SQLite preserves complete
 canonical text and panel parts independently of streaming previews coalesced at
 600 ms intervals. Previews continue for the entire reply; completion and accepted
@@ -290,7 +279,7 @@ Dependencies and ports can be supplied to `startBridge` for isolated integration
 
 Desktop screens live under `apps/desktop/src/pages`; their shared session controller
 uses Svelte runes in `desktop-controller.svelte.ts`. Addon widgets, message formatting,
-message rows and model controls are separate Lua modules loaded before `UI.lua`.
+message rows and model controls are separate Lua modules loaded before `UI/Window.lua`.
 Agent dependencies link to canonical package paths so isolated pnpm installs remain
 resolvable after moving the engine. The bundled just-bash workspace is configured
 explicitly with runtime package installation disabled.
@@ -308,6 +297,6 @@ Vitest projects and native tests must pass before packaging and signing.
 
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
 implement its adapter and readiness checks, register live detection in
-`addon/WispAI/Integrations.lua` / `apps/bridge/src/integration-state.ts`, and test
+`addon/WispAI/Integrations/Integrations.lua` / `apps/bridge/src/integration-state.ts`, and test
 missing/incompatible providers and disabled-tool admission. Integrations supply
 tools; reply panels and automatic suggestions remain separate features.

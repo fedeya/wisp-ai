@@ -3,7 +3,7 @@ local helper = require("addon.tests.support")
 local function setup(env)
     setfenv(1, env)
     do
-        C = {}
+        ns = helper.namespace()
         function UnitClass()
             return "Mago", "MAGE"
         end
@@ -96,7 +96,7 @@ local function setup(env)
             end,
         }
     end
-    helper.addon("Locations.lua", env)
+    helper.addon("Integrations/Locations.lua", env)
 end
 
 it("Forever class-trainer lookup returns native-map spawn references with provenance", function()
@@ -104,7 +104,8 @@ it("Forever class-trainer lookup returns native-map spawn references with proven
     setfenv(1, env)
     setup(env)
 
-    local result = C.FindNPCLocations({ mode = "class_trainers", class = "MAGE", mapId = 1454 })
+    local result =
+        ns.Integrations.FindNPCLocations({ mode = "class_trainers", class = "MAGE", mapId = 1454 })
     assert(result.status == "available" and result.total == 1)
     local pin = result.locations[1]
     assert(pin.npcId == 5885 and pin.name == "Deino" and pin.mapId == 1454 and pin.areaId == 1637)
@@ -115,7 +116,7 @@ it("Forever class-trainer lookup returns native-map spawn references with proven
             and pin.reference.mapId == 1454
     )
     assert(pin.provenance == "QuestieDB" and result.version == "forever")
-    assert(C.FindNPCLocations({ mode = "npc", name = "Deino" }).total == 1)
+    assert(ns.Integrations.FindNPCLocations({ mode = "npc", name = "Deino" }).total == 1)
 end)
 
 it("other versions, unknown maps and ambiguous coordinate frames never become pins", function()
@@ -124,22 +125,22 @@ it("other versions, unknown maps and ambiguous coordinate frames never become pi
     setup(env)
 
     LibQuestieDB.flavor.expansion = "Classic"
-    assert(not pcall(C.FindNPCLocations, { mode = "class_trainers" }))
+    assert(not pcall(ns.Integrations.FindNPCLocations, { mode = "class_trainers" }))
     LibQuestieDB.flavor.expansion = "Forever"
-    assert(not pcall(C.FindNPCLocations, { mode = "class_trainers", mapId = 9999 }))
+    assert(not pcall(ns.Integrations.FindNPCLocations, { mode = "class_trainers", mapId = 9999 }))
     LibQuestieDB.EraToForever = function(_, x, y)
         return x + 5, y
     end
-    local result = C.FindNPCLocations({ mode = "npc", npcId = 5885 })
+    local result = ns.Integrations.FindNPCLocations({ mode = "npc", npcId = 5885 })
     assert(
         result.status == "no_matches"
             and #result.locations == 0
             and result.skippedUnverifiedFrames == 1
     )
     LibQuestieDB.EraToForever = nil
-    assert(C.FindNPCLocations({ mode = "npc", npcId = 5885 }).total == 0)
+    assert(ns.Integrations.FindNPCLocations({ mode = "npc", npcId = 5885 }).total == 0)
     LibQuestieDB = nil
-    assert(not pcall(C.FindNPCLocations, { mode = "class_trainers" }))
+    assert(not pcall(ns.Integrations.FindNPCLocations, { mode = "class_trainers" }))
 end)
 
 it("service lookup discovers transmog NPCs without a personal name", function()
@@ -150,13 +151,16 @@ it("service lookup discovers transmog NPCs without a personal name", function()
     LibQuestieDB.Npc.IdsByName = function()
         error("A service query must not search a guessed NPC name")
     end
-    local result =
-        C.FindNPCLocations({ mode = "services", service = "Transmogrifier", mapId = 1454 })
+    local result = ns.Integrations.FindNPCLocations({
+        mode = "services",
+        service = "Transmogrifier",
+        mapId = 1454,
+    })
     assert(result.status == "available" and result.total == 1)
     assert(
         result.locations[1].npcId == 900001
             and result.locations[1].reference.x == 45
             and result.locations[1].reference.y == 55
     )
-    assert(not pcall(C.FindNPCLocations, { mode = "services", service = "Unknown" }))
+    assert(not pcall(ns.Integrations.FindNPCLocations, { mode = "services", service = "Unknown" }))
 end)

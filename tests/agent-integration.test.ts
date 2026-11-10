@@ -12,7 +12,7 @@ import { applyEvent } from '@wisp/bridge/events';
 import { ReplyProjection } from '@wisp/bridge/reply-stream';
 import { turnInput } from '@wisp/bridge/context';
 import { rebuildHistory } from '../apps/bridge/src/history.ts';
-import { renderReply } from '../apps/bridge/src/reply-display.ts';
+import { replyContent } from '../apps/bridge/src/reply-content.ts';
 
 test(
   'the real Eve agent and AI SDK middleware complete an offline streamed turn',
@@ -133,7 +133,7 @@ test(
         content: [{ type: 'output_text', text: value, annotations: [] }],
       });
       if (count === 11) {
-        output.push(message('Antes de la comparación.\n\n'));
+        output.push(message('Antes de la comparación.\n\n~~~text\n[[ref:example]]\n~~~\n\n'));
       }
       if (call) {
         output.push({
@@ -403,11 +403,12 @@ test(
       expect(names(10)).toContain('wisp__present_ui');
       const reply = chat.messages.at(-1)!;
       expect(reply.parts).toEqual([
-        { type: 'text', text: 'Antes de la comparación.\n\n' },
+        { type: 'text', text: 'Antes de la comparación.\n\n~~~text\n[[ref:example]]\n~~~\n\n' },
         { type: 'ui', id: 'comparison' },
         { type: 'text', text: '\n\nDespués de la comparación.' },
       ]);
       expect(reply.ui?.[0].kind).toBe('comparison');
+      expect(replyContent(reply)?.text).toContain('~~~text\n[[ref:example]]\n~~~');
       expect(reply.references).toMatchObject({ nova: { id: 122 }, frostbolt: { id: 116 } });
       expect(chat.activity.some((entry) => entry.name === 'wisp__present_ui')).toBe(false);
       expect(chat.messages.some((entry) => entry.tool?.name === 'wisp__present_ui')).toBe(false);
@@ -415,7 +416,7 @@ test(
         chat.messages.findIndex((message) => message.id === 'rich-user'),
       );
       const restored = rebuildHistory({ ...chat, messages: richMessages }, richEvents);
-      expect(restored?.at(-1) && renderReply(restored.at(-1)!)).toEqual(renderReply(reply));
+      expect(restored?.at(-1) && replyContent(restored.at(-1)!)).toEqual(replyContent(reply));
       const continuation = JSON.stringify(requests[11]);
       expect(continuation).toContain('accepted');
       const uiAcknowledgement = (requests[11]!.input as Record<string, unknown>[]).find(

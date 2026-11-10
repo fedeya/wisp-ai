@@ -3,7 +3,7 @@ local helper = require("addon.tests.support")
 local function setup(env)
     setfenv(1, env)
     do
-        C = { db = {}, session = "test" }
+        ns = helper.namespace({ db = {}, session = "test" })
         function UnitName()
             return "Mage"
         end
@@ -99,9 +99,11 @@ local function setup(env)
         end
         function find(id)
             for _, o in
-                ipairs(
-                    C.ReadSettings({ provider = "all", sections = { "options" }, limit = 60 }).options
-                )
+                ipairs(ns.Settings.ReadSettings({
+                    provider = "all",
+                    sections = { "options" },
+                    limit = 60,
+                }).options)
             do
                 if o.id == id then
                     return o
@@ -109,7 +111,7 @@ local function setup(env)
             end
         end
     end
-    helper.addon("Settings.lua", env)
+    helper.addon("Settings/Settings.lua", env)
 end
 
 it(
@@ -128,11 +130,15 @@ it(
         blocked = true
         assert(not find("ace:Test:size").writable)
         assert(not find("cvar:locked"))
-        local r =
-            C.ReadSettings({ sections = { "options" }, provider = "game", ids = { "cvar:locked" } })
+        local r = ns.Settings.ReadSettings({
+            sections = { "options" },
+            provider = "game",
+            ids = { "cvar:locked" },
+        })
         assert(r.options[1].writable == false)
         assert(
-            C.ReadSettings({ sections = { "options" }, addon = "Test", limit = 1 }).nextOffset == 1
+            ns.Settings.ReadSettings({ sections = { "options" }, addon = "Test", limit = 1 }).nextOffset
+                == 1
         )
     end
 )
@@ -147,16 +153,19 @@ it(
 
             for _, before in ipairs({ true, false }) do
                 values.enabled = before
-                local r = C.UpdateSettings({
+                local r = ns.Settings.UpdateSettings({
                     operation = "preview",
                     changes = { { id = "ace:Test:enabled", value = not before } },
                 })
+                assert(ns.Settings.UpdateSettings({
+                    operation = "apply",
+                    transactionId = r.transactionId,
+                }).verified and values.enabled == not before)
                 assert(
-                    C.UpdateSettings({ operation = "apply", transactionId = r.transactionId }).verified
-                        and values.enabled == not before
+                    ns.Settings.ApplySettings(r.transactionId, true).verified
+                        and values.enabled == before
                 )
-                assert(C.ApplySettings(r.transactionId, true).verified and values.enabled == before)
-                assert(C.ApplySettings(r.transactionId, true).repeated)
+                assert(ns.Settings.ApplySettings(r.transactionId, true).repeated)
             end
         end
         do
@@ -164,7 +173,7 @@ it(
             setfenv(1, env)
             setup(env)
 
-            local r = C.UpdateSettings({
+            local r = ns.Settings.UpdateSettings({
                 operation = "preview",
                 changes = {
                     { id = "ace:Test:size", value = 1.5 },
@@ -173,18 +182,18 @@ it(
             })
             assert(values.size == 1 and current.autoLootDefault == "0" and not r.applied)
             local id = r.transactionId
-            local a = C.UpdateSettings({ operation = "apply", transactionId = id })
+            local a = ns.Settings.UpdateSettings({ operation = "apply", transactionId = id })
             assert(a.verified and values.size == 1.5 and current.autoLootDefault == "1")
-            assert(C.UpdateSettings({ operation = "apply", transactionId = id }).repeated)
+            assert(ns.Settings.UpdateSettings({ operation = "apply", transactionId = id }).repeated)
             current.autoLootDefault = "0"
-            assert(not pcall(C.ApplySettings, id, true))
+            assert(not pcall(ns.Settings.ApplySettings, id, true))
             assert(values.size == 1.5)
             current.autoLootDefault = "1"
             realm = "Other"
-            assert(not pcall(C.ApplySettings, id, true))
+            assert(not pcall(ns.Settings.ApplySettings, id, true))
             realm = nil
             assert(
-                C.ApplySettings(id, true).verified
+                ns.Settings.ApplySettings(id, true).verified
                     and values.size == 1
                     and current.autoLootDefault == "0"
             )
@@ -206,26 +215,36 @@ it(
             { id = "ace:Test:enabled", value = 1 },
             { id = "ace:Test:reset", value = true },
         }) do
-            assert(not pcall(C.UpdateSettings, { operation = "preview", changes = { request } }))
+            assert(
+                not pcall(
+                    ns.Settings.UpdateSettings,
+                    { operation = "preview", changes = { request } }
+                )
+            )
         end
-        local r = C.UpdateSettings({
+        local r = ns.Settings.UpdateSettings({
             operation = "preview",
             changes = { { id = "ace:Test:size", value = 1.5 } },
         })
         values.size = 1.2
         assert(
-            not pcall(C.UpdateSettings, { operation = "apply", transactionId = r.transactionId })
+            not pcall(
+                ns.Settings.UpdateSettings,
+                { operation = "apply", transactionId = r.transactionId }
+            )
         )
         values.size = 1
-        r = C.UpdateSettings({
+        r = ns.Settings.UpdateSettings({
             operation = "preview",
             changes = {
                 { id = "ace:Test:size", value = 1.5 },
                 { id = "ace:Test:broken", value = 2 },
             },
         })
-        local ok, err =
-            pcall(C.UpdateSettings, { operation = "apply", transactionId = r.transactionId })
+        local ok, err = pcall(
+            ns.Settings.UpdateSettings,
+            { operation = "apply", transactionId = r.transactionId }
+        )
         assert(
             not ok
                 and tostring(err):find("previous values restored")
@@ -234,7 +253,10 @@ it(
         )
         combat = true
         assert(
-            not pcall(C.UpdateSettings, { operation = "apply", transactionId = r.transactionId })
+            not pcall(
+                ns.Settings.UpdateSettings,
+                { operation = "apply", transactionId = r.transactionId }
+            )
         )
     end
 )
@@ -249,13 +271,20 @@ it("settings requests are bounded and only preview/apply scalar setting changes"
     C_CVar.SetCVar = function(k, v)
         current[k] = string.format("%.6f", tonumber(v))
     end
-    local r = C.UpdateSettings({
+    local r = ns.Settings.UpdateSettings({
         operation = "preview",
         changes = {
             { id = "cvar:Sound_MusicVolume", value = 0.2 },
         },
     })
-    assert(C.UpdateSettings({ operation = "apply", transactionId = r.transactionId }).verified)
+    assert(
+        ns.Settings.UpdateSettings({ operation = "apply", transactionId = r.transactionId }).verified
+    )
     current.Sound_MusicVolume = "0.3"
-    assert(not pcall(C.UpdateSettings, { operation = "apply", transactionId = r.transactionId }))
+    assert(
+        not pcall(
+            ns.Settings.UpdateSettings,
+            { operation = "apply", transactionId = r.transactionId }
+        )
+    )
 end)

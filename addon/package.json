@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cd .. && busted"
+    "test": "cd .. && busted",
+    "check:lua": "cd .. && luacheck addon/WispAI"
   }
 }

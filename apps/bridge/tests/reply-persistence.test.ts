@@ -38,7 +38,7 @@ async function fixture() {
   };
 }
 
-test('old Markdown tables render without rewriting canonical history or the legacy JSON backup', async () => {
+test('old Markdown tables reach the addon without rewriting canonical history or the legacy JSON backup', async () => {
   const f = await fixture();
   try {
     const chat = newChat('tables', 'game');
@@ -60,10 +60,10 @@ test('old Markdown tables render without rewriting canonical history or the lega
     const state = createSessionState(restored);
     state.activeChat = chat.id;
     const reply = projectChats(state).chats[0].messages![0];
-    expect(reply.ui?.[0].kind).toBe('table');
+    expect(reply.ui).toEqual([]);
     expect(reply.text).toBe(text);
     expect(reply.references).toEqual(chat.messages[0].references);
-    expect(reply.parts?.map((part) => part.type)).toEqual(['text', 'ui', 'text']);
+    expect(reply.parts).toEqual([{ type: 'text', text }]);
     expect(restored[0].messages[0]).toEqual(chat.messages[0]);
     await store.flush(restored);
     const again = await f.store().load(),
@@ -77,7 +77,7 @@ test('old Markdown tables render without rewriting canonical history or the lega
   }
 });
 
-test('table projection preserves legacy card order and ignores user, tool and partial messages', async () => {
+test('transport preserves Markdown source and legacy native components for every message role', async () => {
   const f = await fixture();
   try {
     const chat = newChat('legacy', 'game');
@@ -94,11 +94,9 @@ test('table projection preserves legacy card order and ignores user, tool and pa
     state.activeChat = chat.id;
     expect(restored[0].messages.slice(0, 3)).toEqual(chat.messages.slice(0, 3));
     const reply = projectChats(state).chats[0].messages![3];
-    expect(reply.ui?.map((node) => node.kind)).toEqual(['stat', 'table']);
-    expect(reply.parts?.filter((part) => part.type === 'ui').map((part) => part.id)).toEqual([
-      reply.ui?.[1].id,
-      'existing',
-    ]);
+    expect(reply).toMatchObject(chat.messages[3]);
+    expect(reply.ui?.map((node) => node.kind)).toEqual(['stat']);
+    expect(reply.parts).toBeUndefined();
   } finally {
     await f.close();
   }

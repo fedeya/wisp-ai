@@ -1,5 +1,5 @@
 import type { SessionState } from './session-state.ts';
-import { renderReply } from './reply-display.ts';
+import { replyContent } from './reply-content.ts';
 export function projectChats(state: SessionState, now = Date.now()) {
   let ordinaryCount = 0;
   let otherCount = 0;
@@ -53,7 +53,7 @@ export function projectChats(state: SessionState, now = Date.now()) {
                 if (c.routineId && index === 0 && m.role === 'user') {
                   return [];
                 }
-                const display = renderReply(m);
+                const display = replyContent(m);
                 return display
                   ? [
                       {

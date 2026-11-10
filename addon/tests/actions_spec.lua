@@ -3,7 +3,7 @@ local helper = require("addon.tests.support")
 local function setup(env)
     setfenv(1, env)
     do
-        C = { db = {} }
+        ns = helper.namespace({ db = {} })
         function time()
             return 123
         end
@@ -87,10 +87,16 @@ local function setup(env)
             error("must not delete")
         end
         function act(kind, args)
-            return C.PerformAction({ kind = kind, args = args or {}, expectedCharacter = identity })
+            return ns.Actions.PerformAction({
+                kind = kind,
+                args = args or {},
+                expectedCharacter = identity,
+            })
         end
     end
-    helper.addon("Character.lua", env)
+    helper.addon("Character/Capture.lua", env)
+    helper.addon("Character/Inspect.lua", env)
+    helper.addon("Actions/Game.lua", env)
 end
 
 it(
@@ -147,7 +153,7 @@ it("Forever plain-coordinate waypoint readings preserve placement, metadata and 
         end
     end
     waypoint = point(1, 0.1, 0.2)
-    local inspected = C.Inspect({ kind = "map", args = {} })
+    local inspected = ns.Character.Inspect({ kind = "map", args = {} })
     assert(inspected.status == "available", inspected.error)
     assert(inspected.data.waypoint.x == 10 and inspected.data.waypoint.y == 20)
     local r = act("set_waypoint", {
@@ -159,15 +165,15 @@ it("Forever plain-coordinate waypoint readings preserve placement, metadata and 
     })
     assert(r.status == "completed", r.error)
     assert(r.data.applied and r.data.reference.x == 52.4 and r.data.reference.y == 11.65)
-    assert(C.db.wispWaypoint.label == "Samo" and C.db.wispWaypoint.source == "QuestieDB Forever")
-    assert(C.db.wispWaypoint.previous.x == 10 and C.db.wispWaypoint.previous.y == 20)
+    assert(ns.db.wispWaypoint.label == "Samo" and ns.db.wispWaypoint.source == "QuestieDB Forever")
+    assert(ns.db.wispWaypoint.previous.x == 10 and ns.db.wispWaypoint.previous.y == 20)
     r = act("set_waypoint", { mapId = 1, x = 60, y = 40, label = "Second", source = "user" })
     assert(r.status == "completed", r.error)
     r = act("clear_waypoint")
     assert(r.status == "completed" and r.data.restoredPrevious, r.error)
     local x, y = waypoint.position:GetXY()
     assert(x == 0.1 and y == 0.2)
-    assert(C.db.wispWaypoint == nil)
+    assert(ns.db.wispWaypoint == nil)
     act("set_waypoint", { mapId = 1, x = 52.4, y = 11.65, label = "Samo", source = "user" })
     waypoint = point(1, 0.7, 0.8)
     assert(act("clear_waypoint").status == "blocked")
@@ -191,7 +197,7 @@ it("malformed native waypoint coordinates block placement without overwriting th
         act("set_waypoint", { mapId = 1, x = 52.4, y = 11.65, label = "Samo", source = "user" })
     assert(r.status == "blocked" and sets == 0)
     assert(r.error:find("waypoint coordinates", 1, true), r.error)
-    assert(C.db.wispWaypoint == nil)
+    assert(ns.db.wispWaypoint == nil)
 end)
 
 it("unsupported maps and character switches never apply actions", function()
@@ -291,8 +297,11 @@ it("macro inventory hides code by default and includes it only when requested", 
     setup(env)
 
     act("create_macro", { name = "Nova", body = "/cast Frost Nova", perCharacter = true })
-    local r = C.Inspect({ kind = "macros", args = {} })
+    local r = ns.Character.Inspect({ kind = "macros", args = {} })
     assert(r.data.macros[1].name == "Nova" and r.data.macros[1].body == nil)
-    r = C.Inspect({ kind = "macros", args = { names = { "Nova" }, includeBodies = true } })
+    r = ns.Character.Inspect({
+        kind = "macros",
+        args = { names = { "Nova" }, includeBodies = true },
+    })
     assert(r.data.macros[1].body == "/cast Frost Nova")
 end)

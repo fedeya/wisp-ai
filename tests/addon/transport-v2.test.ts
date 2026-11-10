@@ -64,14 +64,16 @@ C_EncodingUtil.DeserializeJSON=function(text)
  assert(decodeMap[text]~=nil,'only the supplied checked notification JSON can be decoded')
  return {r=decodeMap[text]}
 end
-C.Log=function(text)logs[#logs+1]=tostring(text)end
+ns.Core.Log=function(text)logs[#logs+1]=tostring(text)end
 `);
   run(beforeLoad);
   run(
-    `assert(load(${JSON.stringify(readFileSync('addon/WispAI/Transport.lua', 'utf8'))}))('WispAI',C)`,
+    `assert(load(${JSON.stringify(readFileSync('addon/WispAI/Transport/Transport.lua', 'utf8'))}))('WispAI',ns)`,
   );
   const activate = () =>
-    run("playerGuid='Player-Test-GUID';C.StartTransport();assert(C.transportStats.version==2)");
+    run(
+      "playerGuid='Player-Test-GUID';ns.Transport.StartTransport();assert(ns.transportStats.version==2)",
+    );
   if (start) {
     activate();
   }
@@ -106,7 +108,7 @@ C.Log=function(text)logs[#logs+1]=tostring(text)end
 
 test('cold login queues only v2 before the player GUID becomes available', () => {
   const h = transportHarness(false);
-  h.run("assert(C.transportStats.version==2);C.Send({type='hello'})");
+  h.run("assert(ns.transportStats.version==2);ns.Transport.Send({type='hello'})");
   h.activate();
   h.run(
     'now=.04;timers[.04]();assert(saves==1 and #logs==0);assert(packets[#packets].transportVersion==2)',
@@ -126,31 +128,31 @@ test.each([
 ])('missing %s fails once without legacy frames or transport tickers', (_, setup, expected) => {
   const h = transportHarness(false, setup);
   h.run(`
-assert(C.StartTransport()==false)
-assert(C.StartTransport()==false)
-assert(C.Send({type='hello'})==false)
+assert(ns.Transport.StartTransport()==false)
+assert(ns.Transport.StartTransport()==false)
+assert(ns.Transport.Send({type='hello'})==false)
 assert(#logs==1 and logs[1]:find(${JSON.stringify(expected)},1,true))
 assert(next(timers)==nil and saves==0 and resets==0 and loads==0)
-assert(#packets==0 and C.transportStats.version==2)
+assert(#packets==0 and ns.transportStats.version==2)
 `);
 });
 
 test('an unavailable character GUID fails once and a later start uses queued v2 only', () => {
   const h = transportHarness(false);
   h.run(`
-C.Send({type='hello'})
-assert(C.StartTransport()==false and C.StartTransport()==false)
+ns.Transport.Send({type='hello'})
+assert(ns.Transport.StartTransport()==false and ns.Transport.StartTransport()==false)
 assert(#logs==1 and logs[1]:find('GUID',1,true))
 assert(next(timers)==nil and saves==0 and resets==0 and loads==0)
 `);
   h.activate();
-  h.run('now=.04;timers[.04]();assert(saves==1 and C.transportStats.error==nil)');
+  h.run('now=.04;timers[.04]();assert(saves==1 and ns.transportStats.error==nil)');
   expect(decodeFrame(h.saved())?.kind).toBe(UPLINK_KIND);
 });
 
 test('missing, corrupt, zero-generation and noncanonical readiness consume no bulk channels', () => {
   const h = transportHarness();
-  h.run("C.Send({type='hello'});timers[.04]()");
+  h.run("ns.Transport.Send({type='hello'});timers[.04]()");
   h.run('for i=1,100 do now=now+.1;timers[.1]()end;assert(loads==0 and resets>50 and #logs==0)');
   h.control(1, 17, (frame) => {
     frame[15] ^= 1;
@@ -170,20 +172,20 @@ test('missing, corrupt, zero-generation and noncanonical readiness consume no bu
 
 test('new checked revisions load once and repeated readiness never burns unchanged slots', () => {
   const h = transportHarness();
-  h.run("C.Send({type='hello'});timers[.04]()");
+  h.run("ns.Transport.Send({type='hello'});timers[.04]()");
   h.control(1);
-  h.run("nextRev=1;now=1;timers[.1]();assert(loads==1 and C.rev==1);C.chats[1].status='working'");
-  h.run('for i=1,100 do now=now+.1;timers[.1]()end;assert(loads==1 and C.slot==2)');
+  h.run("nextRev=1;now=1;timers[.1]();assert(loads==1 and ns.rev==1);ns.chats[1].status='working'");
+  h.run('for i=1,100 do now=now+.1;timers[.1]()end;assert(loads==1 and ns.slot==2)');
   h.control(2);
   h.run(
-    'nextRev=2;now=now+1;timers[.1]();assert(loads==2 and C.rev==2 and C.slot==3 and #logs==0)',
+    'nextRev=2;now=now+1;timers[.1]();assert(loads==2 and ns.rev==2 and ns.slot==3 and #logs==0)',
   );
 });
 
 test('a bulk helper overlapping the uplink preserves its disabled state and uses an explicit character', () => {
   const h = transportHarness();
-  h.run("C.Send({type='hello'});timers[.04]()");
-  h.run('C.slot=257;states.WispAI_S0257=false;disk.WispAI_S0257=false');
+  h.run("ns.Transport.Send({type='hello'});timers[.04]()");
+  h.run('ns.slot=257;states.WispAI_S0257=false;disk.WispAI_S0257=false');
   h.control(1);
   h.run(
     "nextRev=1;now=1;timers[.1]();assert(loads==1 and loadedNames[1]=='WispAI_S0257');assert(states.WispAI_S0257==false and disk.WispAI_S0257==false and #logs==0)",
@@ -194,7 +196,7 @@ test('addon settings pause both writes and reset reads without discarding user e
   const h = transportHarness();
   h.control(1);
   h.run(`
-C.Send({type='poll'})
+ns.Transport.Send({type='poll'})
 AddonList={IsShown=function()return true end}
 states.WispAI_S0257=false
 now=1;timers[.04]();timers[.1]()
@@ -209,14 +211,14 @@ assert(saves==1 and #logs==0)
 test('reset invalidates cached uplink bits so a following publication remains CRC-valid', () => {
   const h = transportHarness();
   h.run(
-    "C.connected=true;C.chats[1].status='working';C.Send({type='poll'});now=.04;timers[.04]();assert(states.WispAI_S0257==true)",
+    "ns.connected=true;ns.chats[1].status='working';ns.Transport.Send({type='poll'});now=.04;timers[.04]();assert(states.WispAI_S0257==true)",
   );
   expect(decodeFrame(h.saved())?.kind).toBe(UPLINK_KIND);
   h.run(`
 disk.WispAI_S0257=false
 now=.2;timers[.1]()
 assert(resets==2 and states.WispAI_S0257==false)
-C.Send({type='poll'})
+ns.Transport.Send({type='poll'})
 now=.24;timers[.04]()
 assert(states.WispAI_S0257==true and #logs==0)
 `);
@@ -228,13 +230,13 @@ assert(states.WispAI_S0257==true and #logs==0)
 test('flat W2 publication reads each full-frame carrier once and reuses its native state cache', () => {
   const h = transportHarness();
   h.run(`
-C.Send({type='poll'})
+ns.Transport.Send({type='poll'})
 now=.04;timers[.04]()
 assert(stateReads==1152 and saves==1,'one startup downlink baseline precedes the first full-frame publication')
 assert(stateChanges>0 and stateChanges<768)
 firstChanges=stateChanges
 for i=1,128 do assert(states[string.format('WispAI_B%03d',i)],'uplink must never write the downlink B lane')end
-C.Send({type='poll'})
+ns.Transport.Send({type='poll'})
 now=.08;timers[.04]()
 assert(stateReads==1152 and saves==2,'cached publication needs one save and no additional native state reads')
 assert(stateChanges>firstChanges and stateChanges-firstChanges<128,'only changed wire sequence and CRC bits need native mutations')
@@ -245,13 +247,13 @@ assert(#logs==0)
 
 test('a retired host generation cannot consume a slot during the new host session', () => {
   const h = transportHarness();
-  h.run("C.Send({type='hello'});timers[.04]()");
+  h.run("ns.Transport.Send({type='hello'});timers[.04]()");
   h.control(1, 100);
-  h.run("nextRev=1;now=1;timers[.1]();C.chats[1].status='working';assert(loads==1)");
+  h.run("nextRev=1;now=1;timers[.1]();ns.chats[1].status='working';assert(loads==1)");
   h.control(2, 101);
   h.run('nextRev=2;now=2;timers[.1]();assert(loads==2)');
   h.control(3, 100);
-  h.run('nextRev=3;now=3;timers[.1]();assert(loads==2 and C.rev==2 and #logs==0)');
+  h.run('nextRev=3;now=3;timers[.1]();assert(loads==2 and ns.rev==2 and #logs==0)');
 });
 
 test('an unacknowledged request renews hello with fresh context before retrying its application identity', () => {
@@ -261,11 +263,11 @@ C_EncodingUtil.SerializeJSON=function(packet)
  packets[#packets+1]=packet
  return packet.type
 end
-C.Send({type='say',chat='chat',messageId='retry-me',text='hello'})
+ns.Transport.Send({type='say',chat='chat',messageId='retry-me',text='hello'})
 now=.04;timers[.04]()
-C.characterAcknowledged=7;C.questAcknowledged=9;captures=0
-C.CaptureTurn=function()
- assert(C.characterAcknowledged==0 and C.questAcknowledged==0)
+ns.characterAcknowledged=7;ns.questAcknowledged=9;captures=0
+ns.Character.CaptureTurn=function()
+ assert(ns.characterAcknowledged==0 and ns.questAcknowledged==0)
  captures=captures+1
  return {characterRevision=12,questRevision=13}
 end
@@ -290,20 +292,20 @@ assert(packets[3].messageId=='retry-me' and packets[3].session==packets[1].sessi
 
 test('consuming the last bulk helper marks exhaustion and subsequent envelopes clamp the advertised cursor', () => {
   const h = transportHarness();
-  h.run("C.Send({type='hello'});timers[.04]()");
+  h.run("ns.Transport.Send({type='hello'});timers[.04]()");
   h.run(`
-C.slot=1024
+ns.slot=1024
 states.WispAI_S1024=false;disk.WispAI_S1024=false
 refreshes=0
-C.Refresh=function()refreshes=refreshes+1 end
+ns.UI.Refresh=function()refreshes=refreshes+1 end
 `);
   h.control(1);
   h.run(`
 nextRev=1;now=1;timers[.1]()
 assert(loads==1 and loadedNames[1]=='WispAI_S1024')
-assert(C.slot==1025 and C.exhausted==true and refreshes>=1)
+assert(ns.slot==1025 and ns.exhausted==true and refreshes>=1)
 assert(states.WispAI_S1024==false and disk.WispAI_S1024==false)
-C.Send({type='poll'})
+ns.Transport.Send({type='poll'})
 assert(packets[#packets].nextSlot==1024,'cursor must remain within the packet schema, not expose 1025')
 assert(#logs==0)
 `);

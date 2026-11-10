@@ -62,7 +62,9 @@ test('rendering derives a reply from its original source and ignores an obsolete
   const first = projectChats(state).chats[0].messages![0];
   expect(first.text).toContain('Original:');
   expect(first.text).not.toContain('Old cached');
-  expect(first.ui?.[0].kind).toBe('table');
+  expect(first.text).toContain('| Toga | Equipada |');
+  expect(first.ui).toEqual([]);
+  expect(first.parts).toEqual([{ type: 'text', text: first.text }]);
   expect(first).not.toHaveProperty('rawReply');
   expect(projectChats(state).chats[0].messages![0]).toEqual(first);
   expect(JSON.stringify(chat)).toBe(before);

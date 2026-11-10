@@ -5,16 +5,16 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
-        C = {}
+        ns = helper.namespace()
         host = CreateFrame("Frame")
-        C.LinkWidget = function(w)
+        ns.UI.LinkWidget = function(w)
             w.linked = true
         end
     end
-    helper.addon("EmojiData.lua", env)
-    helper.addon("Emoji.lua", env)
-    helper.addon("MessageFormat.lua", env)
-    helper.addon("RichUI.lua", env)
+    helper.addon("UI/EmojiData.lua", env)
+    helper.addon("UI/Emoji.lua", env)
+    helper.addon("UI/MessageFormat.lua", env)
+    helper.addon("UI/RichUI.lua", env)
 
     local node = {
         id = "sim",
@@ -42,7 +42,7 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
             { id = "stat", kind = "stat", label = "DPS", value = "25.28", detail = "Experimental" },
         },
     }
-    C.RenderRichUI(host, {}, message, 600)
+    ns.UI.RenderRichUI(host, {}, message, 600)
     local card = host.widgets.sim
     local first, second = card.entries[1], card.entries[2]
     assert(first.badge:GetText() == "Mejor DPS" and not second.badge:IsShown())
@@ -57,7 +57,7 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
         "rounding is presentation only"
     )
     node.precision = 2
-    C.RenderRichUI(host, {}, message, 600)
+    ns.UI.RenderRichUI(host, {}, message, 600)
     assert(first.metric:GetText() == "25.28 DPS")
     node.precision = nil
     assert(first.metric.point[5] == first.title.point[5], "wide layout aligns numbers")
@@ -70,7 +70,7 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
     )
     local count = #UI_TEST.widgets
     node.items[1].label = string.rep("Nombre largo localizado ", 4)
-    C.RenderRichUI(host, {}, message, 210)
+    ns.UI.RenderRichUI(host, {}, message, 210)
     assert(#UI_TEST.widgets == count, "snapshots and resize must reuse widgets")
     assert(first.metric.point[5] < first.title.point[5], "narrow layout stacks values")
     assert(first.delta.point[5] < first.metric.point[5] - first.metric:GetStringHeight())
@@ -81,7 +81,7 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
     node.items[1].value = 0
     node.items[2].value = 0
     node.items[3] = nil
-    C.RenderRichUI(host, {}, message, 600)
+    ns.UI.RenderRichUI(host, {}, message, 600)
     assert(not first.badge:IsShown() and second.badge:IsShown())
     assert(first.bar:GetValue() == 0 and second.bar:GetValue() == 0)
     assert(first.metric:GetText() == "0.0 DPS", "zero baseline cannot produce a percentage")
@@ -90,7 +90,7 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
     node.winner = nil
     node.items[1].detail = nil
     message.ui[2].detail = nil
-    C.RenderRichUI(host, {}, message, 300)
+    ns.UI.RenderRichUI(host, {}, message, 300)
     assert(not first.badge:IsShown() and not second.badge:IsShown())
     assert(not first.detail:IsShown() and not stat.detail:IsShown())
 end)

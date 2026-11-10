@@ -1,9 +1,7 @@
 import { replyPresentation, type ReplyPresentation } from '@wisp/protocol/reply-presentation';
 import type { ReferenceCatalog } from '@wisp/protocol/rich-reference';
-import type { Chat, Message } from './chat.ts';
-import type { ReplyPart } from './reply-tables.ts';
+import type { Chat, Message, ReplyPart } from './chat.ts';
 import { setReplyPreview } from './reply-content.ts';
-export { outsideCode } from './legacy-reply.ts';
 
 export class ReplyStream {
   text = '';

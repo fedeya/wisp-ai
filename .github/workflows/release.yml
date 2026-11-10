@@ -125,3 +125,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_NIGHTLY: ${{ steps.release.outputs.nightly }}
+      # GITHUB_TOKEN publications do not trigger another release-event workflow.
+      - name: Refresh website after publishing Nightly
+        if: steps.release.outputs.nightly == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+        run: node scripts/revalidate-web.ts
+        env:
+          WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

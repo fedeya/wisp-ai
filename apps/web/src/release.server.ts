@@ -1,9 +1,10 @@
 import { site } from './site.ts';
+import { RELEASE_CACHE_TAG } from './release-cache.ts';
 
 export async function getLatestRelease(): Promise<{ version: string; download: string } | null> {
   try {
     const options = {
-      next: { revalidate: 300 },
+      next: { revalidate: 300, tags: [RELEASE_CACHE_TAG] },
       signal: AbortSignal.timeout(5000),
     };
     const response = await fetch(

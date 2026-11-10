@@ -8,7 +8,7 @@ import { applyEvent } from '../src/events.ts';
 import { newChat } from '../src/chat-lifecycle.ts';
 import { ReplyProjection } from '../src/reply-stream.ts';
 import { rebuildHistory } from '../src/history.ts';
-import { renderReply } from '../src/reply-display.ts';
+import { replyContent } from '../src/reply-content.ts';
 
 const panel = {
   nodes: [
@@ -53,11 +53,34 @@ test('plain text streams directly, including Markdown and JSON examples, without
     kind: 'text',
     delta: 'Hola 🧙.\n```json\n{"type":"example"}\n```',
   });
-  expect(renderReply(f.chat.messages[0])?.text).toContain('Hola 🧙.');
-  expect(renderReply(f.chat.messages[0])?.text).toContain('{"type":"example"}');
+  expect(replyContent(f.chat.messages[0])?.text).toContain('Hola 🧙.');
+  expect(replyContent(f.chat.messages[0])?.text).toContain('{"type":"example"}');
   f.text('answer', 'Texto final autoritativo.');
   expect(f.chat.messages).toHaveLength(1);
-  expect(renderReply(f.chat.messages[0])?.text).toBe('Texto final autoritativo.');
+  expect(replyContent(f.chat.messages[0])?.text).toBe('Texto final autoritativo.');
+});
+
+test('Markdown and reference tokens reach Lua unchanged before and after late metadata', () => {
+  const f = fixture();
+  const source =
+    '**[[ref:missing]]** `[[ref:code]]` ``tick ` [[ref:double]]``\n' +
+    '~~~text\n[[ref:fenced]]\n~~~\n\\[[ref:escaped]] [[ref:late]] unfinished [[ref:';
+  f.emit('content.delta', { partId: 'answer', kind: 'text', delta: source });
+  const before = replyContent(f.chat.messages[0])!;
+  expect(before.text).toBe(source);
+  expect(before.parts).toEqual([{ type: 'text', text: source }]);
+  expect(before.references).toEqual({});
+  f.request('refs');
+  f.settle('refs', { references: { late: { kind: 'spell', id: 122, label: 'Nova' } } });
+  const linked = replyContent(f.chat.messages[0])!;
+  expect(linked.text).toBe(source);
+  expect(linked.parts).toEqual(before.parts);
+  expect(linked.references?.late).toMatchObject({ id: 122 });
+  expect(before.references).toEqual({});
+  f.text('answer', source);
+  expect(replyContent(f.chat.messages[0])).toMatchObject({ text: source, streaming: false });
+  expect(f.chat.messages[0].text).toBe(source);
+  expect(f.chat.activity).toEqual([]);
 });
 
 test('text, a validated presentation and subsequent text form one ordered assistant message', () => {
@@ -77,7 +100,7 @@ test('text, a validated presentation and subsequent text form one ordered assist
     { type: 'text', text: '\n\nDespués.' },
   ]);
   expect(f.chat.messages[0].ui).toEqual(panel.nodes);
-  expect(renderReply(f.chat.messages[0])).not.toHaveProperty('replyFormat');
+  expect(replyContent(f.chat.messages[0])).not.toHaveProperty('replyFormat');
 });
 
 test('panels keep call order under out-of-order settlement and duplicate replay', () => {
@@ -116,7 +139,7 @@ test('invalid or failed presentations leave prose available without tool rows', 
   expect(f.chat.activity).toEqual([]);
   expect(f.chat.messages).toHaveLength(1);
   expect(f.chat.messages[0].ui).toEqual([]);
-  expect(renderReply(f.chat.messages[0])?.text).toBe('Antes.Después.');
+  expect(replyContent(f.chat.messages[0])?.text).toBe('Antes.Después.');
 });
 
 test('updating a component preserves its first inline position and rejects identity changes', () => {
@@ -139,9 +162,9 @@ test('verified references register silently, resolve prose and cannot change mea
   const f = fixture();
   f.request('refs');
   f.settle('refs', { references: { nova: { kind: 'spell', id: 122, label: 'Nova' } } });
-  expect(renderReply(f.chat.messages[0])).toBeNull();
+  expect(replyContent(f.chat.messages[0])).toBeNull();
   f.text('answer', 'Usá [[ref:nova]]. `[[ref:example]]`');
-  expect(renderReply(f.chat.messages[0])?.text).toBe('Usá [[ref:nova]]. `[[ref:example]]`');
+  expect(replyContent(f.chat.messages[0])?.text).toBe('Usá [[ref:nova]]. `[[ref:example]]`');
   f.request('conflict');
   f.settle('conflict', { references: { nova: { kind: 'spell', id: 999, label: 'Wrong' } } });
   expect(f.chat.messages[0].references?.nova).toMatchObject({ id: 122 });
@@ -169,7 +192,7 @@ test('acceptance waits for ordered events and publishes only a successful settle
   f.text('after', 'Después.');
   expect(f.chat.messages.at(-1)?.parts?.map((part) => part.type)).toEqual(['text', 'ui', 'text']);
   const restored = rebuildHistory(f.chat, f.events)!;
-  expect(restored.map(renderReply)).toEqual(f.chat.messages.map(renderReply));
+  expect(restored.map(replyContent)).toEqual(f.chat.messages.map(replyContent));
 });
 
 test('reference conflicts reject before acknowledgement, including concurrent reservations', async () => {
@@ -303,7 +326,7 @@ test('the shared projection replays interleaved content, resetting reference key
   f.text('after', 'Después.');
   const replayed = rebuildHistory(f.chat, f.events)!;
   expect(replayed).not.toBeNull();
-  expect(replayed.map(renderReply)).toEqual(f.chat.messages.map(renderReply));
+  expect(replayed.map(replyContent)).toEqual(f.chat.messages.map(replyContent));
   f.emit('turn.started', { turnId: 'next' });
   f.chat.messages.push({ role: 'user', text: 'Otra pregunta' });
   f.request('next-refs');

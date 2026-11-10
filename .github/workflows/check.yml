@@ -21,21 +21,26 @@ concurrency:
 jobs:
   format:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
       - run: pnpm format:check
   lint:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
+      - uses: leafo/gh-actions-lua@v13
+        with:
+          luaVersion: '5.1'
+      - uses: leafo/gh-actions-luarocks@v6
+      - run: luarocks install luacheck 1.2.0-1
       - run: pnpm lint
   types:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
@@ -75,7 +80,7 @@ jobs:
       - run: pnpm test:addon
   ui-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace

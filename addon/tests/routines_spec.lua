@@ -12,12 +12,12 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = { connected = true, chats = {} }
+            ns = helper.namespace({ connected = true, chats = {} })
             sent, tickers = {}, {}
-            C.Send = function(p)
+            ns.Transport.Send = function(p)
                 sent[#sent + 1] = p
             end
-            C.Capture = function()
+            ns.Character.Capture = function()
                 return { character = "mage" }
             end
             C_Timer.NewTicker = function(seconds, fn)
@@ -28,9 +28,9 @@ it(
                 return combat
             end
         end
-        helper.addon("Advice.lua", env)
+        helper.addon("Advice/Advice.lua", env)
 
-        C.InitAdvice()
+        ns.Advice.InitAdvice()
         local events
         for _, w in ipairs(UI_TEST.widgets) do
             if w.scripts.OnEvent then
@@ -45,7 +45,10 @@ it(
         events.UnregisterEvent = function(_, name)
             registered[name] = nil
         end
-        C.ReceiveRoutineSubscriptions({ { native = "PLAYER_LEVEL_UP", event = "level_up" } }, true)
+        ns.Advice.ReceiveRoutineSubscriptions(
+            { { native = "PLAYER_LEVEL_UP", event = "level_up" } },
+            true
+        )
         assert(registered.PLAYER_LEVEL_UP)
         local onEvent = events.scripts.OnEvent
         onEvent(events, "PLAYER_LEVEL_UP", 26)
@@ -57,7 +60,7 @@ it(
         combat = false
         tickers[15]()
         assert(sent[2].type == "routine_tick" and sent[2].data.ready == true)
-        C.ReceiveRoutineSubscriptions({}, false)
+        ns.Advice.ReceiveRoutineSubscriptions({}, false)
         assert(not registered.PLAYER_LEVEL_UP)
         tickers[2]()
         tickers[15]()
@@ -72,19 +75,19 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = {}
+            ns = helper.namespace()
             SlashCmdList = {}
             function time()
                 return 1
             end
         end
         helper.addon("Core.lua", env)
-        helper.addon("RichUI.lua", env)
-        helper.addon("UI.lua", env)
+        helper.addon("UI/RichUI.lua", env)
+        helper.addon("UI/Window.lua", env)
 
-        C.db = { sidebar = true, showTools = true, drafts = {} }
-        C.active, C.connected = "chat", true
-        C.chats = {
+        ns.db = { sidebar = true, showTools = true, drafts = {} }
+        ns.active, ns.connected = "chat", true
+        ns.chats = {
             { id = "chat", title = "Ordinary chat", status = "done", messages = {}, activity = {} },
             {
                 id = "run-one",
@@ -95,8 +98,8 @@ it(
                 activity = {},
             },
         }
-        C.routines = { { id = "mage", title = "Mage review", enabled = true } }
-        C.routineRuns = {
+        ns.routines = { { id = "mage", title = "Mage review", enabled = true } }
+        ns.routineRuns = {
             {
                 id = "run-one",
                 routineId = "mage",
@@ -112,13 +115,13 @@ it(
                 startedAt = 2000000,
             },
         }
-        C.Send = function(packet)
+        ns.Transport.Send = function(packet)
             UI_TEST.sent = packet
         end
-        C.Capture = function()
+        ns.Character.Capture = function()
             return {}
         end
-        C.BuildUI()
+        ns.UI.BuildUI()
         local function row(id)
             for _, w in ipairs(UI_TEST.widgets) do
                 if w.chatId == id then
@@ -128,17 +131,17 @@ it(
         end
         assert(row("chat"):IsShown())
         assert(not row("run-one"), "routine runs must not appear in Chats")
-        C.sidebarTab = "routines"
-        C.Refresh()
+        ns.sidebarTab = "routines"
+        ns.UI.Refresh()
         assert(not row("chat"):IsShown())
         local routine = row("routine-header:mage")
         assert(routine and routine:IsShown())
         routine.scripts.OnClick(routine)
-        assert(C.sidebarRoutine == "mage")
+        assert(ns.sidebarRoutine == "mage")
         local result = row("run-one")
         assert(result and result:IsShown())
         result.scripts.OnClick(result)
-        assert(C.active == "run-one" and UI_TEST.sent.type == "select")
+        assert(ns.active == "run-one" and UI_TEST.sent.type == "select")
         local quiet = row("quiet")
         assert(not quiet, "silent runs must not appear in routine history")
     end
