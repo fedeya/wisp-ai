@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { button, card } from "../ui";
+  import Button from "../ui/Button.svelte";
+  import Card from "../ui/Card.svelte";
 
   import DataState from "../DataState.svelte";
   import ActionProgress from "../ActionProgress.svelte";
@@ -15,11 +16,11 @@
     <p class="muted text-muted text-[12px]">
       {app.status?.mcps.length || 0} custom connections
     </p>
-    <button
-      class={button({ intent: "primary", class: "primary" })}
+    <Button
+      intent="primary"
       onclick={() => app.edit(null)}
       disabled={app.locked || !app.status}
-      ><Icon name="plus" size={17} />Add MCP</button
+      ><Icon name="plus" size={17} />Add MCP</Button
     >
   </div>
   <div class="connection-list">
@@ -47,13 +48,10 @@
             class="actions gap-[10px] px-[22px] py-[12px] m-0 flex flex-wrap items-center border-t-[1px] [border-top-style:solid] border-t-[var(--border)]"
           >
             <ActionProgress {app} target={entry.id} />
-            <button
-              class={button({})}
-              onclick={() => app.edit(server)}
-              disabled={app.locked}>Edit</button
+            <Button onclick={() => app.edit(server)} disabled={app.locked}
+              >Edit</Button
             >
-            <button
-              class={button({})}
+            <Button
               onclick={() =>
                 app.work(
                   "Testing " + server.name,
@@ -68,26 +66,20 @@
                   undefined,
                   entry.id,
                 )}
-              disabled={app.locked}>Test connection</button
+              disabled={app.locked}>Test connection</Button
             >
-            <button
-              class={button({
-                intent: "quiet",
-                destructive: true,
-                class: "quiet danger text-[#e5a399]",
-              })}
+            <Button
+              intent="quiet"
+              destructive
               onclick={() => app.removeMcp(server)}
-              disabled={app.locked}>Remove</button
+              disabled={app.locked}>Remove</Button
             >
           </div>
         {/each}
       </div>
-    {:else}<section
-        class={card({
-          kind: "empty",
-          class:
-            "card empty-state text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]",
-        })}
+    {:else}<Card
+        kind="empty"
+        class="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]"
       >
         <h2 class="text-[21px]">No integrations available yet</h2>
         <p
@@ -96,7 +88,7 @@
           Connect WoW to discover supported addons, or add an MCP server to give
           Wisp more tools.
         </p>
-      </section>{/each}
+      </Card>{/each}
   </div>
   <p class="footnote text-[11px]! text-muted mt-[12px]">
     Changes apply to new tool calls. Disabling an integration preserves

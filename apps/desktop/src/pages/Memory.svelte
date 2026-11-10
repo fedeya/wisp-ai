@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { card } from "../ui";
+  import Card from "../ui/Card.svelte";
 
   import Toggle from "../Toggle.svelte";
   import DataState from "../DataState.svelte";
@@ -10,12 +10,7 @@
 
 {#if app.loading || !app.status}<DataState {app} />{:else}
   {#each (app.status?.integrations || []).filter((entry) => entry.group === "memory") as entry (entry.id)}
-    <section
-      class={card({
-        kind: "toggle",
-        class: "card toggle-card gap-[22px] flex items-center justify-between",
-      })}
-    >
+    <Card kind="toggle" class="gap-[22px] flex items-center justify-between">
       <div class="toggle-description gap-[18px] flex items-center">
         <div>
           <h2 class="text-[15px] max-lg:text-[14px]">
@@ -34,13 +29,10 @@
           onchange={(checked) => app.setIntegration(entry.id, checked)}
         />
       </div>
-    </section>
-  {:else}<section
-      class={card({
-        kind: "empty",
-        class:
-          "card empty-state text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]",
-      })}
+    </Card>
+  {:else}<Card
+      kind="empty"
+      class="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]"
     >
       <h2 class="text-[21px]">No memory controls available</h2>
       <p
@@ -48,5 +40,5 @@
       >
         Memory preferences will appear when Wisp makes them available.
       </p>
-    </section>{/each}
+    </Card>{/each}
 {/if}

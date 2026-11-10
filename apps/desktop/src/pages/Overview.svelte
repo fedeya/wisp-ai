@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { card, button, badge, field } from "../ui";
+  import Badge from "../ui/Badge.svelte";
+  import Button from "../ui/Button.svelte";
+  import Card from "../ui/Card.svelte";
+  import Input from "../ui/Input.svelte";
+  import Select from "../ui/Select.svelte";
 
   import type { DesktopController } from "../desktop-controller.svelte";
   import Icon from "../Icon.svelte";
@@ -87,13 +91,10 @@
   };
 </script>
 
-<section
-  class={card({
-    kind: "workspace",
-    ready: next === "ready",
-    class:
-      "card workspace-status [background:linear-gradient(120deg,_#1d2c2d,_var(--surface)_80%)] [&_>_.action-progress:not(:empty)]:mt-[12px]",
-  })}
+<Card
+  kind="workspace"
+  ready={next === "ready"}
+  class="[background:linear-gradient(120deg,_#1d2c2d,_var(--surface)_80%)] [&_>_.action-progress:not(:empty)]:mt-[12px]"
 >
   <div class="status-heading gap-[18px] flex items-start">
     <div
@@ -119,35 +120,32 @@
   <div
     class="actions status-actions gap-[10px] mt-[22px] flex flex-wrap items-center mr-0 mb-[24px] ml-[70px] min-h-[37px]"
   >
-    {#if next === "update"}<button
-        class={button({ intent: "primary", class: "primary" })}
+    {#if next === "update"}<Button
+        intent="primary"
         disabled={!native || app.locked || !app.wow}
         onclick={app.install}
         >{app.busy === "Installing addon"
           ? "Updating addon…"
-          : "Update addon"}</button
+          : "Update addon"}</Button
       >
-    {:else if next === "start"}<button
-        class={button({ intent: "primary", class: "primary" })}
+    {:else if next === "start"}<Button
+        intent="primary"
         disabled={!!app.busy || !native}
-        onclick={app.start}>Start Wisp</button
+        onclick={app.start}>Start Wisp</Button
       >
-    {:else if next === "account"}<button
-        class={button({ intent: "primary", class: "primary" })}
+    {:else if next === "account"}<Button
+        intent="primary"
         onclick={() => (app.page = "Connections")}
-        >Connect AI<Icon name="arrow" size={16} /></button
+        >Connect AI<Icon name="arrow" size={16} /></Button
       >
-    {:else if next === "game"}<span class={badge({ class: "badge" })}
-        >Waiting for WoW</span
-      ><button
-        class={button({ intent: "quiet", class: "quiet" })}
-        onclick={() => (editingInstallation = true)}>Check installation</button
+    {:else if next === "game"}<Badge>Waiting for WoW</Badge><Button
+        intent="quiet"
+        onclick={() => (editingInstallation = true)}>Check installation</Button
       >
-    {:else if next === "ready"}<span
-        class={badge({ class: "badge good text-accent!" })}
+    {:else if next === "ready"}<Badge class="good text-accent!"
         ><span
           class="live-dot online w-[6px] h-[6px] rounded-[50%] [background:var(--accent)] inline-block shrink-0 [box-shadow:0_0_10px_#77dbc633]"
-        ></span>Ready to help</span
+        ></span>Ready to help</Badge
       >
     {:else if next !== "searching" && next !== "install"}<span
         class="spinner border-[2px] border-solid w-[15px] h-[15px] rounded-[50%] border-t-[var(--accent)] border-r-[#77dbc633] border-b-[#77dbc633] border-l-[#77dbc633] animate-spinner shrink-0"
@@ -182,14 +180,11 @@
             : app.connected
               ? "Connected"
               : "Not connected"}</strong
-      >{#if !app.loading && !app.connected && app.status}<button
-          class={button({
-            intent: "quiet",
-            size: "text",
-            class:
-              "text-button px-0 py-[4px] min-h-[24px] text-accent ml-auto text-[12px]",
-          })}
-          onclick={() => (app.page = "Connections")}>Connect</button
+      >{#if !app.loading && !app.connected && app.status}<Button
+          intent="quiet"
+          size="text"
+          class="ml-auto text-[12px]"
+          onclick={() => (app.page = "Connections")}>Connect</Button
         >{/if}
     </div>
     <div class="gap-[10px] flex items-center min-h-[46px] text-[13px]">
@@ -208,13 +203,10 @@
                 : app.starting || app.status
                   ? "Starting…"
                   : "Stopped"}</strong
-      >{#if app.status}<button
-          class={button({
-            intent: "quiet",
-            size: "text",
-            class:
-              "text-button px-0 py-[4px] min-h-[24px] text-accent ml-auto text-[12px]",
-          })}
+      >{#if app.status}<Button
+          intent="quiet"
+          size="text"
+          class="ml-auto text-[12px]"
           disabled={app.locked}
           onclick={() =>
             app.work(
@@ -224,20 +216,15 @@
                 app.starting = false;
               },
               "Wisp stopped.",
-            )}>Stop Wisp</button
+            )}>Stop Wisp</Button
         >{/if}
     </div>
   </div>
   <ActionProgress {app} />
-</section>
+</Card>
 
 {#if !app.loading}
-  <section
-    class={card({
-      kind: "installation",
-      class: "card installation-card",
-    })}
-  >
+  <Card kind="installation">
     <div
       class="section-title gap-[18px] flex items-center justify-between max-xl:flex-wrap [&_>_svg]:text-muted"
     >
@@ -257,29 +244,25 @@
       {#if app.info?.configured}<div
           class="installation-controls gap-[10px] flex items-center shrink-0 flex-wrap"
         >
-          <span
-            class={badge({
-              positive: !app.info.addonOutdated,
-              class: "badge",
-            })}
+          <Badge positive={!app.info.addonOutdated}
             >{app.info.addonOutdated
               ? "Update needed"
-              : "Addon installed"}</span
-          ><button
-            class={button({ intent: "quiet", class: "quiet" })}
+              : "Addon installed"}</Badge
+          ><Button
+            intent="quiet"
             aria-expanded={installationOpen}
             onclick={() => (editingInstallation = !editingInstallation)}
             >{installationOpen && !app.info.addonOutdated
               ? "Done"
-              : "Manage installation"}</button
+              : "Manage installation"}</Button
           >
-        </div>{:else}<button
-          class={button({ intent: "quiet", class: "quiet" })}
+        </div>{:else}<Button
+          intent="quiet"
           disabled={!native || app.locked || app.detectingGame}
           onclick={app.searchInstallations}
           aria-label="Search again"
           title="Search again"
-          ><Icon name="refresh" size={17} />Search again</button
+          ><Icon name="refresh" size={17} />Search again</Button
         >{/if}
     </div>
     {#if installationOpen}
@@ -298,8 +281,7 @@
             class="field-hint text-[11px]! text-muted mt-[12px]"
             for="detected-game">Found multiple Forever installations</label
           >
-          <select
-            class={field({})}
+          <Select
             id="detected-game"
             aria-label="Detected Forever installations"
             bind:value={app.wow}
@@ -311,7 +293,7 @@
             {#each app.detectedFolders as folder}<option value={folder}
                 >{folder}</option
               >{/each}
-          </select>
+          </Select>
         {:else if !app.info?.configured && app.detectedFolders.length === 0}
           <p class="field-hint text-[11px]! text-muted mt-[12px]">
             {app.detectionFailed
@@ -321,10 +303,8 @@
         {/if}
         <div class="folder-field gap-[12px] mt-[17px] flex items-center">
           {#if app.info?.configured || app.detectedFolders.length < 2}
-            <input
-              class={field({
-                class: "folder-picker cursor-pointer flex-[1]",
-              })}
+            <Input
+              class="folder-picker cursor-pointer flex-[1]"
               aria-label="WoW client folder"
               bind:value={app.wow}
               placeholder="Choose your World of Warcraft folder"
@@ -335,15 +315,14 @@
               onkeydown={(event) => {
                 if (event.key === "Enter") chooseFolder();
               }}
-            />{/if}<button
-            class={button({})}
+            />{/if}<Button
             onclick={chooseFolder}
             disabled={!!app.busy || !native}
             aria-busy={choosingFolder}
             >{#if choosingFolder}<span
                 class="spinner border-[2px] border-solid w-[15px] h-[15px] rounded-[50%] border-t-[var(--accent)] border-r-[#77dbc633] border-b-[#77dbc633] border-l-[#77dbc633] animate-spinner shrink-0"
               ></span>Choosing…{:else}<Icon name="folder" size={17} />Choose
-              folder{/if}</button
+              folder{/if}</Button
           >
         </div>
       {/if}
@@ -357,35 +336,30 @@
         Wisp or whether using it could lead to an account ban.
       </p>
       <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-        {#if !app.info?.configured && !app.detectingGame}<button
-            class={button({ intent: "primary", class: "primary" })}
+        {#if !app.info?.configured && !app.detectingGame}<Button
+            intent="primary"
             onclick={app.install}
             disabled={app.locked || !app.wow || !native}
             >{app.busy === "Installing addon"
               ? "Installing…"
-              : "Install addon"}</button
-          >{:else if app.info?.configured && next !== "update"}<button
-            class={button({
-              intent: "primary",
-            })}
+              : "Install addon"}</Button
+          >{:else if app.info?.configured && next !== "update"}<Button
+            intent="primary"
             onclick={app.install}
             disabled={app.locked || !app.wow || !native}
             >{app.busy === "Installing addon"
               ? "Installing…"
-              : "Install / update addon"}</button
+              : "Install / update addon"}</Button
           >{/if}<ActionProgress {app} target="installation" />
       </div>
-      {#if !app.info?.configured && !app.detectingGame}<button
-          class={button({
-            intent: "quiet",
-            size: "text",
-            class:
-              "text-button import px-0 py-[4px] mx-0 min-h-[24px] text-accent text-[12px] mt-[18px] mb-0",
-          })}
+      {#if !app.info?.configured && !app.detectingGame}<Button
+          intent="quiet"
+          size="text"
+          class="import mx-0 text-[12px] mt-[18px] mb-0"
           onclick={app.importPrevious}
           disabled={!!app.busy || !native || app.detectingGame}
-          >Already using Wisp? Import your previous installation.</button
+          >Already using Wisp? Import your previous installation.</Button
         >{/if}
     {/if}
-  </section>
+  </Card>
 {/if}

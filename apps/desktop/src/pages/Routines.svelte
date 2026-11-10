@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { card, button } from "../ui";
+  import Button from "../ui/Button.svelte";
+  import Card from "../ui/Card.svelte";
 
   import DataState from "../DataState.svelte";
   import ActionProgress from "../ActionProgress.svelte";
@@ -10,7 +11,7 @@
 </script>
 
 {#if app.loading || !app.status}<DataState {app} />{:else}
-  <section class={card({ class: "card" })}>
+  <Card>
     <h2>
       {app.status.routines.length
         ? "Create another routine in game"
@@ -21,9 +22,9 @@
       weapons, review my equipment.” Routines run while the character is
       connected, outside combat. Each run has its own conversation.
     </p>
-  </section>
+  </Card>
   {#each app.status?.routines || [] as routine (routine.characterKey + routine.id)}
-    <section class={card({ class: "card" })}>
+    <Card>
       <div
         class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
       >
@@ -37,8 +38,7 @@
         </div>
         <div class="actions gap-[10px] mt-0 flex flex-wrap items-center">
           <ActionProgress {app} target={routine.characterKey + routine.id} />
-          <button
-            class={button({})}
+          <Button
             disabled={!!app.busy}
             onclick={() =>
               app.work(
@@ -51,14 +51,11 @@
                   }),
                 "Routine updated.",
                 routine.characterKey + routine.id,
-              )}>{routine.enabled ? "Pause" : "Resume"}</button
+              )}>{routine.enabled ? "Pause" : "Resume"}</Button
           >
-          <button
-            class={button({
-              intent: "quiet",
-              destructive: true,
-              class: "quiet danger text-[#e5a399]",
-            })}
+          <Button
+            intent="quiet"
+            destructive
             disabled={!!app.busy}
             onclick={() => {
               app.confirm = {
@@ -76,7 +73,7 @@
                     routine.characterKey + routine.id,
                   ),
               };
-            }}>Delete</button
+            }}>Delete</Button
           >
         </div>
       </div>
@@ -115,8 +112,7 @@
                   {run.summary}
                 </p>{/if}
             </div>
-            {#if run.status !== "no_tip"}<button
-                class={button({})}
+            {#if run.status !== "no_tip"}<Button
                 disabled={!!app.busy || !app.status?.gameConnected}
                 onclick={() =>
                   app.work(
@@ -124,11 +120,11 @@
                     () => request("/routines/open", { id: run.id }),
                     "Conversation selected in WoW. Open /wisp to continue.",
                     routine.characterKey + routine.id,
-                  )}>Open in game</button
+                  )}>Open in game</Button
               >{/if}
           </div>
         {:else}<p class="muted text-muted text-[13px]">No runs yet.</p>{/each}
       </details>
-    </section>
+    </Card>
   {/each}
 {/if}

@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { card, button, field } from "./ui";
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
+  import Input from "./ui/Input.svelte";
+  import Select from "./ui/Select.svelte";
 
   import {
     providerDefinitions,
@@ -71,7 +74,7 @@
   }
 </script>
 
-<section class={card({ kind: "provider", class: "card provider-card" })}>
+<Card kind="provider">
   <div
     class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
   >
@@ -81,10 +84,9 @@
         Use your own API key. Usage is billed by the selected provider.
       </p>
     </div>
-    <button
-      class={button({})}
+    <Button
       disabled={app.locked || !app.status || editing}
-      onclick={() => open()}>Add connection</button
+      onclick={() => open()}>Add connection</Button
     >
   </div>
   {#each app.status?.connections || [] as connection (connection.id)}
@@ -105,17 +107,13 @@
         </p>
       </div>
       <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-        <button
-          class={button({})}
+        <Button
           disabled={app.locked || editing}
-          onclick={() => open(connection)}>Edit</button
+          onclick={() => open(connection)}>Edit</Button
         >
-        <button
-          class={button({
-            intent: "quiet",
-            destructive: true,
-            class: "quiet danger text-[#e5a399]",
-          })}
+        <Button
+          intent="quiet"
+          destructive
           disabled={app.locked || editing}
           onclick={() => {
             app.confirm = {
@@ -131,7 +129,7 @@
                   "connections",
                 ),
             };
-          }}>Remove</button
+          }}>Remove</Button
         >
       </div>
     </div>
@@ -144,8 +142,7 @@
       <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-provider"
         >Provider</label
       >
-      <select
-        class={field({})}
+      <Select
         id="ai-provider"
         bind:value={provider}
         disabled={app.locked || !!id}
@@ -160,16 +157,15 @@
         {#each providerDefinitions as item}<option value={item.id}
             >{item.name}</option
           >{/each}
-      </select>
+      </Select>
       <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-name"
         >Connection name</label
       >
-      <input
-        class={field({})}
+      <Input
         id="ai-name"
         bind:value={name}
         placeholder={definition.name}
-        maxlength="80"
+        maxlength={80}
         disabled={app.locked}
       />
       <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-key"
@@ -179,8 +175,7 @@
             ? "(optional for local servers)"
             : ""}</label
       >
-      <input
-        class={field({})}
+      <Input
         id="ai-key"
         type="password"
         bind:value={apiKey}
@@ -192,8 +187,7 @@
         <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-url"
           >Base URL</label
         >
-        <input
-          class={field({})}
+        <Input
           id="ai-url"
           bind:value={baseURL}
           placeholder="http://localhost:1234/v1"
@@ -204,8 +198,8 @@
           <summary class="cursor-pointer text-muted text-[13px]"
             >Custom endpoint</summary
           >
-          <label for="ai-url">Base URL</label><input
-            class={field({ class: "mt-[8px]" })}
+          <label for="ai-url">Base URL</label><Input
+            class="mt-[8px]"
             id="ai-url"
             bind:value={baseURL}
             placeholder={definition.baseURL}
@@ -217,12 +211,9 @@
         <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-model"
           >Models available in Wisp</label
         >
-        <button
-          class={button({
-            intent: "quiet",
-            size: "text",
-            class: "text-button px-0 py-[4px] min-h-[24px] text-accent",
-          })}
+        <Button
+          intent="quiet"
+          size="text"
           disabled={app.locked || (provider === "compatible" && !baseURL)}
           onclick={() =>
             app.work(
@@ -238,7 +229,7 @@
               },
               "Models loaded. Choose models to add below.",
               "connection-editor",
-            )}>Load model list</button
+            )}>Load model list</Button
         >
       </div>
       <p class="field-hint text-[11px]! text-muted mt-[12px]">
@@ -248,8 +239,7 @@
       <div
         class="api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]"
       >
-        <input
-          class={field({})}
+        <Input
           id="ai-model"
           bind:value={modelId}
           list="ai-model-options"
@@ -261,8 +251,7 @@
               >{model.name || model.id}</option
             >{/each}</datalist
         >
-        <input
-          class={field({})}
+        <Input
           aria-label="Context window in tokens"
           type="number"
           min="1"
@@ -271,10 +260,8 @@
           placeholder="Context tokens"
           disabled={app.locked}
         />
-        <button
-          class={button({})}
-          disabled={app.locked || !modelId.trim()}
-          onclick={addModel}>Add model</button
+        <Button disabled={app.locked || !modelId.trim()} onclick={addModel}
+          >Add model</Button
         >
       </div>
       {#each models as model, index (model.id)}
@@ -282,8 +269,7 @@
           class="api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]"
         >
           <span class="[overflow-wrap:anywhere]">{model.id}</span>
-          <input
-            class={field({})}
+          <Input
             aria-label={`Context window for ${model.id}`}
             type="number"
             min="1"
@@ -292,13 +278,13 @@
             placeholder="Context tokens (required)"
             disabled={app.locked}
           />
-          <button
-            class={button({ intent: "quiet", class: "quiet" })}
+          <Button
+            intent="quiet"
             disabled={app.locked}
             aria-label={`Remove ${model.id}`}
             onclick={() => {
               models = models.filter((m) => m.id !== model.id);
-            }}>Remove</button
+            }}>Remove</Button
           >
         </div>
       {/each}
@@ -310,8 +296,7 @@
         tokens.
       </p>
       <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-        <button
-          class={button({})}
+        <Button
           disabled={app.locked || !models.length}
           onclick={() =>
             app.work(
@@ -319,10 +304,10 @@
               () => request("/connections/test", setup()),
               "Connection and tool calling verified for the first model.",
               "connection-editor",
-            )}>Test first model</button
+            )}>Test first model</Button
         >
-        <button
-          class={button({ intent: "primary", class: "primary" })}
+        <Button
+          intent="primary"
           disabled={app.locked ||
             !models.length ||
             !!modelId.trim() ||
@@ -333,15 +318,15 @@
               save,
               "Connection saved. Choose a default model below.",
               "connection-editor",
-            )}>Save connection</button
+            )}>Save connection</Button
         >
-        <button
-          class={button({ intent: "quiet", class: "quiet" })}
+        <Button
+          intent="quiet"
           disabled={app.locked}
           onclick={() => {
             apiKey = "";
             editing = false;
-          }}>Cancel</button
+          }}>Cancel</Button
         >
       </div>
       <p class="field-hint text-[11px]! text-muted mt-[12px]">
@@ -358,4 +343,4 @@
     search to use web search with API models. Game tools and other enabled
     databases work independently of the search service.
   </p>
-</section>
+</Card>

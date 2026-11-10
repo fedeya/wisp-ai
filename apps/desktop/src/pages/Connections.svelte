@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { card, badge, button, field } from "../ui";
+  import Badge from "../ui/Badge.svelte";
+  import Button from "../ui/Button.svelte";
+  import Card from "../ui/Card.svelte";
+  import Select from "../ui/Select.svelte";
 
   import type { DesktopController } from "../desktop-controller.svelte";
   import ApiConnections from "../ApiConnections.svelte";
@@ -11,7 +14,7 @@
   let chatgptConnected = $derived(app.status?.auth.status === "connected");
 </script>
 
-<section class={card({ kind: "provider", class: "card provider-card" })}>
+<Card kind="provider">
   <div class="provider-heading gap-[15px] flex items-center max-xl:flex-wrap">
     <div
       class="provider-symbol border border-solid border-[#36534d] [background:#243e3a] text-accent rounded-[11px] w-[47px] h-[47px] flex items-center justify-center shrink-0"
@@ -24,12 +27,12 @@
         Connect with your subscription. No API key needed.
       </p>
     </div>
-    <span class={badge({ positive: chatgptConnected, class: "badge ml-auto" })}
+    <Badge positive={chatgptConnected} class="ml-auto"
       >{chatgptConnected
         ? "Connected"
         : app.status?.auth.status === "authorizing"
           ? "Waiting for browser"
-          : "Not connected"}</span
+          : "Not connected"}</Badge
     >
   </div>
   {#if app.status?.auth.account}<p
@@ -44,43 +47,31 @@
       class="empty-inline text-[12px] text-[#c0a77a] mt-[22px]"
     >
       Start Wisp to manage your account.
-      <button
-        class={button({
-          intent: "quiet",
-          size: "text",
-          class: "text-button px-0 py-[4px] min-h-[24px] text-accent",
-        })}
-        onclick={() => (app.page = "Overview")}>Go to Overview</button
+      <Button intent="quiet" size="text" onclick={() => (app.page = "Overview")}
+        >Go to Overview</Button
       >
     </div>{/if}
   <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
     <ActionProgress {app} />
-    <button
-      class={button({
-        intent: chatgptConnected ? "default" : "primary",
-      })}
+    <Button
+      intent={chatgptConnected ? "default" : "primary"}
       onclick={() => app.signIn()}
       disabled={app.locked || !app.status}
       >{app.busy === "Opening sign-in"
         ? "Opening browser…"
         : chatgptConnected
           ? "Reconnect"
-          : "Continue with ChatGPT"}<Icon name="arrow" size={17} /></button
-    ><button
-      class={button({})}
+          : "Continue with ChatGPT"}<Icon name="arrow" size={17} /></Button
+    ><Button
       onclick={() => app.signIn(true)}
-      disabled={app.locked || !app.status}>Add account</button
-    >{#if app.status?.auth.status === "authorizing"}<button
-        class={button({})}
+      disabled={app.locked || !app.status}>Add account</Button
+    >{#if app.status?.auth.status === "authorizing"}<Button
         onclick={() =>
           app.work("Cancelling sign-in", () => request("/auth/cancel", {}))}
-        disabled={!!app.busy}>Cancel sign-in</button
-      >{/if}{#if chatgptConnected}<button
-        class={button({
-          intent: "quiet",
-          destructive: true,
-          class: "quiet danger text-[#e5a399]",
-        })}
+        disabled={!!app.busy}>Cancel sign-in</Button
+      >{/if}{#if chatgptConnected}<Button
+        intent="quiet"
+        destructive
         onclick={() => {
           app.confirm = {
             label:
@@ -93,7 +84,7 @@
               ),
           };
         }}
-        disabled={app.locked}>Disconnect</button
+        disabled={app.locked}>Disconnect</Button
       >{/if}
   </div>
   {#if (app.status?.auth.profiles.length || 0) > 0}<div
@@ -103,16 +94,15 @@
         >Saved accounts</label
       >
       <div class="inline-field gap-[12px] mt-[10px] flex items-center">
-        <select
-          class={field({ class: "flex-[1]" })}
+        <Select
+          class="flex-[1]"
           id="accounts"
           bind:value={app.account}
           disabled={app.locked}
           >{#each app.status?.auth.profiles || [] as item}<option
               value={item.id}>{item.label}</option
-            >{/each}</select
-        ><button
-          class={button({})}
+            >{/each}</Select
+        ><Button
           onclick={() =>
             app.work(
               "Switching account",
@@ -121,17 +111,17 @@
               "accounts",
             )}
           disabled={app.locked || app.account === app.status?.auth.activeId}
-          >Use account</button
+          >Use account</Button
         >
       </div>
       <ActionProgress {app} target="accounts" />
     </div>{/if}
-</section>
+</Card>
 
 <ApiConnections {app} />
 <SearchConnection {app} />
 
-<section class={card({ kind: "provider", class: "card provider-card" })}>
+<Card kind="provider">
   <h2>Default model</h2>
   <div
     class="field-section border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px]"
@@ -145,12 +135,9 @@
     <div class="label-row flex items-center justify-between">
       <label class="text-[12px] font-medium text-[#bdcccf]" for="models"
         >Default model for new chats</label
-      ><button
-        class={button({
-          intent: "quiet",
-          size: "text",
-          class: "text-button px-0 py-[4px] min-h-[24px] text-accent",
-        })}
+      ><Button
+        intent="quiet"
+        size="text"
         onclick={() =>
           app.work(
             "Loading models",
@@ -159,12 +146,12 @@
             "model",
           )}
         disabled={app.locked || !app.status}
-        ><Icon name="refresh" size={14} />Refresh</button
+        ><Icon name="refresh" size={14} />Refresh</Button
       >
     </div>
     <div class="inline-field gap-[12px] mt-[10px] flex items-center">
-      <select
-        class={field({ class: "flex-[1]" })}
+      <Select
+        class="flex-[1]"
         id="models"
         bind:value={app.model}
         disabled={app.locked || !app.models.length}
@@ -174,9 +161,8 @@
             : "Connect a provider first"}</option
         >{#each app.models as item}<option value={item.slug}
             >{item.displayName}</option
-          >{/each}</select
-      ><button
-        class={button({})}
+          >{/each}</Select
+      ><Button
         onclick={() =>
           app.work(
             "Updating default model",
@@ -189,7 +175,7 @@
           app.model === app.status?.model}
         >{app.busy === "Updating default model"
           ? "Saving…"
-          : "Set default"}</button
+          : "Set default"}</Button
       >
     </div>
     <ActionProgress {app} target="model" />
@@ -203,4 +189,4 @@
     <Icon name="check" size={16} />Credentials stay protected by your operating
     system.
   </p>
-</section>
+</Card>

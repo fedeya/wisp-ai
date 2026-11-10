@@ -1,4 +1,5 @@
-import { containerClassName, link } from '../../../components/ui';
+import { containerClassName } from '../../../components/ui';
+import { ButtonLink } from '../../../components/ui/button-link';
 import { getTranslator, translateData, localizedPath } from '../../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../../i18n/server';
 import { localizedMetadata } from '../../../seo';
@@ -217,7 +218,7 @@ export default async function Features({ params }: LocalePageProps) {
                   {feature.title}
                 </h2>
                 {feature.status && (
-                  <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-[center] justify-self-[start] ml-[48px] uppercase shrink-0 md:ml-auto md:justify-self-auto">
+                  <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-center justify-self-start ml-[48px] uppercase shrink-0 md:ml-auto md:justify-self-auto">
                     {feature.status}
                   </span>
                 )}
@@ -257,10 +258,10 @@ export default async function Features({ params }: LocalePageProps) {
             <h2 className="w-full text-[30px] leading-[1.2] mb-[3px] md:text-[33px]">
               {t('Bring your next question in game.')}
             </h2>
-            <Link className={link({ intent: 'primary' })} href={localizedPath(locale, '/setup')}>
+            <ButtonLink internal href={localizedPath(locale, '/setup')}>
               {t('Set up Wisp ')}
               <Icon name="arrow" size={16} />
-            </Link>
+            </ButtonLink>
             <Link
               className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] [&:hover]:text-gold`}
               href={localizedPath(locale, '/setup#privacy')}

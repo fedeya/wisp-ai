@@ -1,17 +1,15 @@
 <script lang="ts">
-  import { card, button } from "./ui";
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
 
   import type { DesktopController } from "./desktop-controller.svelte";
   import Icon from "./Icon.svelte";
   let { app }: { app: DesktopController } = $props();
 </script>
 
-<section
-  class={card({
-    kind: "empty",
-    class:
-      "card empty-state text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]",
-  })}
+<Card
+  kind="empty"
+  class="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]"
   aria-live="polite"
 >
   {#if app.loading}
@@ -34,12 +32,11 @@
         ? "Your workspace will appear when the service is ready."
         : "Your saved data is unavailable while Wisp is stopped or unreachable."}
     </p>
-    <button class={button({})} onclick={() => (app.page = "Overview")}
-      >Go to Overview<Icon name="arrow" size={16} /></button
+    <Button onclick={() => (app.page = "Overview")}
+      >Go to Overview<Icon name="arrow" size={16} /></Button
     >
-    {#if app.connectionError}<button
-        class={button({ intent: "quiet", class: "quiet" })}
-        onclick={app.showLogs}>View diagnostics</button
+    {#if app.connectionError}<Button intent="quiet" onclick={app.showLogs}
+        >View diagnostics</Button
       >{/if}
   {/if}
-</section>
+</Card>

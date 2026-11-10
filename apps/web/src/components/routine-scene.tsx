@@ -1,4 +1,5 @@
 'use client';
+import { PlaybackButton } from './ui/playback-button';
 
 import { getTranslator, type Locale } from '../i18n';
 import Image from 'next/image';
@@ -283,7 +284,7 @@ export function RoutineScene({ locale }: { locale: Locale }) {
           </div>
         </div>
         <div
-          className={`routine-connection gap-[0] p-0 mx-0 my-[16px] grid items-center justify-center text-[#bea06a] opacity-[0.25] h-[42px] flex-col grid-cols-[1fr] w-[42px] justify-self-[center] grid-rows-[42px] content-center [place-items:center] md:my-0 md:grid-cols-[20px] md:absolute md:left-[calc(50%_-_max(0px,_(100%_-_918px)_/_4))] md:top-[50%] md:flex-row md:grid-rows-none md:content-normal [transition:opacity_800ms] [transform:translate(-50%,_-50%)] max-md:[transform:revert-layer] [&.connected]:opacity-[1] max-md:[&_svg]:[transform:rotate(90deg)] max-md:[&_>_svg]:[transform:rotate(90deg)] ${shown >= 2 ? `connected` : ``}`}
+          className={`routine-connection gap-[0] p-0 mx-0 my-[16px] grid items-center justify-center text-[#bea06a] opacity-[0.25] h-[42px] flex-col grid-cols-[1fr] w-[42px] justify-self-center grid-rows-[42px] content-center [place-items:center] md:my-0 md:grid-cols-[20px] md:absolute md:left-[calc(50%_-_max(0px,_(100%_-_918px)_/_4))] md:top-[50%] md:flex-row md:grid-rows-none md:content-normal [transition:opacity_800ms] [transform:translate(-50%,_-50%)] max-md:[transform:revert-layer] [&.connected]:opacity-[1] max-md:[&_svg]:[transform:rotate(90deg)] max-md:[&_>_svg]:[transform:rotate(90deg)] ${shown >= 2 ? `connected` : ``}`}
           aria-hidden="true"
         >
           <svg
@@ -295,7 +296,7 @@ export function RoutineScene({ locale }: { locale: Locale }) {
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="justify-self-[center] block"
+            className="justify-self-center block"
           >
             <path d="m10 12 9 9-9 9" className="opacity-[0.5]" />
             <path d="m22 12 9 9-9 9" className="opacity-[0.5]" />
@@ -415,12 +416,14 @@ export function RoutineScene({ locale }: { locale: Locale }) {
         </div>
       </div>
       <div
-        className={`routine-bottom gap-[20px] px-[3px] flex items-center justify-between pt-[17px] pb-0 [&_button]:[background:transparent]`}
+        className={`routine-bottom gap-[20px] px-[3px] flex items-center justify-between pt-[17px] pb-0`}
       >
         <span className="text-[#8d8370] text-[9px] leading-[1.6] max-w-[185px] sm:max-w-[245px] md:text-[10px] md:max-w-none">
           {t('Keep your plan in memory. Let a routine bring it back at the right time.')}
         </span>
-        <button
+        <PlaybackButton
+          scene="routine"
+          paused={paused || reduced}
           type="button"
           onClick={() => {
             if (reduced) {
@@ -433,11 +436,9 @@ export function RoutineScene({ locale }: { locale: Locale }) {
             }
           }}
           aria-label={paused || reduced ? t('Play routine example') : t('Pause routine example')}
-          className="gap-[5px] border border-solid border-[#b9a16c30] px-[10px] py-[7px] inline-flex items-center rounded-[3px] text-[#bdaf93] text-[10px] cursor-pointer"
         >
-          <Icon name={paused || reduced ? 'play' : 'pause'} size={12} />
           {paused || reduced ? t('Play') : t('Pause')}
-        </button>
+        </PlaybackButton>
       </div>
     </section>
   );

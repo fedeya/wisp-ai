@@ -1,4 +1,5 @@
-import { containerClassName, link } from '../../../components/ui';
+import { containerClassName } from '../../../components/ui';
+import { ButtonLink } from '../../../components/ui/button-link';
 import { getTranslator } from '../../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../../i18n/server';
 import { localizedMetadata } from '../../../seo';
@@ -33,11 +34,11 @@ export default async function Setup({ params }: LocalePageProps) {
         <p className="guide-lead mx-0 text-muted text-[16px] leading-[1.8] mt-[22px] mb-[26px] max-w-[570px]">
           {t('You’ll need Windows, WoW: Forever and your choice of AI connection.')}
         </p>
-        <a className={link({ intent: 'primary' })} href={site.download}>
+        <ButtonLink href={site.download}>
           <Icon name="windows" size={17} />
           {t('Download for Windows')}
           <Icon name="download" size={17} />
-        </a>
+        </ButtonLink>
         <UsageRisk locale={locale} />
         <ol
           className={`guide-steps p-0 mx-0 mt-[58px] mb-0 list-none [counter-reset:setup] [&_li]:[counter-increment:setup] [&_li::before]:[content:'0'_counter(setup)] [&_li::before]:absolute [&_li::before]:left-[0] [&_li::before]:top-[3px] [&_li::before]:text-gold [&_li::before]:text-[22px] [&_li::before]:[font-family:Georgia,_serif] [&_li::before]:font-normal [&_li::before]:not-italic [&_li::before]:[line-height:normal]`}

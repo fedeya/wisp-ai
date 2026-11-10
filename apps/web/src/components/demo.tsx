@@ -1,4 +1,5 @@
 'use client';
+import { PlaybackButton } from './ui/playback-button';
 
 import { getTranslator, translateData, type Locale } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
@@ -386,23 +387,23 @@ export function Demo({ locale }: { locale: Locale }) {
         </div>
       </div>
       <div
-        className={`demo-caption mx-[3px] flex justify-between items-center text-[#b8ad99] text-[10px] mt-[13px] mb-0 [&_i]:[background:var(--gold)] [&_i]:[box-shadow:0_0_8px_#d6b77780] [&_button]:[background:#1716137a] [&_button_svg]:shrink-[0]`}
+        className={`demo-caption mx-[3px] flex justify-between items-center text-[#b8ad99] text-[10px] mt-[13px] mb-0 [&_i]:[background:var(--gold)] [&_i]:[box-shadow:0_0_8px_#d6b77780]`}
       >
         <span className="gap-[7px] flex items-center">
           <i className="w-[5px] h-[5px] rounded-[50%]" />
           {current.label}
         </span>
-        <button
+        <PlaybackButton
+          scene="demo"
+          paused={paused || reduced}
           onClick={() => {
             setPaused(!(paused || reduced));
             setReduced(false);
           }}
           aria-label={paused || reduced ? t('Play demo') : t('Pause demo')}
-          className="gap-[5px] border border-solid border-[#d8c5a52a] px-[9px] py-[6px] text-[#c3b79e] rounded-[3px] text-[10px] cursor-pointer min-h-[28px] inline-flex items-center"
         >
-          <Icon name={paused || reduced ? 'play' : 'pause'} size={12} />
           {paused || reduced ? t('Play') : t('Pause')}
-        </button>
+        </PlaybackButton>
       </div>
     </div>
   );

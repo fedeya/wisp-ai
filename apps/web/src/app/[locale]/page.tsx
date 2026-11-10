@@ -1,4 +1,5 @@
-import { containerClassName, link } from '../../components/ui';
+import { containerClassName } from '../../components/ui';
+import { ButtonLink } from '../../components/ui/button-link';
 import { getTranslator, translateData, localizedPath, type Locale } from '../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../i18n/server';
 import { localizedMetadata } from '../../seo';
@@ -42,11 +43,11 @@ const baseFaqs = [
 function InstallLink({ locale }: { locale: Locale }) {
   const t = getTranslator(locale);
   return (
-    <a className={link({ intent: 'primary' })} href={site.download}>
+    <ButtonLink href={site.download}>
       <Icon name="windows" size={17} />
       {t('Download for Windows')}
       <Icon name="arrow" size={17} />
-    </a>
+    </ButtonLink>
   );
 }
 const baseAbilities = [
@@ -134,7 +135,7 @@ export default async function Home({ params }: LocalePageProps) {
               <UsageRisk locale={locale} />
             </div>
             <div
-              className="hero-product py-0 relative min-h-[0] self-[center] flex justify-end mt-[40px] md:mt-0 md:pb-0"
+              className="hero-product py-0 relative min-h-[0] self-center flex justify-end mt-[40px] md:mt-0 md:pb-0"
               data-hero-product
             >
               <Demo locale={locale} />
@@ -160,11 +161,11 @@ export default async function Home({ params }: LocalePageProps) {
             </h2>
           </div>
           <article
-            className={`feature-scene gear-scene gap-[30px] px-0 py-[64px] grid grid-cols-[1fr] items-center relative md:gap-[45px] md:py-[85px] md:grid-cols-[1fr_1fr] lg:gap-[90px] [&_+_.feature-scene]:border-t-[1px] [&_+_.feature-scene]:[border-top-style:solid] [&_+_.feature-scene]:border-t-[var(--line)] [&_.gear-visual]:w-[min(calc(100%_-_32px),_420px)] [&_.gear-visual]:ml-[32px] [&_.gear-visual]:justify-self-[start] max-md:[&_.gear-visual]:w-[min(100%,_390px)] max-md:[&_.gear-visual]:ml-0 max-md:[&_.gear-visual]:justify-self-[center]`}
+            className={`feature-scene gear-scene gap-[30px] px-0 py-[64px] grid grid-cols-[1fr] items-center relative md:gap-[45px] md:py-[85px] md:grid-cols-[1fr_1fr] lg:gap-[90px] [&_+_.feature-scene]:border-t-[1px] [&_+_.feature-scene]:[border-top-style:solid] [&_+_.feature-scene]:border-t-[var(--line)] [&_.gear-visual]:w-[min(calc(100%_-_32px),_420px)] [&_.gear-visual]:ml-[32px] [&_.gear-visual]:justify-self-start max-md:[&_.gear-visual]:w-[min(100%,_390px)] max-md:[&_.gear-visual]:ml-0 max-md:[&_.gear-visual]:justify-self-center`}
           >
             <GearVisual locale={locale} />
             <div
-              className={`feature-copy row-[1] pl-0 w-full max-w-[none] justify-self-[start] md:max-w-[360px] md:justify-self-[end] md:row-auto max-md:[:lang(es)_&_h2]:text-[41px] max-sm:[:lang(es)_&_h2]:text-[37px]`}
+              className={`feature-copy row-[1] pl-0 w-full max-w-[none] justify-self-start md:max-w-[360px] md:justify-self-end md:row-auto max-md:[:lang(es)_&_h2]:text-[41px] max-sm:[:lang(es)_&_h2]:text-[37px]`}
             >
               <span className="eyebrow block text-[#a3906f] text-[8px] tracking-[2px] leading-[1.8] mb-[14px] md:text-[9px] md:mb-[16px]">
                 {t('YOUR GEAR. YOUR BUDGET.')}
@@ -255,7 +256,7 @@ export default async function Home({ params }: LocalePageProps) {
                 <Icon name="arrow" size={16} />
               </a>
             </div>
-            <div className="ai-choice-connections w-full max-w-[440px] justify-self-[start] md:justify-self-[end]">
+            <div className="ai-choice-connections w-full max-w-[440px] justify-self-start md:justify-self-end">
               <ul
                 className={`ai-provider-list gap-[10px] p-0 m-0 grid grid-cols-[1fr_1fr] list-none sm:gap-[12px] [&_li]:[background:linear-gradient(130deg,_#c7a4670a,_#c7a46702)] [&_span]:block [&_span]:mt-[8px] [&_span]:text-[#a7997d] [&_span]:text-[10px] [&_span]:leading-[1.6]`}
                 aria-label={t('Examples of AI connections')}
@@ -425,7 +426,7 @@ export default async function Home({ params }: LocalePageProps) {
           </section>
           <div className="development gap-[23px] px-0 py-[25px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] border-b-[1px] [border-bottom-style:solid] border-b-[var(--line)] grid grid-cols-[1fr] mt-[10px] md:gap-[40px] md:grid-cols-[1fr_1fr] md:pt-[27px] md:pb-[29px] md:mt-[16px]">
             <div className="grid grid-cols-[100px_1fr] items-center gap-x-[10px] sm:grid-cols-[110px_1fr] md:grid-cols-[auto_1fr] md:gap-x-[13px]">
-              <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-[start] justify-self-[start] md:justify-self-auto">
+              <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-start justify-self-start md:justify-self-auto">
                 {t('BETA')}
               </span>
               <strong className="text-[13px] font-medium">{t('Panels & trackers')}</strong>
@@ -434,7 +435,7 @@ export default async function Home({ params }: LocalePageProps) {
               </p>
             </div>
             <div className="grid grid-cols-[100px_1fr] items-center gap-x-[10px] sm:grid-cols-[110px_1fr] md:grid-cols-[auto_1fr] md:gap-x-[13px]">
-              <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-[start] justify-self-[start] md:justify-self-auto">
+              <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-start justify-self-start md:justify-self-auto">
                 {t('EXPERIMENTAL')}
               </span>
               <strong className="text-[13px] font-medium">{t('Combat simulation')}</strong>

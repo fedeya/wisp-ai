@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { button, field } from "./ui";
+  import Button from "./ui/Button.svelte";
+  import Checkbox from "./ui/Checkbox.svelte";
+  import Input from "./ui/Input.svelte";
+  import Select from "./ui/Select.svelte";
+  import Textarea from "./ui/Textarea.svelte";
 
   import { untrack } from "svelte";
   import { request, type Mcp } from "./api";
@@ -100,50 +104,41 @@
           {server ? "Edit connection" : "Add an MCP"}
         </h2>
       </div>
-      <button
-        class={button({
-          intent: "quiet",
-          size: "icon",
-          class: "icon-button p-[6px] min-h-[30px]",
-        })}
+      <Button
+        intent="quiet"
+        size="icon"
         aria-label="Close dialog"
         onclick={close}
-        disabled={busy}><Icon name="close" /></button
+        disabled={busy}><Icon name="close" /></Button
       >
     </header>
     <div class="form-grid gap-[16px] grid grid-cols-[1fr_1fr]">
       <label
         class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
-        >Name<input
-          class={field({})}
+        >Name<Input
           bind:value={name}
           disabled={!!server || busy}
           placeholder="my_connection"
         /></label
       ><label
         class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
-        >Transport<select
-          class={field({})}
-          bind:value={transport}
-          disabled={busy}
+        >Transport<Select bind:value={transport} disabled={busy}
           ><option value="http">Streamable HTTP</option><option value="sse"
             >SSE</option
-          ><option value="stdio">Local process (stdio)</option></select
+          ><option value="stdio">Local process (stdio)</option></Select
         ></label
       >
     </div>
     <label
       class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
-      >Description<input
-        class={field({})}
+      >Description<Input
         bind:value={description}
         placeholder="What can this connection help with?"
       /></label
     >
     <label
       class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
-      >{transport === "stdio" ? "Executable or command" : "Endpoint URL"}<input
-        class={field({})}
+      >{transport === "stdio" ? "Executable or command" : "Endpoint URL"}<Input
         bind:value={address}
         placeholder={transport === "stdio" ? "npx" : "https://example.com/mcp"}
       /></label
@@ -151,22 +146,18 @@
     {#if transport === "stdio"}<label
         class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
         >Arguments <span class="muted text-muted text-[10px]">JSON array</span
-        ><input class={field({})} bind:value={args} /></label
+        ><Input bind:value={args} /></label
       ><label
         class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
         >Environment <span class="muted text-muted text-[10px]"
           >Blank keeps stored values</span
-        ><textarea
-          class={field({ kind: "area" })}
-          rows="2"
-          bind:value={env}
-          placeholder={'{"API_KEY":"…"}'}></textarea></label
+        ><Textarea rows={2} bind:value={env} placeholder={'{"API_KEY":"…"}'}
+        ></Textarea></label
       >{:else}<label
         class="gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[12px]"
         >Bearer token <span class="muted text-muted text-[10px]"
           >Blank keeps stored token</span
-        ><input
-          class={field({})}
+        ><Input
           type="password"
           bind:value={token}
           autocomplete="off"
@@ -175,23 +166,15 @@
           >{/if}</label
       ><label
         class="check-row gap-[9px] mx-0 my-[15px] flex flex-row text-[#b6c9cf] text-[12px] items-center"
-        ><input
-          class={field({
-            kind: "checkbox",
-            class: "w-[15px] h-[15px] min-h-[0] [accent-color:var(--accent)]",
-          })}
-          type="checkbox"
+        ><Checkbox
+          class="w-[15px] h-[15px] min-h-[0] [accent-color:var(--accent)]"
           bind:checked={clearToken}
         />Remove stored token</label
       >{/if}
     <label
       class="check-row gap-[9px] mx-0 my-[15px] flex flex-row text-[#b6c9cf] text-[12px] items-center"
-      ><input
-        class={field({
-          kind: "checkbox",
-          class: "w-[15px] h-[15px] min-h-[0] [accent-color:var(--accent)]",
-        })}
-        type="checkbox"
+      ><Checkbox
+        class="w-[15px] h-[15px] min-h-[0] [accent-color:var(--accent)]"
         bind:checked={enabled}
       />Enable connection</label
     >
@@ -204,15 +187,13 @@
         "Test the connection before saving. Local commands run on your computer."}
     </p>
     <footer class="gap-[12px] flex justify-end mt-[22px]">
-      <button
-        class={button({})}
-        onclick={() => submit(false)}
-        disabled={busy || !name || !address}>Test connection</button
-      ><button
-        class={button({ intent: "primary", class: "primary" })}
+      <Button onclick={() => submit(false)} disabled={busy || !name || !address}
+        >Test connection</Button
+      ><Button
+        intent="primary"
         onclick={() => submit(true)}
         disabled={busy || !name || !address}
-        >{busy ? "Working…" : "Save connection"}</button
+        >{busy ? "Working…" : "Save connection"}</Button
       >
     </footer>
   </div>

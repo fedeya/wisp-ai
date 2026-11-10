@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { card, badge, field } from "./ui";
+  import Badge from "./ui/Badge.svelte";
+  import Card from "./ui/Card.svelte";
+  import Checkbox from "./ui/Checkbox.svelte";
 
   import Toggle from "./Toggle.svelte";
   import type { CapabilityView } from "@wisp/protocol/capabilities";
@@ -18,7 +20,7 @@
   } = $props();
 </script>
 
-<section class={card({ kind: "integration", class: "card integration" })}>
+<Card kind="integration">
   <div class="integration-top gap-[18px] flex items-center justify-between">
     <div>
       <h2>{entry.name}</h2>
@@ -44,9 +46,8 @@
   <div
     class="integration-meta gap-[12px] flex text-muted text-[12px] mt-[18px] items-center flex-wrap [&_span_+_span]:border-l-[1px] [&_span_+_span]:[border-left-style:solid] [&_span_+_span]:border-l-[#3a4a4e] [&_span_+_span]:pl-[18px]"
   >
-    <span class={badge({ positive: entry.available, class: "badge" })}
-      >{entry.status}</span
-    ><span>{entry.kind === "mcp" ? "MCP" : entry.kind}</span
+    <Badge positive={entry.available}>{entry.status}</Badge><span
+      >{entry.kind === "mcp" ? "MCP" : entry.kind}</span
     >{#if entry.version}<span>v{entry.version}</span>{/if}<span
       >{tools.filter((tool) => tool.effective).length}/{tools.length} active</span
     >
@@ -66,13 +67,8 @@
           class="integration-tool gap-[12px] px-0 py-[14px] flex items-start border-b-[1px] [border-bottom-style:solid] border-b-[#ffffff08] [&:last-child]:border-0 [&:last-child]:border-none [&:last-child]:border-[currentColor] [&:last-child]:pb-0 [&.inactive]:opacity-[0.5]"
           class:inactive={!entry.enabled}
         >
-          <input
-            class={field({
-              kind: "checkbox",
-              class:
-                "p-0 [accent-color:var(--accent)] w-[16px] h-[16px] min-h-[0] shrink-0",
-            })}
-            type="checkbox"
+          <Checkbox
+            class="p-0 [accent-color:var(--accent)] w-[16px] h-[16px] min-h-[0] shrink-0"
             aria-label={`${entry.name}: ${tool.name}`}
             checked={tool.enabled}
             disabled={locked || !entry.enabled}
@@ -93,4 +89,4 @@
           >
         </label>{/each}
     </details>{/if}
-</section>
+</Card>

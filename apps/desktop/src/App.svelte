@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { navigationButton, button } from "./ui";
+  import Button from "./ui/Button.svelte";
 
   import { createDesktopController } from "./desktop-controller.svelte";
   import { native } from "./api";
@@ -56,16 +56,15 @@
         class="nav-label px-[14px] pt-0 pb-[9px] text-muted text-[11px] tracking-[1px] uppercase"
         >Workspace</span
       >
-      {#each app.pages.filter((item) => !["Settings", "Diagnostics"].includes(item.name)) as item}<button
-          class={navigationButton({
-            selected: app.page === item.name,
-          })}
+      {#each app.pages.filter((item) => !["Settings", "Diagnostics"].includes(item.name)) as item}<Button
+          navigation
+          selected={app.page === item.name}
           onclick={() => {
             app.page = item.name;
             if (app.page === "Diagnostics") void app.showLogs();
           }}
           aria-current={app.page === item.name ? "page" : undefined}
-          ><Icon name={item.icon} />{item.name}</button
+          ><Icon name={item.icon} />{item.name}</Button
         >{/each}
     </nav>
     <nav
@@ -77,10 +76,9 @@
         >Application</span
       >
       {#each app.pages.filter( (item) => ["Settings", "Diagnostics"].includes(item.name) ) as item}
-        <button
-          class={navigationButton({
-            selected: app.page === item.name,
-          })}
+        <Button
+          navigation
+          selected={app.page === item.name}
           aria-current={app.page === item.name ? "page" : undefined}
           onclick={() => {
             app.page = item.name;
@@ -88,7 +86,7 @@
           }}
         >
           <Icon name={item.icon} />{item.name}
-        </button>
+        </Button>
       {/each}
     </nav>
     <div
@@ -151,15 +149,13 @@
     <Icon name={app.failed ? "logs" : "check"} size={18} /><span
       class="[overflow-wrap:anywhere]">{app.feedback}</span
     >
-    <button
-      class={button({
-        intent: "quiet",
-        size: "icon",
-        class: "icon-button p-[6px] min-h-[30px] shrink-0",
-      })}
+    <Button
+      intent="quiet"
+      size="icon"
+      class="shrink-0"
       aria-label="Dismiss notification"
       onclick={() => (app.feedback = "")}
-      ><Icon name="close" size={16} /></button
+      ><Icon name="close" size={16} /></Button
     >
   </div>{/if}
 {#if app.dialog}<McpDialog
@@ -181,18 +177,13 @@
         {app.confirm.label}
       </h2>
       <footer class="gap-[12px] flex justify-end mt-[22px]">
-        <button class={button({})} onclick={() => (app.confirm = null)}
-          >Cancel</button
-        ><button
-          class={button({
-            intent: "danger",
-            class: "danger-button [background:#713e3a] text-[#ffe8e3]",
-          })}
+        <Button onclick={() => (app.confirm = null)}>Cancel</Button><Button
+          intent="danger"
           onclick={async () => {
             const action = app.confirm!.run;
             app.confirm = null;
             await action();
-          }}>Confirm</button
+          }}>Confirm</Button
         >
       </footer>
     </div>

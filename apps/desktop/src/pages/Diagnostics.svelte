@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { card, button } from "../ui";
+  import Button from "../ui/Button.svelte";
+  import Card from "../ui/Card.svelte";
 
   import type { DesktopController } from "../desktop-controller.svelte";
   import ActionProgress from "../ActionProgress.svelte";
@@ -8,7 +9,7 @@
   let { app }: { app: DesktopController } = $props();
 </script>
 
-<section class={card({ class: "card" })}>
+<Card>
   <div
     class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
   >
@@ -20,12 +21,11 @@
     </div>
     <div class="actions gap-[10px] mt-0 flex flex-wrap items-center">
       <ActionProgress {app} />
-      <button class={button({})} onclick={app.showLogs} disabled={!!app.busy}
-        ><Icon name="refresh" size={16} />Refresh</button
-      ><button
-        class={button({})}
+      <Button onclick={app.showLogs} disabled={!!app.busy}
+        ><Icon name="refresh" size={16} />Refresh</Button
+      ><Button
         onclick={() => app.work("Opening logs", () => desktop("open_logs"))}
-        >Open folder</button
+        >Open folder</Button
       >
     </div>
   </div>
@@ -41,4 +41,4 @@
   <p class="field-hint text-[11px]! text-muted mt-[12px]">
     Data location: {app.info?.dataDirectory || "Available in the installed app"}
   </p>
-</section>
+</Card>

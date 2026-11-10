@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { card, badge, field, button } from "./ui";
+  import Badge from "./ui/Badge.svelte";
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
+  import Input from "./ui/Input.svelte";
+  import Select from "./ui/Select.svelte";
 
   import type { DesktopController } from "./desktop-controller.svelte";
   import { desktop, request } from "./api";
@@ -24,7 +28,7 @@
   }
 </script>
 
-<section class={card({ kind: "provider", class: "card provider-card" })}>
+<Card kind="provider">
   <div
     class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
   >
@@ -34,14 +38,10 @@
         Search globally across the public web, independently of your chat model.
       </p>
     </div>
-    <span
-      class={badge({
-        positive: app.status?.search?.hasExaKey,
-        class: "badge",
-      })}
+    <Badge positive={app.status?.search?.hasExaKey}
       >{app.status?.search?.hasExaKey
         ? "Exa key saved"
-        : "Exa public · no key needed"}</span
+        : "Exa public · no key needed"}</Badge
     >
   </div>
   <div
@@ -50,8 +50,7 @@
     <label class="text-[12px] font-medium text-[#bdcccf]" for="search-provider"
       >Search service</label
     >
-    <select
-      class={field({})}
+    <Select
       id="search-provider"
       bind:value={provider}
       disabled={app.locked || !app.status}
@@ -65,20 +64,19 @@
       <option value="exa">Exa for all chats</option>
       <option value="chatgpt">ChatGPT search only</option>
       <option value="disabled">Disabled</option>
-    </select>
+    </Select>
     <label class="text-[12px] font-medium text-[#bdcccf]" for="exa-key"
       >Exa API key (optional) {app.status?.search?.hasExaKey
         ? "(leave blank to keep saved key)"
         : ""}</label
     >
-    <input
-      class={field({})}
+    <Input
       id="exa-key"
       type="password"
       bind:value={apiKey}
       autocomplete="off"
       spellcheck="false"
-      maxlength="4096"
+      maxlength={4096}
       disabled={app.locked || !app.status}
     />
     <p class="field-hint text-[11px]! text-muted mt-[12px]">
@@ -92,8 +90,8 @@
       sends one search request using the saved or entered key, or public access.
     </p>
     <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-      <button
-        class={button({ intent: "quiet", class: "quiet" })}
+      <Button
+        intent="quiet"
         disabled={!!app.busy}
         onclick={() =>
           app.work(
@@ -101,10 +99,9 @@
             () => desktop("open_exa_dashboard"),
             "An API key is optional; public search works without one.",
             "search",
-          )}>Get Exa key</button
+          )}>Get Exa key</Button
       >
-      <button
-        class={button({})}
+      <Button
         disabled={app.locked || !app.status}
         onclick={() =>
           app.work(
@@ -112,10 +109,10 @@
             () => request("/search/test", setup()),
             "Exa accepted the test search. Results depend on source coverage.",
             "search",
-          )}>Test Exa</button
+          )}>Test Exa</Button
       >
-      <button
-        class={button({ intent: "primary", class: "primary" })}
+      <Button
+        intent="primary"
         disabled={app.locked || !app.status}
         onclick={() =>
           app.work(
@@ -123,14 +120,11 @@
             save,
             "Search settings saved.",
             "search",
-          )}>Save search settings</button
+          )}>Save search settings</Button
       >
-      {#if app.status?.search?.hasExaKey}<button
-          class={button({
-            intent: "quiet",
-            destructive: true,
-            class: "quiet danger text-[#e5a399]",
-          })}
+      {#if app.status?.search?.hasExaKey}<Button
+          intent="quiet"
+          destructive
           disabled={app.locked}
           onclick={() => {
             app.confirm = {
@@ -144,9 +138,9 @@
                   "search",
                 ),
             };
-          }}>Remove Exa key</button
+          }}>Remove Exa key</Button
         >{/if}
     </div>
     <ActionProgress {app} target="search" />
   </div>
-</section>
+</Card>

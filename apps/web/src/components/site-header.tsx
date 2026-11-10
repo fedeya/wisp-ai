@@ -1,5 +1,8 @@
 'use client';
-import { containerClassName, navigationLinkClassName, link, headerShell } from './ui';
+import { containerClassName } from './ui';
+import { ButtonLink } from './ui/button-link';
+import { NavigationLink } from './ui/navigation-link';
+import { HeaderShell } from './ui/header-shell';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -63,7 +66,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
         ref={marker}
         aria-hidden="true"
       />
-      <div className={headerShell({ opaque: scrolled || menuOpen })}>
+      <HeaderShell opaque={scrolled || menuOpen}>
         <header
           className={`${containerClassName} relative z-[5] flex h-[64px] items-center justify-between gap-2 md:h-[82px]`}
         >
@@ -103,36 +106,30 @@ export function SiteHeader({ locale }: { locale: Locale }) {
               }
             }}
           >
-            <Link
-              className={navigationLinkClassName}
+            <NavigationLink
               href={localizedPath(locale, '/features')}
               aria-current={pathname === '/features' ? 'page' : undefined}
               onClick={() => setMenuOpen(false)}
             >
               {t('Features')}
-            </Link>
-            <Link
-              className={navigationLinkClassName}
+            </NavigationLink>
+            <NavigationLink
               href={localizedPath(locale, '/setup')}
               aria-current={pathname === '/setup' ? 'page' : undefined}
               onClick={() => setMenuOpen(false)}
             >
               {t('Get started')}
-            </Link>
-            <a
-              className={navigationLinkClassName}
-              href={site.repository}
-              onClick={() => setMenuOpen(false)}
-            >
+            </NavigationLink>
+            <NavigationLink external href={site.repository} onClick={() => setMenuOpen(false)}>
               GitHub <Icon name="external" size={12} />
-            </a>
+            </NavigationLink>
           </nav>
           <div className="flex items-center gap-[6px] md:gap-[19px]">
             <LanguageSwitch locale={locale} />
-            <a className={link({ intent: 'outline' })} href={site.download}>
+            <ButtonLink intent="outline" href={site.download}>
               {t('Get Wisp ')}
               <Icon name="download" size={15} />
-            </a>
+            </ButtonLink>
             <button
               ref={menuButton}
               type="button"
@@ -146,7 +143,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
             </button>
           </div>
         </header>
-      </div>
+      </HeaderShell>
     </>
   );
 }

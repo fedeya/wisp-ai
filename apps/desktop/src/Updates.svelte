@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { button, card } from "./ui";
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
 
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
@@ -129,15 +130,14 @@
     role="status"
   >
     <span>Wisp {release.version} is available.</span>
-    <button class={button({})} onclick={openSettings}>View update</button>
-    <button
-      class={button({ intent: "quiet", class: "quiet" })}
-      onclick={() => (dismissed = release!.version)}>Later</button
+    <Button onclick={openSettings}>View update</Button>
+    <Button intent="quiet" onclick={() => (dismissed = release!.version)}
+      >Later</Button
     >
   </div>
 {/if}
 {#if showSettings}
-  <section class={card({ class: "card" })}>
+  <Card>
     <div
       class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
     >
@@ -147,13 +147,12 @@
           Installed version: {version}
         </p>
       </div>
-      <button
-        class={button({})}
+      <Button
         onclick={check}
         disabled={!native || checking || installing || locked}
       >
         {checking ? "Checking…" : "Check for updates"}
-      </button>
+      </Button>
     </div>
     <p class="field-hint text-[11px]! text-muted mt-[12px]">
       Wisp checks automatically at startup and every six hours. You choose when
@@ -177,13 +176,13 @@
         class="release-notes [white-space:pre-wrap] [overflow-wrap:anywhere] [font:inherit] text-muted max-h-[280px] overflow-y-auto">{release.notes ||
           "This release has no notes."}</pre>
       <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-        <button
-          class={button({ intent: "primary", class: "primary" })}
+        <Button
+          intent="primary"
           onclick={install}
           disabled={!supported || installing || checking || locked}
         >
           {installing ? "Updating…" : "Update and restart"}
-        </button>
+        </Button>
       </div>
       <p class="field-hint text-[11px]! text-muted mt-[12px]">
         Wisp downloads and verifies the update, waits for any active reply, then
@@ -192,5 +191,5 @@
         Install / update addon in Overview after updating, then /reload in WoW.
       </p>
     {/if}
-  </section>
+  </Card>
 {/if}

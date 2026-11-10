@@ -70,7 +70,7 @@ export function GearVisual({ locale }: { locale: Locale }) {
   const t = getTranslator(locale);
   return (
     <div
-      className={`gear-visual h-[320px] relative w-[min(390px,_100%)] justify-self-[center] mt-[5px] overflow-clip [overflow-clip-margin:12px] md:h-[330px] md:w-auto md:justify-self-auto md:mt-0 md:overflow-visible md:[overflow-clip-margin:0px] [filter:drop-shadow(0_12px_18px_#0004)] [&:before]:[content:''] [&:before]:absolute [&:before]:top-[-20px] [&:before]:right-[-20px] [&:before]:bottom-[-20px] [&:before]:left-[-20px] [&:before]:[background:radial-gradient(ellipse,_#a97c3a16,_transparent_68%)] [&:before]:z-[-1] max-md:[:lang(es)_&_.item-tooltip]:w-[210px] max-sm:[:lang(es)_&_.item-tooltip]:w-[195px]`}
+      className={`gear-visual h-[320px] relative w-[min(390px,_100%)] justify-self-center mt-[5px] overflow-clip [overflow-clip-margin:12px] md:h-[330px] md:w-auto md:justify-self-auto md:mt-0 md:overflow-visible md:[overflow-clip-margin:0px] [filter:drop-shadow(0_12px_18px_#0004)] [&:before]:[content:''] [&:before]:absolute [&:before]:top-[-20px] [&:before]:right-[-20px] [&:before]:bottom-[-20px] [&:before]:left-[-20px] [&:before]:[background:radial-gradient(ellipse,_#a97c3a16,_transparent_68%)] [&:before]:z-[-1] max-md:[:lang(es)_&_.item-tooltip]:w-[210px] max-sm:[:lang(es)_&_.item-tooltip]:w-[195px]`}
     >
       <div
         className={`floating-items gap-[6px] absolute left-[12px] top-[15px] flex items-center md:left-[0] md:top-[28px] lg:gap-[15px] lg:left-[12px] [transform:rotate(-8deg)] [&_.item-icon]:w-[76px] [&_.item-icon]:h-[76px] max-lg:[&_.item-icon]:w-[64px] max-lg:[&_.item-icon]:h-[64px] max-md:[&_.item-icon]:w-[70px] max-md:[&_.item-icon]:h-[70px] max-sm:[&_.item-icon]:w-[63px] max-sm:[&_.item-icon]:h-[63px] [&_.item-icon:nth-child(2)]:[transform:translateY(-15px)] [&_.item-icon:nth-child(2)]:[box-shadow:0_0_24px_#7fbb3c20] [&_.item-icon:last-child]:[transform:rotate(13deg)]`}
@@ -129,14 +129,14 @@ export function BagsVisual({ locale }: { locale: Locale }) {
   const bagItems = translateData(baseBagItems, locale);
   return (
     <div
-      className={`bags-visual h-[365px] relative max-w-[420px] w-[min(390px,_100%)] justify-self-[center] mt-[8px] overflow-clip [overflow-clip-margin:12px] sm:h-[385px] md:h-[390px] md:w-full md:mt-0 md:overflow-visible md:[overflow-clip-margin:0px] [&:before]:[content:''] [&:before]:absolute [&:before]:top-[-20px] [&:before]:right-[-20px] [&:before]:bottom-[-20px] [&:before]:left-[-20px] [&:before]:[background:radial-gradient(ellipse,_#a97c3a16,_transparent_68%)] [&:before]:z-[-1]`}
+      className={`bags-visual h-[365px] relative max-w-[420px] w-[min(390px,_100%)] justify-self-center mt-[8px] overflow-clip [overflow-clip-margin:12px] sm:h-[385px] md:h-[390px] md:w-full md:mt-0 md:overflow-visible md:[overflow-clip-margin:0px] [&:before]:[content:''] [&:before]:absolute [&:before]:top-[-20px] [&:before]:right-[-20px] [&:before]:bottom-[-20px] [&:before]:left-[-20px] [&:before]:[background:radial-gradient(ellipse,_#a97c3a16,_transparent_68%)] [&:before]:z-[-1]`}
     >
       <div
         className={`inventory border border-solid border-[#9b8054] p-[10px] absolute right-[0] top-[0] rounded-[6px] w-[250px] sm:p-[12px] sm:right-[15px] sm:w-[272px] [background:linear-gradient(135deg,_#353024,_#181914)] [box-shadow:0_0_0_3px_#242016,_0_16px_40px_#0008] [transform:rotate(3deg)]`}
       >
         <div className="inventory-heading px-[1px] text-[16px] [font-family:Georgia,_serif] font-normal not-italic [line-height:normal] border-b-[1px] [border-bottom-style:solid] border-b-[#a58b5840] pt-0 pb-[10px] mb-[10px] flex justify-between">
           {t('Backpack ')}
-          <span className="text-[9px] font-body font-normal not-italic [line-height:normal] text-[#a49372] self-[center]">
+          <span className="text-[9px] font-body font-normal not-italic [line-height:normal] text-[#a49372] self-center">
             {t('16 slots')}
           </span>
         </div>

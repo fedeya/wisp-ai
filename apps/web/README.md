@@ -20,8 +20,9 @@ Tailwind CSS 4 runs through PostCSS. `src/app/globals.css` contains only theme
 tokens, typography defaults, resets, global accessibility preferences and keyframes
 for the caret and thinking dots. Layout, spacing, decorative effects and responsive
 states live in component utility classes; there are no CSS Modules or `@apply`
-rules. `components/ui.ts` shares layout utilities and Tailwind Variants recipes for
-links and header states. The named breakpoints preserve the original layouts:
+rules. `components/ui.ts` shares the container utility. Components in `components/ui/`
+own their Tailwind Variants recipes for CTA links, navigation, header states and
+scene playback controls. The named breakpoints preserve the original layouts:
 `sm` starts at 371px, `md` at 761px, `lg` at 1101px and `2xl` at 1600px.
 
 Semantic class hooks let arbitrary descendant variants style children rendered
@@ -48,9 +49,11 @@ pnpm --filter @wisp/desktop exec vite --host 127.0.0.1 --port 1437
 The desktop command starts a design preview only, without Tauri or the bridge.
 Its Tailwind theme lives in `apps/desktop/src/style.css`, using the Vite plugin.
 Desktop components also use utility classes, without scoped stylesheets.
-`apps/desktop/src/ui.ts` defines Tailwind Variants recipes for buttons, navigation,
-fields, cards and badges; the global stylesheet contains only tokens, base
-defaults, reduced-motion preferences and the spinner keyframes. Its breakpoints
+`apps/desktop/src/ui/` contains native control components with internal Tailwind
+Variants recipes for buttons, fields, cards and badges. Input, select, textarea
+and checkbox components preserve Svelte bindings and native event attributes.
+The global stylesheet contains only tokens, base defaults, reduced-motion
+preferences and the spinner keyframes. Its breakpoints
 start at 651px (`sm`), 951px (`md`), 1001px (`lg`) and 1101px (`xl`).
 Both themes require modern browsers supported by Tailwind 4 (Chrome/Edge 111+,
 Safari 16.4+, Firefox 128+); desktop previews use the current WebView2 runtime.
