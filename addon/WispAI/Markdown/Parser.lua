@@ -87,7 +87,9 @@ local nestingKinds = {
 local function build(source, options, inline, checkpoint)
     local allocated = 0
     local context = { options = options, references = {}, checkpoint = checkpoint }
-    context.referenceLabel = syntax.referenceLabel
+    context.referenceLabel = function(value)
+        return syntax.referenceLabel(value, checkpoint)
+    end
     context.unescape = function(value)
         return syntax.unescape(value, checkpoint)
     end

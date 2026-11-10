@@ -137,10 +137,6 @@ for _, pair in ipairs({
     accents[pair[1]] = pair[2]
 end
 
-local function referenceLabel(label)
-    return (trim(label):gsub("[ \t\r\n]+", " "):lower():gsub("[\194-\244][\128-\191]+", accents))
-end
-
 local entities = { amp = "&", lt = "<", gt = ">", quot = '"', apos = "'", nbsp = " " }
 local function entityAt(source, offset)
     local name, after = source:match("^&([A-Za-z]+);()", offset)
@@ -189,6 +185,11 @@ local function unescape(source, work)
     end
     chunks[#chunks + 1] = source:sub(start)
     return table.concat(chunks)
+end
+
+local function referenceLabel(label, work)
+    local decoded = unescape(label, work)
+    return (trim(decoded):gsub("[ \t\r\n]+", " "):lower():gsub("[\194-\244][\128-\191]+", accents))
 end
 
 local function codeIndex(source, context)
@@ -356,26 +357,38 @@ local function flanking(source, first, after, marker)
 end
 
 local function resolve(tokens, context)
-    local live, byMarker = {}, { ["*"] = {}, ["_"] = {}, ["~"] = {} }
+    local live, byMarker = {}, {}
+    for _, marker in ipairs({ "*", "_", "~" }) do
+        byMarker[marker] = { {}, {}, {}, {}, {}, {} }
+    end
     for index, token in ipairs(tokens) do
         context.checkpoint()
         if token.marker then
             token.remaining = token.width
-            local candidates = byMarker[token.marker]
+            local groups = byMarker[token.marker]
             while token.canClose and token.remaining > 0 do
                 context.checkpoint()
-                while #candidates > 0 and not candidates[#candidates].active do
-                    candidates[#candidates] = nil
+                -- Compatibility depends only on width modulo three and whether
+                -- an opener can also close. Keeping those six groups avoids
+                -- repeatedly scanning a long incompatible suffix of openers.
+                local open
+                for _, candidates in ipairs(groups) do
+                    while #candidates > 0 and not candidates[#candidates].active do
+                        context.checkpoint()
+                        candidates[#candidates] = nil
+                    end
+                    local candidate = candidates[#candidates]
+                    if candidate then
+                        local ambiguous = token.marker ~= "~"
+                            and (candidate.canClose or token.canOpen)
+                            and (candidate.width + token.width) % 3 == 0
+                            and (candidate.width % 3 ~= 0 or token.width % 3 ~= 0)
+                        if not ambiguous and (not open or candidate.index > open.index) then
+                            open = candidate
+                        end
+                    end
                 end
-                local open = candidates[#candidates]
                 if not open then
-                    break
-                end
-                local ambiguous = token.marker ~= "~"
-                    and (open.canClose or token.canOpen)
-                    and (open.width + token.width) % 3 == 0
-                    and (open.width % 3 ~= 0 or token.width % 3 ~= 0)
-                if ambiguous then
                     break
                 end
                 while #live > 0 and live[#live] ~= open do
@@ -400,6 +413,7 @@ local function resolve(tokens, context)
             end
             if token.canOpen and token.remaining > 0 then
                 token.active, token.index = true, index
+                local candidates = groups[token.width % 3 * 2 + (token.canClose and 2 or 1)]
                 live[#live + 1], candidates[#candidates + 1] = token, token
             end
         end
@@ -554,7 +568,7 @@ local function inline(source, context, nesting, allowLinks)
         elseif char == "<" then
             local destination, after =
                 source:match("^<([A-Za-z][A-Za-z0-9+%.%-]*:[^<> \t\n]+)>()", offset)
-            if destination then
+            if destination and allowLinks ~= false then
                 emit("link", {
                     destination = destination,
                     title = "",
@@ -571,8 +585,10 @@ local function inline(source, context, nesting, allowLinks)
         end
         if
             not consumed
-            and allowLinks ~= false
-            and (char == "[" or char == "!" and source:sub(offset + 1, offset + 1) == "[")
+            and (
+                char == "!" and source:sub(offset + 1, offset + 1) == "["
+                or allowLinks ~= false and char == "["
+            )
         then
             local open = char == "!" and offset + 1 or offset
             local close = brackets[open]
@@ -584,7 +600,7 @@ local function inline(source, context, nesting, allowLinks)
                         or close - open <= 1025 and source:sub(open + 1, close - 1)
                     local known = key
                         and #key <= 1024
-                        and context.references[referenceLabel(unescape(key, context.checkpoint))]
+                        and context.references[referenceLabel(key, context.checkpoint)]
                     if known then
                         destination, title, after =
                             known.destination, known.title, endLabel or close + 1

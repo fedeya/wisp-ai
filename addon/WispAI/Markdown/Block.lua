@@ -290,24 +290,7 @@ function M._blocks(source, context)
         return false
     end
 
-    local escapes = {}
-    for p = 33, 126 do
-        local ch = string.char(p)
-        if not ch:match("[%w]") then
-            escapes[ch] = true
-        end
-    end
-    local function decode(text)
-        text = text:gsub("\\(.)", function(ch)
-            return escapes[ch] and ch or "\\" .. ch
-        end)
-        return (
-            text:gsub("&([%a]+);", function(name)
-                return ({ amp = "&", lt = "<", gt = ">", quot = '"', apos = "'" })[name]
-                    or "&" .. name .. ";"
-            end)
-        )
-    end
+    local decode = context.unescape
 
     local function title(text)
         local opening = text:sub(1, 1)
@@ -688,7 +671,8 @@ function M._blocks(source, context)
                     while j <= #rows do
                         local current = marker(rows[j])
                         if
-                            not current
+                            thematic(rows[j])
+                            or not current
                             or current.indent ~= listMarker.indent
                             or current.ordered ~= listMarker.ordered
                             or current.delimiter ~= listMarker.delimiter
@@ -729,7 +713,7 @@ function M._blocks(source, context)
                             k = k + 1
                             tick()
                         end
-                        local nextMarker = rows[k] and marker(rows[k])
+                        local nextMarker = rows[k] and not thematic(rows[k]) and marker(rows[k])
                         local sibling = nextMarker
                             and nextMarker.indent == listMarker.indent
                             and nextMarker.ordered == listMarker.ordered

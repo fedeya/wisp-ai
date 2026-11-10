@@ -1,7 +1,8 @@
 -- Focused contract tests for Wisp's independently implemented block grammar.
 -- Run from the repository root with Lua 5.1.
 local function runblocks()
-    local C = { Markdown = {} }
+    local C = {}
+    assert(loadfile("addon/WispAI/Markdown/Syntax.lua"))("WispAI", C)
     assert(loadfile("addon/WispAI/Markdown/Block.lua"))("WispAI", C)
     local checks, checkpoints = 0, 0
     local function equal(actual, expected, message)
@@ -22,8 +23,11 @@ local function runblocks()
             checkpoint = function()
                 checkpoints = checkpoints + 1
             end,
-            referenceLabel = function(label)
-                return (label:lower():gsub("%s+", " "):gsub("^ +", ""):gsub(" +$", ""))
+            referenceLabel = C.Markdown._syntax.referenceLabel,
+            unescape = function(value)
+                return C.Markdown._syntax.unescape(value, function()
+                    checkpoints = checkpoints + 1
+                end)
             end,
             node = function(kind, fields)
                 fields.type = kind
@@ -174,6 +178,84 @@ end
 
 if type(it) == "function" then
     it("parses Wisp block constructs with original source positions", runblocks)
+
+    it("closes sibling lists before thematic breaks using the same marker", function()
+        local md = require("addon.tests.markdown-support").parser()
+        for _, marker in ipairs({ "-", "*", "_" }) do
+            local bullet = marker == "_" and "-" or marker
+            local source = bullet
+                .. " first\n"
+                .. marker
+                .. " "
+                .. marker
+                .. " "
+                .. marker
+                .. "\n"
+                .. bullet
+                .. " second"
+            local document = assert(md.parse(source))
+            assert.equal(3, #document.children, source)
+            assert.equal("list", document.children[1].type)
+            assert.equal("thematic_break", document.children[2].type)
+            assert.equal("list", document.children[3].type)
+            assert.equal(1, #document.children[1].children)
+            assert.equal(1, #document.children[3].children)
+            assert.equal(2, document.children[2].sourcepos[1][1])
+        end
+        local separated = assert(md.parse("- first\n\n- - -\n\n- second"))
+        assert.is_true(separated.children[1].tight)
+        assert.equal("thematic_break", separated.children[2].type)
+        local quoted = assert(md.parse("> - first\n> - - -\n> - second"))
+        assert.equal("block_quote", quoted.children[1].type)
+        assert.same({ "list", "thematic_break", "list" }, {
+            quoted.children[1].children[1].type,
+            quoted.children[1].children[2].type,
+            quoted.children[1].children[3].type,
+        })
+    end)
+
+    it("uses the same single-pass entity decoder for inline and reference link metadata", function()
+        local md = require("addon.tests.markdown-support").parser()
+        for _, value in ipairs({
+            "/&#x66;oo",
+            "/&#102;oo",
+            "/a&nbsp;b",
+            "/\\&amp;",
+            "/&amp;lt;",
+            "/a\\*b",
+        }) do
+            local inline = assert(md.parse("[x](" .. value .. ")"))
+            local reference = assert(md.parse("[x]\n\n[x]: " .. value))
+            assert.equal(
+                inline.children[1].children[1].destination,
+                reference.children[1].children[1].destination,
+                value
+            )
+        end
+        local document = assert(md.parse('[x]\n\n[x]: /&#x66;oo "A &#65;&nbsp;B \\&amp; &amp;lt;"'))
+        local link = document.children[1].children[1]
+        assert.equal("/foo", link.destination)
+        assert.equal("A A B &amp; &lt;", link.title)
+        local fence = assert(md.parse("```&#x6c;ua &nbsp; \\&amp;\nliteral\n```"))
+        assert.equal("lua   &amp;", fence.children[1].info)
+    end)
+
+    it(
+        "ends tables on empty headings or list items and keeps the first reference definition",
+        function()
+            local md = require("addon.tests.markdown-support").parser()
+            for _, ending in ipairs({ "#", "-", "*", "+", "1." }) do
+                local document = assert(md.parse("A|B\n---|---\n" .. ending))
+                assert.equal(2, #document.children, ending)
+                assert.equal("table", document.children[1].type)
+                assert.equal(1, #document.children[1].children)
+                assert.equal(ending == "#" and "heading" or "list", document.children[2].type)
+            end
+            local document = assert(md.parse("[x]: /first\n\n[x]: /second\nHeading\n===\n\n[x]"))
+            assert.equal("heading", document.children[1].type)
+            assert.equal("/first", document.children[2].children[1].destination)
+        end
+    )
 else
     runblocks()
 end
