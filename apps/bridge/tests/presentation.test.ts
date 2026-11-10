@@ -43,7 +43,11 @@ function fixture() {
     emit('call.settled', { callId, output, outcome });
   const accept = (callId: string, input: unknown = panel, signal = new AbortController().signal) =>
     projection.acceptPresentation(callId, input, signal);
-  return { chat, projection, events, emit, text, request, settle, accept };
+  const read = (callId: string) => {
+    request(callId, 'wow__query_character');
+    settle(callId, {});
+  };
+  return { chat, projection, events, emit, text, request, settle, accept, read };
 }
 
 test('plain text streams directly, including Markdown and JSON examples, without an output protocol', () => {
@@ -156,6 +160,176 @@ test('updating a component preserves its first inline position and rejects ident
   f.request('change-kind');
   f.settle('change-kind', { nodes: [{ id: 'comparison', kind: 'text', text: 'Wrong type' }] });
   expect(f.chat.messages[0].ui).toEqual(updated.nodes);
+});
+
+test('an update after an ordinary tool changes the original panel without duplicating it', async () => {
+  const f = fixture();
+  f.text('before', 'Antes.');
+  f.request('one');
+  const first = { nodes: [{ id: 'summary', kind: 'stat', label: 'DPS', value: '10' }] };
+  f.settle('one', await f.accept('one', first));
+  f.read('read');
+  f.text('after', 'Con los datos nuevos.');
+  f.request('update');
+  const updated = { nodes: [{ ...first.nodes[0], value: '20' }] };
+  f.settle('update', await f.accept('update', updated));
+  expect(f.chat.messages.map((message) => message.role)).toEqual([
+    'assistant',
+    'tool',
+    'assistant',
+  ]);
+  expect(f.chat.messages[0].parts).toEqual([
+    { type: 'text', text: 'Antes.' },
+    { type: 'ui', id: 'summary' },
+  ]);
+  expect(f.chat.messages[0].ui).toEqual(updated.nodes);
+  expect(f.chat.messages[2].ui).toEqual([]);
+  expect(f.chat.messages[2].parts).toEqual([{ type: 'text', text: 'Con los datos nuevos.' }]);
+  expect(f.chat.activity).toHaveLength(1);
+});
+
+test('a mixed presentation routes existing panels and new children to their original message', async () => {
+  const f = fixture();
+  const root = { id: 'summary', kind: 'card' };
+  const child = { id: 'value', parent: 'summary', kind: 'stat', label: 'DPS', value: '10' };
+  f.request('one');
+  f.settle('one', await f.accept('one', { nodes: [root, child] }));
+  f.read('read');
+  f.request('mixed');
+  const updated = { ...child, value: '20' };
+  const added = { id: 'detail', parent: 'summary', kind: 'text', text: 'Verified update' };
+  const fresh = { id: 'new-panel', kind: 'stat', label: 'Level', value: '10' };
+  f.settle('mixed', await f.accept('mixed', { nodes: [root, updated, added, fresh] }));
+  expect(f.chat.messages[0].ui).toEqual([root, updated, added]);
+  expect(f.chat.messages[0].parts).toEqual([{ type: 'ui', id: 'summary' }]);
+  expect(f.chat.messages[2].ui).toEqual([fresh]);
+  expect(f.chat.messages[2].parts).toEqual([{ type: 'ui', id: 'new-panel' }]);
+});
+
+test.each([
+  [{ id: 'summary', kind: 'text', text: 'Changed kind' }],
+  [
+    { id: 'other', kind: 'card' },
+    { id: 'value', parent: 'other', kind: 'stat', label: 'DPS', value: '20' },
+  ],
+])('component identity stays immutable across ordinary tools (%j)', async (...nodes) => {
+  const f = fixture();
+  f.request('one');
+  const first = {
+    nodes: [
+      { id: 'summary', kind: 'card' },
+      { id: 'value', parent: 'summary', kind: 'stat', label: 'DPS', value: '10' },
+    ],
+  };
+  f.settle('one', await f.accept('one', first));
+  f.read('read');
+  f.request('conflict');
+  await expect(f.accept('conflict', { nodes })).rejects.toThrow('cannot change kind or parent');
+  expect(f.chat.messages[0].ui).toEqual(first.nodes);
+});
+
+test.each([
+  { count: 47, size: 1, error: '48 components' },
+  { count: 8, size: 2800, error: 'combined presentation is too large' },
+])(
+  'updates charge component and byte budgets to the owning message ($error)',
+  async ({ count, size, error }) => {
+    const f = fixture();
+    const root = { id: 'summary', kind: 'card' };
+    const first = {
+      nodes: [
+        root,
+        ...Array.from({ length: count }, (_, index) => ({
+          id: 'child' + index,
+          parent: 'summary',
+          kind: 'text',
+          text: 'x'.repeat(size),
+        })),
+      ],
+    };
+    f.request('one');
+    f.settle('one', await f.accept('one', first));
+    f.read('read');
+    f.request('overflow');
+    await expect(
+      f.accept('overflow', {
+        nodes: [
+          root,
+          {
+            id: 'extra',
+            parent: 'summary',
+            kind: 'text',
+            text: 'x'.repeat(size),
+          },
+        ],
+      }),
+    ).rejects.toThrow(error);
+    expect(f.chat.messages[0].ui).toEqual(first.nodes);
+    expect(f.chat.messages[2].ui).toEqual([]);
+  },
+);
+
+test('pending components cannot acquire different owners before their first successful presentation', async () => {
+  const f = fixture();
+  f.request('one');
+  const accepted = await f.accept('one');
+  f.read('read');
+  f.request('two');
+  await expect(f.accept('two')).rejects.toThrow('pending in another message');
+  f.settle('two', undefined, 'failed');
+  f.settle('one', accepted);
+  f.request('retry');
+  const updated = { ...panel, nodes: [{ ...panel.nodes[0], title: 'Updated after settlement' }] };
+  f.settle('retry', await f.accept('retry', updated));
+  expect(f.chat.messages[0].ui).toEqual(updated.nodes);
+  expect(f.chat.messages[2].ui).toEqual([]);
+});
+
+test('late cross-message updates preserve ownership, newest values and replay', async () => {
+  const f = fixture();
+  f.chat.messages.push({ id: 'user', role: 'user', text: 'Compará' });
+  f.events.push({
+    type: 'delivery.consumed',
+    data: { parts: [{ kind: 'text', text: 'Compará' }] },
+  });
+  f.request('one');
+  f.settle('one', await f.accept('one'));
+  f.read('read');
+  f.request('slow');
+  const slow = await f.accept('slow', {
+    ...panel,
+    nodes: [{ ...panel.nodes[0], title: 'Older update' }],
+  });
+  f.read('read-again');
+  f.request('fast');
+  const fast = await f.accept('fast', {
+    ...panel,
+    nodes: [{ ...panel.nodes[0], title: 'Latest update' }],
+  });
+  f.settle('fast', fast);
+  f.settle('slow', slow);
+  const presentations = f.chat.messages.filter((message) => message.ui?.length);
+  expect(presentations).toHaveLength(1);
+  expect(presentations[0].id).toBe('presentation-one');
+  expect(presentations[0].ui).toEqual(fast.nodes);
+  expect(rebuildHistory(f.chat, f.events)?.map(replyContent)).toEqual(
+    f.chat.messages.map(replyContent),
+  );
+});
+
+test('component ownership resets on a new turn without changing the previous reply', async () => {
+  const f = fixture();
+  f.request('one');
+  f.settle('one', await f.accept('one'));
+  const original = f.chat.messages[0];
+  f.emit('turn.started', { turnId: 'next' });
+  f.chat.messages.push({ role: 'user', text: 'Next question' });
+  f.request('new');
+  const next = { nodes: [{ id: 'comparison', kind: 'text', text: 'A new component' }] };
+  f.settle('new', await f.accept('new', next));
+  expect(original.ui).toEqual(panel.nodes);
+  expect(f.chat.messages.at(-1)?.ui).toEqual(next.nodes);
+  expect(f.chat.messages.at(-1)?.parts).toEqual([{ type: 'ui', id: 'comparison' }]);
 });
 
 test('verified references register silently, resolve prose and cannot change meaning', () => {

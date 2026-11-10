@@ -34,6 +34,10 @@ interface Presentation {
   accepted?: ReplyPresentation;
   value?: ReplyPresentation;
 }
+interface Component {
+  group: Group;
+  node: NonNullable<Message['ui']>[number];
+}
 
 // Project Eve's ordered text/tool events into native message parts. Presentation
 // calls occupy a stable position but never become visible tool/activity rows.
@@ -44,6 +48,8 @@ export class ReplyProjection {
   streams = new Map<string, { reply: ReplyStream; group: Group; part: TextPart }>();
   private groups: Group[] = [];
   private presentations = new Map<string, Presentation>();
+  private components = new Map<string, Component>();
+  private roots = new Map<string, string[]>();
   private references: ReferenceCatalog = Object.create(null);
   private skipCalls = new Set<string>();
   private turn = new AbortController();
@@ -65,6 +71,8 @@ export class ReplyProjection {
     this.streams.clear();
     this.kinds.clear();
     this.presentations.clear();
+    this.components.clear();
+    this.roots.clear();
     this.skipCalls.clear();
     this.references = Object.create(null);
     this.noTip = false;
@@ -204,25 +212,37 @@ export class ReplyProjection {
     if (Object.keys(references).length > 64) {
       throw Error('The reply cannot contain more than 64 references. Reuse existing keys.');
     }
-    for (const group of this.groups) {
-      const nodes = new Map((group.message.ui ?? []).map((node) => [node.id, node]));
-      for (const entry of staged.filter((entry) => entry.group === group)) {
-        for (const node of entry.value.nodes) {
-          const old = nodes.get(node.id);
-          if (old && (old.kind !== node.kind || old.parent !== node.parent)) {
-            throw Error(`Component "${node.id}" cannot change kind or parent. Use a new ID.`);
-          }
-          // Reserve the larger version so cancelling a concurrent update cannot
-          // make an already accepted presentation exceed the message budget.
-          if (!old || JSON.stringify(node).length > JSON.stringify(old).length) {
-            nodes.set(node.id, node);
-          }
+    const components = new Map(this.components);
+    for (const entry of staged) {
+      for (const node of entry.value.nodes) {
+        const old = components.get(node.id);
+        if (old && (old.node.kind !== node.kind || old.node.parent !== node.parent)) {
+          throw Error(`Component "${node.id}" cannot change kind or parent. Use a new ID.`);
+        }
+        const group =
+          this.components.get(node.id)?.group ??
+          (node.parent ? components.get(node.parent)?.group : undefined) ??
+          entry.group;
+        if (old && old.group !== group) {
+          throw Error(
+            `Component "${node.id}" is pending in another message. Retry after that presentation finishes.`,
+          );
+        }
+        // Reserve the larger version in its owning message, including new
+        // children of an existing panel and updates from later tool rounds.
+        if (!old || JSON.stringify(node).length > JSON.stringify(old.node).length) {
+          components.set(node.id, { group, node });
         }
       }
-      if (nodes.size > 48) {
+    }
+    for (const group of this.groups) {
+      const nodes = [...components.values()]
+        .filter((entry) => entry.group === group)
+        .map((entry) => entry.node);
+      if (nodes.length > 48) {
         throw Error('The message cannot contain more than 48 components. Reuse existing IDs.');
       }
-      if (JSON.stringify({ nodes: [...nodes.values()], references }).length > 24000) {
+      if (JSON.stringify({ nodes, references }).length > 24000) {
         throw Error(
           'The combined presentation is too large. Use less content or fewer references.',
         );
@@ -250,24 +270,50 @@ export class ReplyProjection {
     }
     presentation.pending = false;
     presentation.accepted = undefined;
+    this.rebuildComponents();
     for (const group of this.groups) {
       group.force = true;
       this.update(group);
     }
   }
 
+  private rebuildComponents() {
+    // An ID keeps its first successful presentation's owner and inline slot.
+    // Reapply values in request order so late settlements cannot undo an update.
+    for (const [callId, presentation] of this.presentations) {
+      for (const node of presentation.value?.nodes ?? []) {
+        let component = this.components.get(node.id);
+        if (!component) {
+          component = {
+            group: node.parent ? this.components.get(node.parent)!.group : presentation.group,
+            node,
+          };
+          this.components.set(node.id, component);
+          if (!node.parent) {
+            const roots = this.roots.get(callId) ?? [];
+            roots.push(node.id);
+            this.roots.set(callId, roots);
+          }
+        }
+        component.node = node;
+      }
+    }
+    for (const group of this.groups) {
+      group.message.ui = [];
+    }
+    for (const component of this.components.values()) {
+      component.group.message.ui!.push(component.node);
+    }
+  }
+
   private update(group: Group) {
     const parts: ReplyPart[] = [];
-    const nodes = new Map<string, NonNullable<Message['ui']>[number]>();
     for (const segment of group.segments) {
       if (segment.type === 'text') {
         parts.push({ ...segment });
       } else {
-        for (const node of this.presentations.get(segment.callId)?.value?.nodes ?? []) {
-          if (!node.parent && !nodes.has(node.id)) {
-            parts.push({ type: 'ui', id: node.id });
-          }
-          nodes.set(node.id, node);
+        for (const id of this.roots.get(segment.callId) ?? []) {
+          parts.push({ type: 'ui', id });
         }
       }
     }
@@ -277,7 +323,6 @@ export class ReplyProjection {
       .flatMap((part) => (part.type === 'text' ? [part.text] : []))
       .join('');
     group.message.parts = parts;
-    group.message.ui = [...nodes.values()];
     group.message.references = { ...this.references };
     group.message.streaming =
       [...this.streams.values()].some((state) => state.group === group && !state.reply.finished) ||
