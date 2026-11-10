@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { button, card } from "./ui";
+
   import { onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { desktop, native } from "./api";
@@ -122,49 +124,68 @@
 </script>
 
 {#if release && dismissed !== release.version && !showSettings}
-  <div class="banner" role="status">
+  <div
+    class="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-[12px] leading-[1.5] [&_.icon-button]:ml-auto"
+    role="status"
+  >
     <span>Wisp {release.version} is available.</span>
-    <button onclick={openSettings}>View update</button>
-    <button class="quiet" onclick={() => (dismissed = release!.version)}
-      >Later</button
+    <button class={button({})} onclick={openSettings}>View update</button>
+    <button
+      class={button({ intent: "quiet", class: "quiet" })}
+      onclick={() => (dismissed = release!.version)}>Later</button
     >
   </div>
 {/if}
 {#if showSettings}
-  <section class="card">
-    <div class="section-title">
+  <section class={card({ class: "card" })}>
+    <div
+      class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
+    >
       <div>
         <h2>App updates</h2>
-        <p>Installed version: {version}</p>
+        <p class="text-muted text-[13px]">
+          Installed version: {version}
+        </p>
       </div>
       <button
+        class={button({})}
         onclick={check}
         disabled={!native || checking || installing || locked}
       >
         {checking ? "Checking…" : "Check for updates"}
       </button>
     </div>
-    <p class="field-hint">
+    <p class="field-hint text-[11px]! text-muted mt-[12px]">
       Wisp checks automatically at startup and every six hours. You choose when
       to install.
     </p>
-    {#if lastChecked}<p class="field-hint">Last checked: {lastChecked}</p>{/if}
-    <p role="status">{installing ? progress : message}</p>
-    {#if error}<p class="banner error" role="alert">{error}</p>{/if}
+    {#if lastChecked}<p class="field-hint text-[11px]! text-muted mt-[12px]">
+        Last checked: {lastChecked}
+      </p>{/if}
+    <p class="text-muted text-[13px]" role="status">
+      {installing ? progress : message}
+    </p>
+    {#if error}<p
+        class="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#332522] text-[#f0b4aa] mb-[20px] text-[13px] leading-[1.5] [&_.icon-button]:ml-auto"
+        role="alert"
+      >
+        {error}
+      </p>{/if}
     {#if release}
       <h3>Wisp {release.version}</h3>
-      <pre class="release-notes">{release.notes ||
+      <pre
+        class="release-notes [white-space:pre-wrap] [overflow-wrap:anywhere] [font:inherit] text-muted max-h-[280px] overflow-y-auto">{release.notes ||
           "This release has no notes."}</pre>
-      <div class="actions">
+      <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
         <button
-          class="primary"
+          class={button({ intent: "primary", class: "primary" })}
           onclick={install}
           disabled={!supported || installing || checking || locked}
         >
           {installing ? "Updating…" : "Update and restart"}
         </button>
       </div>
-      <p class="field-hint">
+      <p class="field-hint text-[11px]! text-muted mt-[12px]">
         Wisp downloads and verifies the update, waits for any active reply, then
         opens the Windows updater. Wisp closes during installation and reopens
         automatically when it is ready. Your chats and settings are kept. Use
@@ -173,14 +194,3 @@
     {/if}
   </section>
 {/if}
-
-<style>
-  .release-notes {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font: inherit;
-    color: var(--muted);
-    max-height: 280px;
-    overflow-y: auto;
-  }
-</style>

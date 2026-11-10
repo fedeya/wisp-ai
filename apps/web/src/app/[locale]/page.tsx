@@ -1,6 +1,4 @@
-import { containerClassName } from '../../components/ui';
-import sharedStyles from '../../components/shared.module.css';
-import styles from './page.module.css';
+import { containerClassName, link } from '../../components/ui';
 import { getTranslator, translateData, localizedPath, type Locale } from '../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../i18n/server';
 import { localizedMetadata } from '../../seo';
@@ -43,10 +41,7 @@ const baseFaqs = [
 function InstallLink({ locale }: { locale: Locale }) {
   const t = getTranslator(locale);
   return (
-    <a
-      className={`button primary gap-[12px] border border-solid border-[#efdaab] px-[22px] py-0 inline-flex min-h-[48px] items-center justify-center rounded-[4px] text-[13px] font-semibold text-[#241c10] ${sharedStyles['button']} ${sharedStyles['primary']}`}
-      href={site.download}
-    >
+    <a className={link({ intent: 'primary' })} href={site.download}>
       <Icon name="windows" size={17} />
       {t('Download for Windows')}
       <Icon name="arrow" size={17} />
@@ -83,7 +78,7 @@ export default async function Home({ params }: LocalePageProps) {
           locale={locale}
         />
         <section
-          className={`hero relative isolate mt-[-64px] min-h-[750px] pt-[64px] md:mt-[-82px] md:pt-[82px] 2xl:min-h-[840px] ${styles['hero']}`}
+          className={`hero relative isolate mt-[-64px] min-h-[750px] pt-[64px] md:mt-[-82px] md:pt-[82px] 2xl:min-h-[840px] [&_h1]:[text-shadow:0_2px_18px_#0004] [:lang(es)_&_h1]:text-[clamp(52px,_5vw,_72px)] max-md:[:lang(es)_&_h1]:text-[clamp(39px,_12.3vw,_58px)]`}
           aria-labelledby="hero-title"
         >
           <Image
@@ -97,15 +92,15 @@ export default async function Home({ params }: LocalePageProps) {
             unoptimized
           />
           <div
-            className={`hero-shade absolute top-[0] right-[0] bottom-[0] left-[0] z-[-2] ${styles['hero-shade']}`}
+            className={`hero-shade absolute top-[0] right-[0] bottom-[0] left-[0] z-[-2] [background:linear-gradient(90deg,_#12110ff2_0%,_#12110f9c_30%,_#12110f05_68%,_#12110f42),_linear-gradient(0deg,_#12110f_0%,_#12110f08_32%,_#12110f00_72%,_#12110fb3_100%)] max-md:[background:linear-gradient(90deg,_#12110fd9,_#12110f30),_linear-gradient(0deg,_#12110f_0%,_#12110f05_60%,_#12110f65)]`}
           />
           <HeroMotion>
             <div
-              className={`hero-copy z-[2] pb-0 md:pb-[12px] ${styles['hero-copy']}`}
+              className={`hero-copy z-[2] pb-0 md:pb-[12px] max-sm:[&_>_.button]:px-[15px] max-sm:[&_>_.button]:py-0 max-sm:[&_>_.button]:text-[12px] [:lang(es)_&_>_.button]:text-[12px]`}
               data-hero-copy
             >
               <a
-                className={`release-badge gap-[9px] flex items-center text-[9px] tracking-[1.6px] text-[#d6c8af] mb-[23px] md:text-[10px] md:mb-[25px] ${styles['release-badge']}`}
+                className={`release-badge gap-[9px] flex items-center text-[9px] tracking-[1.6px] text-[#d6c8af] mb-[23px] md:text-[10px] md:mb-[25px] [&_i]:[background:var(--gold)] [&_i]:[box-shadow:0_0_8px_#d6b77780]`}
                 href={`${site.repository}/releases`}
               >
                 <i className="w-[5px] h-[5px] rounded-[50%]" />
@@ -163,11 +158,11 @@ export default async function Home({ params }: LocalePageProps) {
             </h2>
           </div>
           <article
-            className={`feature-scene gear-scene gap-[30px] px-0 py-[64px] grid grid-cols-[1fr] items-center relative md:gap-[45px] md:py-[85px] md:grid-cols-[1fr_1fr] lg:gap-[90px] ${styles['feature-scene']} ${styles['gear-scene']}`}
+            className={`feature-scene gear-scene gap-[30px] px-0 py-[64px] grid grid-cols-[1fr] items-center relative md:gap-[45px] md:py-[85px] md:grid-cols-[1fr_1fr] lg:gap-[90px] [&_+_.feature-scene]:border-t-[1px] [&_+_.feature-scene]:[border-top-style:solid] [&_+_.feature-scene]:border-t-[var(--line)] [&_.gear-visual]:w-[min(calc(100%_-_32px),_420px)] [&_.gear-visual]:ml-[32px] [&_.gear-visual]:justify-self-[start] max-md:[&_.gear-visual]:w-[min(100%,_390px)] max-md:[&_.gear-visual]:ml-0 max-md:[&_.gear-visual]:justify-self-[center]`}
           >
             <GearVisual locale={locale} />
             <div
-              className={`feature-copy row-[1] pl-0 w-full max-w-[none] justify-self-[start] md:max-w-[360px] md:justify-self-[end] md:row-auto ${styles['feature-copy']}`}
+              className={`feature-copy row-[1] pl-0 w-full max-w-[none] justify-self-[start] md:max-w-[360px] md:justify-self-[end] md:row-auto max-md:[:lang(es)_&_h2]:text-[41px] max-sm:[:lang(es)_&_h2]:text-[37px]`}
             >
               <span className="eyebrow block text-[#a3906f] text-[8px] tracking-[2px] leading-[1.8] mb-[14px] md:text-[9px] md:mb-[16px]">
                 {t('YOUR GEAR. YOUR BUDGET.')}
@@ -183,7 +178,7 @@ export default async function Home({ params }: LocalePageProps) {
                 {t('Then weigh the price against your gold.')}
               </p>
               <div
-                className={`prompt-chip gap-[10px] flex items-center mt-[22px] text-[12px] text-[#d3c1a0] md:mt-[26px] ${styles['prompt-chip']}`}
+                className={`prompt-chip gap-[10px] flex items-center mt-[22px] text-[12px] text-[#d3c1a0] md:mt-[26px] [&_span]:[background:#bd955b08]`}
               >
                 <Image src="/wisp.png" width={27} height={27} alt="" />
                 <span className="border border-solid border-[#c5a66d3d] px-[13px] py-[10px] rounded-[5px]">
@@ -196,9 +191,11 @@ export default async function Home({ params }: LocalePageProps) {
             </div>
           </article>
           <article
-            className={`feature-scene bags-scene gap-[30px] px-0 py-[64px] grid grid-cols-[1fr] items-center relative md:gap-[45px] md:py-[85px] md:grid-cols-[1fr_1fr] lg:gap-[90px] ${styles['feature-scene']}`}
+            className={`feature-scene bags-scene gap-[30px] px-0 py-[64px] grid grid-cols-[1fr] items-center relative md:gap-[45px] md:py-[85px] md:grid-cols-[1fr_1fr] lg:gap-[90px] [&_+_.feature-scene]:border-t-[1px] [&_+_.feature-scene]:[border-top-style:solid] [&_+_.feature-scene]:border-t-[var(--line)]`}
           >
-            <div className={`feature-copy ${styles['feature-copy']}`}>
+            <div
+              className={`feature-copy max-md:[:lang(es)_&_h2]:text-[41px] max-sm:[:lang(es)_&_h2]:text-[37px]`}
+            >
               <span className="eyebrow block text-[#a3906f] text-[8px] tracking-[2px] leading-[1.8] mb-[14px] md:text-[9px] md:mb-[16px]">
                 {t('FROM QUESTION TO ACTION')}
               </span>
@@ -215,7 +212,7 @@ export default async function Home({ params }: LocalePageProps) {
                 )}
               </p>
               <div
-                className={`prompt-chip gap-[10px] flex items-center mt-[22px] text-[12px] text-[#d3c1a0] md:mt-[26px] ${styles['prompt-chip']}`}
+                className={`prompt-chip gap-[10px] flex items-center mt-[22px] text-[12px] text-[#d3c1a0] md:mt-[26px] [&_span]:[background:#bd955b08]`}
               >
                 <Image src="/wisp.png" width={27} height={27} alt="" />
                 <span className="border border-solid border-[#c5a66d3d] px-[13px] py-[10px] rounded-[5px]">
@@ -249,7 +246,7 @@ export default async function Home({ params }: LocalePageProps) {
                 )}
               </p>
               <a
-                className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] mt-[25px] ${sharedStyles['text-link']}`}
+                className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] mt-[25px] [&:hover]:text-gold`}
                 href={localizedPath(locale, '/features#ai-connections')}
               >
                 {t('See AI connection options')}
@@ -258,12 +255,12 @@ export default async function Home({ params }: LocalePageProps) {
             </div>
             <div className="ai-choice-connections w-full max-w-[440px] justify-self-[start] md:justify-self-[end]">
               <ul
-                className={`ai-provider-list gap-[10px] p-0 m-0 grid grid-cols-[1fr_1fr] list-none sm:gap-[12px] ${styles['ai-provider-list']}`}
+                className={`ai-provider-list gap-[10px] p-0 m-0 grid grid-cols-[1fr_1fr] list-none sm:gap-[12px] [&_li]:[background:linear-gradient(130deg,_#c7a4670a,_#c7a46702)] [&_span]:block [&_span]:mt-[8px] [&_span]:text-[#a7997d] [&_span]:text-[10px] [&_span]:leading-[1.6]`}
                 aria-label={t('Examples of AI connections')}
               >
                 <li className="gap-[9px] border border-solid border-[#b79c633b] px-[13px] py-[16px] rounded-[5px] flex items-start min-h-[81px] flex-col sm:gap-[11px] sm:p-[18px] md:gap-[14px] md:p-[20px] md:items-center md:min-h-[89px] md:flex-row">
                   <Image
-                    className={`provider-logo provider-logo-mono shrink-0 w-[25px] h-[25px] sm:w-[28px] sm:h-[28px] ${styles['provider-logo-mono']}`}
+                    className={`provider-logo provider-logo-mono shrink-0 w-[25px] h-[25px] sm:w-[28px] sm:h-[28px] [filter:brightness(0)_invert(0.9)]`}
                     src="/providers/openai.svg"
                     width={28}
                     height={28}
@@ -299,7 +296,7 @@ export default async function Home({ params }: LocalePageProps) {
                 </li>
                 <li className="gap-[9px] border border-solid border-[#b79c633b] px-[13px] py-[16px] rounded-[5px] flex items-start min-h-[81px] flex-col sm:gap-[11px] sm:p-[18px] md:gap-[14px] md:p-[20px] md:items-center md:min-h-[89px] md:flex-row">
                   <Image
-                    className={`provider-logo provider-logo-mono shrink-0 w-[25px] h-[25px] sm:w-[28px] sm:h-[28px] ${styles['provider-logo-mono']}`}
+                    className={`provider-logo provider-logo-mono shrink-0 w-[25px] h-[25px] sm:w-[28px] sm:h-[28px] [filter:brightness(0)_invert(0.9)]`}
                     src="/providers/openrouter.svg"
                     width={28}
                     height={28}
@@ -310,7 +307,7 @@ export default async function Home({ params }: LocalePageProps) {
                   </strong>
                 </li>
                 <li
-                  className={`local-provider gap-[14px] border border-solid border-[#b79c633b] px-[13px] py-[16px] rounded-[5px] flex items-center min-h-[81px] flex-row col-[1_/_-1] sm:p-[18px] md:p-[20px] md:min-h-[89px] md:flex-row ${styles['local-provider']}`}
+                  className={`local-provider gap-[14px] border border-solid border-[#b79c633b] px-[13px] py-[16px] rounded-[5px] flex items-center min-h-[81px] flex-row col-[1_/_-1] sm:p-[18px] md:p-[20px] md:min-h-[89px] md:flex-row [&_>_svg]:shrink-[0] [&_>_svg]:text-[#bfa26c]`}
                 >
                   <Icon name="connection" size={28} />
                   <div>
@@ -338,7 +335,7 @@ export default async function Home({ params }: LocalePageProps) {
             </div>
           </section>
           <section
-            className={`more-capabilities border-t-[1px] [border-top-style:solid] border-t-[var(--line)] pt-[48px] pb-[44px] md:pt-[64px] md:pb-[58px] ${styles['more-capabilities']}`}
+            className={`more-capabilities border-t-[1px] [border-top-style:solid] border-t-[var(--line)] pt-[48px] pb-[44px] md:pt-[64px] md:pb-[58px] [&_.abilities_article]:[background:#c6ad7b05] [&_.abilities_.item-icon]:[filter:none]`}
             aria-labelledby="more-capabilities-title"
           >
             <span className="eyebrow block text-[#a3906f] text-[9px] tracking-[2px] leading-[1.8] mb-[16px]">
@@ -351,7 +348,7 @@ export default async function Home({ params }: LocalePageProps) {
               {t('A little help, wherever you need it.')}
             </h2>
             <div
-              className={`abilities gap-[12px] px-0 grid grid-cols-[1fr] border-t-[0] [border-top-style:none] border-t-[currentColor] pt-[25px] pb-[30px] md:gap-[18px] md:grid-cols-[repeat(3,_1fr)] md:pt-[30px] md:pb-[38px] ${styles['abilities']}`}
+              className={`abilities gap-[12px] px-0 grid grid-cols-[1fr] border-t-[0] [border-top-style:none] border-t-[currentColor] pt-[25px] pb-[30px] md:gap-[18px] md:grid-cols-[repeat(3,_1fr)] md:pt-[30px] md:pb-[38px] [&_.item-icon]:w-[37px] [&_.item-icon]:h-[37px] [&_.item-icon]:[filter:saturate(0.6)]`}
             >
               {abilities.map(([icon, title, text]) => (
                 <article
@@ -369,7 +366,7 @@ export default async function Home({ params }: LocalePageProps) {
               ))}
             </div>
             <a
-              className={`text-link feature-reference-link gap-[9px] mx-0 inline-flex items-center text-gold text-[12px] mt-[-12px] mb-[32px] ${sharedStyles['text-link']}`}
+              className={`text-link feature-reference-link gap-[9px] mx-0 inline-flex items-center text-gold text-[12px] mt-[-12px] mb-[32px] [&:hover]:text-gold`}
               href={localizedPath(locale, '/features')}
             >
               {t('Explore all features ')}
@@ -446,7 +443,7 @@ export default async function Home({ params }: LocalePageProps) {
           </div>
         </section>
         <section
-          className={`setup-section px-0 py-[64px] mt-[60px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] md:py-[100px] md:mt-[90px] ${styles['setup-section']}`}
+          className={`setup-section px-0 py-[64px] mt-[60px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] md:py-[100px] md:mt-[90px] [background:linear-gradient(180deg,_#a8853910,_transparent)]`}
           id="start"
         >
           <div className={`${containerClassName} `}>
@@ -487,7 +484,7 @@ export default async function Home({ params }: LocalePageProps) {
               </li>
             </ol>
             <a
-              className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] ${sharedStyles['text-link']}`}
+              className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] [&:hover]:text-gold`}
               href={localizedPath(locale, '/setup')}
             >
               {t('Full setup guide ')}
@@ -499,7 +496,9 @@ export default async function Home({ params }: LocalePageProps) {
           className={`${containerClassName} faq-section gap-[20px] grid grid-cols-[1fr] pt-[44px] pb-[70px] md:gap-[40px] md:grid-cols-[0.8fr_1.2fr] md:pt-[70px] md:pb-[100px] lg:gap-[80px]`}
         >
           <h2 className="text-[34px] md:text-[39px]">{t('Before you set out.')}</h2>
-          <div className={`faq-list ${styles['faq-list']}`}>
+          <div
+            className={`faq-list [&_summary::-webkit-details-marker]:hidden [&_summary_svg]:shrink-[0] [&_summary_svg]:text-[#a48e69] [&_details[open]_summary_svg]:[transform:rotate(45deg)]`}
+          >
             {faqs.map(([question, answer]) => (
               <details
                 key={question}
@@ -517,7 +516,7 @@ export default async function Home({ params }: LocalePageProps) {
           </div>
         </section>
         <section
-          className={`${containerClassName} install-section px-0 text-center pt-[54px] pb-[70px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] md:pt-[70px] md:pb-[96px] ${styles['install-section']}`}
+          className={`${containerClassName} install-section px-0 text-center pt-[54px] pb-[70px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] md:pt-[70px] md:pb-[96px] [&_>_img]:[filter:drop-shadow(0_0_22px_#7eabda40)]`}
         >
           <Image src="/wisp.png" width={70} height={70} alt="" className="mb-[15px]" />
           <h2 className="text-[43px] mb-[28px] md:text-[52px]">

@@ -1,6 +1,4 @@
 'use client';
-import styles from './demo.module.css';
-import sharedStyles from './shared.module.css';
 
 import { getTranslator, translateData, type Locale } from '../i18n';
 import { useEffect, useRef, useState } from 'react';
@@ -189,15 +187,15 @@ export function Demo({ locale }: { locale: Locale }) {
   return (
     <div
       ref={container}
-      className={`live-demo m-0 w-[min(370px,_100%)] relative z-[1] max-w-full md:w-[370px] ${stopped ? `demo-stopped ${styles['demo-stopped']}` : ``}`}
+      className={`live-demo m-0 w-[min(370px,_100%)] relative z-[1] max-w-full md:w-[370px] ${stopped ? `demo-stopped [&_*]:[animation-play-state:paused] [&_*::after]:[animation-play-state:paused]` : ``}`}
       data-scene={scene}
       data-stage={shownStage}
     >
       <div
-        className={`wisp-window border border-solid border-[#897c675e] rounded-[8px] overflow-hidden h-[431px] grid grid-rows-[42px_minmax(0,_1fr)_71px] ${styles['wisp-window']}`}
+        className={`wisp-window border border-solid border-[#897c675e] rounded-[8px] overflow-hidden h-[431px] grid grid-rows-[42px_minmax(0,_1fr)_71px] [background:linear-gradient(135deg,_#25231ff7,_#1c1b19fa)] [box-shadow:0_18px_65px_#0008,_0_0_0_3px_#18181644]`}
       >
         <div
-          className={`window-heading px-[15px] py-0 h-[42px] flex justify-between items-center border-b-[1px] [border-bottom-style:solid] border-b-[#c4ad8124] text-[#b5aa95] text-[15px] ${styles['window-heading']}`}
+          className={`window-heading px-[15px] py-0 h-[42px] flex justify-between items-center border-b-[1px] [border-bottom-style:solid] border-b-[#c4ad8124] text-[#b5aa95] text-[15px] [background:#ffffff04] [&_>_span:first-child]:gap-[6px] [&_>_span:first-child]:flex [&_>_span:first-child]:items-center [&_>_span:first-child]:font-medium [&_>_span:first-child]:text-[#e2dbcc]`}
         >
           <span>
             <Image src="/wisp.png" width={23} height={23} alt="" />
@@ -206,14 +204,14 @@ export function Demo({ locale }: { locale: Locale }) {
           <Icon name="minus" size={13} />
         </div>
         <div
-          className={`chat-content p-[17px] min-h-[0] h-[auto] overflow-y-auto [overscroll-behavior:contain] [overflow-anchor:none] ${styles['chat-content']}`}
+          className={`chat-content p-[17px] min-h-[0] h-[auto] overflow-y-auto [overscroll-behavior:contain] [overflow-anchor:none] [scrollbar-width:thin] [scrollbar-color:#88734b55_transparent] [scrollbar-gutter:stable]`}
           ref={transcript}
           aria-live="off"
         >
           <div className="chat-thread min-h-full" key={scene}>
             {shownStage >= 1 && (
               <p
-                className={`chat-question border border-solid border-[#c2b8a51b] px-[12px] py-[10px] rounded-[8px_8px_2px_8px] mt-0 mr-0 mb-[15px] ml-[24px] text-[12px] leading-[1.5] text-[#eee6d9] ${styles['chat-question']}`}
+                className={`chat-question border border-solid border-[#c2b8a51b] px-[12px] py-[10px] rounded-[8px_8px_2px_8px] mt-0 mr-0 mb-[15px] ml-[24px] text-[12px] leading-[1.5] text-[#eee6d9] [background:#3b383266]`}
                 data-motion="question"
               >
                 {current.prompt}
@@ -221,7 +219,7 @@ export function Demo({ locale }: { locale: Locale }) {
             )}
             {shownStage >= 2 && (
               <div
-                className={`chat-answer text-[12px] leading-[1.65] text-[#c8c1b5] ${styles['chat-answer']}`}
+                className={`chat-answer text-[12px] leading-[1.65] text-[#c8c1b5] [&_>_p:not(.chat-question)]:mb-[12px] [&_pre]:[background:#10110f80]`}
                 data-motion="answer"
               >
                 <p className="streaming-text grid">
@@ -235,7 +233,7 @@ export function Demo({ locale }: { locale: Locale }) {
                     {reply}
                     {stage === 2 && !reduced && (
                       <span
-                        className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] ${sharedStyles['writing-caret']}`}
+                        className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] [background:#d6b777] animate-caret`}
                       />
                     )}
                   </span>
@@ -247,7 +245,7 @@ export function Demo({ locale }: { locale: Locale }) {
                   >
                     {scene === 0 && (
                       <div
-                        className={`chat-item gap-[11px] border border-solid border-[#a8a09220] p-[10px] mx-0 flex items-center rounded-[4px] mt-[10px] mb-[14px] ${styles['chat-item']}`}
+                        className={`chat-item gap-[11px] border border-solid border-[#a8a09220] p-[10px] mx-0 flex items-center rounded-[4px] mt-[10px] mb-[14px] [background:#12120f85] [&_.item-icon]:w-[37px] [&_.item-icon]:h-[37px] [&_small_svg]:inline-block [&_small_svg]:[vertical-align:-0.15em] [:lang(es)_&_b]:text-[11px]`}
                       >
                         <Item name={t('Barbaric Linen Vest')} icon="vest" rarity="uncommon" />
                         <div>
@@ -263,7 +261,7 @@ export function Demo({ locale }: { locale: Locale }) {
                     {scene === 1 && (
                       <>
                         <div
-                          className={`chat-item gap-[11px] border border-solid border-[#a8a09220] p-[10px] mx-0 flex items-center rounded-[4px] mt-[10px] mb-[14px] ${styles['chat-item']}`}
+                          className={`chat-item gap-[11px] border border-solid border-[#a8a09220] p-[10px] mx-0 flex items-center rounded-[4px] mt-[10px] mb-[14px] [background:#12120f85] [&_.item-icon]:w-[37px] [&_.item-icon]:h-[37px] [&_small_svg]:inline-block [&_small_svg]:[vertical-align:-0.15em] [:lang(es)_&_b]:text-[11px]`}
                         >
                           <Item name={t('Wand Shot')} icon="wand" rarity="rare" />
                           <div>
@@ -286,7 +284,7 @@ export function Demo({ locale }: { locale: Locale }) {
                     {scene === 2 && (
                       <>
                         <div
-                          className={`bag-advice gap-[10px] flex items-center mt-[13px] ${styles['bag-advice']}`}
+                          className={`bag-advice gap-[10px] flex items-center mt-[13px] [&_.item-icon]:w-[34px] [&_.item-icon]:h-[34px] [&_.item-icon]:shrink-[0]`}
                         >
                           <Item name={t('Linen Cloth')} icon="linen" />
                           <p>
@@ -297,7 +295,7 @@ export function Demo({ locale }: { locale: Locale }) {
                           </p>
                         </div>
                         <div
-                          className={`bag-advice gap-[10px] flex items-center mt-[13px] ${styles['bag-advice']}`}
+                          className={`bag-advice gap-[10px] flex items-center mt-[13px] [&_.item-icon]:w-[34px] [&_.item-icon]:h-[34px] [&_.item-icon]:shrink-[0]`}
                         >
                           <Item name={t('Light Feather')} icon="feather" />
                           <p>
@@ -315,7 +313,7 @@ export function Demo({ locale }: { locale: Locale }) {
             )}
             {scene === 0 && shownStage >= 5 && (
               <p
-                className={`chat-question followup border border-solid border-[#c2b8a51b] px-[12px] py-[10px] rounded-[8px_8px_2px_8px] mt-[14px] mr-0 mb-[15px] ml-[24px] text-[12px] leading-[1.5] text-[#eee6d9] ${styles['chat-question']}`}
+                className={`chat-question followup border border-solid border-[#c2b8a51b] px-[12px] py-[10px] rounded-[8px_8px_2px_8px] mt-[14px] mr-0 mb-[15px] ml-[24px] text-[12px] leading-[1.5] text-[#eee6d9] [background:#3b383266]`}
                 data-motion="followup"
               >
                 {followupPrompt}
@@ -323,7 +321,7 @@ export function Demo({ locale }: { locale: Locale }) {
             )}
             {scene === 0 && shownStage >= 6 && (
               <div
-                className={`chat-answer text-[12px] leading-[1.65] text-[#c8c1b5] ${styles['chat-answer']}`}
+                className={`chat-answer text-[12px] leading-[1.65] text-[#c8c1b5] [&_>_p:not(.chat-question)]:mb-[12px] [&_pre]:[background:#10110f80]`}
                 data-motion="followup-answer"
               >
                 <div className="chat-prices gap-[15px] flex flex-wrap pb-[12px] text-[10px] text-[#a79d8b]">
@@ -347,7 +345,7 @@ export function Demo({ locale }: { locale: Locale }) {
                     {stage === 6 ? followupReply.slice(0, characters) : followupReply}
                     {stage === 6 && (
                       <span
-                        className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] ${sharedStyles['writing-caret']}`}
+                        className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] [background:#d6b777] animate-caret`}
                       />
                     )}
                   </span>
@@ -356,7 +354,7 @@ export function Demo({ locale }: { locale: Locale }) {
             )}
             {waiting && (
               <div
-                className={`thinking gap-[5px] px-0 flex items-center h-[31px] pt-[1px] pb-[5px] ${styles['thinking']}`}
+                className={`thinking gap-[5px] px-0 flex items-center h-[31px] pt-[1px] pb-[5px] [&_>_span]:[background:#b6a180] [&_>_span]:animate-thinking [&_>_span:nth-of-type(2)]:[animation-delay:140ms] [&_>_span:nth-of-type(3)]:[animation-delay:280ms]`}
                 aria-label={t('Wisp is thinking')}
               >
                 <Image
@@ -374,13 +372,13 @@ export function Demo({ locale }: { locale: Locale }) {
           </div>
         </div>
         <div
-          className={`chat-composer gap-[12px] border border-solid border-[#baab8d28] p-[10px] mx-[12px] mt-0 mb-[12px] rounded-[4px] text-[#837d70] text-[11px] flex justify-between min-h-[0] items-center leading-[1.5] h-[59px] overflow-hidden ${styles['chat-composer']} ${writingPrompt ? `composer-writing ${styles['composer-writing']}` : ``}`}
+          className={`chat-composer gap-[12px] border border-solid border-[#baab8d28] p-[10px] mx-[12px] mt-0 mb-[12px] rounded-[4px] text-[#837d70] text-[11px] flex justify-between min-h-[0] items-center leading-[1.5] h-[59px] overflow-hidden [background:#12120e45] [&_>_span:first-child]:flex-[1] [&_>_span:first-child]:text-[#837d70] [&_>_span:first-child]:min-w-[0] ${writingPrompt ? `composer-writing [&_>_span:first-child]:text-[#ddd1bb]` : ``}`}
         >
           <span className="text-[#c7b78f]">
             {writingPrompt ? text.slice(0, characters) : t('Ask a follow-up\u2026')}
             {writingPrompt && (
               <span
-                className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] text-[#c7b78f] ${sharedStyles['writing-caret']}`}
+                className={`writing-caret inline-block w-[1px] h-[1em] ml-[2px] [vertical-align:-0.12em] text-[#c7b78f] [background:#d6b777] animate-caret`}
               />
             )}
           </span>
@@ -388,7 +386,7 @@ export function Demo({ locale }: { locale: Locale }) {
         </div>
       </div>
       <div
-        className={`demo-caption mx-[3px] flex justify-between items-center text-[#b8ad99] text-[10px] mt-[13px] mb-0 ${styles['demo-caption']}`}
+        className={`demo-caption mx-[3px] flex justify-between items-center text-[#b8ad99] text-[10px] mt-[13px] mb-0 [&_i]:[background:var(--gold)] [&_i]:[box-shadow:0_0_8px_#d6b77780] [&_button]:[background:#1716137a] [&_button_svg]:shrink-[0]`}
       >
         <span className="gap-[7px] flex items-center">
           <i className="w-[5px] h-[5px] rounded-[50%]" />

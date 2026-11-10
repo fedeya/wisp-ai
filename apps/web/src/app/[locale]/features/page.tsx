@@ -1,6 +1,4 @@
-import { containerClassName } from '../../../components/ui';
-import sharedStyles from '../../../components/shared.module.css';
-import styles from './page.module.css';
+import { containerClassName, link } from '../../../components/ui';
 import { getTranslator, translateData, localizedPath } from '../../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../../i18n/server';
 import { localizedMetadata } from '../../../seo';
@@ -177,7 +175,7 @@ export default async function Features({ params }: LocalePageProps) {
           )}
         </p>
         <Link
-          className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] ${sharedStyles['text-link']}`}
+          className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] [&:hover]:text-gold`}
           href={localizedPath(locale, '/setup')}
         >
           {t('Get started with Wisp ')}
@@ -195,16 +193,16 @@ export default async function Features({ params }: LocalePageProps) {
           {features.map((feature) => (
             <section
               id={feature.id}
-              className={`reference-feature px-0 pt-[28px] pb-[32px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] [scroll-margin-top:0] md:pt-[32px] md:pb-[36px] ${styles['reference-feature']}`}
+              className={`reference-feature px-0 pt-[28px] pb-[32px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] [scroll-margin-top:0] md:pt-[32px] md:pb-[36px] [&:first-child]:pt-0 [&:first-child]:border-t-[0] [&:first-child]:[border-top-style:none] [&:first-child]:border-t-[currentColor] [&_blockquote]:[background:linear-gradient(90deg,_#b89c600c,_transparent)] [&_details_summary::-webkit-details-marker]:hidden [&_details[open]_summary_svg]:[transform:rotate(45deg)]`}
               key={feature.id}
               aria-labelledby={`${feature.id}-title`}
             >
               <div
-                className={`reference-feature-heading gap-[10px] flex items-center mb-[17px] flex-wrap md:gap-[13px] md:flex-nowrap ${styles['reference-feature-heading']}`}
+                className={`reference-feature-heading gap-[10px] flex items-center mb-[17px] flex-wrap md:gap-[13px] md:flex-nowrap [&_.chat-feature-icon]:[background:radial-gradient(circle_at_35%_25%,_#49412d,_#171714_80%)] [&_.item-icon]:w-[38px] [&_.item-icon]:h-[38px]`}
               >
                 {feature.icon === 'chat' ? (
                   <span
-                    className={`item-icon chat-feature-icon border border-solid border-[#96886c] w-[38px] h-[38px] inline-flex relative rounded-[4px] shrink-0 overflow-hidden [vertical-align:middle] items-center justify-center text-[#d5bb75] ${sharedStyles['item-icon']}`}
+                    className={`item-icon chat-feature-icon border border-solid border-[#96886c] w-[38px] h-[38px] inline-flex relative rounded-[4px] shrink-0 overflow-hidden [vertical-align:middle] items-center justify-center text-[#d5bb75] [box-shadow:inset_0_0_0_2px_#000,_0_3px_8px_#0006] [background:#171714] [&.uncommon]:border-[#62983e] [&.rare]:border-[#4b86be]`}
                     aria-hidden="true"
                   >
                     <Icon name="chat" size={26} />
@@ -246,7 +244,7 @@ export default async function Features({ params }: LocalePageProps) {
               </details>
               {feature.id === 'ai-connections' && (
                 <Link
-                  className={`text-link connection-guide-link gap-[9px] inline-flex items-center text-gold text-[12px] mt-[14px] ${sharedStyles['text-link']}`}
+                  className={`text-link connection-guide-link gap-[9px] inline-flex items-center text-gold text-[12px] mt-[14px] [&:hover]:text-gold`}
                   href={localizedPath(locale, '/setup#ai-connection')}
                 >
                   {t('Connection setup guide')}
@@ -259,15 +257,12 @@ export default async function Features({ params }: LocalePageProps) {
             <h2 className="w-full text-[30px] leading-[1.2] mb-[3px] md:text-[33px]">
               {t('Bring your next question in game.')}
             </h2>
-            <Link
-              className={`button primary gap-[12px] border border-solid border-[#efdaab] px-[22px] py-0 inline-flex min-h-[48px] items-center justify-center rounded-[4px] text-[13px] font-semibold text-[#241c10] ${sharedStyles['button']} ${sharedStyles['primary']}`}
-              href={localizedPath(locale, '/setup')}
-            >
+            <Link className={link({ intent: 'primary' })} href={localizedPath(locale, '/setup')}>
               {t('Set up Wisp ')}
               <Icon name="arrow" size={16} />
             </Link>
             <Link
-              className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] ${sharedStyles['text-link']}`}
+              className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] [&:hover]:text-gold`}
               href={localizedPath(locale, '/setup#privacy')}
             >
               {t('Your controls & privacy ')}

@@ -17,7 +17,8 @@
   "dependencies": {
     "@tauri-apps/api": "2.12.4",
     "@wisp/protocol": "workspace:*",
-    "svelte": "5.57.3"
+    "svelte": "5.57.3",
+    "tailwind-variants": "4.0.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",

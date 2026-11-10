@@ -1,6 +1,4 @@
-import { containerClassName } from '../../../components/ui';
-import styles from './page.module.css';
-import sharedStyles from '../../../components/shared.module.css';
+import { containerClassName, link } from '../../../components/ui';
 import { getTranslator } from '../../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../../i18n/server';
 import { localizedMetadata } from '../../../seo';
@@ -17,7 +15,7 @@ export default async function Setup({ params }: LocalePageProps) {
     <>
       <main
         id="main"
-        className={`${containerClassName} guide max-w-[790px] pt-[40px] pb-[80px] md:pt-[65px] ${styles['guide']}`}
+        className={`${containerClassName} guide max-w-[790px] pt-[40px] pb-[80px] md:pt-[65px] [&_p:not(.guide-lead)]:text-[14px] [&_p:not(.guide-lead)]:leading-[1.9] [&_p:not(.guide-lead)]:text-muted [&_p:not(.guide-lead)]:mt-[12px] [&_strong_svg]:inline-block [&_strong_svg]:[vertical-align:-0.15em] [&_.connection-options_details:last-child]:border-b-[0] [&_.connection-options_details:last-child]:[border-bottom-style:none] [&_.connection-options_details:last-child]:border-b-[currentColor]`}
       >
         <PageSchema
           title={t('Get started')}
@@ -34,15 +32,14 @@ export default async function Setup({ params }: LocalePageProps) {
         <p className="guide-lead mx-0 text-muted text-[16px] leading-[1.8] mt-[22px] mb-[26px] max-w-[570px]">
           {t('You’ll need Windows, WoW: Forever and your choice of AI connection.')}
         </p>
-        <a
-          className={`button primary gap-[12px] border border-solid border-[#efdaab] px-[22px] py-0 inline-flex min-h-[48px] items-center justify-center rounded-[4px] text-[13px] font-semibold text-[#241c10] ${sharedStyles['button']} ${sharedStyles['primary']}`}
-          href={site.download}
-        >
+        <a className={link({ intent: 'primary' })} href={site.download}>
           <Icon name="windows" size={17} />
           {t('Download for Windows')}
           <Icon name="download" size={17} />
         </a>
-        <ol className={`guide-steps p-0 mx-0 mt-[58px] mb-0 list-none ${styles['guide-steps']}`}>
+        <ol
+          className={`guide-steps p-0 mx-0 mt-[58px] mb-0 list-none [counter-reset:setup] [&_li]:[counter-increment:setup] [&_li::before]:[content:'0'_counter(setup)] [&_li::before]:absolute [&_li::before]:left-[0] [&_li::before]:top-[3px] [&_li::before]:text-gold [&_li::before]:text-[22px] [&_li::before]:[font-family:Georgia,_serif] [&_li::before]:font-normal [&_li::before]:not-italic [&_li::before]:[line-height:normal]`}
+        >
           <li className="relative pt-0 pr-0 pb-[35px] pl-[39px] md:pl-[55px]">
             <h2 className="text-[28px] tracking-[-0.5px] mb-[17px]">
               {t('Install the app and addon')}
@@ -63,7 +60,7 @@ export default async function Setup({ params }: LocalePageProps) {
               {t('Open Connections in the desktop app and choose the option that works for you.')}
             </p>
             <div
-              className={`connection-options border border-solid border-line px-[17px] mt-[20px] rounded-[5px] ${styles['connection-options']}`}
+              className={`connection-options border border-solid border-line px-[17px] mt-[20px] rounded-[5px] [&_summary::-webkit-details-marker]:hidden [&_summary_svg]:shrink-[0] [&_summary_svg]:text-[#ae9564] [&_details[open]_summary_svg]:[transform:rotate(45deg)]`}
               id="ai-connection"
             >
               <details className="px-0 py-[14px] border-b-[1px] [border-bottom-style:solid] border-b-[var(--line)]">

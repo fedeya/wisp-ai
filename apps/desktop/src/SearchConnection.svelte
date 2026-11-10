@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { card, badge, field, button } from "./ui";
+
   import type { DesktopController } from "./desktop-controller.svelte";
   import { desktop, request } from "./api";
   import ActionProgress from "./ActionProgress.svelte";
@@ -22,23 +24,34 @@
   }
 </script>
 
-<section class="card provider-card">
-  <div class="section-title">
+<section class={card({ kind: "provider", class: "card provider-card" })}>
+  <div
+    class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
+  >
     <div>
       <h2>Web search</h2>
-      <p>
+      <p class="text-muted text-[13px]">
         Search globally across the public web, independently of your chat model.
       </p>
     </div>
-    <span class="badge" class:good={app.status?.search?.hasExaKey}
+    <span
+      class={badge({
+        positive: app.status?.search?.hasExaKey,
+        class: "badge",
+      })}
       >{app.status?.search?.hasExaKey
         ? "Exa key saved"
         : "Exa public · no key needed"}</span
     >
   </div>
-  <div class="search-form field-section">
-    <label for="search-provider">Search service</label>
+  <div
+    class="search-form field-section gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid"
+  >
+    <label class="text-[12px] font-medium text-[#bdcccf]" for="search-provider"
+      >Search service</label
+    >
     <select
+      class={field({})}
       id="search-provider"
       bind:value={provider}
       disabled={app.locked || !app.status}
@@ -53,12 +66,13 @@
       <option value="chatgpt">ChatGPT search only</option>
       <option value="disabled">Disabled</option>
     </select>
-    <label for="exa-key"
+    <label class="text-[12px] font-medium text-[#bdcccf]" for="exa-key"
       >Exa API key (optional) {app.status?.search?.hasExaKey
         ? "(leave blank to keep saved key)"
         : ""}</label
     >
     <input
+      class={field({})}
       id="exa-key"
       type="password"
       bind:value={apiKey}
@@ -67,19 +81,19 @@
       maxlength="4096"
       disabled={app.locked || !app.status}
     />
-    <p class="field-hint">
+    <p class="field-hint text-[11px]! text-muted mt-[12px]">
       Exa works without a key through its public MCP service, with free rate
       limits. Searches cover the public web and return source links and
       excerpts. An optional key uses your Exa account and stays protected by the
       operating system.
     </p>
-    <p class="field-hint">
+    <p class="field-hint text-[11px]! text-muted mt-[12px]">
       A saved key uses your account credits and may incur Exa charges. Testing
       sends one search request using the saved or entered key, or public access.
     </p>
-    <div class="actions">
+    <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
       <button
-        class="quiet"
+        class={button({ intent: "quiet", class: "quiet" })}
         disabled={!!app.busy}
         onclick={() =>
           app.work(
@@ -90,6 +104,7 @@
           )}>Get Exa key</button
       >
       <button
+        class={button({})}
         disabled={app.locked || !app.status}
         onclick={() =>
           app.work(
@@ -100,7 +115,7 @@
           )}>Test Exa</button
       >
       <button
-        class="primary"
+        class={button({ intent: "primary", class: "primary" })}
         disabled={app.locked || !app.status}
         onclick={() =>
           app.work(
@@ -111,7 +126,11 @@
           )}>Save search settings</button
       >
       {#if app.status?.search?.hasExaKey}<button
-          class="quiet danger"
+          class={button({
+            intent: "quiet",
+            destructive: true,
+            class: "quiet danger text-[#e5a399]",
+          })}
           disabled={app.locked}
           onclick={() => {
             app.confirm = {
@@ -131,10 +150,3 @@
     <ActionProgress {app} target="search" />
   </div>
 </section>
-
-<style>
-  .search-form {
-    display: grid;
-    gap: 12px;
-  }
-</style>

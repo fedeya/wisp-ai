@@ -1,7 +1,5 @@
 'use client';
-import styles from './site-header.module.css';
-import sharedStyles from './shared.module.css';
-import { containerClassName, navigationLinkClassName } from './ui';
+import { containerClassName, navigationLinkClassName, link, headerShell } from './ui';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -65,9 +63,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
         ref={marker}
         aria-hidden="true"
       />
-      <div
-        className={`sticky top-0 z-50 h-[64px] isolate md:h-[82px] ${styles.shell} ${scrolled || menuOpen ? styles.opaque : ''}`}
-      >
+      <div className={headerShell({ opaque: scrolled || menuOpen })}>
         <header
           className={`${containerClassName} relative z-[5] flex h-[64px] items-center justify-between gap-2 md:h-[82px]`}
         >
@@ -133,10 +129,7 @@ export function SiteHeader({ locale }: { locale: Locale }) {
           </nav>
           <div className="flex items-center gap-[6px] md:gap-[19px]">
             <LanguageSwitch locale={locale} />
-            <a
-              className={`${sharedStyles.button} inline-flex min-h-[34px] items-center justify-center gap-[6px] rounded border border-solid border-[#c4a16a60] px-2 text-[11px] font-semibold text-[#e8d3aa] md:min-h-[38px] md:gap-3 md:px-[18px] md:text-[13px]`}
-              href={site.download}
-            >
+            <a className={link({ intent: 'outline' })} href={site.download}>
               {t('Get Wisp ')}
               <Icon name="download" size={15} />
             </a>
