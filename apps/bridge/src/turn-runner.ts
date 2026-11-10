@@ -1,6 +1,7 @@
 import type { Client } from 'eve/client';
 import { applyEvent, type Chat } from './events.ts';
 import { ReplyProjection } from './reply-stream.ts';
+import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
 import { sendChatTurn } from './agent-session.ts';
 import { beginTurn, settleTurn } from './chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
@@ -42,6 +43,10 @@ export function createTurnRunner(deps: TurnDependencies) {
   const generations = new WeakMap<Chat, symbol>();
   const running = new Set<Promise<void>>();
   const controllers = new WeakMap<Chat, AbortController>();
+  const projections = new WeakMap<
+    Chat,
+    { parts: ReplyProjection; assertCurrent: () => void; signal: AbortSignal }
+  >();
   async function execute(chat: Chat, text: string, messageId?: string, context?: unknown) {
     if (isStopping() || chat.status === 'working') {
       return;
@@ -66,6 +71,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     };
     changed();
     const parts = new ReplyProjection();
+    projections.set(chat, { parts, assertCurrent, signal: controller.signal });
     const streaming = setInterval(() => {
       if (
         ownsTurn() &&
@@ -195,6 +201,9 @@ export function createTurnRunner(deps: TurnDependencies) {
           }),
       );
       clearInterval(streaming);
+      if (projections.get(chat)?.parts === parts) {
+        projections.delete(chat);
+      }
       if (ownsTurn()) {
         chat.lastActivityAt = Date.now();
         if (chat.usage) {
@@ -223,6 +232,20 @@ export function createTurnRunner(deps: TurnDependencies) {
     return work;
   }
   return Object.assign(run, {
+    present: async (chat: Chat, callId: string, input: ReplyPresentation, signal: AbortSignal) => {
+      const active = projections.get(chat);
+      if (!active) {
+        throw Error('This reply is no longer active.');
+      }
+      active.assertCurrent();
+      const value = await active.parts.acceptPresentation(
+        callId,
+        input,
+        AbortSignal.any([signal, active.signal]),
+      );
+      active.assertCurrent();
+      return value;
+    },
     drain: () => Promise.allSettled(running),
     interrupt: (chat: Chat) => controllers.get(chat)?.abort(),
   });

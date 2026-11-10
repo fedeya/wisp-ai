@@ -6,6 +6,7 @@ import { queryCharacterSections } from '../src/context.ts';
 import { projectChats } from '../src/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { SnapshotGate } from '../src/snapshots.ts';
+import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
 
 function fixture(titlesEnabled = true) {
   const chat = newChat('chat', 'one');
@@ -116,7 +117,7 @@ test('plain source schedules persistence before a reply can be rendered', async 
   expect(f.send).toHaveBeenCalledTimes(1);
 });
 
-test('source persistence through the runner does not publish beyond the preview budget', async () => {
+test('source persistence through the runner retains time-based preview coalescing', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
   try {
@@ -139,7 +140,7 @@ test('source persistence through the runner does not publish beyond the preview 
       stream: async function* () {
         const baseline = publications;
         for (let index = 0; index < 100; index++) {
-          vi.setSystemTime((index + 1) * 1000);
+          vi.setSystemTime((index + 1) * 10);
           const changes = f.changed.mock.calls.length;
           yield {
             type: 'content.delta',
@@ -161,13 +162,76 @@ test('source persistence through the runner does not publish beyond the preview 
       result: async () => ({ status: 'completed', sessionEnded: false }),
     }));
     await f.run(f.chat, 'Question');
-    expect(previews).toBe(8);
-    expect(completed).toBe(9);
+    expect(previews).toBe(2);
+    expect(completed).toBe(3);
     expect(f.chat.status).toBe('done');
   } finally {
     vi.useRealTimers();
   }
 });
+
+test('the active runner accepts presentation RPCs and rejects them after the turn', async () => {
+  const f = fixture();
+  const panel = {
+    nodes: [{ id: 'level', kind: 'stat' as const, label: 'Level', value: '10' }],
+    references: {},
+  };
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {
+      // The local RPC may arrive before its requested event reaches the bridge.
+      const accepted = f.run.present(f.chat, 'ui', panel, new AbortController().signal);
+      yield { type: 'turn.started', data: { turnId: 'turn' } };
+      yield {
+        type: 'call.requested',
+        data: { callId: 'ui', capability: { name: PRESENT_UI_TOOL, kind: 'tool' } },
+      };
+      const output = await accepted;
+      expect(f.chat.messages.at(-1)?.ui).toEqual([]);
+      yield { type: 'call.settled', data: { callId: 'ui', outcome: 'completed', output } };
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  }));
+  await f.run(f.chat, 'Question');
+  expect(f.chat.messages.at(-1)?.ui).toEqual(panel.nodes);
+  expect(f.chat.activity).toEqual([]);
+  await expect(f.run.present(f.chat, 'late', panel, new AbortController().signal)).rejects.toThrow(
+    'no longer active',
+  );
+});
+
+test.each(['character', 'delete', 'interrupt'] as const)(
+  'a %s change rejects a presentation awaiting its requested event',
+  async (change) => {
+    const f = fixture();
+    let rejected: Promise<void> | undefined;
+    const panel = {
+      nodes: [{ id: 'level', kind: 'stat' as const, label: 'Level', value: '10' }],
+      references: {},
+    };
+    f.send.mockImplementationOnce(async () => ({
+      stream: async function* () {
+        const accepted = f.run.present(f.chat, 'ui', panel, new AbortController().signal);
+        rejected = expect(accepted).rejects.toThrow();
+        if (change === 'character') {
+          f.changeCharacter();
+        } else if (change === 'delete') {
+          f.deleteChat();
+        } else {
+          f.run.interrupt(f.chat);
+        }
+        yield {
+          type: 'call.requested',
+          data: { callId: 'ui', capability: { name: PRESENT_UI_TOOL, kind: 'tool' } },
+        };
+      },
+      result: async () => ({ status: 'completed', sessionEnded: false }),
+    }));
+    await f.run(f.chat, 'Question');
+    await rejected;
+    expect(f.chat.messages.some((message) => message.ui?.length)).toBe(false);
+    expect(f.chat.status).toBe('interrupted');
+  },
+);
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {
   const f = fixture();

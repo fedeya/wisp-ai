@@ -69,7 +69,7 @@ test('invisible stream events and unchanged snapshots do not spend revisions', (
   assert.equal(gate.next(view())?.rev, 104, 'a failed disk write must remain retryable');
 });
 
-test('saving raw deltas does not bypass the preview budget or expose source in snapshots', () => {
+test('dense deltas coalesce into timed previews while all source is saved', () => {
   vi.useFakeTimers();
   try {
     const chat: Chat = {
@@ -87,7 +87,7 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
     const delta = 'a';
     let updates = 0;
     for (let index = 0; index < 100; index++) {
-      vi.setSystemTime(index * 1000);
+      vi.setSystemTime(index * 10);
       applyEvent(
         chat,
         { type: 'content.delta', data: { partId: 'answer', kind: 'text', delta } },
@@ -97,9 +97,13 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
         updates++;
       }
     }
-    assert.equal(updates, 8);
+    assert.equal(updates, 2);
     assert.equal(chat.messages[0].text, delta.repeat(100));
+    assert.equal(projectChats(state).chats[0].messages?.[0].text, delta.repeat(61));
     assert.ok(!JSON.stringify(projectChats(state)).includes('rawReply'));
+    assert.equal(projection.flush(chat, 1200), true);
+    assert.equal(projectChats(state).chats[0].messages?.[0].text, delta.repeat(100));
+    assert.ok(gate.next(projectChats(state)));
     applyEvent(
       chat,
       {
@@ -110,6 +114,40 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
     );
     assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(100));
     assert.ok(gate.next(projectChats(state)));
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('long replies keep publishing partial previews beyond eight updates', () => {
+  vi.useFakeTimers();
+  try {
+    const chat: Chat = {
+      id: 'long',
+      owner: 'game',
+      title: 'Long reply',
+      status: 'working',
+      activity: [],
+      messages: [],
+    };
+    const state = createSessionState([chat]);
+    state.activeChat = chat.id;
+    const projection = new ReplyProjection();
+    const gate = new SnapshotGate();
+    for (let index = 0; index < 20; index++) {
+      vi.setSystemTime(index * 600);
+      applyEvent(
+        chat,
+        {
+          type: 'content.delta',
+          data: { partId: 'answer', kind: 'text', delta: 'a' },
+        },
+        projection,
+      );
+      assert.ok(gate.next(projectChats(state)));
+      assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(index + 1));
+      assert.equal(chat.messages[0].streaming, true);
+    }
   } finally {
     vi.useRealTimers();
   }

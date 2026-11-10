@@ -45,6 +45,7 @@ test(
     const requests: Record<string, unknown>[] = [];
     const toolCalls: unknown[] = [];
     const trace: unknown[] = [];
+    let activeProjection: ReplyProjection | undefined;
     const text = 'Offline integration passed.';
     const model = createServer(async (req, res) => {
       if (req.url?.startsWith('/session-model?')) {
@@ -60,6 +61,24 @@ test(
       let body = '';
       for await (const chunk of req) {
         body += chunk;
+      }
+      if (req.url === '/present') {
+        if (req.headers.authorization !== 'Bearer offline-token') {
+          res.writeHead(401).end();
+          return;
+        }
+        try {
+          const data = JSON.parse(body) as { callId: string; presentation: unknown };
+          const accepted = await activeProjection!.acceptPresentation(
+            data.callId,
+            data.presentation,
+            AbortSignal.timeout(10000),
+          );
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(accepted));
+        } catch (error) {
+          res.writeHead(503).end((error as Error).message);
+        }
+        return;
       }
       if (req.url === '/inspect') {
         if (req.headers.authorization !== 'Bearer offline-token') {
@@ -86,7 +105,7 @@ test(
             ],
           },
         ],
-        references: {},
+        references: { nova: { kind: 'spell', id: 122, label: 'Nova' } },
       };
       const plannedCalls: Record<number, { name: string; input: unknown }> = {
         2: { name: 'eve__skill', input: { name: 'settings' } },
@@ -95,6 +114,14 @@ test(
         7: { name: 'eve__skill', input: { name: 'missing-skill' } },
         9: { name: 'eve__tool', input: { name: 'wow__update_settings', input: {} } },
         11: { name: 'wisp__present_ui', input: presentation },
+        12: {
+          name: 'wisp__present_ui',
+          input: { references: { nova: { kind: 'spell', id: 116, label: 'Frostbolt' } } },
+        },
+        13: {
+          name: 'wisp__present_ui',
+          input: { references: { frostbolt: { kind: 'spell', id: 116, label: 'Frostbolt' } } },
+        },
       };
       const call = plannedCalls[count];
       const output: Record<string, unknown>[] = [];
@@ -118,7 +145,7 @@ test(
           arguments: JSON.stringify(call.input),
         });
       } else {
-        output.push(message(count === 12 ? '\n\nDespués de la comparación.' : text));
+        output.push(message(count === 14 ? '\n\nDespués de la comparación.' : text));
       }
       const events: Record<string, unknown>[] = [
         {
@@ -359,8 +386,9 @@ test(
         role: 'user',
         text: 'Mostrá una comparación entre dos párrafos',
       });
-      const rich = await session.send(richInput, { signal: AbortSignal.timeout(15000) });
       const richProjection = new ReplyProjection();
+      activeProjection = richProjection;
+      const rich = await session.send(richInput, { signal: AbortSignal.timeout(15000) });
       const richEvents: { type: string; data: Record<string, unknown> }[] = [];
       for await (const event of rich.stream({ signal: AbortSignal.timeout(15000) })) {
         richEvents.push({ type: event.type, data: { ...event.data } });
@@ -370,7 +398,7 @@ test(
       richProjection.finish();
       richProjection.flush(chat, Date.now(), true);
       expect((await rich.result()).status).toBe('completed');
-      expect(requests).toHaveLength(12);
+      expect(requests).toHaveLength(14);
       expect(names(0)).toContain('wisp__present_ui');
       expect(names(10)).toContain('wisp__present_ui');
       const reply = chat.messages.at(-1)!;
@@ -380,6 +408,7 @@ test(
         { type: 'text', text: '\n\nDespués de la comparación.' },
       ]);
       expect(reply.ui?.[0].kind).toBe('comparison');
+      expect(reply.references).toMatchObject({ nova: { id: 122 }, frostbolt: { id: 116 } });
       expect(chat.activity.some((entry) => entry.name === 'wisp__present_ui')).toBe(false);
       expect(chat.messages.some((entry) => entry.tool?.name === 'wisp__present_ui')).toBe(false);
       const richMessages = chat.messages.slice(
@@ -388,11 +417,19 @@ test(
       const restored = rebuildHistory({ ...chat, messages: richMessages }, richEvents);
       expect(restored?.at(-1) && renderReply(restored.at(-1)!)).toEqual(renderReply(reply));
       const continuation = JSON.stringify(requests[11]);
-      expect(continuation).toContain('presented');
+      expect(continuation).toContain('accepted');
       const uiAcknowledgement = (requests[11]!.input as Record<string, unknown>[]).find(
         (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-11',
       );
-      expect(JSON.parse(String(uiAcknowledgement?.output))).toEqual({ presented: true });
+      expect(JSON.parse(String(uiAcknowledgement?.output))).toEqual({ accepted: true });
+      const uiRejection = (requests[12]!.input as Record<string, unknown>[]).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-12',
+      );
+      expect(String(uiRejection?.output)).toContain('already identifies something else');
+      const repairedAcknowledgement = (requests[13]!.input as Record<string, unknown>[]).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-13',
+      );
+      expect(JSON.parse(String(repairedAcknowledgement?.output))).toEqual({ accepted: true });
 
       if (executable) {
         await stopEveProcess(child);

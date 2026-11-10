@@ -10,6 +10,7 @@ import { simulationInput, simulationNeedsLiveState } from '@wisp/protocol/simula
 import { databaseRequest } from '@wisp/protocol/database';
 import { wowheadQuery } from '@wisp/protocol/search';
 import type { Chat } from './events.ts';
+import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
 import type { ChatGPTAuth } from './chatgpt-auth.ts';
 import type { McpRelay } from './mcp-relay.ts';
 import type { CapabilitySettings } from './capabilities.ts';
@@ -52,6 +53,12 @@ interface AgentDependencies {
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
   setMemoryView: (view: MemoryView) => void;
   changed: () => void;
+  presentReply: (
+    chat: Chat,
+    callId: string,
+    presentation: ReplyPresentation,
+    signal: AbortSignal,
+  ) => Promise<ReplyPresentation>;
 }
 export function createAgentHandler(deps: AgentDependencies) {
   const {
@@ -147,6 +154,7 @@ export function createAgentHandler(deps: AgentDependencies) {
       ![
         '/state',
         '/title',
+        '/present',
         '/identity',
         '/memory',
         '/inspect',
@@ -201,6 +209,18 @@ export function createAgentHandler(deps: AgentDependencies) {
         throw Error(
           'Automatic suggestions cannot change settings, memory, panels, macros or map markers',
         );
+      }
+      if (req.url === '/present') {
+        const data = rpcRequests.present.parse(raw);
+        const abort = new AbortController();
+        res.once('close', () => {
+          if (!res.writableEnded) {
+            abort.abort();
+          }
+        });
+        const result = await deps.presentReply(chat, data.callId, data.presentation, abort.signal);
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
+        return;
       }
       if (req.url === '/simulate') {
         const data = rpcRequests.simulate.parse(raw);

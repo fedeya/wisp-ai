@@ -41,7 +41,9 @@ function fixture() {
     });
   const settle = (callId: string, output: unknown = panel, outcome = 'completed') =>
     emit('call.settled', { callId, output, outcome });
-  return { chat, projection, events, emit, text, request, settle };
+  const accept = (callId: string, input: unknown = panel, signal = new AbortController().signal) =>
+    projection.acceptPresentation(callId, input, signal);
+  return { chat, projection, events, emit, text, request, settle, accept };
 }
 
 test('plain text streams directly, including Markdown and JSON examples, without an output protocol', () => {
@@ -143,6 +145,131 @@ test('verified references register silently, resolve prose and cannot change mea
   f.request('conflict');
   f.settle('conflict', { references: { nova: { kind: 'spell', id: 999, label: 'Wrong' } } });
   expect(f.chat.messages[0].references?.nova).toMatchObject({ id: 122 });
+});
+
+test('acceptance waits for ordered events and publishes only a successful settlement', async () => {
+  const f = fixture();
+  f.chat.messages.push({ id: 'user', role: 'user', text: 'Compará' });
+  f.events.push({
+    type: 'delivery.consumed',
+    data: { parts: [{ kind: 'text', text: 'Compará' }] },
+  });
+  const accepted = f.accept('ui');
+  f.emit('turn.started', { turnId: 'turn' });
+  f.text('before', 'Antes.');
+  f.request('ui');
+  const output = await accepted;
+  expect(output).toEqual(panel);
+  expect(f.chat.messages.at(-1)?.ui).toEqual([]);
+  expect(await f.accept('ui')).toEqual(panel);
+  await expect(
+    f.accept('ui', { nodes: [{ id: 'other', kind: 'text', text: 'Changed' }] }),
+  ).rejects.toThrow('different payload');
+  f.settle('ui', output);
+  f.text('after', 'Después.');
+  expect(f.chat.messages.at(-1)?.parts?.map((part) => part.type)).toEqual(['text', 'ui', 'text']);
+  const restored = rebuildHistory(f.chat, f.events)!;
+  expect(restored.map(renderReply)).toEqual(f.chat.messages.map(renderReply));
+});
+
+test('reference conflicts reject before acknowledgement, including concurrent reservations', async () => {
+  const f = fixture();
+  const first = { references: { nova: { kind: 'spell', id: 122, label: 'Nova' } } };
+  const conflict = { references: { nova: { kind: 'spell', id: 999, label: 'Other' } } };
+  f.request('one');
+  const accepted = await f.accept('one', first);
+  f.request('two');
+  await expect(f.accept('two', conflict)).rejects.toThrow('already identifies something else');
+  f.settle('one', accepted);
+  await expect(f.accept('two', conflict)).rejects.toThrow('already identifies something else');
+  f.settle('two', undefined, 'failed');
+  f.request('repair');
+  const repaired = await f.accept('repair', { references: { other: conflict.references.nova } });
+  f.settle('repair', repaired);
+  expect(f.chat.messages[0].references).toMatchObject({ nova: { id: 122 }, other: { id: 999 } });
+});
+
+test('failed calls release reservations and never publish accepted content', async () => {
+  const f = fixture();
+  f.text('before', 'Texto disponible.');
+  f.request('failed');
+  await f.accept('failed');
+  f.settle('failed', panel, 'failed');
+  expect(f.chat.messages[0].ui).toEqual([]);
+  await expect(f.accept('failed')).rejects.toThrow('already finished');
+  f.request('replacement');
+  const replacement = { nodes: [{ id: 'comparison', kind: 'text', text: 'Now available' }] };
+  f.settle('replacement', await f.accept('replacement', replacement));
+  expect(f.chat.messages[0].ui).toEqual(replacement.nodes);
+  expect(f.chat.activity).toEqual([]);
+});
+
+test('acceptance rejects component conflicts and aggregate limits before returning success', async () => {
+  const f = fixture();
+  f.request('one');
+  await f.accept('one');
+  f.request('kind');
+  await expect(
+    f.accept('kind', { nodes: [{ id: 'comparison', kind: 'text', text: 'Changed kind' }] }),
+  ).rejects.toThrow('cannot change kind or parent');
+  f.request('large');
+  const full = { nodes: Array.from({ length: 48 }, (_, i) => ({ id: 'node' + i, kind: 'card' })) };
+  await expect(f.accept('large', full)).rejects.toThrow('48 components');
+  f.settle('one', undefined, 'failed');
+  f.settle('large', await f.accept('large', full));
+  f.request('extra');
+  await expect(f.accept('extra')).rejects.toThrow('48 components');
+});
+
+test('reference and byte budgets include pending calls and existing message groups', async () => {
+  const f = fixture();
+  const references = Object.fromEntries(
+    Array.from({ length: 64 }, (_, i) => ['r' + i, { kind: 'spell', id: i + 1, label: 'Spell' }]),
+  );
+  f.request('refs');
+  await f.accept('refs', { references });
+  f.request('more-refs');
+  await expect(
+    f.accept('more-refs', { references: { extra: { kind: 'spell', id: 100, label: 'Extra' } } }),
+  ).rejects.toThrow('64 references');
+  f.settle('refs', undefined, 'failed');
+  const large = {
+    nodes: Array.from({ length: 30 }, (_, i) => ({
+      id: 'n' + i,
+      kind: 'text',
+      text: 'x'.repeat(700),
+    })),
+  };
+  f.request('large');
+  f.settle('large', await f.accept('large', large));
+  f.request('ordinary', 'wow__query_character');
+  f.settle('ordinary', {});
+  f.request('global-refs');
+  const longReferences = Object.fromEntries(
+    Array.from({ length: 30 }, (_, i) => [
+      'r' + i,
+      { kind: 'spell', id: i + 1, label: 's'.repeat(100) },
+    ]),
+  );
+  await expect(f.accept('global-refs', { references: longReferences })).rejects.toThrow(
+    'combined presentation is too large',
+  );
+});
+
+test('waiting acceptance rejects on caller cancellation and turn completion', async () => {
+  const f = fixture();
+  const caller = new AbortController();
+  const cancelled = expect(f.accept('cancelled', panel, caller.signal)).rejects.toThrow(
+    'Caller cancelled',
+  );
+  caller.abort(Error('Caller cancelled'));
+  await cancelled;
+  const ended = expect(f.accept('late')).rejects.toThrow('turn has finished');
+  f.projection.finish();
+  await ended;
+  f.emit('turn.started', { turnId: 'next' });
+  f.request('new');
+  expect(await f.accept('new')).toEqual(panel);
 });
 
 test('ordinary tool calls remain chronological and visible between response segments', () => {

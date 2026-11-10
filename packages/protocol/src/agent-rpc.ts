@@ -7,6 +7,7 @@ import { simulationInput } from './simulation.js';
 import { databaseRequest } from './database.js';
 import { wowheadQuery } from './search.js';
 import { providerId } from './providers.js';
+import { replyPresentation } from './reply-presentation.js';
 
 export const characterSections = z
   .array(z.enum(['character', 'location', 'talents', 'spells', 'quests', 'gear', 'bags']))
@@ -37,6 +38,11 @@ export const rpcRequests = {
   state: z.object({ ...session, sections: characterSections, refresh: z.boolean().optional() }),
   identity: z.object(session),
   title: z.object({ ...session, title: z.string().min(1).max(500) }),
+  present: z.object({
+    ...session,
+    callId: z.string().min(1).max(200),
+    presentation: replyPresentation,
+  }),
   memory: memoryRequest,
   inspect: z.object({ ...session, inspection: inspectionSchema }),
   action: z.object({ ...session, action: actionSchema }),
@@ -57,6 +63,7 @@ export const rpcResponses = {
   state: reading,
   identity: z.object({ characterKey: z.string().nullable() }),
   title: z.object({ title: z.string() }),
+  present: replyPresentation,
   memory: z.object({ entries: z.array(memoryEntry) }),
   inspect: reading,
   action: reading,

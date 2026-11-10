@@ -258,10 +258,16 @@ and `Turn timing` entries for receipt, admission and first visible text latency.
 
 Replies stream as ordinary Markdown text. The Eve tool `wisp__present_ui`
 inserts a complete, schema-validated native panel or declares inline entity
-references. The bridge projects text and panels into ordered message parts;
+references. Its authenticated `/present` RPC reserves component IDs, immutable
+reference keys and aggregate payload budgets in the active turn before returning
+`{ accepted: true }` to the model. Rejections return actionable tool errors.
+Successful `call.settled` events publish the reserved payload, so cancelled calls
+remain invisible. The bridge projects text and panels into ordered message parts;
 presentation calls stay in Eve diagnostics but never create tool/activity rows.
 The same projection rebuilds event history, while SQLite preserves complete
-canonical text and panel parts independently of the bounded streaming previews.
+canonical text and panel parts independently of streaming previews coalesced at
+600 ms intervals. Previews continue for the entire reply; completion and accepted
+panels publish immediately.
 Component contracts live in `packages/protocol/src/ui-schema.ts` and
 `reply-presentation.ts`; adding a component extends that contract and its native
 renderer. The historical NDJSON reader is isolated in `legacy-reply.ts` and is

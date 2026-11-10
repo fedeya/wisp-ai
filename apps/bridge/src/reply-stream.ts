@@ -27,13 +27,13 @@ interface Group {
   message: Message;
   segments: Segment[];
   lastAt: number;
-  updates: number;
   signature: string;
   force: boolean;
 }
 interface Presentation {
   group: Group;
   pending: boolean;
+  accepted?: ReplyPresentation;
   value?: ReplyPresentation;
 }
 
@@ -48,9 +48,18 @@ export class ReplyProjection {
   private presentations = new Map<string, Presentation>();
   private references: ReferenceCatalog = Object.create(null);
   private skipCalls = new Set<string>();
+  private turn = new AbortController();
+  private started = false;
+  private waiters = new Map<string, Set<() => void>>();
 
   beginTurn() {
-    this.finish();
+    // Execution can reach the RPC before the first turn.started event is read.
+    // Keep those waiters alive; subsequent turns must invalidate the old ones.
+    if (this.started) {
+      this.finish();
+      this.turn = new AbortController();
+    }
+    this.started = true;
     for (const group of this.groups) {
       setReplyPreview(group.message, { ...group.message });
     }
@@ -70,6 +79,7 @@ export class ReplyProjection {
   }
 
   private group(chat: Chat, id: string): Group {
+    this.started = true;
     const current = this.groups.at(-1);
     if (current && chat.messages.at(-1) === current.message) {
       return current;
@@ -89,7 +99,6 @@ export class ReplyProjection {
       message,
       segments: [],
       lastAt: -Infinity,
-      updates: 0,
       signature: '',
       force: false,
     };
@@ -106,7 +115,6 @@ export class ReplyProjection {
       const part: TextPart = { type: 'text', text: '' };
       state = { reply: new ReplyStream(), group, part };
       group.segments.push(part);
-      group.updates = 0;
       group.lastAt = -Infinity;
       this.streams.set(partId, state);
     }
@@ -130,6 +138,99 @@ export class ReplyProjection {
     this.presentations.set(callId, { group, pending: true });
     group.segments.push({ type: 'presentation', callId });
     this.update(group);
+    for (const resolve of this.waiters.get(callId) ?? []) {
+      resolve();
+    }
+  }
+
+  async acceptPresentation(callId: string, input: unknown, signal: AbortSignal) {
+    const active = AbortSignal.any([signal, this.turn.signal, AbortSignal.timeout(5000)]);
+    active.throwIfAborted();
+    if (!this.presentations.has(callId)) {
+      await new Promise<void>((resolve, reject) => {
+        const waiting = this.waiters.get(callId) ?? new Set<() => void>();
+        const cleanup = () => {
+          active.removeEventListener('abort', abort);
+          waiting.delete(ready);
+          if (!waiting.size) {
+            this.waiters.delete(callId);
+          }
+        };
+        const ready = () => {
+          cleanup();
+          resolve();
+        };
+        const abort = () => {
+          cleanup();
+          reject(active.reason);
+        };
+        waiting.add(ready);
+        this.waiters.set(callId, waiting);
+        active.addEventListener('abort', abort, { once: true });
+      });
+    }
+    active.throwIfAborted();
+    const presentation = this.presentations.get(callId)!;
+    const existing = presentation.accepted ?? presentation.value;
+    if (existing) {
+      if (JSON.stringify(existing) !== JSON.stringify(replyPresentation.parse(input))) {
+        throw Error('This presentation call already has a different payload. Use a new call.');
+      }
+      return existing;
+    }
+    if (!presentation.pending) {
+      throw Error('This presentation call has already finished. Use a new call.');
+    }
+    const value = this.validatePresentation(presentation, input);
+    // Reserve before acknowledging, but publish only on call.settled so replay
+    // and live output agree, including failed or cancelled tool executions.
+    presentation.accepted = value;
+    return value;
+  }
+
+  private validatePresentation(presentation: Presentation, input: unknown): ReplyPresentation {
+    const value = replyPresentation.parse(input);
+    const staged = [...this.presentations.values()]
+      .filter((entry) => entry !== presentation && entry.pending && entry.accepted)
+      .map((entry) => ({ group: entry.group, value: entry.accepted! }));
+    staged.push({ group: presentation.group, value });
+    const references = { ...this.references };
+    for (const entry of staged) {
+      for (const [key, reference] of Object.entries(entry.value.references)) {
+        if (references[key] && JSON.stringify(references[key]) !== JSON.stringify(reference)) {
+          throw Error(`Reference "${key}" already identifies something else. Use a new key.`);
+        }
+        references[key] = reference;
+      }
+    }
+    if (Object.keys(references).length > 64) {
+      throw Error('The reply cannot contain more than 64 references. Reuse existing keys.');
+    }
+    for (const group of this.groups) {
+      const nodes = new Map((group.message.ui ?? []).map((node) => [node.id, node]));
+      for (const entry of staged.filter((entry) => entry.group === group)) {
+        for (const node of entry.value.nodes) {
+          const old = nodes.get(node.id);
+          if (old && (old.kind !== node.kind || old.parent !== node.parent)) {
+            throw Error(`Component "${node.id}" cannot change kind or parent. Use a new ID.`);
+          }
+          // Reserve the larger version so cancelling a concurrent update cannot
+          // make an already accepted presentation exceed the message budget.
+          if (!old || JSON.stringify(node).length > JSON.stringify(old).length) {
+            nodes.set(node.id, node);
+          }
+        }
+      }
+      if (nodes.size > 48) {
+        throw Error('The message cannot contain more than 48 components. Reuse existing IDs.');
+      }
+      if (JSON.stringify({ nodes: [...nodes.values()], references }).length > 24000) {
+        throw Error(
+          'The combined presentation is too large. Use less content or fewer references.',
+        );
+      }
+    }
+    return value;
   }
 
   settlePresentation(callId: string, output: unknown, success: boolean) {
@@ -140,33 +241,17 @@ export class ReplyProjection {
     if (!presentation || !presentation.pending) {
       return;
     }
-    presentation.pending = false;
-    const parsed = success && replyPresentation.safeParse(output);
-    if (parsed && parsed.success) {
-      const value = parsed.data;
-      const ui = presentation.group.message.ui ?? [];
-      const compatible =
-        value.nodes.every((node) => {
-          const old = ui.find((entry) => entry.id === node.id);
-          return !old || (old.kind === node.kind && old.parent === node.parent);
-        }) &&
-        Object.entries(value.references).every(
-          ([key, reference]) =>
-            !this.references[key] ||
-            JSON.stringify(this.references[key]) === JSON.stringify(reference),
-        );
-      const nodes = new Map([...ui, ...value.nodes].map((node) => [node.id, node]));
-      const references = { ...this.references, ...value.references };
-      if (
-        compatible &&
-        nodes.size <= 48 &&
-        Object.keys(references).length <= 64 &&
-        JSON.stringify({ nodes: [...nodes.values()], references }).length <= 24000
-      ) {
+    if (success) {
+      try {
+        const value = presentation.accepted ?? this.validatePresentation(presentation, output);
         presentation.value = value;
-        this.references = references;
+        this.references = { ...this.references, ...value.references };
+      } catch {
+        // Old or malformed history can lack the live RPC acceptance step.
       }
     }
+    presentation.pending = false;
+    presentation.accepted = undefined;
     for (const group of this.groups) {
       group.force = true;
       this.update(group);
@@ -207,11 +292,14 @@ export class ReplyProjection {
   }
 
   finish() {
+    this.started = true;
+    this.turn.abort(Error('The presentation turn has finished.'));
     for (const state of this.streams.values()) {
       state.reply.finish();
     }
     for (const presentation of this.presentations.values()) {
       presentation.pending = false;
+      presentation.accepted = undefined;
     }
     for (const group of this.groups) {
       this.update(group);
@@ -221,12 +309,7 @@ export class ReplyProjection {
   flush(_chat: Chat, now = Date.now(), force = false) {
     let changed = false;
     for (const group of this.groups) {
-      if (
-        !force &&
-        !group.force &&
-        group.message.streaming &&
-        (group.updates >= 8 || now - group.lastAt < 600)
-      ) {
+      if (!force && !group.force && group.message.streaming && now - group.lastAt < 600) {
         continue;
       }
       const signature = JSON.stringify(group.message);
@@ -235,9 +318,6 @@ export class ReplyProjection {
       }
       group.signature = signature;
       group.lastAt = now;
-      if (group.message.streaming) {
-        group.updates++;
-      }
       group.force = false;
       setReplyPreview(group.message, { ...group.message });
       changed = true;
