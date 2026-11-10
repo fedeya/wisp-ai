@@ -2,13 +2,13 @@ local helper = require("addon.tests.support")
 
 it("scenario globals and compiled callbacks stay in their own WoW environment", function()
     local first, second = helper.env(), helper.env()
-    first.C = { count = 0 }
+    first.ns = { count = 0 }
     local callback =
-        setfenv(assert(loadstring("return function() _G.C.count = C.count + 1 end")), first)()
+        setfenv(assert(loadstring("return function() _G.ns.count = ns.count + 1 end")), first)()
     callback()
-    assert.equals(1, first.C.count)
-    assert.is_nil(second.C)
-    assert.is_nil(_G.C)
+    assert.equals(1, first.ns.count)
+    assert.is_nil(second.ns)
+    assert.is_nil(_G.ns)
 end)
 
 it("mocking a standard library does not leak into another scenario or Busted", function()

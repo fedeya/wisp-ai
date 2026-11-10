@@ -1,9 +1,22 @@
 -- Offline CPU measurements, not a WoW frame-time benchmark.
 -- Run from the repository root with Lua 5.1: lua addon/tests/benchmarks/markdown.lua
-local C = {}
+local ns = {
+    Core = {},
+    Chat = {},
+    Transport = {},
+    Character = {},
+    Actions = {},
+    Integrations = {},
+    ChatHistory = {},
+    Settings = {},
+    UI = {},
+    Inline = {},
+    Panels = {},
+    Advice = {},
+}
 local root = arg[1] or "addon/WispAI"
 for _, name in ipairs({ "Syntax", "Block", "Parser" }) do
-    assert(loadfile(root .. "/Markdown/" .. name .. ".lua"))("WispAI", C)
+    assert(loadfile(root .. "/Markdown/" .. name .. ".lua"))("WispAI", ns)
 end
 for _, name in ipairs({
     "Markdown/Cache",
@@ -14,7 +27,7 @@ for _, name in ipairs({
     "Markdown/InlineRenderer",
     "Markdown/ReplyView",
 }) do
-    assert(loadfile("addon/WispAI/" .. name .. ".lua"))("WispAI", C)
+    assert(loadfile("addon/WispAI/" .. name .. ".lua"))("WispAI", ns)
 end
 
 local function median(values)
@@ -49,12 +62,12 @@ for _, case in ipairs(cases) do
     local times = { {}, {}, {}, {}, {}, {} }
     for _ = 1, 7 do
         collectgarbage("collect")
-        local cache = C.Markdown.Cache.new({ clock = os.clock })
-        C.Markdown.Cache.get = function(...)
+        local cache = ns.Markdown.Cache.New({ clock = os.clock })
+        ns.Markdown.Cache.Get = function(...)
             return cache:get(...)
         end
         local source, start = case[2], os.clock()
-        assert(C.Markdown.parse(source, { references = true }))
+        assert(ns.Markdown.Parse(source, { references = true }))
         times[1][#times[1] + 1] = os.clock() - start
         local _, _, pending = cache:get(source)
         local maximum, elapsed, steps = 0, 0, 0
@@ -72,10 +85,10 @@ for _, case in ipairs(cases) do
         times[6][#times[6] + 1] = steps
         local message = { role = "assistant", text = source }
         start = os.clock()
-        C.Markdown.ReplyView.project(message)
+        ns.Markdown.ReplyView.Project(message)
         times[4][#times[4] + 1] = os.clock() - start
         start = os.clock()
-        C.Markdown.ReplyView.project(message)
+        ns.Markdown.ReplyView.Project(message)
         times[5][#times[5] + 1] = os.clock() - start
     end
     print(

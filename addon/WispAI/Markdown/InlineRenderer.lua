@@ -1,4 +1,4 @@
-local _, C = ...
+local _, ns = ...
 local templates = setmetatable({}, { __mode = "k" })
 
 local function escaped(value)
@@ -65,7 +65,7 @@ local function compile(root, limit, fromUser)
             append({ pending = true, literal = node.literal }, entry, kind)
         elseif kind == "native_link" then
             append(
-                fromUser and (C.Emoji.render(node.literal) .. (colors[#colors] or ""))
+                fromUser and (ns.UI.Emoji.Render(node.literal) .. (colors[#colors] or ""))
                     or escaped(node.literal),
                 entry,
                 kind
@@ -74,7 +74,8 @@ local function compile(root, limit, fromUser)
             local value, cut = prefix(node.literal, remaining)
             remaining = remaining - #value
             local plain = escaped(value)
-            local text = (kind == "code" or kind == "code_block") and plain or C.Emoji.render(plain)
+            local text = (kind == "code" or kind == "code_block") and plain
+                or ns.UI.Emoji.Render(plain)
             -- Repeated emoji textures can expand a short source substantially.
             append(#text <= math.max(4096, limit * 2) and text or plain, entry, kind)
             if cut then
@@ -84,14 +85,15 @@ local function compile(root, limit, fromUser)
         elseif kind == "softbreak" or kind == "linebreak" then
             append("\n", entry, kind)
         else
-            local url = kind == "link" and C.Markdown.Links.valid(node.destination) or entry.url
+            local url = kind == "link" and ns.Markdown.Links.Valid(node.destination) or entry.url
             local link = kind == "link" and url ~= nil
             if link then
                 color = "|cff80c8ef"
             end
             if color then
                 colors[#colors + 1] = color
-                parts[#parts + 1] = link and (color .. "|H" .. C.Markdown.Links.encode(url) .. "|h")
+                parts[#parts + 1] = link
+                        and (color .. "|H" .. ns.Markdown.Links.Encode(url) .. "|h")
                     or color
                 if link then
                     parts.links[#parts], openLinks = 1, openLinks + 1
@@ -135,7 +137,7 @@ local function render(node, references, streaming, limit, fromUser, wantRuns)
         else
             local ref = references and references[part.key]
             value = not ref and streaming and "..."
-                or C.Emoji.render(C.MessageFormat.reference(part.key, references))
+                or ns.UI.Emoji.Render(ns.UI.MessageFormat.Reference(part.key, references))
             if #value > 4096 then
                 value = escaped(prefix(tostring(ref and ref.label or "Reference"), 300))
             end
@@ -161,7 +163,7 @@ local function render(node, references, streaming, limit, fromUser, wantRuns)
             }
             if style.url then
                 run.text = "|cff80c8ef|H"
-                    .. C.Markdown.Links.encode(style.url)
+                    .. ns.Markdown.Links.Encode(style.url)
                     .. "|h"
                     .. value
                     .. "|h|r"
@@ -175,18 +177,18 @@ end
 local function formatted(value, references, fromUser, streaming)
     value = tostring(value or "")
     if not value:find("[%*_%~`%[%]\\<|&\n\r]") then
-        return C.Emoji.render(escaped(value)), false
+        return ns.UI.Emoji.Render(escaped(value)), false
     end
-    local tree, _, pending = C.Markdown.Cache.get(value, true, streaming)
+    local tree, _, pending = ns.Markdown.Cache.Get(value, true, streaming)
     return tree and render(tree, references, streaming, nil, fromUser)
-        or C.Markdown.InlineRenderer.preview(value),
+        or ns.Markdown.InlineRenderer.Preview(value),
         pending == true
 end
 
 local function preview(value)
     local text, clipped = prefix(value, 8000)
-    return C.Emoji.render(escaped(text)) .. (clipped and "\n..." or "")
+    return ns.UI.Emoji.Render(escaped(text)) .. (clipped and "\n..." or "")
 end
 
-C.Markdown.InlineRenderer = { render = render, literal = escaped, preview = preview }
-C.FormatText = formatted
+ns.Markdown.InlineRenderer = { Render = render, Literal = escaped, Preview = preview }
+ns.UI.FormatText = formatted

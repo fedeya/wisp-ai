@@ -11,17 +11,17 @@ it(
         local env = helper.env()
         setfenv(1, env)
         setup(env)
-        C = {
+        ns = helper.namespace({
             db = { sidebar = true, showTools = true, drafts = {} },
             active = "chat",
             connected = false,
-        }
-        C.chats = { { id = "chat", title = "Test", status = "idle", activity = {} } }
-        function C.Current()
-            return C.chats[1]
+        })
+        ns.chats = { { id = "chat", title = "Test", status = "idle", activity = {} } }
+        function ns.Chat.Current()
+            return ns.chats[1]
         end
-        helper.addon("UI.lua", env)
-        C.BuildUI()
+        helper.addon("UI/Window.lua", env)
+        ns.UI.BuildUI()
         local header = UI_TEST.frames.WispAISettingsButton.parent
         local setPoint = header.title.SetPoint
         local titleLeft
@@ -32,7 +32,7 @@ it(
             setPoint(self, point, relative, relativePoint, x, y)
         end
         header.titleAnchor = nil
-        C.Refresh()
+        ns.UI.Refresh()
         assert(
             titleLeft
                 and titleLeft[1] == header.logo
@@ -52,33 +52,33 @@ it(
         UI_TEST.now = 0.5
         UI_TEST.frames.WispAIWindow.scripts.OnUpdate(nil, 0.3)
         assert(alpha ~= before, "the loading indicator must animate")
-        C.connected = true
-        C.Refresh()
+        ns.connected = true
+        ns.UI.Refresh()
         assert(
             state:IsShown() and state.loading and state.title:GetText() == "Loading conversation"
         )
-        C.chats[1].messages = {}
-        C.Refresh()
+        ns.chats[1].messages = {}
+        ns.UI.Refresh()
         assert(state:IsShown() and not state.loading and state.title:GetText() == "Ask Wisp")
         assert(not state.dots[1]:IsShown())
-        C.chats[1].status = "working"
-        C.Refresh()
+        ns.chats[1].status = "working"
+        ns.UI.Refresh()
         assert(not state:IsShown(), "thinking has its own transcript row")
-        C.chats[1] = {
+        ns.chats[1] = {
             id = "cached",
             title = "Cached",
             status = "done",
             messages = { { id = "a", role = "assistant", text = "Hello" } },
         }
-        C.connected = false
-        C.Refresh()
+        ns.connected = false
+        ns.UI.Refresh()
         assert(not state:IsShown(), "disconnection must not obscure cached history")
-        C.chats[1] = { id = "other", title = "Other", status = "done" }
-        C.connected = true
-        C.Refresh()
+        ns.chats[1] = { id = "other", title = "Other", status = "done" }
+        ns.connected = true
+        ns.UI.Refresh()
         assert(state:IsShown() and state.title:GetText() == "Loading conversation")
-        C.chats[1].messages = { { id = "b", role = "assistant", text = "Loaded" } }
-        C.Refresh()
+        ns.chats[1].messages = { { id = "b", role = "assistant", text = "Loaded" } }
+        ns.UI.Refresh()
         assert(not state:IsShown(), "the placeholder disappears when history arrives")
         C_Item = {
             GetItemIconByID = function(id)
@@ -92,7 +92,7 @@ it(
         GetItemQualityColor = function()
             return 0, 1, 0, "ff1eff00"
         end
-        local item = C.FormatText(
+        local item = ns.UI.FormatText(
             "[[ref:item]]",
             { item = { kind = "item", id = 100, label = "Robe" } },
             false
@@ -102,7 +102,7 @@ it(
                 and item:find("|cff1eff00|Hitem:100", 1, true),
             "item references use aligned native icons and known quality"
         )
-        local map = C.FormatText(
+        local map = ns.UI.FormatText(
             "[[ref:map]]",
             { map = { kind = "map", mapId = 1454, label = "Orgrimmar" } },
             false
@@ -120,28 +120,29 @@ it(
         local env = helper.env()
         setfenv(1, env)
         setup(env)
-        C = {
+        ns = helper.namespace({
             db = { sidebar = true, showTools = true, drafts = {} },
             active = "chat",
             connected = true,
-        }
-        C.chats = { { id = "chat", title = "Test", status = "idle", messages = {}, activity = {} } }
-        function C.Current()
-            return C.chats[1]
+        })
+        ns.chats =
+            { { id = "chat", title = "Test", status = "idle", messages = {}, activity = {} } }
+        function ns.Chat.Current()
+            return ns.chats[1]
         end
-        helper.addon("UI.lua", env)
-        C.BuildUI()
+        helper.addon("UI/Window.lua", env)
+        ns.UI.BuildUI()
         local meter = UI_TEST.frames.WispAIContextUsage
         assert(meter.text:GetText() == "Context --")
-        C.contextPolicy = { windowTokens = 100000, compactAt = 0.75 }
-        C.chats[1].usage = {
+        ns.contextPolicy = { windowTokens = 100000, compactAt = 0.75 }
+        ns.chats[1].usage = {
             contextTokens = 24000,
             inputTokens = 50000,
             outputTokens = 1000,
             cacheReadTokens = 10000,
             compactions = 1,
         }
-        C.Refresh()
+        ns.UI.Refresh()
         assert(meter.text:GetText() == "Context ~24%")
         local lines = {}
         GameTooltip = {
@@ -155,14 +156,14 @@ it(
         meter.scripts.OnEnter(meter)
         assert(table.concat(lines, "|"):find("not your subscription allowance", 1, true))
         assert(table.concat(lines, "|"):find("Auto compact: 75%", 1, true))
-        C.chats[1].usage.compacting = true
-        C.chats[1].status = "working"
-        C.Refresh()
+        ns.chats[1].usage.compacting = true
+        ns.chats[1].status = "working"
+        ns.UI.Refresh()
         assert(meter.text:GetText() == "Compacting...")
-        assert(#C.chats[1].messages == 0)
-        C.chats[1].usage.compacting = false
-        C.chats[1].usage.contextTokens = nil
-        C.Refresh()
+        assert(#ns.chats[1].messages == 0)
+        ns.chats[1].usage.compacting = false
+        ns.chats[1].usage.contextTokens = nil
+        ns.UI.Refresh()
         assert(meter.text:GetText() == "Context --")
     end
 )
@@ -174,12 +175,12 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = {
+            ns = helper.namespace({
                 db = { sidebar = true, showTools = true, drafts = {} },
                 active = "chat",
                 connected = true,
-            }
-            C.chats = {
+            })
+            ns.chats = {
                 {
                     id = "chat",
                     title = "Test",
@@ -195,14 +196,14 @@ it(
                     },
                 },
             }
-            function C.Current()
-                return C.chats[1]
+            function ns.Chat.Current()
+                return ns.chats[1]
             end
         end
-        helper.addon("UI.lua", env)
-        C.BuildUI()
+        helper.addon("UI/Window.lua", env)
+        ns.UI.BuildUI()
         do
-            C.capabilities = {
+            ns.capabilities = {
                 {
                     id = "tool:query_character",
                     name = "Character readings",
@@ -226,11 +227,11 @@ it(
                     enabled = true,
                 },
             }
-            C.capabilityPending = {}
-            C.SetCapability = function(id, enabled)
+            ns.capabilityPending = {}
+            ns.Chat.SetCapability = function(id, enabled)
                 UI_TEST.capabilityAction = { id = id, enabled = enabled }
             end
-            C.RefreshCapabilities()
+            ns.UI.Capabilities.Refresh()
             local toolRow
             for _, w in ipairs(UI_TEST.widgets) do
                 if w.entry and w.entry.id == "tool:query_character" then
@@ -249,8 +250,8 @@ it(
                     w.scripts.OnClick()
                 end
             end
-            C.capabilityPending["mcp:everloot"] = { enabled = false }
-            C.RefreshCapabilities()
+            ns.capabilityPending["mcp:everloot"] = { enabled = false }
+            ns.UI.Capabilities.Refresh()
             local child
             for _, w in ipairs(UI_TEST.widgets) do
                 if w.entry and w.entry.id == "mcp_tool:everloot:market_value" then
@@ -264,24 +265,24 @@ it(
                     and child.state:GetText() == "Off",
                 "turning off an MCP must disable its children without erasing their preferences"
             )
-            C.capabilityPending = {}
-            C.RefreshCapabilities()
+            ns.capabilityPending = {}
+            ns.UI.Capabilities.Refresh()
             assert(child.check.enabled)
-            C.capabilities = {}
-            C.RefreshCapabilities()
+            ns.capabilities = {}
+            ns.UI.Capabilities.Refresh()
             assert(not child:IsShown())
         end
         do
-            C.MemoryAction = function(action, slot, key, text)
+            ns.Chat.MemoryAction = function(action, slot, key, text)
                 UI_TEST.memoryAction = { action = action, slot = slot, key = key, text = text }
             end
-            C.memory = {
+            ns.memory = {
                 status = "available",
                 entries = {
                     { slot = "character", key = "guide", text = "Following Guide A" },
                 },
             }
-            C.RefreshMemory()
+            ns.UI.Memory.Refresh()
             local row
             for _, w in ipairs(UI_TEST.widgets) do
                 if w.entry and w.entry.key == "guide" then
@@ -311,8 +312,8 @@ it(
                     and UI_TEST.memoryAction.key == "guide"
                     and UI_TEST.memoryAction.slot == "character"
             )
-            C.memory = { status = "available", entries = {} }
-            C.RefreshMemory()
+            ns.memory = { status = "available", entries = {} }
+            ns.UI.Memory.Refresh()
             assert(not row:IsShown(), "forgotten entries must disappear")
         end
         do
@@ -332,7 +333,7 @@ it(
             assert(gear:GetText() == "", "settings uses an icon instead of a text label")
             fold.scripts.OnClick()
             assert(
-                not C.db.sidebar and fold:GetText() == ">" and fold.parent:GetWidth() == 30,
+                not ns.db.sidebar and fold:GetText() == ">" and fold.parent:GetWidth() == 30,
                 "collapsed sidebar must retain its own expand control"
             )
             assert(
@@ -340,19 +341,19 @@ it(
                 "collapsed sidebar must hide both tabs so they cannot overlap the conversation"
             )
             fold.scripts.OnClick()
-            assert(C.db.sidebar and fold:GetText() == "<")
+            assert(ns.db.sidebar and fold:GetText() == "<")
             assert(
                 tabs[1]:IsShown() and tabs[2]:IsShown(),
                 "expanding the sidebar must restore both tabs"
             )
-            C.SetMinimized(true)
+            ns.UI.SetMinimized(true)
             assert(
                 UI_TEST.frames.WispAIWindow:GetWidth() == 220
                     and not fold:IsShown()
                     and not gear:IsShown(),
                 "minimized bar must be compact and hide secondary controls"
             )
-            C.SetMinimized(false)
+            ns.UI.SetMinimized(false)
             assert(fold:IsShown() and gear:IsShown(), "expanding must restore controls")
         end
         do
@@ -361,39 +362,39 @@ it(
             assert(bar.max > 100)
             local writes = UI_TEST.textWrites
             local hides = UI_TEST.hides
-            C.Refresh()
+            ns.UI.Refresh()
             assert(UI_TEST.textWrites == writes, "unchanged snapshots must not replace text")
             assert(UI_TEST.hides == hides, "unchanged snapshots must not hide message rows")
             bar:SetValue(30)
             table.insert(
-                C.chats[1].messages,
+                ns.chats[1].messages,
                 { id = "answer-1", role = "assistant", text = string.rep("New answer ", 100) }
             )
-            C.Refresh()
+            ns.UI.Refresh()
             assert(bar:GetValue() == 30, "incoming content must not pull the reader to the bottom")
         end
         do
             local window = UI_TEST.frames.WispAIWindow
             window:ClearAllPoints()
             window:SetPoint("CENTER", UIParent, "CENTER", 100, 200)
-            C.SetMinimized(true)
+            ns.UI.SetMinimized(true)
             window:ClearAllPoints()
             window:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 800, -600)
-            C.SaveWindowPosition(true)
-            C.SetMinimized(false)
+            ns.UI.SaveWindowPosition(true)
+            ns.UI.SetMinimized(false)
             local p, _, _, x, y = window:GetPoint()
             assert(
                 p == "CENTER" and x == 100 and y == 200,
                 "expanded position must survive moving the minimized bar"
             )
-            C.SetMinimized(true)
+            ns.UI.SetMinimized(true)
             p, _, _, x, y = window:GetPoint()
             assert(
                 p == "TOPLEFT" and x == 800 and y == -600,
                 "minimized position must also be remembered"
             )
-            C.SetMinimized(false)
-            C.RequestDeleteChat("chat")
+            ns.UI.SetMinimized(false)
+            ns.UI.RequestDeleteChat("chat")
             assert(
                 UI_TEST.popup and UI_TEST.popup.data == "chat",
                 "deletion requires explicit confirmation"
@@ -402,20 +403,20 @@ it(
 
         local progress = UI_TEST.frames.WispAIProgress
         assert(not progress:IsShown())
-        C.chats[1].status = "working"
-        C.pendingMessages = { m = { chat = "chat" } }
-        C.Refresh()
+        ns.chats[1].status = "working"
+        ns.pendingMessages = { m = { chat = "chat" } }
+        ns.UI.Refresh()
         assert(
             progress:IsShown() and progress.title:GetText() == "Sending.",
             "sending must be visible before bridge confirmation"
         )
-        C.pendingMessages = {}
-        C.Refresh()
+        ns.pendingMessages = {}
+        ns.UI.Refresh()
         assert(
             progress.title:GetText():match("^Thinking"),
             "an acknowledged message should show an assistant thinking row"
         )
-        C.chats[1].activity = { { label = "Searching the web", status = "running" } }
+        ns.chats[1].activity = { { label = "Searching the web", status = "running" } }
         UI_TEST.now = 7
         local offset = UI_TEST.frames.WispAITranscriptScrollBar:GetValue()
         local hides = UI_TEST.hides
@@ -427,12 +428,12 @@ it(
             UI_TEST.hides == hides and UI_TEST.frames.WispAITranscriptScrollBar:GetValue() == offset,
             "progress ticks must not redraw or scroll messages"
         )
-        C.chats[1].status = "done"
-        C.Refresh()
+        ns.chats[1].status = "done"
+        ns.UI.Refresh()
         assert(not progress:IsShown(), "completion must clear the busy indicator")
-        C.chats[1].status = "working"
+        ns.chats[1].status = "working"
         UI_TEST.now = 80
-        C.Refresh()
+        ns.UI.Refresh()
         assert(progress.elapsed:GetText() == "0s", "a new turn must restart the timer")
     end
 )
@@ -442,12 +443,12 @@ it("macro references show the actual code and pick up by current name without ex
     setfenv(1, env)
     setup(env)
     do
-        C = {
+        ns = helper.namespace({
             db = { sidebar = true, showTools = true, drafts = {} },
             active = "chat",
             connected = true,
-        }
-        C.chats = {
+        })
+        ns.chats = {
             {
                 id = "chat",
                 title = "Macros",
@@ -462,10 +463,10 @@ it("macro references show the actual code and pick up by current name without ex
                 },
             },
         }
-        function C.Current()
-            return C.chats[1]
+        function ns.Chat.Current()
+            return ns.chats[1]
         end
-        function C.Log(text)
+        function ns.Core.Log(text)
             UI_TEST.notice = text
         end
         function GetMacroIndexByName(name)
@@ -485,8 +486,8 @@ it("macro references show the actual code and pick up by current name without ex
             return combat or false
         end
     end
-    helper.addon("UI.lua", env)
-    C.BuildUI()
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
     local row
     for _, w in ipairs(UI_TEST.widgets) do
         if w.scripts.OnHyperlinkEnter and type(w.text) == "table" then
@@ -511,12 +512,12 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = {
+            ns = helper.namespace({
                 db = { sidebar = true, showTools = true, drafts = {} },
                 active = "chat",
                 connected = true,
-            }
-            C.chats = {
+            })
+            ns.chats = {
                 {
                     id = "chat",
                     title = "References",
@@ -551,8 +552,8 @@ it(
                     },
                 },
             }
-            function C.Current()
-                return C.chats[1]
+            function ns.Chat.Current()
+                return ns.chats[1]
             end
             C_Map = {
                 GetMapInfo = function()
@@ -563,8 +564,8 @@ it(
                 end,
             }
         end
-        helper.addon("UI.lua", env)
-        C.BuildUI()
+        helper.addon("UI/Window.lua", env)
+        ns.UI.BuildUI()
         local row
         for _, w in ipairs(UI_TEST.widgets) do
             if
@@ -594,8 +595,8 @@ it(
         assert(UI_TEST.clickedLink == "worldmap:1411:4500:6250")
         row.scripts.OnHyperlinkClick(row, "wispzone:1411", "[Durotar]", "LeftButton")
         assert(UI_TEST.openedMap == 1411)
-        C.chats[1].messages[2].references.ramp.x = 46
-        C.Refresh()
+        ns.chats[1].messages[2].references.ramp.x = 46
+        ns.UI.Refresh()
         assert(
             helper.rowText(row):find("worldmap:1411:4600:6250", 1, true),
             "late reference changes must update the existing row even when the text is unchanged"
@@ -610,10 +611,10 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = {}
+            ns = helper.namespace()
         end
-        helper.addon("UI.lua", env)
-        helper.addon("RichUI.lua", env)
+        helper.addon("UI/Window.lua", env)
+        helper.addon("UI/RichUI.lua", env)
 
         local spell = "Use [[ref:spell]] first."
         local item = "Keep [[ref:item]] equipped."
@@ -638,8 +639,8 @@ it(
             },
         }
         local chat = { id = "chat", status = "done", messages = { message } }
-        local row = C.MakeMessageRow(CreateFrame("Frame"))
-        C.RenderMessageRow(row, chat, message, 500, true)
+        local row = ns.UI.MakeMessageRow(CreateFrame("Frame"))
+        ns.UI.RenderMessageRow(row, chat, message, 500, true)
         assert(
             not row.text:IsShown(),
             "interleaved replies use the rich prose, not the ordinary row text"
@@ -657,21 +658,21 @@ it(
             assert(
                 GameTooltip:IsShown()
                     and UI_TEST.tooltipLink == link
-                    and C.hoverLink == "[Reference]"
+                    and ns.hoverLink == "[Reference]"
             )
             owner.scripts.OnHyperlinkLeave(owner)
-            assert(not GameTooltip:IsShown() and C.hoverLink == nil)
+            assert(not GameTooltip:IsShown() and ns.hoverLink == nil)
             owner.scripts.OnHyperlinkClick(owner, link, "[Reference]", "LeftButton")
             assert(UI_TEST.clickedLink == link)
         end
         local scrolled
-        C.ScrollTranscript = function(delta)
+        ns.UI.ScrollTranscript = function(delta)
             scrolled = delta
         end
         first:GetParent().scripts.OnMouseWheel(first:GetParent(), -1)
         assert(scrolled == -1, "interactive prose must preserve transcript scrolling")
         local owner = first:GetParent()
-        C.RenderMessageRow(row, chat, message, 230, true)
+        ns.UI.RenderMessageRow(row, chat, message, 230, true)
         assert(row.rich.prose[1] == first and first:GetParent() == owner)
         assert(owner.scripts.OnHyperlinkEnter, "resize must keep the interactive owner")
     end
@@ -684,12 +685,12 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = {
+            ns = helper.namespace({
                 db = { sidebar = true, showTools = true, drafts = {} },
                 active = "chat",
                 connected = true,
-            }
-            C.chats = {
+            })
+            ns.chats = {
                 {
                     id = "chat",
                     title = "Links",
@@ -720,8 +721,8 @@ it(
                     },
                 },
             }
-            function C.Current()
-                return C.chats[1]
+            function ns.Chat.Current()
+                return ns.chats[1]
             end
             C_QuestLog = {
                 GetNumQuestLogEntries = function()
@@ -738,8 +739,8 @@ it(
                 UI_TEST.openedQuest = id
             end
         end
-        helper.addon("UI.lua", env)
-        C.BuildUI()
+        helper.addon("UI/Window.lua", env)
+        ns.UI.BuildUI()
 
         local row
         for _, w in ipairs(UI_TEST.widgets) do
@@ -776,7 +777,7 @@ it(
         function IsShiftKeyDown()
             return true
         end
-        function C.draft:Insert(text)
+        function ns.draft:Insert(text)
             UI_TEST.insertedLink = text
         end
         row.scripts.OnHyperlinkClick(
@@ -789,23 +790,23 @@ it(
         local progress = UI_TEST.frames.WispAIProgress
         assert(
             progress.parent == row.parent
-                and progress.parent ~= C.draft.parent
+                and progress.parent ~= ns.draft.parent
                 and progress.author:GetText() == "Wisp AI",
             "progress belongs in the transcript as an assistant row"
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
         assert(bottom == 104, "there must be no additional reserved progress gap")
-        C.chats[1].status = "working"
-        C.Refresh()
+        ns.chats[1].status = "working"
+        ns.UI.Refresh()
         assert(
             progress:IsShown()
                 and progress.parent:GetHeight() == progress.y + progress:GetHeight()
-                and #C.chats[1].messages == 1,
+                and #ns.chats[1].messages == 1,
             "thinking occupies transcript space without becoming a saved message"
         )
-        C.chats[1].status = "done"
-        C.Refresh()
+        ns.chats[1].status = "done"
+        ns.UI.Refresh()
         assert(
             not progress:IsShown() and progress.parent:GetHeight() == progress.y,
             "completion removes the transient row and its space"

@@ -3,7 +3,7 @@ local helper = require("addon.tests.support")
 local function setup(env)
     setfenv(1, env)
     do
-        C = {}
+        ns = helper.namespace()
         UnitClass = function()
             return "Mage", "MAGE"
         end
@@ -25,8 +25,8 @@ local function setup(env)
         }
         Enum = { SpellBookSpellBank = { Player = 0 } }
     end
-    helper.addon("TrainingData.lua", env)
-    helper.addon("Training.lua", env)
+    helper.addon("Character/TrainingData.lua", env)
+    helper.addon("Character/Training.lua", env)
 end
 
 it("Forever mage localized lookup finds the actual catalog rank without a trainer", function()
@@ -34,7 +34,7 @@ it("Forever mage localized lookup finds the actual catalog rank without a traine
     setfenv(1, env)
     setup(env)
 
-    local result = C.QueryTraining({ query = "descarga de escarcha" })
+    local result = ns.Character.QueryTraining({ query = "descarga de escarcha" })
     assert(result.total == 1 and result.spells[1].spellId == 116)
     assert(result.spells[1].requiredLevel == 4 and result.spells[1].baseCostCopper == 100)
     assert(result.spells[1].learned == false and result.version == "forever")
@@ -46,22 +46,22 @@ it("all nine classes load, requirements and pagination survive", function()
     setup(env)
 
     local count = 0
-    for token in pairs(C.TrainingData) do
+    for token in pairs(ns.Character.TrainingData) do
         count = count + 1
-        local r = C.QueryTraining({ class = token, limit = 1 })
+        local r = ns.Character.QueryTraining({ class = token, limit = 1 })
         assert(r.total > 1 and #r.spells == 1 and r.nextOffset == 1)
-        local next = C.QueryTraining({ class = token, limit = 1, offset = 1 })
+        local next = ns.Character.QueryTraining({ class = token, limit = 1, offset = 1 })
         assert(#next.spells == 1)
         if token ~= "MAGE" then
             assert(r.spells[1].learned == nil)
         end
     end
     assert(count == 9)
-    local r = C.QueryTraining({ spellId = 143 })
+    local r = ns.Character.QueryTraining({ spellId = 143 })
     assert(r.spells[1].requiredSpellIds[1] == 133)
-    local teleport = C.QueryTraining({ spellId = 3563 })
+    local teleport = ns.Character.QueryTraining({ spellId = 3563 })
     assert(teleport.total == 0)
-    local quest = C.QueryTraining({ class = "WARRIOR", spellId = 71 })
+    local quest = ns.Character.QueryTraining({ class = "WARRIOR", spellId = 71 })
     assert(
         quest.total > 0
             and quest.spells[1].method == "quest"
@@ -81,8 +81,8 @@ it("missing localized data is explicit and requests loading", function()
     C_Spell.RequestLoadSpellData = function()
         requests = requests + 1
     end
-    local r = C.QueryTraining({ query = "descarga de escarcha" })
+    local r = ns.Character.QueryTraining({ query = "descarga de escarcha" })
     assert(r.total == 0 and r.unresolvedNames > 0 and requests > 0)
-    r = C.QueryTraining({ spellId = 116 })
+    r = ns.Character.QueryTraining({ spellId = 116 })
     assert(r.total == 1 and r.spells[1].requiredLevel == 4)
 end)

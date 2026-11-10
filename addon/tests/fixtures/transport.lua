@@ -23,13 +23,25 @@ bit = {
         return a >> b
     end,
 }
-C = {
+ns = {
     session = "game",
     rev = 0,
     connected = false,
     SLOTS = 1024,
     chats = { { status = "idle" } },
     active = "chat",
+    Core = {},
+    Chat = {},
+    Transport = {},
+    Character = {},
+    Actions = {},
+    Integrations = {},
+    ChatHistory = {},
+    Settings = {},
+    UI = {},
+    Inline = {},
+    Panels = {},
+    Advice = {},
 }
 function time()
     return 123
@@ -41,7 +53,7 @@ function UnitGUID(unit)
     assert(unit == "player")
     return "Player-Test-GUID"
 end
-function C.Log(text)
+function ns.Core.Log(text)
     logs[#logs + 1] = text
 end
 Enum = { CompressionMethod = { Zlib = 1 } }
@@ -94,15 +106,15 @@ C_AddOns = {
     LoadAddOn = function()
         loads = loads + 1
         if nextRev then
-            C.rev = nextRev
+            ns.rev = nextRev
             nextRev = nil
             if nextConnected == nil then
-                C.connected = true
+                ns.connected = true
             else
-                C.connected = nextConnected
+                ns.connected = nextConnected
                 nextConnected = nil
             end
-            C.Acknowledge({ 1 })
+            ns.Transport.Acknowledge({ 1 })
         end
         return true
     end,

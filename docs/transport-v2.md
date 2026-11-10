@@ -94,20 +94,20 @@ bounded operation list. Paths use zero-based array indexes. Operations set a
 value (`s`), delete an object field (`d`), truncate an array (`l`) or append a
 string suffix (`a`). String appends carry only newly generated response text.
 
-[`Downlink.lua`](../addon/WispAI/Downlink.lua) reconstructs a separate raw state
+[`Downlink.lua`](../addon/WispAI/Transport/Downlink.lua) reconstructs a separate raw state
 before the UI merges optimistic messages. Patches require the exact base
 revision and copy only changed ancestor tables into a canonical candidate.
 Unchanged branches remain shared with the immutable baseline; the UI receives
 one separate mutable projection. A full decoded snapshot needs one defensive
-canonical copy. A private projection identity prevents the `C.RememberDownlink`
-call in `Core.lua` from making a redundant second copy, while external bulk
+canonical copy. A private projection identity prevents the `ns.Transport.RememberDownlink`
+call in `Chat/Snapshot.lua` from making a redundant second copy, while external bulk
 snapshots still get their own defensive copy. A candidate commits only after the
 snapshot receiver returns successfully with the expected applied revision. Invalid operations or
 receiver failures do not confirm a new canonical base.
 
 This reduces redundant copying, not all history-dependent work: producing the
 mutable UI projection still traverses the complete state. Per-operation
-diagnostics are available in `C.transportStats.downlinkCopy`.
+diagnostics are available in `ns.transportStats.downlinkCopy`.
 
 The transport caps encoded messages at 64 KiB and decoded JSON at 1 MiB, with at
 most 4,096 patch operations and 32 path levels.
@@ -159,7 +159,7 @@ streams. The [optimization replay](transport-optimization.md) records that
 tradeoff alongside the gains; its virtual timings cannot establish FPS or
 native latency.
 
-[`TransportMetrics.lua`](../addon/WispAI/TransportMetrics.lua) provides an
+[`TransportMetrics.lua`](../addon/WispAI/Transport/TransportMetrics.lua) provides an
 opt-in developer profile with frame-time histograms, instrumented transport
 operation durations, native API call counts and tagged snapshot-application
 checkpoints. Collection starts only when requested. Frame samples describe the
@@ -236,7 +236,7 @@ conversation was restored after the benchmark.
 
 The deployed host and addon completed a real chat in WoW with optional bulk
 loading disabled by **simulating exhaustion**. After recording the actual cursor
-of 2, the addon cursor was deliberately set to `C.slot = 1025`. The UI prompt
+of 2, the addon cursor was deliberately set to `ns.slot = 1025`. The UI prompt
 `Prueba de transporte: respondé únicamente «Sin reload».` returned `Sin reload`
 inside the addon without a UI reload or further `LoadAddOn` calls.
 
@@ -284,7 +284,7 @@ to the actual Node decoders. Both versions receive **identical precomputed JSON
 and zlib bytes**. Every fixture must reconstruct the exact schema-validated
 packet. The baseline is the pre-edit source saved locally at
 `runtime/bridge-research/Transport-before-v2.lua`; without that local backup the
-script uses `git HEAD:addon/WispAI/Transport.lua` and labels the fallback in its
+script uses `git HEAD:addon/WispAI/Transport/Transport.lua` and labels the fallback in its
 output. The JSON includes SHA-256 hashes of both Lua sources.
 
 | Fixture                     | Compressed bytes | Prior frames/saves | v2 frames/saves | Nominal prior/v2 serialization |

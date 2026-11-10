@@ -1,6 +1,6 @@
-local _, C = ...
+local _, ns = ...
 local M = {}
-C.Markdown = M
+ns.Markdown = M
 local TICK = string.char(96)
 
 -- Wisp's inline grammar emits semantic nodes, without native UI dependencies.
@@ -259,10 +259,11 @@ local function target(source, offset, context)
         end
     end
     spaces()
-    local start, finish, depth = at, nil, 0
+    local start, finish
+    local depth = 0
     local destinationStart = at
     if source:sub(at, at) == "<" then
-        at, start, destinationStart = at + 1, at + 1, at + 1
+        at, destinationStart = at + 1, at + 1
         while at <= #source do
             context.checkpoint()
             local char = source:sub(at, at)

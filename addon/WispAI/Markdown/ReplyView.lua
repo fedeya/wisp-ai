@@ -1,15 +1,15 @@
-local _, C = ...
+local _, ns = ...
 local MAX_BLOCKS, MAX_TABLES, MAX_ROWS, MAX_COLUMNS = 256, 24, 200, 6
 local MAX_TABLE_BYTES = 64000
 local view = { revision = 0 }
 
-function view.invalidate()
+function view.Invalidate()
     view.revision = view.revision + 1
-    if C.Refresh then
-        C.Refresh()
+    if ns.UI.Refresh then
+        ns.UI.Refresh()
     end
-    if C.RefreshInline then
-        C.RefreshInline()
+    if ns.Inline.RefreshInline then
+        ns.Inline.RefreshInline()
     end
 end
 
@@ -57,7 +57,7 @@ local function project(message)
         end
     end
     local function format(node, limit)
-        return C.Markdown.InlineRenderer.render(node, message.references, message.streaming, limit)
+        return ns.Markdown.InlineRenderer.Render(node, message.references, message.streaming, limit)
     end
     local function tableView(node, indent)
         tables = tables + 1
@@ -166,7 +166,7 @@ local function project(message)
                         or (kind == "code_block" and "code")
                         or (entry.quote and "quote")
                     local prefix = (entry.prefix or "") .. (entry.quote and "> " or "")
-                    local formatted, runs = C.Markdown.InlineRenderer.render(
+                    local formatted, runs = ns.Markdown.InlineRenderer.Render(
                         node,
                         message.references,
                         message.streaming,
@@ -187,13 +187,13 @@ local function project(message)
             parts[#parts + 1] = part
         elseif part.type == "text" and part.text ~= "" then
             sources[#sources + 1] = part.text
-            local tree, err, loading = C.Markdown.Cache.get(part.text, false, message.streaming)
+            local tree, err, loading = ns.Markdown.Cache.Get(part.text, false, message.streaming)
             pending = pending or loading
             if tree then
                 document(tree)
             else
                 errorCode = err and err.code or errorCode
-                prose(C.Markdown.InlineRenderer.preview(part.text))
+                prose(ns.Markdown.InlineRenderer.Preview(part.text))
             end
         end
     end
@@ -260,32 +260,32 @@ local function cancelObsolete(previous, current)
     end
     for _, source in ipairs(previous or {}) do
         if not keep[source] then
-            C.Markdown.Cache.cancel(source)
+            ns.Markdown.Cache.Cancel(source)
         end
     end
 end
 
-function view.new()
+function view.New()
     return { revision = 0 }
 end
 
 -- The row owns one state, but only this module knows how syntax work, compiled
 -- presentation and asynchronous label formatting affect its lifetime.
-function view.update(state, chatId, message)
-    local cache = C.Markdown.Cache
+function view.Update(state, chatId, message)
+    local cache = ns.Markdown.Cache
     local identityChanged = state.chatId ~= chatId
         or state.messageId ~= message.id
         or state.role ~= message.role
-    local references = C.MessageFormat.signature(message.references)
-    local native = C.RichSignature(message.ui)
-    local dependencies = tostring(C.itemRevision) .. "\31" .. references .. "\31" .. native
+    local references = ns.UI.MessageFormat.Signature(message.references)
+    local native = ns.UI.RichSignature(message.ui)
+    local dependencies = tostring(ns.itemRevision) .. "\31" .. references .. "\31" .. native
     local signature = (message.role or "")
         .. "\31"
         .. (message.text or "")
         .. "\31"
         .. dependencies
         .. "\31"
-        .. C.RichSignature(message.parts)
+        .. ns.UI.RichSignature(message.parts)
         .. "\31"
         .. tostring(message.streaming)
         .. "\31"
@@ -367,10 +367,10 @@ function view.update(state, chatId, message)
     return result, key
 end
 
-function view.rendered(state, pending)
+function view.Rendered(state, pending)
     state.inlinePending = pending == true
-    state.inlineRevision = C.Markdown.Cache.revision
+    state.inlineRevision = ns.Markdown.Cache.revision
 end
 
-view.project = project
-C.Markdown.ReplyView = view
+view.Project = project
+ns.Markdown.ReplyView = view

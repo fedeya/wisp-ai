@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cd .. && busted"
+    "test": "cd .. && node --test addon/scripts/conventions.test.mjs && busted",
+    "check:lua": "cd .. && node addon/scripts/conventions.mjs && luacheck addon/WispAI"
+  },
+  "devDependencies": {
+    "luaparse": "0.3.1"
   }
 }

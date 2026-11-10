@@ -3,7 +3,7 @@ local helper = require("addon.tests.support")
 local function setup(env)
     setfenv(1, env)
     do
-        C = {}
+        ns = helper.namespace()
         function time()
             return 123
         end
@@ -14,9 +14,9 @@ local function setup(env)
             return "Horde"
         end
     end
-    helper.addon("AddonAdapters.lua", env)
-    helper.addon("Integrations.lua", env)
-    helper.addon("Locations.lua", env)
+    helper.addon("Integrations/AddonAdapters.lua", env)
+    helper.addon("Integrations/Integrations.lua", env)
+    helper.addon("Integrations/Locations.lua", env)
 end
 
 it(
@@ -56,7 +56,7 @@ it(
                 return id == 2
             end,
         }
-        local result = C.ReadQuestieQuest({ questId = 1 })
+        local result = ns.Integrations.ReadQuestieQuest({ questId = 1 })
         assert(
             result.status == "available"
                 and result.data.preQuestGroup[2] == 3
@@ -72,17 +72,18 @@ it(
                 and result.reference.id == 1
                 and #result.unknownFields > 0
         )
-        assert(C.ReadQuestieQuest({ questId = 999 }).status == "unknown")
+        assert(ns.Integrations.ReadQuestieQuest({ questId = 999 }).status == "unknown")
         quests[1].objectivesText = { string.rep("x", 1000) }
-        assert(C.ReadQuestieQuest({ questId = 1 }).truncated)
+        assert(ns.Integrations.ReadQuestieQuest({ questId = 1 }).truncated)
         quests[1].objectivesText = { string.rep("x", 399) .. "ñ" }
         assert(
-            C.ReadQuestieQuest({ questId = 1 }).data.objectivesText[1] == string.rep("x", 399),
+            ns.Integrations.ReadQuestieQuest({ questId = 1 }).data.objectivesText[1]
+                == string.rep("x", 399),
             "truncation must preserve valid UTF-8"
         )
         LibQuestieDB.flavor.expansion = "Classic"
         assert(
-            C.InspectIntegration({ kind = "questie_quest", args = { questId = 1 } }).status
+            ns.Integrations.InspectIntegration({ kind = "questie_quest", args = { questId = 1 } }).status
                 == "unavailable"
         )
     end
@@ -112,16 +113,33 @@ it("quest graphs terminate on cycles and report depth, size and missing-record l
             end,
         },
     }
-    local result = C.ReadQuestieChain({ questId = 1, direction = "both", limit = 15, maxDepth = 4 })
+    local result = ns.Integrations.ReadQuestieChain({
+        questId = 1,
+        direction = "both",
+        limit = 15,
+        maxDepth = 4,
+    })
     assert(#result.nodes == 3 and result.missingQuestIds[1] == 3 and not result.truncated)
     assert(not result.nodes[1].liveState.completionKnown)
-    result = C.ReadQuestieChain({ questId = 1, direction = "followups", limit = 15, maxDepth = 4 })
+    result = ns.Integrations.ReadQuestieChain({
+        questId = 1,
+        direction = "followups",
+        limit = 15,
+        maxDepth = 4,
+    })
     assert(#result.nodes == 2 and #result.missingQuestIds == 0)
-    result = C.ReadQuestieChain({ questId = 1, direction = "both", limit = 1, maxDepth = 4 })
+    result = ns.Integrations.ReadQuestieChain({
+        questId = 1,
+        direction = "both",
+        limit = 1,
+        maxDepth = 4,
+    })
     assert(#result.nodes == 1 and result.truncated)
     quests[4].nextQuestInChain = 5
     quests[5] = { name = "Beyond limit" }
-    assert(C.ReadQuestieChain({ questId = 1, direction = "followups", maxDepth = 1 }).truncated)
+    assert(
+        ns.Integrations.ReadQuestieChain({ questId = 1, direction = "followups", maxDepth = 1 }).truncated
+    )
 end)
 
 it(
@@ -172,7 +190,10 @@ it(
             assert(not (numbers and strings), "WoW JSON rejects mixed keys")
             assert(not numbers or highest == count, "WoW JSON rejects sparse arrays")
         end
-        local result = C.InspectIntegration({ kind = "questie_quest", args = { questId = 5041 } })
+        local result = ns.Integrations.InspectIntegration({
+            kind = "questie_quest",
+            args = { questId = 5041 },
+        })
         assert(result.status == "available")
         assertJSON(result)
         local groups = result.data.data.objectives
@@ -187,7 +208,7 @@ it(
             "provider data is never mutated"
         )
         quest.objectives = { [0] = false, label = "mixed", [4] = { value = true } }
-        result = C.ReadQuestieQuest({ questId = 5041 })
+        result = ns.Integrations.ReadQuestieQuest({ questId = 5041 })
         assertJSON(result)
         assert(result.data.objectives["0"] == false and result.data.objectives["4"].value)
     end
@@ -225,14 +246,14 @@ it(
                 end,
             },
         }
-        local result = C.FindStoredItem({ itemId = 123, limit = 20 })
+        local result = ns.Integrations.FindStoredItem({ itemId = 123, limit = 20 })
         assert(
             result.cached
                 and result.totalCached == 10
                 and #result.matches == 1
                 and result.cacheAge == "unknown"
         )
-        result = C.FindStoredItem({ itemId = 123, includeGuild = true, limit = 1 })
+        result = ns.Integrations.FindStoredItem({ itemId = 123, includeGuild = true, limit = 1 })
         assert(
             result.totalCached == 19
                 and result.truncated
@@ -244,10 +265,10 @@ it(
             return false
         end
         assert(
-            C.InspectIntegration({ kind = "stored_item", args = { itemId = 123 } }).status
+            ns.Integrations.InspectIntegration({ kind = "stored_item", args = { itemId = 123 } }).status
                 == "unavailable"
         )
-        assert(C.IntegrationReport().syndicator.status == "waiting")
+        assert(ns.Integrations.IntegrationReport().syndicator.status == "waiting")
     end
 )
 
@@ -277,7 +298,7 @@ it(
                 },
             },
         }
-        local result = C.ReadAuctionatorPrices({ itemIds = { 1, 2, 3, 1 } })
+        local result = ns.Integrations.ReadAuctionatorPrices({ itemIds = { 1, 2, 3, 1 } })
         assert(
             #result.prices == 3
                 and result.prices[1].unitPriceCopper == 450
@@ -291,13 +312,13 @@ it(
                 and result.prices[3].ageDays == nil
         )
         assert(result.realm == "TestRealm" and result.cached)
-        assert(C.IntegrationReport().auctionator.status == "ready")
+        assert(ns.Integrations.IntegrationReport().auctionator.status == "ready")
         Auctionator.API.v1.GetAuctionAgeByItemID = nil
-        assert(C.IntegrationReport().auctionator.status == "partial")
-        assert(not C.ReadAuctionatorPrices({ itemIds = { 1 } }).prices[1].ageKnown)
+        assert(ns.Integrations.IntegrationReport().auctionator.status == "partial")
+        assert(not ns.Integrations.ReadAuctionatorPrices({ itemIds = { 1 } }).prices[1].ageKnown)
         Auctionator = nil
         assert(
-            C.InspectIntegration({ kind = "item_prices", args = { itemIds = { 1 } } }).status
+            ns.Integrations.InspectIntegration({ kind = "item_prices", args = { itemIds = { 1 } } }).status
                 == "unavailable"
         )
     end
@@ -343,7 +364,7 @@ it("object spawns require verified native map frames and never query NPC-only fi
             end,
         },
     }
-    local result = C.FindObjectLocations({ objectId = 99, mapId = 1454 })
+    local result = ns.Integrations.FindObjectLocations({ objectId = 99, mapId = 1454 })
     assert(
         result.total == 1
             and result.locations[1].objectId == 99
@@ -352,8 +373,8 @@ it("object spawns require verified native map frames and never query NPC-only fi
     LibQuestieDB.EraToForever = function(_, x, y)
         return x + 5, y
     end
-    result = C.FindObjectLocations({ objectId = 99, mapId = 1454 })
+    result = ns.Integrations.FindObjectLocations({ objectId = 99, mapId = 1454 })
     assert(result.total == 0 and result.skippedUnverifiedFrames == 1)
     LibQuestieDB.flavor.expansion = "Classic"
-    assert(not pcall(C.FindObjectLocations, { objectId = 99, mapId = 1454 }))
+    assert(not pcall(ns.Integrations.FindObjectLocations, { objectId = 99, mapId = 1454 }))
 end)

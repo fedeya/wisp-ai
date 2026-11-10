@@ -1,4 +1,4 @@
-local _, C = ...
+local _, ns = ...
 local layout = {}
 local MAX_EXTRA_FONTS = 256
 local codeFont = "Interface\\AddOns\\WispAI\\Fonts\\JetBrainsMono-Regular.ttf"
@@ -17,7 +17,7 @@ local function styleFont(font, span, level)
     font:SetFont(path, height, flags)
 end
 
-function layout.hide(pool, start)
+function layout.Hide(pool, start)
     for index = start or 1, #pool do
         local f = pool[index]
         f:Hide()
@@ -49,7 +49,7 @@ local function stringWidth(font)
     return font.GetUnboundedStringWidth and font:GetUnboundedStringWidth() or font:GetStringWidth()
 end
 
-function layout.render(host, pool, part, width, y, count)
+function layout.Render(host, pool, part, width, y, count)
     count = count or 0
     host.markdownMeasure = host.markdownMeasure
         or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
@@ -79,7 +79,7 @@ function layout.render(host, pool, part, width, y, count)
                 pool[count] = f
             end
             -- Every pooled element may change its block type on the next stream update.
-            layout.hide({ f })
+            layout.Hide({ f })
             f.runs = f.runs or {}
             f.block = block
             local top, x, used, decoration, simplified = y, 0, 0, 0, false
@@ -126,10 +126,10 @@ function layout.render(host, pool, part, width, y, count)
                 run:SetWordWrap(true)
                 run:SetNonSpaceWrap(true)
                 run:SetSpacing(3)
-                local color = block.level and C.Widgets.GOLD
+                local color = block.level and ns.UI.Widgets.GOLD
                     or (
-                        (block.kind == "quote" or span.strike) and C.Widgets.MUTED
-                        or C.Widgets.TEXT
+                        (block.kind == "quote" or span.strike) and ns.UI.Widgets.MUTED
+                        or ns.UI.Widgets.TEXT
                     )
                 if span.color then
                     local hex = span.color:match("^|c%x%x(%x%x%x%x%x%x)$")
@@ -145,7 +145,7 @@ function layout.render(host, pool, part, width, y, count)
                 run:ClearAllPoints()
                 run:SetPoint("TOPLEFT", inset + x, -y)
                 run:SetWidth(math.max(1, math.min(length + 1, available - x)))
-                C.Widgets.setText(run, rendered)
+                ns.UI.Widgets.SetText(run, rendered)
                 run:Show()
                 local h, w = run:GetStringHeight(), math.min(length, available - x)
                 if span.code and block.kind ~= "code" then
@@ -235,13 +235,13 @@ function layout.render(host, pool, part, width, y, count)
                 if simplified then
                     -- Preserve the complete shared formatter output rather than
                     -- growing an unbounded set of inline widgets for dense prose.
-                    layout.hide({ f })
+                    layout.Hide({ f })
                     styleFont(f, { text = part.text, code = block.kind == "code" }, block.level)
                     f:ClearAllPoints()
                     f:SetPoint("TOPLEFT", left, -top)
                     f:SetWidth(math.max(1, width - left))
-                    f:SetTextColor(unpack(block.level and C.Widgets.GOLD or C.Widgets.TEXT))
-                    C.Widgets.setText(f, part.text)
+                    f:SetTextColor(unpack(block.level and ns.UI.Widgets.GOLD or ns.UI.Widgets.TEXT))
+                    ns.UI.Widgets.SetText(f, part.text)
                     f:Show()
                     return top + f:GetStringHeight(), count
                 end
@@ -272,14 +272,14 @@ function layout.render(host, pool, part, width, y, count)
                         { 0.65, 0.55, 0.34, 0.8 }
                     )
                 elseif block.kind == "list" then
-                    local marker = block.task
+                    local markerText = block.task
                             and (block.checked and "|TInterface\\Buttons\\UI-CheckBox-Check:18:18|t" or "|TInterface\\Buttons\\UI-CheckBox-Up:18:18|t")
                         or (block.marker:match("^%d") and block.marker or "-")
                     f.marker = f.marker or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
                     f.marker:SetFontObject(ChatFontNormal)
-                    f.marker:SetText(marker)
+                    f.marker:SetText(markerText)
                     f.marker:SetTextColor(
-                        unpack(block.checked and { 0.5, 0.78, 0.55 } or C.Widgets.GOLD)
+                        unpack(block.checked and { 0.5, 0.78, 0.55 } or ns.UI.Widgets.GOLD)
                     )
                     f.marker:SetJustifyH("RIGHT")
                     f.marker:SetWidth(math.min(20, math.max(1, inset - 3)))
@@ -293,4 +293,4 @@ function layout.render(host, pool, part, width, y, count)
     return y, count
 end
 
-C.Markdown.TextStyle = layout
+ns.Markdown.TextStyle = layout

@@ -10,10 +10,10 @@ it("native layout places prose on both sides of a panel", function()
     setfenv(1, env)
     setup(env)
     do
-        C = {}
+        ns = helper.namespace()
         host = CreateFrame("Frame")
     end
-    helper.addon("RichUI.lua", env)
+    helper.addon("UI/RichUI.lua", env)
 
     local message = {
         ui = { { id = "panel", kind = "card", title = "Panel" } },
@@ -23,11 +23,11 @@ it("native layout places prose on both sides of a panel", function()
             { type = "text", text = "After" },
         },
     }
-    C.RenderRichUI(host, {}, message, 300)
+    ns.UI.RenderRichUI(host, {}, message, 300)
     assert(host.prose[1].point[5] > host.widgets.panel.point[5])
     assert(host.widgets.panel.point[5] > host.prose[2].point[5])
     message.parts = nil
-    C.RenderRichUI(host, {}, message, 300)
+    ns.UI.RenderRichUI(host, {}, message, 300)
     assert(not host.prose[1]:IsShown() and not host.prose[2]:IsShown())
     assert(host.widgets.panel.point[5] == 0)
 end)
@@ -39,14 +39,14 @@ it(
         setfenv(1, env)
         setup(env)
         do
-            C = { db = {}, workStarted = {} }
-            function C.Capture()
+            ns = helper.namespace({ db = {}, workStarted = {} })
+            function ns.Character.Capture()
                 return { fresh = true }
             end
-            function C.Send(packet)
+            function ns.Transport.Send(packet)
                 sent = packet
             end
-            function C.FormatText(t)
+            function ns.UI.FormatText(t)
                 return t
             end
             chat = { id = "chat", status = "done" }
@@ -80,9 +80,9 @@ it(
             }
             host = CreateFrame("Frame")
         end
-        helper.addon("RichUI.lua", env)
+        helper.addon("UI/RichUI.lua", env)
 
-        local height = C.RenderRichUI(host, chat, message, 350)
+        local height = ns.UI.RenderRichUI(host, chat, message, 350)
         assert(height > 60)
         local toggle = host.widgets.toggle.control
         toggle:SetChecked(false)
@@ -91,7 +91,7 @@ it(
         select.scripts.OnClick()
         assert(host.values.select == "b")
         local count = #UI_TEST.widgets
-        C.RenderRichUI(host, chat, message, 350)
+        ns.UI.RenderRichUI(host, chat, message, 350)
         assert(
             #UI_TEST.widgets == count
                 and host.values.toggle == false
@@ -109,7 +109,7 @@ it(
                 and sent.context.fresh
         )
         assert(chat.status == "working")
-        C.RenderRichUI(host, chat, message, 350)
+        ns.UI.RenderRichUI(host, chat, message, 350)
         assert(not host.widgets.button.control.enabled)
     end
 )
@@ -119,7 +119,7 @@ it("saved panels preserve controls after reload and can regroup or replace nodes
     setfenv(1, env)
     setup(env)
     do
-        C = {}
+        ns = helper.namespace()
         host = CreateFrame("Frame")
         host.values = { choice = false }
         host.sourceValues = { choice = true }
@@ -137,9 +137,9 @@ it("saved panels preserve controls after reload and can regroup or replace nodes
             },
         }
     end
-    helper.addon("RichUI.lua", env)
+    helper.addon("UI/RichUI.lua", env)
 
-    C.RenderRichUI(host, chat, message, 300)
+    ns.UI.RenderRichUI(host, chat, message, 300)
     assert(
         not host.widgets.choice.control:GetChecked(),
         "saved choice must survive widget creation"
@@ -149,7 +149,7 @@ it("saved panels preserve controls after reload and can regroup or replace nodes
         { id = "group", parent = "root", kind = "card" },
         { id = "choice", parent = "group", kind = "toggle", label = "Enabled", value = true },
     }
-    C.RenderRichUI(host, chat, message, 300)
+    ns.UI.RenderRichUI(host, chat, message, 300)
     assert(
         host.widgets.choice:GetParent() == host.widgets.group
             and not host.widgets.choice.control:GetChecked()
@@ -157,7 +157,7 @@ it("saved panels preserve controls after reload and can regroup or replace nodes
     local old = host.widgets.choice
     message.ui[3] =
         { id = "choice", parent = "group", kind = "stat", label = "State", value = "Updated" }
-    C.RenderRichUI(host, chat, message, 300)
+    ns.UI.RenderRichUI(host, chat, message, 300)
     assert(
         host.widgets.choice ~= old and not old:IsShown() and host.widgets.choice.nodeKind == "stat"
     )

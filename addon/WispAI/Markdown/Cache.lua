@@ -1,4 +1,4 @@
-local _, C = ...
+local _, ns = ...
 
 -- Syntax depends on source and inline/block mode, never on references, item data
 -- or width. Presentation caches can keep their compiled strings after AST eviction.
@@ -122,7 +122,7 @@ local function limits()
     }
 end
 
-function Cache:get(source, inline, urgent)
+function Cache:Get(source, inline, urgent)
     if type(source) ~= "string" then
         return nil, { code = "invalid_source" }, false
     end
@@ -155,7 +155,7 @@ function Cache:get(source, inline, urgent)
     end
     if not makeRoom(self, #source, urgent) then
         if synchronous then
-            local parse = inline and C.Markdown.parseInline or C.Markdown.parse
+            local parse = inline and ns.Markdown.ParseInline or ns.Markdown.Parse
             local document, err = parse(source, limits())
             return document, err, false
         end
@@ -173,7 +173,7 @@ function Cache:get(source, inline, urgent)
     end
     self.newest = entry
     if synchronous then
-        local parse = inline and C.Markdown.parseInline or C.Markdown.parse
+        local parse = inline and ns.Markdown.ParseInline or ns.Markdown.Parse
         local ok, document, err = pcall(parse, source, limits())
         if not ok then
             drop(self, entry)
@@ -182,7 +182,7 @@ function Cache:get(source, inline, urgent)
         entry.document, entry.error = document, err
         return entry.document, entry.error, false
     end
-    local ok, task = pcall(C.Markdown._newTask, source, limits(), inline == true)
+    local ok, task = pcall(ns.Markdown._NewTask, source, limits(), inline == true)
     if not ok or type(task) ~= "thread" then
         drop(self, entry)
         error(ok and "Markdown task constructor must return a coroutine" or task, 0)
@@ -195,7 +195,7 @@ function Cache:get(source, inline, urgent)
     return nil, nil, true
 end
 
-function Cache:step()
+function Cache:Step()
     if self.running then
         return 0, self.pendingCount
     end
@@ -254,7 +254,7 @@ function Cache:step()
     return completed, self.pendingCount
 end
 
-function Cache:cancel(source, inline)
+function Cache:Cancel(source, inline)
     if type(source) ~= "string" then
         return false
     end
@@ -290,12 +290,12 @@ local function new(options)
 end
 
 local frame, default
-local api = { revision = 0, new = new }
+local api = { revision = 0, New = new }
 local function wake()
     if not frame then
         frame = CreateFrame("Frame")
         frame:SetScript("OnUpdate", function()
-            local _, pending = api.step()
+            local _, pending = api.Step()
             if pending == 0 and not default.notification then
                 frame:Hide()
             end
@@ -307,30 +307,30 @@ default = new({
     onSchedule = wake,
     onReady = function(cache)
         api.revision = cache.revision
-        if C.Refresh then
-            C.Refresh()
+        if ns.UI.Refresh then
+            ns.UI.Refresh()
         end
-        if C.RefreshInline then
-            C.RefreshInline()
+        if ns.Inline.RefreshInline then
+            ns.Inline.RefreshInline()
         end
-        if C.RefreshPanels then
-            C.RefreshPanels()
+        if ns.Panels.RefreshPanels then
+            ns.Panels.RefreshPanels()
         end
     end,
 })
-function api.get(source, inline, urgent)
-    local document, err, pending = default:get(source, inline, urgent)
+function api.Get(source, inline, urgent)
+    local document, err, pending = default:Get(source, inline, urgent)
     api.revision = default.revision
     return document, err, pending
 end
-function api.step()
-    local completed, pending = default:step()
+function api.Step()
+    local completed, pending = default:Step()
     api.revision = default.revision
     return completed, pending
 end
-function api.cancel(source, inline)
-    local cancelled = default:cancel(source, inline)
+function api.Cancel(source, inline)
+    local cancelled = default:Cancel(source, inline)
     api.revision = default.revision
     return cancelled
 end
-C.Markdown.Cache = api
+ns.Markdown.Cache = api

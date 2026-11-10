@@ -200,7 +200,7 @@ the client's native file behavior.
    instead of publishing test data to every discovered historical character file.
 2. Carry application messages in both directions with independent sequence
    spaces, acknowledgements, restart generations, bounded queues, and bounded
-   reassembly. Preserve existing `C.Send` and packet-dispatch contracts. The
+   reassembly. Preserve existing `ns.Transport.Send` and packet-dispatch contracts. The
    current 128-bit return lane only acknowledges and must be redesigned to carry
    application payloads. Do not describe the prototype as full duplex chat.
 3. Profile reset, reads, mutations, and save separately. Back off while idle,

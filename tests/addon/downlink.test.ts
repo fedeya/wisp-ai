@@ -155,27 +155,29 @@ C_EncodingUtil.SerializeJSON=nativeSerialize
 C_EncodingUtil.DeserializeJSON=nativeDeserialize
 C_EncodingUtil.CompressString=nativeCompress
 C_EncodingUtil.DecompressString=nativeDecompress
-C.VERSION=1
-C.Log=function(text)logs[#logs+1]=tostring(text)end
-C.ReceiveSnapshot=function(data)
- if data.rev<=C.rev then return end
- C.RememberDownlink(data)
- C.rev=data.rev;C.connected=data.connected;C.chats=data.chats or {}
+ns.VERSION=1
+ns.Core.Log=function(text)logs[#logs+1]=tostring(text)end
+ns.Chat.ReceiveSnapshot=function(data)
+ if data.rev<=ns.rev then return end
+ ns.Transport.RememberDownlink(data)
+ ns.rev=data.rev;ns.connected=data.connected;ns.chats=data.chats or {}
  applications=applications+1;displayed=data
  nativeRecord(data)
  if mutateOptimistic then data.chats[1].messages[#data.chats[1].messages+1]={text='optimistic'}end
 end
 `);
-  for (const file of ['Downlink.lua', 'Transport.lua']) {
+  for (const file of ['Transport/Downlink.lua', 'Transport/Transport.lua']) {
     run(
-      `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + file, 'utf8'))}))('WispAI',C)`,
+      `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,
     );
   }
-  run('C.StartTransport();assert(C.reusableDownlink and C.transportStats.mailboxVersion==1)');
+  run(
+    'ns.Transport.StartTransport();assert(ns.reusableDownlink and ns.transportStats.mailboxVersion==1)',
+  );
   // Establish the outbound session before accepting server publications, as
   // the production login does. Exclude that setup work from per-message counts.
   run(
-    "C.Send({type='hello'});for i=1,10 do timers[.04]()end;C.Acknowledge({1});saves=0;resets=0;stateReads=0",
+    "ns.Transport.Send({type='hello'});for i=1,10 do timers[.04]()end;ns.Transport.Acknowledge({1});saves=0;resets=0;stateReads=0",
   );
   saved.length = 0;
   function write(frame: Buffer) {
@@ -196,7 +198,7 @@ end
     write(frame);
     // Allow the production idle receive backoff (500ms) between publications.
     run(
-      'now=now+.61;timers[.5]();timers[.1]();timers[.05]();assert(C.transportStats.error==nil,C.transportStats.error)',
+      'now=now+.61;timers[.5]();timers[.1]();timers[.05]();assert(ns.transportStats.error==nil,ns.transportStats.error)',
     );
     if (ack) {
       run('now=now+.04;timers[.04]();assert(#logs==0,logs[1])');
@@ -244,16 +246,16 @@ function snapshot(rev: number, text = 'Hola ☀️') {
 
 test('negotiated compact acknowledgements touch 128 uplink bits and unchanged reads reuse validated bodies', () => {
   const h = harness(true);
-  h.run('C.slot=1025');
+  h.run('ns.slot=1025');
   h.message({ r: 1, s: snapshot(1) });
   expect(h.compactAck()).toMatchObject({ kind: COMPACT_ACK_KIND, generation: 77, flags: 0 });
   h.run(
-    'stateReads=0;now=now+1;timers[.05]();assert(stateReads==128 and C.transportStats.cachedReads>=1);stateReads=0;now=now+.04;timers[.04]();assert(stateReads==128)',
+    'stateReads=0;now=now+1;timers[.05]();assert(stateReads==128 and ns.transportStats.cachedReads>=1);stateReads=0;now=now+.04;timers[.04]();assert(stateReads==128)',
   );
   expect(h.compactAck()?.kind).toBe(COMPACT_ACK_KIND);
   h.message({ r: 2, b: 99, p: [['s', ['rev'], 2]] }, 100);
   expect(h.compactAck()).toMatchObject({ kind: COMPACT_ACK_KIND, flags: 1 });
-  h.run('assert(applications==1 and C.rev==1 and C.transportStats.downlinkResyncs==1)');
+  h.run('assert(applications==1 and ns.rev==1 and ns.transportStats.downlinkResyncs==1)');
 });
 
 test('compact responses can progress at 50ms while application packets retain their full frame format', () => {
@@ -272,7 +274,7 @@ test('compact responses can progress at 50ms while application packets retain th
   }
   expect(h.snapshots).toHaveLength(1);
   expect(h.compactAck()).toMatchObject({ kind: COMPACT_ACK_KIND, flags: 2 });
-  h.run('C.Send({type="hello",heartbeat=true});now=now+1;timers[.04]()');
+  h.run('ns.Transport.Send({type="hello",heartbeat=true});now=now+1;timers[.04]()');
   expect(decodeFrame(h.saved.at(-1)!)?.kind).toBe(UPLINK_KIND);
 });
 
@@ -312,7 +314,7 @@ assert(#logs==0,logs[1])
 
 test('the exhausted bank receives full snapshots and compressed sparse patches without another bulk load', () => {
   const h = harness();
-  h.run('C.slot=1025');
+  h.run('ns.slot=1025');
   const first = snapshot(1, 'Hola ☀️'.repeat(100));
   const prepared = prepareDownlink(first);
   const initial = encodeMessage(prepared.body, DOWNLINK_KIND, 77, 0, true);
@@ -330,17 +332,17 @@ test('the exhausted bank receives full snapshots and compressed sparse patches w
     a: [77, initial.length + Math.ceil(next.body.length / 32) - 1, 2],
     b: false,
   });
-  h.run('assert(loads==0 and C.slot==1025 and not C.exhausted and applications==2)');
+  h.run('assert(loads==0 and ns.slot==1025 and not ns.exhausted and applications==2)');
 });
 
 test('consuming the final bulk slot switches to reusable delivery without exposing an exhausted UI state', () => {
   const h = harness();
   const first = snapshot(1);
   h.run(`
-C.slot=1024;states.WispAI_S1024=false;disk.WispAI_S1024=false
+ns.slot=1024;states.WispAI_S1024=false;disk.WispAI_S1024=false
 C_AddOns.LoadAddOn=function()
  loads=loads+1
- C.ReceiveSnapshot(nativeDeserialize(${JSON.stringify(JSON.stringify(first))}))
+ ns.Chat.ReceiveSnapshot(nativeDeserialize(${JSON.stringify(JSON.stringify(first))}))
  return true
 end
 `);
@@ -354,7 +356,7 @@ end
     }),
     false,
   );
-  h.run('assert(loads==1 and C.slot==1025 and not C.exhausted and not states.WispAI_S1024)');
+  h.run('assert(loads==1 and ns.slot==1025 and not ns.exhausted and not states.WispAI_S1024)');
   h.run('now=now+.04;timers[.04]()');
   expect(h.lastAck()).toMatchObject({ a: [77, 0, 1], b: false });
   h.message(
@@ -368,7 +370,7 @@ end
     },
     100,
   );
-  h.run('assert(loads==1 and C.slot==1025 and not C.exhausted and C.rev==2)');
+  h.run('assert(loads==1 and ns.slot==1025 and not ns.exhausted and ns.rev==2)');
   expect(h.snapshots).toHaveLength(2);
   expect(h.lastAck()?.n).toBeUndefined();
 });
@@ -387,14 +389,16 @@ test('a failed optional bulk load asks for a reusable full state and never block
   );
   expect(h.lastAck()).toMatchObject({ a: [77, 0, 0], b: false, n: true });
   h.message({ r: 1, s: snapshot(1) }, 100);
-  h.run('assert(loads==1 and C.slot==1 and C.bulkUnavailable and C.rev==1 and not C.exhausted)');
+  h.run(
+    'assert(loads==1 and ns.slot==1 and ns.bulkUnavailable and ns.rev==1 and not ns.exhausted)',
+  );
   expect(h.snapshots).toHaveLength(1);
   expect(h.lastAck()?.n).toBeUndefined();
 });
 
 test('patches keep an immutable authoritative baseline despite optimistic UI changes', () => {
   const h = harness();
-  h.run('C.slot=1025;mutateOptimistic=true');
+  h.run('ns.slot=1025;mutateOptimistic=true');
   const first = snapshot(1);
   h.message({ r: 1, s: first });
   h.message(
@@ -459,18 +463,18 @@ test('a small patch copies changed paths and one UI projection while preserving 
   h.run(`
 mutateOptimistic=true
 sourceEnvelope=nativeDeserialize(${JSON.stringify(JSON.stringify({ r: 1, s: first }))})
-C.ApplyDownlink(sourceEnvelope)
-local stats=C.transportStats.downlinkCopy
+ns.Transport.ApplyDownlink(sourceEnvelope)
+local stats=ns.transportStats.downlinkCopy
 assert(stats.phase=='full' and stats.committed and stats.shallowTables==0)
 fullTables=stats.deepTables
 assert(fullTables>1000,'fixture must exercise a large history')
 sourceEnvelope.s.chats[2].messages[1].text='external mutation'
-C.ApplyDownlink({r=2,b=1,p={
+ns.Transport.ApplyDownlink({r=2,b=1,p={
  {'s',{'rev'},2},
  {'a',{'chats',3,'messages',249,'text'},' one'},
  {'a',{'chats',3,'messages',249,'text'},' two'}
 }})
-local copies=C.transportStats.downlinkCopy
+local copies=ns.transportStats.downlinkCopy
 assert(copies.phase=='patch' and copies.committed)
 assert(copies.deepTables==fullTables,'the mutable UI needs exactly one full projection')
 assert(copies.shallowTables<=6,'the canonical candidate detaches only changed ancestors')
@@ -487,15 +491,15 @@ assert(#displayed.chats[1].messages==251,'optimistic UI state remains separate f
 test('a later invalid operation rolls back nested copy-on-write changes and leaves the old base usable', () => {
   const h = harness();
   h.run(`
-C.ApplyDownlink(nativeDeserialize(${JSON.stringify(JSON.stringify({ r: 1, s: snapshot(1) }))}))
-local ok=pcall(C.ApplyDownlink,{r=2,b=1,p={
+ns.Transport.ApplyDownlink(nativeDeserialize(${JSON.stringify(JSON.stringify({ r: 1, s: snapshot(1) }))}))
+local ok=pcall(ns.Transport.ApplyDownlink,{r=2,b=1,p={
  {'s',{'rev'},2},
  {'a',{'chats',0,'messages',0,'text'},' BAD'},
  {'s',{'missing','child'},'invalid'}
 }})
-assert(not ok and C.rev==1 and applications==1)
-assert(not C.transportStats.downlinkCopy.committed)
-C.ApplyDownlink({r=2,b=1,p={
+assert(not ok and ns.rev==1 and applications==1)
+assert(not ns.transportStats.downlinkCopy.committed)
+ns.Transport.ApplyDownlink({r=2,b=1,p={
  {'s',{'rev'},2},
  {'a',{'chats',0,'messages',0,'text'},' GOOD'}
 }})
@@ -507,14 +511,14 @@ assert(displayed.chats[1].messages[1].text=='Hola ☀️ GOOD')
 test('a receiver failure clears the prepared projection and does not commit a new patch base', () => {
   const h = harness();
   h.run(`
-C.ApplyDownlink(nativeDeserialize(${JSON.stringify(JSON.stringify({ r: 1, s: snapshot(1) }))}))
-local original=C.ReceiveSnapshot
-C.ReceiveSnapshot=function(data)C.RememberDownlink(data);error('UI receiver failed')end
-assert(not pcall(C.ApplyDownlink,{r=2,b=1,p={{'s',{'rev'},2}}}))
-assert(C.rev==1 and not C.transportStats.downlinkCopy.committed)
-C.ReceiveSnapshot=original
-C.ApplyDownlink({r=2,b=1,p={{'s',{'rev'},2},{'a',{'chats',0,'messages',0,'text'},'!'}}})
-assert(C.rev==2 and displayed.chats[1].messages[1].text=='Hola ☀️!')
+ns.Transport.ApplyDownlink(nativeDeserialize(${JSON.stringify(JSON.stringify({ r: 1, s: snapshot(1) }))}))
+local original=ns.Chat.ReceiveSnapshot
+ns.Chat.ReceiveSnapshot=function(data)ns.Transport.RememberDownlink(data);error('UI receiver failed')end
+assert(not pcall(ns.Transport.ApplyDownlink,{r=2,b=1,p={{'s',{'rev'},2}}}))
+assert(ns.rev==1 and not ns.transportStats.downlinkCopy.committed)
+ns.Chat.ReceiveSnapshot=original
+ns.Transport.ApplyDownlink({r=2,b=1,p={{'s',{'rev'},2},{'a',{'chats',0,'messages',0,'text'},'!'}}})
+assert(ns.rev==2 and displayed.chats[1].messages[1].text=='Hola ☀️!')
 `);
   expect(h.snapshots).toHaveLength(2);
 });
@@ -523,11 +527,11 @@ test('external bulk snapshots keep one defensive canonical copy before UI or cal
   const h = harness();
   h.run(`
 local bulk=nativeDeserialize(${JSON.stringify(JSON.stringify(snapshot(1)))})
-C.ReceiveSnapshot(bulk)
-local stats=C.transportStats.downlinkCopy
+ns.Chat.ReceiveSnapshot(bulk)
+local stats=ns.transportStats.downlinkCopy
 assert(stats.phase=='bulk' and stats.committed and stats.shallowTables==0)
 bulk.chats[1].messages[1].text='mutated bulk projection'
-C.ApplyDownlink({r=2,b=1,p={{'s',{'rev'},2},{'a',{'chats',0,'messages',0,'text'},'!'}}})
+ns.Transport.ApplyDownlink({r=2,b=1,p={{'s',{'rev'},2},{'a',{'chats',0,'messages',0,'text'},'!'}}})
 assert(displayed.chats[1].messages[1].text=='Hola ☀️!')
 `);
   expect(h.snapshots).toHaveLength(2);
@@ -535,7 +539,7 @@ assert(displayed.chats[1].messages[1].text=='Hola ☀️!')
 
 test('a damaged fragment waits for retransmission and a sequence gap requests a complete resync', () => {
   const h = harness();
-  h.run('C.slot=1025');
+  h.run('ns.slot=1025');
   const frames = encodeMessage(prepareDownlink(snapshot(1)).body, DOWNLINK_KIND, 77, 0, true);
   expect(frames.length).toBeGreaterThan(2);
   for (const frame of frames.slice(0, -1)) {
@@ -579,12 +583,12 @@ test('a host restart invalidates the patch base and retired generations cannot o
   h.message({ r: 2, b: 1, p: [['s', ['rev'], 2]] }, 0, 101);
   expect(h.lastAck()?.n).toBe(true);
   expect(h.snapshots).toHaveLength(1);
-  h.run('assert(C.rev==0)');
+  h.run('assert(ns.rev==0)');
   h.message({ r: 1, s: snapshot(1) }, 100, 101);
   expect(h.snapshots).toHaveLength(2);
   h.message({ r: 3, s: snapshot(3) }, 200, 100);
   expect(h.snapshots).toHaveLength(2);
-  h.run('assert(C.rev==1 and loads==0)');
+  h.run('assert(ns.rev==1 and loads==0)');
 });
 
 test('addon settings pause both reusable reads and ACK saves without discarding pending user edits', () => {
@@ -604,7 +608,9 @@ test('addon settings pause both reusable reads and ACK saves without discarding 
 test('incoming data and its ACK wait for the current multipart uplink to finish', () => {
   const h = harness();
   const text = Array.from({ length: 160 }, (_, i) => 'value-' + i.toString(36)).join('|');
-  h.run(`C.Send({type='say',chat='chat',text=${JSON.stringify(text)}});now=.04;timers[.04]()`);
+  h.run(
+    `ns.Transport.Send({type='say',chat='chat',text=${JSON.stringify(text)}});now=.04;timers[.04]()`,
+  );
   const firstUplink = decodeFrame(h.saved[0])!;
   expect(firstUplink.flags & 2).toBe(0);
   const data = encodeMessage(prepareDownlink(snapshot(1)).body, DOWNLINK_KIND, 77, 0, true);
@@ -631,7 +637,7 @@ test('incoming data and its ACK wait for the current multipart uplink to finish'
 
 test('more than 1024 real revisions reuse the same exhausted helper bank without LoadAddOn', () => {
   const h = harness();
-  h.run('C.slot=1025');
+  h.run('ns.slot=1025');
   let sequence = 65530;
   for (let rev = 1; rev <= 1025; rev++) {
     const state = { v: 1, session: 'game', rev, connected: true };
@@ -642,6 +648,6 @@ test('more than 1024 real revisions reuse the same exhausted helper bank without
   expect(h.snapshots).toHaveLength(1025);
   expect(h.lastAck()).toMatchObject({ a: [77, (sequence - 1) & 65535, 1025], b: false });
   h.run(
-    'assert(C.rev==1025 and applications==1025 and C.slot==1025 and loads==0 and not C.exhausted)',
+    'assert(ns.rev==1025 and applications==1025 and ns.slot==1025 and loads==0 and not ns.exhausted)',
   );
 }, 120000);

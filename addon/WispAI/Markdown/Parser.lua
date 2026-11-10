@@ -1,5 +1,5 @@
-local _, C = ...
-local M, syntax = C.Markdown, C.Markdown._syntax
+local _, ns = ...
+local M, syntax = ns.Markdown, ns.Markdown._syntax
 local allowed = { references = true, maxBytes = true, maxNodes = true, maxNesting = true }
 
 local function configuration(source, options)
@@ -176,18 +176,18 @@ local function synchronous(source, options, inline)
     error(result, 0)
 end
 
-function M.parse(source, options)
+function M.Parse(source, options)
     return synchronous(source, options, false)
 end
 
-function M.parseInline(source, options)
+function M.ParseInline(source, options)
     return synchronous(source, options, true)
 end
 
 -- Internal UI scheduling primitive. A task owns its options and partial tree.
 -- Lua 5.1 yields stay within Lua frames; the caller's coroutine.resume catches
 -- failures. Native pattern searches and allocations are not preemptible.
-function M._newTask(source, options, inline)
+function M._NewTask(source, options, inline)
     local config, err = configuration(source, options)
     return coroutine.create(function()
         if not config then

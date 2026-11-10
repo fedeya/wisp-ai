@@ -6,16 +6,16 @@ it(
         local env = helper.env()
         setfenv(1, env)
         do
-            C = {}
+            ns = helper.namespace()
             C_AddOns = {
                 GetAddOnMetadata = function()
                     return "test"
                 end,
             }
         end
-        helper.addon("Integrations.lua", env)
+        helper.addon("Integrations/Integrations.lua", env)
 
-        assert(C.IntegrationReport().questie.status == "missing")
+        assert(ns.Integrations.IntegrationReport().questie.status == "missing")
         LibQuestieDB = {
             flavor = { expansion = "Classic" },
             RequireContract = function()
@@ -23,26 +23,26 @@ it(
             end,
             Npc = { Get = function() end, Exists = function() end },
         }
-        assert(C.IntegrationReport().questie.status == "incompatible")
+        assert(ns.Integrations.IntegrationReport().questie.status == "incompatible")
         LibQuestieDB.flavor.expansion = "Forever"
-        assert(C.IntegrationReport().questie.status == "partial")
+        assert(ns.Integrations.IntegrationReport().questie.status == "partial")
         Questie = { IsForever = true }
         QuestieLoader = {
             ImportModule = function()
                 error("not ready")
             end,
         }
-        assert(C.IntegrationReport().questie.status == "partial")
+        assert(ns.Integrations.IntegrationReport().questie.status == "partial")
         QuestieLoader.ImportModule = function()
             return { GetClassTrainers = function() end, townsfolk = {} }
         end
-        assert(C.IntegrationReport().questie.status == "partial")
+        assert(ns.Integrations.IntegrationReport().questie.status == "partial")
         LibQuestieDB.Quest = LibQuestieDB.Npc
         LibQuestieDB.Object = LibQuestieDB.Npc
-        assert(C.IntegrationReport().questie.status == "ready")
+        assert(ns.Integrations.IntegrationReport().questie.status == "ready")
         LibQuestieDB.RequireContract = function()
             error("contract mismatch")
         end
-        assert(C.IntegrationReport().questie.status == "incompatible")
+        assert(ns.Integrations.IntegrationReport().questie.status == "incompatible")
     end
 )

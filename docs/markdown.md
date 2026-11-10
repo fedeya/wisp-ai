@@ -15,11 +15,11 @@ HTML is displayed as literal text. Images show their alt text.
 ## Parser API
 
 ```lua
-local document, err = C.Markdown.parse(source, { references = true })
-local label, err = C.Markdown.parseInline(source, { references = true })
+local document, err = ns.Markdown.Parse(source, { references = true })
+local label, err = ns.Markdown.ParseInline(source, { references = true })
 ```
 
-`parse` handles a document; `parseInline` handles a UI label. Wisp references
+`Parse` handles a document; `ParseInline` handles a UI label. Wisp references
 are enabled with `references = true`. Failures return `nil` and an error with
 `err.code`.
 

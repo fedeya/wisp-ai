@@ -4,8 +4,8 @@
 dependencies. `Cache.lua` schedules and caches parsing, `InlineRenderer.lua`
 formats text, and `ReplyView.lua` owns reply presentation and its state.
 
-The parser API is `C.Markdown.parse` and `C.Markdown.parseInline`; its tree uses
-`children` arrays. The other modules live under the same `C.Markdown` namespace.
+The parser API is `ns.Markdown.Parse` and `ns.Markdown.ParseInline`; its tree uses
+`children` arrays. The other modules live under the same `ns.Markdown` namespace.
 `TextStyle.lua` lays out the view's preformatted inline runs and decorations;
 `Links.lua` validates and encodes copyable web links. Neither module parses source.
 `MessageRows` and `RichUI` own the native widgets.

@@ -1,5 +1,5 @@
-local _, C = ...
-local M = C.Markdown
+local _, ns = ...
+local M = ns.Markdown
 
 -- Wisp's block grammar is deliberately small. Each recursive container keeps
 -- records pointing into the original document, so stripping a quote or list

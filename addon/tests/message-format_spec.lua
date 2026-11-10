@@ -6,14 +6,14 @@ it(
         local env = helper.env()
         setfenv(1, env)
         do
-            C = {}
+            ns = helper.namespace()
         end
-        helper.addon("EmojiData.lua", env)
-        helper.addon("Emoji.lua", env)
-        helper.addon("MessageFormat.lua", env)
+        helper.addon("UI/EmojiData.lua", env)
+        helper.addon("UI/Emoji.lua", env)
+        helper.addon("UI/MessageFormat.lua", env)
 
         function image(text)
-            local rendered = C.Emoji.render(text)
+            local rendered = ns.UI.Emoji.Render(text)
             local _, count = rendered:gsub("|T", "")
             assert(
                 count == 1 and rendered:sub(-2) == "|t",
@@ -38,30 +38,32 @@ it(
         }) do
             image(emoji)
         end
-        assert(C.Emoji.render("❤") == C.Emoji.render("❤️"))
+        assert(ns.UI.Emoji.Render("❤") == ns.UI.Emoji.Render("❤️"))
         assert(
-            C.FormatText("te pueden pegar a vos 😄") == "te pueden pegar a vos " .. image("😄")
+            ns.UI.FormatText("te pueden pegar a vos 😄")
+                == "te pueden pegar a vos " .. image("😄")
         )
         local localized = "maná, pingüino, ¿qué? 你好 Привет 123 # * ©"
-        assert(C.FormatText(localized) == localized)
+        assert(ns.UI.FormatText(localized) == localized)
         assert(
-            C.FormatText("Explosión → Misiles → repetir") == "Explosión -> Misiles -> repetir"
+            ns.UI.FormatText("Explosión → Misiles → repetir")
+                == "Explosión -> Misiles -> repetir"
         )
         assert(
-            C.FormatText("20–30 DPS • daño × 2 ≠ vida ≤ 50 ≥ 10 ± 2")
+            ns.UI.FormatText("20–30 DPS • daño × 2 ≠ vida ≤ 50 ≥ 10 ± 2")
                 == "20-30 DPS * daño x 2 != vida <= 50 >= 10 +/- 2"
         )
         assert(
-            C.FormatText("“maná”… x² + H₂O ∞ √9")
+            ns.UI.FormatText("“maná”… x² + H₂O ∞ √9")
                 == '"maná"... x^2 + H_2O infinity sqrt9'
         )
-        assert(C.FormatText("A B C​D﻿E") == "A B CDE", "spaces and invisible separators")
-        assert(C.FormatText("ＡＢＣ１２３") == "ABC123")
+        assert(ns.UI.FormatText("A B C​D﻿E") == "A B CDE", "spaces and invisible separators")
+        assert(ns.UI.FormatText("ＡＢＣ１２３") == "ABC123")
         assert(
-            C.FormatText("⧖") == "[U+29D6]",
+            ns.UI.FormatText("⧖") == "[U+29D6]",
             "unmapped technical symbols need readable fallback"
         )
-        local rotation = C.FormatText("[[ref:a]] → [[ref:b]]", {
+        local rotation = ns.UI.FormatText("[[ref:a]] → [[ref:b]]", {
             a = { kind = "spell", id = 2136, label = "Explosión de Fuego" },
             b = { kind = "spell", id = 5143, label = "Misiles Arcanos" },
         })
@@ -75,28 +77,28 @@ it(
                 0x80 + code % 64
             )
             assert(
-                C.Emoji.render(symbol) ~= symbol,
+                ns.UI.Emoji.Render(symbol) ~= symbol,
                 "unhandled symbol U+" .. string.format("%04X", code)
             )
         end
         local link = "|Hitem:100|h[Espada]|h"
-        assert(C.FormatText(link, nil, true) == link)
-        local ref = C.FormatText(
+        assert(ns.UI.FormatText(link, nil, true) == link)
+        local ref = ns.UI.FormatText(
             "**[[ref:s]]**",
             { s = { kind = "spell", id = 100, label = "Fuego 🔥" } }
         )
         assert(ref:find("|Hspell:100|h[Fuego " .. image("🔥") .. "]|h", 1, true))
-        local future = C.Emoji.render("😀‍😀")
+        local future = ns.UI.Emoji.Render("😀‍😀")
         assert(
             future == "[emoji U+1F600]",
             "unknown combinations must not split into partial images"
         )
         assert(
-            C.Emoji.render("☀︎") == "[U+2600]",
+            ns.UI.Emoji.Render("☀︎") == "[U+2600]",
             "explicit text presentation uses a font-safe fallback"
         )
         local count = 0
-        for emoji, index in pairs(C.EmojiData) do
+        for emoji, index in pairs(ns.UI.EmojiData) do
             assert(index >= 0 and index < 4009)
             if #emoji > 2 then
                 image(emoji)

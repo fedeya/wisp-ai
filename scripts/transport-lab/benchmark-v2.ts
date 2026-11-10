@@ -22,7 +22,10 @@ const referenceDir =
 const baselinePath = referenceDir + '/Transport-before-v2.lua';
 const baseline = readFileSync(baselinePath, 'utf8');
 const { reference: protocolReference, Decoder: HistoricalDecoder } = await historicalDecoder();
-const current = readFileSync(new URL('../../addon/WispAI/Transport.lua', import.meta.url), 'utf8');
+const current = readFileSync(
+  new URL('../../addon/WispAI/Transport/Transport.lua', import.meta.url),
+  'utf8',
+);
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 const luaBytes = (bytes: Uint8Array) =>
   '"' + Array.from(bytes, (byte) => '\\' + String(byte).padStart(3, '0')).join('') + '"';
@@ -52,7 +55,24 @@ for i=1,128 do names[#names+1]=string.format('WispAI_B%03d',i)end
 for i=1,1024 do names[#names+1]=string.format('WispAI_S%04d',i)end
 for i,n in ipairs(names)do ids[n]=i;states[n]=true;disk[n]=true end
 local function name(id)return type(id)=='number' and names[id] or id end
-C={session='benchmark',rev=0,connected=true,SLOTS=1024,chats={{status='idle'}},active='chat'}
+ns={session='benchmark',
+rev=0,
+connected=true,
+SLOTS=1024,
+chats={{status='idle'}},
+active='chat',
+Core = {},
+Chat = {},
+Transport = {},
+Character = {},
+Actions = {},
+Integrations = {},
+ChatHistory = {},
+Settings = {},
+UI = {},
+Inline = {},
+Panels = {},
+Advice = {}}
 function time()return 12345 end
 function GetTime()return now end
 function GetTimePreciseSec()return now end
@@ -87,11 +107,11 @@ SaveAddOns=function()
 end,
 LoadAddOn=function()error('This uplink benchmark must never load a bulk helper')end
 }
-assert(load(${luaSource(source)}))('WispAI',C)
-C.StartTransport()
-${version === 2 ? "assert(C.transportStats.version==2,'The production Lua did not select v2')" : ''}
+assert(load(${luaSource(source)}))('WispAI',ns)
+ns.Transport.StartTransport()
+${version === 2 ? "assert(ns.transportStats.version==2,'The production Lua did not select v2')" : ''}
 counts={enable=0,disable=0,save=0,reset=0,read=0};frames={}
-C.Send({type='say',chat='chat',messageId='fixture',text='The serializer returns identical benchmark JSON in both cases.'})
+ns.Transport.Send({type='say',chat='chat',messageId='fixture',text='The serializer returns identical benchmark JSON in both cases.'})
 for i=1,${expectedFrames} do now=i*.04;for _,f in ipairs(assert(timers[.04],'Missing uplink timer'))do f()end end
 `);
   lua.lua_getglobal(L, to_luastring('frames'));
@@ -194,7 +214,7 @@ console.log(
         sha256: sha256(baseline),
       },
       historicalProtocol: protocolReference,
-      v2: { source: 'addon/WispAI/Transport.lua', sha256: sha256(current) },
+      v2: { source: 'addon/WispAI/Transport/Transport.lua', sha256: sha256(current) },
       nominalPeriodMs: 40,
       samples,
     },

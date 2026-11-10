@@ -2,7 +2,7 @@ local helper = require("addon.tests.markdown-support")
 local md = helper.parser()
 
 local function paragraph(source)
-    return assert(md.parse(source)).children[1]
+    return assert(md.Parse(source)).children[1]
 end
 
 local function count(node, kind)
@@ -76,7 +76,7 @@ end)
 it("keeps incompatible-opener scanning bounded while matching ordinary spans", function()
     local function work(size)
         local source = string.rep("*a ", size) .. string.rep("a**b ", size)
-        local task = md._newTask(source)
+        local task = md._NewTask(source)
         local steps = 0
         while true do
             local ok, document, err = coroutine.resume(task)
@@ -84,7 +84,7 @@ it("keeps incompatible-opener scanning bounded while matching ordinary spans", f
             steps = steps + 1
             if coroutine.status(task) == "dead" then
                 assert.is_nil(err)
-                assert.same(assert(md.parse(source)), document)
+                assert.same(assert(md.Parse(source)), document)
                 return steps
             end
         end

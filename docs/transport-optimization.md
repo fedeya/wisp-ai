@@ -252,7 +252,7 @@ fallback comparisons and natural exhaustion are separate trials below.
 The paired no-bulk trials use the same immutable payload and five fixtures as
 the bulk-available A/B, with a 120-second native profile in each mode. After the
 initial snapshot has applied and the ten-second warmup has elapsed, the trusted
-temporary benchmark startup sets `C.slot = 1025` and `C.bulkUnavailable = true`
+temporary benchmark startup sets `ns.slot = 1025` and `ns.bulkUnavailable = true`
 immediately before starting the profile. The start-profile packet advertises
 bulk unavailable to the selected host. No data publication in the timed window
 may use `LoadAddOn`.

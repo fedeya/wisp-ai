@@ -1,9 +1,9 @@
 -- Focused contract tests for Wisp's independently implemented block grammar.
 -- Run from the repository root with Lua 5.1.
 local function runblocks()
-    local C = {}
-    assert(loadfile("addon/WispAI/Markdown/Syntax.lua"))("WispAI", C)
-    assert(loadfile("addon/WispAI/Markdown/Block.lua"))("WispAI", C)
+    local ns = {}
+    assert(loadfile("addon/WispAI/Markdown/Syntax.lua"))("WispAI", ns)
+    assert(loadfile("addon/WispAI/Markdown/Block.lua"))("WispAI", ns)
     local checks, checkpoints = 0, 0
     local function equal(actual, expected, message)
         checks = checks + 1
@@ -23,9 +23,9 @@ local function runblocks()
             checkpoint = function()
                 checkpoints = checkpoints + 1
             end,
-            referenceLabel = C.Markdown._syntax.referenceLabel,
+            referenceLabel = ns.Markdown._syntax.referenceLabel,
             unescape = function(value)
-                return C.Markdown._syntax.unescape(value, function()
+                return ns.Markdown._syntax.unescape(value, function()
                     checkpoints = checkpoints + 1
                 end)
             end,
@@ -34,7 +34,7 @@ local function runblocks()
                 return fields
             end,
         }
-        return C.Markdown._blocks(source, context), context
+        return ns.Markdown._blocks(source, context), context
     end
 
     local doc = parse("hello\nworld\n\n# Title #\n\nA\n===\n\n- - -\n")
@@ -154,7 +154,7 @@ local function runblocks()
     assert(checkpoints > 0, "the block parser must cooperate")
     local yields = 0
     local thread = coroutine.create(function()
-        return C.Markdown._blocks(string.rep("- item\n", 80), {
+        return ns.Markdown._blocks(string.rep("- item\n", 80), {
             options = {},
             references = {},
             checkpoint = function()
@@ -193,7 +193,7 @@ if type(it) == "function" then
                 .. "\n"
                 .. bullet
                 .. " second"
-            local document = assert(md.parse(source))
+            local document = assert(md.Parse(source))
             assert.equal(3, #document.children, source)
             assert.equal("list", document.children[1].type)
             assert.equal("thematic_break", document.children[2].type)
@@ -202,10 +202,10 @@ if type(it) == "function" then
             assert.equal(1, #document.children[3].children)
             assert.equal(2, document.children[2].sourcepos[1][1])
         end
-        local separated = assert(md.parse("- first\n\n- - -\n\n- second"))
+        local separated = assert(md.Parse("- first\n\n- - -\n\n- second"))
         assert.is_true(separated.children[1].tight)
         assert.equal("thematic_break", separated.children[2].type)
-        local quoted = assert(md.parse("> - first\n> - - -\n> - second"))
+        local quoted = assert(md.Parse("> - first\n> - - -\n> - second"))
         assert.equal("block_quote", quoted.children[1].type)
         assert.same({ "list", "thematic_break", "list" }, {
             quoted.children[1].children[1].type,
@@ -224,19 +224,19 @@ if type(it) == "function" then
             "/&amp;lt;",
             "/a\\*b",
         }) do
-            local inline = assert(md.parse("[x](" .. value .. ")"))
-            local reference = assert(md.parse("[x]\n\n[x]: " .. value))
+            local inline = assert(md.Parse("[x](" .. value .. ")"))
+            local reference = assert(md.Parse("[x]\n\n[x]: " .. value))
             assert.equal(
                 inline.children[1].children[1].destination,
                 reference.children[1].children[1].destination,
                 value
             )
         end
-        local document = assert(md.parse('[x]\n\n[x]: /&#x66;oo "A &#65;&nbsp;B \\&amp; &amp;lt;"'))
+        local document = assert(md.Parse('[x]\n\n[x]: /&#x66;oo "A &#65;&nbsp;B \\&amp; &amp;lt;"'))
         local link = document.children[1].children[1]
         assert.equal("/foo", link.destination)
         assert.equal("A A B &amp; &lt;", link.title)
-        local fence = assert(md.parse("```&#x6c;ua &nbsp; \\&amp;\nliteral\n```"))
+        local fence = assert(md.Parse("```&#x6c;ua &nbsp; \\&amp;\nliteral\n```"))
         assert.equal("lua   &amp;", fence.children[1].info)
     end)
 
@@ -245,13 +245,13 @@ if type(it) == "function" then
         function()
             local md = require("addon.tests.markdown-support").parser()
             for _, ending in ipairs({ "#", "-", "*", "+", "1." }) do
-                local document = assert(md.parse("A|B\n---|---\n" .. ending))
+                local document = assert(md.Parse("A|B\n---|---\n" .. ending))
                 assert.equal(2, #document.children, ending)
                 assert.equal("table", document.children[1].type)
                 assert.equal(1, #document.children[1].children)
                 assert.equal(ending == "#" and "heading" or "list", document.children[2].type)
             end
-            local document = assert(md.parse("[x]: /first\n\n[x]: /second\nHeading\n===\n\n[x]"))
+            local document = assert(md.Parse("[x]: /first\n\n[x]: /second\nHeading\n===\n\n[x]"))
             assert.equal("heading", document.children[1].type)
             assert.equal("/first", document.children[2].children[1].destination)
         end

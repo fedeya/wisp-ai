@@ -1,15 +1,15 @@
 local helper = require("addon.tests.markdown-support")
 local md = helper.parser()
 local function paragraph(source, options)
-    return assert(md.parse(source, options)).children[1]
+    return assert(md.Parse(source, options)).children[1]
 end
 
 it("exposes only the Wisp parse and inline entry points", function()
-    assert.is_function(md.parse)
-    assert.is_function(md.parseInline)
+    assert.is_function(md.Parse)
+    assert.is_function(md.ParseInline)
     assert.is_nil(md.newStream)
     assert.is_nil(md.Node)
-    local node, err = md.parse("text", { dialect = "commonmark" })
+    local node, err = md.Parse("text", { dialect = "commonmark" })
     assert.is_nil(node)
     assert.same({ code = "invalid_option", option = "dialect" }, err)
 end)
@@ -105,7 +105,7 @@ it("treats raw HTML as literal text and only decodes basic or numeric entities",
 end)
 
 it("preserves soft and hard breaks without losing inline whitespace", function()
-    local node = assert(md.parseInline("  first\nsecond  \nthird\\\nfourth  "))
+    local node = assert(md.ParseInline("  first\nsecond  \nthird\\\nfourth  "))
     assert.equal("softbreak", node.children[2].type)
     assert.equal("linebreak", node.children[4].type)
     assert.equal("linebreak", node.children[6].type)
@@ -113,7 +113,7 @@ it("preserves soft and hard breaks without losing inline whitespace", function()
 end)
 
 it("uses array children and preserves nested table source positions", function()
-    local doc = assert(md.parse("> | A | B |\n> |---|---:|\n> |x|**y**|\n"))
+    local doc = assert(md.Parse("> | A | B |\n> |---|---:|\n> |x|**y**|\n"))
     local tab = doc.children[1].children[1]
     assert.equal("table", tab.type)
     assert.equal(true, tab.children[1].header)
@@ -126,16 +126,16 @@ it("uses array children and preserves nested table source positions", function()
 end)
 
 it("normalizes CRLF, CR, NUL and malformed UTF-8", function()
-    local doc = assert(md.parse("ñ\r\n😀\rzero\0bad\255"))
+    local doc = assert(md.Parse("ñ\r\n😀\rzero\0bad\255"))
     assert.equal("ñ\n😀\nzero�bad�", helper.text(doc))
     assert.equal(3, doc.children[1].sourcepos[2][1])
 end)
 
 it("does not modify source options or prior documents when resolving definitions", function()
     local source, options = "[x]", { references = true }
-    local first = assert(md.parse(source, options))
+    local first = assert(md.Parse(source, options))
     local before = helper.text(first)
-    local second = assert(md.parse(source .. "\n\n[x]: /resolved", options))
+    local second = assert(md.Parse(source .. "\n\n[x]: /resolved", options))
     assert.same({ references = true }, options)
     assert.equal(before, helper.text(first))
     assert.equal("text", first.children[1].children[1].type)
@@ -144,7 +144,7 @@ end)
 
 it("rejects invalid input and unsupported options with structured errors", function()
     for _, source in ipairs({ false, 1, {} }) do
-        local doc, err = md.parse(source)
+        local doc, err = md.Parse(source)
         assert.is_nil(doc)
         assert.equal("invalid_source", err.code)
     end
@@ -158,7 +158,7 @@ it("rejects invalid input and unsupported options with structured errors", funct
         { maxNesting = 1.5 },
         { maxBytes = math.huge },
     }) do
-        local doc, err = md.parse("x", options)
+        local doc, err = md.Parse("x", options)
         assert.is_nil(doc)
         assert.is_table(err)
     end
@@ -172,7 +172,7 @@ it("enforces byte, allocation and syntax-depth limits atomically", function()
         { "[x](a(b(c)d)e)", { maxNesting = 1 }, "max_nesting" },
         { "***x***", { maxNesting = 1 }, "max_nesting" },
     }) do
-        local doc, err = md.parse(example[1], example[2])
+        local doc, err = md.Parse(example[1], example[2])
         assert.is_nil(doc)
         assert.equal(example[3], err.code)
         assert.is_nil(err.markdownLimit)
@@ -208,7 +208,7 @@ it("keeps mixed malformed syntax bounded and returns valid acyclic trees", funct
             seed = (seed * 16807) % 2147483647
             source[#source + 1] = pieces[seed % #pieces + 1]
         end
-        local doc = assert(md.parse(table.concat(source), { references = true }))
+        local doc = assert(md.Parse(table.concat(source), { references = true }))
         local pending, seen = { doc }, {}
         while #pending > 0 do
             local node = table.remove(pending)
@@ -231,7 +231,7 @@ it("keeps native WoW hyperlinks opaque including quality colors and Markdown in 
         "|Hspell:122|h[Name [[ref:key]]]|h",
     }
     for _, link in ipairs(links) do
-        local label = assert(md.parseInline("Before " .. link .. " after", { references = true }))
+        local label = assert(md.ParseInline("Before " .. link .. " after", { references = true }))
         assert.equal(3, #label.children)
         assert.equal("native_link", label.children[2].type)
         assert.equal(link, label.children[2].literal)
@@ -242,7 +242,7 @@ end)
 
 it("keeps native hyperlinks inside code literal and leaves malformed links as text", function()
     local link = "|cff71d5ff|Hspell:122|h[Name **literal**]|h|r"
-    local label = assert(md.parseInline("`" .. link .. "`"))
+    local label = assert(md.ParseInline("`" .. link .. "`"))
     assert.equal("code", label.children[1].type)
     assert.equal(link, label.children[1].literal)
     for _, source in ipairs({
@@ -250,7 +250,7 @@ it("keeps native hyperlinks inside code literal and leaves malformed links as te
         "|Hitem:100|h[Name\nsplit]|h",
         "|H|h[No payload]|h",
     }) do
-        local node = assert(md.parseInline(source))
+        local node = assert(md.ParseInline(source))
         assert.equal(source, helper.text(node))
         for _, child in ipairs(node.children) do
             assert.not_equal("native_link", child.type)
@@ -260,12 +260,12 @@ end)
 
 it("applies normal parser limits to native hyperlink leaves", function()
     local source = "|Hitem:100|h[Name]|h"
-    local node, err = md.parseInline(source, { maxBytes = #source - 1 })
+    local node, err = md.ParseInline(source, { maxBytes = #source - 1 })
     assert.is_nil(node)
     assert.equal("max_bytes", err.code)
-    node, err = md.parseInline(source, { maxNodes = 1 })
+    node, err = md.ParseInline(source, { maxNodes = 1 })
     assert.is_nil(node)
     assert.equal("max_nodes", err.code)
-    node = assert(md.parseInline(source, { maxNodes = 2 }))
+    node = assert(md.ParseInline(source, { maxNodes = 2 }))
     assert.equal("native_link", node.children[1].type)
 end)

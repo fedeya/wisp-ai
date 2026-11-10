@@ -33,14 +33,16 @@ local function setup(env)
         function hooksecurefunc(_, key, fn)
             hooks[key] = fn
         end
-        C = {
+        ns = helper.namespace({
             transportStats = { compactAck = true },
-            Send = function(packet)
-                sent[#sent + 1] = packet
-            end,
-        }
+            Transport = {
+                Send = function(packet)
+                    sent[#sent + 1] = packet
+                end,
+            },
+        })
     end
-    helper.addon("TransportMetrics.lua", env)
+    helper.addon("Transport/TransportMetrics.lua", env)
 end
 
 it(
@@ -51,11 +53,11 @@ it(
         setup(env)
 
         assert(created == 0 and next(hooks) == nil)
-        C.RecordTransportOperation("ack", 900)
-        assert(not pcall(C.StartTransportProfile, "", 2))
-        C.StartTransportProfile("fixture", 2)
+        ns.Transport.RecordTransportOperation("ack", 900)
+        assert(not pcall(ns.Transport.StartTransportProfile, "", 2))
+        ns.Transport.StartTransportProfile("fixture", 2)
         assert(created == 1 and sent[1].data.event == "transport_profile_start")
-        assert(not pcall(C.StartTransportProfile, "overlap", 2))
+        assert(not pcall(ns.Transport.StartTransportProfile, "overlap", 2))
         hooks.SaveAddOns()
         hooks.SaveAddOns()
         hooks.ResetAddOns()
@@ -63,11 +65,11 @@ it(
             now = now + 0.01
             widget.update(widget, 0.01)
         end
-        C.RecordTransportOperation("ack", 3)
-        C.RecordTransportOperation("ack", 5)
+        ns.Transport.RecordTransportOperation("ack", 3)
+        ns.Transport.RecordTransportOperation("ack", 5)
         now = 2.01
         widget.update(widget, 0.02)
-        local result = C.lastTransportProfile
+        local result = ns.lastTransportProfile
         assert(widget.hidden and result.frames.count == 101)
         assert(result.frames.p50 == 10 and result.frames.p95 == 10 and result.frames.max == 20)
         assert(result.calls.SaveAddOns == 2 and result.calls.ResetAddOns == 1)
@@ -76,9 +78,9 @@ it(
         )
         assert(sent[2].data.event == "transport_profile")
         hooks.SaveAddOns()
-        C.RecordTransportOperation("ack", 99)
+        ns.Transport.RecordTransportOperation("ack", 99)
         assert(result.calls.SaveAddOns == 2 and result.work.ack.count == 2)
-        assert(C.StopTransportProfile() == nil)
+        assert(ns.Transport.StopTransportProfile() == nil)
     end
 )
 
@@ -89,20 +91,20 @@ it(
         setfenv(1, env)
         setup(env)
 
-        C.StartTransportProfile("timing", 10)
+        ns.Transport.StartTransportProfile("timing", 10)
         now = 0.1
-        local started = C.BeginTransportApply()
+        local started = ns.Transport.BeginTransportApply()
         now = 0.104
-        C.RecordTransportSnapshot(
+        ns.Transport.RecordTransportSnapshot(
             { benchmark = { id = "stream", step = 1, textBytes = 3 } },
             started
         )
         now = 0.2
-        C.RecordTransportSnapshot(
+        ns.Transport.RecordTransportSnapshot(
             { benchmark = { id = "stream", step = 2, textBytes = 12, final = true } },
             nil
         )
-        local result = C.StopTransportProfile()
+        local result = ns.Transport.StopTransportProfile()
         assert(#result.records == 1 and result.records[1].count == 2)
         assert(math.abs(result.records[1].firstTextAppliedMs - 104) < 0.001)
         assert(result.records[1].finalAppliedMs == 200)

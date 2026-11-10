@@ -1,10 +1,10 @@
 local helper = {}
 function helper.parser()
-    local C = {}
+    local ns = {}
     for _, name in ipairs({ "Syntax", "Block", "Parser" }) do
-        assert(loadfile("addon/WispAI/Markdown/" .. name .. ".lua"))("WispAI", C)
+        assert(loadfile("addon/WispAI/Markdown/" .. name .. ".lua"))("WispAI", ns)
     end
-    return C.Markdown
+    return ns.Markdown
 end
 function helper.text(node)
     if node.literal then

@@ -3,7 +3,7 @@ local helper = require("addon.tests.support")
 local function setup(env)
     setfenv(1, env)
     do
-        C = {}
+        ns = helper.namespace()
         function time()
             return 123
         end
@@ -17,7 +17,9 @@ local function setup(env)
             return { RegisterEvent = function() end, SetScript = function() end }
         end
     end
-    helper.addon("Character.lua", env)
+    helper.addon("Character/Capture.lua", env)
+    helper.addon("Character/Inspect.lua", env)
+    helper.addon("Actions/Game.lua", env)
 end
 
 it(
@@ -56,28 +58,31 @@ it(
                 return tostring(data.count) .. tostring(data.quests[1].complete)
             end,
         }
-        local first = C.CaptureTurn()
+        local first = ns.Character.CaptureTurn()
         assert(first.questRevision == 1 and first.sections.quests.data.count == 1)
         assert(first.sections.quests.data.quests[1].objectives[1].unused == nil)
-        C.questAcknowledged = 1
-        local second = C.CaptureTurn()
+        ns.questAcknowledged = 1
+        local second = ns.Character.CaptureTurn()
         assert(
             reads == 2 and second.questRevision == 1 and second.sections.quests == nil,
             "revalidate without resending"
         )
         complete = true
-        local third = C.CaptureTurn()
+        local third = ns.Character.CaptureTurn()
         assert(third.questRevision == 2 and third.sections.quests.data.quests[1].complete)
-        assert(C.CaptureTurn().sections.quests ~= nil, "lost/unconfirmed revisions must resend")
-        C.questAcknowledged = 2
-        assert(C.CaptureTurn().sections.quests == nil)
+        assert(
+            ns.Character.CaptureTurn().sections.quests ~= nil,
+            "lost/unconfirmed revisions must resend"
+        )
+        ns.questAcknowledged = 2
+        assert(ns.Character.CaptureTurn().sections.quests == nil)
         count = 42
-        local bounded = C.CaptureTurn().sections.quests.data
+        local bounded = ns.Character.CaptureTurn().sections.quests.data
         assert(bounded.count == 42 and bounded.truncated and #bounded.quests == 40)
         C_QuestLog.GetNumQuestLogEntries = function()
             error("not ready")
         end
-        local failed = C.CaptureTurn()
+        local failed = ns.Character.CaptureTurn()
         assert(
             failed.questRevision == nil and failed.sections.quests == nil,
             "never reuse stale data on failure"
@@ -116,26 +121,28 @@ it(
                 return tostring(data.quests[1].rewardXP)
             end,
         }
-        assert(C.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == 850)
-        local first = C.CaptureTurn()
+        assert(ns.Character.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == 850)
+        local first = ns.Character.CaptureTurn()
         assert(first.sections.quests.data.quests[1].rewardXP == 850)
-        C.questAcknowledged = first.questRevision
-        assert(C.CaptureTurn().sections.quests == nil)
+        ns.questAcknowledged = first.questRevision
+        assert(ns.Character.CaptureTurn().sections.quests == nil)
         xp = 0
-        local changed = C.CaptureTurn()
+        local changed = ns.Character.CaptureTurn()
         assert(changed.questRevision > first.questRevision)
         assert(changed.sections.quests.data.quests[1].rewardXP == 0)
         for _, invalid in ipairs({ -1, "850", math.huge, 0 / 0 }) do
             xp = invalid
-            assert(C.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == nil)
+            assert(
+                ns.Character.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == nil
+            )
         end
         GetQuestLogRewardXP = function()
             error("not ready")
         end
-        assert(C.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == nil)
-        assert(C.CaptureTurn().sections.quests.data.quests[1].rewardXP == nil)
+        assert(ns.Character.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == nil)
+        assert(ns.Character.CaptureTurn().sections.quests.data.quests[1].rewardXP == nil)
         GetQuestLogRewardXP = nil
-        assert(C.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == nil)
+        assert(ns.Character.Capture({ "quests" }).sections.quests.data.quests[1].rewardXP == nil)
     end
 )
 
@@ -147,7 +154,7 @@ it(
         setup(env)
 
         local level = 13
-        C.Capture = function()
+        ns.Character.Capture = function()
             return {
                 capturedAt = 123,
                 source = "WoW addon live API",
@@ -175,7 +182,7 @@ it(
                 return tostring(data.level)
             end,
         }
-        local first = C.CaptureTurn()
+        local first = ns.Character.CaptureTurn()
         assert(first.characterRevision == 1 and first.sections.character.data.level == 13)
         assert(
             first.sections.character.data.moneyCopper == nil
@@ -183,11 +190,11 @@ it(
                 and first.sections.character.data.raceToken == nil
         )
         assert(first.source == nil and first.character == nil)
-        C.characterAcknowledged = 1
-        local second = C.CaptureTurn()
+        ns.characterAcknowledged = 1
+        local second = ns.Character.CaptureTurn()
         assert(second.characterRevision == 1 and second.sections.character == nil)
         level = 14
-        local third = C.CaptureTurn()
+        local third = ns.Character.CaptureTurn()
         assert(third.characterRevision == 2 and third.sections.character.data.level == 14)
     end
 )
@@ -218,16 +225,16 @@ it(
                 return { lines = { { leftText = "Requires Level 5" } } }
             end,
         }
-        local r = C.Inspect({ kind = "reference", args = { kind = "item", id = 1 } })
+        local r = ns.Character.Inspect({ kind = "reference", args = { kind = "item", id = 1 } })
         assert(
             r.status == "available"
                 and r.data.requiredLevel == 5
                 and r.data.tooltip[1].left == "Requires Level 5"
         )
-        r = C.Inspect({ kind = "reference", args = { kind = "item", id = 2 } })
+        r = ns.Character.Inspect({ kind = "reference", args = { kind = "item", id = 2 } })
         assert(r.data.status == "loading" and requested == 2)
         assert(
-            C.Inspect({ kind = "reference", args = { kind = "spell", id = 3 } }).status
+            ns.Character.Inspect({ kind = "reference", args = { kind = "spell", id = 3 } }).status
                 == "unavailable"
         )
     end
@@ -249,7 +256,7 @@ it("progression preserves false completion separately from unavailable data", fu
             return id == 1
         end,
     }
-    local d = C.Inspect({
+    local d = ns.Character.Inspect({
         kind = "progression",
         args = { questIds = { 1, 2, 3 }, factionIds = { 10 } },
     }).data
@@ -264,7 +271,7 @@ it("trainer reads require an open window and use the Forever service return fiel
     setfenv(1, env)
     setup(env)
 
-    assert(C.Inspect({ kind = "trainer" }).status == "unavailable")
+    assert(ns.Character.Inspect({ kind = "trainer" }).status == "unavailable")
     ClassTrainerFrame = {
         IsShown = function()
             return true
@@ -282,7 +289,7 @@ it("trainer reads require an open window and use the Forever service return fiel
     BuyTrainerService = function()
         error("must not train")
     end
-    local d = C.Inspect({ kind = "trainer" }).data
+    local d = ns.Character.Inspect({ kind = "trainer" }).data
     assert(
         d.services[1].requiredLevel == 10
             and d.services[1].rank == "Rank 1"
@@ -319,7 +326,7 @@ it(
                 end
             end,
         }
-        local d = C.Inspect({ kind = "resources" }).data
+        local d = ns.Character.Inspect({ kind = "resources" }).data
         assert(
             d.moneyCopper == 500
                 and d.bagCapacity == 4
@@ -346,7 +353,7 @@ it("comparison considers both ring slots without converting raw deltas to DPS", 
     GetInventoryItemID = function(unit, slot)
         return slot == 11 and 1 or 2
     end
-    local d = C.Inspect({ kind = "compare_items", args = { itemIds = { 5 } } }).data
+    local d = ns.Character.Inspect({ kind = "compare_items", args = { itemIds = { 5 } } }).data
     assert(#d.candidates[1].comparisons == 2)
     assert(
         d.candidates[1].comparisons[1].statDelta.INT == 4
@@ -361,7 +368,7 @@ it(
         setfenv(1, env)
         setup(env)
 
-        assert(C.Inspect({ kind = "auctions" }).status == "unavailable")
+        assert(ns.Character.Inspect({ kind = "auctions" }).status == "unavailable")
         AuctionFrame = {
             IsShown = function()
                 return true
@@ -385,14 +392,14 @@ it(
         PlaceAuctionBid = function()
             error("must not buy")
         end
-        local d = C.Inspect({ kind = "auctions", args = { itemId = 2589 } }).data
+        local d = ns.Character.Inspect({ kind = "auctions", args = { itemId = 2589 } }).data
         assert(
             d.partial
                 and d.totalSearchResults == 200
                 and d.results[1].unitBuyoutCopper == 50
                 and d.results[1].buyoutCopper == 1000
         )
-        local other = C.Inspect({ kind = "auctions", args = { itemId = 999 } }).data
+        local other = ns.Character.Inspect({ kind = "auctions", args = { itemId = 999 } }).data
         assert(#other.results == 0 and other.partial)
     end
 )
@@ -436,12 +443,12 @@ it("target inspection uses the selected NPC identity and does not fabricate coor
     UnitIsDead = function()
         return false
     end
-    local d = C.Inspect({ kind = "target" }).data
+    local d = ns.Character.Inspect({ kind = "target" }).data
     assert(d.npcId == 456 and d.level == 11 and d.attackable and d.x == nil)
     UnitExists = function()
         return false
     end
-    assert(C.Inspect({ kind = "target" }).status == "unavailable")
+    assert(ns.Character.Inspect({ kind = "target" }).status == "unavailable")
 end)
 
 it("modern auction browse output stays labelled as cached partial data", function()
@@ -468,7 +475,7 @@ it("modern auction browse output stays labelled as cached partial data", functio
             error("must not search")
         end,
     }
-    local d = C.Inspect({ kind = "auctions", args = { itemId = 2589, limit = 1 } }).data
+    local d = ns.Character.Inspect({ kind = "auctions", args = { itemId = 2589, limit = 1 } }).data
     assert(
         d.partial
             and d.loadedResults == 1

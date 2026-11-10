@@ -49,8 +49,8 @@ const sources = {
   },
   optimized: {
     core: read('addon/WispAI/Core.lua'),
-    state: read('addon/WispAI/Downlink.lua'),
-    transport: read('addon/WispAI/Transport.lua'),
+    state: read('addon/WispAI/Transport/Downlink.lua'),
+    transport: read('addon/WispAI/Transport/Transport.lua'),
   },
 };
 
@@ -213,7 +213,7 @@ function benchmarkStep()
  assert(nextTimer,'No timer');now=nextTimer.at
  if nextTimer.period then nextTimer.at=nextTimer.at+nextTimer.period else nextTimer.cancelled=true end
  nextTimer.fn()
- assert(not C.transportStats.error,C.transportStats.error)
+ assert(not ns.transportStats.error,ns.transportStats.error)
 end
 for i=1,128 do local n=string.format('WispAI_B%03d',i);states[n]=true;disk[n]=true end
 for i=1,1024 do local n=string.format('WispAI_S%04d',i);states[n]=true;disk[n]=true end
@@ -240,25 +240,36 @@ C_AddOns.LoadAddOn=function()
  if payloadJSON then WispAI_Receive(payloadJSON)end
  return true
 end
-C={}
+ns={Core = {},
+Chat = {},
+Transport = {},
+Character = {},
+Actions = {},
+Integrations = {},
+ChatHistory = {},
+Settings = {},
+UI = {},
+Inline = {},
+Panels = {},
+Advice = {}}
 `);
   const source = sources[version];
-  run(`assert(load(${JSON.stringify(source.core)}))('WispAI',C)`);
+  run(`assert(load(${JSON.stringify(source.core)}))('WispAI',ns)`);
   // Counter only: the saved pre-optimization function is otherwise unchanged.
   const stateSource =
     version === 'optimized'
       ? source.state
       : source.state.replace('local result = {}', 'local result = {}; cloneCount=cloneCount+1');
-  run(`assert(load(${JSON.stringify(stateSource)}))('WispAI',C)`);
-  run(`assert(load(${JSON.stringify(source.transport)}))('WispAI',C)
-C.session='replay';C.db={drafts={},sound=false};C.active='benchmark'
-local original=C.ReceiveSnapshot
-C.ReceiveSnapshot=function(data)
- local before=C.rev
+  run(`assert(load(${JSON.stringify(stateSource)}))('WispAI',ns)`);
+  run(`assert(load(${JSON.stringify(source.transport)}))('WispAI',ns)
+ns.session='replay';ns.db={drafts={},sound=false};ns.active='benchmark'
+local original=ns.Chat.ReceiveSnapshot
+ns.Chat.ReceiveSnapshot=function(data)
+ local before=ns.rev
  original(data)
- if C.rev~=before then nativeApplied(now,data,C.transportStats.downlinkCopy,cloneCount-lastCopyCount);lastCopyCount=cloneCount end
+ if ns.rev~=before then nativeApplied(now,data,ns.transportStats.downlinkCopy,cloneCount-lastCopyCount);lastCopyCount=cloneCount end
 end
-C.StartTransport()
+ns.Transport.StartTransport()
 `);
   return {
     run,
@@ -343,7 +354,7 @@ function replay(version: Version, fixture: ReplayFixture, bulkAvailable: boolean
         : preferBulkDelivery(prepared.body.length, {
             fragmentMs,
             bulkMs,
-            slotsRemaining: Math.max(0, 1025 - Number(game.evalValue('C.slot'))),
+            slotsRemaining: Math.max(0, 1025 - Number(game.evalValue('ns.slot'))),
           }));
     game.payload(latest);
     const frames = bulk
@@ -444,7 +455,7 @@ function replay(version: Version, fixture: ReplayFixture, bulkAvailable: boolean
     // receipt. This models an already connected client with a loaded history.
     game.payload(fixture.seed);
     if (version === 'legacy') {
-      game.run("C.chats={{id='benchmark',status='working'}}");
+      game.run("ns.chats={{id='benchmark',status='working'}}");
     } else {
       const frame = encodeFrame({
         kind,
@@ -459,25 +470,25 @@ function replay(version: Version, fixture: ReplayFixture, bulkAvailable: boolean
     }
     for (
       let i = 0;
-      i < 5000 && (Number(game.evalValue('C.rev')) !== 1 || (version !== 'legacy' && active));
+      i < 5000 && (Number(game.evalValue('ns.rev')) !== 1 || (version !== 'legacy' && active));
       i++
     ) {
       now = game.step();
       processSaves();
     }
-    assert.equal(Number(game.evalValue('C.rev')), 1, 'Failed warm start');
+    assert.equal(Number(game.evalValue('ns.rev')), 1, 'Failed warm start');
     base = fixture.seed;
     receivedRevision = 1;
     active = undefined;
     latest = undefined;
     const startedAt = now;
-    game.run(`C.slot=${bulkAvailable ? 2 : 1025};C.chats[1].status='idle'`);
+    game.run(`ns.slot=${bulkAvailable ? 2 : 1025};ns.chats[1].status='idle'`);
     game.clearMeasurements();
     consumedSaves = 0;
     dataFrames = dataBytes = controlFrames = compactAcks = rawAcks = bulkPayloadBytes = 0;
     game.set('benchmarkPrompt', fixture.prompt);
     game.run(
-      "C.Send({type='say',chat='benchmark',messageId='benchmark-user',text=benchmarkPrompt})",
+      "ns.Transport.Send({type='say',chat='benchmark',messageId='benchmark-user',text=benchmarkPrompt})",
     );
     let publishedIndex = 0,
       completed = false,
@@ -502,7 +513,7 @@ function replay(version: Version, fixture: ReplayFixture, bulkAvailable: boolean
           }
         }
       }
-      if (version === 'legacy' && !bulkAvailable && game.evalValue('C.exhausted')) {
+      if (version === 'legacy' && !bulkAvailable && game.evalValue('ns.exhausted')) {
         blocked = true;
         break;
       }
@@ -518,7 +529,7 @@ function replay(version: Version, fixture: ReplayFixture, bulkAvailable: boolean
     const firstApplied = game.applied.find((entry) => entry.textBytes > 0);
     if (!blocked) {
       assert.ok(completed && finalApplied, `${version}/${fixture.id} did not complete`);
-      game.run('assert(not C.transportStats.downlinkError,C.transportStats.downlinkError)');
+      game.run('assert(not ns.transportStats.downlinkError,ns.transportStats.downlinkError)');
     }
     return {
       version,

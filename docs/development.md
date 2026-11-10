@@ -8,6 +8,7 @@ Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.
 
 ```sh
 pnpm install --frozen-lockfile
+luarocks --lua-version=5.1 install luacheck 1.2.0-1
 luarocks --lua-version=5.1 install busted 2.3.0-1
 pnpm build
 pnpm check
@@ -56,6 +57,7 @@ exports. This lets a package typecheck before its own build has produced `dist/`
 | `pnpm test:core`        | All app/package TypeScript suites and root integrations, excluding desktop UI |
 | `pnpm test:integration` | Cross-component tests in `tests/`, including Lua/TS transport                 |
 | `pnpm test:addon`       | Busted Lua specs and WoW fixtures in `addon/tests/`                           |
+| `pnpm lint:addon`       | Lua 5.1 conventions and Luacheck against the WoW API globals                  |
 | `pnpm test:ui`          | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)            |
 | `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
@@ -74,6 +76,10 @@ see the CI workflow for their build prerequisites and command. Simulator and nat
 tests keep their existing skips when the required binaries are absent.
 
 ### Lua addon tests
+
+The [addon guide](../addon/README.md) describes subsystem ownership, namespace and
+naming conventions. StyLua formats Lua; `pnpm lint:addon` runs the AST convention
+checks and Luacheck. Install `luacheck 1.2.0-1` with LuaRocks alongside Busted.
 
 The [Markdown parser contract](markdown.md) documents its renderer-independent
 AST, supported product syntax and offline parser checks.
@@ -94,8 +100,9 @@ Busted installed through LuaRocks, real addon files and explicit WoW mocks.
 
 Write addon-only cases in `addon/tests/*_spec.lua`, using Busted's `it`, assertions
 and hooks. `support.lua` creates private WoW globals for each scenario and loads
-the real addon files, including the UI dependency order. The existing WoW API
-stubs remain fixtures; these specs run outside the game.
+the real addon files, including the UI dependency order. A manifest smoke test
+recursively checks every Lua source and loads the real `.toc` in its actual order.
+The existing WoW API stubs remain fixtures; these specs run outside the game.
 
 ```sh
 busted
@@ -104,7 +111,8 @@ busted --filter "settings"
 ```
 
 Run these commands from the repository root; `.busted` selects `addon/tests/`.
-`pnpm test:addon` runs only `busted`; the binary emoji-atlas checks also run in Lua.
+`pnpm test:addon` runs the convention checker's regression tests and Busted;
+the binary emoji-atlas checks also run in Lua.
 `pnpm test:watch` reruns the addon suite when addon files change. Direct Vitest runs
 cover TypeScript suites. Tests exchanging frames between Lua and TypeScript live
 in `tests/addon/` and still use Fengari.
@@ -294,6 +302,6 @@ Vitest projects and native tests must pass before packaging and signing.
 
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
 implement its adapter and readiness checks, register live detection in
-`addon/WispAI/Integrations.lua` / `apps/bridge/src/integration-state.ts`, and test
+`addon/WispAI/Integrations/Integrations.lua` / `apps/bridge/src/integration-state.ts`, and test
 missing/incompatible providers and disabled-tool admission. Integrations supply
 tools; reply panels and automatic suggestions remain separate features.
