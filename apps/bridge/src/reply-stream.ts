@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
 import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';
 import { conversationTitle } from './context.ts';
+import type { ReplyPart } from './reply-tables.ts';
 const keySchema = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
@@ -20,7 +21,9 @@ export class ReplyStream {
   text = '';
   references: ReferenceCatalog = Object.create(null);
   ui: UINode[] = [];
-  parts: ({ type: 'text'; text: string } | { type: 'ui'; id: string })[] = [];
+  parts: ReplyPart[] = [];
+  private rawText = '';
+  recoveredPlainText = false;
   errors: string[] = [];
   finished = false;
   records = 0;
@@ -151,6 +154,7 @@ export class ReplyStream {
     if (this.finished) {
       return;
     }
+    this.rawText += chunk.slice(0, 20000 - this.rawText.length);
     this.buffer += chunk;
     let newline;
     while ((newline = this.buffer.indexOf('\n')) >= 0) {
@@ -166,6 +170,20 @@ export class ReplyStream {
     if (!this.finished) {
       this.line(this.buffer);
       this.buffer = '';
+      // Recover final assistant prose without replaying a turn or interpreting
+      // invented links. Malformed protocol/JSON stays hidden; reasoning is never fed here.
+      if (
+        !this.records &&
+        this.rawText.trim() &&
+        !/(?:^|\n)\s*(?:[[{]|```(?:json|jsonl|ndjson)\b|"(?:type|text|node|key)"\s*:)/i.test(
+          this.rawText,
+        ) &&
+        !/"type"\s*:/.test(this.rawText)
+      ) {
+        this.text = this.rawText.replace(/[\uD800-\uDBFF]$/, '');
+        this.parts = [{ type: 'text', text: this.text }];
+        this.recoveredPlainText = true;
+      }
       this.finished = true;
     }
   }
@@ -237,11 +255,12 @@ export class ReplyStream {
         parts.push({ type: 'text', text: pending });
       }
     }
+    const visibleParts: ReplyPart[] = parts.map((part) =>
+      part.type === 'text' ? { ...part, text: renderText(part.text) } : part,
+    );
     return {
       text: renderText(this.text + pending),
-      parts: parts.map((part) =>
-        part.type === 'text' ? { ...part, text: renderText(part.text) } : part,
-      ),
+      parts: visibleParts,
       references: { ...this.references },
       ui: this.ui.map((node) => ({ ...node })),
       streaming: !this.finished,
@@ -250,6 +269,7 @@ export class ReplyStream {
 }
 
 export class ReplyProjection {
+  sourceRevision = 0;
   kinds = new Map<string, string>();
   streams = new Map<
     string,
@@ -262,6 +282,38 @@ export class ReplyProjection {
       this.streams.set(partId, state);
     }
     return state;
+  }
+  capture(
+    chat: {
+      messages: {
+        id?: string;
+        role: string;
+        text: string;
+        phase?: string;
+        rawReply?: string;
+        streaming?: boolean;
+      }[];
+    },
+    partId: string,
+    value: string | undefined,
+    append: boolean,
+  ) {
+    const id = 'text-' + partId;
+    let message = chat.messages.find((entry) => entry.id === id);
+    if (!message) {
+      message = { id, role: 'assistant', phase: 'reply', text: '', rawReply: '', streaming: true };
+      chat.messages.push(message);
+    }
+    const raw = append
+      ? (message.rawReply ?? '') + (value ?? '')
+      : (value ?? message.rawReply ?? '');
+    if (message.rawReply !== raw || (!append && message.streaming)) {
+      message.rawReply = raw;
+      if (!append) {
+        message.streaming = false;
+      }
+      this.sourceRevision++;
+    }
   }
   flush(
     chat: {
@@ -310,10 +362,7 @@ export class ReplyProjection {
         chat.messages.push(message);
       }
       Object.assign(message, view);
-      if (!view.text && !view.ui.length && state.reply.finished && state.reply.errors.length) {
-        message.role = 'system';
-        message.text = 'The reply could not be displayed. Please try again.';
-      }
+      // Display failures belong to the renderer, never to persisted reply content.
       changed = true;
     }
     return changed;

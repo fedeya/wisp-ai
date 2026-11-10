@@ -46,6 +46,28 @@ test('ordinary chats retain their initial user message', () => {
   expect(projectChats(state).chats[0].messages?.[0].text).toBe('Help me with my rotation.');
 });
 
+test('rendering derives a reply from its original source and ignores an obsolete cached view', () => {
+  const chat = newChat('raw', 'game');
+  const raw =
+    '{"type":"text_delta","text":"Original: \\n\\n| Pieza | Estado |\\n|---|---|\\n| Toga | Equipada |"}';
+  chat.messages.push({
+    role: 'assistant',
+    text: 'Old cached interpretation',
+    rawReply: raw,
+    streaming: false,
+  });
+  const state = createSessionState([chat]);
+  state.activeChat = chat.id;
+  const before = JSON.stringify(chat);
+  const first = projectChats(state).chats[0].messages![0];
+  expect(first.text).toContain('Original:');
+  expect(first.text).not.toContain('Old cached');
+  expect(first.ui?.[0].kind).toBe('table');
+  expect(first).not.toHaveProperty('rawReply');
+  expect(projectChats(state).chats[0].messages![0]).toEqual(first);
+  expect(JSON.stringify(chat)).toBe(before);
+});
+
 test('routine traffic cannot displace ordinary chats and silent runs stay hidden', () => {
   const state = createSessionState();
   const ordinary = newChat('ordinary', 'session', 1);

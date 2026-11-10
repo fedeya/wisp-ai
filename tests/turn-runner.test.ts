@@ -24,6 +24,7 @@ function fixture(titlesEnabled = true) {
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
   const log = vi.fn();
   const flushFirstText = vi.fn();
+  const changed = vi.fn();
   const run = createTurnRunner({
     client,
     models: { models, prepare: async () => {} },
@@ -39,7 +40,7 @@ function fixture(titlesEnabled = true) {
     isStopping: () => false,
     accountBusy: () => false,
     isCurrent: () => current,
-    changed: () => {},
+    changed,
     log,
     flushFirstText,
   });
@@ -51,6 +52,7 @@ function fixture(titlesEnabled = true) {
     models,
     log,
     flushFirstText,
+    changed,
     changeCharacter: () => {
       transport = 'two';
     },
@@ -79,6 +81,34 @@ test('a complete turn projects streamed content and settles once', async () => {
   );
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
+});
+
+test('plain source schedules persistence before a reply can be rendered', async () => {
+  const f = fixture();
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {
+      const before = f.changed.mock.calls.length;
+      yield {
+        type: 'content.delta',
+        data: { partId: 'reply', kind: 'text', delta: 'Primera parte' },
+      };
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+        'Primera parte',
+      );
+      expect(f.changed.mock.calls.length).toBeGreaterThan(before);
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe('');
+      yield {
+        type: 'content.completed',
+        data: { partId: 'reply', kind: 'text', value: 'Primera parte completa' },
+      };
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  }));
+  await f.run(f.chat, 'Question');
+  expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+    'Primera parte completa',
+  );
+  expect(f.send).toHaveBeenCalledTimes(1);
 });
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {

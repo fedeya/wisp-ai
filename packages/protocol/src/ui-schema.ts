@@ -14,6 +14,29 @@ export const uiNode = z.discriminatedUnion('kind', [
   z.object({ ...base, kind: z.literal('column'), title }),
   z.object({ ...base, kind: z.literal('row'), title }),
   z.object({ ...base, kind: z.literal('card'), title }),
+  z
+    .object({
+      ...base,
+      kind: z.literal('table'),
+      title,
+      columns: z
+        .array(
+          z.object({
+            label: z.string().min(1).max(100),
+            align: z.enum(['left', 'center', 'right']).optional(),
+          }),
+        )
+        .min(2)
+        .max(6),
+      rows: z
+        .array(z.array(z.string().max(300)).min(2).max(6))
+        .min(1)
+        .max(20),
+    })
+    .refine(
+      (node) => node.rows.every((row) => row.length === node.columns.length),
+      'Table rows must match the columns',
+    ),
   z.object({
     ...base,
     kind: z.literal('comparison'),

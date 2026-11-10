@@ -271,7 +271,7 @@ export function withConversationHistory(input: string, messages: Message[]): str
 }
 export function visibleUserText(input: string) {
   const match =
-    /^<game_context>\n[^\n]*\n<\/game_context>\n\n<conversation_context>\n[^\n]*\n<\/conversation_context>\n\n(?:<linked_references>\n[^\n]*\n<\/linked_references>\n\n)?(?:<last_ui_result>\n[^\n]*\n<\/last_ui_result>\n\n)?(?:<historical_conversation>\n[^\n]*\n<\/historical_conversation>\n\n)?<user_message>\n([^\n]*)\n<\/user_message>$/.exec(
+    /^<game_context>\n[^\n]*\n<\/game_context>\n\n(?:<integrations_context>\n[^\n]*\n<\/integrations_context>\n\n)?<conversation_context>\n[^\n]*\n<\/conversation_context>\n\n(?:<linked_references>\n[^\n]*\n<\/linked_references>\n\n)?(?:<last_ui_result>\n[^\n]*\n<\/last_ui_result>\n\n)?(?:<historical_conversation>\n[^\n]*\n<\/historical_conversation>\n\n)?<user_message>\n([^\n]*)\n<\/user_message>$/.exec(
       input,
     );
   if (match) {

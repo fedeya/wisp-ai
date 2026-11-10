@@ -116,7 +116,9 @@ export function createTurnRunner(deps: TurnDependencies) {
       changed();
       for await (const event of response.stream({ signal: controller.signal })) {
         assertCurrent();
-        if (applyEvent(chat, event, parts) && !chat.proactive) {
+        const sourceRevision = parts.sourceRevision;
+        const visibleChanged = applyEvent(chat, event, parts);
+        if (visibleChanged && !chat.proactive) {
           if (
             firstTextMs === undefined &&
             [...parts.streams.values()].some((state) => state.reply.view().text)
@@ -124,6 +126,8 @@ export function createTurnRunner(deps: TurnDependencies) {
             firstTextMs = Math.round(performance.now() - started);
             deps.flushFirstText?.();
           }
+        }
+        if (visibleChanged || parts.sourceRevision !== sourceRevision) {
           chat.lastActivityAt = Date.now();
           changed();
         }
@@ -195,6 +199,9 @@ export function createTurnRunner(deps: TurnDependencies) {
         }
         for (const state of parts.streams.values()) {
           state.reply.finish();
+          if (state.reply.recoveredPlainText) {
+            log('Recovered plain-text reply: ' + chat.id);
+          }
         }
         if (isCurrent(chat) && currentTransport() === owner) {
           parts.flush(chat, Date.now(), true);
