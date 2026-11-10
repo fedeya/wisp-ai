@@ -37,6 +37,7 @@ export function encodeRun(
 ): RunRow {
   return {
     id,
+    instanceId: null,
     characterKey,
     routineId,
     title,
@@ -50,6 +51,7 @@ export function encodeRun(
   };
 }
 export function decodeRun({
+  instanceId: _instanceId,
   sortIndex: _sortIndex,
   extras,
   finishedAt,

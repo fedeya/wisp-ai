@@ -89,6 +89,7 @@ export function importRoutines(db: Orm, value: { routines: Routine[]; runs: Rout
       sortIndex,
     ) => ({
       id,
+      instanceId: null,
       characterKey,
       routineId,
       title,

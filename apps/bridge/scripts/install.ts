@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { SLOT_COUNT, BIT_COUNT, luaJson } from '@wisp/protocol/protocol';
 import { migrateGameSaves, retireLegacyAddons } from '../src/rename-migration.ts';
 import { appPaths } from '../src/app-paths.ts';
+import { checkDevelopmentTarget } from '../src/development-target.ts';
 const root = process.env.WISP_RESOURCE_ROOT || fileURLToPath(new URL('../../../', import.meta.url));
 const paths = appPaths(root);
 await mkdir(paths.runtime, { recursive: true });
@@ -12,6 +13,7 @@ if (!wow) {
   throw Error('Choose the WoW client folder.');
 }
 await access(path.join(wow, 'Wow.exe'));
+await checkDevelopmentTarget(wow);
 const addons = path.join(wow, 'Interface', 'AddOns');
 await mkdir(addons, { recursive: true });
 await migrateGameSaves(wow);

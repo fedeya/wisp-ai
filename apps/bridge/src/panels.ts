@@ -11,6 +11,9 @@ export class PanelStore {
   }
   async load() {
     await this.database.initializeProducts();
+    this.refresh();
+  }
+  refresh() {
     this.panels = readPanels(this.database.orm);
   }
   list(characterKey: string) {

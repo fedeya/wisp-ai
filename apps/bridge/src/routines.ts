@@ -9,7 +9,7 @@ import {
 } from '@wisp/protocol/routines';
 import type { z } from 'zod';
 import { ApplicationDatabase, type ApplicationOrm } from './db/application-database.ts';
-import { routines, routineRuns } from './db/schema.ts';
+import { routines, routineRuns, routineInstanceState } from './db/schema.ts';
 import {
   decodeRoutine,
   decodeRun,
@@ -26,8 +26,10 @@ interface HistoryOptions {
 }
 export class RoutineStore {
   readonly database: ApplicationDatabase;
-  constructor(database: ApplicationDatabase) {
+  readonly instanceId?: string;
+  constructor(database: ApplicationDatabase, instanceId?: string) {
     this.database = database;
+    this.instanceId = instanceId;
   }
   async load() {
     await this.database.initializeProducts();
@@ -35,7 +37,14 @@ export class RoutineStore {
       db
         .update(routineRuns)
         .set({ status: 'interrupted', finishedAt: Date.now() })
-        .where(eq(routineRuns.status, 'running'))
+        .where(
+          and(
+            eq(routineRuns.status, 'running'),
+            this.instanceId
+              ? eq(routineRuns.instanceId, this.instanceId)
+              : sql`${routineRuns.instanceId} IS NULL`,
+          ),
+        )
         .run(),
     );
   }
@@ -46,7 +55,7 @@ export class RoutineStore {
       .where(characterKey === undefined ? undefined : eq(routines.characterKey, characterKey))
       .orderBy(routines.sortIndex)
       .all()
-      .map(decodeRoutine);
+      .map((row) => this.decode(this.database.orm, row));
   }
   history({
     characterKey,
@@ -59,6 +68,9 @@ export class RoutineStore {
       .from(routineRuns)
       .where(
         and(
+          this.instanceId
+            ? eq(routineRuns.instanceId, this.instanceId)
+            : sql`${routineRuns.instanceId} IS NULL`,
           characterKey === undefined ? undefined : eq(routineRuns.characterKey, characterKey),
           routineId === undefined ? undefined : eq(routineRuns.routineId, routineId),
           includeSilent ? undefined : ne(routineRuns.status, 'no_tip'),
@@ -77,6 +89,9 @@ export class RoutineStore {
       .where(
         and(
           eq(routineRuns.id, id),
+          this.instanceId
+            ? eq(routineRuns.instanceId, this.instanceId)
+            : sql`${routineRuns.instanceId} IS NULL`,
           characterKey === undefined ? undefined : eq(routineRuns.characterKey, characterKey),
         ),
       )
@@ -89,6 +104,63 @@ export class RoutineStore {
       .from(routines)
       .where(and(eq(routines.characterKey, characterKey), eq(routines.id, id)))
       .get();
+  }
+  private decode(db: ApplicationOrm, row: RoutineRow): Routine {
+    const definition = decodeRoutine(row);
+    if (!this.instanceId) {
+      return definition;
+    }
+    const state = db
+      .select()
+      .from(routineInstanceState)
+      .where(
+        and(
+          eq(routineInstanceState.instanceId, this.instanceId),
+          eq(routineInstanceState.characterKey, row.characterKey),
+          eq(routineInstanceState.routineId, row.id),
+        ),
+      )
+      .get();
+    if (!state || state.definitionUpdatedAt !== row.updatedAt) {
+      return {
+        ...definition,
+        pending: undefined,
+        lastStartedAt: undefined,
+      };
+    }
+    return {
+      ...definition,
+      enabled: definition.enabled && !state.completedOnce,
+      nextAt: state.nextAt,
+      lastStartedAt: state.lastStartedAt ?? undefined,
+      pending: state.pending ? JSON.parse(state.pending) : undefined,
+    };
+  }
+  private execution(db: ApplicationOrm, row: RoutineRow, value: Routine) {
+    if (!this.instanceId) {
+      return this.update(db, row, value);
+    }
+    const state = {
+      instanceId: this.instanceId,
+      characterKey: row.characterKey,
+      routineId: row.id,
+      definitionUpdatedAt: row.updatedAt,
+      nextAt: value.nextAt,
+      lastStartedAt: value.lastStartedAt ?? null,
+      pending: value.pending ? JSON.stringify(value.pending) : null,
+      completedOnce: row.enabled && !value.enabled,
+    };
+    db.insert(routineInstanceState)
+      .values(state)
+      .onConflictDoUpdate({
+        target: [
+          routineInstanceState.instanceId,
+          routineInstanceState.characterKey,
+          routineInstanceState.routineId,
+        ],
+        set: state,
+      })
+      .run();
   }
   private update(db: ApplicationOrm, row: RoutineRow, value: Routine) {
     db.update(routines)
@@ -169,9 +241,9 @@ export class RoutineStore {
         .where(and(eq(routines.characterKey, characterKey), eq(routines.enabled, true)))
         .all();
       for (const row of rows) {
-        const r = decodeRoutine(row);
+        const r = this.decode(db, row);
         if (r.triggers.some((t) => matchesRoutineEvent(t, event))) {
-          this.update(db, row, {
+          this.execution(db, row, {
             ...r,
             pending: { event: event.event, values: event.values, at: now },
           });
@@ -181,27 +253,48 @@ export class RoutineStore {
   }
   claim(characterKey: string, now = Date.now()) {
     return this.transact((db) => {
-      const row = db
-        .select()
-        .from(routines)
-        .where(
-          and(
-            eq(routines.characterKey, characterKey),
-            eq(routines.enabled, true),
-            or(
-              lte(routines.nextAt, now),
-              sql`json_type(${routines.content}, '$.pending') = 'object'`,
-            ),
-            sql`${now} - coalesce(json_extract(${routines.content}, '$.lastStartedAt'), 0) >= json_extract(${routines.content}, '$.cooldownSeconds') * 1000`,
-          ),
-        )
-        .orderBy(asc(sql`json_extract(${routines.content}, '$.lastStartedAt')`), routines.sortIndex)
-        .limit(1)
-        .get();
+      const row = this.instanceId
+        ? db
+            .select()
+            .from(routines)
+            .where(and(eq(routines.characterKey, characterKey), eq(routines.enabled, true)))
+            .all()
+            .map((row) => ({ row, routine: this.decode(db, row) }))
+            .filter(
+              ({ routine: r }) =>
+                r.enabled &&
+                (r.nextAt <= now || r.pending) &&
+                now - (r.lastStartedAt ?? 0) >= r.cooldownSeconds * 1000,
+            )
+            .sort(
+              (a, b) =>
+                (a.routine.lastStartedAt ?? 0) - (b.routine.lastStartedAt ?? 0) ||
+                a.row.sortIndex - b.row.sortIndex,
+            )[0]?.row
+        : db
+            .select()
+            .from(routines)
+            .where(
+              and(
+                eq(routines.characterKey, characterKey),
+                eq(routines.enabled, true),
+                or(
+                  lte(routines.nextAt, now),
+                  sql`json_type(${routines.content}, '$.pending') = 'object'`,
+                ),
+                sql`${now} - coalesce(json_extract(${routines.content}, '$.lastStartedAt'), 0) >= json_extract(${routines.content}, '$.cooldownSeconds') * 1000`,
+              ),
+            )
+            .orderBy(
+              asc(sql`json_extract(${routines.content}, '$.lastStartedAt')`),
+              routines.sortIndex,
+            )
+            .limit(1)
+            .get();
       if (!row) {
         return null;
       }
-      const r = decodeRoutine(row);
+      const r = this.decode(db, row);
       const event = r.pending || { event: 'interval', values: {}, at: now };
       const next = {
         ...r,
@@ -209,7 +302,7 @@ export class RoutineStore {
         lastStartedAt: now,
         nextAt: now + this.interval(r.triggers),
       };
-      this.update(db, row, next);
+      this.execution(db, row, next);
       const run: RoutineRun = {
         id: 'routine-' + randomUUID(),
         routineId: r.id,
@@ -225,7 +318,9 @@ export class RoutineStore {
           .from(routineRuns)
           .get()!.next,
       );
-      db.insert(routineRuns).values(encodeRun(run, position)).run();
+      db.insert(routineRuns)
+        .values({ ...encodeRun(run, position), instanceId: this.instanceId ?? null })
+        .run();
       const previous = db
         .select({ summary: routineRuns.summary })
         .from(routineRuns)
@@ -234,6 +329,9 @@ export class RoutineStore {
             eq(routineRuns.characterKey, characterKey),
             eq(routineRuns.routineId, r.id),
             eq(routineRuns.status, 'done'),
+            this.instanceId
+              ? eq(routineRuns.instanceId, this.instanceId)
+              : sql`${routineRuns.instanceId} IS NULL`,
           ),
         )
         .orderBy(desc(routineRuns.sortIndex))
@@ -256,9 +354,9 @@ export class RoutineStore {
         .where(eq(routineRuns.id, id))
         .run();
       const row = this.row(db, run.characterKey, run.routineId);
-      const routine = row && decodeRoutine(row);
+      const routine = row && this.decode(db, row);
       if (status === 'done' && row && routine?.once && routine.updatedAt <= run.startedAt) {
-        this.update(db, row, { ...routine, enabled: false, pending: undefined });
+        this.execution(db, row, { ...routine, enabled: false, pending: undefined });
       }
     });
   }
@@ -269,9 +367,9 @@ export class RoutineStore {
         return;
       }
       const row = this.row(db, run.characterKey, run.routineId);
-      const routine = row && decodeRoutine(row);
+      const routine = row && this.decode(db, row);
       if (row && routine && routine.updatedAt <= run.startedAt) {
-        this.update(db, row, {
+        this.execution(db, row, {
           ...routine,
           pending: routine.pending ?? event,
           lastStartedAt: undefined,

@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { migrateDatabase } from './migrate.ts';
 import { preparePrivateDatabase } from './private-file.ts';
-import { importProductData } from './product-store.ts';
 
 export type ApplicationOrm = Omit<ReturnType<typeof migrateDatabase>, '$client'>;
 
@@ -42,15 +41,35 @@ export class ApplicationDatabase {
   private async open() {
     await preparePrivateDatabase(this.file);
     this.client = new DatabaseSync(this.file, { timeout: 5000 });
-    this.client.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+    this.client.exec('PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;');
+    // Changing a new database's journal mode can report BUSY immediately,
+    // despite busy_timeout, when simultaneous first launches compete for it.
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      try {
+        this.client.exec('PRAGMA journal_mode=WAL;');
+        break;
+      } catch (error) {
+        const code =
+          error instanceof Error && 'errcode' in error && typeof error.errcode === 'number'
+            ? error.errcode & 0xff
+            : 0;
+        if ((code !== 5 && code !== 6) || Date.now() >= deadline) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    }
     this.db = migrateDatabase(this.client);
   }
   async initializeProducts() {
     await this.initialize();
-    await (this.importing ??= importProductData(this.file, this.orm).catch((error) => {
-      this.importing = undefined;
-      throw error;
-    }));
+    await (this.importing ??= import('./product-store.ts')
+      .then(({ importProductData }) => importProductData(this.file, this.orm))
+      .catch((error) => {
+        this.importing = undefined;
+        throw error;
+      }));
   }
   async transaction<T>(work: (db: ApplicationOrm) => T): Promise<T> {
     await this.initialize();

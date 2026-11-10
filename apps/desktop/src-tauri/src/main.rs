@@ -37,6 +37,11 @@ fn hidden(command: &mut Command) {
 
 impl Host {
     fn node(&self) -> PathBuf {
+        if cfg!(debug_assertions) {
+            if let Some(node) = std::env::var_os("WISP_DEV_NODE") {
+                return PathBuf::from(node);
+            }
+        }
         let engine = self.payload.join("wisp-engine.exe");
         if engine.is_file() {
             return engine;
@@ -48,11 +53,15 @@ impl Host {
     fn command(&self, script: &str) -> Result<Command, String> {
         let mut command = Command::new(self.node());
         command
-            .arg(if self.payload.join("wisp-engine.exe").is_file() {
-                PathBuf::from(script)
-            } else {
-                self.payload.join(script)
-            })
+            .arg(
+                if cfg!(debug_assertions) && std::env::var_os("WISP_DEV_NODE").is_some() {
+                    self.payload.join("apps/bridge").join(script)
+                } else if self.payload.join("wisp-engine.exe").is_file() {
+                    PathBuf::from(script)
+                } else {
+                    self.payload.join(script)
+                },
+            )
             .current_dir(&self.payload)
             .env("WISP_DATA_DIR", &self.data)
             .env("WISP_RESOURCE_ROOT", &self.payload)
@@ -538,7 +547,9 @@ fn main() {
             updates::install_update
         ])
         .setup(|app| {
-            let data = app.path().app_data_dir()?;
+            let data = std::env::var_os("WISP_DATA_DIR")
+                .map(PathBuf::from)
+                .unwrap_or(app.path().app_data_dir()?);
             update_trace::append(&data, "app-opened");
             fs::create_dir_all(data.join("runtime"))?;
             let payload = std::env::var_os("WISP_PAYLOAD_ROOT")
@@ -560,7 +571,7 @@ fn main() {
             let menu = tauri::menu::Menu::with_items(app, &[&show, &exit])?;
             tauri::tray::TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Wisp AI")
+                .tooltip(app.config().product_name.as_deref().unwrap_or("Wisp AI"))
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {

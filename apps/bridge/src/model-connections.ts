@@ -44,12 +44,15 @@ export class ModelConnections implements ModelCatalog {
     this.fetcher = fetcher;
   }
   async load() {
-    this.connections = await readJson(this.file, z.array(connectionConfig), () => []);
-    for (const connection of this.connections) {
+    const connections = await readJson(this.file, z.array(connectionConfig), () => []);
+    const keys = new Set<string>();
+    for (const connection of connections) {
       if (await this.vault.read(this.key(connection.id))) {
-        this.keys.add(connection.id);
+        keys.add(connection.id);
       }
     }
+    this.connections = connections;
+    this.keys = keys;
   }
   private key(id: string) {
     return 'ai-connection:' + id;
@@ -101,6 +104,15 @@ export class ModelConnections implements ModelCatalog {
     return key;
   }
   async save(raw: unknown) {
+    if (!this.vault.exclusive) {
+      return this.saveCurrent(raw);
+    }
+    return this.vault.exclusive('models', async () => {
+      await this.load();
+      return this.saveCurrent(raw);
+    });
+  }
+  private async saveCurrent(raw: unknown) {
     const input = connectionSetup.parse(raw);
     if (input.id && this.get(input.id).provider !== input.provider) {
       throw Error('Create a new connection to change provider.');
@@ -142,6 +154,15 @@ export class ModelConnections implements ModelCatalog {
     return { id };
   }
   async remove(id: string) {
+    if (!this.vault.exclusive) {
+      return this.removeCurrent(id);
+    }
+    return this.vault.exclusive('models', async () => {
+      await this.load();
+      return this.removeCurrent(id);
+    });
+  }
+  private async removeCurrent(id: string) {
     this.get(id);
     const previous = await this.vault.read(this.key(id));
     await this.vault.write(this.key(id), '');

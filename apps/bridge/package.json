@@ -62,7 +62,10 @@
     "./runtime-resources": "./src/runtime-resources.ts",
     "./chat": "./src/chat.ts",
     "./model-connections": "./src/model-connections.ts",
-    "./web-search": "./src/web-search.ts"
+    "./web-search": "./src/web-search.ts",
+    "./workspace-chats": "./src/workspace-chats.ts",
+    "./shared-lock": "./src/shared-lock.ts",
+    "./development-target": "./src/development-target.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",

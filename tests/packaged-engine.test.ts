@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { ChatStore, conversationInstanceId } from '@wisp/bridge/chat-store';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { migrationsFolder } from '@wisp/bridge/db/migrate';
 
 const exec = promisify(execFile);
 test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
@@ -106,7 +107,16 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
-        expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+        expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+          (await readdir(migrationsFolder)).length,
+        );
+        expect(
+          db
+            .prepare(
+              "SELECT name FROM sqlite_master WHERE name IN ('workspace_drafts', 'routine_instance_state') ORDER BY name",
+            )
+            .all(),
+        ).toEqual([{ name: 'routine_instance_state' }, { name: 'workspace_drafts' }]);
         expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
         expect(
           db

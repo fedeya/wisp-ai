@@ -12,13 +12,46 @@ import { migrateDatabase, migrationsFolder } from '@wisp/bridge/db/migrate';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { ChatStore } from '@wisp/bridge/chat-store';
 
+const migrationCount = (await readdir(migrationsFolder)).length;
+
+test('upgrading the released initial schema preserves history and legacy routine runs', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-workspace-upgrade-'));
+  const db = new DatabaseSync(path.join(root, 'wisp.sqlite'));
+  try {
+    const initial = (await readdir(migrationsFolder)).sort()[0];
+    const folder = path.join(root, 'migrations');
+    await cp(path.join(migrationsFolder, initial), path.join(folder, initial), { recursive: true });
+    migrateDatabase(db, folder);
+    db.exec(`INSERT INTO chats(id,sort_index,title,status,revision,extras) VALUES('keep',0,'History','done',4,'{"activity":[]}');
+      INSERT INTO messages(id,chat_id,position,role,text,extras) VALUES('message','keep',0,'user','Keep this','{}');
+      INSERT INTO routine_runs(id,character_key,routine_id,sort_index,title,started_at,event,status,extras) VALUES('run','mage','routine',0,'Run',1,'level_up','done','{}');`);
+    const chats = db.prepare('SELECT * FROM chats').all(),
+      messages = db.prepare('SELECT * FROM messages').all();
+    migrateDatabase(db);
+    expect(db.prepare('SELECT * FROM chats').all()).toEqual(chats);
+    expect(db.prepare('SELECT * FROM messages').all()).toEqual(messages);
+    expect(db.prepare('SELECT id, status, instance_id FROM routine_runs').get()).toEqual({
+      id: 'run',
+      status: 'done',
+      instance_id: null,
+    });
+    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrationCount,
+    );
+  } finally {
+    db.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('the official Drizzle migrator creates the complete schema and shares its journal with Wisp', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-migrations-'));
   const file = path.join(root, 'wisp.sqlite');
   const database = new DatabaseSync(file);
   try {
     const names = (await readdir(migrationsFolder)).sort();
-    expect(names).toHaveLength(1);
+    expect(names).toHaveLength(2);
     expect(names[0]).toMatch(/_initial$/);
     migrateDatabase(database);
     const tables = database
@@ -34,8 +67,10 @@ test('the official Drizzle migrator creates the complete schema and shares its j
       'messages',
       'metadata',
       'panels',
+      'routine_instance_state',
       'routine_runs',
       'routines',
+      'workspace_drafts',
     ]);
     expect(
       tables
@@ -57,7 +92,9 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     migrate(drizzle({ client: database }), { migrationsFolder });
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
     expect(database.prepare('SELECT role, text FROM messages').get()).toEqual(chat.messages[0]);
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrationCount,
+    );
     const folder = path.join(root, 'migrations');
     await cp(migrationsFolder, folder, { recursive: true });
     const pending = path.join(folder, '20980101000000_next');
@@ -68,7 +105,9 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     );
     migrateDatabase(database, folder);
     migrate(drizzle({ client: database }), { migrationsFolder: folder });
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(2);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrationCount + 1,
+    );
     const failing = path.join(folder, '20990101000000_failure');
     await mkdir(failing);
     await writeFile(
@@ -79,7 +118,9 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     expect(
       database.prepare("SELECT name FROM sqlite_master WHERE name='should_rollback'").get(),
     ).toBeUndefined();
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(2);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrationCount + 1,
+    );
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
   } finally {
     database.close();
@@ -106,7 +147,9 @@ test('a failed initial migration rolls back every table and can retry', async ()
     expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(0);
     migrateDatabase(database);
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrationCount,
+    );
   } finally {
     database.close();
     await rm(root, { recursive: true, force: true });
@@ -156,7 +199,9 @@ test('startup succeeds when another connection commits after Drizzle reads the e
     };
     migrateDatabase(first);
     expect(competingStartup).toBe(true);
-    expect(first.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+    expect(first.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrationCount,
+    );
     expect(first.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   } finally {
     first.close();

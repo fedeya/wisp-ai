@@ -31,7 +31,8 @@
     "test:core": "turbo run test --filter=@wisp/tests",
     "test:addon": "turbo run test --filter=@wisp/addon",
     "test:watch": "turbo watch test",
-    "typecheck:root": "tsc --noEmit"
+    "typecheck:root": "tsc --noEmit",
+    "dev:instance": "node scripts/dev-instance.ts"
   },
   "devDependencies": {
     "@johnnymorganz/stylua-bin": "2.6.0",

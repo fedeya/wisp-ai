@@ -37,6 +37,86 @@ async function fixture() {
   return { dataDirectory, options, child: () => child };
 }
 
+test(
+  'two development runtimes share history live with separate ports, tokens and engine directories',
+  { timeout: 20000 },
+  async () => {
+    const shared = await mkdtemp(path.join(tmpdir(), 'wisp-shared-runtime-'));
+    const a = await fixture(),
+      b = await fixture();
+    const origins: string[] = [],
+      engineRoots: string[] = [],
+      evePorts: number[] = [];
+    for (const f of [a, b]) {
+      const start = f.options.startAgent!;
+      f.options.startAgent = (options) => {
+        origins.push(options.environment.WOW_BRIDGE_URL!);
+        engineRoots.push(options.root);
+        evePorts.push(options.port!);
+        return start(options);
+      };
+    }
+    let first: Awaited<ReturnType<typeof startBridge>> | undefined;
+    let second: Awaited<ReturnType<typeof startBridge>> | undefined;
+    vi.stubEnv('WISP_SHARED_DATA_DIR', shared);
+    try {
+      vi.stubEnv('WISP_EVE_PORT', '51001');
+      first = await startBridge(a.options);
+      vi.stubEnv('WISP_EVE_PORT', '51002');
+      second = await startBridge(b.options);
+      const identityA = JSON.parse(
+        await readFile(path.join(a.dataDirectory, 'runtime/desktop.json'), 'utf8'),
+      );
+      const identityB = JSON.parse(
+        await readFile(path.join(b.dataDirectory, 'runtime/desktop.json'), 'utf8'),
+      );
+      expect(identityA.port).not.toBe(identityB.port);
+      expect(identityA.token).not.toBe(identityB.token);
+      expect(origins[0]).not.toBe(origins[1]);
+      expect(engineRoots[0]).not.toBe(engineRoots[1]);
+      expect(evePorts).toEqual([51001, 51002]);
+      first.state.chats.push({
+        ...newChat('shared-chat', 'game-a'),
+        status: 'done',
+        eveId: 'private-a',
+        messages: [{ role: 'user', text: 'From A' }],
+      });
+      first.receive(packetSchema.parse({ type: 'hello', session: 'game-a', seq: 1, at: 1 }));
+      await vi.waitFor(
+        () =>
+          expect(second!.state.chats.find((c) => c.id === 'shared-chat')?.messages[0].text).toBe(
+            'From A',
+          ),
+        { timeout: 5000 },
+      );
+      expect(second.state.chats[0].eveId).toBeUndefined();
+      expect(second.state.activeTransport).toBe('');
+      second.state.chats[0].messages.push({ role: 'assistant', text: 'From B' });
+      second.receive(packetSchema.parse({ type: 'hello', session: 'game-b', seq: 1, at: 1 }));
+      await vi.waitFor(
+        () =>
+          expect(
+            first!.state.chats.find((c) => c.id === 'shared-chat')?.messages.at(-1)?.text,
+          ).toBe('From B'),
+        { timeout: 5000 },
+      );
+      await first.stop();
+      first = undefined;
+      const response = await fetch(`http://127.0.0.1:${identityB.port}/status`, {
+        headers: { authorization: 'Bearer ' + identityB.token },
+      });
+      expect(response.ok).toBe(true);
+    } finally {
+      await first?.stop();
+      await second?.stop();
+      vi.unstubAllEnvs();
+      for (const directory of [a.dataDirectory, b.dataDirectory, shared]) {
+        await rm(directory, { recursive: true, force: true });
+      }
+    }
+  },
+);
+
 test('a fresh addon installation starts before a default model is selected', async () => {
   const f = await fixture();
   const config = { wow: path.join(f.dataDirectory, 'wow'), model: '' };

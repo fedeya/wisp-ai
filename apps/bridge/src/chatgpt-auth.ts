@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypt
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
+import { isDeepStrictEqual } from 'node:util';
 import { z } from 'zod';
 import type { SecretVault } from './secret-vault.ts';
 import { accountModel, type AccountModel, type AccountModelInput } from './chat-model.ts';
@@ -62,6 +63,7 @@ export class ChatGPTAuth {
   fetcher: typeof fetch;
   now: () => number;
   saved: Saved = { profiles: [] };
+  private persisted: Saved = { profiles: [] };
   hostId = '';
   pending?: Pending;
   revision = 0;
@@ -105,9 +107,40 @@ export class ChatGPTAuth {
     if (raw) {
       this.saved = savedSchema.parse(JSON.parse(raw));
     }
+    this.persisted = structuredClone(this.saved);
+  }
+  private exclusive<T>(work: () => Promise<T>) {
+    return this.vault.exclusive ? this.vault.exclusive('models', work) : work();
+  }
+  async reloadAccounts() {
+    const raw = await this.vault.read('chatgpt:accounts');
+    const next: Saved = raw ? savedSchema.parse(JSON.parse(raw)) : { profiles: [] };
+    if (!isDeepStrictEqual(this.saved, next)) {
+      this.modelsCache = undefined;
+      this.revision++;
+    }
+    this.saved = next;
+    this.persisted = structuredClone(this.saved);
   }
   private async persist() {
-    await this.vault.write('chatgpt:accounts', JSON.stringify(this.saved));
+    await this.exclusive(async () => {
+      if (this.vault.exclusive) {
+        const raw = await this.vault.read('chatgpt:accounts');
+        const current: Saved = raw ? savedSchema.parse(JSON.parse(raw)) : { profiles: [] };
+        const previous = new Map(this.persisted.profiles.map((p) => [p.id, p]));
+        for (const profile of this.saved.profiles) {
+          if (!isDeepStrictEqual(profile, previous.get(profile.id))) {
+            current.profiles = [...current.profiles.filter((p) => p.id !== profile.id), profile];
+          }
+        }
+        if (this.saved.activeId !== this.persisted.activeId) {
+          current.activeId = this.saved.activeId;
+        }
+        this.saved = current;
+      }
+      await this.vault.write('chatgpt:accounts', JSON.stringify(this.saved));
+      this.persisted = structuredClone(this.saved);
+    });
     this.revision++;
     this.modelsCache = undefined;
   }
@@ -465,6 +498,15 @@ export class ChatGPTAuth {
     return this.state();
   }
   async accessToken(rejectedToken?: string): Promise<string> {
+    if (!this.vault.exclusive) {
+      return this.currentAccessToken(rejectedToken);
+    }
+    return this.exclusive(async () => {
+      await this.reloadAccounts();
+      return this.currentAccessToken(rejectedToken);
+    });
+  }
+  private async currentAccessToken(rejectedToken?: string): Promise<string> {
     if (this.signingOut) {
       throw new ChatGPTAuthError('Wisp is disconnecting.');
     }
@@ -528,6 +570,14 @@ export class ChatGPTAuth {
   }
   async disconnect() {
     await this.cancel();
+    return this.exclusive(async () => {
+      if (this.vault.exclusive) {
+        await this.reloadAccounts();
+      }
+      return this.disconnectCurrent();
+    });
+  }
+  private async disconnectCurrent() {
     this.signingOut = true;
     const profile = this.current();
     let confirmed = true;

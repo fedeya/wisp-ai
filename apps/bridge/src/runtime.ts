@@ -20,6 +20,9 @@ import { Client } from 'eve/client';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { DiskTransport } from './transport.ts';
 import { ChatStore } from './chat-store.ts';
+import { WorkspaceChats } from './workspace-chats.ts';
+import { checkDevelopmentTarget } from './development-target.ts';
+import { sharedLock } from './shared-lock.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './turn-runner.ts';
@@ -33,7 +36,7 @@ import { SnapshotGate } from './snapshots.ts';
 import { PanelStore } from './panels.ts';
 import { McpManager } from './mcp-manager.ts';
 import { McpRelay } from './mcp-relay.ts';
-import { NativeVault, type SecretVault } from './secret-vault.ts';
+import { NativeVault, SharedModelVault, type SecretVault } from './secret-vault.ts';
 import { startDesktopServer } from './desktop-server.ts';
 import { RoutineStore } from './routines.ts';
 import { routineEvents } from '@wisp/protocol/routines';
@@ -69,10 +72,12 @@ export async function startBridge(options: BridgeOptions = {}) {
       .then((metadata) => metadata.version)
       .catch(() => 'unknown');
     const runtime = paths.runtime;
+    const sharedRoot = process.env.WISP_SHARED_DATA_DIR;
+    const sharedRuntime = sharedRoot ? path.join(sharedRoot, 'runtime') : runtime;
     const simulator = new Simulator(ROOT, runtime);
     await prepareEngine(paths.agent, paths.engine);
     await mkdir(runtime, { recursive: true });
-    const databaseFile = applicationDatabaseFile(runtime);
+    const databaseFile = applicationDatabaseFile(sharedRuntime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
     resources.defer(() => applicationDatabase.close());
     const memoryStore = new MemoryStore(applicationDatabase);
@@ -104,10 +109,11 @@ export async function startBridge(options: BridgeOptions = {}) {
         throw Error('Choose a WoW folder and install the addon first.');
       },
     );
+    await checkDevelopmentTarget(config.wow);
     const mcpFile = config.mcpConfig
       ? path.resolve(paths.dataRoot, config.mcpConfig)
       : path.join(runtime, 'mcp.json');
-    const vault =
+    const localVault =
       options.vault ||
       new NativeVault(
         process.env.WISP_DESKTOP_EXE ||
@@ -121,12 +127,29 @@ export async function startBridge(options: BridgeOptions = {}) {
             process.platform === 'win32' ? 'wisp.exe' : 'wisp',
           ),
       );
+    const vault: SecretVault =
+      sharedRoot && !options.vault
+        ? new SharedModelVault(
+            localVault,
+            new NativeVault((localVault as NativeVault).executable, sharedRoot),
+            sharedLock(applicationDatabase),
+          )
+        : localVault;
     const mcpManager = new McpManager(mcpFile, ROOT, vault);
     await mcpManager.load();
     resources.defer(() => mcpManager.close());
-    const auth = new ChatGPTAuth(runtime, vault);
-    await auth.load();
-    const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
+    const auth = new ChatGPTAuth(sharedRuntime, vault);
+    await mkdir(sharedRuntime, { recursive: true });
+    if (vault.exclusive) {
+      await vault.exclusive('models', () => auth.load());
+    } else {
+      await auth.load();
+    }
+    const connections = new ModelConnections(
+      path.join(sharedRuntime, 'connections.json'),
+      vault,
+      auth,
+    );
     await connections.load();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     await webSearch.load();
@@ -151,7 +174,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const database = new TheWoWDB();
     const panelStore = new PanelStore(applicationDatabase);
     await panelStore.load();
-    const routineStore = new RoutineStore(applicationDatabase);
+    const routineStore = new RoutineStore(applicationDatabase, sharedRoot ? runtime : undefined);
     await routineStore.load();
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
     await capabilitySettings.load();
@@ -221,9 +244,17 @@ export async function startBridge(options: BridgeOptions = {}) {
         (!tool || capabilitySettings.enabled('mcp_tool:' + name + ':' + tool)),
     );
     resources.defer(() => mcpRelay.close());
-    const chatStore = new ChatStore(applicationDatabase, (error) =>
-      log('Conversation save failed: ' + errorMessage(error)),
-    );
+    const chatError = (error: unknown) => log('Conversation save failed: ' + errorMessage(error));
+    const chatStore = sharedRoot
+      ? new WorkspaceChats(applicationDatabase, runtime, chatError, (previous, current) => {
+          if (state.activeChat === previous) {
+            state.activeChat = current;
+          }
+          if (state.inlineChat === previous) {
+            state.inlineChat = current;
+          }
+        })
+      : new ChatStore(applicationDatabase, chatError);
     const state = createSessionState(await chatStore.load());
     resources.defer(async () => {
       try {
@@ -239,10 +270,11 @@ export async function startBridge(options: BridgeOptions = {}) {
     const pending = new GameRequests(changed);
     resources.defer(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
+    const evePort = Number(process.env.WISP_EVE_PORT || 43186);
     const client =
       options.client ||
       new Client({
-        baseUrl: 'http://127.0.0.1:43186',
+        baseUrl: 'http://127.0.0.1:' + evePort,
         auth: { bearer: () => token },
       });
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
@@ -361,7 +393,11 @@ export async function startBridge(options: BridgeOptions = {}) {
     resources.defer(() => closeServer(server));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(options.agentPort ?? 43187, '127.0.0.1', resolve);
+      server.listen(
+        options.agentPort ?? Number(process.env.WISP_AGENT_PORT ?? 43187),
+        '127.0.0.1',
+        resolve,
+      );
     });
     const agentOrigin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
     await writeFile(path.join(runtime, 'bridge.pid'), String(process.pid));
@@ -373,6 +409,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     function startEve() {
       return (options.startAgent || startEveProcess)({
         root: paths.engine,
+        port: evePort,
         logFile: eveLog,
         environment: {
           ...process.env,
@@ -520,7 +557,8 @@ export async function startBridge(options: BridgeOptions = {}) {
           setTimeout(() => void stop().catch((error) => log(errorMessage(error))), 200);
         },
       }),
-      options.desktopPort,
+      options.desktopPort ??
+        (process.env.WISP_DESKTOP_PORT ? Number(process.env.WISP_DESKTOP_PORT) : undefined),
     );
     resources.defer(() => closeServer(desktopServer));
     const integrationHealth = setInterval(() => {
@@ -611,6 +649,68 @@ export async function startBridge(options: BridgeOptions = {}) {
       }
     }
     const publish = setInterval(publishSnapshot, 400);
+    if (chatStore instanceof WorkspaceChats) {
+      let version = -1;
+      const refresh = setInterval(() => {
+        const current = Number(
+          applicationDatabase.connection.prepare('PRAGMA data_version').get()!.data_version,
+        );
+        if (version === current || shutdownRequested) {
+          return;
+        }
+        try {
+          const active = chatFor(state.activeChat),
+            inline = chatFor(state.inlineChat);
+          chatStore.synchronize(state.chats);
+          if (active) {
+            state.activeChat = active.id;
+          }
+          if (inline) {
+            state.inlineChat = inline.id;
+          }
+          panelStore.refresh();
+          version = current;
+          dirty = true;
+        } catch (error) {
+          log('Shared data refresh failed: ' + errorMessage(error));
+        }
+      }, 500);
+      resources.defer(() => clearInterval(refresh));
+      let refreshingModels = false;
+      let modelRefreshWork: Promise<unknown> | undefined;
+      const modelRefresh = setInterval(() => {
+        if (refreshingModels || accountBusy || auth.pending || shutdownRequested) {
+          return;
+        }
+        refreshingModels = true;
+        const before = JSON.stringify({ auth: auth.revision, connections: connections.list() });
+        modelRefreshWork = (
+          vault.exclusive
+            ? vault.exclusive('models', async () => {
+                await auth.reloadAccounts();
+                await connections.load();
+              })
+            : Promise.resolve()
+        )
+          .then(async () => {
+            if (
+              before !== JSON.stringify({ auth: auth.revision, connections: connections.list() }) &&
+              !shutdownRequested
+            ) {
+              await refreshModelCatalog();
+              dirty = true;
+            }
+          })
+          .catch((error) => log('Shared accounts refresh failed: ' + errorMessage(error)))
+          .finally(() => {
+            refreshingModels = false;
+          });
+      }, 3000);
+      resources.defer(async () => {
+        clearInterval(modelRefresh);
+        await modelRefreshWork;
+      });
+    }
     log('Wisp started. WoW: ' + config.wow);
     resources.defer(() => clearInterval(publish));
     function stop() {

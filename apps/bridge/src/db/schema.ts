@@ -16,6 +16,48 @@ export const metadata = sqliteTable('metadata', {
   value: text().notNull(),
 });
 
+// Only unfinished turns live here. Completed transcripts use chats/messages.
+// No foreign key: a private turn may precede publication or outlive a deletion.
+export const workspaceDrafts = sqliteTable(
+  'workspace_drafts',
+  {
+    instanceId: text('instance_id').notNull(),
+    chatId: text('chat_id').notNull(),
+    baseRevision: integer('base_revision'),
+    content: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.instanceId, t.chatId] }),
+    check(
+      'workspace_draft_content',
+      sql`json_valid(${t.content}) AND json_type(${t.content}) = 'object'`,
+    ),
+  ],
+);
+
+export const routineInstanceState = sqliteTable(
+  'routine_instance_state',
+  {
+    instanceId: text('instance_id').notNull(),
+    characterKey: text('character_key').notNull(),
+    routineId: text('routine_id').notNull(),
+    definitionUpdatedAt: real('definition_updated_at').notNull(),
+    nextAt: real('next_at').notNull(),
+    lastStartedAt: real('last_started_at'),
+    pending: text(),
+    completedOnce: integer('completed_once', { mode: 'boolean' }).notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.instanceId, t.characterKey, t.routineId] }),
+    foreignKey({
+      columns: [t.characterKey, t.routineId],
+      foreignColumns: [routines.characterKey, routines.id],
+    }).onDelete('cascade'),
+    check('routine_instance_pending', sql`${t.pending} IS NULL OR json_valid(${t.pending})`),
+    check('routine_instance_completed', sql`${t.completedOnce} IN (0,1)`),
+  ],
+);
+
 export const routines = sqliteTable(
   'routines',
   {
@@ -41,6 +83,7 @@ export const routineRuns = sqliteTable(
   'routine_runs',
   {
     id: text().primaryKey().notNull(),
+    instanceId: text('instance_id'),
     characterKey: text('character_key').notNull(),
     routineId: text('routine_id').notNull(),
     sortIndex: integer('sort_index').notNull(),

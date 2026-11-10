@@ -69,6 +69,69 @@ and partial-startup cleanup in temporary data directories.
 
 ## Build and run on Windows
 
+### Parallel worktree previews
+
+Use a dedicated `codex/` branch and worktree per chat, based on current `main`.
+The root [AGENTS.md](../AGENTS.md) makes this the default contributor workflow.
+After installing dependencies and building the simulator, run:
+
+```powershell
+pnpm dev:instance info
+# Optional, once, before creating the shared development profile:
+pnpm dev:instance seed "$env:APPDATA\com.wisp.ai"
+pnpm dev:instance addon
+pnpm dev:instance desktop
+```
+
+`info` prints the worktree identity and every destination without creating data.
+`addon` installs into a synthetic WoW directory under this worktree; it supports
+desktop and installation tests, but cannot run the game. `desktop` builds the
+protocol and agent, runs the bridge directly from this worktree's source and
+starts Tauri/Vite with a unique application identifier and a title containing
+the branch. It skips production resource staging. Cargo output, engine sessions,
+ports, bridge tokens, logs, config and addon files stay under the worktree's
+`runtime/dev-instance/`. A duplicate launch from the same worktree is rejected,
+even if it selects another shared profile. Ctrl+C stops that launch's process tree.
+
+All worktrees from the same Git repository share the development profile at
+`<git-common-dir>/wisp-dev/shared/`; this is separate from the installed app.
+Completed chats, memory, panels, routine definitions and connected LLM credentials
+are shared. New history appears in running instances within about half a second;
+connection changes are polled every three seconds. Active turns stay in private,
+recoverable draft rows until completion. Concurrent edits retain both transcripts
+as separate chats; deletions propagate. Engine sessions, unread/model state,
+routine events/runs/cooldowns and MCP credentials remain scoped to each instance.
+
+Sign into ChatGPT once in the shared development profile; every worktree then
+uses that connection, with token renewal serialized across processes. `seed`
+copies existing history/products through SQLite's WAL-aware snapshot API or the
+legacy JSON importer and, on Windows, copies only reusable LLM API keys in their
+existing DPAPI-encrypted form. It preserves the source files and never stops the
+installed app. It deliberately leaves ChatGPT's rotating OAuth token and host
+identity behind. On macOS, connect LLM credentials once in the development profile;
+its Keychain service is separate from the installed application's. No credentials
+are stored in Git or plaintext SQLite. Connection edits and disconnects affect
+every worktree using that shared profile.
+
+For live game testing, provide a **dedicated client directory per worktree**:
+
+```powershell
+pnpm dev:instance target "E:\WoW-test-task-a\_forever_"
+pnpm dev:instance addon
+pnpm dev:instance desktop
+```
+
+The target must contain `Wow.exe` and have no production Wisp addon. It is marked
+with its owning instance; other worktrees refuse it. The desktop installer and
+bridge both enforce the selected target. Use `target` with the sandbox path shown
+by `info` to return to the fixture. Multiple bridges must never use one WoW client.
+
+Keep schema changes in new Drizzle migrations. Restart previews after migrations
+change; use an absolute `WISP_SHARED_DATA_DIR` outside the worktree to create a
+separate profile for incompatible persistence experiments. Do not point it at the
+installed application's data. Seeding refuses to overwrite an existing profile;
+an interrupted seed leaves a marker that prevents launching incomplete data.
+
 In addition to the workspace prerequisites, install Rust, Windows C++ build tools, Git, Go and protoc. Build the pinned simulator before starting the native app:
 
 ```powershell
