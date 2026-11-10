@@ -9,7 +9,7 @@ export type ReplyPart = { type: 'text'; text: string } | { type: 'ui'; id: strin
 // Presentation only: apply the same renderer to new replies and saved history.
 // Never store generated table nodes back into the canonical conversation.
 export function renderMessageTables(message: Message): Message {
-  if (message.role !== 'assistant' || message.streaming) {
+  if (message.role !== 'assistant') {
     return message;
   }
   const ui = message.ui ?? [];

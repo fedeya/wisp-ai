@@ -117,58 +117,64 @@ test('plain source schedules persistence before a reply can be rendered', async 
   expect(f.send).toHaveBeenCalledTimes(1);
 });
 
-test('source persistence through the runner retains time-based preview coalescing', async () => {
-  vi.useFakeTimers();
-  vi.setSystemTime(0);
-  try {
-    const f = fixture();
-    const state = createSessionState([f.chat]);
-    state.activeChat = f.chat.id;
-    const gate = new SnapshotGate();
-    let publications = 0,
-      previews = 0,
-      completed = 0;
-    f.changed.mockImplementation(() => {
-      const snapshot = gate.next(projectChats(state));
-      if (snapshot) {
-        publications++;
-        expect(JSON.stringify(snapshot)).not.toContain('rawReply');
-      }
-    });
-    const delta = 'a';
-    f.send.mockImplementationOnce(async () => ({
-      stream: async function* () {
-        const baseline = publications;
-        for (let index = 0; index < 100; index++) {
-          vi.setSystemTime((index + 1) * 10);
-          const changes = f.changed.mock.calls.length;
-          yield {
-            type: 'content.delta',
-            data: { partId: 'reply', kind: 'text', delta },
-          };
-          expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
+test.each([
+  { interval: 10, expectedPreviews: 2 },
+  { interval: 100, expectedPreviews: 17 },
+])(
+  'source persistence retains preview coalescing throughout a reply ($interval ms)',
+  async ({ interval, expectedPreviews }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const f = fixture();
+      const state = createSessionState([f.chat]);
+      state.activeChat = f.chat.id;
+      const gate = new SnapshotGate();
+      let publications = 0,
+        previews = 0,
+        completed = 0;
+      f.changed.mockImplementation(() => {
+        const snapshot = gate.next(projectChats(state));
+        if (snapshot) {
+          publications++;
+          expect(JSON.stringify(snapshot)).not.toContain('rawReply');
         }
-        expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
-          delta.repeat(100),
-        );
-        previews = publications - baseline;
-        yield {
-          type: 'content.completed',
-          data: { partId: 'reply', kind: 'text', value: delta.repeat(100) },
-        };
-        completed = publications - baseline;
-        expect(projectChats(state).chats[0].messages?.at(-1)?.text).toBe('a'.repeat(100));
-      },
-      result: async () => ({ status: 'completed', sessionEnded: false }),
-    }));
-    await f.run(f.chat, 'Question');
-    expect(previews).toBe(2);
-    expect(completed).toBe(3);
-    expect(f.chat.status).toBe('done');
-  } finally {
-    vi.useRealTimers();
-  }
-});
+      });
+      const delta = 'a';
+      f.send.mockImplementationOnce(async () => ({
+        stream: async function* () {
+          const baseline = publications;
+          for (let index = 0; index < 100; index++) {
+            vi.setSystemTime((index + 1) * interval);
+            const changes = f.changed.mock.calls.length;
+            yield {
+              type: 'content.delta',
+              data: { partId: 'reply', kind: 'text', delta },
+            };
+            expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
+          }
+          expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
+            delta.repeat(100),
+          );
+          previews = publications - baseline;
+          yield {
+            type: 'content.completed',
+            data: { partId: 'reply', kind: 'text', value: delta.repeat(100) },
+          };
+          completed = publications - baseline;
+          expect(projectChats(state).chats[0].messages?.at(-1)?.text).toBe('a'.repeat(100));
+        },
+        result: async () => ({ status: 'completed', sessionEnded: false }),
+      }));
+      await f.run(f.chat, 'Question');
+      expect(previews).toBe(expectedPreviews);
+      expect(completed).toBe(expectedPreviews + 1);
+      expect(f.chat.status).toBe('done');
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 test('the active runner accepts presentation RPCs and rejects them after the turn', async () => {
   const f = fixture();
