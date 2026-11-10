@@ -1,8 +1,6 @@
-import { readJson, writeJson } from './json-file.ts';
+import { ProductDatabase, readRoutines, saveRoutines } from './db/product-store.ts';
 import { randomUUID } from 'node:crypto';
 import {
-  savedRoutine,
-  routineRun,
   matchesRoutineEvent,
   type Routine,
   type RoutineRun,
@@ -15,20 +13,16 @@ export class RoutineStore {
   routines: Routine[] = [];
   runs: RoutineRun[] = [];
   private queue: Promise<unknown> = Promise.resolve();
-  file: string;
-  constructor(file: string) {
-    this.file = file;
+  readonly database: ProductDatabase;
+  constructor(file: string | ProductDatabase) {
+    this.database = typeof file === 'string' ? new ProductDatabase(file) : file;
   }
   async load() {
-    const raw = await readJson(
-      this.file,
-      z.object({ routines: z.array(savedRoutine), runs: z.array(routineRun) }),
-      () => ({ routines: [], runs: [] }),
-    );
-    this.routines = raw.routines;
-    this.runs = raw.runs.map((run) =>
-      run.status === 'running' ? { ...run, status: 'interrupted', finishedAt: Date.now() } : run,
-    );
+    await this.transact(() => {
+      this.runs = this.runs.map((run) =>
+        run.status === 'running' ? { ...run, status: 'interrupted', finishedAt: Date.now() } : run,
+      );
+    });
   }
   list(characterKey: string) {
     return this.routines.filter((r) => r.characterKey === characterKey);
@@ -37,19 +31,27 @@ export class RoutineStore {
     const work = this.queue
       .catch(() => {})
       .then(async () => {
-        const before = JSON.stringify({ routines: this.routines, runs: this.runs });
+        let before: string | undefined;
         try {
-          const result = change();
-          const content = JSON.stringify({ routines: this.routines, runs: this.runs });
-          if (content === before) {
+          return await this.database.transaction((db) => {
+            const stored = readRoutines(db);
+            this.routines = stored.routines;
+            this.runs = stored.runs;
+            before = JSON.stringify(stored);
+            const result = change();
+            const content = JSON.stringify({ routines: this.routines, runs: this.runs });
+            if (content === before) {
+              return result;
+            }
+            saveRoutines(db, { routines: this.routines, runs: this.runs });
             return result;
-          }
-          await writeJson(this.file, { routines: this.routines, runs: this.runs });
-          return result;
+          });
         } catch (e) {
-          const old = JSON.parse(before);
-          this.routines = old.routines;
-          this.runs = old.runs;
+          if (before !== undefined) {
+            const old = JSON.parse(before);
+            this.routines = old.routines;
+            this.runs = old.runs;
+          }
           throw e;
         }
       });

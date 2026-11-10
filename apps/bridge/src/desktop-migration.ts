@@ -2,6 +2,7 @@ import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promise
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { ChatStore, conversationInstanceId } from './chat-store.ts';
+import { ProductDatabase } from './db/product-store.ts';
 import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
@@ -149,6 +150,7 @@ export async function migrateDesktop(
       await store.close();
     }
   }
+  await new ProductDatabase(databaseFile).initialize();
   if (localAppData) {
     const hash = createHash('sha256').update(source).digest('hex');
     const secrets = path.join(localAppData, 'WispAI', 'Secrets', hash);

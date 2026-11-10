@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { RoutineStore } from '@wisp/bridge/routines';
@@ -27,7 +27,7 @@ const definition = () =>
 async function fixture(work: (store: RoutineStore, file: string) => Promise<void>) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routines-'));
   try {
-    const file = path.join(root, 'routines.json');
+    const file = path.join(root, 'wisp.sqlite');
     await work(new RoutineStore(file), file);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -118,6 +118,10 @@ test.each([
       ...['a', 'b', 'c'].map((id, index) => ({ ...base, id, lastStartedAt: starts[index] })),
     ].map((routine) => savedRoutine.parse(routine));
     const savedOrder = store.routines.map((routine) => routine.id);
+    await writeFile(
+      path.join(path.dirname(file), 'routines.json'),
+      JSON.stringify({ routines: store.routines, runs: [] }),
+    );
     for (const id of order) {
       const claimed = (await store.claim('mage', now))!;
       expect(claimed.routine.id).toBe(id);

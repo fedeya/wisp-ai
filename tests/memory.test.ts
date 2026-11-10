@@ -10,7 +10,8 @@ import { localMemory } from '@wisp/agent/agent-memory';
 test('memory survives new store instances, isolates characters, and serializes concurrent updates', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-memory-'));
   try {
-    const store = new MemoryStore(directory);
+    const file = path.join(directory, 'wisp.sqlite');
+    const store = new MemoryStore(file);
     await Promise.all([
       store.update(
         'character',
@@ -22,7 +23,7 @@ test('memory survives new store instances, isolates characters, and serializes c
       store.update('character', 'warrior', 'guide', 'Following Guide B'),
       store.update('preferences', 'local-player', 'pace', 'Prefers exploration'),
     ]);
-    const restarted = new MemoryStore(directory);
+    const restarted = new MemoryStore(file);
     assert.equal((await restarted.read('character', 'mage')).length, 2);
     assert.equal((await restarted.read('character', 'warrior'))[0].text, 'Following Guide B');
     await restarted.update('character', 'mage', 'guide', 'Stopped following Guide A');
@@ -31,7 +32,7 @@ test('memory survives new store instances, isolates characters, and serializes c
       1,
     );
     await restarted.update('character', 'mage', 'guide');
-    assert.equal((await new MemoryStore(directory).read('character', 'mage')).length, 1);
+    assert.equal((await new MemoryStore(file).read('character', 'mage')).length, 1);
     assert.equal(
       (await restarted.read('preferences', 'local-player'))[0].text,
       'Prefers exploration',

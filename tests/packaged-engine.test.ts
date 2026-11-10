@@ -5,6 +5,8 @@ import { copyFile, mkdir, mkdtemp, writeFile, readFile, rm, readdir } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
+import { savedRoutine } from '@wisp/protocol/routines';
 import { migrationsFolder } from '@wisp/bridge/db/migrate';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 
@@ -39,6 +41,58 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         .prepare('INSERT INTO messages VALUES(?,?,?)')
         .run(chat.id, 0, JSON.stringify(messages[0]));
       source.exec("INSERT INTO metadata VALUES('initialized','1'); PRAGMA user_version=1");
+      const routine = savedRoutine.parse({
+        id: 'review',
+        title: 'Review',
+        instruction: 'Review spells',
+        triggers: [{ kind: 'interval', seconds: 60 }],
+        characterKey: 'mage',
+        enabled: true,
+        updatedAt: 1,
+        nextAt: 100,
+      });
+      const productSources = {
+        'routines.json': JSON.stringify({
+          routines: [routine],
+          runs: [
+            {
+              id: 'run',
+              routineId: 'removed',
+              characterKey: 'mage',
+              title: 'Old routine',
+              startedAt: 1,
+              status: 'done',
+              event: 'interval',
+              summary: 'Keep history',
+            },
+          ],
+        }),
+        'panels.json': JSON.stringify([
+          {
+            id: 'goal',
+            title: 'Goal',
+            characterKey: 'mage',
+            updatedAt: 1,
+            ui: [{ id: 'card', kind: 'card', title: 'Goal' }],
+          },
+        ]),
+      };
+      for (const [name, content] of Object.entries(productSources)) {
+        await writeFile(path.join(previous, 'runtime', name), content);
+      }
+      await mkdir(path.join(previous, 'runtime/memory'));
+      const memoryName =
+        createHash('sha256')
+          .update(JSON.stringify(['character', 'mage']))
+          .digest('hex') + '.json';
+      await writeFile(
+        path.join(previous, 'runtime/memory', memoryName),
+        JSON.stringify({
+          slot: 'character',
+          owner: 'mage',
+          entries: [{ key: 'goal', text: 'Keep plan', updatedAt: '2026-11-09' }],
+        }),
+      );
       await writeFile(
         path.join(previous, 'config.local.json'),
         JSON.stringify({ wow: 'fixture-wow' }),
@@ -64,10 +118,28 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
-        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(2);
-        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(3);
+        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(3);
+        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(4);
         expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
         expect(db.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id).toBeNull();
+        expect(db.prepare('SELECT title FROM routines').get()!.title).toBe('Review');
+        expect(db.prepare('SELECT summary FROM routine_runs').get()!.summary).toBe('Keep history');
+        expect(db.prepare('SELECT title FROM panels').get()!.title).toBe('Goal');
+        expect(db.prepare('SELECT text FROM memory_entries').get()!.text).toBe('Keep plan');
+        for (const [name, content] of Object.entries(productSources)) {
+          expect(await readFile(path.join(previous, 'runtime', name), 'utf8')).toBe(content);
+          const digest = createHash('sha256').update(content).digest('hex');
+          expect(
+            await readFile(
+              path.join(
+                destination,
+                'runtime',
+                name.replace(/\.json$/, `.pre-sqlite-${digest}.json`),
+              ),
+              'utf8',
+            ),
+          ).toBe(content);
+        }
         expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
         expect(
           JSON.parse(String(source.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId,

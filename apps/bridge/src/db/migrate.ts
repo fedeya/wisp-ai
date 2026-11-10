@@ -22,7 +22,7 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
   db.transaction(
     (tx) => {
       const version = Number(client.prepare('PRAGMA user_version').get()!.user_version);
-      if (version > 3) {
+      if (version > 4) {
         throw Error(`Unsupported conversation database version: ${version}`);
       }
       tx.run(sql`CREATE TABLE IF NOT EXISTS wisp_migrations (
@@ -51,7 +51,7 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
       if (client.prepare('PRAGMA foreign_key_check').all().length) {
         throw Error('Conversation migration violated foreign key constraints.');
       }
-      tx.run(sql`PRAGMA user_version = 3`);
+      tx.run(sql`PRAGMA user_version = 4`);
     },
     { behavior: 'immediate' },
   );

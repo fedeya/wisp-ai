@@ -67,7 +67,7 @@ export class ChatStore {
       await preparePrivateDatabase(this.file);
       this.db = new DatabaseSync(this.file, { timeout: 5000 });
       const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
-      if (version > 3) {
+      if (version > 4) {
         throw Error(`Unsupported conversation database version: ${version}`);
       }
       this.db.exec(

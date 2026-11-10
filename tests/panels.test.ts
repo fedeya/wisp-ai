@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { PanelStore } from '@wisp/bridge/panels';
@@ -18,7 +18,7 @@ const example = {
 test('persistent panels isolate characters, survive restart and update by ID without duplication', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-panels-'));
   try {
-    const file = path.join(root, 'panels.json'),
+    const file = path.join(root, 'wisp.sqlite'),
       store = new PanelStore(file);
     await store.load();
     await store.mutate('mage', { operation: 'save', panel: panelContent.parse(example) });
@@ -37,7 +37,9 @@ test('persistent panels isolate characters, survive restart and update by ID wit
     assert.equal(next.list('warrior')[0].title, 'Other character');
     await next.mutate('mage', { operation: 'remove', id: 'materials' });
     assert.equal(next.list('warrior').length, 1);
-    assert.equal(JSON.parse(await readFile(file, 'utf8')).length, 1);
+    const reopened = new PanelStore(file);
+    await reopened.load();
+    assert.equal(reopened.panels.length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

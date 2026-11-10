@@ -25,7 +25,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
   try {
     const start = 1000000;
     vi.setSystemTime(start);
-    const store = new RoutineStore(path.join(root, 'routines.json'));
+    const store = new RoutineStore(path.join(root, 'wisp.sqlite'));
     for (const id of ['a', 'b']) {
       await store.mutate('mage', {
         operation: 'save',

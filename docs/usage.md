@@ -37,7 +37,7 @@ Replies arrive in batches, with tool/progress indicators while Wisp works. The c
 
 Ask Wisp to save a tracker for your character. Panels survive chats and reloads; restore hidden ones with **Show saved panels** in-game or the desktop **Panels** page. Bag counts, money, level and quest completion update locally without model calls. Panel buttons send follow-up questions; ordinary reply cards are temporary unless saved.
 
-Ask Wisp in chat to create a routine, for example “Every two levels, review my spells and rotation.” Open **Routines** in the in-game sidebar to browse routines and their run conversations; the desktop **Routines** page also offers pause, resume, delete and run history. Supported triggers include level, equipment, money, bags, quests, spells, talents and zone changes, plus intervals of at least one minute. Filters use the event’s documented fields. “Every two levels” can use even levels; Wisp should explain the exact saved condition. Routines run only while that character and the desktop app are connected. Combat and active turns delay work; repeated events and missed intervals coalesce. Automatic runs are read-only and can remain silent when there is nothing useful to report. Each useful run has its own conversation, where you can ask follow-up questions. Routine definitions and history are saved locally in routines.json; they are independent of their creation chat. Old Suggestions toggles are replaced by explicit routines; they are not automatically enabled.
+Ask Wisp in chat to create a routine, for example “Every two levels, review my spells and rotation.” Open **Routines** in the in-game sidebar to browse routines and their run conversations; the desktop **Routines** page also offers pause, resume, delete and run history. Supported triggers include level, equipment, money, bags, quests, spells, talents and zone changes, plus intervals of at least one minute. Filters use the event’s documented fields. “Every two levels” can use even levels; Wisp should explain the exact saved condition. Routines run only while that character and the desktop app are connected. Combat and active turns delay work; repeated events and missed intervals coalesce. Automatic runs are read-only and can remain silent when there is nothing useful to report. Each useful run has its own conversation, where you can ask follow-up questions. Routine definitions and history are saved locally in wisp.sqlite; they are independent of their creation chat. Old Suggestions toggles are replaced by explicit routines; they are not automatically enabled.
 
 ## Controls, privacy and limits
 
@@ -65,18 +65,18 @@ The bridge holds the ChatGPT grant and proxies model requests with `store: false
 
 Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from application resources. Source runs default to the repository root; `WISP_DATA_DIR` overrides it.
 
-| Data                                   | Path relative to the data root                   |
-| -------------------------------------- | ------------------------------------------------ |
-| Configuration                          | `config.local.json`                              |
-| Application database (currently chats) | `runtime/wisp.sqlite`                            |
-| Routine definitions and run history    | `runtime/routines.json`                          |
-| Shared preferences and character plans | `runtime/memory/`                                |
-| Tool choices / custom MCP metadata     | `runtime/capabilities.json` / `runtime/mcp.json` |
-| Agent log                              | `runtime/eve.log`                                |
+| Data                                            | Path relative to the data root                   |
+| ----------------------------------------------- | ------------------------------------------------ |
+| Configuration                                   | `config.local.json`                              |
+| Chats, routines, run history, memory and panels | `runtime/wisp.sqlite`                            |
+| Tool choices / custom MCP metadata              | `runtime/capabilities.json` / `runtime/mcp.json` |
+| Agent log                                       | `runtime/eve.log`                                |
 
 On the first launch after upgrading, Wisp validates the complete legacy `runtime/chats.json`, creates a byte-for-byte `runtime/chats.pre-sqlite-<sha256>.json` backup and imports conversations and messages in one transaction. The original JSON is preserved. After a successful import, SQLite is authoritative: the old JSON is no longer updated or reimported, including after deleting every conversation. Invalid legacy data or an unsupported/corrupt database stops startup rather than replacing history with an empty store. Retain the original and backup until the imported history has been checked.
 
 Earlier SQLite previews used `runtime/chats.sqlite`. When `wisp.sqlite` is absent, startup takes a consistent SQLite snapshot of that database, including committed WAL pages, and publishes it under the new name only when the copy is complete. The old database is retained as a backup. An existing `wisp.sqlite` is authoritative, including when it is empty; a stale `chats.sqlite` is never reimported over it. Installation import accepts either name and prefers `wisp.sqlite`.
+
+Routine definitions, routine run history, persistent panels and memory entries also live in the application database. Their legacy JSON files are validated together and imported in one transaction, with byte-exact SHA-256-named backups beside each original. The originals remain untouched. A completed import marker prevents stale JSON from restoring deleted records, including empty memory scopes. Runs remain available after their routine or creation conversation is deleted. Memory is keyed by scope, owner and entry key; panels and routines are keyed by character and ID. Configuration, MCP/provider settings, credentials, logs and temporary runtime files keep their existing storage mechanisms.
 
 SQLite stores conversation titles, status, character identity and activity timestamps in `chats` columns. `messages` stores role, text and ordering separately; each row has a stable internal ID independent of its position. `source_id` preserves the original optional message ID, including old missing or duplicate IDs. Rich content, references, UI and unknown extension fields remain in JSON `extras`, preserving their original values. Updates write only changed rows.
 

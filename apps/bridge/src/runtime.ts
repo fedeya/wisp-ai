@@ -21,6 +21,7 @@ import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { DiskTransport } from './transport.ts';
 import { ChatStore } from './chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
+import { ProductDatabase } from './db/product-store.ts';
 import { createTurnRunner } from './turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { MemoryStore } from './memory-store.ts';
@@ -71,7 +72,9 @@ export async function startBridge(options: BridgeOptions = {}) {
     const simulator = new Simulator(ROOT, runtime);
     await prepareEngine(paths.agent, paths.engine);
     await mkdir(runtime, { recursive: true });
-    const memoryStore = new MemoryStore(path.join(runtime, 'memory'));
+    const databaseFile = await applicationDatabaseFile(runtime);
+    const productDatabase = new ProductDatabase(databaseFile);
+    const memoryStore = new MemoryStore(productDatabase);
     async function memorySnapshot(identity: string | undefined) {
       const preferences = (await memoryStore.read('preferences', 'local-player')).map((entry) => ({
         ...entry,
@@ -145,9 +148,9 @@ export async function startBridge(options: BridgeOptions = {}) {
       })());
     }
     const database = new TheWoWDB();
-    const panelStore = new PanelStore(path.join(runtime, 'panels.json'));
+    const panelStore = new PanelStore(productDatabase);
     await panelStore.load();
-    const routineStore = new RoutineStore(path.join(runtime, 'routines.json'));
+    const routineStore = new RoutineStore(productDatabase);
     await routineStore.load();
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
     await capabilitySettings.load();
@@ -217,7 +220,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         (!tool || capabilitySettings.enabled('mcp_tool:' + name + ':' + tool)),
     );
     resources.defer(() => mcpRelay.close());
-    const chatStore = new ChatStore(await applicationDatabaseFile(runtime), (error) =>
+    const chatStore = new ChatStore(databaseFile, (error) =>
       log('Conversation save failed: ' + errorMessage(error)),
     );
     const state = createSessionState(await chatStore.load());

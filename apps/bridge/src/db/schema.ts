@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -14,6 +15,113 @@ export const metadata = sqliteTable('metadata', {
   key: text().primaryKey().notNull(),
   value: text().notNull(),
 });
+
+export const routines = sqliteTable(
+  'routines',
+  {
+    characterKey: text('character_key').notNull(),
+    id: text().notNull(),
+    sortIndex: integer('sort_index').notNull(),
+    title: text().notNull(),
+    enabled: integer({ mode: 'boolean' }).notNull(),
+    nextAt: real('next_at').notNull(),
+    updatedAt: real('updated_at').notNull(),
+    content: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.characterKey, t.id] }),
+    index('routines_due').on(t.characterKey, t.enabled, t.nextAt),
+    check('routines_enabled', sql`${t.enabled} IN (0,1)`),
+    check('routines_content', sql`json_valid(${t.content}) AND json_type(${t.content}) = 'object'`),
+  ],
+);
+
+// Runs retain their history after the routine or its source conversation is removed.
+export const routineRuns = sqliteTable(
+  'routine_runs',
+  {
+    id: text().primaryKey().notNull(),
+    characterKey: text('character_key').notNull(),
+    routineId: text('routine_id').notNull(),
+    sortIndex: integer('sort_index').notNull(),
+    title: text().notNull(),
+    startedAt: real('started_at').notNull(),
+    finishedAt: real('finished_at'),
+    event: text().notNull(),
+    status: text().notNull(),
+    summary: text(),
+    extras: text().notNull(),
+  },
+  (t) => [
+    index('routine_runs_history').on(t.characterKey, t.routineId, t.startedAt),
+    check(
+      'routine_runs_status',
+      sql`${t.status} IN ('running','done','no_tip','error','cancelled','interrupted')`,
+    ),
+    check(
+      'routine_runs_extras',
+      sql`json_valid(${t.extras}) AND json_type(${t.extras}) = 'object'`,
+    ),
+  ],
+);
+
+export const panels = sqliteTable(
+  'panels',
+  {
+    characterKey: text('character_key').notNull(),
+    id: text().notNull(),
+    sortIndex: integer('sort_index').notNull(),
+    title: text().notNull(),
+    updatedAt: real('updated_at').notNull(),
+    content: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.characterKey, t.id] }),
+    check('panels_content', sql`json_valid(${t.content}) AND json_type(${t.content}) = 'object'`),
+  ],
+);
+
+export const memoryScopes = sqliteTable(
+  'memory_scopes',
+  {
+    slot: text().notNull(),
+    owner: text().notNull(),
+    extras: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.slot, t.owner] }),
+    check('memory_slot', sql`${t.slot} IN ('preferences','character')`),
+    check(
+      'memory_scope_extras',
+      sql`json_valid(${t.extras}) AND json_type(${t.extras}) = 'object'`,
+    ),
+  ],
+);
+
+export const memoryEntries = sqliteTable(
+  'memory_entries',
+  {
+    slot: text().notNull(),
+    owner: text().notNull(),
+    key: text().notNull(),
+    sortIndex: integer('sort_index').notNull(),
+    text: text().notNull(),
+    updatedAt: text('updated_at').notNull(),
+    extras: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.slot, t.owner, t.key] }),
+    foreignKey({
+      columns: [t.slot, t.owner],
+      foreignColumns: [memoryScopes.slot, memoryScopes.owner],
+    }).onDelete('cascade'),
+    check('memory_entry_slot', sql`${t.slot} IN ('preferences','character')`),
+    check(
+      'memory_entry_extras',
+      sql`json_valid(${t.extras}) AND json_type(${t.extras}) = 'object'`,
+    ),
+  ],
+);
 
 export const chats = sqliteTable(
   'chats',
