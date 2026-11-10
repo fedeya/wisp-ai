@@ -822,6 +822,10 @@ local function sameWaypoint(a, b)
         and math.abs(a.x - b.x) < 0.001
         and math.abs(a.y - b.y) < 0.001
 end
+function inspectors.travel(args)
+    assert(C.InspectTravel, "Travel API is unavailable")
+    return C.InspectTravel(args)
+end
 function inspectors.map(args)
     assert(C_Map and C_Map.GetMapInfo, "Map API is unavailable")
     local current = C_Map.GetBestMapForUnit("player")

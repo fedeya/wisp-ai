@@ -114,6 +114,8 @@ For an old portable install, choose **Import your previous installation** on fir
 
 WoW character readings, inventory, progression, references, settings, maps and macros are core agent capabilities. Titles and persistent panels are also built in. These capabilities have no integration switches; game reads still require a live WoW connection. Older switches for these capabilities no longer apply. Memory remains optional with independent controls.
 
+For observed travel options, load the `locations` tools and ask Wisp to inspect travel (`wow__inspect_travel`). It reads standard Hearthstone possession/cooldown and your bind name. Open a flight master yourself to inspect destinations selectable from that origin. Closed windows and unsupported readings are unavailable; unreachable does not mean globally locked. Results are bounded and timestamped, not a global flight network, route planner or travel action.
+
 Desktop **Integrations** and WoW **Settings > Integrations** share the same optional integration controls.
 Each integration has a master switch and individual capabilities. Disabling a parent
 preserves child preferences. Enabled and available capabilities are projected into

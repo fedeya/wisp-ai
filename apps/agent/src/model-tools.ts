@@ -28,6 +28,7 @@ const groupTools: Record<(typeof toolGroupNames)[number], string[]> = {
   quests: ['questie__get_quest', 'questie__get_quest_chain', 'wow__query_progression'],
   locations: [
     'wow__inspect_map',
+    'wow__inspect_travel',
     'questie__find_npc_locations',
     'questie__find_object_locations',
     'wow__set_map_waypoint',
@@ -68,7 +69,7 @@ const groupDescriptions: Record<(typeof toolGroupNames)[number], string> = {
   quests:
     'quest quests mission missions mision misiones chain prerequisites reputation cadena requisitos reputacion',
   locations:
-    'map npc trainer coordinates city service waypoint transmog transmogrifier location travel mapa ubicacion ciudad coordenadas entrenador',
+    'map npc trainer coordinates city service waypoint transmog transmogrifier location travel hearthstone bind flight taxi mapa ubicacion ciudad coordenadas entrenador',
   inventory:
     'inventory items gear equipment bags bank auction prices resources money skills crafting inventario objetos equipo bolsas banco subasta precios dinero profesiones',
   chat: 'chat messages said say yell party raid guild officer whisper public channel historial mensajes dijo dijeron grupo hermandad susurros',

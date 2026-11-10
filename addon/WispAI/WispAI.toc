@@ -18,6 +18,7 @@ TrainingData.lua
 Training.lua
 Character.lua
 Locations.lua
+Travel.lua
 AddonAdapters.lua
 Settings.lua
 RichUI.lua

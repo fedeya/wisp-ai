@@ -84,6 +84,9 @@ export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
+export const travelInput = z.strictObject({
+  limit: z.number().int().min(1).max(100).default(50),
+});
 export const chatHistoryInput = z.strictObject({
   channels: z
     .array(
@@ -159,6 +162,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
       query: z.string().min(1).max(80).optional(),
     }),
   }),
+  z.object({ kind: z.literal('travel'), args: travelInput }),
   ...(['target', 'trainer', 'resources'] as const).map((kind) =>
     z.object({ kind: z.literal(kind), args: z.object({}) }),
   ),

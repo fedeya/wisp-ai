@@ -412,6 +412,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 auctions: 'inspect_auctions',
                 macros: 'inspect_macros',
                 map: 'inspect_map',
+                travel: 'inspect_travel',
               } as const
             )[inspection.kind]
           : 'query_character';
