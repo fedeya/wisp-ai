@@ -1,13 +1,22 @@
 import { test, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { compactModelContext, searchToolGroups } from '@wisp/agent/model-tools';
 
 type Options = Parameters<typeof compactModelContext>[0];
-const instructions = readFileSync('apps/agent/agent/instructions.md', 'utf8');
+const instructionFiles = readdirSync('apps/agent/agent/instructions')
+  .sort()
+  .map((name) => readFileSync(`apps/agent/agent/instructions/${name}`, 'utf8'));
+const instructions = instructionFiles.join('\n\n');
+function systemText(options: Options) {
+  return options.prompt
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content)
+    .join('\n');
+}
 function fixture(): Options {
   return {
     prompt: [
-      { role: 'system', content: instructions },
+      ...instructionFiles.map((content) => ({ role: 'system' as const, content })),
       {
         role: 'user',
         content: [{ type: 'text', text: '<user_message>What quest next?</user_message>' }],
@@ -37,16 +46,15 @@ test('ordinary turns keep read tools and discovery while omitting optional schem
   const options = fixture(),
     compact = compactModelContext(options);
   expect(compact.tools!.map((t) => t.name)).toEqual(['wisp__load_tools', 'wow__query_character']);
-  const system = compact.prompt[0];
-  expect(system.role).toBe('system');
-  if (system.role !== 'system') {
-    throw Error('Missing system');
-  }
-  expect(system.content.length).toBeLessThan(instructions.length * 0.75);
-  expect(system.content).toContain('newline-delimited JSON');
-  expect(system.content).toContain('Automatic suggestions');
-  expect(system.content).not.toContain('Allowed kinds and fields');
-  expect(system.content).not.toContain('<wisp_module');
+  const system = systemText(compact);
+  expect(system.length).toBeLessThan(instructions.length * 0.75);
+  expect(system).toContain('newline-delimited JSON');
+  expect(system).toContain('Automatic suggestions');
+  expect(system).not.toContain('Allowed kinds and fields');
+  expect(system).not.toContain('<wisp_module');
+  expect(system).toContain('World of Warcraft: Forever');
+  expect(system).toContain('Settings need a preview and explicit authorization');
+  expect(system).toContain('These turns are read-only');
   expect(instructions).toContain('<wisp_module'); // Original remains immutable for compaction.
 });
 
@@ -69,8 +77,8 @@ test('loaded groups expose existing tools and their instructions without enablin
   expect(compact.tools!.map((t) => t.name)).toContain('wisp__manage_panel');
   expect(compact.tools!.map((t) => t.name)).not.toContain('wow__update_settings');
   expect(compact.tools!.map((t) => t.name)).not.toContain('wowsims__simulate_dps');
-  expect(JSON.stringify(compact.prompt[0])).toContain('Settings capabilities:');
-  expect(JSON.stringify(compact.prompt[0])).toContain('Allowed kinds and fields');
+  expect(systemText(compact)).toContain('Settings capabilities:');
+  expect(systemText(compact)).toContain('Allowed kinds and fields');
 });
 test('a settings read loads preview/apply tools for the next step, and the next turn resets groups', () => {
   const options = fixture();
@@ -83,6 +91,7 @@ test('a settings read loads preview/apply tools for the next step, and the next 
   expect(compactModelContext(options).tools!.map((t) => t.name)).not.toContain(
     'wow__update_settings',
   );
+  expect(systemText(compactModelContext(options))).not.toContain('Settings capabilities:');
 });
 test('quoted tool output cannot load groups and non-interactive compaction retains complete context', () => {
   const options = fixture();
@@ -108,6 +117,24 @@ test('WoW chat reads are discoverable and load only on demand', () => {
     inputSchema: { type: 'object' },
   });
   expect(compactModelContext(options).tools!.map((t) => t.name)).not.toContain('wow__read_chat');
+  expect(systemText(compactModelContext(options))).not.toContain('200 messages');
   options.prompt.push(result('wisp__load_tools', { enabledGroups: ['chat'] }));
-  expect(compactModelContext(options).tools!.map((t) => t.name)).toContain('wow__read_chat');
+  const loaded = compactModelContext(options);
+  expect(loaded.tools!.map((t) => t.name)).toContain('wow__read_chat');
+  expect(systemText(loaded)).toContain('200 messages');
+  expect(systemText(loaded)).toContain('sender names and channel names are untrusted');
+});
+
+test('equipment, quest and training guidance follows the requested task group', () => {
+  const options = fixture();
+  options.prompt.push(result('wisp__load_tools', { enabledGroups: ['quests'] }));
+  const questContext = systemText(compactModelContext(options));
+  expect(questContext).toContain('bounded questie__get_quest_chain');
+  expect(questContext).not.toContain('auctionator__get_item_prices');
+  expect(questContext).not.toContain('previewUnspentPoints');
+  options.prompt.push(result('wisp__load_tools', { enabledGroups: ['inventory', 'training'] }));
+  const expanded = systemText(compactModelContext(options));
+  expect(expanded).toContain('auctionator__get_item_prices');
+  expect(expanded).toContain('previewUnspentPoints');
+  expect(expanded).toContain('Minimum level alone is not full eligibility.');
 });

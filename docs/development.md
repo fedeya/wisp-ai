@@ -128,11 +128,27 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 | ----------------------------- | ---------------------------------------------------------------------------------------------- |
 | Desktop UI and native host    | [Svelte](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
 | Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent-process.ts) |
-| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)        |
+| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions)           |
 | Shared contracts              | [protocol](../packages/protocol/src)                                                           |
 | Game UI, readings and actions | [addon](../addon/WispAI)                                                                       |
 
 The bridge owns accounts, persistence and tool execution. Eve runs on loopback **43186**; the separate RPC/model endpoint on **43187** uses an ephemeral agent token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+
+Agent instructions live in `apps/agent/agent/instructions/`. Eve compiles each Markdown
+file as a system instruction. `00-core.md` contains shared context, authorization and
+reply rules; task files wrap their content in `<wisp_module name="GROUP">` using an
+existing group from `model-tools.ts`. The model middleware includes those blocks
+only after tool discovery/loading or use of a tool in that group during the current
+turn. Compaction retains the full instructions. This uses the existing tool-group
+loader rather than adding a separate skill activation call.
+
+Keep each rule with its owner: shared guarantees in core, task procedures in the
+matching module, parameter details in tool schemas, and enforceable constraints in
+code. Preserve Forever-specific evidence requirements and preview/verified-result
+boundaries when shortening text. `tests/model-context.test.ts` checks selective
+loading; `tests/agent-integration.test.ts` exercises actual Eve discovery and the
+middleware with an offline model. Prompt edits also need representative gameplay
+evaluation before claiming improved model behavior.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
 Compressed snapshots and patches continue through the reusable lane after the
