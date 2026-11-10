@@ -17,7 +17,7 @@ pnpm test
 `build` runs workspace builds through Turborepo, including the protocol, agent,
 desktop frontend and website. It does not build the native host, simulator or
 installer. `check` runs formatting, lint and type checks; `pnpm test` runs all
-TypeScript tests with Vitest (core, addon and desktop UI) and Lua specs with Busted. Simulator engine tests
+TypeScript tests with Vitest (apps, packages and integrations) and Lua specs with Busted. Simulator engine tests
 require its binary—offline input tests alone do not validate the engine.
 
 Turborepo resolves prerequisites from the declared workspace dependencies and
@@ -45,21 +45,27 @@ with other agents, read the skill and its linked references explicitly.
 
 ## Tests
 
-Vitest projects keep each environment separate:
+Each app or package owns its unit tests and Vitest configuration. The root
+`tests/` workspace contains cross-component integrations and repository-wide checks.
 
-| Command           | Scope                                                                |
-| ----------------- | -------------------------------------------------------------------- |
-| `pnpm test`       | All TypeScript tests and Busted Lua specs                            |
-| `pnpm test:core`  | Bridge, agent, protocol and integration tests in `tests/` (Node)     |
-| `pnpm test:addon` | Busted Lua specs and TS integration tests in `addon/tests/`          |
-| `pnpm test:ui`    | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)   |
-| `pnpm test:watch` | Watch all projects; Lua source and fixture changes rerun addon tests |
+| Command                 | Scope                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `pnpm test`             | All TypeScript tests and Busted Lua specs                                     |
+| `pnpm test:core`        | All app/package TypeScript suites and root integrations, excluding desktop UI |
+| `pnpm test:integration` | Cross-component tests in `tests/`, including Lua/TS transport                 |
+| `pnpm test:addon`       | Busted Lua specs and WoW fixtures in `addon/tests/`                           |
+| `pnpm test:ui`          | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)            |
+| `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
-Use `pnpm test:addon`, `pnpm test:core` or `pnpm test:ui` for a suite. For a file,
-run `pnpm exec turbo run test --filter=@wisp/tests -- tests/routines.test.ts`.
+Use `pnpm test:addon`, `pnpm test:core`, `pnpm test:integration` or `pnpm test:ui`
+for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp/bridge`
+(or `@wisp/agent`, `@wisp/protocol`, `@wisp/releases`, `@wisp/scripts`, `@wisp/web`).
+For a file, run `pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/routines.test.ts`.
 `pnpm test:watch` watches the task graph and rebuilds dependencies before rerunning tests.
-Existing schema assertions in addon tests
-also verify the TypeScript contracts consumed by Lua. Native Rust tests remain on Cargo;
+Protocol schema assertions live in `packages/protocol/tests/`; the apps own their
+behavior tests in `apps/<app>/tests/` (desktop UI tests remain in `src/`). Release
+helpers own their tests in `packages/releases/tests/` and `scripts/tests/`.
+Native Rust tests remain on Cargo;
 see the CI workflow for their build prerequisites and command. Simulator and native-helper
 tests keep their existing skips when the required binaries are absent.
 
@@ -91,13 +97,12 @@ busted --filter "settings"
 ```
 
 Run these commands from the repository root; `.busted` selects `addon/tests/`.
-`pnpm test:addon` runs `busted` followed by the remaining TypeScript tests;
-`pnpm test:watch` reruns that command when addon files change. Direct Vitest runs
-cover only TypeScript tests. Protocol/schema checks, binary asset checks and tests
-exchanging frames between Lua and TypeScript stay in `.test.ts`; the frame
-integration tests still use Fengari.
+`pnpm test:addon` runs only `busted`; the binary emoji-atlas checks also run in Lua.
+`pnpm test:watch` reruns the addon suite when addon files change. Direct Vitest runs
+cover TypeScript suites. Tests exchanging frames between Lua and TypeScript live
+in `tests/addon/` and still use Fengari.
 
-Core tests also launch the real Eve agent against a local model fixture. This checks
+Root integration tests also launch the real Eve agent against a local model fixture. This checks
 agent compilation, dependency resolution, model middleware and streamed replies without
 credentials or external inference. Runtime tests exercise startup, shutdown, persistence
 and partial-startup cleanup in temporary data directories.

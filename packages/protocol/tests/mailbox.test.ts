@@ -20,7 +20,7 @@ import {
   replaceDownlink,
   MailboxDecoder,
   inflateMessage,
-} from '../packages/protocol/src/mailbox.ts';
+} from '../src/mailbox.ts';
 
 test('negotiated compact ACKs are checked 16-byte control frames and never message fragments', () => {
   for (const flags of [0, 1, 2, 3]) {

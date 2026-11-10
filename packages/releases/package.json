@@ -7,12 +7,15 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "cd ../.. && vitest run --config packages/releases/vitest.config.ts"
   },
   "dependencies": {
     "marked": "18.1.3"
   },
   "devDependencies": {
-    "typescript": "5.9.3"
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
   }
 }

@@ -6,8 +6,8 @@ import {
   applyDownlink,
   parseDownlinkAck,
   prepareDownlink,
-} from '../packages/protocol/src/downlink.ts';
-import { MAX_DECODED_BYTES, MAX_ENCODED_BYTES } from '../packages/protocol/src/mailbox.ts';
+} from '../src/downlink.ts';
+import { MAX_DECODED_BYTES, MAX_ENCODED_BYTES } from '../src/mailbox.ts';
 
 const unpack = (prepared: ReturnType<typeof prepareDownlink>) =>
   JSON.parse(inflateSync(prepared.body, { maxOutputLength: MAX_DECODED_BYTES }).toString('utf8'));

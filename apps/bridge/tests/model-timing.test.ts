@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { modelTiming } from '../apps/bridge/src/model-timing.ts';
+import { modelTiming } from '../src/model-timing.ts';
 
 test('model observation forwards bytes immediately and logs only timings and cache metadata', async () => {
   const logs: string[] = [];

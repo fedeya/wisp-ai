@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { updateManifest } from '../scripts/update-manifest.ts';
+import { updateManifest } from '../update-manifest.ts';
 
 test('the update manifest references the exact versioned release artifact and embeds its signature', () => {
   const manifest = updateManifest('0.3.0', 'signed-data\n', 'Fixed connections.');

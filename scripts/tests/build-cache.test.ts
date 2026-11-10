@@ -1,5 +1,5 @@
 import { test } from 'vitest';
-import { adapters } from '../apps/bridge/src/simulation/adapters/index.ts';
+import { adapters } from '../../apps/bridge/src/simulation/adapters/index.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,8 +10,8 @@ import {
   restoreNativeBinary,
   saveNativeBinary,
   type NativeBuildContext,
-} from '../scripts/native-cache.ts';
-import { verifySimulator } from '../scripts/verify-simulator.ts';
+} from '../native-cache.ts';
+import { verifySimulator } from '../verify-simulator.ts';
 
 const context: NativeBuildContext = {
   platform: 'win32',

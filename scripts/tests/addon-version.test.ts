@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { stampAddonVersions } from '../scripts/addon-version.ts';
+import { stampAddonVersions } from '../addon-version.ts';
 
 test.each(['0.0.8', '0.0.8-nightly.123.2'])(
   'staged and installed addon/helpers identify build %s',

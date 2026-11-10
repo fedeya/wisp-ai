@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { Simulator } from '@wisp/bridge/simulation';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/protocol/simulation';
-import type { ClassMetadata } from '../apps/bridge/src/simulation/adapters/types.ts';
-import { adapters } from '../apps/bridge/src/simulation/adapters/index.ts';
+import type { ClassMetadata } from '../src/simulation/adapters/types.ts';
+import { adapters } from '../src/simulation/adapters/index.ts';
 const simulator = new Simulator(process.cwd());
 const input = { plans: [{ label: 'Frostbolt', priority: [{ spellId: 205 }] }] };
 
@@ -713,7 +713,7 @@ test('talent-granted actions and DoT conditions are delegated to the engine', as
   });
 });
 
-import { replaceEquipment, type CatalogItem } from '../apps/bridge/src/simulation/equipment.ts';
+import { replaceEquipment, type CatalogItem } from '../src/simulation/equipment.ts';
 test('equipment policies are delegated to the engine and replacements do not inherit enchants', () => {
   const catalog = new Map<number, CatalogItem>([
     [1, { id: 1, name: 'Dagger', type: 13, weaponType: 2, handType: 2 }],

@@ -1,11 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { modelReasoningEfforts } from '@wisp/agent/reasoning';
-import { chooseChatModel } from '@wisp/bridge/chat-model';
+
 import type { ProviderId } from '@wisp/protocol/providers';
-
 afterEach(() => vi.unstubAllGlobals());
-
 async function request(provider: ProviderId, modelId: string, effort: string, stream = false) {
   let body: Record<string, any> | undefined;
   vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
@@ -33,7 +31,6 @@ async function request(provider: ProviderId, modelId: string, effort: string, st
   expect(body).toBeDefined();
   return body!;
 }
-
 test('model catalogs expose supported reasoning choices without applying them to unknown models', () => {
   expect(modelReasoningEfforts('openai', 'gpt-5.4')).toContain('xhigh');
   expect(modelReasoningEfforts('openai', 'gpt-4.1')).toEqual([]);
@@ -54,22 +51,6 @@ test('model catalogs expose supported reasoning choices without applying them to
     expect(modelReasoningEfforts(provider, 'unknown-test-model')).toEqual([]);
   }
 });
-
-test('API chats preserve provider defaults, allow reverting, and reject unsupported efforts', () => {
-  const catalog = [
-    {
-      slug: 'api',
-      displayName: 'API',
-      efforts: ['provider-default', 'low', 'high'],
-      defaultEffort: 'provider-default',
-    },
-  ];
-  expect(chooseChatModel(catalog, 'api').effort).toBe('provider-default');
-  expect(chooseChatModel(catalog, 'api', 'high').effort).toBe('high');
-  expect(chooseChatModel(catalog, 'api', 'provider-default').effort).toBe('provider-default');
-  expect(() => chooseChatModel(catalog, 'api', 'medium')).toThrow('supported effort');
-});
-
 test.each([false, true])(
   'native reasoning is encoded for generate/stream (stream=%s)',
   async (stream) => {
@@ -122,7 +103,6 @@ test.each([false, true])(
     expect((await request('gateway', 'openai/gpt-5.4', 'high', stream)).reasoning).toBe('high');
   },
 );
-
 test('budget-based providers use different native token budgets for low and high', async () => {
   for (const [provider, modelId, read] of [
     ['anthropic', 'claude-sonnet-4-5', (body: Record<string, any>) => body.thinking.budget_tokens],
@@ -143,7 +123,6 @@ test('budget-based providers use different native token budgets for low and high
     );
   }
 });
-
 test.each(['cerebras', 'togetherai', 'deepinfra', 'baseten', 'compatible', 'fireworks'] as const)(
   '%s passes supported effort to the native chat adapter',
   async (provider) => {
@@ -156,7 +135,6 @@ test.each(['cerebras', 'togetherai', 'deepinfra', 'baseten', 'compatible', 'fire
     expect((await request(provider, id, 'high')).reasoning_effort).toBe('high');
   },
 );
-
 test('provider default omits explicit reasoning configuration', async () => {
   for (const [provider, id] of [
     ['openai', 'gpt-5.4'],

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { getLatestRelease } from '../apps/web/src/release.server.ts';
-import { GET } from '../apps/web/src/app/download/route.ts';
+import { getLatestRelease } from '../src/release.server.ts';
+import { GET } from '../src/app/download/route.ts';
 
 const repository = 'https://github.com/fedeya/wisp-ai';
 

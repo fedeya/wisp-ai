@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
-import { installerBuildVersion } from '../scripts/installer-version.ts';
-import { syncReleaseNotes, type NotesStore } from '../scripts/sync-release-notes.ts';
-import { updateManifest } from '../scripts/update-manifest.ts';
+import { installerBuildVersion } from '../installer-version.ts';
+import { syncReleaseNotes, type NotesStore } from '../sync-release-notes.ts';
+import { updateManifest } from '../update-manifest.ts';
 
 test.each(['0.0.7', '0.0.8-nightly.123.2'])(
   'installer verification uses the artifact version %s independently of the source checkout',

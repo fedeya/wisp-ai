@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "cd .. && vitest run --config scripts/vitest.config.ts"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
@@ -15,6 +16,7 @@
     "@yao-pkg/pkg": "6.24.0",
     "esbuild": "0.28.2",
     "eve": "1.0.0-rc.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
   }
 }

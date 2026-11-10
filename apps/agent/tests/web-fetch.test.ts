@@ -2,14 +2,14 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { dynamicEvaluate } from './node_modules/eve/dist/src/dynamic/definition.js';
-import definition from '../apps/agent/agent/tools/web_fetch.ts';
-import type { WebFetchInput } from '../apps/agent/src/web-fetch.ts';
-import { WebFetchPages } from '../apps/agent/src/web-fetch-pages.ts';
+import { dynamicEvaluate } from '../node_modules/eve/dist/src/dynamic/definition.js';
+import definition from '../agent/tools/web_fetch.ts';
+import type { WebFetchInput } from '../src/web-fetch.ts';
+import { WebFetchPages } from '../src/web-fetch-pages.ts';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';
 import { compactModelContext, searchToolGroups } from '@wisp/agent/model-tools';
-import { publicWebAddresses } from '../apps/agent/src/public-web-tunnel.ts';
-import { publicWebTunnel } from '../apps/agent/src/public-web-tunnel.ts';
+import { publicWebAddresses } from '../src/public-web-tunnel.ts';
+import { publicWebTunnel } from '../src/public-web-tunnel.ts';
 import { request } from 'node:http';
 
 const { impitFetch, impitOptions, dnsLookup } = vi.hoisted(() => ({
@@ -17,7 +17,7 @@ const { impitFetch, impitOptions, dnsLookup } = vi.hoisted(() => ({
   impitOptions: vi.fn(),
   dnsLookup: vi.fn(),
 }));
-vi.mock('../apps/agent/src/impit-client.ts', () => ({
+vi.mock('../src/impit-client.ts', () => ({
   impitClient(options: unknown) {
     impitOptions(options);
     return { fetch: impitFetch };

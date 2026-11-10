@@ -23,7 +23,8 @@
   "scripts": {
     "dev": "eve dev",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "test": "cd ../.. && vitest run --config apps/agent/vitest.config.ts"
   },
   "dependencies": {
     "@ai-sdk/alibaba": "2.0.85",
@@ -60,6 +61,7 @@
   "devDependencies": {
     "@types/node": "24.19.2",
     "@types/turndown": "5.0.6",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
   }
 }
