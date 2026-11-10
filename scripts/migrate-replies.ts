@@ -15,13 +15,7 @@ try {
   const snapshot = new DatabaseSync(file, { readOnly: true });
   const destination = path.join(root, `runtime/chats.before-rich-stream-${Date.now()}.sqlite`);
   try {
-    if (
-      snapshot
-        .prepare(
-          "SELECT id FROM chats WHERE json_extract(metadata, '$.status') = 'working' LIMIT 1",
-        )
-        .get()
-    ) {
+    if (snapshot.prepare("SELECT id FROM chats WHERE status = 'working' LIMIT 1").get()) {
       throw Error('Wait for active turns and stop Wisp before migrating.');
     }
     await backup(snapshot, destination);

@@ -314,7 +314,7 @@ test('installation import snapshots WAL data and detaches engine sessions only i
     expect(
       inspect(
         path.join(source, 'runtime/chats.sqlite'),
-        (db) => JSON.parse(String(db.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId,
+        (db) => db.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id,
       ),
     ).toBe('source-session');
   } finally {

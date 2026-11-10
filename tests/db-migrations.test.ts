@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { migrateChats, migrationsFolder } from '@wisp/bridge/db/migrate';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { ChatStore } from '@wisp/bridge/chat-store';
 
 test('Drizzle adopts existing v1 rows, is repeatable, rejects drift and rolls back failed upgrades', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-migrations-'));
@@ -28,13 +29,21 @@ test('Drizzle adopts existing v1 rows, is repeatable, rejects drift and rolls ba
       .prepare('INSERT INTO messages VALUES (?, ?, ?)')
       .run(chat.id, 0, JSON.stringify(messages[0]));
     database.exec("INSERT INTO metadata VALUES ('initialized', '1'); PRAGMA user_version=1");
+    migrateChats(database);
     const before = database.prepare('SELECT * FROM chats').all();
     migrateChats(database);
-    migrateChats(database);
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
-    expect(
-      JSON.parse(String(database.prepare('SELECT content FROM messages').get()!.content)),
-    ).toEqual(messages[0]);
+    expect(database.prepare('SELECT role, text FROM messages').get()).toEqual(messages[0]);
+    expect(database.prepare('SELECT title, revision FROM chats').get()).toEqual({
+      title: chat.title,
+      revision: 7,
+    });
+    const reader = new ChatStore(path.join(root, 'v1.sqlite'), () => {});
+    try {
+      expect((await reader.load())[0]).toMatchObject(chat);
+    } finally {
+      await reader.close();
+    }
     expect(database.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(
       names.length,
     );

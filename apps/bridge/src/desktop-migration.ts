@@ -2,7 +2,7 @@ import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promise
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync, backup } from 'node:sqlite';
-import { ChatStore } from './chat-store.ts';
+import { ChatStore, conversationInstanceId } from './chat-store.ts';
 
 async function stopPreviousBridge(source: string) {
   let identity: { port?: number; token?: string };
@@ -144,7 +144,9 @@ export async function migrateDesktop(
   }
   // The copied database is authoritative when both formats are present.
   if (sourceDatabase) {
-    const store = new ChatStore(databaseFile, () => {});
+    const store = new ChatStore(databaseFile, () => {}, undefined, {
+      inheritInstanceId: conversationInstanceId(path.join(source, 'runtime')),
+    });
     try {
       const chats = await store.load();
       for (const chat of chats) {

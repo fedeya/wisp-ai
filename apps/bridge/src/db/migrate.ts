@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/node-sqlite';
 import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { sql } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { validateLegacyChats } from './legacy-schema.ts';
 
 const journal = sqliteTable('wisp_migrations', {
   name: text().primaryKey(),
@@ -21,7 +22,7 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
   db.transaction(
     (tx) => {
       const version = Number(client.prepare('PRAGMA user_version').get()!.user_version);
-      if (version > 2) {
+      if (version > 3) {
         throw Error(`Unsupported conversation database version: ${version}`);
       }
       tx.run(sql`CREATE TABLE IF NOT EXISTS wisp_migrations (
@@ -35,6 +36,9 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
         }
       }
       for (const migration of migrations.slice(applied.length)) {
+        if (migration.name === '20261110001924_normalize-conversations') {
+          validateLegacyChats(client);
+        }
         for (const statement of migration.sql) {
           if (statement.trim()) {
             tx.run(sql.raw(statement));
@@ -44,7 +48,10 @@ export function migrateChats(client: DatabaseSync, folder = migrationsFolder) {
           .values({ name: migration.name, hash: migration.hash, appliedAt: Date.now() })
           .run();
       }
-      tx.run(sql`PRAGMA user_version = 2`);
+      if (client.prepare('PRAGMA foreign_key_check').all().length) {
+        throw Error('Conversation migration violated foreign key constraints.');
+      }
+      tx.run(sql`PRAGMA user_version = 3`);
     },
     { behavior: 'immediate' },
   );

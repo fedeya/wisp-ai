@@ -5,7 +5,7 @@ import { copyFile, mkdir, mkdtemp, writeFile, readFile, rm, readdir } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '@wisp/bridge/chat-store';
+import { migrationsFolder } from '@wisp/bridge/db/migrate';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 
 const exec = promisify(execFile);
@@ -16,23 +16,29 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
     const root = await mkdtemp(path.join(tmpdir(), 'wisp-packaged-sqlite-'));
     const previous = path.join(root, 'previous');
     const destination = path.join(root, 'imported');
-    const source = new ChatStore(path.join(previous, 'runtime/chats.sqlite'), () => {});
+    await mkdir(path.join(previous, 'runtime'), { recursive: true });
+    const source = new DatabaseSync(path.join(previous, 'runtime/chats.sqlite'));
     try {
-      await source.load();
+      source.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL');
+      source.exec(
+        await readFile(
+          path.join(migrationsFolder, '20261109234044_initial-chat-schema/migration.sql'),
+          'utf8',
+        ),
+      );
       const chat = {
         ...newChat('history', 'game'),
         eveId: 'old-session',
         messages: [{ role: 'user' as const, text: 'History survives packaging 🧙' }],
       };
-      await source.flush([chat]);
-      // Simulate the first SQLite release: rows already exist, but Drizzle's
-      // migration journal does not yet exist.
-      const previousDb = new DatabaseSync(path.join(previous, 'runtime/chats.sqlite'));
-      try {
-        previousDb.exec('DROP TABLE wisp_migrations; PRAGMA user_version = 1');
-      } finally {
-        previousDb.close();
-      }
+      const { messages, ...metadata } = chat;
+      source
+        .prepare('INSERT INTO chats VALUES(?,?,?,?,?,?)')
+        .run(chat.id, 0, null, 0, 0, JSON.stringify(metadata));
+      source
+        .prepare('INSERT INTO messages VALUES(?,?,?)')
+        .run(chat.id, 0, JSON.stringify(messages[0]));
+      source.exec("INSERT INTO metadata VALUES('initialized','1'); PRAGMA user_version=1");
       await writeFile(
         path.join(previous, 'config.local.json'),
         JSON.stringify({ wow: 'fixture-wow' }),
@@ -58,19 +64,19 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
-        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(1);
-        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(2);
+        expect(db.prepare('SELECT count(*) AS n FROM wisp_migrations').get()!.n).toBe(2);
+        expect(db.prepare('PRAGMA user_version').get()!.user_version).toBe(3);
+        expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
+        expect(db.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id).toBeNull();
+        expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
         expect(
-          JSON.parse(String(db.prepare('SELECT content FROM messages').get()!.content)).text,
-        ).toBe(chat.messages[0].text);
-        expect(
-          JSON.parse(String(db.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId,
-        ).toBeUndefined();
+          JSON.parse(String(source.prepare('SELECT metadata FROM chats').get()!.metadata)).eveId,
+        ).toBe('old-session');
       } finally {
         db.close();
       }
     } finally {
-      await source.close();
+      source.close();
       await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
   },
