@@ -21,7 +21,7 @@ concurrency:
 jobs:
   format:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
@@ -40,7 +40,7 @@ jobs:
       - run: pnpm lint
   types:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
@@ -80,7 +80,7 @@ jobs:
       - run: pnpm test:addon
   ui-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
