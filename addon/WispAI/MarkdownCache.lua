@@ -3,7 +3,7 @@ local _, C = ...
 -- Syntax depends on source and inline/block mode, never on references, item data
 -- or width. Presentation caches can keep their compiled strings after AST eviction.
 local MAX_SOURCE, MAX_NODES, MAX_NESTING = 65536, 20000, 128
-local SYNC_BYTES, FRAME_BUDGET, MAX_RESUMES = 512, 0.002, 8
+local SYNC_BYTES, FRAME_BUDGET, MAX_RESUMES = 512, 0.002, 128
 local Cache = {}
 Cache.__index = Cache
 

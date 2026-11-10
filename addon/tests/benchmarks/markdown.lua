@@ -20,6 +20,13 @@ local function median(values)
     table.sort(values)
     return values[math.floor(#values / 2) + 1] * 1000
 end
+local function peak(values)
+    local maximum = 0
+    for _, value in ipairs(values) do
+        maximum = math.max(maximum, value)
+    end
+    return maximum * 1000
+end
 local cases = {
     { "plain", string.rep("ordinary text ", 1500):sub(1, 20000) },
     {
@@ -34,9 +41,11 @@ local cases = {
             .. string.rep("one|two|three|four|five|six\n", 700),
     },
 }
-print("case\tbytes\tsync_parse_ms\tasync_cpu_ms\tmax_step_ms\tpresentation_ms\tcached_view_ms")
+print(
+    "case\tbytes\tsync_parse_ms\tasync_cpu_ms\tpeak_step_ms\tsteps\tpresentation_ms\tcached_view_ms"
+)
 for _, case in ipairs(cases) do
-    local times = { {}, {}, {}, {}, {} }
+    local times = { {}, {}, {}, {}, {}, {} }
     for _ = 1, 7 do
         collectgarbage("collect")
         local cache = C.MarkdownCache.new({ clock = os.clock })
@@ -47,10 +56,11 @@ for _, case in ipairs(cases) do
         assert(C.Markdown.parse(source, { references = true }))
         times[1][#times[1] + 1] = os.clock() - start
         local _, _, pending = cache:get(source)
-        local maximum, elapsed = 0, 0
+        local maximum, elapsed, steps = 0, 0, 0
         while pending do
             start = os.clock()
             cache:step()
+            steps = steps + 1
             local used = os.clock() - start
             maximum, elapsed = math.max(maximum, used), elapsed + used
             local document, err
@@ -58,6 +68,7 @@ for _, case in ipairs(cases) do
             assert(document or pending, err and err.code)
         end
         times[2][#times[2] + 1], times[3][#times[3] + 1] = elapsed, maximum
+        times[6][#times[6] + 1] = steps
         local message = { role = "assistant", text = source }
         start = os.clock()
         C.MarkdownView.project(message)
@@ -68,12 +79,13 @@ for _, case in ipairs(cases) do
     end
     print(
         string.format(
-            "%s\t%d\t%.1f\t%.1f\t%.1f\t%.1f\t%.1f",
+            "%s\t%d\t%.1f\t%.1f\t%.1f\t%d\t%.1f\t%.1f",
             case[1],
             #case[2],
             median(times[1]),
             median(times[2]),
-            median(times[3]),
+            peak(times[3]),
+            median(times[6]) / 1000,
             median(times[4]),
             median(times[5])
         )
