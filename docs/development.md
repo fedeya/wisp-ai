@@ -75,6 +75,18 @@ Native Rust tests remain on Cargo;
 see the CI workflow for their build prerequisites and command. Simulator and native-helper
 tests keep their existing skips when the required binaries are absent.
 
+CI runs the general TypeScript suites on Ubuntu, excluding
+`apps/bridge/tests/simulation.test.ts`. A separate Windows job runs that complete
+file against the pinned simulator, so engine tests do not silently skip on Linux.
+Windows release calls the same validation workflow before packaging; pushes to
+`main` use that validation instead of starting a second copy of CI.
+
+The shared `setup-simulator` action caches the executable, manifest, class/item
+metadata and license for both validation and packaging. Its key includes the Go
+version, build and metadata scripts, engine patch, class adapters and checked-in
+metadata. A hit skips Go/protoc setup and compilation; every restore verifies the
+binary hash and metadata before use.
+
 ### Lua addon tests
 
 The [Lua guidelines](lua-guidelines.md) define coding practices; the

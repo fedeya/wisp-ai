@@ -1,0 +1,40 @@
+name: Set up simulator
+description: Restore or build the pinned Windows simulator and verify its binary and metadata.
+runs:
+  using: composite
+  steps:
+    - name: Restore pinned simulator build
+      id: simulator-binary
+      uses: actions/cache@v4
+      with:
+        path: |
+          simulator/wowsimcli.exe
+          simulator/manifest.json
+          simulator/items.json
+          simulator/classes.json
+          simulator/LICENSE-WoWSims.txt
+        key: wisp-simulator-v2-${{ runner.os }}-${{ runner.arch }}-go1.25.14-${{ hashFiles('scripts/build-simulator.ps1', 'scripts/simulator-downranking.patch', 'scripts/simulator-metadata.ts', 'scripts/verify-simulator.ts', 'apps/bridge/src/simulation/adapters/*.ts', 'simulator/*.json') }}
+    - uses: actions/setup-go@v6
+      if: steps.simulator-binary.outputs.cache-hit != 'true'
+      with:
+        go-version: '1.25.14'
+        cache: false
+    - name: Install protocol compiler
+      if: steps.simulator-binary.outputs.cache-hit != 'true'
+      run: choco install protoc --yes --no-progress
+      shell: pwsh
+    - uses: actions/cache@v4
+      if: steps.simulator-binary.outputs.cache-hit != 'true'
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/AppData/Local/go-build
+          node_modules/.cache/wowsims-levelsim
+        key: wowsims-windows-go125-7f9c0e7
+    - name: Build pinned simulator
+      if: steps.simulator-binary.outputs.cache-hit != 'true'
+      run: ./scripts/build-simulator.ps1
+      shell: pwsh
+    - name: Verify simulator binary and metadata
+      run: node --input-type=module -e "import { verifySimulator } from './scripts/verify-simulator.ts'; await verifySimulator(process.cwd());"
+      shell: pwsh

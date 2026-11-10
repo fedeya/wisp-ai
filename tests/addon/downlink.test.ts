@@ -17,6 +17,16 @@ import {
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
+const downlinkHelpers = Array.from({ length: 384 }, (_, index) =>
+  to_luastring(
+    index < 128
+      ? 'WispAI_B' + String(index + 1).padStart(3, '0')
+      : 'WispAI_S' + String(index - 127).padStart(4, '0'),
+  ),
+);
+const uplinkHelpers = Array.from({ length: 768 }, (_, index) =>
+  to_luastring('WispAI_S' + String(index + 257).padStart(4, '0')),
+);
 
 // Native APIs are stubbed, but JSON/zlib bytes, frame CRCs, production Lua and
 // helper bit mapping are real. This is a correctness test, not native FPS data.
@@ -117,8 +127,30 @@ function harness(compact = false) {
     snapshots.push(read(state, 1));
     return 0;
   });
-  callback('nativeSaved', (state) => {
-    saved.push(Buffer.from(lua.lua_tolstring(state, 1)));
+  // WoW implements these APIs natively. Keep the fake disk copies and bit packing
+  // in the host too, rather than interpreting those loops for every frame/ACK.
+  function copyStates(state: unknown) {
+    lua.lua_pushnil(state);
+    while (lua.lua_next(state, 1)) {
+      lua.lua_pushvalue(state, -2);
+      lua.lua_pushvalue(state, -2);
+      lua.lua_rawset(state, 2);
+      lua.lua_pop(state, 1);
+    }
+    return 0;
+  }
+  callback('nativeCopyStates', copyStates);
+  callback('nativeSaveAddOns', (state) => {
+    copyStates(state);
+    const bytes = Buffer.alloc(96);
+    for (let index = 0; index < uplinkHelpers.length; index++) {
+      lua.lua_getfield(state, 1, uplinkHelpers[index]);
+      if (lua.lua_toboolean(state, -1)) {
+        bytes[index >> 3] |= 1 << (index & 7);
+      }
+      lua.lua_pop(state, 1);
+    }
+    saved.push(bytes);
     return 0;
   });
   run(readFileSync('addon/tests/fixtures/transport.lua', 'utf8'));
@@ -137,19 +169,10 @@ C_AddOns.DoesAddOnExist=function(name)return states[name]~=nil end
 C_AddOns.GetAddOnEnableState=function(name,character)check(name,character);stateReads=stateReads+1;return states[name]and 2 or 0 end
 C_AddOns.EnableAddOn=function(name,character)check(name,character);states[name]=true end
 C_AddOns.DisableAddOn=function(name,character)check(name,character);states[name]=false end
-C_AddOns.ResetAddOns=function()resets=resets+1;for name,value in pairs(disk)do states[name]=value end end
+C_AddOns.ResetAddOns=function()resets=resets+1;nativeCopyStates(disk,states)end
 C_AddOns.SaveAddOns=function()
  saves=saves+1
- for name,value in pairs(states)do disk[name]=value end
- local bytes={}
- for byte=0,95 do
-  local value=0
-  for position=0,7 do
-   if states[string.format('WispAI_S%04d',257+byte*8+position)]then value=value+2^position end
-  end
-  bytes[#bytes+1]=string.char(value)
- end
- nativeSaved(table.concat(bytes))
+ nativeSaveAddOns(states,disk)
 end
 C_EncodingUtil.SerializeJSON=nativeSerialize
 C_EncodingUtil.DeserializeJSON=nativeDeserialize
@@ -181,18 +204,12 @@ end
   );
   saved.length = 0;
   function write(frame: Buffer) {
-    lua.lua_pushlstring(L, frame, frame.length);
-    lua.lua_setglobal(L, to_luastring('diskFrame'));
-    run(`
-for byte=1,48 do
- local value=diskFrame:byte(byte)
- for position=0,7 do
-  local index=(byte-1)*8+position+1
-  local name=index<=128 and string.format('WispAI_B%03d',index)or string.format('WispAI_S%04d',index-128)
-  disk[name]=math.floor(value/2^position)%2==1
- end
-end
-`);
+    lua.lua_getglobal(L, to_luastring('disk'));
+    for (let index = 0; index < downlinkHelpers.length; index++) {
+      lua.lua_pushboolean(L, Boolean(frame[index >> 3] & (1 << (index & 7))));
+      lua.lua_setfield(L, -2, downlinkHelpers[index]);
+    }
+    lua.lua_pop(L, 1);
   }
   function receive(frame: Buffer, ack = true) {
     write(frame);

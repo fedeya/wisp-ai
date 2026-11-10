@@ -71,34 +71,7 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
           cache-on-failure: true
-      - name: Restore pinned simulator build
-        id: simulator-binary
-        uses: actions/cache@v4
-        with:
-          path: |
-            simulator/wowsimcli.exe
-            simulator/manifest.json
-            simulator/item-ids.json
-            simulator/mage-talents.json
-          key: wisp-simulator-v1-${{ runner.os }}-${{ runner.arch }}-go1.25.14-${{ hashFiles('scripts/build-simulator.ps1', 'scripts/simulator-metadata.ts', 'scripts/verify-simulator.ts', 'simulator/*.json') }}
-      - uses: actions/setup-go@v6
-        if: steps.simulator-binary.outputs.cache-hit != 'true'
-        with:
-          go-version: '1.25.14'
-          cache: false
-      - run: choco install protoc --yes --no-progress
-        if: steps.simulator-binary.outputs.cache-hit != 'true'
-      - uses: actions/cache@v4
-        if: steps.simulator-binary.outputs.cache-hit != 'true'
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/AppData/Local/go-build
-            node_modules/.cache/wowsims-levelsim
-          key: wowsims-windows-go125-7f9c0e7
-      - run: ./scripts/build-simulator.ps1
-        if: steps.simulator-binary.outputs.cache-hit != 'true'
-        shell: pwsh
+      - uses: ./.github/actions/setup-simulator
       - run: pnpm build:desktop
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

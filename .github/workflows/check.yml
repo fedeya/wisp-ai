@@ -7,8 +7,7 @@ on:
         description: Successful Windows release run to verify
         required: true
         type: string
-  push:
-    branches: [main]
+  # Pushes to main are validated once by Windows release's reusable-workflow job.
   pull_request:
   workflow_run:
     workflows: ['Windows release']
@@ -47,25 +46,19 @@ jobs:
       - run: pnpm typecheck
   unit-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+      - run: pnpm test:core -- --exclude=apps/bridge/tests/simulation.test.ts
+  simulator-tests:
+    if: github.event_name != 'workflow_run' && !inputs.release_run_id
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache: false
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/AppData/Local/go-build
-            node_modules/.cache/wowsims-levelsim
-          key: wowsims-windows-go125-7f9c0e7
-      - run: choco install protoc --yes --no-progress
-      - run: ./scripts/build-simulator.ps1
-        shell: pwsh
-      - run: pnpm test:core
+      - uses: ./.github/actions/setup-simulator
+      - run: pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/simulation.test.ts
   addon-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
     runs-on: ubuntu-latest
