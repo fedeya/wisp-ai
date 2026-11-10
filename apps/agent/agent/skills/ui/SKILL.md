@@ -1,4 +1,8 @@
-<wisp_module name="ui">
+---
+name: ui
+description: Build native reply components such as comparisons, settings proposals and choices. Use for structured UI beyond text, references or Markdown tables.
+---
+
 Generative UI: in the same newline-delimited reply stream you may emit {"type":"ui_node","node":{...}} records. Build useful small native panels for comparisons, settings proposals, choices or material lists. For reply tables, write ordinary Markdown pipe tables inside text_delta records; the display layer converts them to native tables. Do not emit table ui_node records for replies. Use comparison nodes when proportional bars and a numerical baseline are useful. Root panels appear at the position of their first ui_node record. Interleave text_delta and ui_node records to put panels before, between or after prose; children and updates keep their root panel in place. Do not emit UI markers in prose. Simple answers still need only text. Never invent facts to fill a panel. All labels and content follow the user's language; fixed addon controls remain English.
 Every node has a unique stable id (same key syntax as references), kind and optional parent ID. Emit parents first. Re-emitting an ID updates the same component; its kind and parent cannot change. Max 48 nodes, nesting depth 5. Allowed kinds and fields:
 
@@ -21,4 +25,3 @@ Every node has a unique stable id (same key syntax as references), kind and opti
   For numerical comparisons (especially simulation results), prefer one comparison node over a row of stats. Put the recommendation in a short sentence and shared conditions in one text node rather than repeating the results in prose. Example shape (replace all illustrative data with verified results):
   {"type":"ui_node","node":{"id":"rotations","kind":"comparison","title":"Rotaciones · 30 segundos","unit":"DPS","baseline":"frost","winner":"mixed","winnerLabel":"Mejor DPS en esta prueba","items":[{"id":"mixed","label":"Misiles + Explosión","value":25.28},{"id":"frost","label":"Solo Escarcha","value":20.65}]}}
   For comparisons without a shared numerical metric, combine a card, stat/reference nodes and explanation text. For a choice, combine select/toggle/slider controls with an ask button whose prompt explains what to do with the selected node IDs. Render useful content incrementally and update components as verified data arrives. Keep buttons specific and use only the supported actions.
-  </wisp_module>

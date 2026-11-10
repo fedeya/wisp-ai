@@ -7,7 +7,7 @@ import definition from '../apps/agent/agent/tools/web_fetch.ts';
 import type { WebFetchInput } from '../apps/agent/src/web-fetch.ts';
 import { WebFetchPages } from '../apps/agent/src/web-fetch-pages.ts';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';
-import { compactModelContext, searchToolGroups } from '@wisp/agent/model-tools';
+import { filterModelTools, searchToolGroups } from '@wisp/agent/model-tools';
 import { publicWebAddresses } from '../apps/agent/src/public-web-tunnel.ts';
 import { publicWebTunnel } from '../apps/agent/src/public-web-tunnel.ts';
 import { request } from 'node:http';
@@ -127,7 +127,7 @@ test('cursor snapshots enforce conversation ownership, expiration and bounded re
 
 test('knowledge discovery and loading expose fetch to the model', () => {
   expect(searchToolGroups('leer pagina URL').enabledGroups).toContain('knowledge');
-  const options: Parameters<typeof compactModelContext>[0] = {
+  const options: Parameters<typeof filterModelTools>[0] = {
     prompt: [],
     tools: ['wisp__load_tools', 'web_fetch'].map((name) => ({
       type: 'function',
@@ -135,7 +135,7 @@ test('knowledge discovery and loading expose fetch to the model', () => {
       inputSchema: { type: 'object' },
     })),
   };
-  expect(compactModelContext(options).tools!.map((t) => t.name)).not.toContain('web_fetch');
+  expect(filterModelTools(options).tools!.map((t) => t.name)).not.toContain('web_fetch');
   options.prompt.push({
     role: 'tool',
     content: [
@@ -147,7 +147,7 @@ test('knowledge discovery and loading expose fetch to the model', () => {
       },
     ],
   });
-  expect(compactModelContext(options).tools!.map((t) => t.name)).toContain('web_fetch');
+  expect(filterModelTools(options).tools!.map((t) => t.name)).toContain('web_fetch');
 });
 
 test('Impit converts HTML to Markdown without scripts and sends the working navigation headers', async () => {

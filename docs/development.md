@@ -128,27 +128,29 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 | ----------------------------- | ---------------------------------------------------------------------------------------------- |
 | Desktop UI and native host    | [Svelte](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
 | Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent-process.ts) |
-| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions)           |
+| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)        |
 | Shared contracts              | [protocol](../packages/protocol/src)                                                           |
 | Game UI, readings and actions | [addon](../addon/WispAI)                                                                       |
 
 The bridge owns accounts, persistence and tool execution. Eve runs on loopback **43186**; the separate RPC/model endpoint on **43187** uses an ephemeral agent token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
-Agent instructions live in `apps/agent/agent/instructions/`. Eve compiles each Markdown
-file as a system instruction. `00-core.md` contains shared context, authorization and
-reply rules; task files wrap their content in `<wisp_module name="GROUP">` using an
-existing group from `model-tools.ts`. The model middleware includes those blocks
-only after tool discovery/loading or use of a tool in that group during the current
-turn. Compaction retains the full instructions. This uses the existing tool-group
-loader rather than adding a separate skill activation call.
+Shared agent rules live in `apps/agent/agent/instructions.md`. Task procedures
+live in native Eve skills at `apps/agent/agent/skills/<name>/SKILL.md`, with a
+short frontmatter description stating when to use each skill. Eve advertises those
+descriptions and returns the full instructions through `eve__skill`. Eve owns
+how loaded skill results are retained in history and compacted.
 
-Keep each rule with its owner: shared guarantees in core, task procedures in the
-matching module, parameter details in tool schemas, and enforceable constraints in
-code. Preserve Forever-specific evidence requirements and preview/verified-result
-boundaries when shortening text. `tests/model-context.test.ts` checks selective
-loading; `tests/agent-integration.test.ts` exercises actual Eve discovery and the
-middleware with an offline model. Prompt edits also need representative gameplay
-evaluation before claiming improved model behavior.
+Tool schemas are separate: `wisp__search_tools` / `wisp__load_tools` select the
+available groups for the current turn through `filterModelTools`. Loading a skill
+does not enable tools or change permissions. Dynamic capability definitions and
+bridge checks remain authoritative. Keep parameter details in tool schemas and
+enforceable constraints in code; preserve Forever evidence, authorization and
+verified-result requirements when editing skills.
+
+`tests/model-context.test.ts` checks tool selection without rewriting prompts.
+`tests/agent-integration.test.ts` exercises native skill discovery/activation,
+separate schema loading and follow-up turns with the real Eve agent and an offline
+model. Prompt edits still need gameplay evaluation before claiming better answers.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
 Compressed snapshots and patches continue through the reusable lane after the

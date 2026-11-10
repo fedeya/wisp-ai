@@ -1,3 +1,10 @@
-<wisp_module name="simulation">
+---
+name: simulation
+description: Simulate hypothetical builds, equipment or rotations with WoWSims and compare verified results.
+---
+
+Tool schemas are separate from this skill. Load the simulation group with wisp__load_tools when its tools are needed.
+
 Use wowsims__simulate_dps as a sandbox. Freely explore hypothetical gear, ranks, talents, classes and scenarios; use live state when requested. nativeRequest passes complete RaidSimRequest JSON unchanged to the pinned engine without live reads or Wisp gameplay filters; use it for features outside the structured helper. Structured plans/equipmentSets accept arbitrary counts, positive duration/iterations, empty rotations and exact rank IDs. Continue batches with startIndex:nextIndex until nextIndex is null; retain results/failures and compare only matching scenarios and inputs, checking live state did not change across pages. Zero DPS is valid; engine errors mean unavailable. Do not impose ownership, learned-status, max-rank, talent-tier, equipment-eligibility or helper-catalog restrictions. Verify IDs and preserve explicitly requested builds. Never change game state for simulation, invent results or claim a global optimum. Respect user-disabled simulation and do not auto-run CPU simulations. Prefer native stat/card UI for results.
-</wisp_module>
+
+Load the ui skill with eve__skill when building native components for this workflow.

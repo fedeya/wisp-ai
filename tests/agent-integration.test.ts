@@ -71,13 +71,17 @@ test(
         return;
       }
       requests.push(JSON.parse(body));
-      if (requests.length === 2) {
+      if (requests.length === 2 || requests.length === 3 || requests.length === 6) {
         const item = {
-          id: 'search-item',
+          id: 'tool-item-' + requests.length,
           type: 'function_call',
-          call_id: 'search-call',
-          name: 'wisp__search_tools',
-          arguments: JSON.stringify({ query: 'graphics settings' }),
+          call_id: 'tool-call-' + requests.length,
+          name: requests.length === 3 ? 'wisp__search_tools' : 'eve__skill',
+          arguments: JSON.stringify(
+            requests.length === 3
+              ? { query: 'graphics settings' }
+              : { name: requests.length === 6 ? 'missing-skill' : 'settings' },
+          ),
         };
         const events = [
           {
@@ -248,26 +252,61 @@ test(
       expect(chat.title).toBe('New conversation');
       expect(chat.titleGenerated).not.toBe(true);
       expect(JSON.stringify(requests[0])).not.toContain('Ratchet delivery');
-      expect(JSON.stringify(requests[0])).not.toContain('<wisp_module');
       expect(JSON.stringify(requests[0])).not.toContain('Allowed kinds and fields');
+      expect(JSON.stringify(requests[0])).not.toContain('To change a setting:');
+      expect((requests[0]!.tools as { name: string }[]).map((tool) => tool.name)).toContain(
+        'eve__skill',
+      );
       expect(
         requests.every((request) => request.store === false && !('safety_identifier' in request)),
       ).toBe(true);
       const next = await session.send(
-        turnInput('Search settings tools', undefined, { ...chat, titleGenerated: true }),
+        turnInput('Load the settings skill and search its tools', undefined, {
+          ...chat,
+          titleGenerated: true,
+        }),
         { signal: AbortSignal.timeout(15000) },
       );
       for await (const _event of next.stream({ signal: AbortSignal.timeout(15000) })) {
         /* Drain the real tool loop. */
       }
       expect((await next.result()).status).toBe('completed');
-      expect(requests).toHaveLength(3);
+      expect(requests).toHaveLength(4);
       const names = (i: number) =>
         (requests[i]!.tools as { name: string }[]).map((tool) => tool.name);
       expect(names(1)).not.toContain('wow__get_settings');
-      expect(names(2)).toContain('wow__get_settings');
-      expect(names(2)).not.toContain('wow__update_settings');
+      expect(names(2)).not.toContain('wow__get_settings');
       expect(JSON.stringify(requests[2])).toContain('Settings capabilities:');
+      const systemInput = (requests[2]!.input as { role?: string }[]).filter(
+        (message) => message.role === 'system' || message.role === 'developer',
+      );
+      expect(systemInput.length).toBeGreaterThan(0);
+      expect(JSON.stringify(systemInput)).not.toContain('To change a setting:');
+      expect(JSON.stringify(requests[2])).not.toContain('Allowed kinds and fields');
+      expect(names(3)).toContain('wow__get_settings');
+      expect(names(3)).not.toContain('wow__update_settings');
+      const followup = await session.send(
+        turnInput('Continue', undefined, { ...chat, titleGenerated: true }),
+        { signal: AbortSignal.timeout(15000) },
+      );
+      for await (const _event of followup.stream({ signal: AbortSignal.timeout(15000) })) {
+        /* Native skill instructions remain in history across turns. */
+      }
+      expect((await followup.result()).status).toBe('completed');
+      expect(requests).toHaveLength(5);
+      expect(JSON.stringify(requests[4])).toContain('Settings capabilities:');
+      expect(names(4)).not.toContain('wow__get_settings');
+      const missing = await session.send(
+        turnInput('Load a missing skill', undefined, { ...chat, titleGenerated: true }),
+        { signal: AbortSignal.timeout(15000) },
+      );
+      for await (const _event of missing.stream({ signal: AbortSignal.timeout(15000) })) {
+        /* A failed activation must not enable any tool schemas. */
+      }
+      expect((await missing.result()).status).toBe('completed');
+      expect(requests).toHaveLength(7);
+      expect(JSON.stringify(requests[6])).toContain('No skill named');
+      expect(names(6)).not.toContain('wow__get_settings');
       if (executable) {
         await stopEveProcess(child);
         child = start();

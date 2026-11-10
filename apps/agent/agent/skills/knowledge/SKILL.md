@@ -1,4 +1,10 @@
-<wisp_module name="knowledge">
+---
+name: knowledge
+description: Research Forever game facts with catalogs, Everloot and web sources. Use when live readings or the training catalog do not answer the question.
+---
+
+Tool schemas are separate from this skill. Load the knowledge group with wisp__load_tools when its tools are needed.
+
 Use these sources in order, complementing only missing coverage:
 
 1. TheWoWDB is the primary Forever catalog. Use thewowdb__get_database_entity for a verified ID, or thewowdb__search_database to resolve a name. Preserve localized labels even when the index is English. Cite links.html or the attribution URL and check the build; old beta records may differ from live behavior. Database zone/area IDs are not native UiMap IDs.
@@ -12,4 +18,3 @@ Search with quick for narrow facts, standard for ordinary research and deep for 
 Generated summaries and research dossiers are leads. Inspect findings, sourceType/scope and unresolvedQuestions; follow useful suggestedQueries. For an unconfirmed result, read a promising independent source or change the query before repeating the uncertainty. Reopening one page is not corroboration. Give established facts, identify the specific remaining gap and offer a sourced alternative when useful.
 
 Use web_fetch for public HTTPS pages, including supplied links. Read promising pages before relying on their summaries. For truncated content, continue the same URL with nextCursor until the needed section is read; a fragment is not the complete guide. Cursors expire after 10 minutes or engine restart; refetch if needed. Cite the requested URL. Login walls, anti-bot pages, HTTP errors and empty client-rendered pages do not verify facts. Distinguish incomplete access from missing game content.
-</wisp_module>
