@@ -107,12 +107,12 @@ export function formatNightlyNotes(sha: string, previous?: string, changes = '',
   const technical = previous
     ? `${repository}/compare/${previous}...${sha}`
     : `${repository}/commit/${sha}`;
-  const heading = previous ? `Technical changes since ${previous}` : 'Technical changes';
+  const heading = previous ? `Changes since ${previous}` : 'Changes';
   const cumulative =
     stable && stable !== previous
       ? `\n[All changes since ${stable}](${repository}/compare/${stable}...${sha})\n`
       : '';
-  return `# Nightly preview\n\n- Experimental build from main. It may contain bugs.\n\n## ${heading}\n\n${changes.trim() || '- No commits in this comparison.'}\n\n[View full diff on GitHub](${technical})\n${cumulative}`;
+  return `# ${heading}\n\n${changes.trim() || '- No commits in this comparison.'}\n\n[View full diff on GitHub](${technical})\n${cumulative}`;
 }
 export async function nightlyNotes(sha: string, root = process.cwd(), previousNightly?: string) {
   let stable: string | undefined;

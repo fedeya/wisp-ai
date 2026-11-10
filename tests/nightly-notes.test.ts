@@ -18,12 +18,13 @@ const authored =
 
 test('nightly release notes contain a technical list and exact comparison link', () => {
   const notes = formatNightlyNotes(sha, 'v0.0.7', '- test: added regression coverage');
-  expect(notes).toContain('Experimental build from main');
+  expect(notes).not.toContain('Nightly preview');
+  expect(notes).not.toContain('Experimental build from main');
   expect(notes).not.toContain('## Fixed');
   expect(notes).toContain(
     `[View full diff on GitHub](https://github.com/fedeya/wisp-ai/compare/v0.0.7...${sha})`,
   );
-  expect(notes).toContain('## Technical changes since v0.0.7');
+  expect(notes).toMatch(/^# Changes since v0.0.7\n/);
   expect(notes).toContain('- test: added regression coverage');
   expect(validateNotes(notes)).toBe(notes);
 });
@@ -41,7 +42,7 @@ test('malformed source identities fail explicitly', () => {
 
 test('incremental Nightly notes retain a separate cumulative Stable comparison', () => {
   const notes = formatNightlyNotes(sha, 'v0.0.8-nightly.1.1', '- Fixed reconnects.', 'v0.0.7');
-  expect(notes).toContain('Technical changes since v0.0.8-nightly.1.1');
+  expect(notes).toMatch(/^# Changes since v0.0.8-nightly.1.1\n/);
   expect(notes).toContain(`/compare/v0.0.8-nightly.1.1...${sha}`);
   expect(notes).toContain(
     `[All changes since v0.0.7](https://github.com/fedeya/wisp-ai/compare/v0.0.7...${sha})`,
@@ -102,7 +103,7 @@ test('nightly generation includes technical commits through the exact build with
     expect(notes).toContain(`/commit/${buildSha}`);
     expect(notes).not.toContain('README');
     expect(notes).not.toContain('Conversations reconnect');
-    expect(notes).toContain('Experimental build from main');
+    expect(notes).not.toContain('Experimental build from main');
 
     const published = (version: string) => ({
       tag_name: `v${version}`,
