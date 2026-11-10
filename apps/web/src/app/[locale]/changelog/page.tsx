@@ -1,3 +1,4 @@
+import { changelogStyles } from '../../../components/ui/changelog';
 import Link from 'next/link';
 import { getReleaseHistory } from '../../../changelog.server';
 import { ReleaseCard } from '../../../components/release-card';
@@ -29,22 +30,30 @@ export default async function Changelog({
   const history = await getReleaseHistory(channel, page);
   const path = localizedPath(locale, '/changelog');
   const es = locale === 'es';
+  const styles = changelogStyles();
   return (
-    <main id="main" className="container changelog-page">
-      <header className="reference-intro changelog-intro">
-        <span className="eyebrow">{es ? 'EL DIARIO DE WISP' : 'THE WISP JOURNAL'}</span>
-        <h1>{es ? 'Cada vez más compañero.' : 'A better companion, every update.'}</h1>
-        <p>
+    <main id="main" className={styles.page()}>
+      <header className={styles.intro()}>
+        <span className={styles.eyebrow()}>{es ? 'EL DIARIO DE WISP' : 'THE WISP JOURNAL'}</span>
+        <h1 className={styles.heading()}>
+          {es ? 'Cada vez más compañero.' : 'A better companion, every update.'}
+        </h1>
+        <p className={styles.lead()}>
           {es
             ? 'Nuevas ideas, pequeños detalles y mejoras para tus aventuras en Azeroth.'
             : 'New ideas, thoughtful details and improvements for your adventures in Azeroth.'}
         </p>
       </header>
-      <nav className="release-channels" aria-label={es ? 'Canal de versiones' : 'Release channel'}>
-        <Link href={path} aria-current={channel === 'stable' ? 'page' : undefined}>
+      <nav className={styles.tabs()} aria-label={es ? 'Canal de versiones' : 'Release channel'}>
+        <Link
+          className={styles.tab()}
+          href={path}
+          aria-current={channel === 'stable' ? 'page' : undefined}
+        >
           Stable
         </Link>
         <Link
+          className={styles.tab()}
           href={`${path}?channel=nightly`}
           aria-current={channel === 'nightly' ? 'page' : undefined}
         >
@@ -52,7 +61,7 @@ export default async function Changelog({
         </Link>
       </nav>
       {channel === 'nightly' && history.releases.length > 0 && (
-        <p className="nightly-notice">
+        <p className={styles.notice()}>
           {es
             ? 'Probá las últimas novedades antes de que lleguen a Stable. Estas versiones pueden contener errores.'
             : 'Try the latest changes before they reach Stable. These builds may contain bugs.'}
@@ -62,8 +71,8 @@ export default async function Changelog({
         <ReleaseCard key={release.version} release={release} locale={locale} />
       ))}
       {!history.releases.length && (
-        <div className="release-empty">
-          <h2>
+        <div className={styles.empty()}>
+          <h2 className={styles.emptyHeading()}>
             {history.unavailable
               ? es
                 ? 'No pudimos cargar las novedades'
@@ -86,12 +95,12 @@ export default async function Changelog({
                 : 'You can find published releases on GitHub.'}
           </p>
           {!history.unavailable && channel === 'nightly' && page === 1 ? (
-            <Link className="text-link" href={path}>
+            <Link className={styles.textLink()} href={path}>
               {es ? 'Ver novedades de Stable' : 'Explore Stable updates'}{' '}
               <Icon name="arrow" size={16} />
             </Link>
           ) : (
-            <a className="text-link" href={`${site.repository}/releases`}>
+            <a className={styles.textLink()} href={`${site.repository}/releases`}>
               GitHub Releases <Icon name="external" size={16} />
             </a>
           )}
@@ -99,20 +108,23 @@ export default async function Changelog({
       )}
       {(page > 1 || history.more) && (
         <nav
-          className="release-pagination"
+          className={styles.pagination()}
           aria-label={es ? 'Páginas del historial' : 'Release history pages'}
         >
           {page > 1 && (
-            <Link className="text-link" href={`${path}?channel=${channel}&page=${page - 1}`}>
+            <Link
+              className={styles.textLink()}
+              href={`${path}?channel=${channel}&page=${page - 1}`}
+            >
               <Icon name="arrow-left" size={16} /> {es ? 'Más recientes' : 'Newer'}
             </Link>
           )}
-          <span className="release-page-number">
+          <span className={styles.pageNumber()}>
             {es ? 'Página' : 'Page'} {page}
           </span>
           {history.more && (
             <Link
-              className="text-link"
+              className={styles.textLink()}
               href={`${path}?channel=${channel}&page=${history.nextPage}`}
             >
               {es ? 'Anteriores' : 'Older'} <Icon name="arrow" size={16} />

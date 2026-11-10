@@ -8,5 +8,6 @@
 ## Improved
 
 - Read formatted release notes directly in the app before updating. The app, website and GitHub now share the same notes.
+- Run **/wisp diag** to see the installed addon version alongside the desktop/bridge version and identify a mismatch after an update.
 
 Nightly builds are experimental and may contain bugs. Returning to Stable can install an older version; your chats and settings are kept.

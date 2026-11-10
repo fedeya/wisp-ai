@@ -16,6 +16,9 @@ const addons = path.join(wow, 'Interface', 'AddOns');
 await mkdir(addons, { recursive: true });
 await migrateGameSaves(wow);
 await cp(path.join(root, 'addon', 'WispAI'), path.join(addons, 'WispAI'), { recursive: true });
+const toc = await readFile(path.join(addons, 'WispAI', 'WispAI.toc'), 'utf8');
+const addonVersion = toc.match(/^##[\t ]*Version:[\t ]*([^\r\n]+)/m)?.[1].trim();
+const versionHeader = addonVersion ? `## Version: ${addonVersion}\n` : '';
 const payloadDir = path.join(addons, 'WispAI_Payload');
 await mkdir(payloadDir, { recursive: true });
 await writeFile(
@@ -27,7 +30,7 @@ for (let n = 1; n <= BIT_COUNT; n++) {
   await mkdir(path.join(addons, name), { recursive: true });
   await writeFile(
     path.join(addons, name, name + '.toc'),
-    `## Interface: 16001\n## Title: Wisp bit ${n}\n## Group: WispAI\n## LoadOnDemand: 1\n`,
+    `## Interface: 16001\n## Title: Wisp bit ${n}\n${versionHeader}## Group: WispAI\n## LoadOnDemand: 1\n`,
   );
 }
 for (let n = 1; n <= SLOT_COUNT; n++) {
@@ -35,7 +38,7 @@ for (let n = 1; n <= SLOT_COUNT; n++) {
   await mkdir(path.join(addons, name), { recursive: true });
   await writeFile(
     path.join(addons, name, name + '.toc'),
-    `## Interface: 16001\n## Title: Wisp canal ${n}\n## Group: WispAI\n## DefaultState: enabled\n## LoadOnDemand: 1\n## Dependencies: WispAI\n\n..\\WispAI_Payload\\Payload.lua\n`,
+    `## Interface: 16001\n## Title: Wisp canal ${n}\n${versionHeader}## Group: WispAI\n## DefaultState: enabled\n## LoadOnDemand: 1\n## Dependencies: WispAI\n\n..\\WispAI_Payload\\Payload.lua\n`,
   );
 }
 let config: { wow: string; model?: string } = { wow };

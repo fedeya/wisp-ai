@@ -3,6 +3,8 @@ import { renderReleaseNotes } from '@wisp/releases';
 import { localizedPath, type Locale } from '../i18n';
 import type { PublishedRelease } from '../changelog.server';
 import { Icon } from './icon';
+import { ButtonLink } from './ui/button-link';
+import { changelogStyles } from './ui/changelog';
 
 export function ReleaseCard({
   release,
@@ -14,39 +16,50 @@ export function ReleaseCard({
   detail?: boolean;
 }) {
   const notes = release.notes.replace(/^# .+\r?\n/, '').trim();
+  const styles = changelogStyles();
   return (
-    <article className="release-entry">
-      <aside className="release-stamp">
-        <span className={`channel-pill ${release.channel}`}>
+    <article className={styles.entry()}>
+      <aside className={styles.stamp()}>
+        <span className={styles.channel()}>
           {release.channel === 'nightly' ? 'Nightly' : 'Stable'}
         </span>
-        <time dateTime={release.date}>
+        <time className={styles.date()} dateTime={release.date}>
           {new Intl.DateTimeFormat(locale, { dateStyle: 'long', timeZone: 'UTC' }).format(
             new Date(release.date),
           )}
         </time>
       </aside>
-      <div className="release-content">
+      <div>
         {!detail && (
-          <h2>
-            <Link href={localizedPath(locale, `/changelog/${release.version}`)}>
+          <h2 className={styles.title()}>
+            <Link
+              className={styles.titleLink()}
+              href={localizedPath(locale, `/changelog/${release.version}`)}
+            >
               {release.title}
-              <Icon name="arrow" size={22} />
+              <span className={styles.titleArrow()}>
+                <Icon name="arrow" size={22} />
+              </span>
             </Link>
           </h2>
         )}
         <div
-          className="release-prose"
+          className={styles.prose()}
           dangerouslySetInnerHTML={{ __html: renderReleaseNotes(notes) }}
         />
-        <div className="release-links">
+        <div className={styles.links()}>
           {release.downloads.map((download) => (
-            <a className="button release-download" href={download.url} key={download.url}>
+            <ButtonLink
+              intent="outline"
+              className={styles.download()}
+              href={download.url}
+              key={download.url}
+            >
               <Icon name="download" size={17} />
               {locale === 'es' ? 'Descargar para' : 'Download for'} {download.label}
-            </a>
+            </ButtonLink>
           ))}
-          <a className="text-link" href={release.url}>
+          <a className={styles.textLink()} href={release.url}>
             GitHub <Icon name="external" size={16} />
           </a>
         </div>

@@ -1,3 +1,4 @@
+import { changelogStyles } from '../../../../components/ui/changelog';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getPublishedRelease } from '../../../../changelog.server';
@@ -27,11 +28,12 @@ export default async function ReleasePage({ params }: Props) {
   if (!release) {
     notFound();
   }
+  const styles = changelogStyles();
   return (
-    <main id="main" className="container changelog-page">
-      <header className="reference-intro changelog-intro release-detail-intro">
+    <main id="main" className={styles.page()}>
+      <header className={styles.intro()}>
         <Link
-          className="text-link"
+          className={styles.textLink({ class: styles.backLink() })}
           href={localizedPath(
             locale,
             `/changelog${release.channel === 'nightly' ? '?channel=nightly' : ''}`,
@@ -40,7 +42,7 @@ export default async function ReleasePage({ params }: Props) {
           <Icon name="arrow-left" size={16} />{' '}
           {locale === 'es' ? 'Todas las novedades' : 'All updates'}
         </Link>
-        <h1>{release.title}</h1>
+        <h1 className={styles.heading()}>{release.title}</h1>
       </header>
       <ReleaseCard release={release} locale={locale} detail />
     </main>

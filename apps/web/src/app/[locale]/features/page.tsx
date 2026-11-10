@@ -1,3 +1,5 @@
+import { containerClassName } from '../../../components/ui';
+import { ButtonLink } from '../../../components/ui/button-link';
 import { getTranslator, translateData, localizedPath } from '../../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../../i18n/server';
 import { localizedMetadata } from '../../../seo';
@@ -149,32 +151,40 @@ export default async function Features({ params }: LocalePageProps) {
   const t = getTranslator(locale);
   const features = translateData(baseFeatures, locale);
   return (
-    <main id="main" className="feature-reference container">
+    <main
+      id="main"
+      className={`${containerClassName} feature-reference pt-[40px] pb-[55px] md:pt-[65px] md:pb-[80px]`}
+    >
       <PageSchema
         title={t('Features')}
         description="Explore Wisp’s capabilities, example prompts, requirements and limits."
         path="/features"
         locale={locale}
       />
-      <div className="reference-intro">
-        <span className="eyebrow">{t('WHAT WISP CAN DO')}</span>
-        <h1>
+      <div className="reference-intro max-w-[650px] mb-[35px] md:mb-[60px]">
+        <span className="eyebrow block text-[#a3906f] text-[9px] tracking-[2px] leading-[1.8] mb-[16px]">
+          {t('WHAT WISP CAN DO')}
+        </span>
+        <h1 className="text-[clamp(46px,_5.2vw,_68px)] leading-[1.12] tracking-[-2px]">
           {t('A question.')}
           <br />
           {t('A useful next step.')}
         </h1>
-        <p>
+        <p className="mx-0 my-[22px] text-muted text-[14px] leading-[1.8] max-w-[560px] md:text-[16px]">
           {t(
             'Explore the things you can ask Wisp to help with, from a one-off macro to a routine that remembers your plan.',
           )}
         </p>
-        <Link className="text-link" href={localizedPath(locale, '/setup')}>
+        <Link
+          className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] [&:hover]:text-gold`}
+          href={localizedPath(locale, '/setup')}
+        >
           {t('Get started with Wisp ')}
           <Icon name="arrow" size={16} />
         </Link>
       </div>
-      <div className="reference-layout">
-        <aside className="reference-index">
+      <div className="reference-layout gap-[35px] grid grid-cols-[1fr] items-start md:gap-[40px] md:grid-cols-[200px_minmax(0,_1fr)] lg:gap-[80px] lg:grid-cols-[240px_minmax(0,_1fr)]">
+        <aside className={`reference-index static top-[110px] md:sticky`}>
           <FeatureIndex
             features={features.map(({ id, title, status }) => ({ id, title, status }))}
             locale={locale}
@@ -184,38 +194,58 @@ export default async function Features({ params }: LocalePageProps) {
           {features.map((feature) => (
             <section
               id={feature.id}
-              className="reference-feature"
+              className={`reference-feature px-0 pt-[28px] pb-[32px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] [scroll-margin-top:0] md:pt-[32px] md:pb-[36px] [&:first-child]:pt-0 [&:first-child]:border-t-[0] [&:first-child]:[border-top-style:none] [&:first-child]:border-t-[currentColor] [&_blockquote]:[background:linear-gradient(90deg,_#b89c600c,_transparent)] [&_details_summary::-webkit-details-marker]:hidden [&_details[open]_summary_svg]:[transform:rotate(45deg)]`}
               key={feature.id}
               aria-labelledby={`${feature.id}-title`}
             >
-              <div className="reference-feature-heading">
+              <div
+                className={`reference-feature-heading gap-[10px] flex items-center mb-[17px] flex-wrap md:gap-[13px] md:flex-nowrap [&_.chat-feature-icon]:[background:radial-gradient(circle_at_35%_25%,_#49412d,_#171714_80%)] [&_.item-icon]:w-[38px] [&_.item-icon]:h-[38px]`}
+              >
                 {feature.icon === 'chat' ? (
-                  <span className="item-icon chat-feature-icon" aria-hidden="true">
+                  <span
+                    className={`item-icon chat-feature-icon border border-solid border-[#96886c] w-[38px] h-[38px] inline-flex relative rounded-[4px] shrink-0 overflow-hidden [vertical-align:middle] items-center justify-center text-[#d5bb75] [box-shadow:inset_0_0_0_2px_#000,_0_3px_8px_#0006] [background:#171714] [&.uncommon]:border-[#62983e] [&.rare]:border-[#4b86be]`}
+                    aria-hidden="true"
+                  >
                     <Icon name="chat" size={26} />
                   </span>
                 ) : (
                   <Item icon={feature.icon} name={feature.title} />
                 )}
-                <h2 id={`${feature.id}-title`}>{feature.title}</h2>
-                {feature.status && <span className="beta-label">{feature.status}</span>}
+                <h2
+                  id={`${feature.id}-title`}
+                  className="text-[25px] leading-[1.2] tracking-[-0.6px] flex-[1] min-w-[170px] md:text-[27px] md:flex-initial md:min-w-[auto] lg:text-[29px]"
+                >
+                  {feature.title}
+                </h2>
+                {feature.status && (
+                  <span className="beta-label border border-solid border-[#bba16b3a] px-[7px] py-[5px] text-[8px] tracking-[1px] text-[#b7a17c] rounded-[3px] self-center justify-self-start ml-[48px] uppercase shrink-0 md:ml-auto md:justify-self-auto">
+                    {feature.status}
+                  </span>
+                )}
               </div>
-              <p>{feature.description}</p>
-              <blockquote>
-                <span>{feature.id === 'ai-connections' ? t('SETUP') : t('TRY ASKING')}</span>
-                <p>
+              <p className="text-muted text-[13px] leading-[1.9] max-w-[730px] md:text-[14px]">
+                {feature.description}
+              </p>
+              <blockquote className="px-[18px] py-[15px] mx-0 mt-[21px] mb-[19px] border-l-[2px] [border-left-style:solid] border-l-[#b89c604d]">
+                <span className="block text-[#a1906f] text-[8px] tracking-[1.3px] mb-[8px]">
+                  {feature.id === 'ai-connections' ? t('SETUP') : t('TRY ASKING')}
+                </span>
+                <p className="text-[#d9cbae] text-[13px] leading-[1.8] md:text-[14px]">
                   {feature.id === 'ai-connections' ? feature.example : <>“{feature.example}”</>}
                 </p>
               </blockquote>
               <details>
-                <summary>
+                <summary className="gap-[12px] py-[6px] inline-flex items-center cursor-pointer text-[11px] leading-[1.7] text-[#a49a86] list-none">
                   {t('Requirements & things to know')}
                   <Icon name="plus" size={15} />
                 </summary>
-                <p>{feature.note}</p>
+                <p className="text-[#9e9585] text-[11px] leading-[1.9] mt-[10px] max-w-[730px] md:text-[12px]">
+                  {feature.note}
+                </p>
               </details>
               {feature.id === 'ai-connections' && (
                 <Link
-                  className="text-link connection-guide-link"
+                  className={`text-link connection-guide-link gap-[9px] inline-flex items-center text-gold text-[12px] mt-[14px] [&:hover]:text-gold`}
                   href={localizedPath(locale, '/setup#ai-connection')}
                 >
                   {t('Connection setup guide')}
@@ -224,13 +254,18 @@ export default async function Features({ params }: LocalePageProps) {
               )}
             </section>
           ))}
-          <div className="reference-end">
-            <h2>{t('Bring your next question in game.')}</h2>
-            <Link className="button primary" href={localizedPath(locale, '/setup')}>
+          <div className="reference-end gap-[23px] border-t-[1px] [border-top-style:solid] border-t-[var(--line)] pt-[35px] mt-[8px] flex items-center flex-wrap">
+            <h2 className="w-full text-[30px] leading-[1.2] mb-[3px] md:text-[33px]">
+              {t('Bring your next question in game.')}
+            </h2>
+            <ButtonLink internal href={localizedPath(locale, '/setup')}>
               {t('Set up Wisp ')}
               <Icon name="arrow" size={16} />
-            </Link>
-            <Link className="text-link" href={localizedPath(locale, '/setup#privacy')}>
+            </ButtonLink>
+            <Link
+              className={`text-link gap-[9px] inline-flex items-center text-gold text-[12px] [&:hover]:text-gold`}
+              href={localizedPath(locale, '/setup#privacy')}
+            >
               {t('Your controls & privacy ')}
               <Icon name="chevron-right" size={14} />
             </Link>

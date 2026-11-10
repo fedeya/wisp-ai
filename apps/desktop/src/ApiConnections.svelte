@@ -1,4 +1,9 @@
 <script lang="ts">
+  import Button from "./ui/Button.svelte";
+  import Card from "./ui/Card.svelte";
+  import Input from "./ui/Input.svelte";
+  import Select from "./ui/Select.svelte";
+
   import {
     providerDefinitions,
     type ProviderId,
@@ -69,22 +74,28 @@
   }
 </script>
 
-<section class="card provider-card">
-  <div class="section-title">
+<Card kind="provider">
+  <div
+    class="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted"
+  >
     <div>
       <h2>API connections</h2>
-      <p>Use your own API key. Usage is billed by the selected provider.</p>
+      <p class="text-muted text-[13px]">
+        Use your own API key. Usage is billed by the selected provider.
+      </p>
     </div>
-    <button
+    <Button
       disabled={app.locked || !app.status || editing}
-      onclick={() => open()}>Add connection</button
+      onclick={() => open()}>Add connection</Button
     >
   </div>
   {#each app.status?.connections || [] as connection (connection.id)}
-    <div class="api-connection-row">
+    <div
+      class="api-connection-row gap-[16px] px-0 py-[16px] flex items-center justify-between border-b-[1px] [border-bottom-style:solid] border-b-[var(--border)] max-sm:items-start max-sm:flex-col"
+    >
       <div>
         <strong>{connection.name}</strong>
-        <p class="muted">
+        <p class="muted text-muted text-[13px]">
           {providerDefinitions.find((p) => p.id === connection.provider)?.name} ·
           {connection.models.length} model{connection.models.length === 1
             ? ""
@@ -95,13 +106,14 @@
               : "Key missing"}
         </p>
       </div>
-      <div class="actions">
-        <button
+      <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
+        <Button
           disabled={app.locked || editing}
-          onclick={() => open(connection)}>Edit</button
+          onclick={() => open(connection)}>Edit</Button
         >
-        <button
-          class="quiet danger"
+        <Button
+          intent="quiet"
+          destructive
           disabled={app.locked || editing}
           onclick={() => {
             app.confirm = {
@@ -117,16 +129,20 @@
                   "connections",
                 ),
             };
-          }}>Remove</button
+          }}>Remove</Button
         >
       </div>
     </div>
   {/each}
   <ActionProgress {app} target="connections" />
   {#if editing}
-    <div class="field-section api-connection-form">
-      <label for="ai-provider">Provider</label>
-      <select
+    <div
+      class="field-section api-connection-form gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid"
+    >
+      <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-provider"
+        >Provider</label
+      >
+      <Select
         id="ai-provider"
         bind:value={provider}
         disabled={app.locked || !!id}
@@ -141,23 +157,25 @@
         {#each providerDefinitions as item}<option value={item.id}
             >{item.name}</option
           >{/each}
-      </select>
-      <label for="ai-name">Connection name</label>
-      <input
+      </Select>
+      <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-name"
+        >Connection name</label
+      >
+      <Input
         id="ai-name"
         bind:value={name}
         placeholder={definition.name}
-        maxlength="80"
+        maxlength={80}
         disabled={app.locked}
       />
-      <label for="ai-key"
+      <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-key"
         >API key {id
           ? "(leave blank to keep saved key)"
           : provider === "compatible"
             ? "(optional for local servers)"
             : ""}</label
       >
-      <input
+      <Input
         id="ai-key"
         type="password"
         bind:value={apiKey}
@@ -166,8 +184,10 @@
         disabled={app.locked}
       />
       {#if provider === "compatible"}
-        <label for="ai-url">Base URL</label>
-        <input
+        <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-url"
+          >Base URL</label
+        >
+        <Input
           id="ai-url"
           bind:value={baseURL}
           placeholder="http://localhost:1234/v1"
@@ -175,8 +195,11 @@
         />
       {:else}
         <details>
-          <summary>Custom endpoint</summary>
-          <label for="ai-url">Base URL</label><input
+          <summary class="cursor-pointer text-muted text-[13px]"
+            >Custom endpoint</summary
+          >
+          <label for="ai-url">Base URL</label><Input
+            class="mt-[8px]"
             id="ai-url"
             bind:value={baseURL}
             placeholder={definition.baseURL}
@@ -184,10 +207,13 @@
           />
         </details>
       {/if}
-      <div class="label-row">
-        <label for="ai-model">Models available in Wisp</label>
-        <button
-          class="text-button"
+      <div class="label-row flex items-center justify-between">
+        <label class="text-[12px] font-medium text-[#bdcccf]" for="ai-model"
+          >Models available in Wisp</label
+        >
+        <Button
+          intent="quiet"
+          size="text"
           disabled={app.locked || (provider === "compatible" && !baseURL)}
           onclick={() =>
             app.work(
@@ -203,15 +229,17 @@
               },
               "Models loaded. Choose models to add below.",
               "connection-editor",
-            )}>Load model list</button
+            )}>Load model list</Button
         >
       </div>
-      <p class="field-hint">
+      <p class="field-hint text-[11px]! text-muted mt-[12px]">
         Choose a model with tool calling. You can enter its exact ID if the
         provider cannot list models.
       </p>
-      <div class="api-model-fields">
-        <input
+      <div
+        class="api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]"
+      >
+        <Input
           id="ai-model"
           bind:value={modelId}
           list="ai-model-options"
@@ -223,7 +251,7 @@
               >{model.name || model.id}</option
             >{/each}</datalist
         >
-        <input
+        <Input
           aria-label="Context window in tokens"
           type="number"
           min="1"
@@ -232,14 +260,16 @@
           placeholder="Context tokens"
           disabled={app.locked}
         />
-        <button disabled={app.locked || !modelId.trim()} onclick={addModel}
-          >Add model</button
+        <Button disabled={app.locked || !modelId.trim()} onclick={addModel}
+          >Add model</Button
         >
       </div>
       {#each models as model, index (model.id)}
-        <div class="api-model-fields">
-          <span>{model.id}</span>
-          <input
+        <div
+          class="api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]"
+        >
+          <span class="[overflow-wrap:anywhere]">{model.id}</span>
+          <Input
             aria-label={`Context window for ${model.id}`}
             type="number"
             min="1"
@@ -248,25 +278,25 @@
             placeholder="Context tokens (required)"
             disabled={app.locked}
           />
-          <button
-            class="quiet"
+          <Button
+            intent="quiet"
             disabled={app.locked}
             aria-label={`Remove ${model.id}`}
             onclick={() => {
               models = models.filter((m) => m.id !== model.id);
-            }}>Remove</button
+            }}>Remove</Button
           >
         </div>
       {/each}
-      <p class="field-hint">
+      <p class="field-hint text-[11px]! text-muted mt-[12px]">
         Set the context window for every model so Wisp can manage long
         conversations. For local models, use the tokens your server allocates.
         Choose reasoning per chat in game when the model supports it. Default
         keeps the provider's setting; higher effort can use more time and
         tokens.
       </p>
-      <div class="actions">
-        <button
+      <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
+        <Button
           disabled={app.locked || !models.length}
           onclick={() =>
             app.work(
@@ -274,10 +304,10 @@
               () => request("/connections/test", setup()),
               "Connection and tool calling verified for the first model.",
               "connection-editor",
-            )}>Test first model</button
+            )}>Test first model</Button
         >
-        <button
-          class="primary"
+        <Button
+          intent="primary"
           disabled={app.locked ||
             !models.length ||
             !!modelId.trim() ||
@@ -288,63 +318,29 @@
               save,
               "Connection saved. Choose a default model below.",
               "connection-editor",
-            )}>Save connection</button
+            )}>Save connection</Button
         >
-        <button
-          class="quiet"
+        <Button
+          intent="quiet"
           disabled={app.locked}
           onclick={() => {
             apiKey = "";
             editing = false;
-          }}>Cancel</button
+          }}>Cancel</Button
         >
       </div>
-      <p class="field-hint">
+      <p class="field-hint text-[11px]! text-muted mt-[12px]">
         Testing sends a small request to the provider and may incur usage
         charges.
       </p>
       <ActionProgress {app} target="connection-editor" />
     </div>
   {/if}
-  <p class="privacy-note">
+  <p
+    class="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!"
+  >
     API keys are protected by your operating system. Configure Exa under Web
     search to use web search with API models. Game tools and other enabled
     databases work independently of the search service.
   </p>
-</section>
-
-<style>
-  .api-connection-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 16px 0;
-    border-bottom: 1px solid var(--border);
-  }
-  .api-connection-form {
-    display: grid;
-    gap: 12px;
-  }
-  .api-model-fields {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(160px, 0.7fr) auto;
-    gap: 10px;
-    align-items: center;
-  }
-  .api-model-fields span {
-    overflow-wrap: anywhere;
-  }
-  details input {
-    margin-top: 8px;
-  }
-  @media (max-width: 650px) {
-    .api-model-fields {
-      grid-template-columns: 1fr;
-    }
-    .api-connection-row {
-      align-items: flex-start;
-      flex-direction: column;
-    }
-  }
-</style>
+</Card>

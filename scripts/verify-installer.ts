@@ -73,6 +73,16 @@ try {
     windowsHide: true,
     timeout: 60000,
   });
+  for (const relative of [
+    'WispAI/WispAI.toc',
+    'WispAI_B001/WispAI_B001.toc',
+    'WispAI_S0001/WispAI_S0001.toc',
+  ]) {
+    const toc = await readFile(path.join(wow, 'Interface/AddOns', relative), 'utf8');
+    if (toc.match(/^## Version: ([^\r\n]+)/m)?.[1] !== version) {
+      throw Error('Installed addon version does not match the release: ' + relative);
+    }
+  }
   const payloadFiles = (await readdir(payload, { recursive: true, withFileTypes: true })).filter(
     (entry) => entry.isFile(),
   ).length;

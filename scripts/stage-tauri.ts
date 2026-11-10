@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifySimulator } from './verify-simulator.ts';
 import { findNpmDirectory } from './node-runtime.ts';
+import { stampAddonVersions } from './addon-version.ts';
 
 export async function stageTauri({ packaged = false } = {}) {
   const root = fileURLToPath(new URL('../', import.meta.url));
@@ -52,6 +53,8 @@ export async function stageTauri({ packaged = false } = {}) {
   for (const name of ['addon/WispAI', 'simulator']) {
     await cp(path.join(root, name), path.join(stage, name), { recursive: true });
   }
+  const version = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).version;
+  await stampAddonVersions(path.join(stage, 'addon'), version);
   for (const name of ['LICENSE', 'NOTICE']) {
     await copyFile(path.join(root, name), path.join(stage, name));
   }

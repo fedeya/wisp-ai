@@ -44,14 +44,21 @@ export default async function RootLayout({
   const locale = await resolveLocale(params);
   const t = getTranslator(locale);
   return (
-    <html lang={locale} className={`${dmSans.variable} ${manrope.variable}`}>
+    <html
+      lang={locale}
+      data-scroll-behavior="smooth"
+      className={`${dmSans.variable} ${manrope.variable}`}
+    >
       <head>
         {process.env.NODE_ENV === 'production' && !isPreview && (
           <script src="/_fm/script.js?siteId=61b021a9d037" defer />
         )}
       </head>
       <body>
-        <a className="skip-link" href="#main">
+        <a
+          className={`skip-link p-[12px] fixed top-[-100px] z-[100] text-[#111] bg-gold focus:top-[10px]`}
+          href="#main"
+        >
           {t('Skip to content')}
         </a>
         <SiteHeader locale={locale} />

@@ -1,6 +1,8 @@
-local _, C = ...
+local addonName, C = ...
 WispAI = C
 C.VERSION = 1
+local metadata = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
+C.addonVersion = type(metadata) == "function" and metadata(addonName, "Version") or "unknown"
 C.SLOTS = 1024
 C.session = tostring(time()) .. "-" .. tostring(math.random(100000, 999999))
 C.chats, C.requestsDone = {}, {}
@@ -285,6 +287,7 @@ function C.ReceiveSnapshot(data)
     local previous = C.Current()
     local previousState = previous and previous.status
     C.rev, C.connected, C.lastSeen = data.rev, data.connected, GetTime()
+    C.bridgeVersion = data.bridgeVersion
     C.contextPolicy = data.contextPolicy
     C.modelCatalog = data.modelCatalog or C.modelCatalog
     if data.capabilities then
@@ -485,6 +488,17 @@ SlashCmdList.WISPAI = function(message)
     end
     if message == "diag" then
         local stats = C.transportStats or {}
+        local mismatch = C.bridgeVersion
+            and C.bridgeVersion ~= "unknown"
+            and C.addonVersion ~= "unknown"
+            and C.bridgeVersion ~= C.addonVersion
+        C.Log(
+            "Addon "
+                .. C.addonVersion
+                .. ", desktop/bridge "
+                .. (C.bridgeVersion or "unknown")
+                .. (mismatch and " (version mismatch; update the addon and /reload)" or "")
+        )
         C.Log(
             "Slots "
                 .. C.slot
