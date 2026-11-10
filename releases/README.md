@@ -39,11 +39,14 @@ Every push to `main` runs the release pipeline. After checks pass, CI assigns
 checkout. No version commits are pushed back to `main`. Each installer has an
 immutable version tag targeting the exact source SHA. No notes need to be authored
 for a PR or Nightly build: merging is enough. Generated GitHub release notes
-contain an experimental-build notice, the technical commit list since the nearest
-Stable ancestor, and a link to the full diff ending at the exact build SHA. If no
-Stable tag exists, the notes list up to 30 recent commits. This history includes
-changes since Stable, not just the latest PR. Nightly never reads `next.md` or
-copies pending Stable highlights into every build.
+contain an experimental-build notice and the technical commit list since the
+previous published Nightly on this build's ancestry. Drafts and incomplete builds
+are excluded, so failed builds do not hide changes. The first Nightly compares
+against its nearest Stable ancestor; without any Stable tag it lists up to 30
+recent commits. Notes link both to that build's diff and, when available, all
+changes since Stable. GitHub lookup errors stop preparation rather than silently
+choosing an incorrect baseline. Nightly never reads `next.md` or copies pending
+Stable highlights into every build.
 
 The website lists Nightlies compactly: version, date, platform download and the
 technical link, which opens that build's GitHub release to read its notes. The

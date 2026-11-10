@@ -2,7 +2,7 @@ import { readFile, writeFile, access } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { stableVersion } from '@wisp/releases';
+import { stableVersion, nightlyVersion, newerNightly } from '@wisp/releases';
 
 export function validateNotes(notes: string) {
   const content = notes.replace(/<!--[\s\S]*?-->/g, '').trim();
@@ -31,8 +31,76 @@ export async function prepareNotes(version: string, root = process.cwd()) {
   }
   throw Error(`Release notes already exist for ${version}.`);
 }
-export function formatNightlyNotes(sha: string, previous?: string, changes = '') {
-  if (!/^[a-f0-9]{40}$/.test(sha) || (previous && !/^v\d+\.\d+\.\d+$/.test(previous))) {
+type NightlyRelease = {
+  tag_name: string;
+  draft: boolean;
+  prerelease: boolean;
+  published_at: string | null;
+  assets: { name: string }[];
+};
+
+export async function previousPublishedNightly(version: string, sha: string, root = process.cwd()) {
+  if (!nightlyVersion.test(version) || !/^[a-f0-9]{40}$/.test(sha)) {
+    throw Error('Invalid Nightly source identity.');
+  }
+  for (let page = 1; ; page++) {
+    const response = await fetch(
+      `https://api.github.com/repos/fedeya/wisp-ai/releases?per_page=100&page=${page}`,
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
+        },
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+    if (!response.ok) {
+      throw Error(`Cannot determine the previous published Nightly: GitHub ${response.status}.`);
+    }
+    const releases: NightlyRelease[] = await response.json();
+    const candidates = releases
+      .filter((release) => {
+        const candidate = release.tag_name.slice(1);
+        return (
+          release.tag_name.startsWith('v') &&
+          nightlyVersion.test(candidate) &&
+          !release.draft &&
+          release.prerelease &&
+          !!release.published_at &&
+          newerNightly(version, candidate) &&
+          release.assets.some((asset) => asset.name === 'latest.json') &&
+          release.assets.some((asset) => asset.name === `WispAI-${candidate}-windows-x64-setup.exe`)
+        );
+      })
+      .sort((a, b) => (newerNightly(a.tag_name.slice(1), b.tag_name.slice(1)) ? -1 : 1));
+    for (const candidate of candidates) {
+      try {
+        execFileSync('git', ['merge-base', '--is-ancestor', candidate.tag_name, sha], {
+          cwd: root,
+          windowsHide: true,
+          stdio: 'pipe',
+        });
+        return candidate.tag_name;
+      } catch (error) {
+        if ((error as { status?: number }).status !== 1) {
+          throw error;
+        }
+      }
+    }
+    if (releases.length < 100) {
+      return undefined;
+    }
+  }
+}
+
+export function formatNightlyNotes(sha: string, previous?: string, changes = '', stable?: string) {
+  if (
+    !/^[a-f0-9]{40}$/.test(sha) ||
+    (previous &&
+      !(stableVersion.test(previous.slice(1)) || nightlyVersion.test(previous.slice(1)))) ||
+    (previous && !previous.startsWith('v')) ||
+    (stable && !/^v\d+\.\d+\.\d+$/.test(stable))
+  ) {
     throw Error('Invalid Nightly source identity.');
   }
   const repository = 'https://github.com/fedeya/wisp-ai';
@@ -40,12 +108,16 @@ export function formatNightlyNotes(sha: string, previous?: string, changes = '')
     ? `${repository}/compare/${previous}...${sha}`
     : `${repository}/commit/${sha}`;
   const heading = previous ? `Technical changes since ${previous}` : 'Technical changes';
-  return `# Nightly preview\n\n- Experimental build from main. It may contain bugs.\n\n## ${heading}\n\n${changes.trim() || '- No commits in this comparison.'}\n\n[View full diff on GitHub](${technical})\n`;
+  const cumulative =
+    stable && stable !== previous
+      ? `\n[All changes since ${stable}](${repository}/compare/${stable}...${sha})\n`
+      : '';
+  return `# Nightly preview\n\n- Experimental build from main. It may contain bugs.\n\n## ${heading}\n\n${changes.trim() || '- No commits in this comparison.'}\n\n[View full diff on GitHub](${technical})\n${cumulative}`;
 }
-export async function nightlyNotes(sha: string, root = process.cwd()) {
-  let previous: string | undefined;
+export async function nightlyNotes(sha: string, root = process.cwd(), previousNightly?: string) {
+  let stable: string | undefined;
   try {
-    previous = execFileSync(
+    stable = execFileSync(
       'git',
       [
         'describe',
@@ -62,6 +134,7 @@ export async function nightlyNotes(sha: string, root = process.cwd()) {
   } catch {
     // A repository without a stable tag can still link to the exact source.
   }
+  const previous = previousNightly || stable;
   const changes = execFileSync(
     'git',
     [
@@ -72,7 +145,7 @@ export async function nightlyNotes(sha: string, root = process.cwd()) {
     ],
     { cwd: root, encoding: 'utf8', windowsHide: true },
   );
-  return formatNightlyNotes(sha, previous, changes);
+  return formatNightlyNotes(sha, previous, changes, stable);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === 'check') {

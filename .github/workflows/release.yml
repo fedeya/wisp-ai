@@ -28,6 +28,8 @@ jobs:
       - name: Prepare version and shared release notes
         id: release
         run: node scripts/prepare-release.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Validate release version and signing configuration
         shell: pwsh
         env:

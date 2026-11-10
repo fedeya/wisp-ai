@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, appendFile } from 'node:fs/promises';
 import { syncVersion, nightlyBuildVersion } from './release-version.ts';
-import { nightlyNotes, validateNotes } from './release-notes.ts';
+import { nightlyNotes, previousPublishedNightly, validateNotes } from './release-notes.ts';
 
 const nightly = process.env.GITHUB_REF === 'refs/heads/main';
 let version = JSON.parse(await readFile('package.json', 'utf8')).version;
@@ -14,8 +14,11 @@ if (nightly) {
 } else if (process.env.GITHUB_REF_NAME !== `v${version}`) {
   throw Error('Release tag must match the app version.');
 }
+const previous = nightly
+  ? await previousPublishedNightly(version, process.env.GITHUB_SHA!)
+  : undefined;
 const notes = nightly
-  ? await nightlyNotes(process.env.GITHUB_SHA!)
+  ? await nightlyNotes(process.env.GITHUB_SHA!, process.cwd(), previous)
   : validateNotes(await readFile(`releases/${version}.md`, 'utf8'));
 await mkdir('dist', { recursive: true });
 await writeFile('dist/release-notes.md', notes);
