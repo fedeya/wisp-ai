@@ -431,6 +431,59 @@ test('structured skill replies use the declared skill and map references support
   );
 });
 
+test('prose around generated cards keeps spell and item hover, clicks and scrolling on its own frame', () => {
+  const L = lauxlib.luaL_newstate();
+  lualib.luaL_openlibs(L);
+  const run = (code: string) => {
+    if (lauxlib.luaL_dostring(L, to_luastring(code)) !== lua.LUA_OK) {
+      throw new Error(to_jsstring(lua.lua_tolstring(L, -1)));
+    }
+  };
+  run(readFileSync('addon/tests/wow-ui-stub.lua', 'utf8'));
+  run('C = {}');
+  run(`assert(load(${JSON.stringify(addonSource('UI.lua'))}))('WispAI', C)`);
+  run(`assert(load(${JSON.stringify(addonSource('RichUI.lua'))}))('WispAI', C)`);
+  run(`
+local spell = 'Use [[ref:spell]] first.'
+local item = 'Keep [[ref:item]] equipped.'
+local message = {
+    id = 'reply', role = 'assistant', text = spell .. '\\n' .. item,
+    references = {
+        spell = { kind = 'spell', id = 2137, label = 'Explosión de Fuego' },
+        item = { kind = 'item', id = 1733, payload = 'item:1733:0', label = 'Capa desgastada' },
+    },
+    ui = {{ id = 'result', kind = 'stat', label = 'DPS', value = '31.2' }},
+    parts = {{ type = 'text', text = spell }, { type = 'ui', id = 'result' }, { type = 'text', text = item }},
+}
+local chat = { id = 'chat', status = 'done', messages = { message } }
+local row = C.MakeMessageRow(CreateFrame('Frame'))
+C.RenderMessageRow(row, chat, message, 500, true)
+assert(not row.text:IsShown(), 'interleaved replies use the rich prose, not the ordinary row text')
+local first, second = row.rich.prose[1], row.rich.prose[2]
+assert(first:GetText():find('|Hspell:2137|h[Explosión de Fuego]|h', 1, true))
+assert(second:GetText():find('|Hitem:1733:0|h[Capa desgastada]|h', 1, true))
+for _, entry in ipairs({{first, 'spell:2137'}, {second, 'item:1733:0'}}) do
+    local owner, link = entry[1]:GetParent(), entry[2]
+    assert(owner.mouseEnabled and owner.hyperlinksEnabled and owner.scripts.OnHyperlinkEnter,
+        'the frame owning visible prose must receive hyperlink events')
+    owner.scripts.OnHyperlinkEnter(owner, link, '[Reference]')
+    assert(GameTooltip:IsShown() and UI_TEST.tooltipLink == link and C.hoverLink == '[Reference]')
+    owner.scripts.OnHyperlinkLeave(owner)
+    assert(not GameTooltip:IsShown() and C.hoverLink == nil)
+    owner.scripts.OnHyperlinkClick(owner, link, '[Reference]', 'LeftButton')
+    assert(UI_TEST.clickedLink == link)
+end
+local scrolled
+C.ScrollTranscript = function(delta) scrolled = delta end
+first:GetParent().scripts.OnMouseWheel(first:GetParent(), -1)
+assert(scrolled == -1, 'interactive prose must preserve transcript scrolling')
+local owner = first:GetParent()
+C.RenderMessageRow(row, chat, message, 230, true)
+assert(row.rich.prose[1] == first and first:GetParent() == owner)
+assert(owner.scripts.OnHyperlinkEnter, 'resize must keep the interactive owner')
+`);
+});
+
 test('verified references support hover and quest clicks without reserving transcript space for progress', () => {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);

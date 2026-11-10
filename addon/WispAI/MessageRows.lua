@@ -384,7 +384,10 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
                 )
                 + (message.role == "user" and padding or 10)
             if C.RenderRichUI then
-                row.rich = row.rich or CreateFrame("Frame", nil, row)
+                if not row.rich then
+                    row.rich = CreateFrame("Frame", nil, row)
+                    linked(row.rich)
+                end
                 row.rich:Show()
                 row.rich:ClearAllPoints()
                 row.rich:SetPoint("TOPLEFT", padding, -(interleaved and top or row.height))
