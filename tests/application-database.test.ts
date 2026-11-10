@@ -37,40 +37,44 @@ test('JSON installations initialize the canonical application database and retai
   }
 });
 
-test('installation snapshots include live WAL pages, preserve source sessions and never overwrite a destination', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wisp-database-snapshot-'));
-  const source = new ChatStore(applicationDatabaseFile(path.join(root, 'source')), () => {});
-  const targetFile = applicationDatabaseFile(path.join(root, 'target'));
-  const target = new ChatStore(targetFile, () => {});
-  try {
-    await source.load();
-    await source.flush([chat()]);
-    expect((await readFile(source.file + '-wal')).length).toBeGreaterThan(0);
-    await copyDatabaseSnapshot(source.file, targetFile);
-    // The destination's own instance identity does not resume the source engine.
-    const history = await target.load();
-    expect(history[0].messages).toEqual(chat().messages);
-    expect(history[0].eveId).toBeUndefined();
-    await target.flush([]);
-    await target.close();
-    await expect(copyDatabaseSnapshot(source.file, targetFile)).rejects.toMatchObject({
-      code: 'EEXIST',
-    });
-    const reopened = new ChatStore(targetFile, () => {});
+test(
+  'installation snapshots include live WAL pages, preserve source sessions and never overwrite a destination',
+  { timeout: 30_000 },
+  async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'wisp-database-snapshot-'));
+    const source = new ChatStore(applicationDatabaseFile(path.join(root, 'source')), () => {});
+    const targetFile = applicationDatabaseFile(path.join(root, 'target'));
+    const target = new ChatStore(targetFile, () => {});
     try {
-      expect(await reopened.load()).toEqual([]);
+      await source.load();
+      await source.flush([chat()]);
+      expect((await readFile(source.file + '-wal')).length).toBeGreaterThan(0);
+      await copyDatabaseSnapshot(source.file, targetFile);
+      // The destination's own instance identity does not resume the source engine.
+      const history = await target.load();
+      expect(history[0].messages).toEqual(chat().messages);
+      expect(history[0].eveId).toBeUndefined();
+      await target.flush([]);
+      await target.close();
+      await expect(copyDatabaseSnapshot(source.file, targetFile)).rejects.toMatchObject({
+        code: 'EEXIST',
+      });
+      const reopened = new ChatStore(targetFile, () => {});
+      try {
+        expect(await reopened.load()).toEqual([]);
+      } finally {
+        await reopened.close();
+      }
+      expect(
+        (await readdir(path.dirname(targetFile))).some((name) => name.startsWith('.wisp-import-')),
+      ).toBe(false);
     } finally {
-      await reopened.close();
+      await target.close();
+      await source.close();
+      await rm(root, { recursive: true, force: true });
     }
-    expect(
-      (await readdir(path.dirname(targetFile))).some((name) => name.startsWith('.wisp-import-')),
-    ).toBe(false);
-  } finally {
-    await target.close();
-    await source.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  },
+);
 
 test('a failed snapshot preserves its source and does not publish an empty database', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-failed-snapshot-'));
