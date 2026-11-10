@@ -432,6 +432,35 @@ local function resolve(tokens, context)
     return root
 end
 
+local function nativeLinkEnd(source, offset)
+    local link = source:match("^|cn[A-Za-z0-9_]+:()", offset)
+        or source:match("^|c%x%x%x%x%x%x%x%x()", offset)
+    local colored = link ~= nil
+    link = link or offset
+    if source:sub(link, link + 1) ~= "|H" then
+        return nil
+    end
+    local separator = source:find("|", link + 2, true)
+    if not separator or separator == link + 2 or source:sub(separator, separator + 1) ~= "|h" then
+        return nil
+    end
+    local ending = source:find("|h", separator + 2, true)
+    if not ending then
+        return nil
+    end
+    local after = ending + 2
+    if colored then
+        if source:sub(after, after + 1) ~= "|r" then
+            return nil
+        end
+        after = after + 2
+    end
+    if after - offset > 4096 or source:sub(offset, after - 1):find("[\r\n]") then
+        return nil
+    end
+    return after
+end
+
 local function inline(source, context, nesting, allowLinks)
     nesting = nesting or 0
     if nesting > context.options.maxNesting then
@@ -470,6 +499,12 @@ local function inline(source, context, nesting, allowLinks)
                 offset = offset + #marker
             end
             consumed = true
+        elseif char == "|" then
+            local after = nativeLinkEnd(source, offset)
+            if after then
+                emit("native_link", { literal = source:sub(offset, after - 1) })
+                offset, consumed = after, true
+            end
         elseif char == "\n" then
             local last = tokens[#tokens]
             local hard = last and last.type == "text" and last.literal:match("  $")
@@ -571,7 +606,7 @@ local function inline(source, context, nesting, allowLinks)
             end
         end
         if not consumed then
-            local first = source:find("[\\" .. TICK .. "\n*_~%[!&<]", offset + 1)
+            local first = source:find("[\\" .. TICK .. "\n*_~%[!&<|]", offset + 1)
             local after = first or #source + 1
             emit("text", { literal = source:sub(offset, after - 1) })
             offset = after

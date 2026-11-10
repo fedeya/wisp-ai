@@ -223,3 +223,49 @@ it("keeps mixed malformed syntax bounded and returns valid acyclic trees", funct
         end
     end
 end)
+
+it("keeps native WoW hyperlinks opaque including quality colors and Markdown in labels", function()
+    local links = {
+        "|cnIQ2:|Hitem:100:0:0|h[Name **with MD**]|h|r",
+        "|cff9d9d9d|Hitem:100:0:0|h[Name _with MD_]|h|r",
+        "|Hspell:122|h[Name [[ref:key]]]|h",
+    }
+    for _, link in ipairs(links) do
+        local label = assert(md.parseInline("Before " .. link .. " after", { references = true }))
+        assert.equal(3, #label.children)
+        assert.equal("native_link", label.children[2].type)
+        assert.equal(link, label.children[2].literal)
+        assert.same({}, label.children[2].children)
+        assert.equal("Before " .. link .. " after", helper.text(label))
+    end
+end)
+
+it("keeps native hyperlinks inside code literal and leaves malformed links as text", function()
+    local link = "|cff71d5ff|Hspell:122|h[Name **literal**]|h|r"
+    local label = assert(md.parseInline("`" .. link .. "`"))
+    assert.equal("code", label.children[1].type)
+    assert.equal(link, label.children[1].literal)
+    for _, source in ipairs({
+        "|Hitem:100|h[unfinished]",
+        "|Hitem:100|h[Name\nsplit]|h",
+        "|H|h[No payload]|h",
+    }) do
+        local node = assert(md.parseInline(source))
+        assert.equal(source, helper.text(node))
+        for _, child in ipairs(node.children) do
+            assert.not_equal("native_link", child.type)
+        end
+    end
+end)
+
+it("applies normal parser limits to native hyperlink leaves", function()
+    local source = "|Hitem:100|h[Name]|h"
+    local node, err = md.parseInline(source, { maxBytes = #source - 1 })
+    assert.is_nil(node)
+    assert.equal("max_bytes", err.code)
+    node, err = md.parseInline(source, { maxNodes = 1 })
+    assert.is_nil(node)
+    assert.equal("max_nodes", err.code)
+    node = assert(md.parseInline(source, { maxNodes = 2 }))
+    assert.equal("native_link", node.children[1].type)
+end)
