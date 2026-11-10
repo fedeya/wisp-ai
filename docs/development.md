@@ -134,6 +134,24 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 
 The bridge owns accounts, persistence and tool execution. Eve runs on loopback **43186**; the separate RPC/model endpoint on **43187** uses an ephemeral agent token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
+Shared agent rules live in `apps/agent/agent/instructions.md`. Task procedures
+live in native Eve skills at `apps/agent/agent/skills/<name>/SKILL.md`, with a
+short frontmatter description stating when to use each skill. Eve advertises those
+descriptions and returns the full instructions through `eve__skill`. Eve owns
+how loaded skill results are retained in history and compacted.
+
+Tool schemas are separate: `wisp__search_tools` / `wisp__load_tools` select the
+available groups for the current turn through `filterModelTools`. Loading a skill
+does not enable tools or change permissions. Dynamic capability definitions and
+bridge checks remain authoritative. Keep parameter details in tool schemas and
+enforceable constraints in code; preserve Forever evidence, authorization and
+verified-result requirements when editing skills.
+
+`tests/model-context.test.ts` checks tool selection without rewriting prompts.
+`tests/agent-integration.test.ts` exercises native skill discovery/activation,
+separate schema loading and follow-up turns with the real Eve agent and an offline
+model. Prompt edits still need gameplay evaluation before claiming better answers.
+
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
 Compressed snapshots and patches continue through the reusable lane after the
 optional load-on-demand bulk bank is exhausted. The unversioned transport and its

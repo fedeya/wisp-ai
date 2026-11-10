@@ -9,7 +9,6 @@ export const toolGroupNames = [
   'simulation',
   'panels',
   'routines',
-  'ui',
   'quests',
   'locations',
   'inventory',
@@ -24,7 +23,6 @@ const groupTools: Record<(typeof toolGroupNames)[number], string[]> = {
   simulation: ['wowsims__simulate_dps'],
   panels: ['wisp__manage_panel'],
   routines: ['wisp__manage_routine'],
-  ui: [],
   quests: ['questie__get_quest', 'questie__get_quest_chain', 'wow__query_progression'],
   locations: [
     'wow__inspect_map',
@@ -64,7 +62,6 @@ const groupDescriptions: Record<(typeof toolGroupNames)[number], string> = {
   simulation: 'simulate simulation dps damage rotation simular daño rotacion',
   panels: 'panel tracker persistent saved materials seguimiento materiales',
   routines: 'routine recurring automatic schedule rutina automatico recurrente',
-  ui: 'rich ui components controls cards interfaz botones',
   quests:
     'quest quests mission missions mision misiones chain prerequisites reputation cadena requisitos reputacion',
   locations:
@@ -108,16 +105,7 @@ export function searchToolGroups(query: string) {
     matches: matches.map(({ group }) => ({ group, tools: groupTools[group] })),
   };
 }
-const triggers: Record<string, (typeof toolGroupNames)[number][]> = {
-  wow__get_settings: ['settings', 'ui'],
-  wow__inspect_macros: ['macros'],
-  wow__compare_items: ['ui'],
-  wowsims__simulate_dps: ['simulation', 'ui'],
-  wisp__manage_panel: ['panels', 'ui'],
-  wisp__manage_routine: ['routines'],
-};
-
-export function compactModelContext(options: CallOptions): CallOptions {
+export function filterModelTools(options: CallOptions): CallOptions {
   // Compaction and other non-interactive calls must retain their full context.
   if (!options.tools?.some((tool) => tool.name === 'wisp__load_tools')) {
     return options;
@@ -146,9 +134,6 @@ export function compactModelContext(options: CallOptions): CallOptions {
           groups.add(group);
         }
       }
-      for (const group of triggers[part.toolName] || []) {
-        groups.add(group);
-      }
       if (
         (part.toolName === 'wisp__load_tools' || part.toolName === 'wisp__search_tools') &&
         part.output.type === 'json'
@@ -171,9 +156,6 @@ export function compactModelContext(options: CallOptions): CallOptions {
       }
     }
   }
-  if (groups.has('settings') || groups.has('simulation') || groups.has('panels')) {
-    groups.add('ui');
-  }
   const hidden = new Set(
     Object.entries(groupTools).flatMap(([group, tools]) => (groups.has(group) ? [] : tools)),
   );
@@ -187,17 +169,6 @@ export function compactModelContext(options: CallOptions): CallOptions {
       options.toolChoice?.type === 'tool' && hidden.has(options.toolChoice.toolName)
         ? { type: 'auto' }
         : options.toolChoice,
-    prompt: options.prompt.map((message) =>
-      message.role === 'system'
-        ? {
-            ...message,
-            content: message.content.replace(
-              /<wisp_module name="([a-z]+)">([\s\S]*?)<\/wisp_module>/g,
-              (_block, group: string, text: string) => (groups.has(group) ? text : ''),
-            ),
-          }
-        : message,
-    ),
   };
 }
 

@@ -4,7 +4,7 @@ import { wrapLanguageModel } from 'ai';
 import { normalizeModelError } from '@wisp/protocol/model-errors';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import type { z } from 'zod';
-import { subscriptionCallOptions, filterWebSearch, compactModelContext } from './model-tools.ts';
+import { subscriptionCallOptions, filterWebSearch, filterModelTools } from './model-tools.ts';
 import { applyModelReasoning } from './reasoning.ts';
 
 export function connectionModel(
@@ -49,7 +49,7 @@ export function connectionModel(
     middleware: {
       specificationVersion: 'v4',
       transformParams: async ({ params }) => {
-        params = compactModelContext(params);
+        params = filterModelTools(params);
         if (!native) {
           return filterWebSearch(
             subscriptionCallOptions(params),
