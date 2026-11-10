@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { and, eq, sql } from 'drizzle-orm';
@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
 import { migrateChats } from './db/migrate.ts';
+import { preparePrivateDatabase } from './db/private-file.ts';
 import { chats as chatTable, messages as messageTable, chatInstanceState } from './db/schema.ts';
 import {
   encodeChat,
@@ -62,8 +63,8 @@ export class ChatStore {
     if (this.db) {
       throw Error('Conversation store is already open.');
     }
-    await mkdir(path.dirname(this.file), { recursive: true });
     try {
+      await preparePrivateDatabase(this.file);
       this.db = new DatabaseSync(this.file, { timeout: 5000 });
       const version = Number(this.db.prepare('PRAGMA user_version').get()!.user_version);
       if (version > 3) {
@@ -188,40 +189,46 @@ export class ChatStore {
   }
 
   private readChats(): Chat[] {
-    const orm = this.orm!;
-    const messages = new Map<string, MessageRow[]>();
-    for (const row of orm
-      .select()
-      .from(messageTable)
-      .orderBy(messageTable.chatId, messageTable.position)
-      .all()) {
-      const values = messages.get(row.chatId) ?? [];
-      if (row.position !== values.length) {
-        throw Error('Conversation messages are not contiguous.');
-      }
-      values.push(row);
-      messages.set(row.chatId, values);
-    }
-    const states = new Map(
-      orm
-        .select()
-        .from(chatInstanceState)
-        .where(eq(chatInstanceState.instanceId, this.instanceId))
-        .all()
-        .map((row) => [row.chatId, row]),
+    // The content and the optimistic revisions must describe one WAL snapshot,
+    // even when another connection commits between these SELECT statements.
+    return this.orm!.transaction(
+      (orm) => {
+        const messages = new Map<string, MessageRow[]>();
+        for (const row of orm
+          .select()
+          .from(messageTable)
+          .orderBy(messageTable.chatId, messageTable.position)
+          .all()) {
+          const values = messages.get(row.chatId) ?? [];
+          if (row.position !== values.length) {
+            throw Error('Conversation messages are not contiguous.');
+          }
+          values.push(row);
+          messages.set(row.chatId, values);
+        }
+        const states = new Map(
+          orm
+            .select()
+            .from(chatInstanceState)
+            .where(eq(chatInstanceState.instanceId, this.instanceId))
+            .all()
+            .map((row) => [row.chatId, row]),
+        );
+        return orm
+          .select()
+          .from(chatTable)
+          .orderBy(chatTable.sortIndex, chatTable.id)
+          .all()
+          .map((row) => {
+            const record = { row, messages: messages.get(row.id) ?? [], state: states.get(row.id) };
+            const chat = decodeChat(record, this.identities);
+            chatSchema.parse(chat);
+            this.saved.set(row.id, record);
+            return chat;
+          });
+      },
+      { behavior: 'deferred' },
     );
-    return orm
-      .select()
-      .from(chatTable)
-      .orderBy(chatTable.sortIndex, chatTable.id)
-      .all()
-      .map((row) => {
-        const record = { row, messages: messages.get(row.id) ?? [], state: states.get(row.id) };
-        const chat = decodeChat(record, this.identities);
-        chatSchema.parse(chat);
-        this.saved.set(row.id, record);
-        return chat;
-      });
   }
 
   private insertChat(chat: StoredChat) {

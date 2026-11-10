@@ -45,6 +45,7 @@
     "./desktop-handler": "./src/desktop-handler.ts",
     "./chat-store": "./src/chat-store.ts",
     "./db/migrate": "./src/db/migrate.ts",
+    "./db/private-file": "./src/db/private-file.ts",
     "./chat-lifecycle": "./src/chat-lifecycle.ts",
     "./chat-projection": "./src/chat-projection.ts",
     "./game-requests": "./src/game-requests.ts",
