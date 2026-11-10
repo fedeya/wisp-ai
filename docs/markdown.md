@@ -45,22 +45,22 @@ zero. Inline leaves do not promise source ranges.
 
 ### Node types
 
-| Types | Additional fields |
-| --- | --- |
-| `document`, `paragraph`, `block_quote`, `item` | Children; task items have `task = true` and boolean `checked` |
-| `heading` | `level` from 1 through 6; inline children |
-| `list` | `listType` (`bullet` or `ordered`), `listTight`; ordered lists also have `listStart` and `listDelimiter` |
-| `code_block` | Literal `literal` text, including its final newline; fenced blocks also have unescaped `info` |
-| `html_block`, `html_inline` | Opaque `literal` source; no execution or presentation |
-| `thematic_break`, `softbreak`, `linebreak` | No text payload |
-| `text`, `code` | `literal` text; code preserves its contents without entity, escape or reference processing |
-| `emph`, `strong`, `strikethrough` | Inline children |
-| `link`, `image` | `destination`, `title` and inline children; destinations have URI escaping applied |
-| `reference` | Wisp `key` and exact `literal` token; emitted only when enabled |
-| `table` | `align`: an array of `left`, `center`, `right` or `false`; a `table_head` followed by an optional `table_body` |
-| `table_head`, `table_body` | `table_row` children |
-| `table_row` | `table_cell` children |
-| `table_cell` | Inline children, boolean `header`, optional `align` |
+| Types                                          | Additional fields                                                                                              |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `document`, `paragraph`, `block_quote`, `item` | Children; task items have `task = true` and boolean `checked`                                                  |
+| `heading`                                      | `level` from 1 through 6; inline children                                                                      |
+| `list`                                         | `listType` (`bullet` or `ordered`), `listTight`; ordered lists also have `listStart` and `listDelimiter`       |
+| `code_block`                                   | Literal `literal` text, including its final newline; fenced blocks also have unescaped `info`                  |
+| `html_block`, `html_inline`                    | Opaque `literal` source; no execution or presentation                                                          |
+| `thematic_break`, `softbreak`, `linebreak`     | No text payload                                                                                                |
+| `text`, `code`                                 | `literal` text; code preserves its contents without entity, escape or reference processing                     |
+| `emph`, `strong`, `strikethrough`              | Inline children                                                                                                |
+| `link`, `image`                                | `destination`, `title` and inline children; destinations have URI escaping applied                             |
+| `reference`                                    | Wisp `key` and exact `literal` token; emitted only when enabled                                                |
+| `table`                                        | `align`: an array of `left`, `center`, `right` or `false`; a `table_head` followed by an optional `table_body` |
+| `table_head`, `table_body`                     | `table_row` children                                                                                           |
+| `table_row`                                    | `table_cell` children                                                                                          |
+| `table_cell`                                   | Inline children, boolean `header`, optional `align`                                                            |
 
 Table grammar is independent of presentation limits: empty headers,
 single-column tables, zero body rows and arbitrary widths are valid. Short rows
