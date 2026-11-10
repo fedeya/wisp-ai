@@ -76,4 +76,5 @@ export const chatSchema = z.object({
 export type Chat = z.infer<typeof chatSchema>;
 export type ChatStatus = z.infer<typeof chatStatus>;
 export type Message = Chat['messages'][number];
+export type ReplyPart = NonNullable<Message['parts']>[number];
 export type Activity = Chat['activity'][number];

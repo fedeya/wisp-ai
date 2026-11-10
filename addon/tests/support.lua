@@ -21,12 +21,27 @@ function M.fixture(path, env)
 end
 
 function M.addon(name, env)
+    if name == "MarkdownTables.lua" and not env.C.Markdown then
+        for _, dependency in ipairs({
+            "Node",
+            "Data",
+            "Scanner",
+            "Inline",
+            "Extensions",
+            "Block",
+            "Parser",
+            "Stream",
+        }) do
+            M.addon("Markdown/" .. dependency .. ".lua", env)
+        end
+    end
     if name == "UI.lua" then
         for _, dependency in ipairs({
             "Widgets.lua",
             "EmojiData.lua",
             "Emoji.lua",
             "MessageFormat.lua",
+            "MarkdownTables.lua",
             "ModelControls.lua",
             "MessageRows.lua",
         }) do

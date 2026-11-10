@@ -1,7 +1,7 @@
 import type { Message } from './chat.ts';
 import { ReplyStream } from './reply-stream.ts';
 
-// Shared interpretation for display and restored model history; no table layout.
+// Decode reply events for transport and restored model history. Markdown stays text.
 export function replyContent(original: Message): Message | null {
   const { rawReply, ...message } = original;
   if (message.role === 'assistant' && rawReply !== undefined) {

@@ -215,7 +215,7 @@ test('plain-text recovery never exposes malformed protocol or reasoning and stay
   assert.equal(reply.view().text, 'x'.repeat(19999));
 });
 
-test('completed Markdown tables become native UI between prose and keep transcript text', () => {
+test('Markdown tables remain source text in live and completed addon messages', () => {
   const markdown =
     'Antes.\n\n| Pieza | Estado |\n| :--- | ---: |\n| [[ref:robe]] | Equipada |\n| Capa | En bolsas |\n\nDespués.';
   const reply = new ReplyStream();
@@ -223,38 +223,20 @@ test('completed Markdown tables become native UI between prose and keep transcri
     record({ type: 'reference', key: 'robe', kind: 'item', id: 100, label: 'Toga' }) +
       text(markdown),
   );
-  assert.equal(reply.view().ui.length, 0, 'generated tables remain presentation only');
-  assert.equal(display(reply).ui![0].kind, 'table', 'tables render before completion');
+  const live = display(reply);
+  assert.equal(live.text, markdown);
+  assert.deepEqual(live.ui, []);
+  assert.deepEqual(live.parts, [{ type: 'text', text: markdown }]);
   reply.finish();
-  assert.equal(
-    reply.view().ui.length,
-    0,
-    'the stored message keeps Markdown rather than generated table nodes',
-  );
   const view = display(reply);
+  assert.equal(view.streaming, false);
   assert.equal(view.text, markdown);
-  const table = view.ui![0];
-  assert.equal(table.kind, 'table');
-  if (table.kind !== 'table') {
-    return;
-  }
-  assert.deepEqual(table.columns, [
-    { label: 'Pieza', align: 'left' },
-    { label: 'Estado', align: 'right' },
-  ]);
-  assert.deepEqual(table.rows, [
-    ['[[ref:robe]]', 'Equipada'],
-    ['Capa', 'En bolsas'],
-  ]);
-  assert.deepEqual(view.parts, [
-    { type: 'text', text: 'Antes.\n\n' },
-    { type: 'ui', id: table.id },
-    { type: 'text', text: '\n\nDespués.' },
-  ]);
-  assert.deepEqual(display(reply), view, 'projection must be deterministic');
+  assert.deepEqual(view.ui, []);
+  assert.deepEqual(view.parts, live.parts);
+  assert.deepEqual(display(reply), view, 'transport projection must be deterministic');
 });
 
-test('tables grow within an unfinished text event after many partial updates without rewriting history', () => {
+test('unfinished Markdown cells reach the addon after many partial updates without rewriting history', () => {
   const c = chat(),
     projection = new ReplyProjection(),
     reply = projection.stream('answer').reply,
@@ -268,49 +250,27 @@ test('tables grow within an unfinished text event after many partial updates wit
     now += 600;
     const stored = JSON.stringify(c);
     const view = projectChats(state).chats[0].messages![0];
-    assert.equal(JSON.stringify(c), stored, 'rendering does not modify the stored reply');
+    assert.equal(JSON.stringify(c), stored);
     assert.equal(c.messages[0].ui?.length, 0);
     assert.equal(view.streaming, true);
+    assert.deepEqual(view.ui, []);
     return view;
   };
   for (let i = 0; i < 9; i++) {
     feed(text('Antes. '));
   }
   let markdown = '\n\n| Pieza | Estado |\n';
-  assert.equal(
-    feed('{"type":"text_delta","text":"' + JSON.stringify(markdown).slice(1, -1)).ui?.length,
-    0,
-  );
-  let tableId: string | undefined;
-  for (const [delta, rows] of [
-    ['| --- | --- |\n| To', [['To', '']]],
-    ['ga | Equi', [['Toga', 'Equi']]],
-    [
-      'pada |\n| Capa | En bol',
-      [
-        ['Toga', 'Equipada'],
-        ['Capa', 'En bol'],
-      ],
-    ],
-    [
-      'sas |\n\nDespués.',
-      [
-        ['Toga', 'Equipada'],
-        ['Capa', 'En bolsas'],
-      ],
-    ],
-  ] as const) {
+  feed('{"type":"text_delta","text":"' + JSON.stringify(markdown).slice(1, -1));
+  for (const delta of [
+    '| --- | --- |\n| To',
+    'ga | Equi',
+    'pada |\n| Capa | En bol',
+    'sas |\n\nDespués.',
+  ]) {
     markdown += delta;
     const view = feed(JSON.stringify(delta).slice(1, -1));
-    const table = view.ui![0];
-    assert.equal(table.kind, 'table');
-    if (table.kind === 'table') {
-      assert.deepEqual(table.rows, rows);
-    }
-    tableId ??= table.id;
-    assert.equal(table.id, tableId, 'the table keeps its identity while cells grow');
     assert.equal(view.text, 'Antes. '.repeat(9) + markdown);
-    assert.equal(view.parts?.filter((part) => part.type === 'ui').length, 1);
+    assert.deepEqual(view.parts, [{ type: 'text', text: view.text }]);
   }
   reply.feed('"}\n');
   reply.finish();
@@ -318,80 +278,38 @@ test('tables grow within an unfinished text event after many partial updates wit
   assert.equal(projection.flush(c, now), true);
   const view = projectChats(state).chats[0].messages![0];
   assert.equal(view.streaming, false);
-  assert.equal(view.ui![0].id, tableId);
-  assert.deepEqual(view.parts, [
-    { type: 'text', text: 'Antes. '.repeat(9) + '\n\n' },
-    { type: 'ui', id: tableId },
-    { type: 'text', text: '\n\nDespués.' },
-  ]);
-  assert.equal(c.messages[0].text, 'Antes. '.repeat(9) + markdown);
-  assert.equal(c.messages[0].ui?.length, 0);
+  assert.equal(view.text, 'Antes. '.repeat(9) + markdown);
+  assert.deepEqual(view.parts, [{ type: 'text', text: view.text }]);
+  assert.deepEqual(view.ui, []);
 });
 
-test('table conversion handles escaped/code pipes, code fences, limits and existing component IDs', () => {
+test('Markdown interpretation belongs to the addon while explicit UI keeps its source order', () => {
   const wire = 'A | B\n--- | :---:\na\\|b | `x\\|y`\n';
+  const node = { id: 'markdown_table_1', kind: 'stat', label: 'Existing', value: '1' };
   const reply = new ReplyStream();
-  reply.feed(
-    record({
-      type: 'ui_node',
-      node: { id: 'markdown_table_1', kind: 'stat', label: 'Existing', value: '1' },
-    }) + text(wire),
-  );
+  reply.feed(text(wire) + record({ type: 'ui_node', node }) + text('Después.'));
   reply.finish();
-  const table = display(reply).ui![1];
-  assert.equal(table.kind, 'table');
-  if (table.kind !== 'table') {
-    return;
-  }
-  assert.notEqual(table.id, 'markdown_table_1');
-  assert.deepEqual(table.rows, [['a|b', '`x|y`']]);
-  for (const raw of [
+  const view = display(reply);
+  assert.deepEqual(view.ui, [node]);
+  assert.deepEqual(view.parts, [
+    { type: 'text', text: wire },
+    { type: 'ui', id: node.id },
+    { type: 'text', text: 'Después.' },
+  ]);
+  for (const markdown of [
     '```text\n' + wire + '```',
-    '~~~\n' + wire + '~~~',
-    '    A | B\n    --- | ---\n    1 | 2\n',
-    '> A | B\n> --- | ---\n> 1 | 2\n',
-    '- A | B\n  --- | ---\n  1 | 2\n',
-    '<pre>\n' + wire + '</pre>\n',
-    'A | B\n--- | ---\n',
-    'A | B | C | D | E | F | G\n---|---|---|---|---|---|---\n1|2|3|4|5|6|7\n',
-    'A | B\n--- | ---\n' + 'x'.repeat(301) + ' | 2\n',
-    'A | B\n--- | ---\n' + '1 | 2\n'.repeat(21),
+    'A|B\n---|---\n' + 'x'.repeat(301) + '|2',
+    'A|B\n---|---\n' + '1|2\n'.repeat(21),
+    'A|B\n:-|-:\n1\n2|3|extra\n4|5',
   ]) {
-    const stream = new ReplyStream();
-    stream.feed(text(raw));
-    assert.equal(display(stream).ui?.length ?? 0, 0, 'streaming follows the same GFM limits');
-    stream.finish();
-    assert.equal(display(stream).ui?.length ?? 0, 0);
-    const first = stream.view().parts[0];
-    assert.equal(first.type === 'text' && first.text, raw);
+    const plain = new ReplyStream();
+    plain.feed(markdown);
+    plain.finish();
+    const transported = display(plain);
+    assert.deepEqual(transported.ui, []);
+    assert.equal(transported.text, markdown, 'format recovery must not interpret Markdown');
+    assert.deepEqual(transported.parts, [{ type: 'text', text: markdown }]);
   }
-  const plain = new ReplyStream();
-  plain.feed(wire);
-  plain.finish();
-  assert.equal(display(plain).ui![0].kind, 'table', 'format recovery and table conversion compose');
-});
-
-test('table interpretation follows GFM delimiters and normalizes short or extra cells', () => {
-  const markdown = 'A | B\n:- | -:\n1\n2 | 3 | ignored\n4 | 5\n';
-  const reply = new ReplyStream();
-  reply.feed(text(markdown));
-  reply.finish();
-  const view = display(reply),
-    table = view.ui![0];
-  assert.equal(table.kind, 'table');
-  if (table.kind === 'table') {
-    assert.deepEqual(table.columns, [
-      { label: 'A', align: 'left' },
-      { label: 'B', align: 'right' },
-    ]);
-    assert.deepEqual(table.rows, [
-      ['1', ''],
-      ['2', '3'],
-      ['4', '5'],
-    ]);
-  }
-  assert.equal(reply.view().text, markdown);
-  assert.equal(view.text, markdown, 'the original text remains available, including extra cells');
 });
 test('migration preserves user links and tools, converts verified references, and is idempotent', () => {
   const c = chat();

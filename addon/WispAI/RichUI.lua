@@ -188,7 +188,7 @@ local function tableUI(w, node, available, rendered)
         row:SetWidth(available)
         row:ClearAllPoints()
         row:SetPoint("TOPLEFT", 0, -y)
-        if header and not wide then
+        if header and not wide and #node.rows > 0 then
             row:Hide()
         else
             row.background:SetColorTexture(
@@ -227,15 +227,18 @@ local function tableUI(w, node, available, rendered)
                         )
                     )
                 else
-                    top = top
-                        + line(
-                            label,
-                            rendered(spec.label),
-                            math.max(1, available - padding * 2),
-                            padding,
-                            top
-                        )
-                        + 3
+                    label:Hide()
+                    if not header then
+                        top = top
+                            + line(
+                                label,
+                                rendered(spec.label),
+                                math.max(1, available - padding * 2),
+                                padding,
+                                top
+                            )
+                            + 3
+                    end
                     top = top
                         + line(
                             cell,
@@ -387,7 +390,7 @@ function C.RenderRichUI(host, chat, message, width)
             end
             height = (node.kind == "row" and y + tallest or y) + padding
         elseif node.kind == "table" then
-            height = tableUI(w, node, available, rendered)
+            height = tableUI(w, node, available, node._markdown and tostring or rendered)
         elseif node.kind == "comparison" then
             height = comparison(w, node, available, rendered)
         elseif node.kind == "stat" then

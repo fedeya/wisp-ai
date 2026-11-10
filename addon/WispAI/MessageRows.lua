@@ -289,21 +289,24 @@ function C.MessageSpeaker(message)
 end
 function C.RenderMessageRow(row, chat, message, width, showAuthor)
     local tool = message.tool
-    local signature = chat.id
-        .. "\31"
-        .. (message.role or "")
+    local contentSignature = (message.role or "")
         .. "\31"
         .. (message.text or "")
-        .. "\31"
-        .. (tool and tool.status or "")
-        .. "\31"
-        .. width
         .. "\31"
         .. C.itemRevision
         .. "\31"
         .. referenceSignature(message.references)
         .. "\31"
         .. (C.RichSignature and C.RichSignature({ message.ui, message.parts }) or "")
+    local signature = chat.id
+        .. "\31"
+        .. (message.id or "")
+        .. "\31"
+        .. contentSignature
+        .. "\31"
+        .. (tool and tool.status or "")
+        .. "\31"
+        .. width
         .. "\31"
         .. (chat.status or "")
         .. "\31"
@@ -312,6 +315,21 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
         .. tostring(message.groupKey)
     if row.signature ~= signature then
         row.signature = signature
+        if row.markdownSignature ~= contentSignature then
+            local view = C.MarkdownTables.project(message)
+            row.markdownSignature = contentSignature
+            row.markdownUI = view ~= message and view.ui or nil
+            row.markdownParts = view ~= message and view.parts or nil
+        end
+        if row.markdownUI then
+            -- Cache presentation data, never a stale copy of message metadata.
+            local view = {}
+            for key, value in pairs(message) do
+                view[key] = value
+            end
+            view.ui, view.parts = row.markdownUI, row.markdownParts
+            message = view
+        end
         row.speaker = message.role
         local padding = message.role == "user" and 8 or 0
         if message.role == "user" then
@@ -359,10 +377,18 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
             row.height = top + math.max(18, row.text:GetStringHeight()) + 7
         else
             row.icon:Hide()
+            local interleaved = message.parts
+                and #message.parts > 0
+                and message.ui
+                and #message.ui > 0
             row.text:SetPoint("TOPLEFT", padding, -top)
             row.text:SetWidth(width - padding * 2)
             row.text:SetTextColor(unpack(message.role == "system" and MUTED or TEXT))
-            setText(row.text, formatted(message.text, message.references, message.role == "user"))
+            setText(
+                row.text,
+                interleaved and ""
+                    or formatted(message.text, message.references, message.role == "user")
+            )
             if message.role == "user" and not (message.ui and #message.ui > 0) then
                 local natural = row.text.GetUnboundedStringWidth
                     and row.text:GetUnboundedStringWidth()
@@ -372,10 +398,6 @@ function C.RenderMessageRow(row, chat, message, width, showAuthor)
                     row.text:SetWidth(width - padding * 2)
                 end
             end
-            local interleaved = message.parts
-                and #message.parts > 0
-                and message.ui
-                and #message.ui > 0
             row.text:SetShown(not interleaved)
             row.height = top
                 + math.max(

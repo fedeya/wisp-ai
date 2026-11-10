@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
 import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';
 import { conversationTitle } from './conversation-title.ts';
-import type { ReplyPart } from './reply-tables.ts';
+import type { ReplyPart } from './chat.ts';
 const keySchema = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
