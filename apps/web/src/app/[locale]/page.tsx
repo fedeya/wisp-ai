@@ -11,6 +11,7 @@ import { Icon } from '../../components/icon';
 import { site } from '../../site';
 import { getLatestRelease } from '../../release.server';
 import { PageSchema } from '../../components/page-schema';
+import { UsageRisk } from '../../components/usage-risk';
 export const revalidate = 300;
 const baseFaqs = [
   [
@@ -130,6 +131,7 @@ export default async function Home({ params }: LocalePageProps) {
               <span className="download-note mt-[13px] block text-[11px] leading-[1.6] text-[#b8ad99]">
                 {t('Windows x64 · Choose your AI connection')}
               </span>
+              <UsageRisk locale={locale} />
             </div>
             <div
               className="hero-product py-0 relative min-h-[0] self-[center] flex justify-end mt-[40px] md:mt-0 md:pb-0"
@@ -529,6 +531,7 @@ export default async function Home({ params }: LocalePageProps) {
             {release && `v${release.version}`}
             {t(' · Windows x64 · Open source')}
           </p>
+          <UsageRisk locale={locale} centered />
         </section>
       </main>
     </>

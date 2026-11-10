@@ -5,6 +5,7 @@ import { localizedMetadata } from '../../../seo';
 import { Icon } from '../../../components/icon';
 import { site } from '../../../site';
 import { PageSchema } from '../../../components/page-schema';
+import { UsageRisk } from '../../../components/usage-risk';
 export async function generateMetadata({ params }: LocalePageProps) {
   return localizedMetadata(await resolveLocale(params), '/setup');
 }
@@ -37,6 +38,7 @@ export default async function Setup({ params }: LocalePageProps) {
           {t('Download for Windows')}
           <Icon name="download" size={17} />
         </a>
+        <UsageRisk locale={locale} />
         <ol
           className={`guide-steps p-0 mx-0 mt-[58px] mb-0 list-none [counter-reset:setup] [&_li]:[counter-increment:setup] [&_li::before]:[content:'0'_counter(setup)] [&_li::before]:absolute [&_li::before]:left-[0] [&_li::before]:top-[3px] [&_li::before]:text-gold [&_li::before]:text-[22px] [&_li::before]:[font-family:Georgia,_serif] [&_li::before]:font-normal [&_li::before]:not-italic [&_li::before]:[line-height:normal]`}
         >

@@ -352,6 +352,10 @@
         >
           Update the addon, then type /reload in WoW.
         </p>{/if}
+      <p class="field-hint text-[11px]! text-muted mt-[12px]">
+        <strong>Use at your own risk.</strong> We don’t know whether Blizzard permits
+        Wisp or whether using it could lead to an account ban.
+      </p>
       <div class="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
         {#if !app.info?.configured && !app.detectingGame}<button
             class={button({ intent: "primary", class: "primary" })}
