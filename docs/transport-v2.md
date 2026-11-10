@@ -204,8 +204,8 @@ revisions with an already exhausted bank**, using the same helper names and no
 APIs; they do not establish native frame cost or a long-session live result.
 
 ```powershell
-pnpm exec vitest run --project core tests/downlink.test.ts tests/transport-v2.test.ts
-pnpm exec vitest run --project addon addon/tests/downlink.test.ts
+pnpm exec vitest run --project protocol --project bridge packages/protocol/tests/downlink.test.ts apps/bridge/tests/transport-v2.test.ts
+pnpm exec vitest run --project integration tests/addon/downlink.test.ts
 ```
 
 Before the current optimization, the addon and core Vitest projects passed:
@@ -327,7 +327,7 @@ and 3,708 ms after the Sending phase. Their difference implies approximately
 726 ms from sending to acknowledgement. This is **one real run including model
 inference**, not a matched live comparison against v1. The addon and core Vitest
 projects passed at closeout: 66 files, 375 tests, using
-`pnpm exec vitest run --project addon --project core`.
+`pnpm test:core` and `pnpm test:addon`.
 
 ## Outstanding empirical validation
 

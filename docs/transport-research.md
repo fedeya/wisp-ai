@@ -249,7 +249,7 @@ the configured WoW account directory. It requires the existing 768 helper names.
 Offline checks:
 
 ```powershell
-pnpm exec vitest run --project addon addon/tests/reusable-mailbox.test.ts
+pnpm exec vitest run --project integration tests/addon/transport-v2.test.ts
 pnpm exec tsc --noEmit --project scripts/tsconfig.json
-pnpm exec oxlint --deny-warnings scripts/transport-lab addon/tests/reusable-mailbox.test.ts
+pnpm exec oxlint --deny-warnings scripts/transport-lab tests/addon
 ```

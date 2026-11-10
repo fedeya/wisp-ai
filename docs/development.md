@@ -8,6 +8,7 @@ Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.
 
 ```sh
 pnpm install --frozen-lockfile
+luarocks --lua-version=5.1 install busted 2.3.0-1
 pnpm build
 pnpm check
 pnpm test
@@ -16,7 +17,7 @@ pnpm test
 `build` runs workspace builds through Turborepo, including the protocol, agent,
 desktop frontend and website. It does not build the native host, simulator or
 installer. `check` runs formatting, lint and type checks; `pnpm test` runs all
-TypeScript tests with Vitest (core, addon and desktop UI). Simulator engine tests
+TypeScript tests with Vitest (apps, packages and integrations) and Lua specs with Busted. Simulator engine tests
 require its binary—offline input tests alone do not validate the engine.
 
 Turborepo resolves prerequisites from the declared workspace dependencies and
@@ -44,25 +45,68 @@ with other agents, read the skill and its linked references explicitly.
 
 ## Tests
 
-Vitest projects keep each environment separate:
+Each app or package owns its unit tests and Vitest configuration. The root
+`tests/` workspace contains cross-component integrations and repository-wide checks.
+Unit tests import their component's source directly; integration tests use package
+exports. This lets a package typecheck before its own build has produced `dist/`.
 
-| Command           | Scope                                                                |
-| ----------------- | -------------------------------------------------------------------- |
-| `pnpm test`       | All TypeScript tests                                                 |
-| `pnpm test:core`  | Bridge, agent, protocol and integration tests in `tests/` (Node)     |
-| `pnpm test:addon` | Addon tests and WoW stubs in `addon/tests/` (Node + Fengari for Lua) |
-| `pnpm test:ui`    | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)   |
-| `pnpm test:watch` | Watch all projects; Lua source and fixture changes rerun addon tests |
+| Command                 | Scope                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------- |
+| `pnpm test`             | All TypeScript tests and Busted Lua specs                                     |
+| `pnpm test:core`        | All app/package TypeScript suites and root integrations, excluding desktop UI |
+| `pnpm test:integration` | Cross-component tests in `tests/`, including Lua/TS transport                 |
+| `pnpm test:addon`       | Busted Lua specs and WoW fixtures in `addon/tests/`                           |
+| `pnpm test:ui`          | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)            |
+| `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
-Use `pnpm test:addon`, `pnpm test:core` or `pnpm test:ui` for a suite. For a file,
-run `pnpm exec turbo run test --filter=@wisp/tests -- tests/routines.test.ts`.
+Use `pnpm test:addon`, `pnpm test:core`, `pnpm test:integration` or `pnpm test:ui`
+for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp/bridge`
+(or `@wisp/agent`, `@wisp/protocol`, `@wisp/releases`, `@wisp/scripts`, `@wisp/web`).
+For a file, run `pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/routines.test.ts`.
 `pnpm test:watch` watches the task graph and rebuilds dependencies before rerunning tests.
-Existing schema assertions in addon tests
-also verify the TypeScript contracts consumed by Lua. Native Rust tests remain on Cargo;
+The root integration task includes addon Lua sources and transport fixtures as
+inputs, so addon changes also rerun the cross-language transport tests.
+Protocol schema assertions live in `packages/protocol/tests/`; the apps own their
+behavior tests in `apps/<app>/tests/` (desktop UI tests remain in `src/`). Release
+helpers own their tests in `packages/releases/tests/` and `scripts/tests/`.
+Native Rust tests remain on Cargo;
 see the CI workflow for their build prerequisites and command. Simulator and native-helper
 tests keep their existing skips when the required binaries are absent.
 
-Core tests also launch the real Eve agent against a local model fixture. This checks
+### Lua addon tests
+
+Install Lua 5.1 and LuaRocks using your platform's package manager, then install
+[Busted](https://lunarmodules.github.io/busted/) with
+`luarocks --lua-version=5.1 install busted 2.3.0-1`. Put that installation's
+`lua` and `busted` commands on `PATH`. LuaRocks may require a C compiler and Lua
+development headers to build dependencies. CI uses the standard
+[Lua](https://github.com/leafo/gh-actions-lua) and
+[LuaRocks](https://github.com/leafo/gh-actions-luarocks) actions on Ubuntu.
+
+The addon specs run on Lua 5.1, matching WoW's language APIs; `.busted` rejects
+other interpreter versions. This follows the offline test setup used by
+[Questie](https://github.com/Questie/Questie/blob/master/.github/workflows/ci.yml)
+and [BetterBags](https://github.com/Cidan/BetterBags/blob/main/.github/workflows/test.yml):
+Busted installed through LuaRocks, real addon files and explicit WoW mocks.
+
+Write addon-only cases in `addon/tests/*_spec.lua`, using Busted's `it`, assertions
+and hooks. `support.lua` creates private WoW globals for each scenario and loads
+the real addon files, including the UI dependency order. The existing WoW API
+stubs remain fixtures; these specs run outside the game.
+
+```sh
+busted
+busted addon/tests/settings_spec.lua
+busted --filter "settings"
+```
+
+Run these commands from the repository root; `.busted` selects `addon/tests/`.
+`pnpm test:addon` runs only `busted`; the binary emoji-atlas checks also run in Lua.
+`pnpm test:watch` reruns the addon suite when addon files change. Direct Vitest runs
+cover TypeScript suites. Tests exchanging frames between Lua and TypeScript live
+in `tests/addon/` and still use Fengari.
+
+Root integration tests also launch the real Eve agent against a local model fixture. This checks
 agent compilation, dependency resolution, model middleware and streamed replies without
 credentials or external inference. Runtime tests exercise startup, shutdown, persistence
 and partial-startup cleanup in temporary data directories.

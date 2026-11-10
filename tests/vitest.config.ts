@@ -5,7 +5,7 @@ export default defineConfig({
   root: fileURLToPath(new URL('..', import.meta.url)),
   cacheDir: fileURLToPath(new URL('./node_modules/.cache/vitest', import.meta.url)),
   test: {
-    name: 'core',
+    name: 'integration',
     environment: 'node',
     include: ['tests/**/*.test.ts'],
     maxWorkers: 2,

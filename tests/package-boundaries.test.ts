@@ -7,7 +7,16 @@ import ts from 'typescript';
 test('workspace sources declare their direct package imports', () => {
   const missing: string[] = [];
   const builtins = new Set(builtinModules);
-  for (const directory of ['apps/agent', 'apps/bridge', 'apps/desktop', 'packages/protocol']) {
+  for (const directory of [
+    'apps/agent',
+    'apps/bridge',
+    'apps/desktop',
+    'apps/web',
+    'packages/protocol',
+    'packages/releases',
+    'scripts',
+    'tests',
+  ]) {
     const pkg = JSON.parse(readFileSync(path.join(directory, 'package.json'), 'utf8'));
     const declared = new Set(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }));
     declared.add(pkg.name);
@@ -15,7 +24,7 @@ test('workspace sources declare their direct package imports', () => {
       for (const entry of readdirSync(folder, { withFileTypes: true })) {
         const file = path.join(folder, entry.name);
         if (entry.isDirectory()) {
-          if (!['node_modules', 'dist', 'src-tauri', '.eve'].includes(entry.name)) {
+          if (!['node_modules', 'dist', 'src-tauri', '.eve', '.next'].includes(entry.name)) {
             walk(file);
           }
         } else if (/\.(ts|svelte)$/.test(entry.name)) {

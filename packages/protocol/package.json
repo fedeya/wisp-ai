@@ -15,13 +15,15 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "cd ../.. && vitest run --config packages/protocol/vitest.config.ts"
   },
   "dependencies": {
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
   }
 }

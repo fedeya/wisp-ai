@@ -67,7 +67,8 @@
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "start": "node src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "cd ../.. && vitest run --config apps/bridge/vitest.config.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
@@ -80,8 +81,10 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "4.0.110",
     "@types/node": "24.19.2",
     "drizzle-kit": "1.0.0-rc.5",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
   }
 }

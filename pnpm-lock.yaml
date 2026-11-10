@@ -197,26 +197,7 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
-  addon:
-    devDependencies:
-      '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
-      '@wisp/bridge':
-        specifier: workspace:*
-        version: link:../apps/bridge
-      '@wisp/protocol':
-        specifier: workspace:*
-        version: link:../packages/protocol
-      fengari:
-        specifier: 0.1.5
-        version: 0.1.5
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+  addon: {}
 
   apps/agent:
     dependencies:
@@ -320,6 +301,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   apps/bridge:
     dependencies:
@@ -348,6 +332,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@ai-sdk/openai':
+        specifier: 4.0.110
+        version: 4.0.110(zod@4.6.7)
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -357,6 +344,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   apps/desktop:
     dependencies:
@@ -458,6 +448,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   packages/protocol:
     dependencies:
@@ -471,6 +464,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   packages/releases:
     dependencies:
@@ -478,9 +474,15 @@ importers:
         specifier: 18.1.3
         version: 18.1.3
     devDependencies:
+      '@types/node':
+        specifier: 24.19.2
+        version: 24.19.2
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   scripts:
     devDependencies:
@@ -511,15 +513,12 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
 
   tests:
     devDependencies:
-      '@ai-sdk/openai':
-        specifier: 4.0.110
-        version: 4.0.110(zod@4.6.7)
-      '@modelcontextprotocol/sdk':
-        specifier: 1.32.2
-        version: 1.32.2(zod@4.6.7)
       '@types/node':
         specifier: 24.19.2
         version: 24.19.2
@@ -532,30 +531,18 @@ importers:
       '@wisp/protocol':
         specifier: workspace:*
         version: link:../packages/protocol
-      '@wisp/releases':
-        specifier: workspace:*
-        version: link:../packages/releases
-      ai:
-        specifier: 7.0.164
-        version: 7.0.164(zod@4.6.7)
-      drizzle-orm:
-        specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7)
       eve:
         specifier: 1.0.0-rc.6
         version: 1.0.0-rc.6(ai@7.0.164(zod@4.6.7))(just-bash@3.6.0)(next@16.4.5(@playwright/test@1.65.0)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)(svelte@5.57.3)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      jose:
-        specifier: 6.2.15
-        version: 6.2.15
+      fengari:
+        specifier: 0.1.5
+        version: 0.1.5
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@types/node@24.19.2)(jsdom@31.0.0)(vite@8.3.6(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
-      zod:
-        specifier: 4.6.7
-        version: 4.6.7
 
 packages:
 

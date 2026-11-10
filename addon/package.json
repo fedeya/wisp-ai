@@ -4,15 +4,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "cd .. && vitest run --config addon/vitest.config.ts",
-    "typecheck": "tsc --noEmit"
-  },
-  "devDependencies": {
-    "@types/node": "24.19.2",
-    "@wisp/bridge": "workspace:*",
-    "@wisp/protocol": "workspace:*",
-    "fengari": "0.1.5",
-    "typescript": "5.9.3",
-    "vitest": "5.1.0"
+    "test": "cd .. && busted"
   }
 }

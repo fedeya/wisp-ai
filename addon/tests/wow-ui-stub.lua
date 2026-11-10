@@ -1,5 +1,5 @@
 -- Minimal stateful WoW widget API for renderer regression tests.
-unpack = table.unpack
+unpack = unpack or table.unpack
 UI_TEST = { frames = {}, widgets = {}, textWrites = 0, hides = 0 }
 function GetTime()
     return UI_TEST.now or 0
@@ -150,7 +150,7 @@ function methods:SetPoint(point, relative, relativePoint, x, y)
     self.point = { point, relative, relativePoint, x or 0, y or 0 }
 end
 function methods:GetPoint()
-    return table.unpack(self.point or { "CENTER", UIParent, "CENTER", 0, 0 })
+    return unpack(self.point or { "CENTER", UIParent, "CENTER", 0, 0 })
 end
 function CreateFrame(kind, name, parent)
     return widget(kind, name, parent)
