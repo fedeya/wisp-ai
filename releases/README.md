@@ -34,7 +34,15 @@ does not publish npm packages or automatically publish stable drafts.
 
 ## Nightly
 
-Every push to `main` runs the release pipeline. After checks pass, CI assigns
+Pushes to `main` run the release pipeline unless all changed paths belong to the
+website, documentation/release notes, contributor instructions, GitHub workflows
+or the website revalidation script and its tests. Regular CI still runs for those
+changes. Mixed pushes that also change app code still build an installer. Shared
+dependencies, lockfiles and build scripts remain release inputs, as do the agent's
+runtime Markdown instructions and skills. Version tags and manual workflow runs
+bypass the path filter.
+
+After checks pass, CI assigns
 `<current stable, next patch>-nightly.<run number>.<attempt>` only in the build
 checkout. No version commits are pushed back to `main`. Each installer has an
 immutable version tag targeting the exact source SHA. No notes need to be authored

@@ -3,6 +3,18 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # Branch pushes only need an installer when app/build inputs change.
+    # GitHub does not apply path filters to tag pushes; manual builds also remain available.
+    paths-ignore:
+      - 'apps/web/**'
+      - 'docs/**'
+      - 'releases/**'
+      - '.agents/**'
+      - '.github/**'
+      - '**/AGENTS.md'
+      - '**/README.*'
+      - 'scripts/revalidate-web.ts'
+      - 'scripts/tests/revalidate-web.test.ts'
   workflow_dispatch:
 permissions:
   contents: write
