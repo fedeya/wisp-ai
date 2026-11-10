@@ -29,7 +29,7 @@ test('one long text event becomes visible before its JSON string closes, with no
   reply.feed('" y un emoji: \\uD83D');
   assert.equal(reply.view().text, 'Ya podés leer esto.\nUna comilla: " y un emoji: ');
   reply.feed('\\uDE00. [[ref:');
-  assert.equal(reply.view().text, 'Ya podés leer esto.\nUna comilla: " y un emoji: 😀. ');
+  assert.equal(reply.view().text, 'Ya podés leer esto.\nUna comilla: " y un emoji: 😀. [[ref:');
   reply.feed(
     'nova]]"}\n' +
       record({ type: 'reference', key: 'nova', kind: 'spell', id: 122, label: 'Nova' }),
@@ -50,7 +50,14 @@ test('arbitrary stream boundaries preserve escapes, Unicode and late references 
     for (let i = 0; i < wire.length; i += split) {
       reply.feed(wire.slice(i, i + split));
       assert.ok(!reply.view().text.includes('"type"'));
-      assert.ok(!reply.view().text.endsWith('[[ref:'));
+      assert.equal(
+        reply
+          .view()
+          .parts.map((part) => (part.type === 'text' ? part.text : ''))
+          .join(''),
+        reply.view().text,
+        'preview parts preserve the same decoded source as message text',
+      );
     }
     reply.finish();
     assert.equal(reply.view().text, 'Sí, "usá" [[ref:nova]].\nDespués seguí.');
@@ -77,13 +84,35 @@ test('invalid references, conflicting keys and missing IDs fail once without gue
   );
   reply.finish();
   reply.finish();
-  assert.equal(reply.view().text, '(reference unavailable) [[ref:s]] `[[ref:example]]`');
+  assert.equal(reply.view().text, '[[ref:missing]] [[ref:s]] `[[ref:example]]`');
   const spell = reply.view().references.s;
   assert.equal(spell.kind === 'spell' && spell.id, 122);
   assert.equal(reply.view().references.pin, undefined);
   assert.equal(reply.errors.length, 3);
 });
-test('hundreds of text deltas spend at most eight partial updates, recover completion, and never leak reasoning', () => {
+test('reference presentation never rewrites Markdown source in code, prose or partial tokens', () => {
+  const source =
+    '**[[ref:missing]]** `[[ref:code]]` ``tick ` [[ref:double]]``\n' +
+    '~~~text\n[[ref:fenced]]\n~~~\n\\[[ref:escaped]] [[ref:late]] unfinished [[ref:';
+  const reply = new ReplyStream();
+  reply.feed(text(source));
+  const before = reply.view();
+  assert.equal(before.text, source);
+  assert.deepEqual(before.parts, [{ type: 'text', text: source }]);
+  assert.deepEqual(before.references, {});
+  assert.equal(before.streaming, true);
+  reply.feed(record({ type: 'reference', key: 'late', kind: 'spell', id: 122, label: 'Nova' }));
+  const after = reply.view();
+  assert.equal(after.text, source, 'late metadata only updates the separate reference catalog');
+  assert.deepEqual(after.parts, before.parts);
+  assert.equal(after.references.late.kind, 'spell');
+  assert.deepEqual(before.references, {}, 'earlier snapshots remain independent');
+  reply.finish();
+  assert.equal(reply.view().text, source);
+  assert.deepEqual(reply.view().parts, before.parts);
+  assert.equal(reply.view().streaming, false);
+});
+test('long replies keep refreshing at a bounded cadence, complete, and never leak reasoning', () => {
   const c = chat(),
     projection = new ReplyProjection();
   applyEvent(
@@ -103,12 +132,19 @@ test('hundreds of text deltas spend at most eight partial updates, recover compl
   let updates = 0;
   for (let i = 0; i < 500; i++) {
     state.reply.feed(text('a'));
-    if (projection.flush(c, i * 2000)) {
+    if (projection.flush(c, i * 100)) {
       updates++;
     }
   }
-  assert.equal(updates, 8);
+  assert.equal(updates, 84);
   assert.equal(c.messages.length, 1);
+  assert.equal(c.messages[0].text, 'a'.repeat(499));
+  assert.equal(c.messages[0].streaming, true);
+  assert.equal(projection.flush(c, 49800), false, 'unchanged content is not republished');
+  assert.equal(projection.flush(c, 49900), false, 'deltas within 600 ms remain batched');
+  assert.equal(projection.flush(c, 50400), true, 'the last pending delta is published');
+  assert.equal(c.messages[0].text, 'a'.repeat(500));
+  assert.equal(projection.flush(c, 51000), false, 'identical views are not republished');
   applyEvent(
     c,
     {
@@ -208,7 +244,7 @@ test('plain-text recovery never exposes malformed protocol or reasoning and stay
   assert.equal(reply.view().text, 'x'.repeat(19999));
 });
 
-test('completed Markdown tables become native UI between prose and keep transcript text', () => {
+test('Markdown tables remain source text in live and completed addon messages', () => {
   const markdown =
     'Antes.\n\n| Pieza | Estado |\n| :--- | ---: |\n| [[ref:robe]] | Equipada |\n| Capa | En bolsas |\n\nDespués.';
   const reply = new ReplyStream();
@@ -216,99 +252,93 @@ test('completed Markdown tables become native UI between prose and keep transcri
     record({ type: 'reference', key: 'robe', kind: 'item', id: 100, label: 'Toga' }) +
       text(markdown),
   );
-  assert.equal(reply.view().ui.length, 0, 'partial tables must not change the layout');
+  const live = display(reply);
+  assert.equal(live.text, markdown);
+  assert.deepEqual(live.ui, []);
+  assert.deepEqual(live.parts, [{ type: 'text', text: markdown }]);
   reply.finish();
-  assert.equal(
-    reply.view().ui.length,
-    0,
-    'the stored message keeps Markdown rather than generated table nodes',
-  );
   const view = display(reply);
+  assert.equal(view.streaming, false);
   assert.equal(view.text, markdown);
-  const table = view.ui![0];
-  assert.equal(table.kind, 'table');
-  if (table.kind !== 'table') {
-    return;
-  }
-  assert.deepEqual(table.columns, [
-    { label: 'Pieza', align: 'left' },
-    { label: 'Estado', align: 'right' },
-  ]);
-  assert.deepEqual(table.rows, [
-    ['[[ref:robe]]', 'Equipada'],
-    ['Capa', 'En bolsas'],
-  ]);
-  assert.deepEqual(view.parts, [
-    { type: 'text', text: 'Antes.\n\n' },
-    { type: 'ui', id: table.id },
-    { type: 'text', text: '\n\nDespués.' },
-  ]);
-  assert.deepEqual(display(reply), view, 'projection must be deterministic');
+  assert.deepEqual(view.ui, []);
+  assert.deepEqual(view.parts, live.parts);
+  assert.deepEqual(display(reply), view, 'transport projection must be deterministic');
 });
 
-test('table conversion handles escaped/code pipes, code fences, limits and existing component IDs', () => {
-  const wire = 'A | B\n--- | :---:\na\\|b | `x\\|y`\n';
-  const reply = new ReplyStream();
-  reply.feed(
-    record({
-      type: 'ui_node',
-      node: { id: 'markdown_table_1', kind: 'stat', label: 'Existing', value: '1' },
-    }) + text(wire),
-  );
-  reply.finish();
-  const table = display(reply).ui![1];
-  assert.equal(table.kind, 'table');
-  if (table.kind !== 'table') {
-    return;
+test('unfinished Markdown cells reach the addon after many partial updates without rewriting history', () => {
+  const c = chat(),
+    projection = new ReplyProjection(),
+    reply = projection.stream('answer').reply,
+    state = createSessionState([c]);
+  state.activeChat = c.id;
+  let now = 0;
+  const feed = (chunk: string) => {
+    projection.capture(c, 'answer', chunk, true);
+    reply.feed(chunk);
+    assert.equal(projection.flush(c, now), true);
+    now += 600;
+    const stored = JSON.stringify(c);
+    const view = projectChats(state).chats[0].messages![0];
+    assert.equal(JSON.stringify(c), stored);
+    assert.equal(c.messages[0].ui?.length, 0);
+    assert.equal(view.streaming, true);
+    assert.deepEqual(view.ui, []);
+    return view;
+  };
+  for (let i = 0; i < 9; i++) {
+    feed(text('Antes. '));
   }
-  assert.notEqual(table.id, 'markdown_table_1');
-  assert.deepEqual(table.rows, [['a|b', '`x|y`']]);
-  for (const raw of [
-    '```text\n' + wire + '```',
-    '~~~\n' + wire + '~~~',
-    '    A | B\n    --- | ---\n    1 | 2\n',
-    '> A | B\n> --- | ---\n> 1 | 2\n',
-    '- A | B\n  --- | ---\n  1 | 2\n',
-    '<pre>\n' + wire + '</pre>\n',
-    'A | B\n--- | ---\n',
-    'A | B | C | D | E | F | G\n---|---|---|---|---|---|---\n1|2|3|4|5|6|7\n',
-    'A | B\n--- | ---\n' + 'x'.repeat(301) + ' | 2\n',
-    'A | B\n--- | ---\n' + '1 | 2\n'.repeat(21),
+  let markdown = '\n\n| Pieza | Estado |\n';
+  feed('{"type":"text_delta","text":"' + JSON.stringify(markdown).slice(1, -1));
+  for (const delta of [
+    '| --- | --- |\n| To',
+    'ga | Equi',
+    'pada |\n| Capa | En bol',
+    'sas |\n\nDespués.',
   ]) {
-    const stream = new ReplyStream();
-    stream.feed(text(raw));
-    stream.finish();
-    assert.equal(display(stream).ui?.length ?? 0, 0);
-    const first = stream.view().parts[0];
-    assert.equal(first.type === 'text' && first.text, raw);
+    markdown += delta;
+    const view = feed(JSON.stringify(delta).slice(1, -1));
+    assert.equal(view.text, 'Antes. '.repeat(9) + markdown);
+    assert.deepEqual(view.parts, [{ type: 'text', text: view.text }]);
   }
-  const plain = new ReplyStream();
-  plain.feed(wire);
-  plain.finish();
-  assert.equal(display(plain).ui![0].kind, 'table', 'format recovery and table conversion compose');
+  reply.feed('"}\n');
+  reply.finish();
+  projection.capture(c, 'answer', '"}\n', true);
+  assert.equal(projection.flush(c, now), true);
+  const view = projectChats(state).chats[0].messages![0];
+  assert.equal(view.streaming, false);
+  assert.equal(view.text, 'Antes. '.repeat(9) + markdown);
+  assert.deepEqual(view.parts, [{ type: 'text', text: view.text }]);
+  assert.deepEqual(view.ui, []);
 });
 
-test('table interpretation follows GFM delimiters and normalizes short or extra cells', () => {
-  const markdown = 'A | B\n:- | -:\n1\n2 | 3 | ignored\n4 | 5\n';
+test('Markdown interpretation belongs to the addon while explicit UI keeps its source order', () => {
+  const wire = 'A | B\n--- | :---:\na\\|b | `x\\|y`\n';
+  const node = { id: 'markdown_table_1', kind: 'stat', label: 'Existing', value: '1' };
   const reply = new ReplyStream();
-  reply.feed(text(markdown));
+  reply.feed(text(wire) + record({ type: 'ui_node', node }) + text('Después.'));
   reply.finish();
-  const view = display(reply),
-    table = view.ui![0];
-  assert.equal(table.kind, 'table');
-  if (table.kind === 'table') {
-    assert.deepEqual(table.columns, [
-      { label: 'A', align: 'left' },
-      { label: 'B', align: 'right' },
-    ]);
-    assert.deepEqual(table.rows, [
-      ['1', ''],
-      ['2', '3'],
-      ['4', '5'],
-    ]);
+  const view = display(reply);
+  assert.deepEqual(view.ui, [node]);
+  assert.deepEqual(view.parts, [
+    { type: 'text', text: wire },
+    { type: 'ui', id: node.id },
+    { type: 'text', text: 'Después.' },
+  ]);
+  for (const markdown of [
+    '```text\n' + wire + '```',
+    'A|B\n---|---\n' + 'x'.repeat(301) + '|2',
+    'A|B\n---|---\n' + '1|2\n'.repeat(21),
+    'A|B\n:-|-:\n1\n2|3|extra\n4|5',
+  ]) {
+    const plain = new ReplyStream();
+    plain.feed(markdown);
+    plain.finish();
+    const transported = display(plain);
+    assert.deepEqual(transported.ui, []);
+    assert.equal(transported.text, markdown, 'format recovery must not interpret Markdown');
+    assert.deepEqual(transported.parts, [{ type: 'text', text: markdown }]);
   }
-  assert.equal(reply.view().text, markdown);
-  assert.equal(view.text, markdown, 'the original text remains available, including extra cells');
 });
 test('migration preserves user links and tools, converts verified references, and is idempotent', () => {
   const c = chat();

@@ -174,17 +174,30 @@ local function build(panel, index)
         end
     end
     local view = C.BoundPanel(panel)
-    local signature = C.RichSignature(view) .. tostring(state.minimized) .. tostring(state.hidden)
+    local sourceSignature = C.RichSignature(view)
+        .. tostring(state.minimized)
+        .. tostring(state.hidden)
+    local signature = sourceSignature
+        .. "\31"
+        .. (w.inlineMarkdownPending and C.Markdown.Cache.revision or "")
     if w.signature ~= signature then
-        w.signature = signature
         w.title:SetText(panel.title:gsub("|", "||"))
         w.mini:SetText(state.minimized and "+" or "-")
-        local height = C.RenderRichUI(w.host, { id = "panel:" .. panel.id, status = "idle" }, {
-            id = "persistent:" .. panel.id,
-            panelId = panel.id,
-            ui = view.ui,
-            references = view.references,
-        }, 265)
+        local height, pending = C.RenderRichUI(
+            w.host,
+            { id = "panel:" .. panel.id, status = "idle" },
+            {
+                id = "persistent:" .. panel.id,
+                panelId = panel.id,
+                ui = view.ui,
+                references = view.references,
+            },
+            265
+        )
+        w.inlineMarkdownPending = pending == true
+        w.signature = sourceSignature
+            .. "\31"
+            .. (w.inlineMarkdownPending and C.Markdown.Cache.revision or "")
         w.scroll:SetShown(not state.minimized)
         w:SetHeight(state.minimized and 35 or math.min(460, math.max(90, height + 55)))
     end

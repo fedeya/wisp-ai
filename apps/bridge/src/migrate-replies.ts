@@ -1,8 +1,20 @@
 // Offline migration only. The live renderer accepts structured references exclusively.
 import { linkedReferences } from '@wisp/protocol/references';
-import { outsideCode } from './reply-stream.ts';
 import { referenceSchema, type RichReference } from '@wisp/protocol/rich-reference';
 import type { Chat } from './events.ts';
+
+// Preserve the legacy migration's interpretation; live replies transport source
+// text and leave Markdown context and reference presentation to the addon.
+function outsideCode(text: string, transform: (text: string) => string): string {
+  let result = '',
+    cursor = 0;
+  for (const match of text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g)) {
+    result += transform(text.slice(cursor, match.index)) + match[0];
+    cursor = match.index! + match[0].length;
+  }
+  return result + transform(text.slice(cursor));
+}
+
 export function migrateReplies(chats: Chat[]) {
   let messages = 0,
     references = 0;

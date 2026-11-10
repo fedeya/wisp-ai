@@ -2,20 +2,11 @@ import { z } from 'zod';
 import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
 import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';
 import { conversationTitle } from './conversation-title.ts';
-import type { ReplyPart } from './reply-tables.ts';
+import type { ReplyPart } from './chat.ts';
 const keySchema = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
   .refine((value) => !['__proto__', 'constructor', 'prototype'].includes(value));
-export function outsideCode(text: string, transform: (text: string) => string): string {
-  let result = '',
-    cursor = 0;
-  for (const match of text.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*(?:`|$)/g)) {
-    result += transform(text.slice(cursor, match.index)) + match[0];
-    cursor = match.index! + match[0].length;
-  }
-  return result + transform(text.slice(cursor));
-}
 export class ReplyStream {
   buffer = '';
   text = '';
@@ -230,21 +221,6 @@ export class ReplyStream {
     }
   }
   view() {
-    const renderText = (value: string) =>
-      outsideCode(value, (prose) => {
-        let visible = prose.replace(/\[\[ref:([a-zA-Z][a-zA-Z0-9_-]{0,63})\]\]/g, (token, key) =>
-          this.references[key] ? token : this.finished ? '(reference unavailable)' : '...',
-        );
-        const start = visible.lastIndexOf('[[');
-        if (
-          start >= 0 &&
-          !visible.slice(start).includes(']]') &&
-          ('[[ref:'.startsWith(visible.slice(start)) || visible.slice(start).startsWith('[[ref:'))
-        ) {
-          visible = visible.slice(0, start);
-        }
-        return visible;
-      });
     const pending = this.pendingText().slice(0, 20000 - this.text.length);
     const parts = this.parts.map((part) => ({ ...part }));
     if (pending) {
@@ -255,12 +231,11 @@ export class ReplyStream {
         parts.push({ type: 'text', text: pending });
       }
     }
-    const visibleParts: ReplyPart[] = parts.map((part) =>
-      part.type === 'text' ? { ...part, text: renderText(part.text) } : part,
-    );
+    // Markdown and reference tokens stay source text. The addon owns syntax and
+    // resolves declared, missing and still-streaming references for presentation.
     return {
-      text: renderText(this.text + pending),
-      parts: visibleParts,
+      text: this.text + pending,
+      parts,
       references: { ...this.references },
       ui: this.ui.map((node) => ({ ...node })),
       streaming: !this.finished,
@@ -271,14 +246,11 @@ export class ReplyStream {
 export class ReplyProjection {
   sourceRevision = 0;
   kinds = new Map<string, string>();
-  streams = new Map<
-    string,
-    { reply: ReplyStream; lastAt: number; updates: number; signature: string }
-  >();
+  streams = new Map<string, { reply: ReplyStream; lastAt: number; signature: string }>();
   stream(partId: string) {
     let state = this.streams.get(partId);
     if (!state) {
-      state = { reply: new ReplyStream(), lastAt: -Infinity, updates: 0, signature: '' };
+      state = { reply: new ReplyStream(), lastAt: -Infinity, signature: '' };
       this.streams.set(partId, state);
     }
     return state;
@@ -343,7 +315,7 @@ export class ReplyProjection {
       if (!view.text && !view.ui.length && !state.reply.finished) {
         continue;
       }
-      if (!force && !state.reply.finished && (state.updates >= 8 || now - state.lastAt < 600)) {
+      if (!force && !state.reply.finished && now - state.lastAt < 600) {
         continue;
       }
       const signature = JSON.stringify(view);
@@ -352,9 +324,6 @@ export class ReplyProjection {
       }
       state.signature = signature;
       state.lastAt = now;
-      if (!state.reply.finished) {
-        state.updates++;
-      }
       const id = 'text-' + partId;
       let message = chat.messages.find((message) => message.id === id);
       if (!message) {

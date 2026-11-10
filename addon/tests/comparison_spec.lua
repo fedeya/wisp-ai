@@ -14,7 +14,6 @@ it("native comparison resizes, updates winners, handles zero results and reuses 
     helper.addon("EmojiData.lua", env)
     helper.addon("Emoji.lua", env)
     helper.addon("MessageFormat.lua", env)
-    helper.addon("Markdown.lua", env)
     helper.addon("RichUI.lua", env)
 
     local node = {

@@ -570,13 +570,13 @@ it(
             if
                 w.scripts.OnHyperlinkEnter
                 and type(w.text) == "table"
-                and w.text:GetText():find("Rampa", 1, true)
+                and helper.rowText(w):find("Rampa", 1, true)
             then
                 row = w
             end
         end
         assert(row)
-        local text = row.text:GetText()
+        local text = helper.rowText(row)
         assert(
             text:find("|Hspell:11070:0|h[Descarga de Escarcha mejorada]|h", 1, true),
             "plain text must reuse the exact skill link supplied by the user"
@@ -597,7 +597,7 @@ it(
         C.chats[1].messages[2].references.ramp.x = 46
         C.Refresh()
         assert(
-            row.text:GetText():find("worldmap:1411:4600:6250", 1, true),
+            helper.rowText(row):find("worldmap:1411:4600:6250", 1, true),
             "late reference changes must update the existing row even when the text is unchanged"
         )
     end

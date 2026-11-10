@@ -11,7 +11,6 @@ it(
         helper.addon("EmojiData.lua", env)
         helper.addon("Emoji.lua", env)
         helper.addon("MessageFormat.lua", env)
-        helper.addon("Markdown.lua", env)
 
         function image(text)
             local rendered = C.Emoji.render(text)

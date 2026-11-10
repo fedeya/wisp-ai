@@ -1,0 +1,192 @@
+local _, C = ...
+local templates = setmetatable({}, { __mode = "k" })
+
+local function escaped(value)
+    return (tostring(value or ""):gsub("|", "||"))
+end
+
+local function prefix(value, bytes)
+    if #value <= bytes then
+        return value, false
+    end
+    local after = bytes + 1
+    while
+        after > 1
+        and value:byte(after)
+        and value:byte(after) >= 128
+        and value:byte(after) < 192
+    do
+        after = after - 1
+    end
+    return value:sub(1, after - 1), true
+end
+
+-- A template contains static WoW text plus reference keys. Reformatting item
+-- data reuses both syntax and static text; no Markdown substitutions are used.
+local function compile(root, limit, fromUser)
+    local cached = templates[root]
+    if cached and cached.limit == limit and cached.fromUser == fromUser then
+        return cached.parts
+    end
+    local parts, colors, stack, remaining =
+        { styles = {}, links = {} }, {}, { { node = root } }, limit
+    local clipped, openLinks = false, 0
+    local function append(value, entry, kind)
+        parts[#parts + 1] = value
+        parts.styles[#parts] = {
+            color = colors[#colors],
+            code = kind == "code" or kind == "code_block",
+            strike = entry.strike,
+            url = entry.url,
+            atomic = kind == "reference" or kind == "reference_pending" or kind == "native_link",
+        }
+    end
+    while #stack > 0 do
+        local entry = table.remove(stack)
+        local node, kind = entry.node, entry.node.type
+        local color = kind == "strong" and "|cffe3c77e"
+            or (kind == "strikethrough" and "|cff99948a")
+            or (kind == "emph" and "|cffded6be")
+        if entry.close then
+            if entry.link then
+                parts[#parts + 1] = "|h"
+                parts.links[#parts], openLinks = -1, openLinks - 1
+            end
+            colors[#colors] = nil
+            parts[#parts + 1] = "|r" .. (colors[#colors] or "")
+        elseif kind == "reference" then
+            remaining = remaining - #(node.literal or node.key)
+            if remaining < 0 then
+                clipped = true
+                break
+            end
+            append({ key = node.key, restore = colors[#colors] or "" }, entry, kind)
+        elseif kind == "reference_pending" then
+            append({ pending = true, literal = node.literal }, entry, kind)
+        elseif kind == "native_link" then
+            append(
+                fromUser and (C.Emoji.render(node.literal) .. (colors[#colors] or ""))
+                    or escaped(node.literal),
+                entry,
+                kind
+            )
+        elseif node.literal ~= nil then
+            local value, cut = prefix(node.literal, remaining)
+            remaining = remaining - #value
+            local plain = escaped(value)
+            local text = (kind == "code" or kind == "code_block") and plain or C.Emoji.render(plain)
+            -- Repeated emoji textures can expand a short source substantially.
+            append(#text <= math.max(4096, limit * 2) and text or plain, entry, kind)
+            if cut then
+                clipped = true
+                break
+            end
+        elseif kind == "softbreak" or kind == "linebreak" then
+            append("\n", entry, kind)
+        else
+            local url = kind == "link" and C.Markdown.Links.valid(node.destination) or entry.url
+            local link = kind == "link" and url ~= nil
+            if link then
+                color = "|cff80c8ef"
+            end
+            if color then
+                colors[#colors + 1] = color
+                parts[#parts + 1] = link and (color .. "|H" .. C.Markdown.Links.encode(url) .. "|h")
+                    or color
+                if link then
+                    parts.links[#parts], openLinks = 1, openLinks + 1
+                end
+                stack[#stack + 1] = { node = node, close = true, link = link }
+            end
+            for index = #(node.children or {}), 1, -1 do
+                stack[#stack + 1] = {
+                    node = node.children[index],
+                    strike = kind == "strikethrough" or entry.strike,
+                    url = url,
+                }
+            end
+        end
+    end
+    if clipped then
+        append("...", {}, "text")
+        for _ = 1, openLinks do
+            parts[#parts + 1] = "|h"
+            parts.links[#parts] = -1
+        end
+        if #colors > 0 then
+            parts[#parts + 1] = "|r"
+        end
+    end
+    templates[root] = { limit = limit, parts = parts, fromUser = fromUser }
+    return parts
+end
+
+local function render(node, references, streaming, limit, fromUser, wantRuns)
+    fromUser = fromUser == true
+    local result, bytes, maximum = {}, 0, math.max(4096, (limit or 65536) * 2)
+    local template, runs = compile(node, limit or 65536, fromUser), wantRuns and {} or nil
+    local openLinks = 0
+    for index, part in ipairs(template) do
+        local value
+        if type(part) == "string" then
+            value = part
+        elseif part.pending then
+            value = streaming and "..." or escaped(part.literal)
+        else
+            local ref = references and references[part.key]
+            value = not ref and streaming and "..."
+                or C.Emoji.render(C.MessageFormat.reference(part.key, references))
+            if #value > 4096 then
+                value = escaped(prefix(tostring(ref and ref.label or "Reference"), 300))
+            end
+            value = value .. part.restore
+        end
+        if bytes + #value > maximum then
+            result[#result + 1] = string.rep("|h", openLinks) .. "...|r"
+            if runs then
+                runs[#runs + 1] = { text = "..." }
+            end
+            break
+        end
+        result[#result + 1], bytes = value, bytes + #value
+        openLinks = openLinks + (template.links[index] or 0)
+        local style = template.styles[index]
+        if runs and style then
+            local run = {
+                text = value,
+                color = style.color,
+                code = style.code,
+                strike = style.strike,
+                atomic = style.atomic or style.url ~= nil,
+            }
+            if style.url then
+                run.text = "|cff80c8ef|H"
+                    .. C.Markdown.Links.encode(style.url)
+                    .. "|h"
+                    .. value
+                    .. "|h|r"
+            end
+            runs[#runs + 1] = run
+        end
+    end
+    return table.concat(result), runs
+end
+
+local function formatted(value, references, fromUser, streaming)
+    value = tostring(value or "")
+    if not value:find("[%*_%~`%[%]\\<|&\n\r]") then
+        return C.Emoji.render(escaped(value)), false
+    end
+    local tree, _, pending = C.Markdown.Cache.get(value, true, streaming)
+    return tree and render(tree, references, streaming, nil, fromUser)
+        or C.Markdown.InlineRenderer.preview(value),
+        pending == true
+end
+
+local function preview(value)
+    local text, clipped = prefix(value, 8000)
+    return C.Emoji.render(escaped(text)) .. (clipped and "\n..." or "")
+end
+
+C.Markdown.InlineRenderer = { render = render, literal = escaped, preview = preview }
+C.FormatText = formatted

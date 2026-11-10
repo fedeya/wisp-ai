@@ -69,7 +69,7 @@ test('invisible stream events and unchanged snapshots do not spend revisions', (
   assert.equal(gate.next(view())?.rev, 104, 'a failed disk write must remain retryable');
 });
 
-test('saving raw deltas does not bypass the preview budget or expose source in snapshots', () => {
+test('saving raw deltas respects the preview cadence and hides source throughout long replies', () => {
   vi.useFakeTimers();
   try {
     const chat: Chat = {
@@ -87,7 +87,7 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
     const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
     let updates = 0;
     for (let index = 0; index < 100; index++) {
-      vi.setSystemTime(index * 1000);
+      vi.setSystemTime(index * 100);
       applyEvent(
         chat,
         { type: 'content.delta', data: { partId: 'answer', kind: 'text', delta } },
@@ -97,7 +97,8 @@ test('saving raw deltas does not bypass the preview budget or expose source in s
         updates++;
       }
     }
-    assert.equal(updates, 8);
+    assert.equal(updates, 17);
+    assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(97));
     assert.equal(chat.messages[0].rawReply, delta.repeat(100));
     assert.ok(!JSON.stringify(projectChats(state)).includes('rawReply'));
     applyEvent(

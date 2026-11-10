@@ -1,0 +1,222 @@
+local helper = require("addon.tests.support")
+
+local function setup()
+    local env = helper.env()
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
+    env.C = {}
+    helper.addon("UI.lua", env)
+    local row = env.C.MakeMessageRow(env.CreateFrame("Frame"))
+    return env, env.C, row
+end
+
+local function paint(C, row, message, width)
+    local chat =
+        { id = "chat", status = message.streaming and "working" or "done", messages = { message } }
+    C.RenderMessageRow(row, chat, message, width or 400, true)
+    for _ = 1, 2000 do
+        local _, pending = C.Markdown.Cache.step()
+        if pending == 0 then
+            break
+        end
+    end
+    C.RenderMessageRow(row, chat, message, width or 400, true)
+end
+
+local function visibleFonts(row)
+    local result = {}
+    for _, font in ipairs(row.rich and row.rich.prose or {}) do
+        if font:IsShown() then
+            result[#result + 1] = font
+        end
+        for _, run in ipairs(font.runs or {}) do
+            if run:IsShown() then
+                result[#result + 1] = run
+            end
+        end
+    end
+    return result
+end
+
+it("styles the shared parser tree without reparsing on resize or reference updates", function()
+    local env, C, row = setup()
+    local source =
+        "# Rotación\n\n**Fuego** y `x_y`\n\n- [x] Listo\n  - Seguí [[ref:s]]\n\n> Consejo\n\n---\n\n```lua\n  /cast [[ref:s]]\n**literal** |cff00ff00\n```"
+    local message = {
+        id = "reply",
+        role = "assistant",
+        text = source,
+        references = {
+            s = { kind = "spell", id = 2137, label = "Fuego" },
+        },
+    }
+    local parse, calls = C.Markdown.parse, 0
+    C.Markdown.parse = function(...)
+        calls = calls + 1
+        return parse(...)
+    end
+    paint(C, row, message)
+    local syntaxCalls = calls
+    assert.equal(1, syntaxCalls)
+    local sawMono, sawGold, sawCode, sawTask, sawRule = false, false, false, false, false
+    for _, font in ipairs(visibleFonts(row)) do
+        if font.fontPath:find("JetBrainsMono-Regular.ttf", 1, true) then
+            sawMono = true
+        else
+            assert.equal("Fonts\\FRIZQT__.TTF", font.fontPath)
+        end
+        sawGold = sawGold or (font:GetText() == "Fuego" and font.tint[1] == 227 / 255)
+    end
+    for _, block in ipairs(row.rich.prose) do
+        if block.block and block.block.kind == "code" then
+            local code = helper.rendered(block)
+            assert.is_truthy(code:find("**literal** ||cff00ff00", 1, true))
+            assert.is_truthy(code:find("  /cast [[ref:s]]", 1, true))
+            assert.is_nil(code:find("|Hspell:", 1, true))
+            sawCode = true
+        elseif block.block and block.block.task then
+            sawTask = block.marker:GetText():find("UI-CheckBox-Check", 1, true) ~= nil
+        elseif block.block and block.block.kind == "rule" then
+            sawRule = block.decorations[1]:IsShown()
+        end
+    end
+    assert.is_true(sawMono and sawGold and sawCode and sawTask and sawRule)
+    local height = row:GetHeight()
+    paint(C, row, message, 150)
+    assert.is_true(row:GetHeight() > height)
+    local count = #env.UI_TEST.widgets
+    paint(C, row, message, 400)
+    paint(C, row, message, 150)
+    assert.equal(count, #env.UI_TEST.widgets)
+    message.references.s.label = "Nueva llama"
+    paint(C, row, message, 150)
+    assert.is_truthy(helper.rowText(row):find("[Nueva llama]", 1, true))
+    assert.equal(syntaxCalls, calls)
+    assert.equal(source, message.text)
+end)
+
+it("keeps tables and cards in order while inline code uses JetBrains Mono", function()
+    local _, C, row = setup()
+    local message = {
+        id = "reply",
+        role = "assistant",
+        text = "`Antes`\n\nA|B\n---|---\nx|y\n\n`Después`",
+        ui = { { id = "panel", kind = "stat", label = "DPS", value = "31" } },
+    }
+    paint(C, row, message)
+    local first, last = row.rich.prose[1], row.rich.prose[2]
+    local table = row.rich.widgets.markdown_table_1
+    assert.is_truthy(first.fontPath:find("JetBrainsMono-Regular.ttf", 1, true))
+    assert.is_truthy(last.fontPath:find("JetBrainsMono-Regular.ttf", 1, true))
+    assert.is_true(first.point[5] > table.point[5] and table.point[5] > last.point[5])
+    assert.is_true(last.point[5] > row.rich.widgets.panel.point[5])
+end)
+
+it("falls back to game fonts for other scripts and failed code font loads", function()
+    local _, C, row = setup()
+    local message = { id = "reply", role = "assistant" }
+    for _, sample in ipairs({
+        "こんにちは",
+        "العربية",
+        "ไทย",
+        "你好",
+        "한국어",
+    }) do
+        message.text = "`" .. sample .. "`"
+        paint(C, row, message)
+        assert.equal("Fonts\\FRIZQT__.TTF", row.rich.prose[1].fontPath)
+        assert.equal(sample, helper.rowText(row))
+    end
+    message.text = "`Explosión de Fuego`"
+    paint(C, row, message)
+    local font = row.rich.prose[1]
+    assert.is_truthy(font.fontPath:find("JetBrainsMono-Regular.ttf", 1, true))
+    local setFont = font.SetFont
+    font.SetFont = function(self, path, ...)
+        if path:find("JetBrainsMono", 1, true) then
+            return false
+        end
+        return setFont(self, path, ...)
+    end
+    message.text = "`/cast Fuego`"
+    paint(C, row, message)
+    assert.equal("Fonts\\FRIZQT__.TTF", font.fontPath)
+end)
+
+it("clears decorations and preserves completed presentation across pending append work", function()
+    local env, C, row = setup()
+    local message = {
+        id = "reply",
+        role = "assistant",
+        streaming = true,
+        text = "~~Antes~~ y `código`\n\n> Nota\n\n- [x] Listo",
+    }
+    paint(C, row, message)
+    local before = helper.rowText(row)
+    local fonts = row.rich.prose
+    message.text = message.text .. "\n\n" .. string.rep("**texto** ", 200)
+    C.RenderMessageRow(row, { id = "chat", status = "working" }, message, 150, true)
+    assert.equal(before, helper.rowText(row))
+    paint(C, row, message, 150)
+    message.text, message.streaming = "Texto simple", false
+    paint(C, row, message)
+    assert.is_true(row.text:IsShown())
+    for _, font in ipairs(fonts) do
+        assert.is_false(font:IsShown())
+        for _, run in ipairs(font.runs or {}) do
+            assert.is_false(run:IsShown())
+        end
+        for _, decoration in ipairs(font.decorations or {}) do
+            assert.is_false(decoration:IsShown())
+        end
+        assert.is_true(not font.marker or not font.marker:IsShown())
+    end
+end)
+
+it("uses the parser's URL nodes for hover and the selectable copy dialog", function()
+    local env, C, row = setup()
+    local url = "https://example.com/Guía_(WoW)?a=1&b=2"
+    local source = "[**Guía**](" .. url .. ")"
+    local message = { id = "reply", role = "assistant", text = source }
+    paint(C, row, message)
+    local link = helper.rowText(row):match("|H([^|]+)|h")
+    assert.equal(url, C.Markdown.Links.decode(link))
+    row.scripts.OnHyperlinkEnter(row, link, "Guía")
+    assert.equal(url, env.GameTooltip:GetText())
+    row.scripts.OnHyperlinkClick(row, link, "Guía", "LeftButton")
+    assert.equal(url, env.UI_TEST.popup.data)
+    assert.equal("WISPAI_COPY_URL", env.UI_TEST.popup.id)
+    local edit = env.CreateFrame("EditBox")
+    env.StaticPopupDialogs.WISPAI_COPY_URL.OnShow({ editBox = edit }, env.UI_TEST.popup.data)
+    assert.equal(url, edit:GetText())
+    for _, invalid in ipairs({ "wispurl:abc", "wispurl:00", "wispurl:gg" }) do
+        assert.is_nil(C.Markdown.Links.decode(invalid))
+    end
+    assert.is_nil(C.Markdown.Links.valid("javascript:alert(1)"))
+end)
+
+it("closes clipped hyperlinks and preserves preformatted run markers", function()
+    local _, C = setup()
+    local tree = assert(
+        C.Markdown.parseInline("[**" .. string.rep("etiqueta ", 40) .. "**](https://example.com)")
+    )
+    local text, runs = C.Markdown.InlineRenderer.render(tree, nil, false, 40, false, true)
+    assert.is_truthy(text:find("...", 1, true))
+    local _, opens = text:gsub("|H", "")
+    local _, markers = text:gsub("|h", "")
+    assert.equal(opens * 2, markers)
+    assert.equal("...", runs[#runs].text)
+end)
+
+it("bounds inline font growth while retaining the shared formatter's full text", function()
+    local env, C, row = setup()
+    local message = { id = "dense", role = "assistant", text = string.rep("`x` ", 1000) }
+    paint(C, row, message, 150)
+    assert.is_true(row.rich.styledExtras <= 256)
+    assert.is_true(#env.UI_TEST.widgets < 600)
+    assert.equal(string.rep("x ", 1000), helper.rowText(row))
+    local count = #env.UI_TEST.widgets
+    paint(C, row, message, 400)
+    paint(C, row, message, 150)
+    assert.equal(count, #env.UI_TEST.widgets)
+    assert.equal(string.rep("`x` ", 1000), message.text)
+end)
