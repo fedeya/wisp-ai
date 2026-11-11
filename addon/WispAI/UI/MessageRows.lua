@@ -366,6 +366,7 @@ end
 
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId, groupOffset = {}, {}, nil, nil
+    local hasReplyText = false
     local function flushTools(currentTurn)
         if not groupId then
             return false
@@ -391,12 +392,15 @@ function ns.UI.DisplayMessages(chat)
         else
             if message.role == "user" or message.role == "system" then
                 flushTools(false)
+                hasReplyText = false
+            elseif message.role == "assistant" and (message.text or ""):find("%S") then
+                hasReplyText = true
             end
             messages[#messages + 1] = message
         end
     end
     local active = flushTools(true)
-    return messages, active
+    return messages, active, hasReplyText
 end
 function ns.UI.PositionMessageRow(row, parent, y, width)
     local x = row.speaker == "user" and width - row:GetWidth() or 0

@@ -901,12 +901,13 @@ it(
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
         assert(bottom == 104, "there must be no additional reserved progress gap")
+        table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()
         assert(
             progress:IsShown()
                 and progress.parent:GetHeight() == progress.y + progress:GetHeight()
-                and #ns.chats[1].messages == 1,
+                and #ns.chats[1].messages == 2,
             "thinking occupies transcript space without becoming a saved message"
         )
         ns.chats[1].status = "done"

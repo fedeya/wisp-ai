@@ -131,13 +131,6 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 assert(top < previous, "message chronology must be preserved")
                 previous = top
             end
-            if surface == "main" then
-                assert(
-                    not UI_TEST.frames.WispAIProgress.author:IsShown(),
-                    "progress continues the same assistant section"
-                )
-                assert(UI_TEST.frames.WispAIProgress:GetHeight() == 34)
-            end
             local progress = UI_TEST.frames.WispAIProgress
             if surface == "inline" then
                 local content = findRow("Second answer"):GetParent()
@@ -149,7 +142,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 end
                 assert(progress ~= UI_TEST.frames.WispAIProgress, "inline has a thinking row")
             end
-            assert(progress:IsShown())
+            assert(not progress:IsShown(), "a visible reply takes the place of thinking")
             ns.db.showTools = false
             refresh()
             assert(
@@ -173,6 +166,12 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             )
             assert(user:GetWidth() < findRow("Checking gear"):GetWidth())
 
+            local reply = table.remove(ns.chats[1].messages)
+            refresh()
+            assert(progress:IsShown(), "only text in the current turn suppresses thinking")
+            if surface == "main" then
+                assert(not progress.author:IsShown() and progress:GetHeight() == 34)
+            end
             local pending = { chat = "chat" }
             ns.pendingMessages.u2 = pending
             ns.workStarted.chat = GetTime()
@@ -211,7 +210,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local group = findRow("Reading talents")
             assert(group.disclosure:IsShown() and group.text:GetText() == "Reading talents")
             assert(not progress:IsShown(), "the active tool replaces the thinking row")
-            assert(#ns.chats[1].messages == 8, "grouping must not rewrite saved history")
+            assert(#ns.chats[1].messages == 7, "grouping must not rewrite saved history")
             local _, _, _, labelLeft = group.text:GetPoint()
             local _, _, _, chevronLeft = group.chevron:GetPoint()
             check.equal(labelLeft + group.text:GetUnboundedStringWidth() + 4, chevronLeft)
@@ -243,6 +242,18 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             )
             group.disclosure.scripts.OnClick()
             assert(not child:IsShown())
+
+            reply.text, reply.streaming = " \n", true
+            table.insert(ns.chats[1].messages, reply)
+            refresh()
+            assert(progress:IsShown(), "whitespace does not replace the thinking row")
+            reply.text = "Second answer"
+            refresh()
+            assert(findRow(reply.text):IsShown() and not progress:IsShown())
+            reply.streaming = false
+            refresh()
+            assert(not progress:IsShown(), "thinking stays hidden after the last text chunk")
+
             ns.chats[1].messages =
                 { { id = "long", role = "assistant", text = string.rep("Long reply ", 1000) } }
             ns.chats[1].status = "done"
