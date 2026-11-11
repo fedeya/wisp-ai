@@ -988,6 +988,7 @@ function ns.UI.BuildUI()
     local itemEvents = CreateFrame("Frame")
     itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
     itemEvents:RegisterEvent("QUEST_LOG_UPDATE")
+    itemEvents:RegisterEvent("UPDATE_MACROS")
     itemEvents:SetScript("OnEvent", function(_, event)
         if event == "QUEST_LOG_UPDATE" and not refreshReferences() then
             return

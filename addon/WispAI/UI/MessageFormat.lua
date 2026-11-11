@@ -40,6 +40,17 @@ local function macroNameFromLink(link)
     end
     return name
 end
+local function macroIcon(name)
+    if type(name) ~= "string" or not GetMacroIndexByName or not GetMacroInfo then
+        return nil
+    end
+    local index = GetMacroIndexByName(name)
+    if index and index > 0 then
+        local _, icon = GetMacroInfo(index)
+        return icon
+    end
+    return nil
+end
 local function nativeReference(key, references)
     local ref = references and references[key]
     if type(ref) ~= "table" then
@@ -118,6 +129,8 @@ local function nativeReference(key, references)
         icon, color = "Interface\\Icons\\INV_Misc_Map_01", "ff80cf91"
     elseif ref.kind == "quest" then
         icon = "Interface\\GossipFrame\\AvailableQuestIcon"
+    elseif ref.kind == "macro" then
+        icon = macroIcon(ref.name) or icon
     end
     return (
         "|T"
@@ -137,6 +150,10 @@ local function referenceSignature(references)
         local values = {}
         for field, value in pairs(ref) do
             values[#values + 1] = field .. "=" .. tostring(value)
+        end
+        -- The game's resolved icon can change without changing the reply.
+        if ref.kind == "macro" then
+            values[#values + 1] = "macroIcon=" .. tostring(macroIcon(ref.name))
         end
         table.sort(values)
         parts[#parts + 1] = key .. ":" .. table.concat(values, "\30")

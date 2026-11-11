@@ -1,5 +1,51 @@
 local helper = require("addon.tests.support")
 
+it("renders each macro reference with its game icon and preserves the pickup link", function()
+    local env = helper.env()
+    env.ns = helper.namespace()
+    helper.addon("UI/EmojiData.lua", env)
+    helper.addon("UI/Emoji.lua", env)
+    helper.addon("UI/MessageFormat.lua", env)
+    local macros = {
+        [1] = { name = "Nova fría", icon = 135848 },
+        [121] = { name = "Heal", icon = "Interface\\Icons\\Spell_Holy_Heal" },
+    }
+    env.GetMacroIndexByName = function(name)
+        for index, macro in pairs(macros) do
+            if macro.name == name then
+                return index
+            end
+        end
+        return 0
+    end
+    env.GetMacroInfo = function(index)
+        local macro = assert(macros[index], "missing macros must not be queried")
+        return macro.name, macro.icon, "#showtooltip"
+    end
+    for _, macro in pairs(macros) do
+        local references = { macro = { kind = "macro", name = macro.name, label = "Pick up" } }
+        local text = env.ns.UI.FormatText("[[ref:macro]]", references)
+        assert.is_truthy(text:find("|T" .. macro.icon .. ":12:12:0:-2|t", 1, true))
+        local link = assert(text:match("|H(.-)|h%[Pick up%]|h"))
+        assert.equal(macro.name, env.ns.UI.MessageFormat.MacroNameFromLink(link))
+    end
+
+    local references = { macro = { kind = "macro", name = "Missing", label = "Missing" } }
+    local function fallback()
+        local text = env.ns.UI.FormatText("[[ref:macro]]", references)
+        assert.is_truthy(text:find("|TInterface\\Icons\\INV_Misc_QuestionMark:", 1, true))
+        assert.is_truthy(text:find("|Hwispmacro:", 1, true))
+    end
+    fallback()
+    references.macro.name = "Heal"
+    macros[121].icon = nil
+    fallback()
+    env.GetMacroInfo = nil
+    fallback()
+    env.GetMacroIndexByName = nil
+    fallback()
+end)
+
 it(
     "emoji images preserve complete sequences, formatting, localized text and native links",
     function()

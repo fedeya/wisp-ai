@@ -129,6 +129,43 @@ it("retains compatible prefixes and replaces their presentation once syntax comp
     assert.equal(0, #unrelated.ui)
 end)
 
+it("refreshes macro icons and availability without reparsing the reply", function()
+    local env, ns = setup()
+    local icon, index = 135848, 121
+    env.GetMacroIndexByName = function(name)
+        assert.equal("Nova", name)
+        return index
+    end
+    env.GetMacroInfo = function(actualIndex)
+        assert.equal(121, actualIndex)
+        return "Nova", icon, "#showtooltip\n/cast Frost Nova"
+    end
+    local state, original = ns.Markdown.ReplyView.New(), reply("[[ref:nova]]")
+    original.references = { nova = { kind = "macro", name = "Nova", label = "Nova" } }
+    local parse, calls = ns.Markdown.Parse, 0
+    ns.Markdown.Parse = function(...)
+        calls = calls + 1
+        return parse(...)
+    end
+    local first, firstKey = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.is_truthy(first.parts[1].text:find("|T135848:", 1, true))
+    local unchanged, unchangedKey = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.equal(first.parts, unchanged.parts)
+    assert.equal(firstKey, unchangedKey)
+    icon = 135846
+    local changed, changedKey = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.is_truthy(changed.parts[1].text:find("|T135846:", 1, true))
+    assert.are_not.equal(firstKey, changedKey)
+    index = 0
+    local missing, missingKey = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.is_truthy(missing.parts[1].text:find("INV_Misc_QuestionMark", 1, true))
+    assert.are_not.equal(changedKey, missingKey)
+    index = 121
+    local restored = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.is_truthy(restored.parts[1].text:find("|T135846:", 1, true))
+    assert.equal(1, calls)
+end)
+
 it("refreshes mutable references and item data without reparsing cached syntax", function()
     local env, ns = setup()
     local state, original = ns.Markdown.ReplyView.New(), reply("[[ref:robe]]")
