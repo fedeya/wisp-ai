@@ -5,6 +5,7 @@ local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
+local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
 local TOOL_STATES = {
@@ -524,8 +525,10 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
             setToolIcon(row.icon, icon.cell, icon.tint)
             setToolSpinner(row, state == "running" and chat.status == "working")
             local textLeft = indent + 20
+            local chevronSpace = row.groupKey and (row.chevron:GetWidth() + CHEVRON_GAP) or 0
+            local textWidth = width - textLeft - chevronSpace
             row.text:SetPoint("TOPLEFT", textLeft, -top)
-            row.text:SetWidth(width - textLeft - (row.groupKey and 18 or 0))
+            row.text:SetWidth(textWidth)
             row.text:SetTextColor(unpack(TEXT))
             setText(
                 row.text,
@@ -533,8 +536,14 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
             )
             local headerHeight = math.max(18, row.text:GetStringHeight())
             if row.groupKey then
+                local labelWidth = row.text.GetUnboundedStringWidth
+                        and row.text:GetUnboundedStringWidth()
+                    or row.text:GetStringWidth()
+                local chevronLeft = textLeft
+                    + math.min(textWidth, math.ceil(labelWidth))
+                    + CHEVRON_GAP
                 row.chevron:ClearAllPoints()
-                row.chevron:SetPoint("TOPRIGHT", -2, -top - 1)
+                row.chevron:SetPoint("TOPLEFT", row, "TOPLEFT", chevronLeft, -top - 1)
                 setToolIcon(row.chevron, message.groupExpanded and 4 or 3, MUTED)
                 row.disclosure:ClearAllPoints()
                 row.disclosure:SetPoint("TOPLEFT", row, "TOPLEFT", indent, -top)
