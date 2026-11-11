@@ -41,6 +41,11 @@ layout and decoration do not parse Markdown again or change cached syntax.
 Headings and emphasis retain the game typeface, while code uses JetBrains Mono
 with a localized game-font fallback. Web links expose their URL on hover and
 open a selectable copy dialog on click.
+Code uses a smaller face and a subtle neutral background. Headings use light ivory
+with extra space above and below; bold body text retains its gold accent.
+Macro blocks highlight slash commands, `#showtooltip`/`#show`, and bracketed
+conditions. This applies to macro-shaped code with no language tag or tagged
+`macro`, `wowmacro`, `lua`, or `text`; other code remains literal and uncolored.
 Inline layout keeps at most 256 extra font strings per reply host; dense content
 falls back to the complete shared formatter output instead of growing widgets
 without a bound.

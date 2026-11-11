@@ -220,3 +220,48 @@ it("bounds inline font growth while retaining the shared formatter's full text",
     assert.equal(count, #env.UI_TEST.widgets)
     assert.equal(string.rep("`x` ", 1000), message.text)
 end)
+
+it("separates headings from body emphasis and gives sections more breathing room", function()
+    local _, ns, row = setup()
+    paint(ns, row, {
+        id = "sections",
+        role = "assistant",
+        text = "# **Rotación**\n\nAntes\n\n## Prioridades\n\nDespués\n\n```\n/cast Fuego\n```",
+    })
+    local title, before, section, after, code = unpack(row.rich.prose)
+    assert.same(title.tint, section.tint)
+    assert.is_true(title.tint[3] > ns.UI.Widgets.GOLD[3])
+    assert.equal(0, title.point[5])
+    local sectionGap = -section.point[5] + before.point[5] - before:GetStringHeight()
+    local bodyGap = -after.point[5] + section.point[5] - section:GetStringHeight()
+    assert.is_true(sectionGap > bodyGap and bodyGap > 8)
+    assert.is_true(code.fontSize < before.fontSize)
+end)
+
+it("colors macro commands and conditions while keeping code literal across reflow", function()
+    local _, ns, row = setup()
+    local source =
+        "#showtooltip\n/cast [mod:shift, @focus] Explosión de Fuego\n/say |Hspell:1|hFake|h :fire: [[ref:s]]\n"
+    local message = { id = "macro", role = "assistant", text = "```macro\n" .. source .. "```" }
+    local tree = assert(ns.Markdown.Parse(message.text))
+    local formatted = ns.Markdown.InlineRenderer.Render(tree)
+    local plain = formatted:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    assert.equal(source:gsub("|", "||"), plain)
+    for _, width in ipairs({ 400, 150, 400 }) do
+        paint(ns, row, message, width)
+        local text = helper.rowText(row)
+        assert.is_truthy(text:find("|cff8fb7c6/cast|r", 1, true))
+        assert.is_truthy(text:find("|cffb0aa8e#showtooltip|r", 1, true))
+        assert.is_truthy(text:find("|cffaca0c2[mod:shift,|r", 1, true))
+        local literal = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        assert.equal(source:gsub("|", "||"):gsub("\n", ""), literal)
+    end
+    for _, sample in ipairs({
+        "```python\n/cast [mod:shift] Fuego\n```",
+        "```lua\nlocal value = '[mod:shift]'\n```",
+    }) do
+        message.text = sample
+        paint(ns, row, message)
+        assert.is_nil(helper.rowText(row):find("|cff", 1, true))
+    end
+end)
