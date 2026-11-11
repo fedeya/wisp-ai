@@ -280,7 +280,8 @@ function ns.Inline.RefreshInline()
     local previousRange = scroll:GetVerticalScrollRange()
     local offset = scroll:GetVerticalScroll()
     local follow = previousRange - offset < 30
-    for index, message in ipairs(ns.UI.DisplayMessages(chat)) do
+    local messages, activeTool = ns.UI.DisplayMessages(chat)
+    for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = chat.id .. ":" .. (message.id or index)
             local row = rows[key]
@@ -323,8 +324,8 @@ function ns.Inline.RefreshInline()
         end
     end
     local working = chat and chat.status == "working"
-    busy:SetShown(working)
-    if working then
+    busy:SetShown(working and not activeTool)
+    if working and not activeTool then
         local active = "Thinking..."
         for _, call in ipairs(chat.activity or {}) do
             if call.status == "running" then

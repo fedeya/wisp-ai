@@ -28,7 +28,6 @@ function ns.UI.Activity.Refresh(chat)
             dot:SetShown(emptyState.loading)
         end
     end
-    progress:SetShown(working)
     local title = "Wisp AI"
     if working then
         local now = GetTime()
@@ -78,7 +77,11 @@ function ns.UI.Activity.Refresh(chat)
 end
 
 -- Returns the next transcript offset, including the working assistant row.
-function ns.UI.Activity.LayoutProgress(y, width, showAuthor)
+function ns.UI.Activity.LayoutProgress(y, width, showAuthor, visible)
+    progress:SetShown(visible == true)
+    if not visible then
+        return y
+    end
     if progress.showAuthor ~= showAuthor then
         progress.showAuthor = showAuthor
         progress.author:SetShown(showAuthor)

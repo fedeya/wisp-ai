@@ -9,7 +9,10 @@ export default enabledTool(
     description:
       'Read a bounded graph of prerequisites and follow-ups for a verified quest ID from installed QuestieDB Forever. Group prerequisites require all; single prerequisites are alternatives. Direction, depth and limit bound traversal. Missing records, unknown completion and truncated branches are explicitly reported; never present a truncated graph as the complete chain. Use fresh character progression before recommending a quest.',
     inputSchema: questChainInput,
-    label: { start: () => 'Reading quest chain' },
+    label: {
+      start: ({ questId }) => `Reading the chain for quest #${questId}`,
+      complete: ({ questId }) => `Looked up the chain for quest #${questId}`,
+    },
     execute: (args, ctx) =>
       agentRPC(
         'inspect',

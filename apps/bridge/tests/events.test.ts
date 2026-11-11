@@ -20,12 +20,21 @@ test('UI gets tool states and final text, never hidden reasoning', () => {
       data: {
         callId: '1',
         capability: { name: 'query_character', label: 'Reading spells', kind: 'tool' },
+        input: { sections: ['spells'] },
       },
     },
     parts,
   );
   assert.equal(chat.activity[0].status, 'running');
-  applyEvent(chat, { type: 'call.settled', data: { callId: '1', outcome: 'completed' } }, parts);
+  assert.equal(chat.messages[0].tool?.inputPreview, '{"sections":["spells"]}');
+  applyEvent(
+    chat,
+    {
+      type: 'call.settled',
+      data: { callId: '1', outcome: 'completed', output: 'Spells: ' + '❄️'.repeat(400) },
+    },
+    parts,
+  );
   applyEvent(
     chat,
     {
@@ -51,6 +60,8 @@ test('UI gets tool states and final text, never hidden reasoning', () => {
   assert.equal(chat.messages.length, 2);
   assert.equal(chat.messages[0].role, 'tool');
   assert.equal(chat.messages[0].tool?.status, 'completed');
+  assert.match(chat.messages[0].tool?.resultPreview ?? '', /^Spells: .*…$/);
+  assert.equal(chat.messages[0].tool?.resultPreview?.length, 720);
   assert.equal(chat.messages[1].text, 'Ya conocés Nova de Escarcha.');
 });
 test('tool calls stay in chronological history across subsequent turns', () => {

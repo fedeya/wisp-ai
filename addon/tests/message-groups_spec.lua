@@ -1,4 +1,5 @@
 local helper = require("addon.tests.support")
+local check = require("luassert")
 
 local function setup(env)
     setfenv(1, env)
@@ -43,12 +44,6 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                             tool = { label = "Reading spells", status = "completed" },
                         },
                         { id = "a1", role = "assistant", text = "Checking gear" },
-                        {
-                            id = "t2",
-                            role = "tool",
-                            text = "Reading gear",
-                            tool = { label = "Reading gear", status = "running" },
-                        },
                         { id = "a2", role = "assistant", text = "Final answer" },
                         { id = "u2", role = "user", text = "Second question" },
                         {
@@ -91,9 +86,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 end
                 return result
             end
-            function findRow(text)
+            function findRow(text, except)
                 for _, row in ipairs(visibleRows()) do
-                    if row.text:GetText():find(text, 1, true) then
+                    if row ~= except and row.text:GetText():find(text, 1, true) then
                         return row
                     end
                 end
@@ -110,7 +105,6 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(textTop == -20, "the first tool must be below the assistant name")
             for _, text in ipairs({
                 "Checking gear",
-                "Reading gear",
                 "Final answer",
                 "Second answer",
             }) do
@@ -128,7 +122,6 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 "First question",
                 "Reading spells",
                 "Checking gear",
-                "Reading gear",
                 "Final answer",
                 "Second question",
                 "Reading quests",
@@ -145,6 +138,18 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 )
                 assert(UI_TEST.frames.WispAIProgress:GetHeight() == 34)
             end
+            local progress = UI_TEST.frames.WispAIProgress
+            if surface == "inline" then
+                local content = findRow("Second answer"):GetParent()
+                for _, widget in ipairs(UI_TEST.widgets) do
+                    if widget:GetParent() == content and widget:GetText() == "Thinking..." then
+                        progress = widget
+                        break
+                    end
+                end
+                assert(progress ~= UI_TEST.frames.WispAIProgress, "inline has a thinking row")
+            end
+            assert(progress:IsShown())
             ns.db.showTools = false
             refresh()
             assert(
@@ -167,23 +172,43 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 "user bubbles sit on the right"
             )
             assert(user:GetWidth() < findRow("Checking gear"):GetWidth())
-            table.insert(ns.chats[1].messages, 3, {
-                id = "t1b",
+            local call = {
+                id = "t3b",
                 role = "tool",
                 text = "Reading talents",
-                tool = { label = "Reading talents", status = "running" },
-            })
+                tool = {
+                    label = "Reading talents",
+                    status = "running",
+                    inputPreview = '{"sections":["talents"]}',
+                },
+            }
+            table.insert(ns.chats[1].messages, call)
             refresh()
             local group = findRow("Reading talents")
-            assert(
-                group.disclosure:IsShown() and not group.text:GetText():find("completed", 1, true)
+            assert(group.disclosure:IsShown() and group.text:GetText() == "Reading talents")
+            assert(not progress:IsShown(), "the active tool replaces the thinking row")
+            assert(#ns.chats[1].messages == 8, "grouping must not rewrite saved history")
+            group.disclosure.scripts.OnClick()
+            assert(group.text:GetText() == "Reading talents")
+            check.same({ 0, 1 / 8, 0, 1 }, findRow("Reading quests").icon.texCoord)
+            local child = findRow("Reading talents", group)
+            check.same({ 1 / 8, 2 / 8, 0, 1 }, child.icon.texCoord)
+            assert(child.toolSpinner:IsPlaying() and child.disclosure:IsShown())
+            child.disclosure.scripts.OnClick()
+            assert(child.toolDetail:IsShown())
+            check.equal('Input  {"sections":["talents"]}', child.toolDetail:GetText())
+            call.tool.status = "failed"
+            call.tool.resultPreview = "Talents are unavailable | retry"
+            refresh()
+            assert(progress:IsShown() and group.text:GetText() == "2 tool calls")
+            check.same({ 2 / 8, 3 / 8, 0, 1 }, child.icon.texCoord)
+            assert(not child.toolSpinner:IsPlaying())
+            check.equal(
+                'Input  {"sections":["talents"]}\n\nResult  Talents are unavailable || retry',
+                child.toolDetail:GetText()
             )
-            assert(#ns.chats[1].messages == 9, "grouping must not rewrite saved history")
             group.disclosure.scripts.OnClick()
-            assert(group.text:GetText():find("Reading spells - completed", 1, true))
-            assert(group.text:GetText():find("Reading talents - running", 1, true))
-            group.disclosure.scripts.OnClick()
-            assert(not group.text:GetText():find("Reading spells - completed", 1, true))
+            assert(not child:IsShown())
             ns.chats[1].messages =
                 { { id = "long", role = "assistant", text = string.rep("Long reply ", 1000) } }
             ns.chats[1].status = "done"

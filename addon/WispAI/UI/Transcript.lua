@@ -33,7 +33,8 @@ function ns.UI.Transcript.Refresh(chat)
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}
     local previousSpeaker
-    for index, message in ipairs(ns.UI.DisplayMessages(chat)) do
+    local messages, activeTool = ns.UI.DisplayMessages(chat)
+    for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = id .. ":" .. (message.id or tostring(index))
             local row = rows[key]
@@ -57,9 +58,12 @@ function ns.UI.Transcript.Refresh(chat)
             y = y + row.height
         end
     end
-    if chat and chat.status == "working" then
-        y = ns.UI.Activity.LayoutProgress(y, width, previousSpeaker ~= "assistant")
-    end
+    y = ns.UI.Activity.LayoutProgress(
+        y,
+        width,
+        previousSpeaker ~= "assistant",
+        chat and chat.status == "working" and not activeTool
+    )
     for key, row in pairs(rows) do
         if not used[key] and row:IsShown() then
             row:Hide()

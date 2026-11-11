@@ -4,6 +4,49 @@ local GOLD, TEXT, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.TEXT, ns.UI.Widgets.
 local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
+local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
+local TOOL_STATES = {
+    completed = { cell = 0, tint = MUTED },
+    running = { cell = 1, tint = GOLD },
+    failed = { cell = 2, tint = { 0.85, 0.52, 0.46 } },
+}
+local toolGroupsExpanded = {}
+
+local function setToolIcon(texture, cell, tint)
+    texture:SetTexture(TOOL_ICONS)
+    texture:SetTexCoord(cell / 8, (cell + 1) / 8, 0, 1)
+    texture:SetVertexColor(unpack(tint))
+end
+
+local function setToolSpinner(row, running)
+    row.toolRunning = running
+    if running and not row.toolSpinner then
+        local group = row.icon:CreateAnimationGroup()
+        local spin = group:CreateAnimation("Rotation")
+        spin:SetDegrees(-360)
+        spin:SetDuration(1.3)
+        group:SetLooping("REPEAT")
+        row.toolSpinner = group
+        row:HookScript("OnHide", function()
+            group:Stop()
+        end)
+        row:HookScript("OnShow", function()
+            if row.toolRunning then
+                group:Play()
+            end
+        end)
+    end
+    if row.toolSpinner then
+        if running and row:IsVisible() then
+            if not row.toolSpinner:IsPlaying() then
+                row.toolSpinner:Play()
+            end
+        else
+            row.toolSpinner:Stop()
+        end
+    end
+end
+
 ns.itemRevision = 0
 local function linked(row)
     row:EnableMouse(true)
@@ -179,6 +222,9 @@ local function makeRow(parent)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(14, 14)
     row.icon:SetPoint("TOPLEFT", 0, -1)
+    row.chevron = row:CreateTexture(nil, "ARTWORK")
+    row.chevron:SetSize(14, 14)
+    row.chevron:Hide()
     row.bubble = CreateFrame("Frame", nil, row, "BackdropTemplate")
     row.bubble:SetFrameLevel(row:GetFrameLevel())
     row.bubble:SetAllPoints(row)
@@ -193,10 +239,8 @@ local function makeRow(parent)
     row.bubble:EnableMouse(false)
     row.bubble:Hide()
     row.disclosure = CreateFrame("Button", nil, row)
-    row.disclosure:SetAllPoints(row)
     row.disclosure:SetScript("OnClick", function()
-        ns.toolGroupsExpanded = ns.toolGroupsExpanded or {}
-        ns.toolGroupsExpanded[row.groupKey] = not ns.toolGroupsExpanded[row.groupKey]
+        toolGroupsExpanded[row.groupKey] = not toolGroupsExpanded[row.groupKey] or nil
         ns.UI.Refresh()
         if ns.Inline.RefreshInline then
             ns.Inline.RefreshInline()
@@ -216,70 +260,109 @@ local function makeRow(parent)
     return row
 end
 ns.UI.MakeMessageRow = makeRow
-ns.toolGroupsExpanded = {}
+
+local function toolDetails(tool, name)
+    local lines = {}
+    if type(tool.inputPreview) == "string" and tool.inputPreview ~= "" then
+        lines[#lines + 1] = "Input  " .. tool.inputPreview
+    end
+    if type(tool.resultPreview) == "string" and tool.resultPreview ~= "" then
+        lines[#lines + 1] = "Result  " .. tool.resultPreview
+    elseif type(tool.detail) == "string" and tool.detail ~= "" and tool.detail ~= name then
+        lines[#lines + 1] = tool.detail
+    end
+    return #lines > 0 and table.concat(lines, "\n\n") or nil
+end
+
+local function toolCallRow(chatId, call, id, callId, indent)
+    local tool = call.tool or {}
+    local name = tool.label or call.text or "Tool"
+    local detail = toolDetails(tool, name)
+    local key = detail and (chatId .. ":" .. callId)
+    local expanded = key and toolGroupsExpanded[key]
+    return {
+        id = id,
+        role = "tool",
+        text = name,
+        tool = { status = tool.status or "completed" },
+        toolIndent = indent,
+        groupKey = key,
+        groupExpanded = expanded,
+        toolDetail = expanded and detail or nil,
+    }
+end
+
+local function appendToolGroup(messages, chatId, calls, id)
+    if #calls == 1 then
+        local call = calls[1]
+        local entry = toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0)
+        messages[#messages + 1] = entry
+        return entry.tool.status == "running"
+    end
+    local running, failed, latest
+    for _, call in ipairs(calls) do
+        local tool = call.tool or {}
+        latest = tool.label or call.text or "Tool"
+        local status = tool.status or "completed"
+        if status == "running" then
+            running = latest
+        elseif status ~= "completed" then
+            failed = true
+        end
+    end
+    local key = chatId .. ":" .. id
+    local expanded = toolGroupsExpanded[key]
+    messages[#messages + 1] = {
+        id = id,
+        role = "tool",
+        text = running
+            or (expanded and (#calls .. " tool calls") or (latest .. "  +" .. (#calls - 1))),
+        tool = { status = running and "running" or (failed and "failed" or "completed") },
+        groupKey = key,
+        groupExpanded = expanded,
+    }
+    if expanded then
+        for index, call in ipairs(calls) do
+            local callId = id .. "-call-" .. (call.id or index)
+            messages[#messages + 1] = toolCallRow(chatId, call, callId, callId, 18)
+        end
+    end
+    return running ~= nil
+end
+
 function ns.UI.DisplayMessages(chat)
-    local messages, group = {}, nil
+    local messages, calls, groupId, groupOffset = {}, {}, nil, nil
+    local function flushTools(currentTurn)
+        if not groupId then
+            return false
+        end
+        local group = {}
+        local running = appendToolGroup(group, chat.id, calls, groupId)
+        local active = currentTurn and chat.status == "working" and running
+        -- While a call runs, its group occupies the current activity slot.
+        local offset = active and #messages + 1 or groupOffset
+        for index = #group, 1, -1 do
+            table.insert(messages, offset, group[index])
+        end
+        calls, groupId, groupOffset = {}, nil, nil
+        return active
+    end
     for index, message in ipairs(chat and chat.messages or {}) do
         if message.role == "tool" then
             if ns.db.showTools then
-                if not group then
-                    group = {
-                        id = "tools-" .. (message.id or index),
-                        role = "tool",
-                        text = "",
-                        calls = {},
-                    }
-                    messages[#messages + 1] = group
-                end
-                group.calls[#group.calls + 1] = message
+                groupId = groupId or ("tools-" .. (message.id or index))
+                calls[#calls + 1] = message
+                groupOffset = #messages + 1
             end
         else
-            group = nil
+            if message.role == "user" or message.role == "system" then
+                flushTools(false)
+            end
             messages[#messages + 1] = message
         end
     end
-    for _, message in ipairs(messages) do
-        if message.calls then
-            local labels, details, running, failed = {}, {}, nil, false
-            local extraDetails = {}
-            for _, call in ipairs(message.calls) do
-                local tool = call.tool or {}
-                local name = tool.label or call.text or "Tool"
-                labels[#labels + 1] = name
-                details[#details + 1] = name .. " - " .. (tool.status or "completed")
-                if type(tool.detail) == "string" and tool.detail ~= "" and tool.detail ~= name then
-                    extraDetails[#extraDetails + 1] = tool.detail
-                    details[#details] = details[#details] .. "\n" .. tool.detail
-                end
-                if tool.status == "running" then
-                    running = name
-                end
-                if tool.status and tool.status ~= "running" and tool.status ~= "completed" then
-                    failed = true
-                end
-            end
-            if #labels > 1 or #extraDetails > 0 then
-                message.groupKey = chat.id .. ":" .. message.id
-            end
-            local expanded = message.groupKey and ns.toolGroupsExpanded[message.groupKey]
-            local summary = running or table.concat(labels, " / ", 1, math.min(2, #labels))
-            if #labels > 2 and not running then
-                summary = summary .. " / +" .. (#labels - 2)
-            end
-            message.text = (message.groupKey and (expanded and "- " or "+ ") or "")
-                .. summary
-                .. (
-                    expanded
-                        and ("\n" .. table.concat(#labels == 1 and extraDetails or details, "\n"))
-                    or ""
-                )
-            message.tool = {
-                label = message.text,
-                status = running and "running" or (failed and "failed" or "completed"),
-            }
-        end
-    end
-    return messages
+    local active = flushTools(true)
+    return messages, active
 end
 function ns.UI.PositionMessageRow(row, parent, y, width)
     local x = row.speaker == "user" and width - row:GetWidth() or 0
@@ -298,6 +381,7 @@ function ns.UI.ChatSignature(chat)
         parts[#parts + 1] = (message.id or "")
             .. (message.text or "")
             .. (message.tool and message.tool.status or "")
+            .. (message.tool and message.tool.resultPreview or "")
             .. (ns.UI.RichSignature and ns.UI.RichSignature({ message.ui, message.parts }) or "")
     end
     return table.concat(parts, "\31")
@@ -336,6 +420,12 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
         .. tostring(showAuthor)
         .. "\31"
         .. tostring(message.groupKey)
+        .. "\31"
+        .. (message.groupExpanded and "1" or "0")
+        .. "\31"
+        .. (message.toolIndent or 0)
+        .. "\31"
+        .. (message.toolDetail or "")
     if row.signature ~= signature then
         row.signature = signature
         local pending = false
@@ -348,6 +438,11 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
         row.bubble:SetShown(message.role == "user")
         row.groupKey = message.groupKey
         row.disclosure:SetShown(message.groupKey ~= nil)
+        row.chevron:SetShown(message.groupKey ~= nil)
+        if row.toolDetail then
+            row.toolDetail:Hide()
+            row.toolDetailBackground:Hide()
+        end
         row.text:Show()
         row.text:ClearAllPoints()
         local top = message.role == "user" and padding or (showAuthor and 20 or 0)
@@ -366,28 +461,61 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
             if row.rich then
                 row.rich:Hide()
             end
+            local indent = message.toolIndent or 0
             row.icon:ClearAllPoints()
-            row.icon:SetPoint("TOPLEFT", 0, -top - 1)
+            row.icon:SetPoint("TOPLEFT", indent, -top - 1)
             row.icon:Show()
             local state = tool and tool.status or "completed"
-            row.icon:SetTexture(
-                state == "completed" and "Interface\\RaidFrame\\ReadyCheck-Ready"
-                    or (
-                        state == "running" and "Interface\\RaidFrame\\ReadyCheck-Waiting"
-                        or "Interface\\RaidFrame\\ReadyCheck-NotReady"
-                    )
+            local icon = TOOL_STATES[state] or TOOL_STATES.failed
+            setToolIcon(row.icon, icon.cell, icon.tint)
+            setToolSpinner(row, state == "running" and chat.status == "working")
+            local textLeft = indent + 20
+            row.text:SetPoint("TOPLEFT", textLeft, -top)
+            row.text:SetWidth(width - textLeft - (row.groupKey and 18 or 0))
+            row.text:SetTextColor(unpack(TEXT))
+            setText(
+                row.text,
+                ns.Markdown.InlineRenderer.Literal(tool and tool.label or message.text)
             )
-            row.text:SetPoint("TOPLEFT", 21, -top)
-            row.text:SetWidth(width - 21)
-            row.text:SetTextColor(unpack(MUTED))
-            local suffix = state == "running" and "  |cffe0c070Running|r"
-                or (state == "completed" and "" or "  |cffd98575Failed|r")
-            local text, waiting = formatted(tool and tool.label or message.text)
-            pending = waiting == true
-            setText(row.text, text .. suffix)
-            row.height = top + math.max(18, row.text:GetStringHeight()) + 7
+            local headerHeight = math.max(18, row.text:GetStringHeight())
+            if row.groupKey then
+                row.chevron:ClearAllPoints()
+                row.chevron:SetPoint("TOPRIGHT", -2, -top - 1)
+                setToolIcon(row.chevron, message.groupExpanded and 4 or 3, MUTED)
+                row.disclosure:ClearAllPoints()
+                row.disclosure:SetPoint("TOPLEFT", row, "TOPLEFT", indent, -top)
+                row.disclosure:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", 0, -top - headerHeight)
+            end
+            row.height = top + headerHeight + 5
+            if message.toolDetail then
+                if not row.toolDetail then
+                    row.toolDetailBackground = row:CreateTexture(nil, "BACKGROUND")
+                    row.toolDetailBackground:SetColorTexture(0.84, 0.72, 0.43, 0.08)
+                    row.toolDetail = label(row, "", MUTED)
+                    row.toolDetail:SetWordWrap(true)
+                    row.toolDetail:SetNonSpaceWrap(true)
+                    row.toolDetail:SetSpacing(2)
+                end
+                row.toolDetail:ClearAllPoints()
+                row.toolDetail:SetPoint("TOPLEFT", textLeft + 8, -row.height - 6)
+                row.toolDetail:SetWidth(width - textLeft - 16)
+                setText(row.toolDetail, ns.Markdown.InlineRenderer.Literal(message.toolDetail))
+                row.toolDetail:Show()
+                row.toolDetailBackground:ClearAllPoints()
+                row.toolDetailBackground:SetPoint("TOPLEFT", row.toolDetail, "TOPLEFT", -8, 6)
+                row.toolDetailBackground:SetPoint(
+                    "BOTTOMRIGHT",
+                    row.toolDetail,
+                    "BOTTOMRIGHT",
+                    8,
+                    -6
+                )
+                row.toolDetailBackground:Show()
+                row.height = row.height + row.toolDetail:GetStringHeight() + 18
+            end
         else
             row.icon:Hide()
+            setToolSpinner(row, false)
             local interleaved = message.parts
                 and #message.parts > 0
                 and not message._markdownSimple

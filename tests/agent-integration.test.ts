@@ -38,6 +38,7 @@ test(
         enabled: {
           ...Object.fromEntries(defaultCapabilities().map((capability) => [capability.id, false])),
           'tool:get_settings': true,
+          'tool:get_quest': true,
           'tool:query_character': true,
         },
       }),
@@ -85,10 +86,16 @@ test(
           res.writeHead(401).end();
           return;
         }
-        toolCalls.push(JSON.parse(body));
-        res
-          .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ status: 'completed', data: { settings: [], verified: true } }));
+        const request = JSON.parse(body);
+        toolCalls.push(request);
+        const result =
+          request.inspection.kind === 'questie_quest'
+            ? {
+                status: 'available',
+                reference: { kind: 'quest', id: 166, label: 'The Defias Brotherhood' },
+              }
+            : { status: 'completed', data: { settings: [], verified: true } };
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
       requests.push(JSON.parse(body));
@@ -121,6 +128,10 @@ test(
         13: {
           name: 'wisp__present_ui',
           input: { references: { frostbolt: { kind: 'spell', id: 116, label: 'Frostbolt' } } },
+        },
+        15: {
+          name: 'eve__tool',
+          input: { name: 'questie__get_quest', input: { questId: 166 } },
         },
       };
       const call = plannedCalls[count];
@@ -431,6 +442,35 @@ test(
         (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-13',
       );
       expect(JSON.parse(String(repairedAcknowledgement?.output))).toEqual({ accepted: true });
+
+      const questChat = newChat('quest', 'test');
+      const questProjection = new ReplyProjection();
+      const questLookup = await session.send(
+        turnInput('Read the details for quest 166', undefined, {
+          ...questChat,
+          titleGenerated: true,
+        }),
+        { signal: AbortSignal.timeout(15000) },
+      );
+      let runningLabel: string | undefined;
+      for await (const event of questLookup.stream({ signal: AbortSignal.timeout(15000) })) {
+        applyEvent(questChat, event, questProjection);
+        const tool = questChat.activity.find((entry) => entry.name === 'questie__get_quest');
+        if (tool?.status === 'running') {
+          runningLabel = tool.label;
+        }
+      }
+      expect((await questLookup.result()).status).toBe('completed');
+      expect(runningLabel).toBe('Reading details for quest #166');
+      expect(
+        questChat.messages.find((entry) => entry.tool?.name === 'questie__get_quest'),
+      ).toMatchObject({
+        text: 'Read quest details for “The Defias Brotherhood”',
+        tool: {
+          inputPreview: '{"questId":166}',
+          resultPreview: expect.stringContaining('The Defias Brotherhood'),
+        },
+      });
 
       if (executable) {
         await stopEveProcess(child);

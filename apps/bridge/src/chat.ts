@@ -30,7 +30,9 @@ export const chatSchema = z.object({
       // Exact final-answer source, independent of parser/display limits. Never reasoning.
       rawReply: z.string().optional(),
       replyFormat: z.literal('text').optional(),
-      tool: activity.optional(),
+      tool: activity
+        .extend({ inputPreview: z.string().optional(), resultPreview: z.string().optional() })
+        .optional(),
       phase: z.string().optional(),
       references: z.record(z.string(), referenceSchema).optional(),
       ui: z.array(uiNode).optional(),

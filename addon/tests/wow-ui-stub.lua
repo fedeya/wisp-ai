@@ -117,6 +117,9 @@ end
 function methods:SetScript(name, fn)
     self.scripts[name] = fn
 end
+function methods:IsVisible()
+    return self:IsShown() and (not self.parent or self.parent:IsVisible())
+end
 function methods:EnableMouse(enabled)
     self.mouseEnabled = enabled
 end
@@ -140,6 +143,24 @@ function methods:CreateFontString()
 end
 function methods:CreateTexture()
     return widget("Texture", nil, self)
+end
+function methods:SetTexCoord(...)
+    self.texCoord = { ... }
+end
+function methods:CreateAnimationGroup()
+    return widget("AnimationGroup", nil, self)
+end
+function methods:CreateAnimation(kind)
+    return widget(kind, nil, self)
+end
+function methods:Play()
+    self.playing = true
+end
+function methods:Stop()
+    self.playing = false
+end
+function methods:IsPlaying()
+    return self.playing == true
 end
 function methods:SetThumbTexture()
     self.thumb = widget("Texture", nil, self)
