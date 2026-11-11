@@ -150,7 +150,7 @@ local function project(message)
                     end
                     stack[#stack + 1] = {
                         node = item,
-                        indent = entry.indent + 12,
+                        indent = entry.indent + 22,
                         prefix = prefix,
                         quote = entry.quote,
                     }

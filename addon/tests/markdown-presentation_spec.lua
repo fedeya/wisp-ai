@@ -94,6 +94,51 @@ it("styles the shared parser tree without reparsing on resize or reference updat
     assert.equal(source, message.text)
 end)
 
+it("renders all unordered markers with compact hanging indents", function()
+    local _, ns, row = setup()
+    for _, marker in ipairs({ "*", "-", "+", "•" }) do
+        local message = {
+            id = "reply",
+            role = "assistant",
+            text = marker
+                .. " **Primero**\n  continuación\n\n  Segundo párrafo\n\n  "
+                .. marker
+                .. " Anidado\n"
+                .. marker
+                .. " Final",
+        }
+        paint(ns, row, message, 180)
+        local first, continuation, nested, last = unpack(row.rich.prose)
+        assert.equal("list", first.block.kind)
+        assert.equal("•", first.marker:GetText())
+        assert.equal(22, first.point[4])
+        assert.equal(first.point[4], continuation.point[4])
+        assert.equal("list", nested.block.kind)
+        assert.equal("•", nested.marker:GetText())
+        assert.equal(first.point[4] + 22, nested.point[4])
+        assert.equal(first.point[4], last.point[4])
+        assert.equal("•", last.marker:GetText())
+        for _, run in ipairs(first.runs) do
+            if run:IsShown() then
+                assert.is_true(run.point[4] >= first.point[4])
+            end
+        end
+        assert.equal(message.text, ns.Markdown.ReplyView.Project(message)._markdownSources[1])
+    end
+end)
+
+it("keeps a single asterisk item styled while streaming and on completion", function()
+    local _, ns, row = setup()
+    local message = { id = "reply", role = "assistant", text = "* **Uno**", streaming = true }
+    for _, streaming in ipairs({ true, false }) do
+        message.streaming = streaming
+        paint(ns, row, message)
+        assert.is_false(row.text:IsShown())
+        assert.equal("list", row.rich.prose[1].block.kind)
+        assert.equal("•", row.rich.prose[1].marker:GetText())
+    end
+end)
+
 it("keeps tables and cards in order while inline code uses JetBrains Mono", function()
     local _, ns, row = setup()
     local message = {

@@ -232,6 +232,9 @@ function M._blocks(source, context)
         local ordered, number, markerWidth, delimiter
         if symbol == "-" or symbol == "+" or symbol == "*" then
             ordered, markerWidth, delimiter = false, 1, symbol
+        elseif text:sub(1, #"•") == "•" then
+            -- Older replies used a literal disc instead of a Markdown marker.
+            ordered, markerWidth, delimiter = false, #"•", "•"
         else
             local digits, ending = text:match("^(%d+)([.)])")
             if not digits or #digits > 9 then
@@ -243,6 +246,7 @@ function M._blocks(source, context)
         if after ~= "" and not after:match("^[ \t]") then
             return nil
         end
+        local markerColumns = delimiter == "•" and 1 or markerWidth
         local whitespace, p = 0, 1
         while p <= #after do
             local ch = after:sub(p, p)
@@ -251,7 +255,7 @@ function M._blocks(source, context)
             elseif ch == "\t" then
                 whitespace = whitespace
                     + 4
-                    - (record.column - 1 + width + markerWidth + whitespace) % 4
+                    - (record.column - 1 + width + markerColumns + whitespace) % 4
             else
                 break
             end
@@ -259,7 +263,7 @@ function M._blocks(source, context)
             tick()
         end
         local padding = whitespace >= 1 and whitespace <= 4 and whitespace or 1
-        local contentIndent = width + markerWidth + padding
+        local contentIndent = width + markerColumns + padding
         local content = strip(record, width)
         content = shift(content, markerWidth)
         content = strip(content, padding)

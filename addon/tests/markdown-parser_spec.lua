@@ -4,6 +4,24 @@ local function paragraph(source, options)
     return assert(md.Parse(source, options)).children[1]
 end
 
+it("recognizes literal discs from older replies without changing inline or code text", function()
+    local source =
+        "Ventas:\n• **Grises**\n  • Tela\n• Equipo\n\n`• literal`\n\n```\n• código\n```"
+    local tree = assert(md.Parse(source))
+    local list = tree.children[2]
+    assert.equal("list", list.type)
+    assert.is_false(list.ordered)
+    assert.equal(2, #list.children)
+    assert.equal("Grises", helper.text(list.children[1].children[1]))
+    assert.equal("list", list.children[1].children[2].type)
+    assert.equal("Tela", helper.text(list.children[1].children[2]))
+    assert.same({ { 2, 5 }, { 2, 14 } }, list.children[1].children[1].sourcepos)
+    assert.equal("• literal", helper.text(tree.children[3]))
+    assert.equal("• código\n", tree.children[4].literal)
+    assert.equal("paragraph", paragraph("•sin espacio").type)
+    assert.equal("paragraph", paragraph("Texto • intermedio").type)
+end)
+
 it("exposes only the Wisp parse and inline entry points", function()
     assert.is_function(md.Parse)
     assert.is_function(md.ParseInline)

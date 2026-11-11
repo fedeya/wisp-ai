@@ -11,6 +11,7 @@ fonts, layout and native links. Stored Markdown is preserved.
 - Wisp references: `[[ref:key]]`.
 
 HTML is displayed as literal text. Images show their alt text.
+Lists also accept literal `•` markers used in older replies.
 
 ## Parser API
 

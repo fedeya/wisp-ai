@@ -97,9 +97,6 @@ function layout.Render(host, pool, part, width, y, count)
                     block.kind == "code" and 10
                     or (block.kind == "quote" and math.min(block.depth, 5) * 14 or 0)
                 )
-            if block.kind == "list" then
-                inset = left + 26
-            end
             inset = math.min(inset, math.max(0, width - 24))
             local available = math.max(1, width - inset - (block.kind == "code" and 10 or 0))
             local lineHeight, lineUsed = 0, false
@@ -283,7 +280,7 @@ function layout.Render(host, pool, part, width, y, count)
                 elseif block.kind == "list" then
                     local markerText = block.task
                             and (block.checked and "|TInterface\\Buttons\\UI-CheckBox-Check:18:18|t" or "|TInterface\\Buttons\\UI-CheckBox-Up:18:18|t")
-                        or (block.marker:match("^%d") and block.marker or "-")
+                        or (block.marker:match("^%d") and block.marker or "•")
                     f.marker = f.marker or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
                     f.marker:SetFontObject(ChatFontNormal)
                     f.marker:SetText(markerText)
