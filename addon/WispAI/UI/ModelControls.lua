@@ -61,9 +61,7 @@ function ns.UI.RefreshModelControls()
             if controls.narrow ~= narrow then
                 controls.narrow = narrow
                 controls.composer:SetHeight(narrow and 106 or 78)
-                ns.draft:ClearAllPoints()
-                ns.draft:SetPoint("TOPLEFT", 10, -7)
-                ns.draft:SetPoint("BOTTOMRIGHT", -10, narrow and 56 or 28)
+                controls.inputScroll:SetPoint("BOTTOMRIGHT", -10, narrow and 56 or 28)
                 controls.send:ClearAllPoints()
                 controls.send:SetPoint("BOTTOMRIGHT", -7, narrow and 31 or 5)
                 controls.transcript:SetPoint("BOTTOMRIGHT", -31, narrow and 132 or 104)

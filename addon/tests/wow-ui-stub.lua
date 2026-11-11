@@ -162,6 +162,9 @@ end
 function methods:SetScrollChild(child)
     self.child = child
 end
+function methods:SetClipsChildren(enabled)
+    self.clipsChildren = enabled
+end
 function methods:GetVerticalScrollRange()
     return math.max(0, (self.child and self.child.height or 0) - self.height)
 end

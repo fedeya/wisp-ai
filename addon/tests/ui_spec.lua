@@ -5,6 +5,86 @@ local function setup(env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
 end
 
+it("keeps multiline drafts clipped and follows the cursor across composer layouts", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    ns = helper.namespace({
+        db = { sidebar = true, showTools = true, drafts = {} },
+        active = "chat",
+        connected = true,
+    })
+    ns.chats = { { id = "chat", title = "Draft", status = "idle", messages = {} } }
+    function ns.Chat.Current()
+        return ns.chats[1]
+    end
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
+    local draft = ns.draft
+    local viewport = UI_TEST.frames.WispAIInputScroll
+    assert(viewport and viewport.kind == "ScrollFrame" and viewport.clipsChildren)
+    assert(viewport.child == draft and draft:GetParent() == viewport)
+    viewport:SetSize(300, 43)
+    viewport.scripts.OnSizeChanged(viewport, 300, 43)
+    assert(draft:GetWidth() == 300, "wrapping must follow the viewport width")
+
+    -- Emulate native multiline EditBox growth and cursor events.
+    function draft:Insert(text)
+        self:SetText(self:GetText() .. text)
+        local _, breaks = self:GetText():gsub("\n", "")
+        self:SetHeight((breaks + 1) * 16)
+        self.scripts.OnTextChanged(self, true)
+        self.scripts.OnCursorChanged(self, 0, -breaks * 16, 1, 16)
+    end
+    function IsShiftKeyDown()
+        return true
+    end
+    for _ = 1, 40 do
+        draft.scripts.OnEnterPressed(draft)
+        assert(
+            draft:GetHeight() <= viewport:GetVerticalScroll() + viewport:GetHeight(),
+            "each Shift+Enter must keep the new line visible"
+        )
+    end
+    assert(#draft:GetText() == 40 and viewport:GetVerticalScroll() > 0)
+    draft.scripts.OnCursorChanged(draft, 0, 0, 1, 16)
+    assert(viewport:GetVerticalScroll() == 0, "moving to the first line must scroll up")
+    draft.scripts.OnCursorChanged(draft, 0, -320, 1, 16)
+    assert(viewport:GetVerticalScroll() <= 320)
+    assert(viewport:GetVerticalScroll() + viewport:GetHeight() >= 336)
+    viewport.scripts.OnMouseWheel(viewport, 1000)
+    assert(viewport:GetVerticalScroll() == 0)
+    viewport.scripts.OnMouseWheel(viewport, -1000)
+    assert(viewport:GetVerticalScroll() == viewport:GetVerticalScrollRange())
+    draft:SetText("short")
+    draft:SetHeight(16)
+    draft.scripts.OnTextChanged(draft, false)
+    assert(viewport:GetVerticalScroll() == 0, "shorter restored drafts must clamp the scroll")
+    viewport:SetVerticalScroll(100)
+    draft:SetText("")
+    draft.scripts.OnTextChanged(draft, false)
+    assert(viewport:GetVerticalScroll() == 0, "clearing the draft must reset the scroll")
+
+    local controls = UI_TEST.frames.WispAIChatModelControls
+    for _, width in ipairs({ 350, 500, 350 }) do
+        controls.composer:SetWidth(width)
+        ns.UI.RefreshModelControls()
+        local point, _, _, _, bottom = viewport:GetPoint()
+        assert(point == "BOTTOMRIGHT" and bottom == (width < 380 and 56 or 28))
+        local _, parent = draft:GetPoint()
+        assert(parent == viewport, "layout changes must keep the editor inside its scroll area")
+    end
+    local submitted = 0
+    function IsShiftKeyDown()
+        return false
+    end
+    function ns.Chat.Submit()
+        submitted = submitted + 1
+    end
+    draft.scripts.OnEnterPressed(draft)
+    assert(submitted == 1, "Enter must still submit")
+end)
+
 it(
     "chat placeholder distinguishes connecting, fetching history and an empty conversation",
     function()
