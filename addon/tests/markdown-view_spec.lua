@@ -91,6 +91,45 @@ it("preserves canonical source, native component ordering and reference data", f
     assert.equal(view, ns.Markdown.ReplyView.Project(view))
 end)
 
+it(
+    "renders interleaved presentation parts while code and escaped references stay literal",
+    function()
+        local _, ns = setup()
+        local before = "# Antes\n\n~~~text\n[[ref:example]]\n~~~\n\nA|B\n---|---\n[[ref:nova]]|20"
+        local after = "**Después** \\[[ref:escaped]]"
+        local original = message(before .. after)
+        original.references = { nova = { kind = "spell", id = 122, label = "Nova" } }
+        original.ui = {
+            {
+                id = "comparison",
+                kind = "comparison",
+                unit = "DPS",
+                items = {
+                    { id = "a", label = "A", value = 10 },
+                    { id = "b", label = "B", value = 20 },
+                },
+            },
+        }
+        original.parts = {
+            { type = "text", text = before },
+            { type = "ui", id = "comparison" },
+            { type = "text", text = after },
+        }
+        local signature = ns.UI.RichSignature(original)
+        local view = settled(ns, original)
+        assert.equal(signature, ns.UI.RichSignature(original))
+        assert.equal(original.text, view.text)
+        assert.equal(original.ui[1], view.ui[1])
+        assert.equal("heading", view.parts[1].style)
+        assert.equal("code", view.parts[2].style)
+        assert.is_truthy(view.parts[2].text:find("[[ref:example]]", 1, true))
+        assert.same({ type = "ui", id = "markdown_table_1", indent = 0 }, view.parts[3])
+        assert.same({ type = "ui", id = "comparison" }, view.parts[4])
+        assert.is_truthy(view.parts[5].text:find("[[ref:escaped]]", 1, true))
+        assert.is_truthy(view.ui[2].rows[1][1]:find("|Hspell:122|h[Nova]|h", 1, true))
+    end
+)
+
 it("renders lists, tasks, quotes and code through the shared document view", function()
     local _, ns = setup()
     local view = settled(

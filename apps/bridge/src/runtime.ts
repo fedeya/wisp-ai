@@ -352,6 +352,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         defaultModel: () => config.model || 'gpt-6.1-sol',
         readSimulationCharacter,
         memorySnapshot,
+        presentReply: run.present,
         setMemoryView: (view) => {
           state.memoryView = view;
         },

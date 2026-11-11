@@ -11,6 +11,8 @@ import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { applyEvent } from '@wisp/bridge/events';
 import { ReplyProjection } from '@wisp/bridge/reply-stream';
 import { turnInput } from '@wisp/bridge/context';
+import { rebuildHistory } from '../apps/bridge/src/history.ts';
+import { replyContent } from '../apps/bridge/src/reply-content.ts';
 
 test(
   'the real Eve agent and AI SDK middleware complete an offline streamed turn',
@@ -43,8 +45,8 @@ test(
     const requests: Record<string, unknown>[] = [];
     const toolCalls: unknown[] = [];
     const trace: unknown[] = [];
-    const text =
-      '{"type":"text_delta","text":"Offline integration passed."}\n{"type":"conversation_title","title":"Quest in Ratchet"}\n';
+    let activeProjection: ReplyProjection | undefined;
+    const text = 'Offline integration passed.';
     const model = createServer(async (req, res) => {
       if (req.url?.startsWith('/session-model?')) {
         res.writeHead(200, { 'content-type': 'application/json' }).end(
@@ -60,6 +62,24 @@ test(
       for await (const chunk of req) {
         body += chunk;
       }
+      if (req.url === '/present') {
+        if (req.headers.authorization !== 'Bearer offline-token') {
+          res.writeHead(401).end();
+          return;
+        }
+        try {
+          const data = JSON.parse(body) as { callId: string; presentation: unknown };
+          const accepted = await activeProjection!.acceptPresentation(
+            data.callId,
+            data.presentation,
+            AbortSignal.timeout(10000),
+          );
+          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(accepted));
+        } catch (error) {
+          res.writeHead(503).end((error as Error).message);
+        }
+        return;
+      }
       if (req.url === '/inspect') {
         if (req.headers.authorization !== 'Bearer offline-token') {
           res.writeHead(401).end();
@@ -72,108 +92,114 @@ test(
         return;
       }
       requests.push(JSON.parse(body));
+      const count = requests.length;
+      const presentation = {
+        nodes: [
+          {
+            id: 'comparison',
+            kind: 'comparison',
+            unit: 'DPS',
+            items: [
+              { id: 'a', label: 'A', value: 10 },
+              { id: 'b', label: 'B', value: 20 },
+            ],
+          },
+        ],
+        references: { nova: { kind: 'spell', id: 122, label: 'Nova' } },
+      };
       const plannedCalls: Record<number, { name: string; input: unknown }> = {
         2: { name: 'eve__skill', input: { name: 'settings' } },
         3: { name: 'eve__search', input: { query: 'wow__get_settings' } },
         4: { name: 'eve__tool', input: { name: 'wow__get_settings', input: {} } },
         7: { name: 'eve__skill', input: { name: 'missing-skill' } },
         9: { name: 'eve__tool', input: { name: 'wow__update_settings', input: {} } },
+        11: { name: 'wisp__present_ui', input: presentation },
+        12: {
+          name: 'wisp__present_ui',
+          input: { references: { nova: { kind: 'spell', id: 116, label: 'Frostbolt' } } },
+        },
+        13: {
+          name: 'wisp__present_ui',
+          input: { references: { frostbolt: { kind: 'spell', id: 116, label: 'Frostbolt' } } },
+        },
       };
-      const planned = plannedCalls[requests.length];
-      if (planned) {
-        const item = {
-          id: 'tool-item-' + requests.length,
-          type: 'function_call',
-          call_id: 'tool-call-' + requests.length,
-          name: planned.name,
-          arguments: JSON.stringify(planned.input),
-        };
-        const events = [
-          {
-            type: 'response.created',
-            response: { id: 'search-response', model: 'offline-test', created_at: 1 },
-          },
-          { type: 'response.output_item.added', output_index: 0, item: { ...item, arguments: '' } },
-          {
-            type: 'response.function_call_arguments.delta',
-            item_id: item.id,
-            output_index: 0,
-            delta: item.arguments,
-          },
-          {
-            type: 'response.function_call_arguments.done',
-            item_id: item.id,
-            output_index: 0,
-            arguments: item.arguments,
-          },
-          {
-            type: 'response.output_item.done',
-            output_index: 0,
-            item: { ...item, status: 'completed' },
-          },
-          {
-            type: 'response.completed',
-            response: {
-              id: 'search-response',
-              model: 'offline-test',
-              created_at: 1,
-              output: [item],
-              usage: { input_tokens: 20, output_tokens: 10 },
-            },
-          },
-        ];
-        res
-          .writeHead(200, { 'content-type': 'text/event-stream' })
-          .end(events.map((e) => 'data: ' + JSON.stringify(e) + '\n\n').join(''));
-        return;
+      const call = plannedCalls[count];
+      const output: Record<string, unknown>[] = [];
+      const message = (value: string) => ({
+        id: 'message-' + count,
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: value, annotations: [] }],
+      });
+      if (count === 11) {
+        output.push(message('Antes de la comparación.\n\n~~~text\n[[ref:example]]\n~~~\n\n'));
       }
-      const events = [
+      if (call) {
+        output.push({
+          id: 'tool-item-' + count,
+          type: 'function_call',
+          call_id: 'tool-call-' + count,
+          status: 'completed',
+          name: call.name,
+          arguments: JSON.stringify(call.input),
+        });
+      } else {
+        output.push(message(count === 14 ? '\n\nDespués de la comparación.' : text));
+      }
+      const events: Record<string, unknown>[] = [
         {
           type: 'response.created',
-          response: { id: 'offline-response', model: 'offline-test', created_at: 1 },
-        },
-        {
-          type: 'response.output_item.added',
-          output_index: 0,
-          item: { id: 'offline-message', type: 'message', role: 'assistant', content: [] },
-        },
-        {
-          type: 'response.output_text.delta',
-          item_id: 'offline-message',
-          output_index: 0,
-          delta: text,
-        },
-        { type: 'response.output_text.done', item_id: 'offline-message', output_index: 0, text },
-        {
-          type: 'response.output_item.done',
-          output_index: 0,
-          item: {
-            id: 'offline-message',
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [{ type: 'output_text', text, annotations: [] }],
-          },
-        },
-        {
-          type: 'response.completed',
-          response: {
-            id: 'offline-response',
-            model: 'offline-test',
-            created_at: 1,
-            output: [
-              {
-                id: 'offline-message',
-                type: 'message',
-                role: 'assistant',
-                status: 'completed',
-                content: [{ type: 'output_text', text, annotations: [] }],
-              },
-            ],
-            usage: { input_tokens: 20, output_tokens: 10 },
-          },
+          response: { id: 'response-' + count, model: 'offline-test', created_at: 1 },
         },
       ];
+      for (const [index, item] of output.entries()) {
+        events.push({
+          type: 'response.output_item.added',
+          output_index: index,
+          item:
+            item.type === 'function_call' ? { ...item, arguments: '' } : { ...item, content: [] },
+        });
+        if (item.type === 'function_call') {
+          events.push({
+            type: 'response.function_call_arguments.delta',
+            item_id: item.id,
+            output_index: index,
+            delta: item.arguments,
+          });
+          events.push({
+            type: 'response.function_call_arguments.done',
+            item_id: item.id,
+            output_index: index,
+            arguments: item.arguments,
+          });
+        } else {
+          const value = (item.content as { text: string }[])[0]!.text;
+          events.push({
+            type: 'response.output_text.delta',
+            item_id: item.id,
+            output_index: index,
+            delta: value,
+          });
+          events.push({
+            type: 'response.output_text.done',
+            item_id: item.id,
+            output_index: index,
+            text: value,
+          });
+        }
+        events.push({ type: 'response.output_item.done', output_index: index, item });
+      }
+      events.push({
+        type: 'response.completed',
+        response: {
+          id: 'response-' + count,
+          model: 'offline-test',
+          created_at: 1,
+          output,
+          usage: { input_tokens: 20, output_tokens: 10 },
+        },
+      });
       res
         .writeHead(200, { 'content-type': 'text/event-stream' })
         .end(events.map((event) => 'data: ' + JSON.stringify(event) + '\n\n').join(''));
@@ -262,6 +288,9 @@ test(
       expect((requests[0]!.tools as { name: string }[]).map((tool) => tool.name)).toContain(
         'eve__skill',
       );
+      expect((requests[0]!.tools as { name: string }[]).map((tool) => tool.name)).toContain(
+        'wisp__present_ui',
+      );
       expect(
         requests.every((request) => request.store === false && !('safety_identifier' in request)),
       ).toBe(true);
@@ -348,6 +377,61 @@ test(
       expect(requests).toHaveLength(10);
       expect(JSON.stringify(requests[9])).toContain('No tool named');
       expect(toolCalls).toHaveLength(1);
+      const richInput = turnInput('Mostrá una comparación entre dos párrafos', undefined, {
+        ...chat,
+        titleGenerated: true,
+      });
+      chat.messages.push({
+        id: 'rich-user',
+        role: 'user',
+        text: 'Mostrá una comparación entre dos párrafos',
+      });
+      const richProjection = new ReplyProjection();
+      activeProjection = richProjection;
+      const rich = await session.send(richInput, { signal: AbortSignal.timeout(15000) });
+      const richEvents: { type: string; data: Record<string, unknown> }[] = [];
+      for await (const event of rich.stream({ signal: AbortSignal.timeout(15000) })) {
+        richEvents.push({ type: event.type, data: { ...event.data } });
+        trace.push(event);
+        applyEvent(chat, event, richProjection);
+      }
+      richProjection.finish();
+      richProjection.flush(chat, Date.now(), true);
+      expect((await rich.result()).status).toBe('completed');
+      expect(requests).toHaveLength(14);
+      expect(names(0)).toContain('wisp__present_ui');
+      expect(names(10)).toContain('wisp__present_ui');
+      const reply = chat.messages.at(-1)!;
+      expect(reply.parts).toEqual([
+        { type: 'text', text: 'Antes de la comparación.\n\n~~~text\n[[ref:example]]\n~~~\n\n' },
+        { type: 'ui', id: 'comparison' },
+        { type: 'text', text: '\n\nDespués de la comparación.' },
+      ]);
+      expect(reply.ui?.[0].kind).toBe('comparison');
+      expect(replyContent(reply)?.text).toContain('~~~text\n[[ref:example]]\n~~~');
+      expect(reply.references).toMatchObject({ nova: { id: 122 }, frostbolt: { id: 116 } });
+      expect(chat.activity.some((entry) => entry.name === 'wisp__present_ui')).toBe(false);
+      expect(chat.messages.some((entry) => entry.tool?.name === 'wisp__present_ui')).toBe(false);
+      const richMessages = chat.messages.slice(
+        chat.messages.findIndex((message) => message.id === 'rich-user'),
+      );
+      const restored = rebuildHistory({ ...chat, messages: richMessages }, richEvents);
+      expect(restored?.at(-1) && replyContent(restored.at(-1)!)).toEqual(replyContent(reply));
+      const continuation = JSON.stringify(requests[11]);
+      expect(continuation).toContain('accepted');
+      const uiAcknowledgement = (requests[11]!.input as Record<string, unknown>[]).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-11',
+      );
+      expect(JSON.parse(String(uiAcknowledgement?.output))).toEqual({ accepted: true });
+      const uiRejection = (requests[12]!.input as Record<string, unknown>[]).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-12',
+      );
+      expect(String(uiRejection?.output)).toContain('already identifies something else');
+      const repairedAcknowledgement = (requests[13]!.input as Record<string, unknown>[]).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-13',
+      );
+      expect(JSON.parse(String(repairedAcknowledgement?.output))).toEqual({ accepted: true });
+
       if (executable) {
         await stopEveProcess(child);
         child = start();

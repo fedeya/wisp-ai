@@ -69,48 +69,91 @@ test('invisible stream events and unchanged snapshots do not spend revisions', (
   assert.equal(gate.next(view())?.rev, 104, 'a failed disk write must remain retryable');
 });
 
-test('saving raw deltas respects the preview cadence and hides source throughout long replies', () => {
+test.each([
+  { interval: 10, expectedUpdates: 2, visibleLength: 61 },
+  { interval: 100, expectedUpdates: 17, visibleLength: 97 },
+])(
+  'deltas every $interval ms coalesce into previews while all source is saved',
+  ({ interval, expectedUpdates, visibleLength }) => {
+    vi.useFakeTimers();
+    try {
+      const chat: Chat = {
+        id: 'chat',
+        owner: 'game',
+        title: 'Test',
+        status: 'working',
+        activity: [],
+        messages: [],
+      };
+      const state = createSessionState([chat]);
+      state.activeChat = chat.id;
+      const projection = new ReplyProjection(),
+        gate = new SnapshotGate();
+      const delta = 'a';
+      let updates = 0;
+      for (let index = 0; index < 100; index++) {
+        vi.setSystemTime(index * interval);
+        applyEvent(
+          chat,
+          { type: 'content.delta', data: { partId: 'answer', kind: 'text', delta } },
+          projection,
+        );
+        if (gate.next(projectChats(state))) {
+          updates++;
+        }
+      }
+      assert.equal(updates, expectedUpdates);
+      assert.equal(chat.messages[0].text, delta.repeat(100));
+      assert.equal(projectChats(state).chats[0].messages?.[0].text, delta.repeat(visibleLength));
+      assert.ok(!JSON.stringify(projectChats(state)).includes('rawReply'));
+      assert.equal(projection.flush(chat, 100 * interval + 600), true);
+      assert.equal(projectChats(state).chats[0].messages?.[0].text, delta.repeat(100));
+      assert.ok(gate.next(projectChats(state)));
+      applyEvent(
+        chat,
+        {
+          type: 'content.completed',
+          data: { partId: 'answer', kind: 'text', value: delta.repeat(100) },
+        },
+        projection,
+      );
+      assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(100));
+      assert.ok(gate.next(projectChats(state)));
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+test('long replies keep publishing partial previews beyond eight updates', () => {
   vi.useFakeTimers();
   try {
     const chat: Chat = {
-      id: 'chat',
+      id: 'long',
       owner: 'game',
-      title: 'Test',
+      title: 'Long reply',
       status: 'working',
       activity: [],
       messages: [],
     };
     const state = createSessionState([chat]);
     state.activeChat = chat.id;
-    const projection = new ReplyProjection(),
-      gate = new SnapshotGate();
-    const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
-    let updates = 0;
-    for (let index = 0; index < 100; index++) {
-      vi.setSystemTime(index * 100);
+    const projection = new ReplyProjection();
+    const gate = new SnapshotGate();
+    for (let index = 0; index < 20; index++) {
+      vi.setSystemTime(index * 600);
       applyEvent(
         chat,
-        { type: 'content.delta', data: { partId: 'answer', kind: 'text', delta } },
+        {
+          type: 'content.delta',
+          data: { partId: 'answer', kind: 'text', delta: 'a' },
+        },
         projection,
       );
-      if (gate.next(projectChats(state))) {
-        updates++;
-      }
+      assert.ok(gate.next(projectChats(state)));
+      assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(index + 1));
+      assert.equal(chat.messages[0].streaming, true);
     }
-    assert.equal(updates, 17);
-    assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(97));
-    assert.equal(chat.messages[0].rawReply, delta.repeat(100));
-    assert.ok(!JSON.stringify(projectChats(state)).includes('rawReply'));
-    applyEvent(
-      chat,
-      {
-        type: 'content.completed',
-        data: { partId: 'answer', kind: 'text', value: delta.repeat(100) },
-      },
-      projection,
-    );
-    assert.equal(projectChats(state).chats[0].messages?.[0].text, 'a'.repeat(100));
-    assert.ok(gate.next(projectChats(state)));
   } finally {
     vi.useRealTimers();
   }

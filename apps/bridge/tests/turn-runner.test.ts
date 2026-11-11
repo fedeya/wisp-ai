@@ -6,6 +6,7 @@ import { queryCharacterSections } from '../src/context.ts';
 import { projectChats } from '../src/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { SnapshotGate } from '../src/snapshots.ts';
+import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
 
 function fixture(titlesEnabled = true) {
   const chat = newChat('chat', 'one');
@@ -15,7 +16,7 @@ function fixture(titlesEnabled = true) {
     stream: async function* (): AsyncGenerator<{ type: string; data: Record<string, unknown> }> {
       yield {
         type: 'content.delta',
-        data: { partId: 'reply', kind: 'text', delta: '{"type":"text_delta","text":"Hello"}\n' },
+        data: { partId: 'reply', kind: 'text', delta: 'Hello' },
       };
     },
     result: async () => ({ status: 'completed', sessionEnded: false }),
@@ -95,11 +96,13 @@ test('plain source schedules persistence before a reply can be rendered', async 
         type: 'content.delta',
         data: { partId: 'reply', kind: 'text', delta: 'Primera parte' },
       };
-      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
         'Primera parte',
       );
       expect(f.changed.mock.calls.length).toBeGreaterThan(before);
-      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe('');
+      expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
+        'Primera parte',
+      );
       yield {
         type: 'content.completed',
         data: { partId: 'reply', kind: 'text', value: 'Primera parte completa' },
@@ -108,64 +111,133 @@ test('plain source schedules persistence before a reply can be rendered', async 
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
   await f.run(f.chat, 'Question');
-  expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
+  expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
     'Primera parte completa',
   );
   expect(f.send).toHaveBeenCalledTimes(1);
 });
 
-test('source persistence through the runner respects the preview cadence throughout a reply', async () => {
-  vi.useFakeTimers();
-  vi.setSystemTime(0);
-  try {
+test.each([
+  { interval: 10, expectedPreviews: 2 },
+  { interval: 100, expectedPreviews: 17 },
+])(
+  'source persistence retains preview coalescing throughout a reply ($interval ms)',
+  async ({ interval, expectedPreviews }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const f = fixture();
+      const state = createSessionState([f.chat]);
+      state.activeChat = f.chat.id;
+      const gate = new SnapshotGate();
+      let publications = 0,
+        previews = 0,
+        completed = 0;
+      f.changed.mockImplementation(() => {
+        const snapshot = gate.next(projectChats(state));
+        if (snapshot) {
+          publications++;
+          expect(JSON.stringify(snapshot)).not.toContain('rawReply');
+        }
+      });
+      const delta = 'a';
+      f.send.mockImplementationOnce(async () => ({
+        stream: async function* () {
+          const baseline = publications;
+          for (let index = 0; index < 100; index++) {
+            vi.setSystemTime((index + 1) * interval);
+            const changes = f.changed.mock.calls.length;
+            yield {
+              type: 'content.delta',
+              data: { partId: 'reply', kind: 'text', delta },
+            };
+            expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
+          }
+          expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
+            delta.repeat(100),
+          );
+          previews = publications - baseline;
+          yield {
+            type: 'content.completed',
+            data: { partId: 'reply', kind: 'text', value: delta.repeat(100) },
+          };
+          completed = publications - baseline;
+          expect(projectChats(state).chats[0].messages?.at(-1)?.text).toBe('a'.repeat(100));
+        },
+        result: async () => ({ status: 'completed', sessionEnded: false }),
+      }));
+      await f.run(f.chat, 'Question');
+      expect(previews).toBe(expectedPreviews);
+      expect(completed).toBe(expectedPreviews + 1);
+      expect(f.chat.status).toBe('done');
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
+
+test('the active runner accepts presentation RPCs and rejects them after the turn', async () => {
+  const f = fixture();
+  const panel = {
+    nodes: [{ id: 'level', kind: 'stat' as const, label: 'Level', value: '10' }],
+    references: {},
+  };
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {
+      // The local RPC may arrive before its requested event reaches the bridge.
+      const accepted = f.run.present(f.chat, 'ui', panel, new AbortController().signal);
+      yield { type: 'turn.started', data: { turnId: 'turn' } };
+      yield {
+        type: 'call.requested',
+        data: { callId: 'ui', capability: { name: PRESENT_UI_TOOL, kind: 'tool' } },
+      };
+      const output = await accepted;
+      expect(f.chat.messages.at(-1)?.ui).toEqual([]);
+      yield { type: 'call.settled', data: { callId: 'ui', outcome: 'completed', output } };
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  }));
+  await f.run(f.chat, 'Question');
+  expect(f.chat.messages.at(-1)?.ui).toEqual(panel.nodes);
+  expect(f.chat.activity).toEqual([]);
+  await expect(f.run.present(f.chat, 'late', panel, new AbortController().signal)).rejects.toThrow(
+    'no longer active',
+  );
+});
+
+test.each(['character', 'delete', 'interrupt'] as const)(
+  'a %s change rejects a presentation awaiting its requested event',
+  async (change) => {
     const f = fixture();
-    const state = createSessionState([f.chat]);
-    state.activeChat = f.chat.id;
-    const gate = new SnapshotGate();
-    let publications = 0,
-      previews = 0,
-      completed = 0;
-    f.changed.mockImplementation(() => {
-      const snapshot = gate.next(projectChats(state));
-      if (snapshot) {
-        publications++;
-        expect(JSON.stringify(snapshot)).not.toContain('rawReply');
-      }
-    });
-    const delta = JSON.stringify({ type: 'text_delta', text: 'a' }) + '\n';
+    let rejected: Promise<void> | undefined;
+    const panel = {
+      nodes: [{ id: 'level', kind: 'stat' as const, label: 'Level', value: '10' }],
+      references: {},
+    };
     f.send.mockImplementationOnce(async () => ({
       stream: async function* () {
-        const baseline = publications;
-        for (let index = 0; index < 100; index++) {
-          vi.setSystemTime((index + 1) * 100);
-          const changes = f.changed.mock.calls.length;
-          yield {
-            type: 'content.delta',
-            data: { partId: 'reply', kind: 'text', delta },
-          };
-          expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
+        const accepted = f.run.present(f.chat, 'ui', panel, new AbortController().signal);
+        rejected = expect(accepted).rejects.toThrow();
+        if (change === 'character') {
+          f.changeCharacter();
+        } else if (change === 'delete') {
+          f.deleteChat();
+        } else {
+          f.run.interrupt(f.chat);
         }
-        expect(f.chat.messages.find((message) => message.id === 'text-reply')?.rawReply).toBe(
-          delta.repeat(100),
-        );
-        previews = publications - baseline;
         yield {
-          type: 'content.completed',
-          data: { partId: 'reply', kind: 'text', value: delta.repeat(100) },
+          type: 'call.requested',
+          data: { callId: 'ui', capability: { name: PRESENT_UI_TOOL, kind: 'tool' } },
         };
-        completed = publications - baseline;
-        expect(projectChats(state).chats[0].messages?.at(-1)?.text).toBe('a'.repeat(100));
       },
       result: async () => ({ status: 'completed', sessionEnded: false }),
     }));
     await f.run(f.chat, 'Question');
-    expect(previews).toBe(17);
-    expect(completed).toBe(18);
-    expect(f.chat.status).toBe('done');
-  } finally {
-    vi.useRealTimers();
-  }
-});
+    await rejected;
+    expect(f.chat.messages.some((message) => message.ui?.length)).toBe(false);
+    expect(f.chat.status).toBe('interrupted');
+  },
+);
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {
   const f = fixture();
