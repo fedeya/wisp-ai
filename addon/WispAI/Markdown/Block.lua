@@ -39,6 +39,10 @@ function M._blocks(source, context)
         return width, p
     end
 
+    local function recordIndent(record)
+        return indent(record.text, record.visualColumn or record.column)
+    end
+
     local function endColumn(text, start)
         local col = start or 1
         for p = 1, #text do
@@ -55,13 +59,17 @@ function M._blocks(source, context)
     local function strip(record, count)
         local width, p = 0, 1
         local text = record.text
+        local visualColumn = record.visualColumn or record.column
+        local sourceColumn = record.column
         while width < count and p <= #text do
             local ch = text:sub(p, p)
-            local nextWidth
+            local nextWidth, nextSource
             if ch == " " then
                 nextWidth = width + 1
+                nextSource = sourceColumn + 1
             elseif ch == "\t" then
-                nextWidth = width + 4 - (record.column - 1 + width) % 4
+                nextWidth = width + 4 - (visualColumn - 1 + width) % 4
+                nextSource = sourceColumn + 4 - (sourceColumn - 1) % 4
             else
                 break
             end
@@ -70,26 +78,30 @@ function M._blocks(source, context)
                 return {
                     text = string.rep(" ", nextWidth - count) .. text:sub(p),
                     line = record.line,
-                    column = record.column + count,
+                    column = nextSource - (nextWidth - count),
+                    visualColumn = visualColumn + count,
                     finish = record.finish,
                 }
             end
-            width = nextWidth
+            width, sourceColumn = nextWidth, nextSource
             tick()
         end
         return {
             text = text:sub(p),
             line = record.line,
-            column = record.column + width,
+            column = sourceColumn,
+            visualColumn = visualColumn + width,
             finish = record.finish,
         }
     end
 
-    local function shift(record, bytes)
+    local function shift(record, bytes, columns)
         return {
             text = record.text:sub(bytes + 1),
             line = record.line,
             column = record.column + bytes,
+            -- Source positions count UTF-8 bytes; disc markers occupy one tab column.
+            visualColumn = (record.visualColumn or record.column) + (columns or bytes),
             finish = record.finish,
         }
     end
@@ -128,7 +140,7 @@ function M._blocks(source, context)
     end
 
     local function core(record)
-        local width, p = indent(record.text, record.column)
+        local width, p = recordIndent(record)
         if width > 3 then
             return nil
         end
@@ -247,15 +259,14 @@ function M._blocks(source, context)
             return nil
         end
         local markerColumns = delimiter == "•" and 1 or markerWidth
+        local afterColumn = (record.visualColumn or record.column) - 1 + width + markerColumns
         local whitespace, p = 0, 1
         while p <= #after do
             local ch = after:sub(p, p)
             if ch == " " then
                 whitespace = whitespace + 1
             elseif ch == "\t" then
-                whitespace = whitespace
-                    + 4
-                    - (record.column - 1 + width + markerColumns + whitespace) % 4
+                whitespace = whitespace + 4 - (afterColumn + whitespace) % 4
             else
                 break
             end
@@ -265,10 +276,11 @@ function M._blocks(source, context)
         local padding = whitespace >= 1 and whitespace <= 4 and whitespace or 1
         local contentIndent = width + markerColumns + padding
         local content = strip(record, width)
-        content = shift(content, markerWidth)
+        content = shift(content, markerWidth, markerColumns)
         content = strip(content, padding)
         if after == "" then
-            content.column = record.column + contentIndent
+            content.column = record.column + width + markerWidth + padding
+            content.visualColumn = (record.visualColumn or record.column) + contentIndent
         end
         return {
             ordered = ordered,
@@ -532,7 +544,7 @@ function M._blocks(source, context)
                 return
             end
             if state.tableActive then
-                if not interrupts(record, false) and indent(record.text, record.column) < 4 then
+                if not interrupts(record, false) and recordIndent(record) < 4 then
                     return
                 end
                 state.tableActive = false
@@ -547,10 +559,7 @@ function M._blocks(source, context)
                 state.paragraph, state.tableActive, state.previous = false, true, nil
                 return
             end
-            if
-                interrupts(record, false)
-                or (indent(record.text, record.column) >= 4 and not state.paragraph)
-            then
+            if interrupts(record, false) or (recordIndent(record) >= 4 and not state.paragraph) then
                 state.paragraph, state.previous = false, nil
                 return
             end
@@ -690,7 +699,7 @@ function M._blocks(source, context)
                         while k <= #rows do
                             local nextRecord = rows[k]
                             local nextMarker = marker(nextRecord)
-                            local width = indent(nextRecord.text, nextRecord.column)
+                            local width = recordIndent(nextRecord)
                             if nextMarker and nextMarker.indent <= listMarker.indent then
                                 break
                             end
@@ -762,12 +771,12 @@ function M._blocks(source, context)
                     list.sourcepos = position(record, last, listMarker.indent)
                     append(list)
                     i = j
-                elseif indent(record.text, record.column) >= 4 then
+                elseif recordIndent(record) >= 4 then
                     local lines, j, last, lastNonblank = {}, i, record, 0
                     while j <= #rows do
                         if blank(rows[j].text) then
                             lines[#lines + 1] = "\n"
-                        elseif indent(rows[j].text, rows[j].column) >= 4 then
+                        elseif recordIndent(rows[j]) >= 4 then
                             lines[#lines + 1] = strip(rows[j], 4).text .. "\n"
                             lastNonblank, last = #lines, rows[j]
                         else
@@ -815,7 +824,7 @@ function M._blocks(source, context)
                         j <= #rows
                         and not blank(rows[j].text)
                         and not interrupts(rows[j], false)
-                        and indent(rows[j].text, rows[j].column) < 4
+                        and recordIndent(rows[j]) < 4
                     do
                         local parts = cells(rows[j])
                         addRow(parts, rows[j], false)
@@ -840,12 +849,12 @@ function M._blocks(source, context)
                                 break
                             end
                         end
-                        local width = indent(rows[j].text, rows[j].column)
+                        local width = recordIndent(rows[j])
                         lines[#lines + 1] = strip(rows[j], math.min(width, 3)).text
                         last, j = rows[j], j + 1
                         tick()
                     end
-                    local width = indent(record.text, record.column)
+                    local width = recordIndent(record)
                     local first = strip(record, math.min(width, 3))
                     if underline then
                         append(

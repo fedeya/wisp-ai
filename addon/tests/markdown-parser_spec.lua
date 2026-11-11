@@ -22,6 +22,37 @@ it("recognizes literal discs from older replies without changing inline or code 
     assert.equal("paragraph", paragraph("Texto • intermedio").type)
 end)
 
+it(
+    "keeps disc tab stops consistent through nested containers and preserves source columns",
+    function()
+        local function shape(node)
+            local result = { type = node.type, literal = node.literal, children = {} }
+            for _, child in ipairs(node.children) do
+                result.children[#result.children + 1] = shape(child)
+            end
+            return result
+        end
+        for _, source in ipairs({
+            "-\t  code",
+            "- \t\tcode",
+            "-\ttext\n\tcontinued",
+            "- >\ttext\n  >\tcontinued",
+            "- -\t  code",
+            "> -\t  code",
+            "- > -\t  code",
+        }) do
+            assert.same(
+                shape(assert(md.Parse(source))),
+                shape(assert(md.Parse((source:gsub("%-", "•")))))
+            )
+        end
+        local code = assert(md.Parse("•\t  code")).children[1].children[1].children[1]
+        assert.equal("code_block", code.type)
+        assert.equal("code\n", code.literal)
+        assert.same({ { 1, 7 }, { 1, 10 } }, code.sourcepos)
+    end
+)
+
 it("exposes only the Wisp parse and inline entry points", function()
     assert.is_function(md.Parse)
     assert.is_function(md.ParseInline)
