@@ -1,5 +1,5 @@
 local _, ns = ...
-local set = ns.UI.Widgets.SetText
+local uiWidgets = ns.UI.Widgets
 BINDING_HEADER_WISPAI = "Wisp"
 BINDING_NAME_WISPAI_INLINE = "Ask about hovered reference"
 local panel, entry, title, scroll, content, busy, send
@@ -332,7 +332,10 @@ function ns.Inline.RefreshInline()
                 break
             end
         end
-        set(busy, previousSpeaker == "assistant" and active or ("Wisp AI  ·  " .. active))
+        uiWidgets.SetText(
+            busy,
+            previousSpeaker == "assistant" and active or ("Wisp AI  ·  " .. active)
+        )
         busy:ClearAllPoints()
         busy:SetPoint("TOPLEFT", 0, -y)
         y = y + 28
@@ -344,7 +347,7 @@ function ns.Inline.RefreshInline()
     end
     ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
     renderedChat = chat and chat.id
-    set(send, working and "Stop" or "Ask")
+    uiWidgets.SetText(send, working and "Stop" or "Ask")
 end
 function ns.Inline.OpenInline()
     if bindingCapture and bindingCapture:IsShown() then
@@ -378,7 +381,7 @@ function ns.Inline.OpenInline()
         scroll:SetVerticalScroll(0)
     end
     local name = reference:match("|h(.-)|h") or reference:match("%[([^%]]+)%]") or "Reference"
-    set(title, "Ask Wisp · " .. name:gsub("[|%c]", ""))
+    uiWidgets.SetText(title, "Ask Wisp · " .. name:gsub("[|%c]", ""))
     if GetCursorPosition then
         local x, y = GetCursorPosition()
         local scale = UIParent:GetEffectiveScale()

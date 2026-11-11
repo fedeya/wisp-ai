@@ -1,5 +1,5 @@
 local _, ns = ...
-local text = ns.UI.Widgets.SetText
+local uiWidgets = ns.UI.Widgets
 function ns.UI.RichSignature(value)
     if type(value) ~= "table" then
         return tostring(value)
@@ -28,7 +28,7 @@ local function line(f, value, width, x, y)
     f:SetWidth(math.max(1, width))
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", x, -y)
-    text(f, value)
+    uiWidgets.SetText(f, value)
     f:SetShown(value ~= "")
     return value ~= "" and f:GetStringHeight() or 0
 end
@@ -271,8 +271,8 @@ local function tableUI(w, node, available, rendered)
             w.pagerLabel:SetJustifyH("CENTER")
             w.pagerPrev:SetSize(28, 24)
             w.pagerNext:SetSize(28, 24)
-            text(w.pagerPrev, "<")
-            text(w.pagerNext, ">")
+            uiWidgets.SetText(w.pagerPrev, "<")
+            uiWidgets.SetText(w.pagerNext, ">")
         end
         local function changePage(delta)
             w.page = math.max(1, math.min(pages, w.page + delta))
@@ -412,7 +412,7 @@ function ns.UI.RenderRichUI(host, chat, message, width)
         if node.kind == "row" or node.kind == "column" or node.kind == "card" then
             local padding = node.kind == "card" and 10 or 0
             local y = padding
-            text(w.title, node.title and rendered(node.title) or "")
+            uiWidgets.SetText(w.title, node.title and rendered(node.title) or "")
             w.title:SetWidth(math.max(30, available - 2 * padding))
             w.title:ClearAllPoints()
             w.title:SetPoint("TOPLEFT", padding, -padding)
@@ -461,18 +461,18 @@ function ns.UI.RenderRichUI(host, chat, message, width)
             local value = node.kind == "reference" and ("[[ref:" .. node.reference .. "]]")
                 or node.text
             w.title:SetWidth(available)
-            text(w.title, rendered(value or ""))
+            uiWidgets.SetText(w.title, rendered(value or ""))
             height = math.max(18, w.title:GetStringHeight())
         elseif node.kind == "divider" then
             w.title:SetWidth(available)
-            text(w.title, "________________")
+            uiWidgets.SetText(w.title, "________________")
             height = 12
         elseif node.kind == "button" then
-            text(w.title, "")
+            uiWidgets.SetText(w.title, "")
             w.control:ClearAllPoints()
             w.control:SetPoint("TOPLEFT", 0, 0)
             w.control:SetWidth(available)
-            text(w.control, (node.label or "Continue"):gsub("|", "||"))
+            uiWidgets.SetText(w.control, (node.label or "Continue"):gsub("|", "||"))
             w.control:SetEnabled(chat.status ~= "working")
             w.control:SetScript("OnClick", function()
                 ns.UI.PanelAction(chat, message, node, values)
@@ -510,14 +510,14 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                 w.title:ClearAllPoints()
                 w.title:SetPoint("TOPLEFT", 30, -5)
                 w.title:SetWidth(math.max(20, available - 30))
-                text(w.title, rendered(title))
+                uiWidgets.SetText(w.title, rendered(title))
                 height = math.max(28, w.title:GetStringHeight() + 10)
                 w.control:SetScript("OnClick", function(self)
                     values[node.id] = self:GetChecked() == true
                 end)
             elseif node.kind == "select" then
                 w.title:SetWidth(available)
-                text(w.title, rendered(title))
+                uiWidgets.SetText(w.title, rendered(title))
                 local top = w.title:GetStringHeight() + 5
                 w.control:ClearAllPoints()
                 w.control:SetPoint("TOPLEFT", 0, -top)
@@ -530,7 +530,7 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                     end
                     return "Choose"
                 end
-                text(w.control, selected():gsub("|", "||"))
+                uiWidgets.SetText(w.control, selected():gsub("|", "||"))
                 w.control:SetScript("OnClick", function()
                     if MenuUtil and MenuUtil.CreateContextMenu then
                         MenuUtil.CreateContextMenu(w.control, function(_, root)
@@ -540,7 +540,7 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                                     return values[node.id] == value
                                 end, function()
                                     values[node.id] = value
-                                    text(w.control, selected():gsub("|", "||"))
+                                    uiWidgets.SetText(w.control, selected():gsub("|", "||"))
                                 end)
                             end
                         end)
@@ -553,13 +553,13 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                             end
                         end
                         values[node.id] = node.options[index].value
-                        text(w.control, selected():gsub("|", "||"))
+                        uiWidgets.SetText(w.control, selected():gsub("|", "||"))
                     end
                 end)
                 height = top + 28
             else
                 w.title:SetWidth(available)
-                text(w.title, rendered(title .. ": " .. tostring(values[node.id])))
+                uiWidgets.SetText(w.title, rendered(title .. ": " .. tostring(values[node.id])))
                 local top = w.title:GetStringHeight() + 7
                 w.control:ClearAllPoints()
                 w.control:SetPoint("TOPLEFT", 3, -top)
@@ -570,14 +570,17 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                 w.control:SetValue(values[node.id])
                 w.control:SetScript("OnValueChanged", function(_, value)
                     values[node.id] = value
-                    text(w.title, rendered(title .. ": " .. string.format("%.2f", value)))
+                    uiWidgets.SetText(
+                        w.title,
+                        rendered(title .. ": " .. string.format("%.2f", value))
+                    )
                 end)
                 height = top + 22
             end
             w.control:SetEnabled(chat.status ~= "working")
         elseif node.kind == "progress" then
             w.title:SetWidth(available)
-            text(
+            uiWidgets.SetText(
                 w.title,
                 rendered(
                     (node.label or "")
@@ -663,7 +666,7 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                     end
                     f:SetPoint("TOPLEFT", left, -y)
                     f:SetWidth(math.max(1, width - left))
-                    text(f, part._markdown and part.text or rendered(part.text))
+                    uiWidgets.SetText(f, part._markdown and part.text or rendered(part.text))
                     f:Show()
                     y = y + f:GetStringHeight() + 8
                 end

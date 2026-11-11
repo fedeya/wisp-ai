@@ -1,8 +1,7 @@
 -- QuestieDB Forever readiness and read-only quest/location adapters.
 local _, ns = ...
-local integer = ns.Shared.Numbers.IsNonNegativeInteger
-local finite = ns.Shared.Numbers.IsFinite
-local trimText = ns.Shared.Text.TruncateUtf8Bytes
+local numbers = ns.Shared.Numbers
+local sharedText = ns.Shared.Text
 
 local function reads(entity)
     return entity and type(entity.Get) == "function" and type(entity.Exists) == "function" or false
@@ -90,7 +89,7 @@ function ns.Integrations.ReadQuestieQuest(args)
             if #value > 400 then
                 truncated = true
             end
-            return trimText(value, 400)
+            return sharedText.TruncateUtf8Bytes(value, 400)
         elseif type(value) == "number" or type(value) == "boolean" then
             return value
         elseif type(value) == "table" and depth < 4 then
@@ -112,7 +111,7 @@ function ns.Integrations.ReadQuestieQuest(args)
             local size, highest, array = 0, 0, true
             for key in pairs(out) do
                 size = size + 1
-                if not integer(key) or key < 1 then
+                if not numbers.IsNonNegativeInteger(key) or key < 1 then
                     array = false
                 else
                     highest = math.max(highest, key)
@@ -199,7 +198,7 @@ function ns.Integrations.ReadQuestieChain(args)
                 truncated = true
                 break
             end
-            if integer(candidate) and candidate > 0 then
+            if numbers.IsNonNegativeInteger(candidate) and candidate > 0 then
                 ids[#ids + 1] = candidate
             end
         end
@@ -227,7 +226,8 @@ function ns.Integrations.ReadQuestieChain(args)
                 local name = quest.Get(entry.id, "name")
                 nodes[#nodes + 1] = {
                     id = entry.id,
-                    name = type(name) == "string" and trimText(name, 160) or nil,
+                    name = type(name) == "string" and sharedText.TruncateUtf8Bytes(name, 160)
+                        or nil,
                     requiredLevel = quest.Get(entry.id, "requiredLevel"),
                     relations = links,
                     knownRelations = known,
@@ -352,8 +352,8 @@ local function findLocations(entityName, args)
                         for _, point in ipairs(points) do
                             local x, y = point[1], point[2]
                             if
-                                finite(x)
-                                and finite(y)
+                                numbers.IsFinite(x)
+                                and numbers.IsFinite(y)
                                 and x >= 0
                                 and x <= 100
                                 and y >= 0
@@ -364,8 +364,8 @@ local function findLocations(entityName, args)
                                     local projectedX, projectedY = db.EraToForever(areaId, x, y)
                                     -- A non-identity projection needs per-record frame provenance.
                                     -- Never guess whether a composed point has already been projected.
-                                    frameKnown = finite(projectedX)
-                                        and finite(projectedY)
+                                    frameKnown = numbers.IsFinite(projectedX)
+                                        and numbers.IsFinite(projectedY)
                                         and math.abs(projectedX - x) < 0.01
                                         and math.abs(projectedY - y) < 0.01
                                 end

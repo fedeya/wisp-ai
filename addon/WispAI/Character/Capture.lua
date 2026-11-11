@@ -1,5 +1,5 @@
 local _, ns = ...
-local finite = ns.Shared.Numbers.IsFinite
+local numbers = ns.Shared.Numbers
 local collectors = {}
 function collectors.character()
     local _, class = UnitClass("player")
@@ -189,7 +189,7 @@ local function questRewardXP(id)
         return nil
     end
     local ok, xp = pcall(GetQuestLogRewardXP, id)
-    if ok and finite(xp) and xp >= 0 then
+    if ok and numbers.IsFinite(xp) and xp >= 0 then
         return xp
     end
 end

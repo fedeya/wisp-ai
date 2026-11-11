@@ -1,6 +1,6 @@
 -- Auctionator readiness and read-only cached price adapter.
 local _, ns = ...
-local integer = ns.Shared.Numbers.IsNonNegativeInteger
+local numbers = ns.Shared.Numbers
 
 function ns.Integrations._AuctionatorReport()
     local api = Auctionator and Auctionator.API and Auctionator.API.v1
@@ -23,13 +23,13 @@ function ns.Integrations.ReadAuctionatorPrices(args)
             seen[id] = true
             local price = api.GetAuctionPriceByItemID("WispAI", id)
             local age = api.GetAuctionAgeByItemID and api.GetAuctionAgeByItemID("WispAI", id)
-            local known = integer(price) and price > 0
+            local known = numbers.IsNonNegativeInteger(price) and price > 0
             prices[#prices + 1] = {
                 itemId = id,
                 status = known and "available" or "unknown",
                 unitPriceCopper = known and price or nil,
-                ageDays = known and integer(age) and age or nil,
-                ageKnown = known and integer(age) or false,
+                ageDays = known and numbers.IsNonNegativeInteger(age) and age or nil,
+                ageKnown = known and numbers.IsNonNegativeInteger(age) or false,
             }
         end
     end

@@ -1,6 +1,6 @@
 -- Syndicator readiness and read-only cached inventory adapter.
 local _, ns = ...
-local integer = ns.Shared.Numbers.IsNonNegativeInteger
+local numbers = ns.Shared.Numbers
 
 function ns.Integrations._SyndicatorReport()
     local api = Syndicator and Syndicator.API
@@ -27,7 +27,7 @@ function ns.Integrations.FindStoredItem(args)
     for _, row in ipairs(data.characters or {}) do
         local counts, count = {}, 0
         for _, key in ipairs({ "bags", "bank", "mail", "equipped", "void", "auctions" }) do
-            if integer(row[key]) then
+            if numbers.IsNonNegativeInteger(row[key]) then
                 counts[key] = row[key]
                 count = count + row[key]
             end
@@ -44,7 +44,7 @@ function ns.Integrations.FindStoredItem(args)
     end
     if args.includeGuild then
         for _, row in ipairs(data.guilds or {}) do
-            if integer(row.bank) and row.bank > 0 then
+            if numbers.IsNonNegativeInteger(row.bank) and row.bank > 0 then
                 total = total + row.bank
                 matches[#matches + 1] = {
                     guild = row.guild,

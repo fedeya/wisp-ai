@@ -1,7 +1,7 @@
 local _, ns = ...
-local finite = ns.Shared.Numbers.IsFinite
+local numbers = ns.Shared.Numbers
 local function scalar(value)
-    return type(value) == "string" or type(value) == "boolean" or finite(value)
+    return type(value) == "string" or type(value) == "boolean" or numbers.IsFinite(value)
 end
 local function plain(value)
     return tostring(value or "")
