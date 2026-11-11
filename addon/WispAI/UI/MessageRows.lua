@@ -275,10 +275,7 @@ local function makeRow(parent)
     row.disclosure = CreateFrame("Button", nil, row)
     row.disclosure:SetScript("OnClick", function()
         toolGroupsExpanded[row.groupKey] = not toolGroupsExpanded[row.groupKey] or nil
-        ns.UI.Refresh()
-        if ns.Inline.RefreshInline then
-            ns.Inline.RefreshInline()
-        end
+        ns.UI.Refresh(row.chatId)
     end)
     row.disclosure:Hide()
     row.retry = ns.UI.Widgets.Button(row, "Retry", 80, function(self)
@@ -484,6 +481,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
     if row.signature ~= signature then
         row.signature = signature
         local pending = false
+        row.chatId = chat.id
         row.speaker = message.role
         local padding = message.role == "user" and 8 or 0
         if message.role == "user" then

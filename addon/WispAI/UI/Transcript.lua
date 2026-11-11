@@ -15,7 +15,7 @@ function ns.UI.Transcript.SetBottomInset(inset)
     scrollBar:SetPoint("BOTTOMRIGHT", -10, inset)
 end
 
-function ns.UI.Transcript.Refresh(chat)
+function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     rendering = true
     local id = chat and chat.id or "empty"
     local switched = renderedChat ~= id
@@ -29,6 +29,9 @@ function ns.UI.Transcript.Refresh(chat)
         local saved = scrollPositions[id]
         oldOffset = saved and saved.offset or 0
         follow = not saved or saved.follow
+    end
+    if preserveScrollForChat == id then
+        follow = false
     end
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}

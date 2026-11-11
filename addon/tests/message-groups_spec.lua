@@ -227,13 +227,31 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(group.text:GetStringHeight() > 18)
             call.tool.label = "Reading talents"
             refresh()
+            local viewport = group:GetParent():GetParent()
+            viewport:SetHeight(64)
+            refresh()
+            local function scrollToBottom()
+                local offset = viewport:GetVerticalScrollRange()
+                if surface == "main" then
+                    UI_TEST.frames.WispAITranscriptScrollBar:SetValue(offset)
+                else
+                    viewport:SetVerticalScroll(offset)
+                end
+                return offset
+            end
+            local groupOffset = scrollToBottom()
             group.disclosure.scripts.OnClick()
+            assert(viewport:GetVerticalScrollRange() > groupOffset)
+            check.equal(groupOffset, viewport:GetVerticalScroll())
             assert(group.text:GetText() == "Reading talents")
             check.same({ 0, 1 / 8, 0, 1 }, findRow("Reading quests").icon.texCoord)
             local child = findRow("Reading talents", group)
             check.same({ 1 / 8, 2 / 8, 0, 1 }, child.icon.texCoord)
             assert(child.toolSpinner:IsPlaying() and child.disclosure:IsShown())
+            local detailOffset = scrollToBottom()
             child.disclosure.scripts.OnClick()
+            assert(viewport:GetVerticalScrollRange() > detailOffset)
+            check.equal(detailOffset, viewport:GetVerticalScroll())
             assert(child.toolDetail:IsShown())
             check.equal('Input  {"sections":["talents"]}', child.toolDetail:GetText())
             call.tool.status = "failed"

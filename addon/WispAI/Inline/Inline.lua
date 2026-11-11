@@ -266,7 +266,7 @@ function ns.Inline.SendInline()
     entry:SetText("")
     ns.Inline.RefreshInline()
 end
-function ns.Inline.RefreshInline()
+function ns.Inline.RefreshInline(preserveScrollForChat)
     if not panel or not panel:IsShown() then
         return
     end
@@ -279,7 +279,8 @@ function ns.Inline.RefreshInline()
     local width = math.max(180, scroll:GetWidth() - 6)
     local previousRange = scroll:GetVerticalScrollRange()
     local offset = scroll:GetVerticalScroll()
-    local follow = previousRange - offset < 30
+    local preserveScroll = chat and preserveScrollForChat == chat.id
+    local follow = not preserveScroll and previousRange - offset < 30
     local messages, activeTool, hasReplyText = ns.UI.DisplayMessages(chat)
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
@@ -347,8 +348,9 @@ function ns.Inline.RefreshInline()
     end
     content:SetWidth(width)
     content:SetHeight(math.max(1, y))
-    if follow then
-        scroll:SetVerticalScroll(math.max(0, y - scroll:GetHeight()))
+    if follow or preserveScroll then
+        local bottom = math.max(0, y - scroll:GetHeight())
+        scroll:SetVerticalScroll(follow and bottom or math.min(offset, bottom))
     end
     ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
     renderedChat = chat and chat.id

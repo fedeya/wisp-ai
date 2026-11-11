@@ -76,7 +76,7 @@ function ns.UI.SetMinimized(value)
     ns.UI.Refresh()
 end
 
-function ns.UI.Refresh()
+function ns.UI.Refresh(preserveScrollForChat)
     if not frame or rendering then
         return
     end
@@ -87,10 +87,10 @@ function ns.UI.Refresh()
     ns.UI.Composer.Refresh(chat)
     layout()
     ns.UI.Sidebar.Refresh()
-    ns.UI.Transcript.Refresh(chat)
+    ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     rendering = false
     if ns.Inline.RefreshInline then
-        ns.Inline.RefreshInline()
+        ns.Inline.RefreshInline(preserveScrollForChat)
     end
 end
 
