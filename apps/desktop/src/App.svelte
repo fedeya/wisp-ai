@@ -132,11 +132,7 @@
       onBusy={(label) => (app.busy = label)}
     />
     {#if app.page === "Settings"}
-      <TelemetrySettings
-        onchange={(enabled) => {
-          if (app.info) app.info.telemetryEnabled = enabled;
-        }}
-      />
+      <TelemetrySettings />
     {/if}
     {#if app.page === "Overview"}<Overview {app} />
     {:else if app.page === "Connections"}<Connections {app} />
@@ -152,14 +148,6 @@
       <span>Wisp stays available in your system tray.</span><span
         >History saved locally.</span
       >
-      {#if app.info?.telemetryEnabled !== undefined}
-        <button
-          class="cursor-pointer border-0 bg-transparent p-0 text-muted underline"
-          onclick={() => (app.page = "Settings")}
-        >
-          Usage analytics {app.info.telemetryEnabled ? "on" : "off"}
-        </button>
-      {/if}
     </footer>
   </main>
 </div>

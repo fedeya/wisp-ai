@@ -65,7 +65,7 @@ The bridge holds the ChatGPT grant and proxies model requests with `store: false
 
 Installed release builds share usage analytics with PostHog by default. Turn it off
 in desktop **Settings > Usage analytics**; the preference also applies to the
-running bridge and agent. The footer shows whether usage analytics is on or off.
+running bridge and agent.
 Development runs do not send usage analytics.
 
 Events include a random persistent installation ID, app/addon versions, operating

@@ -4,7 +4,6 @@
   import Card from "./ui/Card.svelte";
   import Toggle from "./Toggle.svelte";
 
-  let { onchange }: { onchange: (enabled: boolean) => void } = $props();
   let enabled = $state(true);
   let loaded = $state(false);
   let saving = $state(false);
@@ -31,7 +30,6 @@
         { enabled: value },
       );
       enabled = settings.enabled;
-      onchange(enabled);
     } catch {
       enabled = previous;
       error = "Could not save usage analytics settings. Try again.";
@@ -46,14 +44,7 @@
     <div>
       <h2>Usage analytics</h2>
       <p class="mt-2 text-[13px] leading-relaxed text-muted">
-        Enabled by default to help improve Wisp. Sends app and addon versions,
-        app activity, features used, tool names, outcomes and durations to
-        PostHog using a random installation ID.
-      </p>
-      <p class="mt-2 text-[13px] leading-relaxed text-muted">
-        Conversations, tool arguments and results, character names, credentials
-        and local logs are not included. Turning this off stops future usage
-        events from the desktop app, bridge and agent.
+        Help improve Wisp by sharing usage data.
       </p>
     </div>
     <Toggle

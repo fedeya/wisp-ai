@@ -11,25 +11,27 @@ test('usage analytics can be disabled before the bridge is configured', async ()
   vi.mocked(desktop).mockImplementation(
     async (_command, args) => ({ enabled: args?.enabled ?? true }) as never,
   );
-  const onchange = vi.fn();
-  render(TelemetrySettings, { onchange });
-  const toggle = await screen.findByRole('checkbox', { name: 'Share usage analytics' });
-  await vi.waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
-  expect((toggle as HTMLInputElement).checked).toBe(true);
+  render(TelemetrySettings);
+  const toggle = (await screen.findByRole('checkbox', {
+    name: 'Share usage analytics',
+  })) as HTMLInputElement;
+  await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(toggle.checked).toBe(true);
   await fireEvent.click(toggle);
-  await vi.waitFor(() => expect(onchange).toHaveBeenCalledWith(false));
+  await vi.waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(toggle.checked).toBe(false);
   expect(desktop).toHaveBeenCalledWith('telemetry_settings', { enabled: false });
 });
 
 test('failed preference writes keep the saved value and report the error', async () => {
   vi.mocked(desktop).mockResolvedValueOnce({ enabled: false });
   vi.mocked(desktop).mockRejectedValueOnce(Error('read-only'));
-  const onchange = vi.fn();
-  render(TelemetrySettings, { onchange });
-  const toggle = await screen.findByRole('checkbox', { name: 'Share usage analytics' });
-  await vi.waitFor(() => expect((toggle as HTMLInputElement).disabled).toBe(false));
+  render(TelemetrySettings);
+  const toggle = (await screen.findByRole('checkbox', {
+    name: 'Share usage analytics',
+  })) as HTMLInputElement;
+  await vi.waitFor(() => expect(toggle.disabled).toBe(false));
   await fireEvent.click(toggle);
   await screen.findByRole('alert');
-  expect((toggle as HTMLInputElement).checked).toBe(false);
-  expect(onchange).not.toHaveBeenCalled();
+  expect(toggle.checked).toBe(false);
 });
