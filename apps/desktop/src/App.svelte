@@ -6,6 +6,8 @@
   import Icon from "./Icon.svelte";
   import McpDialog from "./McpDialog.svelte";
   import Updates from "./Updates.svelte";
+  import TelemetrySettings from "./TelemetrySettings.svelte";
+  import { desktop } from "./api";
   import logo from "../../../assets/wisp.png";
   import Overview from "./pages/Overview.svelte";
   import Connections from "./pages/Connections.svelte";
@@ -15,6 +17,12 @@
   import Routines from "./pages/Routines.svelte";
   import Diagnostics from "./pages/Diagnostics.svelte";
   const app = createDesktopController();
+
+  $effect(() => {
+    if (native && !app.loading) {
+      void desktop("telemetry_screen", { screen: app.page }).catch(() => {});
+    }
+  });
 
   $effect(() => {
     if (!app.feedback || app.busy) {
@@ -123,6 +131,13 @@
       openSettings={() => (app.page = "Settings")}
       onBusy={(label) => (app.busy = label)}
     />
+    {#if app.page === "Settings"}
+      <TelemetrySettings
+        onchange={(enabled) => {
+          if (app.info) app.info.telemetryEnabled = enabled;
+        }}
+      />
+    {/if}
     {#if app.page === "Overview"}<Overview {app} />
     {:else if app.page === "Connections"}<Connections {app} />
     {:else if app.page === "Integrations"}<Integrations {app} />
@@ -137,6 +152,14 @@
       <span>Wisp stays available in your system tray.</span><span
         >History saved locally.</span
       >
+      {#if app.info?.telemetryEnabled !== undefined}
+        <button
+          class="cursor-pointer border-0 bg-transparent p-0 text-muted underline"
+          onclick={() => (app.page = "Settings")}
+        >
+          Usage analytics {app.info.telemetryEnabled ? "on" : "off"}
+        </button>
+      {/if}
     </footer>
   </main>
 </div>

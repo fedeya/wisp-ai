@@ -171,6 +171,51 @@ and run a local npm executable offline. They reject loose dependency extraction.
 The installer CI additionally checks the native host, installation, upgrades and
 preservation of user data.
 
+### Usage analytics
+
+`apps/desktop/src-tauri/src/telemetry.rs` owns `telemetry.json` in the app data
+directory and creates the installation UUID and default-on preference. It reports
+`app_first_open`, `app_opened`, `app_active` and `desktop_section_viewed`, including
+before WoW is configured. The native Settings command persists changes atomically.
+The public PostHog ingestion token and US endpoint match the website project.
+
+The native host sets `WISP_TELEMETRY_RELEASE=1` only in release builds without
+`WISP_PAYLOAD_ROOT` or an external `DO_NOT_TRACK=1`. Source bridge runs default to
+disabled. Eve's own analytics remain disabled with `DO_NOT_TRACK=1` in child
+processes; this does not override Wisp's separately managed user preference.
+
+`apps/bridge/src/telemetry.ts` reads the native preference before each send and
+reports `chat_completed`, `tool_executed`, `game_connected` and daily `app_active`.
+All agent tool settlements use this one path; no provider tracing, prompts or tool
+payloads are sent. Built-in names come from the public capability catalog; custom
+tools become `external_tool`. Addon versions are validated, polling is deduplicated,
+and metadata uses `surface: desktop`, `app_version`, `channel`, `os` and `arch`.
+Use distinct installation IDs when counting active installs; `app_active` may be
+emitted by both host startup and bridge usage on the same day.
+
+Telemetry uses PostHog's public `/i/v0/e/` API with person-profile processing and
+GeoIP enrichment disabled. Requests have a three-second timeout, bounded bridge
+concurrency and no persisted event queue. Failures never block gameplay. Only
+first-opening delivery is retried on later app launches until successful.
+Tests use temporary preferences and mocked requests, so they do not pollute the
+production project. Reinstalling/upgrading preserves the preference and UUID as
+long as the app data directory is preserved.
+
+Suggested PostHog insights for the shared project:
+
+| Question | Event and aggregation |
+| --- | --- |
+| First tracked installations | `app_first_open`, unique installation IDs |
+| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version` |
+| Feature use | `tool_executed`, event count, breakdown by `tool` |
+| Queries and failures | `chat_completed`, event count, breakdown by `mode` / `outcome` |
+| Addon adoption | `game_connected`, unique installation IDs, breakdown by `addon_version` |
+| Website download intent | `download_clicked`, event count, breakdown by `location` / `locale` |
+
+Actual installer download counts come from the `download_count` values on GitHub
+release assets. They include repeated/automated downloads and upgrades; do not
+combine them with click events or treat them as unique installations.
+
 ### Publishing app updates
 
 Installed Windows x64 release builds check `https://github.com/fedeya/wisp-ai/releases/latest/download/latest.json` at startup and every six hours. **Settings > Check for updates** checks manually. Users review release notes and choose **Update and restart**; the app verifies the download before stopping the bridge, waits for active replies and installs through NSIS. Chats, credentials and settings remain in AppData. Development builds and other platforms do not install updates. Overview detects when the bundled addon differs from the installed copy; use **Install / update addon**, then `/reload` in WoW.

@@ -7,8 +7,9 @@ import { projectChats } from '../src/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { SnapshotGate } from '../src/snapshots.ts';
 import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
+import type { UsageTelemetry } from '../src/telemetry.ts';
 
-function fixture(titlesEnabled = true) {
+function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver'>) {
   const chat = newChat('chat', 'one');
   let transport = 'one';
   let current = true;
@@ -30,6 +31,7 @@ function fixture(titlesEnabled = true) {
   const flushFirstText = vi.fn();
   const changed = vi.fn();
   const run = createTurnRunner({
+    telemetry,
     client,
     models: { models, prepare: async () => {} },
     capabilitySettings: {
@@ -85,6 +87,20 @@ test('a complete turn projects streamed content and settles once', async () => {
   );
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
+});
+
+test('real streamed turns report their mode, outcome and tool lifecycle to telemetry', async () => {
+  const observe = vi.fn();
+  const telemetry = { chat: vi.fn(), toolObserver: () => observe };
+  const f = fixture(true, telemetry);
+  f.chat.inline = true;
+  await f.run(f.chat, 'Private question');
+  expect(observe).toHaveBeenCalledWith(expect.objectContaining({ type: 'content.delta' }));
+  expect(telemetry.chat).toHaveBeenCalledWith('hover', 'completed', expect.any(Number));
+  f.chat.inline = false;
+  f.chat.routineId = 'private-routine-id';
+  await f.run(f.chat, 'Private routine');
+  expect(telemetry.chat).toHaveBeenLastCalledWith('routine', 'completed', expect.any(Number));
 });
 
 test('plain source schedules persistence before a reply can be rendered', async () => {

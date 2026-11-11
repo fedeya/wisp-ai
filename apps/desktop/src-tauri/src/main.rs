@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod game_detection;
+mod telemetry;
 mod update_trace;
 mod updates;
 mod vault;
@@ -56,6 +57,14 @@ impl Host {
             .current_dir(&self.payload)
             .env("WISP_DATA_DIR", &self.data)
             .env("WISP_RESOURCE_ROOT", &self.payload)
+            .env(
+                "WISP_TELEMETRY_RELEASE",
+                if telemetry::release_enabled() {
+                    "1"
+                } else {
+                    "0"
+                },
+            )
             .env(
                 "WISP_DESKTOP_EXE",
                 std::env::current_exe().map_err(|e| e.to_string())?,
@@ -172,7 +181,11 @@ async fn bridge_request(
 }
 
 #[tauri::command]
-async fn desktop_info(host: tauri::State<'_, Host>) -> Result<Value, String> {
+async fn desktop_info(
+    host: tauri::State<'_, Host>,
+    telemetry: tauri::State<'_, telemetry::Telemetry>,
+) -> Result<Value, String> {
+    let telemetry_enabled = telemetry.enabled();
     let data = host.data.clone();
     let payload = host.payload.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -187,7 +200,7 @@ async fn desktop_info(host: tauri::State<'_, Host>) -> Result<Value, String> {
         )
         .ok()
     });
-    json!({"wow":config["wow"], "configured":config["wow"].as_str().is_some(), "dataDirectory":data.to_string_lossy(), "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION"), "addonOutdated": addon_outdated})
+    json!({"wow":config["wow"], "configured":config["wow"].as_str().is_some(), "dataDirectory":data.to_string_lossy(), "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION"), "addonOutdated": addon_outdated, "telemetryEnabled": telemetry_enabled})
 
     }).await.map_err(|e| e.to_string())
 }
@@ -521,6 +534,8 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Updates::default())
         .invoke_handler(tauri::generate_handler![
+            telemetry::telemetry_settings,
+            telemetry::telemetry_screen,
             updates::update_channel,
             bridge_request,
             desktop_info,
@@ -541,6 +556,8 @@ fn main() {
             let data = app.path().app_data_dir()?;
             update_trace::append(&data, "app-opened");
             fs::create_dir_all(data.join("runtime"))?;
+            app.manage(telemetry::Telemetry::new(&data));
+            telemetry::start(app.handle().clone());
             let payload = std::env::var_os("WISP_PAYLOAD_ROOT")
                 .map(PathBuf::from)
                 .unwrap_or(app.path().resource_dir()?.join("payload"));

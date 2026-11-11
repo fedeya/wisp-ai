@@ -7,6 +7,8 @@ import { site } from '../../site';
 import { isPreview, pageMetadata } from '../../seo';
 import { SiteHeader } from '../../components/site-header';
 import { SiteFooter } from '../../components/site-footer';
+import { WebsiteAnalytics } from '../../components/website-analytics';
+import { getLatestRelease } from '../../release.server';
 import '../globals.css';
 const dmSans = DM_Sans({ subsets: ['latin'], display: 'swap', variable: '--font-dm-sans' });
 const manrope = Manrope({
@@ -42,6 +44,7 @@ export default async function RootLayout({
   children: ReactNode;
 } & LocalePageProps) {
   const locale = await resolveLocale(params);
+  const release = await getLatestRelease();
   const t = getTranslator(locale);
   return (
     <html
@@ -55,13 +58,14 @@ export default async function RootLayout({
         )}
       </head>
       <body>
+        {process.env.NODE_ENV === 'production' && !isPreview && <WebsiteAnalytics />}
         <a
           className={`skip-link p-[12px] fixed top-[-100px] z-[100] text-[#111] bg-gold focus:top-[10px]`}
           href="#main"
         >
           {t('Skip to content')}
         </a>
-        <SiteHeader locale={locale} />
+        <SiteHeader locale={locale} version={release?.version} />
         {children}
         <SiteFooter locale={locale} />
       </body>

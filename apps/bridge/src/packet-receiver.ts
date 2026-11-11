@@ -25,7 +25,9 @@ import { parseConnectionModel } from '@wisp/protocol/providers';
 import { resumeChat, isEmptyDraft } from './sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
+import type { UsageTelemetry } from './telemetry.ts';
 interface ReceiverDependencies {
+  telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
   client: Pick<Client, 'sessions'>;
   pending: GameRequests;
@@ -135,7 +137,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     ) {
       transport().setCursor(packet.nextSlot!, Number(packet.receivedRev || 0));
     }
-    integrationState.receive(packet.integrations);
+    if (integrationState.receive(packet.integrations) && integrationState.report) {
+      deps.telemetry?.game(integrationState.report.version);
+    }
     if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
       void capabilitySettings
         .publish()

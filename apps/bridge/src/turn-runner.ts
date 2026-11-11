@@ -9,8 +9,10 @@ import { chooseChatModel } from './chat-model.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
+import type { UsageTelemetry } from './telemetry.ts';
 
 interface TurnDependencies {
+  telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver'>;
   client: Pick<Client, 'sessions'>;
   models: ModelCatalog;
   capabilitySettings: Pick<CapabilitySettings, 'publish' | 'enabled' | 'snapshot'>;
@@ -53,6 +55,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     }
     const controller = new AbortController();
     const started = performance.now();
+    const observeTool = deps.telemetry?.toolObserver();
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
@@ -124,6 +127,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         assertCurrent();
         const sourceRevision = parts.sourceRevision;
         const visibleChanged = applyEvent(chat, event, parts);
+        observeTool?.(event);
         if (visibleChanged && !chat.proactive) {
           if (
             firstTextMs === undefined &&
@@ -189,6 +193,17 @@ export function createTurnRunner(deps: TurnDependencies) {
           safeErrorMessage(error instanceof Error ? error.message : String(error)),
       );
     } finally {
+      deps.telemetry?.chat(
+        chat.routineId ? 'routine' : chat.proactive ? 'tip' : chat.inline ? 'hover' : 'chat',
+        chat.status === 'done'
+          ? 'completed'
+          : chat.status === 'needs_input'
+            ? 'needs_input'
+            : chat.status === 'error'
+              ? 'failed'
+              : 'cancelled',
+        performance.now() - started,
+      );
       log(
         'Turn timing: ' +
           JSON.stringify({

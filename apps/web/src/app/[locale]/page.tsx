@@ -1,5 +1,5 @@
 import { containerClassName } from '../../components/ui';
-import { ButtonLink } from '../../components/ui/button-link';
+import { DownloadLink } from '../../components/download-link';
 import { getTranslator, translateData, localizedPath, type Locale } from '../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../i18n/server';
 import { localizedMetadata } from '../../seo';
@@ -40,14 +40,22 @@ const baseFaqs = [
     'Yes. Wisp is an early release for WoW: Forever on Windows. Answers can be wrong and data coverage varies. Persistent panels and trackers are in beta; combat simulation is experimental and does not yet cover all classes and scenarios.',
   ],
 ];
-function InstallLink({ locale }: { locale: Locale }) {
+function InstallLink({
+  locale,
+  location,
+  version,
+}: {
+  locale: Locale;
+  location: 'hero' | 'home-footer';
+  version?: string;
+}) {
   const t = getTranslator(locale);
   return (
-    <ButtonLink href={site.download}>
+    <DownloadLink href={site.download} locale={locale} location={location} version={version}>
       <Icon name="windows" size={17} />
       {t('Download for Windows')}
       <Icon name="arrow" size={17} />
-    </ButtonLink>
+    </DownloadLink>
   );
 }
 const baseAbilities = [
@@ -128,7 +136,7 @@ export default async function Home({ params }: LocalePageProps) {
                 <br />
                 {t('Just ask Wisp.')}
               </p>
-              <InstallLink locale={locale} />
+              <InstallLink locale={locale} location="hero" version={release?.version} />
               <span className="download-note mt-[13px] block text-[11px] leading-[1.6] text-[#b8ad99]">
                 {t('Windows x64 · Choose your AI connection')}
               </span>
@@ -527,7 +535,7 @@ export default async function Home({ params }: LocalePageProps) {
             <br />
             {t('A better adventure.')}
           </h2>
-          <InstallLink locale={locale} />
+          <InstallLink locale={locale} location="home-footer" version={release?.version} />
           <p className="download-note mt-[13px] block text-[11px] leading-[1.6] text-[#b8ad99]">
             {release && `v${release.version}`}
             {t(' · Windows x64 · Open source')}

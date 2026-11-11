@@ -1,5 +1,6 @@
 import { containerClassName } from '../../../components/ui';
-import { ButtonLink } from '../../../components/ui/button-link';
+import { DownloadLink } from '../../../components/download-link';
+import { getLatestRelease } from '../../../release.server';
 import { getTranslator } from '../../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../../i18n/server';
 import { localizedMetadata } from '../../../seo';
@@ -12,6 +13,7 @@ export async function generateMetadata({ params }: LocalePageProps) {
 }
 export default async function Setup({ params }: LocalePageProps) {
   const locale = await resolveLocale(params);
+  const release = await getLatestRelease();
   const t = getTranslator(locale);
   return (
     <>
@@ -34,11 +36,16 @@ export default async function Setup({ params }: LocalePageProps) {
         <p className="guide-lead mx-0 text-muted text-[16px] leading-[1.8] mt-[22px] mb-[26px] max-w-[570px]">
           {t('You’ll need Windows, WoW: Forever and your choice of AI connection.')}
         </p>
-        <ButtonLink href={site.download}>
+        <DownloadLink
+          href={site.download}
+          location="setup"
+          locale={locale}
+          version={release?.version}
+        >
           <Icon name="windows" size={17} />
           {t('Download for Windows')}
           <Icon name="download" size={17} />
-        </ButtonLink>
+        </DownloadLink>
         <UsageRisk locale={locale} />
         <ol
           className={`guide-steps p-0 mx-0 mt-[58px] mb-0 list-none [counter-reset:setup] [&_li]:[counter-increment:setup] [&_li::before]:[content:'0'_counter(setup)] [&_li::before]:absolute [&_li::before]:left-[0] [&_li::before]:top-[3px] [&_li::before]:text-gold [&_li::before]:text-[22px] [&_li::before]:[font-family:Georgia,_serif] [&_li::before]:font-normal [&_li::before]:not-italic [&_li::before]:[line-height:normal]`}
@@ -211,6 +218,11 @@ export default async function Setup({ params }: LocalePageProps) {
           <h2 className="text-[28px] tracking-[-0.5px] mb-[17px]">
             {t('Your controls and data.')}
           </h2>
+          <p>
+            {t(
+              'Release builds share usage analytics with PostHog by default: versions, activity, features used, outcomes and durations with a random installation ID. Analytics events exclude conversations, character names, tool arguments and results, and credentials. Turn it off in desktop Settings / Usage analytics.',
+            )}
+          </p>
           <p>
             {t(
               'Messages, relevant character readings and conversation context go to the AI connection you choose, including any gateway it uses. Enabled external sources receive lookup arguments. Conversations and preferences are stored locally. Data handling depends on your provider or endpoint.',

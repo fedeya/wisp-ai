@@ -9,6 +9,7 @@ export const desktopInfoSchema = z.object({
   dataDirectory: z.string(),
   platform: z.string(),
   version: z.string(),
+  telemetryEnabled: z.boolean().optional(),
   addonOutdated: z.boolean().nullable().optional(),
 });
 export const modelSchema = z.object({

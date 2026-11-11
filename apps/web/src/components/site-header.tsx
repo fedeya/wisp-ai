@@ -1,6 +1,6 @@
 'use client';
 import { containerClassName } from './ui';
-import { ButtonLink } from './ui/button-link';
+import { DownloadLink } from './download-link';
 import { NavigationLink } from './ui/navigation-link';
 import { HeaderShell } from './ui/header-shell';
 import Image from 'next/image';
@@ -12,7 +12,7 @@ import { getTranslator, localizedPath, stripLocale, type Locale } from '../i18n'
 import { site } from '../site';
 import { LanguageSwitch } from './language-switch';
 
-export function SiteHeader({ locale }: { locale: Locale }) {
+export function SiteHeader({ locale, version }: { locale: Locale; version?: string }) {
   const t = getTranslator(locale);
   const pathname = stripLocale(usePathname());
   const [scrolled, setScrolled] = useState(false);
@@ -133,10 +133,16 @@ export function SiteHeader({ locale }: { locale: Locale }) {
           </nav>
           <div className="flex items-center gap-[6px] md:gap-[19px]">
             <LanguageSwitch locale={locale} />
-            <ButtonLink intent="outline" href={site.download}>
+            <DownloadLink
+              intent="outline"
+              href={site.download}
+              location="header"
+              locale={locale}
+              version={version}
+            >
               {t('Get Wisp ')}
               <Icon name="download" size={15} />
-            </ButtonLink>
+            </DownloadLink>
             <button
               ref={menuButton}
               type="button"

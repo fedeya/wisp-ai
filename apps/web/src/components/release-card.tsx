@@ -3,7 +3,7 @@ import { renderReleaseNotes } from '@wisp/releases';
 import { localizedPath, type Locale } from '../i18n';
 import type { PublishedRelease } from '../changelog.server';
 import { Icon } from './icon';
-import { ButtonLink } from './ui/button-link';
+import { DownloadLink } from './download-link';
 import { changelogStyles } from './ui/changelog';
 
 export function ReleaseCard({
@@ -60,7 +60,11 @@ export function ReleaseCard({
         )}
         <div className={styles.links({ class: nightly && !detail ? 'mt-0' : undefined })}>
           {release.downloads.map((download) => (
-            <ButtonLink
+            <DownloadLink
+              location={detail ? 'release' : 'changelog'}
+              locale={locale}
+              version={release.version}
+              channel={release.channel}
               intent="outline"
               className={styles.download()}
               href={download.url}
@@ -68,7 +72,7 @@ export function ReleaseCard({
             >
               <Icon name="download" size={17} />
               {locale === 'es' ? 'Descargar para' : 'Download for'} {download.label}
-            </ButtonLink>
+            </DownloadLink>
           ))}
           <a className={styles.textLink()} href={release.url}>
             {nightly

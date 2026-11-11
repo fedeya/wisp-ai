@@ -61,6 +61,28 @@ Each message includes available character name/realm, level, class, race, factio
 
 The bridge holds the ChatGPT grant and proxies model requests with `store: false`; this does not mean the provider receives no data or retains nothing. Neither the agent nor desktop webview receives the ChatGPT credentials. Windows credentials use DPAPI for the current user, so changing Windows users requires signing in again. See [OpenAI’s sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
+### Usage analytics
+
+Installed release builds share usage analytics with PostHog by default. Turn it off
+in desktop **Settings > Usage analytics**; the preference also applies to the
+running bridge and agent. The footer shows whether usage analytics is on or off.
+Development runs do not send usage analytics.
+
+Events include a random persistent installation ID, app/addon versions, operating
+system and architecture, app activity, desktop sections visited, chat mode
+(chat, hover, routine or tip), tool names, outcomes and durations. Custom MCP tool
+names are replaced with `external_tool`. Analytics events exclude conversations,
+tool arguments/results, character/account names, credentials, local paths and logs.
+This is pseudonymous installation analytics, not a count of individual people.
+The addon sends its normal local bridge messages; it makes no analytics requests.
+
+The first tracked opening is recorded once after successful delivery. Activity,
+versions and feature use can only be measured after upgrading to a release that
+includes telemetry. Website download clicks and GitHub release downloads remain
+separate metrics; browser IDs are not automatically linked to installations.
+Turning analytics off stops future events; it does not delete previously sent
+events. Deleting `telemetry.json` resets the preference and installation ID.
+
 ### Local data and deletion
 
 Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from application resources. Source runs default to the repository root; `WISP_DATA_DIR` overrides it.
@@ -68,6 +90,7 @@ Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from applicati
 | Data                                            | Path relative to the data root                   |
 | ----------------------------------------------- | ------------------------------------------------ |
 | Configuration                                   | `config.local.json`                              |
+| Usage analytics preference and installation ID   | `telemetry.json`                                 |
 | Chats, routines, run history, memory and panels | `runtime/wisp.sqlite`                            |
 | Tool choices / custom MCP metadata              | `runtime/capabilities.json` / `runtime/mcp.json` |
 | Agent log                                       | `runtime/eve.log`                                |

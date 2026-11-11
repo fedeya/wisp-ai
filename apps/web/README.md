@@ -138,6 +138,24 @@ Enable **First-Party Proxy** in Rybbit Site Settings → Privacy & Security so
 forwarded visitor IPs are interpreted correctly. Only tracking endpoints are
 exposed; the dashboard and administrative API are not proxied.
 
+Production pages also use PostHog in the shared Wisp project. Its public ingestion
+token and US host are configured in `src/analytics.ts`; no deployment variables
+are required. Optional build-time `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` and
+`NEXT_PUBLIC_POSTHOG_HOST` overrides select another project or region. These are
+public browser values, not personal API keys. Next.js does not read `VITE_*` values.
+Development and Vercel previews do not initialize PostHog.
+
+PostHog records pageviews, including client-side route/language changes, and
+`download_clicked` with `surface: web`, `platform: windows-x64`, `location`, `locale`,
+`version` when available, and `channel`. Locations are `header`, `hero`,
+`home-footer`, `setup`, `changelog` and `release`. Downloads remain ordinary links
+and work with JavaScript disabled or analytics blocked. Click events use beacon
+transport before navigation; they indicate intent, not completed downloads or
+installations. Session replay, automatic interaction capture, exception capture,
+heatmaps, performance capture and surveys are disabled. A pseudonymous browser ID
+is persisted in localStorage; it is not automatically linked to desktop installs.
+Rybbit continues to run alongside PostHog.
+
 The immersive hero uses a generated illustrative background and locally cached
 WoW icons. Equipment, tooltips, auctions, bags and action bars are native React
 and CSS, not a flattened mockup or video. See [asset provenance](ASSETS.md).

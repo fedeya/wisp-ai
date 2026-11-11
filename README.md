@@ -34,6 +34,11 @@ For hover questions, choose **Bind inline chat** in Wisp’s in-game settings an
 
 Relevant game readings and conversation context go to the AI connection selected for that chat, including any gateway it uses. You control available tools, memory and connections. Requested settings changes can be previewed before applying them; gameplay stays with you. Read [controls, privacy and limits](docs/usage.md#controls-privacy-and-limits).
 
+Release builds share usage analytics with PostHog by default: versions, activity,
+feature use, outcomes and durations with a random installation ID. Analytics events
+exclude conversations, character names, tool arguments/results and credentials.
+Turn it off in desktop **Settings > Usage analytics**.
+
 Windows is the tested distribution target. Other WoW versions and macOS distribution are not established as supported. Game communication uses addon files; large replies can take several seconds, and `/reload` renews the finite receive channels.
 
 ## Explore

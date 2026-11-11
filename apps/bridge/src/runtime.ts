@@ -1,5 +1,6 @@
 import { characterLabel } from '@wisp/protocol/character-key';
 import { RuntimeResources } from './runtime-resources.ts';
+import { UsageTelemetry } from './telemetry.ts';
 import { projectChats } from './chat-projection.ts';
 import { startRoutineScheduler } from './routine-scheduler.ts';
 import { createPacketReceiver } from './packet-receiver.ts';
@@ -69,6 +70,8 @@ export async function startBridge(options: BridgeOptions = {}) {
       .then((metadata) => metadata.version)
       .catch(() => 'unknown');
     const runtime = paths.runtime;
+    const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion);
+    resources.defer(() => telemetry.close());
     const simulator = new Simulator(ROOT, runtime);
     await prepareEngine(paths.agent, paths.engine);
     await mkdir(runtime, { recursive: true });
@@ -270,6 +273,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     }
     let shutdownRequested = false;
     const run = createTurnRunner({
+      telemetry,
       client,
       models: connections,
       capabilitySettings,
@@ -304,6 +308,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     });
     resources.defer(stopRoutineScheduler);
     const receive = createPacketReceiver({
+      telemetry,
       state,
       client,
       pending,
