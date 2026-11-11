@@ -913,7 +913,7 @@ it(
         ns.chats[1].status = "done"
         ns.UI.Refresh()
         assert(
-            not progress:IsShown() and progress.parent:GetHeight() == progress.y,
+            not progress:IsShown() and progress.parent:GetHeight() == progress.y - 12,
             "completion removes the transient row and its space"
         )
     end

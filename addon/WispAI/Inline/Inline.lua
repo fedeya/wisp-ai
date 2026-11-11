@@ -4,7 +4,8 @@ BINDING_HEADER_WISPAI = "Wisp"
 BINDING_NAME_WISPAI_INLINE = "Ask about hovered reference"
 local panel, entry, title, scroll, content, busy, send
 local rows = {}
-local newMessages, renderedChat, renderedWorking
+local newMessages, renderedChat
+local replyTurn = {}
 local bindingCapture, hotkey, bindingEvents, lastActivation, bindingSignature
 local mouseKeys = { LeftButton = "BUTTON1", RightButton = "BUTTON2", MiddleButton = "BUTTON3" }
 local function combination(key)
@@ -281,8 +282,8 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     local offset = scroll:GetVerticalScroll()
     local preserveScroll = chat and preserveScrollForChat == chat.id
     local follow = not preserveScroll and previousRange - offset < 30
-    local animateTurn = chat and renderedChat == chat.id and renderedWorking
     local messages, hasToolActivity, hasReplyText, turnStart = ns.UI.DisplayMessages(chat)
+    local animateTurn = ns.UI.ObserveReplyTurn(replyTurn, chat, messages[turnStart - 1])
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = chat.id .. ":" .. (message.id or index)
@@ -297,13 +298,13 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
             y = y + ns.UI.MessageGap(previousMessage, message)
             local showAuthor = speaker ~= "assistant" or previousSpeaker ~= speaker
             local animateReply = animateTurn and index >= turnStart and message.phase == "reply"
+            if not row:IsShown() then
+                row:Show()
+            end
             ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
             previousSpeaker, previousMessage = speaker, message
             local h = row.height
             ns.UI.PositionMessageRow(row, content, y, width)
-            if not row:IsShown() then
-                row:Show()
-            end
             if ns.Transport.RecordFirstText then
                 ns.Transport.RecordFirstText(chat, message, row)
             end
@@ -332,21 +333,31 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         and not hasReplyText
         and not ns.UI.Activity.IsSending(chat)
     busy:SetShown(showBusy)
+    ns.UI.Activity.SetSpinner(busy, showBusy == true)
     if showBusy then
-        local active = "Thinking..."
+        local active = "Thinking…"
         for _, call in ipairs(chat.activity or {}) do
             if call.status == "running" then
                 active = call.label or call.name or active
                 break
             end
         end
-        uiWidgets.SetText(
-            busy,
-            previousSpeaker == "assistant" and active or ("Wisp AI  ·  " .. active)
-        )
+        local showAuthor = previousSpeaker ~= "assistant"
+        local top = showAuthor and 20 or 0
+        if previousSpeaker and showAuthor then
+            y = y + 12
+        end
+        busy.author:SetShown(showAuthor)
+        busy.icon:ClearAllPoints()
+        busy.icon:SetPoint("TOPLEFT", 0, -top - 1)
+        busy.title:ClearAllPoints()
+        busy.title:SetPoint("TOPLEFT", 20, -top)
+        busy.title:SetPoint("RIGHT", 0, 0)
+        uiWidgets.SetText(busy.title, active)
         busy:ClearAllPoints()
         busy:SetPoint("TOPLEFT", 0, -y)
-        y = y + 28
+        busy:SetSize(width, top + 23)
+        y = y + busy:GetHeight()
     end
     content:SetWidth(width)
     content:SetHeight(math.max(1, y))
@@ -355,7 +366,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         scroll:SetVerticalScroll(follow and bottom or math.min(offset, bottom))
     end
     ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
-    renderedChat, renderedWorking = chat and chat.id, working
+    renderedChat = chat and chat.id
     uiWidgets.SetText(send, working and "Stop" or "Ask")
 end
 function ns.Inline.OpenInline()
@@ -526,9 +537,15 @@ function ns.Inline.InitInline()
         end
     end)
     newMessages:Hide()
-    busy = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    busy:SetTextColor(0.84, 0.72, 0.43)
-    busy:SetText("Thinking...")
+    busy = CreateFrame("Frame", "WispAIInlineProgress", content)
+    busy.icon = busy:CreateTexture(nil, "ARTWORK")
+    busy.icon:SetSize(14, 14)
+    ns.UI.Activity.SetIcon(busy.icon, 1, uiWidgets.GOLD)
+    busy.author = uiWidgets.Label(busy, "Wisp AI", uiWidgets.GOLD)
+    busy.author:SetPoint("TOPLEFT", 0, 0)
+    busy.title = uiWidgets.Label(busy, "Thinking…", uiWidgets.MUTED)
+    busy.title:SetFontObject(ChatFontNormal)
+    busy.title:SetWordWrap(false)
     busy:Hide()
     entry = CreateFrame("EditBox", "WispAIInlineInput", panel, "InputBoxTemplate")
     entry:SetAutoFocus(false)

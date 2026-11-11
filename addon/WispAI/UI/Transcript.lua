@@ -2,7 +2,8 @@ local _, ns = ...
 local box, button = ns.UI.Widgets.Box, ns.UI.Widgets.Button
 local transcript, content, scrollBar, newMessages
 local rows, scrollPositions = {}, {}
-local renderedChat, renderedWorking
+local renderedChat
+local replyTurn = {}
 local rendering, scrollRange = false, 0
 
 function ns.UI.ScrollTranscript(delta)
@@ -36,9 +37,8 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}
     local previousSpeaker, previousMessage
-    local working = chat and chat.status == "working"
-    local animateTurn = not switched and renderedWorking
     local messages, hasToolActivity, hasReplyText, turnStart = ns.UI.DisplayMessages(chat)
+    local animateTurn = ns.UI.ObserveReplyTurn(replyTurn, chat, messages[turnStart - 1])
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = id .. ":" .. (message.id or tostring(index))
@@ -52,12 +52,12 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
             y = y + ns.UI.MessageGap(previousMessage, message)
             local showAuthor = speaker ~= "assistant" or previousSpeaker ~= speaker
             local animateReply = animateTurn and index >= turnStart and message.phase == "reply"
-            ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
-            previousSpeaker, previousMessage = speaker, message
-            ns.UI.PositionMessageRow(row, content, y, width)
             if not row:IsShown() then
                 row:Show()
             end
+            ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
+            previousSpeaker, previousMessage = speaker, message
+            ns.UI.PositionMessageRow(row, content, y, width)
             if ns.Transport.RecordFirstText then
                 ns.Transport.RecordFirstText(chat, message, row)
             end
@@ -69,6 +69,9 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
         and not hasToolActivity
         and not hasReplyText
         and not ns.UI.Activity.IsSending(chat)
+    if showProgress and previousSpeaker and previousSpeaker ~= "assistant" then
+        y = y + 12
+    end
     y = ns.UI.Activity.LayoutProgress(y, width, previousSpeaker ~= "assistant", showProgress)
     for key, row in pairs(rows) do
         if not used[key] and row:IsShown() then
@@ -85,7 +88,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     scrollBar:SetValue(position)
     transcript:SetVerticalScroll(position)
     ns.UI.UpdateNewMessages(newMessages, chat, follow, switched)
-    renderedChat, renderedWorking = id, working
+    renderedChat = id
     rendering = false
 end
 

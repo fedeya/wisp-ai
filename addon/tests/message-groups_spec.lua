@@ -137,17 +137,8 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local _, _, _, _, answerTop = findRow("Final answer"):GetPoint()
             check.equal(toolTop - first:GetHeight() - 6, preambleTop)
             check.equal(preambleTop - preamble:GetHeight(), answerTop)
-            local progress = UI_TEST.frames.WispAIProgress
-            if surface == "inline" then
-                local content = findRow("Second answer"):GetParent()
-                for _, widget in ipairs(UI_TEST.widgets) do
-                    if widget:GetParent() == content and widget:GetText() == "Thinking..." then
-                        progress = widget
-                        break
-                    end
-                end
-                assert(progress ~= UI_TEST.frames.WispAIProgress, "inline has a thinking row")
-            end
+            local progress = surface == "main" and UI_TEST.frames.WispAIProgress
+                or UI_TEST.frames.WispAIInlineProgress
             assert(not progress:IsShown(), "a visible reply takes the place of thinking")
             ns.db.showTools = false
             refresh()
@@ -172,13 +163,13 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             )
             assert(user:GetWidth() < findRow("Checking gear"):GetWidth())
 
+            local replyRow = findRow("Second answer")
             local reply = table.remove(ns.chats[1].messages)
             local completedCall = table.remove(ns.chats[1].messages)
             refresh()
             assert(progress:IsShown(), "past replies do not suppress thinking in a new turn")
-            if surface == "main" then
-                assert(progress.author:IsShown() and progress:GetHeight() == 54)
-            end
+            assert(progress.author:IsShown() and progress:GetHeight() == 43)
+            assert(progress.spinner:IsPlaying())
             local pending = { chat = "chat" }
             ns.pendingMessages.u2 = pending
             ns.workStarted.chat = GetTime()
@@ -210,11 +201,13 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
 
             table.insert(ns.chats[1].messages, completedCall)
             refresh()
-            assert(not progress:IsShown(), "completed calls occupy the activity slot")
+            assert(not progress:IsShown() and not progress.spinner:IsPlaying())
             local waitingGroup = findRow("Reading quests")
-            assert(waitingGroup.continuing:IsShown())
-            check.equal("Working…", waitingGroup.continuing:GetText())
-            check.same({ 0, 1 / 8, 0, 1 }, waitingGroup.icon.texCoord)
+            assert(waitingGroup.spinner:IsPlaying())
+            check.same(progress.icon.texCoord, waitingGroup.icon.texCoord)
+            local _, _, _, thinkingX, thinkingY = progress.icon:GetPoint()
+            local _, _, _, toolX, toolY = waitingGroup.icon:GetPoint()
+            check.same({ thinkingX, thinkingY }, { toolX, toolY })
 
             local call = {
                 id = "t3b",
@@ -230,7 +223,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             local group = findRow("Reading talents")
             assert(group.disclosure:IsShown() and group.text:GetText() == "Reading talents")
-            assert(not group.continuing:IsShown())
+            assert(group.spinner:IsPlaying())
             assert(not progress:IsShown(), "the active tool replaces the thinking row")
             assert(#ns.chats[1].messages == 7, "grouping must not rewrite saved history")
             local _, _, _, labelLeft = group.text:GetPoint()
@@ -263,7 +256,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             check.same({ 0, 1 / 8, 0, 1 }, findRow("Reading quests").icon.texCoord)
             local child = findRow("Reading talents", group)
             check.same({ 1 / 8, 2 / 8, 0, 1 }, child.icon.texCoord)
-            assert(child.toolSpinner:IsPlaying() and child.disclosure:IsShown())
+            assert(child.spinner:IsPlaying() and child.disclosure:IsShown())
             local detailOffset = scrollToBottom()
             child.disclosure.scripts.OnClick()
             assert(viewport:GetVerticalScrollRange() > detailOffset)
@@ -271,12 +264,13 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(child.toolDetail:IsShown())
             check.equal('Input  {"sections":["talents"]}', child.toolDetail:GetText())
             call.tool.status = "failed"
+            call.tool.label = "Tried to read talents"
             call.tool.resultPreview = "Talents are unavailable | retry"
             refresh()
-            assert(not progress:IsShown() and group.text:GetText() == "2 tool calls")
-            assert(group.continuing:IsShown())
+            assert(not progress:IsShown() and group.text:GetText() == "Tried to read talents  +1")
+            assert(group.spinner:IsPlaying())
             check.same({ 2 / 8, 3 / 8, 0, 1 }, child.icon.texCoord)
-            assert(not child.toolSpinner:IsPlaying())
+            assert(not child.spinner:IsPlaying())
             check.equal(
                 'Input  {"sections":["talents"]}\n\nResult  Talents are unavailable || retry',
                 child.toolDetail:GetText()
@@ -287,11 +281,14 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             reply.text = "Second answer"
             table.insert(ns.chats[1].messages, reply)
             refresh()
-            assert(findRow(reply.text):IsShown() and not progress:IsShown())
-            assert(not group.continuing:IsShown())
+            assert(replyRow:IsShown() and not progress:IsShown())
+            check.equal("S", replyRow.text:GetText())
+            assert(not group.spinner:IsPlaying())
             reply.streaming = false
             refresh()
             assert(not progress:IsShown(), "thinking stays hidden after the last text chunk")
+            replyRow.scripts.OnUpdate(replyRow, 1)
+            check.equal(reply.text, replyRow.text:GetText())
 
             table.insert(ns.chats[1].messages, {
                 id = "final-only",
@@ -306,6 +303,36 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(finalOnly:IsShown() and finalOnly.scripts.OnUpdate)
             finalOnly.scripts.OnUpdate(finalOnly, 1)
             check.equal("A reply delivered as a single snapshot", finalOnly.text:GetText())
+
+            local fresh = { id = "fresh", status = "idle", messages = {} }
+            table.insert(ns.chats, fresh)
+            if surface == "main" then
+                ns.active = fresh.id
+            else
+                ns.inlineId = fresh.id
+            end
+            refresh()
+            fresh.messages = {
+                { id = "first-question", role = "user", text = "First question in a new chat" },
+                {
+                    id = "first-reply",
+                    role = "assistant",
+                    phase = "reply",
+                    streaming = false,
+                    text = "Zebra starts the first reply.",
+                },
+            }
+            fresh.status = "done"
+            refresh()
+            local firstReply = findRow("Z")
+            check.equal("Z", firstReply.text:GetText())
+            firstReply.scripts.OnUpdate(firstReply, 1)
+            check.equal("Zebra starts the first reply.", firstReply.text:GetText())
+            if surface == "main" then
+                ns.active = "chat"
+            else
+                ns.inlineId = "chat"
+            end
 
             ns.chats[1].messages =
                 { { id = "long", role = "assistant", text = string.rep("Long reply ", 1000) } }

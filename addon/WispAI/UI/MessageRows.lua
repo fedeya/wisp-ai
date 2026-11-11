@@ -5,7 +5,6 @@ local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
 local truncateUtf8 = ns.Shared.Text.TruncateUtf8Bytes
-local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
@@ -76,7 +75,7 @@ local function revealWriting(row, fonts, source, previous, interrupted, streamin
     if previousSource == "" then
         remaining = math.huge
     end
-    if previous and previous.pending and not pending and appended then
+    if previous and previousSource ~= "" and previous.pending and not pending and appended then
         remaining = #source
     end
     local entries, bytes = {}, 0
@@ -138,42 +137,13 @@ local function revealWriting(row, fonts, source, previous, interrupted, streamin
         first.prefix = first.text:sub(1, firstBytes)
         setText(first.font, first.prefix)
     end
+    -- Keep the first glyph visible while syntax is pending. Starting the
+    -- reveal on the raw preview would replay the same text after formatting.
+    if pending and previousSource == "" then
+        snapshot.source = ""
+        return
+    end
     row:SetScript("OnUpdate", updateWriting)
-end
-
-local function setToolIcon(texture, cell, tint)
-    texture:SetTexture(TOOL_ICONS)
-    texture:SetTexCoord(cell / 8, (cell + 1) / 8, 0, 1)
-    texture:SetVertexColor(unpack(tint))
-end
-
-local function setToolSpinner(row, running)
-    row.toolRunning = running
-    if running and not row.toolSpinner then
-        local group = row.icon:CreateAnimationGroup()
-        local spin = group:CreateAnimation("Rotation")
-        spin:SetDegrees(-360)
-        spin:SetDuration(1.3)
-        group:SetLooping("REPEAT")
-        row.toolSpinner = group
-        row:HookScript("OnHide", function()
-            group:Stop()
-        end)
-        row:HookScript("OnShow", function()
-            if row.toolRunning then
-                group:Play()
-            end
-        end)
-    end
-    if row.toolSpinner then
-        if running and row:IsVisible() then
-            if not row.toolSpinner:IsPlaying() then
-                row.toolSpinner:Play()
-            end
-        else
-            row.toolSpinner:Stop()
-        end
-    end
 end
 
 ns.itemRevision = 0
@@ -450,7 +420,7 @@ local function toolCallRow(chatId, call, id, callId, indent)
     }
 end
 
-local function appendToolGroup(messages, chatId, calls, id)
+local function appendToolGroup(messages, chatId, calls, id, spinning)
     if #calls == 1 then
         local call = calls[1]
         local entry = toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0)
@@ -474,7 +444,10 @@ local function appendToolGroup(messages, chatId, calls, id)
         id = id,
         role = "tool",
         text = running
-            or (expanded and (#calls .. " tool calls") or (latest .. "  +" .. (#calls - 1))),
+            or (
+                expanded and not spinning and (#calls .. " tool calls")
+                or (latest .. "  +" .. (#calls - 1))
+            ),
         tool = { status = running and "running" or (failed and "failed" or "completed") },
         groupKey = key,
         groupExpanded = expanded,
@@ -494,18 +467,16 @@ end
 
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId, groupOffset = {}, {}, nil, nil
-    local hasReplyText, replyAfterTool, turnStart = false, false, 1
+    local hasReplyText, turnStart = false, 1
     local function flushTools(currentTurn)
         if not groupId then
             return
         end
         local group = {}
-        local running = appendToolGroup(group, chat.id, calls, groupId)
+        local spinning = currentTurn and chat.status == "working" and not hasReplyText
+        local running = appendToolGroup(group, chat.id, calls, groupId, spinning)
         local active = currentTurn and chat.status == "working" and running
-        group[1].toolContinuing = currentTurn
-            and chat.status == "working"
-            and not running
-            and not replyAfterTool
+        group[1].turnSpinning = spinning
         -- While a call runs, its group occupies the current activity slot.
         local offset = active and #messages + 1 or groupOffset
         for index = #group, 1, -1 do
@@ -519,16 +490,18 @@ function ns.UI.DisplayMessages(chat)
                 groupId = groupId or ("tools-" .. (message.id or index))
                 calls[#calls + 1] = message
                 groupOffset = #messages + 1
-                replyAfterTool = false
             end
-        else
+        elseif
+            message.role ~= "assistant"
+            or isTextReply(message)
+            or (message.ui and #message.ui > 0)
+        then
             if message.role == "user" or message.role == "system" then
                 flushTools(false)
                 hasReplyText = false
                 turnStart = #messages + 2
             elseif isTextReply(message) then
                 hasReplyText = true
-                replyAfterTool = true
             end
             messages[#messages + 1] = message
         end
@@ -537,6 +510,24 @@ function ns.UI.DisplayMessages(chat)
     flushTools(true)
     return messages, hasToolActivity, hasReplyText, turnStart
 end
+
+-- An observed chat can receive the new question and its complete reply together.
+function ns.UI.ObserveReplyTurn(view, chat, boundary)
+    local id = chat and chat.id
+    local userId = boundary and boundary.role == "user" and boundary.id
+    local working = chat and chat.status == "working"
+    local live = working
+        or (
+            chat
+            and chat.status == "done"
+            and view.chatId == id
+            and (view.working or (view.loaded and userId and view.userId ~= userId))
+        )
+    view.chatId, view.working, view.userId = id, working, userId
+    view.loaded = chat and chat.messages ~= nil
+    return live
+end
+
 function ns.UI.PositionMessageRow(row, parent, y, width)
     local x = row.speaker == "user" and width - row:GetWidth() or 0
     if row.y ~= y or row.x ~= x then
@@ -612,7 +603,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
         .. "\31"
         .. (message.toolDetail or "")
         .. "\31"
-        .. tostring(message.toolContinuing)
+        .. tostring(message.turnSpinning)
         .. "\31"
         .. (sending and "sending" or "")
     if row.signature ~= signature then
@@ -651,9 +642,6 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
         row.groupKey = message.groupKey
         row.disclosure:SetShown(message.groupKey ~= nil)
         row.chevron:SetShown(message.groupKey ~= nil)
-        if row.continuing then
-            row.continuing:Hide()
-        end
         if row.toolDetail then
             row.toolDetail:Hide()
             row.toolDetailBackground:Hide()
@@ -681,21 +669,16 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             row.icon:SetPoint("TOPLEFT", indent, -top - 1)
             row.icon:Show()
             local state = tool and tool.status or "completed"
-            local icon = TOOL_STATES[state] or TOOL_STATES.failed
-            setToolIcon(row.icon, icon.cell, icon.tint)
-            setToolSpinner(row, state == "running" and chat.status == "working")
+            local spinning = message.turnSpinning
+                or (indent > 0 and state == "running" and chat.status == "working")
+            local icon = spinning and TOOL_STATES.running
+                or TOOL_STATES[state]
+                or TOOL_STATES.failed
+            ns.UI.Activity.SetIcon(row.icon, icon.cell, icon.tint)
+            ns.UI.Activity.SetSpinner(row, spinning)
             local textLeft = indent + 20
             local chevronSpace = row.groupKey and (row.chevron:GetWidth() + CHEVRON_GAP) or 0
-            local continuingSpace = 0
-            if message.toolContinuing then
-                if not row.continuing then
-                    row.continuing = label(row, "Working…", MUTED)
-                    row.continuing:SetFontObject("GameFontHighlightSmall")
-                    row.continuing:SetTextColor(unpack(MUTED))
-                end
-                continuingSpace = math.ceil(row.continuing:GetStringWidth()) + 6
-            end
-            local textWidth = math.max(1, width - textLeft - chevronSpace - continuingSpace)
+            local textWidth = math.max(1, width - textLeft - chevronSpace)
             row.text:SetPoint("TOPLEFT", textLeft, -top)
             row.text:SetWidth(textWidth)
             row.text:SetTextColor(unpack(TEXT))
@@ -712,15 +695,10 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 local chevronLeft = labelRight + CHEVRON_GAP
                 row.chevron:ClearAllPoints()
                 row.chevron:SetPoint("TOPLEFT", row, "TOPLEFT", chevronLeft, -top - 1)
-                setToolIcon(row.chevron, message.groupExpanded and 4 or 3, MUTED)
+                ns.UI.Activity.SetIcon(row.chevron, message.groupExpanded and 4 or 3, MUTED)
                 row.disclosure:ClearAllPoints()
                 row.disclosure:SetPoint("TOPLEFT", row, "TOPLEFT", indent, -top)
                 row.disclosure:SetPoint("BOTTOMRIGHT", row, "TOPRIGHT", 0, -top - headerHeight)
-            end
-            if message.toolContinuing then
-                row.continuing:ClearAllPoints()
-                row.continuing:SetPoint("TOPLEFT", labelRight + chevronSpace + 6, -top - 2)
-                row.continuing:Show()
             end
             row.height = top + headerHeight + 5
             if message.toolDetail then
@@ -751,7 +729,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             end
         else
             row.icon:Hide()
-            setToolSpinner(row, false)
+            ns.UI.Activity.SetSpinner(row, false)
             local interleaved = message.parts
                 and #message.parts > 0
                 and not message._markdownSimple
