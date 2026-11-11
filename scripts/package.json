@@ -16,6 +16,7 @@
     "@yao-pkg/pkg": "6.24.0",
     "esbuild": "0.28.2",
     "eve": "1.0.0-rc.6",
+    "fengari": "0.1.5",
     "typescript": "5.9.3",
     "vitest": "5.1.0"
   }

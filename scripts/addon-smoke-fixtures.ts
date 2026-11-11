@@ -33,6 +33,9 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
     Auctionator={API={v1={GetAuctionPriceByItemID=function(_,id)if id==123 then return 450 end end,GetAuctionAgeByItemID=function(_,id)if id==123 then return 3 end end}}}
   `);
   for (const file of [
+    'Namespace.lua',
+    'Shared/Numbers.lua',
+    'Shared/Text.lua',
     'Integrations/Integrations.lua',
     'Integrations/Questie.lua',
     'Integrations/Syndicator.lua',
