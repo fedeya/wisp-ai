@@ -173,10 +173,11 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(user:GetWidth() < findRow("Checking gear"):GetWidth())
 
             local reply = table.remove(ns.chats[1].messages)
+            local completedCall = table.remove(ns.chats[1].messages)
             refresh()
-            assert(progress:IsShown(), "only text in the current turn suppresses thinking")
+            assert(progress:IsShown(), "past replies do not suppress thinking in a new turn")
             if surface == "main" then
-                assert(not progress.author:IsShown() and progress:GetHeight() == 34)
+                assert(progress.author:IsShown() and progress:GetHeight() == 54)
             end
             local pending = { chat = "chat" }
             ns.pendingMessages.u2 = pending
@@ -200,6 +201,16 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             assert(not delivery:IsShown() and progress:IsShown())
             assert(question:GetHeight() == bubbleHeight)
+
+            reply.text, reply.streaming = " \n", true
+            table.insert(ns.chats[1].messages, reply)
+            refresh()
+            assert(progress:IsShown(), "whitespace does not replace the thinking row")
+            table.remove(ns.chats[1].messages)
+
+            table.insert(ns.chats[1].messages, completedCall)
+            refresh()
+            assert(not progress:IsShown(), "completed calls occupy the activity slot")
 
             local call = {
                 id = "t3b",
@@ -257,7 +268,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             call.tool.status = "failed"
             call.tool.resultPreview = "Talents are unavailable | retry"
             refresh()
-            assert(progress:IsShown() and group.text:GetText() == "2 tool calls")
+            assert(not progress:IsShown() and group.text:GetText() == "2 tool calls")
             check.same({ 2 / 8, 3 / 8, 0, 1 }, child.icon.texCoord)
             assert(not child.toolSpinner:IsPlaying())
             check.equal(
@@ -267,11 +278,8 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             group.disclosure.scripts.OnClick()
             assert(not child:IsShown())
 
-            reply.text, reply.streaming = " \n", true
-            table.insert(ns.chats[1].messages, reply)
-            refresh()
-            assert(progress:IsShown(), "whitespace does not replace the thinking row")
             reply.text = "Second answer"
+            table.insert(ns.chats[1].messages, reply)
             refresh()
             assert(findRow(reply.text):IsShown() and not progress:IsShown())
             reply.streaming = false

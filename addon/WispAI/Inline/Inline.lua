@@ -281,7 +281,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     local offset = scroll:GetVerticalScroll()
     local preserveScroll = chat and preserveScrollForChat == chat.id
     local follow = not preserveScroll and previousRange - offset < 30
-    local messages, activeTool, hasReplyText = ns.UI.DisplayMessages(chat)
+    local messages, hasToolActivity, hasReplyText = ns.UI.DisplayMessages(chat)
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = chat.id .. ":" .. (message.id or index)
@@ -326,7 +326,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     end
     local working = chat and chat.status == "working"
     local showBusy = working
-        and not activeTool
+        and not hasToolActivity
         and not hasReplyText
         and not ns.UI.Activity.IsSending(chat)
     busy:SetShown(showBusy)

@@ -36,7 +36,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}
     local previousSpeaker, previousMessage
-    local messages, activeTool, hasReplyText = ns.UI.DisplayMessages(chat)
+    local messages, hasToolActivity, hasReplyText = ns.UI.DisplayMessages(chat)
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = id .. ":" .. (message.id or tostring(index))
@@ -63,7 +63,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     end
     local showProgress = chat
         and chat.status == "working"
-        and not activeTool
+        and not hasToolActivity
         and not hasReplyText
         and not ns.UI.Activity.IsSending(chat)
     y = ns.UI.Activity.LayoutProgress(y, width, previousSpeaker ~= "assistant", showProgress)

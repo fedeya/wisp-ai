@@ -370,7 +370,7 @@ function ns.UI.DisplayMessages(chat)
     local hasReplyText = false
     local function flushTools(currentTurn)
         if not groupId then
-            return false
+            return
         end
         local group = {}
         local running = appendToolGroup(group, chat.id, calls, groupId)
@@ -381,7 +381,6 @@ function ns.UI.DisplayMessages(chat)
             table.insert(messages, offset, group[index])
         end
         calls, groupId, groupOffset = {}, nil, nil
-        return active
     end
     for index, message in ipairs(chat and chat.messages or {}) do
         if message.role == "tool" then
@@ -400,8 +399,9 @@ function ns.UI.DisplayMessages(chat)
             messages[#messages + 1] = message
         end
     end
-    local active = flushTools(true)
-    return messages, active, hasReplyText
+    local hasToolActivity = groupId ~= nil
+    flushTools(true)
+    return messages, hasToolActivity, hasReplyText
 end
 function ns.UI.PositionMessageRow(row, parent, y, width)
     local x = row.speaker == "user" and width - row:GetWidth() or 0
