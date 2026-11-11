@@ -12,12 +12,22 @@ export default enabledTool(
     label: {
       start: ({ questId }) => `Reading details for quest #${questId}`,
       complete: ({ questId }, output) => {
-        const quest = output as { status?: unknown; reference?: { label?: unknown } } | undefined;
-        if (quest?.status === 'unknown') {
+        const result = output as
+          | {
+              data?: {
+                status?: unknown;
+                reference?: { label?: unknown };
+                data?: { name?: unknown };
+              };
+            }
+          | undefined;
+        const quest = result?.data;
+        if (quest?.status !== 'available') {
           return `Looked up quest #${questId}`;
         }
-        const label = quest?.reference?.label;
-        const name = typeof label === 'string' ? label.trim() : '';
+        const name = [quest?.reference?.label, quest?.data?.name]
+          .find((label): label is string => typeof label === 'string' && !!label.trim())
+          ?.trim();
         return name ? `Read quest details for “${name}”` : `Read details for quest #${questId}`;
       },
     },

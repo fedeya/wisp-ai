@@ -92,7 +92,12 @@ test(
           request.inspection.kind === 'questie_quest'
             ? {
                 status: 'available',
-                reference: { kind: 'quest', id: 166, label: 'The Defias Brotherhood' },
+                data: {
+                  status: 'available',
+                  questId: 166,
+                  data: { name: 'The Defias Brotherhood' },
+                  reference: { kind: 'quest', id: 166 },
+                },
               }
             : { status: 'completed', data: { settings: [], verified: true } };
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
