@@ -32,7 +32,7 @@ function ns.UI.Transcript.Refresh(chat)
     end
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}
-    local previousSpeaker
+    local previousSpeaker, previousMessage
     local messages, activeTool, hasReplyText = ns.UI.DisplayMessages(chat)
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
@@ -44,10 +44,10 @@ function ns.UI.Transcript.Refresh(chat)
             end
             used[key] = true
             local speaker = ns.UI.MessageSpeaker(message)
-            y = y + ns.UI.MessageGap(previousSpeaker, speaker)
+            y = y + ns.UI.MessageGap(previousMessage, message)
             local showAuthor = speaker ~= "assistant" or previousSpeaker ~= speaker
             ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
-            previousSpeaker = speaker
+            previousSpeaker, previousMessage = speaker, message
             ns.UI.PositionMessageRow(row, content, y, width)
             if not row:IsShown() then
                 row:Show()

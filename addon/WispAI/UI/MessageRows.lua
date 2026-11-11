@@ -364,6 +364,10 @@ local function appendToolGroup(messages, chatId, calls, id)
     return running ~= nil
 end
 
+local function isTextReply(message)
+    return message.role == "assistant" and (message.text or ""):find("%S") ~= nil
+end
+
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId, groupOffset = {}, {}, nil, nil
     local hasReplyText = false
@@ -393,7 +397,7 @@ function ns.UI.DisplayMessages(chat)
             if message.role == "user" or message.role == "system" then
                 flushTools(false)
                 hasReplyText = false
-            elseif message.role == "assistant" and (message.text or ""):find("%S") then
+            elseif isTextReply(message) then
                 hasReplyText = true
             end
             messages[#messages + 1] = message
@@ -410,8 +414,11 @@ function ns.UI.PositionMessageRow(row, parent, y, width)
         row:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
     end
 end
-function ns.UI.MessageGap(previous, speaker)
-    return previous and previous ~= speaker and 12 or 0
+function ns.UI.MessageGap(previous, message)
+    if previous and previous.role == "tool" and isTextReply(message) then
+        return 6
+    end
+    return previous and ns.UI.MessageSpeaker(previous) ~= ns.UI.MessageSpeaker(message) and 12 or 0
 end
 function ns.UI.ChatSignature(chat)
     local parts = { chat and chat.id or "" }

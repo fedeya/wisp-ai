@@ -275,7 +275,7 @@ function ns.Inline.RefreshInline()
     end
     local chat = ns.Inline.InlineCurrent()
     local y, used = 0, {}
-    local previousSpeaker
+    local previousSpeaker, previousMessage
     local width = math.max(180, scroll:GetWidth() - 6)
     local previousRange = scroll:GetVerticalScrollRange()
     local offset = scroll:GetVerticalScroll()
@@ -292,10 +292,10 @@ function ns.Inline.RefreshInline()
             end
             used[key] = true
             local speaker = ns.UI.MessageSpeaker(message)
-            y = y + ns.UI.MessageGap(previousSpeaker, speaker)
+            y = y + ns.UI.MessageGap(previousMessage, message)
             local showAuthor = speaker ~= "assistant" or previousSpeaker ~= speaker
             ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
-            previousSpeaker = speaker
+            previousSpeaker, previousMessage = speaker, message
             local h = row.height
             ns.UI.PositionMessageRow(row, content, y, width)
             if not row:IsShown() then

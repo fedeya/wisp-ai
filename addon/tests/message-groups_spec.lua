@@ -131,6 +131,12 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 assert(top < previous, "message chronology must be preserved")
                 previous = top
             end
+            local preamble = findRow("Checking gear")
+            local _, _, _, _, toolTop = first:GetPoint()
+            local _, _, _, _, preambleTop = preamble:GetPoint()
+            local _, _, _, _, answerTop = findRow("Final answer"):GetPoint()
+            check.equal(toolTop - first:GetHeight() - 6, preambleTop)
+            check.equal(preambleTop - preamble:GetHeight(), answerTop)
             local progress = UI_TEST.frames.WispAIProgress
             if surface == "inline" then
                 local content = findRow("Second answer"):GetParent()
