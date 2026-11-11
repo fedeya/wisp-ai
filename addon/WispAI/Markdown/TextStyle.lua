@@ -3,10 +3,15 @@ local layout = {}
 local MAX_EXTRA_FONTS = 256
 local codeFont = "Interface\\AddOns\\WispAI\\Fonts\\JetBrainsMono-Regular.ttf"
 local headingSizes = { 7, 5, 3, 2, 1, 0 }
+local HEADING = { 0.94, 0.92, 0.86 }
+local CODE = { 0.82, 0.81, 0.77 }
 local function styleFont(font, span, level)
     font:SetFontObject(ChatFontNormal)
     local path, size, flags = ChatFontNormal:GetFont()
     local height = size + (level and headingSizes[level] or 0)
+    if span.code then
+        height = math.max(10, math.floor(height * 0.86 + 0.5))
+    end
     -- Emphasis and headings keep the localized game face. Conservatively restrict
     -- code to Latin/Greek/Cyrillic; unsupported scripts keep the game font too.
     if span.code and not span.text:find("[\212-\255]") then
@@ -82,6 +87,9 @@ function layout.Render(host, pool, part, width, y, count)
             layout.Hide({ f })
             f.runs = f.runs or {}
             f.block = block
+            if block.kind == "heading" and y > 0 then
+                y = y + 12
+            end
             local top, x, used, decoration, simplified = y, 0, 0, 0, false
             local left = math.max(0, math.min(block.indent, math.max(0, width - 40)))
             local inset = left
@@ -126,12 +134,13 @@ function layout.Render(host, pool, part, width, y, count)
                 run:SetWordWrap(true)
                 run:SetNonSpaceWrap(true)
                 run:SetSpacing(3)
-                local color = block.level and ns.UI.Widgets.GOLD
+                local color = block.level and HEADING
                     or (
                         (block.kind == "quote" or span.strike) and ns.UI.Widgets.MUTED
+                        or span.code and CODE
                         or ns.UI.Widgets.TEXT
                     )
-                if span.color then
+                if span.color and not block.level then
                     local hex = span.color:match("^|c%x%x(%x%x%x%x%x%x)$")
                     if hex then
                         color = {
@@ -158,7 +167,7 @@ function layout.Render(host, pool, part, width, y, count)
                         y,
                         w + 2,
                         h,
-                        { 0.1, 0.16, 0.15, 0.9 }
+                        { 0.16, 0.15, 0.12, 0.45 }
                     )
                 end
                 if span.strike then
@@ -240,10 +249,10 @@ function layout.Render(host, pool, part, width, y, count)
                     f:ClearAllPoints()
                     f:SetPoint("TOPLEFT", left, -top)
                     f:SetWidth(math.max(1, width - left))
-                    f:SetTextColor(unpack(block.level and ns.UI.Widgets.GOLD or ns.UI.Widgets.TEXT))
+                    f:SetTextColor(unpack(block.level and HEADING or ns.UI.Widgets.TEXT))
                     ns.UI.Widgets.SetText(f, part.text)
                     f:Show()
-                    return top + f:GetStringHeight(), count
+                    return top + f:GetStringHeight() + (block.level and 6 or 0), count
                 end
                 y = y + (lineUsed and math.max(16, lineHeight) or 0)
                 if block.kind == "code" then
@@ -257,7 +266,7 @@ function layout.Render(host, pool, part, width, y, count)
                         top,
                         width,
                         math.max(24, y - top),
-                        { 0.055, 0.07, 0.075, 0.96 }
+                        { 0.035, 0.033, 0.028, 0.55 }
                     )
                 elseif block.kind == "quote" then
                     decoration = decoration + 1
@@ -286,6 +295,9 @@ function layout.Render(host, pool, part, width, y, count)
                     f.marker:ClearAllPoints()
                     f.marker:SetPoint("TOPRIGHT", host, "TOPLEFT", inset - 6, -top)
                     f.marker:Show()
+                end
+                if block.kind == "heading" then
+                    y = y + 6
                 end
             end
         end

@@ -6,6 +6,39 @@ local function escaped(value)
     return (tostring(value or ""):gsub("|", "||"))
 end
 
+-- Macro coloring stays inside literal code: no Markdown or game links are parsed.
+-- Keep one text run so long macros do not allocate a widget per token.
+local function macroCode(value, info)
+    local language = (info or ""):match("^%s*(%S+)") or ""
+    if
+        not ({ [""] = true, macro = true, wowmacro = true, lua = true, text = true })[language:lower()]
+    then
+        return escaped(value)
+    end
+    local lines, commands = {}, 0
+    for line in (value .. "\n"):gmatch("(.-)\n") do
+        local indent, command, tail = line:match("^(%s*)([/#][%a]+)(.*)$")
+        if
+            command
+            and (command:sub(1, 1) == "/" or command == "#showtooltip" or command == "#show")
+        then
+            commands = commands + 1
+            local color = command:sub(1, 1) == "/" and "|cff8fb7c6" or "|cffb0aa8e"
+            -- Stop at the next opener so unmatched '[' cannot rescan overlapping suffixes.
+            tail = escaped(tail):gsub("(%[[^%[%]\n]*%])", function(condition)
+                -- Each word closes its color so wrapping into another font string is safe.
+                return (condition:gsub("%S+", "|cffaca0c2%0|r"))
+            end)
+            lines[#lines + 1] = indent .. color .. command .. "|r" .. tail
+        elseif line:match("%S") then
+            return escaped(value)
+        else
+            lines[#lines + 1] = line
+        end
+    end
+    return commands > 0 and table.concat(lines, "\n") or escaped(value)
+end
+
 -- A template contains static WoW text plus reference keys. Reformatting item
 -- data reuses both syntax and static text; no Markdown substitutions are used.
 local function compile(root, limit, fromUser)
@@ -59,7 +92,8 @@ local function compile(root, limit, fromUser)
             local value, cut = sharedText.TruncateUtf8Bytes(node.literal, remaining)
             remaining = remaining - #value
             local plain = escaped(value)
-            local text = (kind == "code" or kind == "code_block") and plain
+            local text = kind == "code_block" and macroCode(value, node.info)
+                or kind == "code" and plain
                 or ns.UI.Emoji.Render(plain)
             -- Repeated emoji textures can expand a short source substantially.
             append(#text <= math.max(4096, limit * 2) and text or plain, entry, kind)
