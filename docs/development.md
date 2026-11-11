@@ -293,7 +293,9 @@ Dependencies and ports can be supplied to `startBridge` for isolated integration
 
 Desktop screens live under `apps/desktop/src/pages`; their shared session controller
 uses Svelte runes in `desktop-controller.svelte.ts`. Addon widgets, message formatting,
-message rows and model controls are separate Lua modules loaded before `UI/Window.lua`.
+message rows and model controls are separate Lua modules. `UI/Window.lua` composes
+the sidebar, transcript, composer, activity, conversation status and settings
+components; see the [addon module map](../addon/README.md) for their ownership.
 Agent dependencies link to canonical package paths so isolated pnpm installs remain
 resolvable after moving the engine. The bundled just-bash workspace is configured
 explicitly with runtime package installation disabled.

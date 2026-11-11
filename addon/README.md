@@ -43,6 +43,24 @@ characters and reports truncation; it does not validate UTF-8. These modules loa
 immediately after `Namespace.lua`. UI text caching belongs to `UI/Widgets.lua`;
 RichUI and Inline reuse `ns.UI.Widgets.SetText`.
 
+`UI/Window.lua` composes the main chat window and owns its position, minimize/resize
+behavior and refresh entry point. Its components keep widget and cache state local:
+
+| Module                      | Responsibility                                                     |
+| --------------------------- | ------------------------------------------------------------------ |
+| `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog   |
+| `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation  |
+| `UI/Composer.lua`           | Multiline input, cursor scrolling, send/stop and responsive layout |
+| `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators  |
+| `UI/ConversationStatus.lua` | Conversation title, connection state and context usage             |
+| `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                    |
+
+The composer reports its bottom inset to the transcript through a callback wired
+by the window. `UI/ModelControls.lua` owns model/effort controls without changing
+composer or transcript geometry. Activity ticks update indicators without
+rerendering messages. The manifest loads these components before the window;
+the offline UI fixtures follow the same dependency order.
+
 `Integrations/Integrations.lua` owns provider metadata, readiness aggregation and
 protected inspection dispatch. Each provider owns its readiness checks and reads
 in one file: `Questie.lua` (quests, chains and NPC/object locations),

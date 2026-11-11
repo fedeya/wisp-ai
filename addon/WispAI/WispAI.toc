@@ -47,6 +47,12 @@ UI\ModelControls.lua
 UI\MessageRows.lua
 UI\Capabilities.lua
 UI\Memory.lua
+UI\Sidebar.lua
+UI\SettingsPanel.lua
+UI\Activity.lua
+UI\Transcript.lua
+UI\Composer.lua
+UI\ConversationStatus.lua
 UI\Window.lua
 Inline\Inline.lua
 Panels\Panels.lua

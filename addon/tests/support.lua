@@ -56,6 +56,12 @@ function M.addon(name, env)
             "UI/MessageRows.lua",
             "UI/Capabilities.lua",
             "UI/Memory.lua",
+            "UI/Sidebar.lua",
+            "UI/SettingsPanel.lua",
+            "UI/Activity.lua",
+            "UI/Transcript.lua",
+            "UI/Composer.lua",
+            "UI/ConversationStatus.lua",
         }) do
             M.addon(dependency, env)
         end

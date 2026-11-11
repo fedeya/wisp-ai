@@ -56,18 +56,6 @@ function ns.UI.RefreshModelControls()
         end
         local pending = chat and ns.modelPending[chat.id]
         controls.model:SetWidth(math.max(90, math.min(165, controls:GetParent():GetWidth() - 150)))
-        if controls.composer then
-            local narrow = controls.composer:GetWidth() < 380
-            if controls.narrow ~= narrow then
-                controls.narrow = narrow
-                controls.composer:SetHeight(narrow and 106 or 78)
-                controls.inputScroll:SetPoint("BOTTOMRIGHT", -10, narrow and 56 or 28)
-                controls.send:ClearAllPoints()
-                controls.send:SetPoint("BOTTOMRIGHT", -7, narrow and 31 or 5)
-                controls.transcript:SetPoint("BOTTOMRIGHT", -31, narrow and 132 or 104)
-                controls.scrollBar:SetPoint("BOTTOMRIGHT", -10, narrow and 132 or 104)
-            end
-        end
         local working = chat and chat.status == "working"
         setText(
             controls.model,

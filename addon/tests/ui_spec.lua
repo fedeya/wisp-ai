@@ -88,10 +88,15 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
 
     local controls = UI_TEST.frames.WispAIChatModelControls
     for _, width in ipairs({ 350, 500, 350 }) do
-        controls.composer:SetWidth(width)
-        ns.UI.RefreshModelControls()
+        local composer = controls:GetParent()
+        composer:SetWidth(width)
+        composer.scripts.OnSizeChanged(composer, width)
+        ns.UI.Refresh()
         local point, _, _, _, bottom = viewport:GetPoint()
         assert(point == "BOTTOMRIGHT" and bottom == (width < 380 and 56 or 28))
+        local transcriptBar = UI_TEST.frames.WispAITranscriptScrollBar
+        local _, _, _, _, transcriptBottom = transcriptBar:GetPoint()
+        assert(transcriptBottom == (width < 380 and 132 or 104))
         local _, parent = draft:GetPoint()
         assert(parent == viewport, "layout changes must keep the editor inside its scroll area")
     end
