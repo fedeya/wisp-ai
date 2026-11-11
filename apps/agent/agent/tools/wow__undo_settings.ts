@@ -9,7 +9,13 @@ export default enabledTool(
     description:
       'Undo a previously applied settings transaction for the same character. Checks that the current values still equal Wisp’s changes; never overwrites subsequent player changes. No code editing.',
     inputSchema: settingsUndo,
-    label: { start: () => 'Restoring settings' },
+    label: {
+      start: () => 'Restoring settings',
+      complete: (_, output) =>
+        (output as { status?: unknown } | undefined)?.status === 'completed'
+          ? 'Restored settings'
+          : 'Tried to restore settings',
+    },
     execute: (args, ctx) =>
       agentRPC(
         'action',

@@ -35,7 +35,7 @@ export function localMemory(slot: 'preferences' | 'character') {
           key: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
           text: z.string().min(1).max(1000),
         }),
-        label: { start: () => 'Updating memory' },
+        label: { start: () => 'Updating memory', complete: () => 'Updated memory' },
         execute: async (input) =>
           agentRPC(
             'memory',
@@ -46,7 +46,7 @@ export function localMemory(slot: 'preferences' | 'character') {
       remove_memory: defineTool({
         description: 'Forget an outdated or user-retracted memory by its exact saved key.',
         inputSchema: z.object({ key: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/) }),
-        label: { start: () => 'Removing memory' },
+        label: { start: () => 'Removing memory', complete: () => 'Removed memory' },
         execute: async (input) =>
           agentRPC(
             'memory',

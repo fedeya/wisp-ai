@@ -10,6 +10,10 @@ export default enabledTool(
     ...webFetch,
     inputSchema: webFetchInput,
     outputSchema: webFetchOutput,
+    label: {
+      start: ({ url }) => 'Reading page from ' + (new URL(url).hostname || 'the web'),
+      complete: ({ url }) => 'Read page from ' + (new URL(url).hostname || 'the web'),
+    },
     async execute(input, ctx) {
       return fetchWebPage(input, ctx.abortSignal, ctx.session.id);
     },

@@ -15,7 +15,10 @@ export default enabledTool(
         .optional()
         .describe('Bypass the turn-verified quest cache only when an updated reading is needed.'),
     }),
-    label: { start: ({ sections }) => 'Reading ' + sections.join(', ') },
+    label: {
+      start: ({ sections }) => 'Reading ' + sections.join(', '),
+      complete: ({ sections }) => 'Read ' + sections.join(', '),
+    },
     execute: ({ sections, refresh }, ctx) =>
       agentRPC('state', { eveSession: ctx.session.id, sections, refresh }, ctx.abortSignal),
   }),

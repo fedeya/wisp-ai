@@ -8,7 +8,7 @@ export default enabledTool(
     description:
       'Reads the currently selected target: name, NPC ID when available, level, classification, faction and hostility. Does not infer drops, quest involvement, target coordinates or fight difficulty from level alone.',
     inputSchema: z.object({}),
-    label: { start: () => 'Inspecting target' },
+    label: { start: () => 'Inspecting target', complete: () => 'Inspected target' },
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',

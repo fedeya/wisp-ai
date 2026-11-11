@@ -12,7 +12,7 @@ export default enabledTool(
       names: z.array(z.string().min(1).max(32)).max(10).default([]),
       includeBodies: z.boolean().default(false),
     }),
-    label: { start: () => 'Reading macros' },
+    label: { start: () => 'Reading macros', complete: () => 'Read macros' },
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',

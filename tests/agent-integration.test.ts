@@ -312,10 +312,21 @@ test(
         }),
         { signal: AbortSignal.timeout(15000) },
       );
-      for await (const _event of next.stream({ signal: AbortSignal.timeout(15000) })) {
-        /* Drain the real tool loop. */
+      const settingsChat = newChat('settings', 'test');
+      const settingsProjection = new ReplyProjection();
+      let settingsRunningLabel: string | undefined;
+      for await (const event of next.stream({ signal: AbortSignal.timeout(15000) })) {
+        applyEvent(settingsChat, event, settingsProjection);
+        const tool = settingsChat.activity.find((entry) => entry.name === 'wow__get_settings');
+        if (tool?.status === 'running') {
+          settingsRunningLabel = tool.label;
+        }
       }
       expect((await next.result()).status).toBe('completed');
+      expect(settingsRunningLabel).toBe('Reading settings');
+      expect(
+        settingsChat.messages.find((entry) => entry.tool?.name === 'wow__get_settings'),
+      ).toMatchObject({ text: 'Read settings', tool: { status: 'completed' } });
       expect(requests).toHaveLength(5);
       const names = (i: number) =>
         (requests[i]!.tools as { name: string }[]).map((tool) => tool.name);

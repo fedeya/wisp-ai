@@ -9,7 +9,7 @@ export default enabledTool(
     description:
       'Reads existing auction results already loaded while the auction house is open. Optional item ID filters that partial result set; it does not search or scan. All prices are copper. Does not bid, buy, post or cancel. For realm market values/history outside the AH use Everloot market_value/auction_history with freshness and coverage checks.',
     inputSchema: auctionInput,
-    label: { start: () => 'Reading auction results' },
+    label: { start: () => 'Reading auction results', complete: () => 'Read auction results' },
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',

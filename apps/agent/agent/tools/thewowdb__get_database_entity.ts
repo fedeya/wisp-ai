@@ -10,7 +10,10 @@ export default enabledTool(
     description:
       'Get a verified Forever item, spell, quest, NPC or zone from the primary TheWoWDB catalog. Use IDs verified by search or user/game references. Returns structured facts, source links, attribution and build. Does not prove the character owns/knows/completed anything. Resolve native map IDs separately with wow__inspect_map.',
     inputSchema: databaseEntity,
-    label: { start: ({ kind }) => 'Reading Forever ' + kind + ' data' },
+    label: {
+      start: ({ kind }) => 'Reading Forever ' + kind + ' data',
+      complete: ({ kind }) => 'Read Forever ' + kind + ' data',
+    },
     execute: (args, ctx) =>
       agentRPC(
         'database',

@@ -9,7 +9,13 @@ export default enabledTool(
     description:
       'Removes the waypoint last placed by Wisp, restoring the prior pin if there was one. Refuses to alter a waypoint the player has changed since then. Use when asked to undo/remove Wisp’s marker.',
     inputSchema: z.object({}),
-    label: { start: () => 'Removing map marker' },
+    label: {
+      start: () => 'Removing map marker',
+      complete: (_, output) =>
+        (output as { status?: unknown } | undefined)?.status === 'completed'
+          ? 'Removed map marker'
+          : 'Tried to remove the map marker',
+    },
     execute: async (args, ctx) =>
       agentRPC(
         'action',

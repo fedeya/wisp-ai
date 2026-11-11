@@ -12,7 +12,7 @@ export default enabledTool(
       mapIds: z.array(z.number().int().positive()).max(20).default([]),
       query: z.string().min(1).max(80).optional(),
     }),
-    label: { start: () => 'Reading maps' },
+    label: { start: () => 'Reading maps', complete: () => 'Read maps' },
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',

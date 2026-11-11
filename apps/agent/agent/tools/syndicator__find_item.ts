@@ -9,7 +9,7 @@ export default enabledTool(
     description:
       'Locate a verified item ID using Syndicator public API, including Baganator inventory data. Cached bag, bank, mail, equipped and auction counts across visible characters on the same connected realm and faction; guild storage requires includeGuild=true. Results are cached observations, not proof the item is currently accessible or absent. Use core character/resource reads for fresh bags; never claim to transfer items.',
     inputSchema: storedItemInput,
-    label: { start: () => 'Finding stored item' },
+    label: { start: () => 'Finding stored item', complete: () => 'Checked stored items' },
     execute: (args, ctx) =>
       agentRPC(
         'inspect',
