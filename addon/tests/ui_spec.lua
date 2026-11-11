@@ -22,11 +22,19 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     ns.UI.BuildUI()
     local draft = ns.draft
     local viewport = UI_TEST.frames.WispAIInputScroll
+    local bar = UI_TEST.frames.WispAIInputScrollBar
+    assert(not bar:IsShown(), "the scrollbar must start hidden")
     assert(viewport and viewport.kind == "ScrollFrame" and viewport.clipsChildren)
     assert(viewport.child == draft and draft:GetParent() == viewport)
     viewport:SetSize(300, 43)
     viewport.scripts.OnSizeChanged(viewport, 300, 43)
     assert(draft:GetWidth() == 300, "wrapping must follow the viewport width")
+    draft:SetHeight(43)
+    viewport.scripts.OnScrollRangeChanged(viewport)
+    assert(not bar:IsShown(), "text that exactly fits must not show a scrollbar")
+    draft:SetHeight(44)
+    viewport.scripts.OnScrollRangeChanged(viewport)
+    assert(bar:IsShown(), "the scrollbar must appear as soon as text overflows")
 
     -- Emulate native multiline EditBox growth and cursor events.
     function draft:Insert(text)
@@ -47,6 +55,18 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
         )
     end
     assert(#draft:GetText() == 40 and viewport:GetVerticalScroll() > 0)
+    assert(bar:IsShown() and bar:GetValue() == viewport:GetVerticalScroll())
+    bar:SetValue(120)
+    assert(viewport:GetVerticalScroll() == 120, "dragging the scrollbar must scroll the draft")
+    viewport:SetVerticalScroll(80)
+    viewport.scripts.OnVerticalScroll(viewport, 80)
+    assert(bar:GetValue() == 80, "native scrolling must keep the thumb in sync")
+    viewport:SetHeight(draft:GetHeight())
+    viewport.scripts.OnSizeChanged(viewport, 300)
+    assert(not bar:IsShown(), "enlarging the viewport to fit must hide the scrollbar")
+    viewport:SetHeight(43)
+    viewport.scripts.OnSizeChanged(viewport, 300)
+    assert(bar:IsShown(), "shrinking the viewport must restore the scrollbar")
     draft.scripts.OnCursorChanged(draft, 0, 0, 1, 16)
     assert(viewport:GetVerticalScroll() == 0, "moving to the first line must scroll up")
     draft.scripts.OnCursorChanged(draft, 0, -320, 1, 16)
@@ -60,6 +80,7 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     draft:SetHeight(16)
     draft.scripts.OnTextChanged(draft, false)
     assert(viewport:GetVerticalScroll() == 0, "shorter restored drafts must clamp the scroll")
+    assert(not bar:IsShown() and bar:GetValue() == 0)
     viewport:SetVerticalScroll(100)
     draft:SetText("")
     draft.scripts.OnTextChanged(draft, false)
