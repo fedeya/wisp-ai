@@ -172,6 +172,30 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 "user bubbles sit on the right"
             )
             assert(user:GetWidth() < findRow("Checking gear"):GetWidth())
+
+            local pending = { chat = "chat" }
+            ns.pendingMessages.u2 = pending
+            ns.workStarted.chat = GetTime()
+            local question = findRow("Second question")
+            local bubbleHeight = question:GetHeight()
+            refresh()
+            local delivery = question.delivery
+            assert(delivery:IsShown() and #delivery.dots == 3 and not progress:IsShown())
+            assert(not delivery.waiting:IsShown() and not question.author:IsShown())
+            local _, anchor, relativePoint = delivery:GetPoint()
+            assert(anchor == question.bubble and relativePoint == "BOTTOMRIGHT")
+            assert(question:GetHeight() == bubbleHeight + delivery:GetHeight())
+            UI_TEST.now = 15
+            delivery.scripts.OnUpdate(delivery)
+            assert(
+                delivery.waiting:IsShown() and delivery.waiting:GetText() == "Waiting for bridge"
+            )
+            assert(question:GetHeight() == bubbleHeight + delivery:GetHeight())
+            pending.acknowledged = true
+            refresh()
+            assert(not delivery:IsShown() and progress:IsShown())
+            assert(question:GetHeight() == bubbleHeight)
+
             local call = {
                 id = "t3b",
                 role = "tool",

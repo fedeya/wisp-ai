@@ -4,6 +4,17 @@ local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
 local header, replyGlow, emptyState, progress
 local progressTick = 0
 
+function ns.UI.Activity.IsSending(chat)
+    if chat and chat.status == "working" then
+        for _, pending in pairs(ns.pendingMessages or {}) do
+            if pending.chat == chat.id and not pending.acknowledged then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 function ns.UI.Activity.Refresh(chat)
     local working = chat and chat.status == "working"
     local empty = not chat or not chat.messages or #chat.messages == 0
@@ -35,20 +46,12 @@ function ns.UI.Activity.Refresh(chat)
         local seconds = math.max(0, math.floor(now - ns.workStarted[chat.id]))
         local elapsed = seconds < 60 and (seconds .. "s")
             or string.format("%dm %02ds", math.floor(seconds / 60), seconds % 60)
-        local sending = false
-        for _, pending in pairs(ns.pendingMessages or {}) do
-            if pending.chat == chat.id and not pending.acknowledged then
-                sending = true
-                break
-            end
-        end
+        local sending = ns.UI.Activity.IsSending(chat)
         local compacting = chat.usage and chat.usage.compacting
-        local phase = sending and "Sending" or (compacting and "Compacting" or "Thinking")
+        local phase = compacting and "Compacting" or "Thinking"
         local dots = string.rep(".", math.floor(now * 2) % 3 + 1)
         setText(progress.elapsed, elapsed)
-        local detail = sending
-                and (seconds >= 15 and "Waiting for bridge confirmation" or "Delivering your message")
-            or "Preparing your reply"
+        local detail = "Preparing your reply"
         if compacting then
             detail = "Summarizing older context to continue this conversation"
         end
@@ -65,7 +68,7 @@ function ns.UI.Activity.Refresh(chat)
         end
         setText(progress.title, (activity or phase) .. dots)
         setText(progress.detail, detail)
-        title = "Wisp AI - " .. phase .. " " .. elapsed
+        title = "Wisp AI - " .. (sending and "Sending" or phase) .. " " .. elapsed
     elseif chat then
         ns.workStarted[chat.id] = nil
     end

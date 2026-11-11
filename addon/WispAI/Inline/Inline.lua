@@ -324,8 +324,9 @@ function ns.Inline.RefreshInline()
         end
     end
     local working = chat and chat.status == "working"
-    busy:SetShown(working and not activeTool)
-    if working and not activeTool then
+    local showBusy = working and not activeTool and not ns.UI.Activity.IsSending(chat)
+    busy:SetShown(showBusy)
+    if showBusy then
         local active = "Thinking..."
         for _, call in ipairs(chat.activity or {}) do
             if call.status == "running" then

@@ -5,6 +5,8 @@ local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
+local DELIVERY_HEIGHT = 20
+local DELIVERY_DELAY = 15
 local TOOL_STATES = {
     completed = { cell = 0, tint = MUTED },
     running = { cell = 1, tint = GOLD },
@@ -210,6 +212,38 @@ local function linked(row)
     end)
 end
 ns.UI.LinkWidget = linked
+
+local function updateDelivery(delivery)
+    local elapsed = GetTime() - delivery.startedAt
+    for index, dot in ipairs(delivery.dots) do
+        dot:SetAlpha(0.35 + 0.65 * (0.5 + 0.5 * math.sin(elapsed * 5 - (index - 1) * 0.8)))
+    end
+    local delayed = elapsed >= DELIVERY_DELAY
+    if delivery.waiting:IsShown() ~= delayed then
+        delivery.waiting:SetShown(delayed)
+    end
+end
+
+local function makeDelivery(row)
+    local delivery = CreateFrame("Frame", nil, row)
+    delivery:SetSize(140, DELIVERY_HEIGHT)
+    delivery:SetPoint("TOPRIGHT", row.bubble, "BOTTOMRIGHT", -8, 0)
+    delivery.dots = {}
+    for index = 1, 3 do
+        local dot = label(delivery, ".", GOLD)
+        dot:SetFontObject("GameFontNormalLarge")
+        dot:SetPoint("RIGHT", delivery, "RIGHT", (index - 3) * 8, 4)
+        delivery.dots[index] = dot
+    end
+    delivery.waiting = label(delivery, "Waiting for bridge", MUTED)
+    delivery.waiting:SetFontObject("GameFontHighlightSmall")
+    delivery.waiting:SetTextColor(unpack(MUTED))
+    delivery.waiting:SetPoint("RIGHT", delivery, "RIGHT", -30, 0)
+    delivery.waiting:Hide()
+    delivery:SetScript("OnUpdate", updateDelivery)
+    return delivery
+end
+
 local function makeRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     linked(row)
@@ -227,7 +261,6 @@ local function makeRow(parent)
     row.chevron:Hide()
     row.bubble = CreateFrame("Frame", nil, row, "BackdropTemplate")
     row.bubble:SetFrameLevel(row:GetFrameLevel())
-    row.bubble:SetAllPoints(row)
     row.bubble:SetBackdrop({
         bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -405,6 +438,14 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
     local display, viewKey = ns.Markdown.ReplyView.Update(row.replyView, chat.id, message)
     message = display
     local tool = message.tool
+    local pendingMessage = message.role == "user"
+        and message.id
+        and ns.pendingMessages
+        and ns.pendingMessages[message.id]
+    local sending = chat.status == "working"
+        and pendingMessage
+        and pendingMessage.chat == chat.id
+        and not pendingMessage.acknowledged
     local signature = chat.id
         .. "\31"
         .. (message.id or "")
@@ -426,6 +467,8 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
         .. (message.toolIndent or 0)
         .. "\31"
         .. (message.toolDetail or "")
+        .. "\31"
+        .. (sending and "sending" or "")
     if row.signature ~= signature then
         row.signature = signature
         local pending = false
@@ -436,6 +479,17 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
         end
         row:SetWidth(width)
         row.bubble:SetShown(message.role == "user")
+        if message.role == "user" then
+            row.bubble:ClearAllPoints()
+            row.bubble:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+            row.bubble:SetPoint(
+                "BOTTOMRIGHT",
+                row,
+                "BOTTOMRIGHT",
+                0,
+                sending and DELIVERY_HEIGHT or 0
+            )
+        end
         row.groupKey = message.groupKey
         row.disclosure:SetShown(message.groupKey ~= nil)
         row.chevron:SetShown(message.groupKey ~= nil)
@@ -576,6 +630,15 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
             row.retry:ClearAllPoints()
             row.retry:SetPoint("TOPLEFT", 0, -row.height)
             row.height = row.height + 30
+        end
+        if sending then
+            row.delivery = row.delivery or makeDelivery(row)
+            row.delivery.startedAt = ns.workStarted[chat.id] or GetTime()
+            updateDelivery(row.delivery)
+            row.height = row.height + DELIVERY_HEIGHT
+        end
+        if row.delivery then
+            row.delivery:SetShown(sending == true)
         end
         row:SetHeight(row.height)
     end

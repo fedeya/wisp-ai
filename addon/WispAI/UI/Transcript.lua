@@ -62,7 +62,7 @@ function ns.UI.Transcript.Refresh(chat)
         y,
         width,
         previousSpeaker ~= "assistant",
-        chat and chat.status == "working" and not activeTool
+        chat and chat.status == "working" and not activeTool and not ns.UI.Activity.IsSending(chat)
     )
     for key, row in pairs(rows) do
         if not used[key] and row:IsShown() then

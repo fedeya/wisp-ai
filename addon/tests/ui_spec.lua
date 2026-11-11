@@ -510,16 +510,14 @@ it(
         local progress = UI_TEST.frames.WispAIProgress
         assert(not progress:IsShown())
         ns.chats[1].status = "working"
+        table.insert(ns.chats[1].messages, { id = "m", role = "user", text = "Sending test" })
         ns.pendingMessages = { m = { chat = "chat" } }
         ns.UI.Refresh()
-        assert(
-            progress:IsShown() and progress.title:GetText() == "Sending.",
-            "sending must be visible before bridge confirmation"
-        )
-        ns.pendingMessages = {}
+        assert(not progress:IsShown(), "sending must not show an assistant progress row")
+        ns.pendingMessages.m.acknowledged = true
         ns.UI.Refresh()
         assert(
-            progress.title:GetText():match("^Thinking"),
+            progress:IsShown() and progress.title:GetText():match("^Thinking"),
             "an acknowledged message should show an assistant thinking row"
         )
         ns.chats[1].activity = { { label = "Searching the web", status = "running" } }
