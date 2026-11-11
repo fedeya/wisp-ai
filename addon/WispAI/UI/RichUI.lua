@@ -608,7 +608,7 @@ function ns.UI.RenderRichUI(host, chat, message, width)
     if ns.Markdown and ns.Markdown.TextStyle then
         ns.Markdown.TextStyle.Hide(host.prose)
     end
-    local proseCount = 0
+    local proseCount, writingTail = 0, nil
     local function indent(value)
         return math.max(0, math.min(tonumber(value) or 0, math.max(0, width - 40)))
     end
@@ -627,6 +627,7 @@ function ns.UI.RenderRichUI(host, chat, message, width)
         and (message._markdown or (message.ui and #message.ui > 0))
     then
         for _, part in ipairs(message.parts) do
+            writingTail = nil
             if part.type == "ui" then
                 local node = nodes[part.id]
                 if node and not node.parent then
@@ -670,6 +671,22 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                     f:Show()
                     y = y + f:GetStringHeight() + 8
                 end
+                if
+                    message.streaming
+                    and not part.style
+                    and not part.styled
+                    and not part.text:find("|", 1, true)
+                then
+                    local f = host.prose[proseCount]
+                    if f and f:IsShown() then
+                        writingTail = f
+                        for _, run in ipairs(f.runs or {}) do
+                            if run:IsShown() then
+                                writingTail = run
+                            end
+                        end
+                    end
+                end
             end
         end
     else
@@ -693,5 +710,5 @@ function ns.UI.RenderRichUI(host, chat, message, width)
     end
     host:SetWidth(width)
     host:SetHeight(math.max(1, y))
-    return y, pending
+    return y, pending, writingTail
 end

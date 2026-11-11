@@ -292,6 +292,57 @@ it(
     end
 )
 
+it("reveals streamed prose without cutting UTF-8 or remeasuring the row", function()
+    local env, ns = setup()
+    local original = message("")
+    original.streaming = true
+    local chat = { id = "chat", status = "working", messages = { original } }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.is_nil(row.scripts.OnUpdate)
+    original.text = "Ésta es una primera tanda de texto."
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    local height = row.height
+    assert.equal("É", row.text:GetText())
+    row.scripts.OnUpdate(row, 0.15)
+    local partial = row.text:GetText()
+    assert.is_true(#partial > #"É" and #partial < #original.text)
+    assert.equal(height, row.height)
+
+    original.text = original.text .. " Sigue la segunda."
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.equal(partial, row.text:GetText())
+    row.scripts.OnUpdate(row, 0.4)
+    assert.equal(original.text, row.text:GetText())
+    assert.is_nil(row.scripts.OnUpdate)
+
+    original.text = original.text .. "\n\nPárrafo nuevo."
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.equal("P", row.rich.prose[2]:GetText())
+    original.streaming = false
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.equal("Párrafo nuevo.", row.rich.prose[2]:GetText())
+    assert.is_nil(row.scripts.OnUpdate)
+end)
+
+it("preserves native markup and finishes the reveal when the row is hidden", function()
+    local env, ns = setup()
+    local original = message("**A bold start**")
+    original.streaming = true
+    local chat = { id = "chat", status = "working", messages = { original } }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.equal("|cffe3c77eA bold start|r", row.text:GetText())
+    assert.is_nil(row.scripts.OnUpdate)
+
+    original.text = original.text .. "\n\nAnother paragraph."
+    ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.is_function(row.scripts.OnUpdate)
+    row.scripts.OnHide(row)
+    assert.equal("Another paragraph.", row.rich.prose[2]:GetText())
+    assert.is_nil(row.scripts.OnUpdate)
+end)
+
 it("uses current metadata with a cached view and preserves user native links", function()
     local env, ns = setup()
     local original = message("A|B\n---|---\nx|y")

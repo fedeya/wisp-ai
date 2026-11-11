@@ -4,6 +4,7 @@ local GOLD, TEXT, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.TEXT, ns.UI.Widgets.
 local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
+local truncateUtf8 = ns.Shared.Text.TruncateUtf8Bytes
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
@@ -14,6 +15,76 @@ local TOOL_STATES = {
     failed = { cell = 2, tint = { 0.85, 0.52, 0.46 } },
 }
 local toolGroupsExpanded = {}
+
+local function finishWriting(row)
+    local writing = row.writing
+    if writing then
+        setText(writing.font, writing.text)
+        row.writing = nil
+        row:SetScript("OnUpdate", nil)
+    end
+end
+
+local function updateWriting(row, elapsed)
+    local writing = row.writing
+    writing.elapsed = writing.elapsed + elapsed
+    if writing.elapsed >= writing.duration then
+        finishWriting(row)
+    elseif writing.elapsed - writing.updated >= 0.03 then
+        writing.updated = writing.elapsed
+        local bytes = writing.start
+            + math.floor((#writing.text - writing.start) * writing.elapsed / writing.duration)
+        writing.prefix = truncateUtf8(writing.text, bytes)
+        setText(writing.font, writing.prefix)
+    end
+end
+
+local function revealWriting(row, font, source, previous, interrupted)
+    local text = font and font:GetText() or ""
+    row.writingSnapshot = { source = source, font = font, text = text }
+    if not font or not row:IsVisible() then
+        return
+    end
+    if text == "" or text:find("|", 1, true) then
+        return
+    end
+    if interrupted and interrupted.font == font and interrupted.text == text then
+        row.writing = interrupted
+    else
+        local previousSource = previous and previous.source or ""
+        if #source <= #previousSource or source:sub(1, #previousSource) ~= previousSource then
+            return
+        end
+        if previous and previous.font == font and previous.text == text then
+            return
+        end
+        -- Font strings can change when Markdown adds a new paragraph or wraps a line.
+        -- Only reveal as much as the new source added, capped for large bursts.
+        local start = math.max(0, #text - (#source - #previousSource))
+        if previous and previous.font == font and text:sub(1, #previous.text) == previous.text then
+            start = interrupted and #interrupted.prefix or #previous.text
+        end
+        start = #truncateUtf8(text, math.max(start, #text - 180))
+        if start == 0 then
+            local first = text:find("%S") or 1
+            start = (text:find("[^\128-\191]", first + 1) or #text + 1) - 1
+        end
+        if start >= #text then
+            return
+        end
+        row.writing = {
+            font = font,
+            text = text,
+            start = start,
+            prefix = text:sub(1, start),
+            elapsed = 0,
+            updated = 0,
+            duration = math.min(0.36, (#text - start) * 0.018),
+        }
+    end
+    setText(font, row.writing.prefix)
+    row:SetScript("OnUpdate", updateWriting)
+end
 
 local function setToolIcon(texture, cell, tint)
     texture:SetTexture(TOOL_ICONS)
@@ -248,6 +319,7 @@ end
 local function makeRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     linked(row)
+    row:SetScript("OnHide", finishWriting)
     row.author = label(row, "", GOLD)
     row.author:SetPoint("TOPLEFT", 0, 0)
     row.text = label(row, "")
@@ -444,6 +516,7 @@ function ns.UI.MessageSpeaker(message)
 end
 function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
     row.replyView = row.replyView or ns.Markdown.ReplyView.New()
+    local sameReply = row.replyView.chatId == chat.id and row.replyView.messageId == message.id
     local display, viewKey = ns.Markdown.ReplyView.Update(row.replyView, chat.id, message)
     message = display
     local tool = message.tool
@@ -480,6 +553,16 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
         .. (sending and "sending" or "")
     if row.signature ~= signature then
         row.signature = signature
+        local previous = sameReply and row.writingSnapshot
+        local interrupted = sameReply and row.writing
+        finishWriting(row)
+        row.writingSnapshot = nil
+        local writingSource = message.role == "assistant"
+                and message.streaming
+                and chat.status == "working"
+                and (message.text or "")
+            or nil
+        local writingFont
         local pending = false
         row.chatId = chat.id
         row.speaker = message.role
@@ -614,6 +697,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
                 end
             end
             row.text:SetShown(not interleaved)
+            writingFont = not interleaved and row.text or nil
             row.height = top
                 + math.max(
                     1,
@@ -628,8 +712,11 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
                 row.rich:Show()
                 row.rich:ClearAllPoints()
                 row.rich:SetPoint("TOPLEFT", padding, -(interleaved and top or row.height))
-                local height, waiting =
+                local height, waiting, tail =
                     ns.UI.RenderRichUI(row.rich, chat, message, width - padding * 2)
+                if interleaved then
+                    writingFont = tail
+                end
                 row.height = row.height + height
                 pending = pending or waiting == true
             end
@@ -659,5 +746,8 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
             row.delivery:SetShown(sending == true)
         end
         row:SetHeight(row.height)
+        if writingSource then
+            revealWriting(row, writingFont, writingSource, previous, interrupted)
+        end
     end
 end
