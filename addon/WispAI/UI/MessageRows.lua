@@ -493,9 +493,8 @@ end
 local function appendToolGroup(messages, chatId, calls, id, spinning)
     if #calls == 1 then
         local call = calls[1]
-        local entry = toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0)
-        messages[#messages + 1] = entry
-        return entry.tool.status == "running"
+        messages[#messages + 1] = toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0)
+        return
     end
     local running, failed, latest
     for _, call in ipairs(calls) do
@@ -528,7 +527,6 @@ local function appendToolGroup(messages, chatId, calls, id, spinning)
             messages[#messages + 1] = toolCallRow(chatId, call, callId, callId, 18)
         end
     end
-    return running ~= nil
 end
 
 local function isTextReply(message)
@@ -536,23 +534,16 @@ local function isTextReply(message)
 end
 
 function ns.UI.DisplayMessages(chat)
-    local messages, calls, groupId, groupOffset = {}, {}, nil, nil
+    local messages, calls, groupId = {}, {}, nil
     local hasReplyContent, turnStart = false, 1
-    local function flushTools(currentTurn)
+    local function flushTools(spinning)
         if not groupId then
             return
         end
-        local group = {}
-        local spinning = currentTurn and chat.status == "working" and not hasReplyContent
-        local running = appendToolGroup(group, chat.id, calls, groupId, spinning)
-        local active = spinning and running
-        group[1].turnSpinning = spinning
-        -- While a call runs, its group occupies the current activity slot.
-        local offset = active and #messages + 1 or groupOffset
-        for index = #group, 1, -1 do
-            table.insert(messages, offset, group[index])
-        end
-        calls, groupId, groupOffset = {}, nil, nil
+        local header = #messages + 1
+        appendToolGroup(messages, chat.id, calls, groupId, spinning)
+        messages[header].turnSpinning = spinning
+        calls, groupId = {}, nil
     end
     for index, message in ipairs(chat and chat.messages or {}) do
         if message.role == "tool" then
@@ -561,15 +552,15 @@ function ns.UI.DisplayMessages(chat)
             if ns.db.showTools then
                 groupId = groupId or ("tools-" .. (message.id or index))
                 calls[#calls + 1] = message
-                groupOffset = #messages + 1
             end
         elseif
             message.role ~= "assistant"
             or isTextReply(message)
             or (message.ui and #message.ui > 0)
         then
+            -- Visible replies close the preceding batch at its position in the transcript.
+            flushTools(false)
             if message.role == "user" or message.role == "system" then
-                flushTools(false)
                 hasReplyContent = false
                 turnStart = #messages + 2
             elseif message.role == "assistant" then
@@ -579,7 +570,7 @@ function ns.UI.DisplayMessages(chat)
         end
     end
     local hasToolActivity = groupId ~= nil
-    flushTools(true)
+    flushTools(hasToolActivity and chat.status == "working")
     return messages, hasToolActivity, hasReplyContent, turnStart
 end
 

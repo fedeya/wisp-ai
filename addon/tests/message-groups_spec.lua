@@ -299,16 +299,19 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local messages = ns.chats[1].messages
             table.insert(messages, simulation)
             refresh()
-            assert(group.spinner:IsPlaying() and group.y > replyRow.y)
-            check.equal("Simulating DPS", group.text:GetText())
+            local simulationGroup = findRow("Simulating DPS")
+            check.equal("Tried to read talents  +1", group.text:GetText())
+            assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
+            assert(not group.spinner:IsPlaying() and simulationGroup.spinner:IsPlaying())
 
             simulation.tool.status, simulation.tool.label = "completed", "Simulated DPS"
             refresh()
             assert(
-                group.spinner:IsPlaying(),
+                simulationGroup.spinner:IsPlaying(),
                 "the loader stays on while the comparison is prepared"
             )
-            check.equal("Simulated DPS  +2", group.text:GetText())
+            check.equal("Simulated DPS", simulationGroup.text:GetText())
+            assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
 
             table.insert(messages, {
                 id = "presentation-progress-comparison",
@@ -317,8 +320,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 tool = { status = "running", label = "Creating comparison" },
             })
             refresh()
-            assert(group.spinner:IsPlaying() and not progress:IsShown())
-            check.equal("Creating comparison", group.text:GetText())
+            assert(simulationGroup.spinner:IsPlaying() and not progress:IsShown())
+            check.equal("Creating comparison", simulationGroup.text:GetText())
+            assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
 
             table.remove(messages)
             table.insert(messages, {
@@ -329,7 +333,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 parts = { { type = "ui", id = "comparison-card" } },
             })
             refresh()
-            assert(not group.spinner:IsPlaying() and not progress:IsShown())
+            assert(not simulationGroup.spinner:IsPlaying() and not progress:IsShown())
             local comparisonRow
             for _, row in ipairs(visibleRows()) do
                 if row.replyView and row.replyView.messageId == "simulation-comparison" then
@@ -337,7 +341,8 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 end
             end
             assert(comparisonRow and comparisonRow.rich.widgets["comparison-card"]:IsShown())
-            assert(comparisonRow.y > group.y)
+            assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
+            assert(simulationGroup.y < comparisonRow.y)
 
             table.insert(ns.chats[1].messages, {
                 id = "final-only",
