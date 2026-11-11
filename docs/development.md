@@ -193,24 +193,26 @@ and metadata uses `surface: desktop`, `app_version`, `channel`, `os` and `arch`.
 Use distinct installation IDs when counting active installs; `app_active` may be
 emitted by both host startup and bridge usage on the same day.
 
-Telemetry uses PostHog's public `/i/v0/e/` API with person-profile processing and
-GeoIP enrichment disabled. Requests have a three-second timeout, bounded bridge
-concurrency and no persisted event queue. Failures never block gameplay. Only
-first-opening delivery is retried on later app launches until successful.
+The desktop host uses `posthog-rs`, the bridge uses `posthog-node`, and the
+website uses `posthog-js`. Desktop SDKs use immediate capture with a three-second
+request timeout, no retry backlog, and a final preference check and property
+filter before sending. Person-profile processing and GeoIP enrichment are disabled.
+First-opening delivery is retried on later app launches until confirmed by the SDK.
+The bridge bounds concurrent sends and runs them outside gameplay.
 Tests use temporary preferences and mocked requests, so they do not pollute the
 production project. Reinstalling/upgrading preserves the preference and UUID as
 long as the app data directory is preserved.
 
 Suggested PostHog insights for the shared project:
 
-| Question | Event and aggregation |
-| --- | --- |
-| First tracked installations | `app_first_open`, unique installation IDs |
-| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version` |
-| Feature use | `tool_executed`, event count, breakdown by `tool` |
-| Queries and failures | `chat_completed`, event count, breakdown by `mode` / `outcome` |
-| Addon adoption | `game_connected`, unique installation IDs, breakdown by `addon_version` |
-| Website download intent | `download_clicked`, event count, breakdown by `location` / `locale` |
+| Question                          | Event and aggregation                                                   |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| First tracked installations       | `app_first_open`, unique installation IDs                               |
+| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`       |
+| Feature use                       | `tool_executed`, event count, breakdown by `tool`                       |
+| Queries and failures              | `chat_completed`, event count, breakdown by `mode` / `outcome`          |
+| Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version` |
+| Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`     |
 
 Actual installer download counts come from the `download_count` values on GitHub
 release assets. They include repeated/automated downloads and upgrades; do not

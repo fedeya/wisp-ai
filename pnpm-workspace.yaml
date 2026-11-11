@@ -23,3 +23,4 @@ minimumReleaseAgeExclude:
   - '@posthog/core@1.67.1'
   - '@posthog/types@1.423.0'
   - posthog-js@1.447.10
+  - posthog-node@5.68.2

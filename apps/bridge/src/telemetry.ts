@@ -1,11 +1,29 @@
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { PostHog } from 'posthog-node';
 import path from 'node:path';
 import { z } from 'zod';
 import { publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
 import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/protocol/reply-presentation';
 
 const token = 'phc_se29yi8DLMmFxhRcqQrzrSs9vGLzAiEGmsaMvjotDdTE';
-const endpoint = 'https://us.i.posthog.com/i/v0/e/';
+const host = 'https://us.i.posthog.com';
+const propertyKeys = new Set([
+  'surface',
+  'app_version',
+  'channel',
+  'os',
+  'arch',
+  'mode',
+  'outcome',
+  'duration_ms',
+  'addon_version',
+  'tool',
+  '$process_person_profile',
+  '$geoip_disable',
+  '$lib',
+  '$lib_version',
+]);
 const builtinTools = new Map(
   Object.keys(toolDescriptions).map((name) => [publicToolName(name), name]),
 );
@@ -23,7 +41,7 @@ type Properties = Record<string, string | number | boolean>;
 // model/connection IDs, character data or free-form errors are accepted.
 export class UsageTelemetry {
   private pending = new Set<Promise<void>>();
-  private controllers = new Set<AbortController>();
+  private client?: PostHog;
   private activeDay = '';
   private addonDay = '';
   private closed = false;
@@ -59,43 +77,52 @@ export class UsageTelemetry {
       this.addonDay = '';
       return;
     }
-    const controller = new AbortController();
-    this.controllers.add(controller);
-    try {
-      await fetch(endpoint, {
-        method: 'POST',
-        redirect: 'error',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(3000)]),
-        body: JSON.stringify({
-          api_key: token,
-          distinct_id: preferences.installationId,
-          event,
-          properties: {
-            surface: 'desktop',
-            app_version: versionSchema.safeParse(this.version).success ? this.version : 'unknown',
-            channel: this.version.includes('-nightly.') ? 'nightly' : 'stable',
-            os:
-              process.platform === 'win32'
-                ? 'windows'
-                : process.platform === 'darwin'
-                  ? 'macos'
-                  : process.platform,
-            arch:
-              process.arch === 'x64'
-                ? 'x86_64'
-                : process.arch === 'arm64'
-                  ? 'aarch64'
-                  : process.arch,
-            $process_person_profile: false,
-            $geoip_disable: true,
-            ...properties,
-          },
-        }),
-      });
-    } finally {
-      this.controllers.delete(controller);
-    }
+    this.client ??= new PostHog(token, {
+      host,
+      requestTimeout: 3000,
+      fetchRetryCount: 0,
+      flushInterval: 0,
+      disableGeoip: true,
+      isServer: false,
+      enableLocalEvaluation: false,
+      enableExceptionAutocapture: false,
+      privacyMode: true,
+      before_send: (message) => {
+        try {
+          const saved = preferencesSchema.parse(
+            JSON.parse(readFileSync(path.join(this.dataRoot, 'telemetry.json'), 'utf8')),
+          );
+          if (this.closed || !saved.enabled) return null;
+          // SDK context/enrichment must not add arbitrary properties to our events.
+          message.properties = Object.fromEntries(
+            Object.entries(message.properties ?? {}).filter(([key]) => propertyKeys.has(key)),
+          );
+          return message;
+        } catch {
+          return null;
+        }
+      },
+    });
+    await this.client.captureImmediate({
+      distinctId: preferences.installationId,
+      event,
+      properties: {
+        surface: 'desktop',
+        app_version: versionSchema.safeParse(this.version).success ? this.version : 'unknown',
+        channel: this.version.includes('-nightly.') ? 'nightly' : 'stable',
+        os:
+          process.platform === 'win32'
+            ? 'windows'
+            : process.platform === 'darwin'
+              ? 'macos'
+              : process.platform,
+        arch:
+          process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : process.arch,
+        $process_person_profile: false,
+        $geoip_disable: true,
+        ...properties,
+      },
+    });
   }
 
   private active() {
@@ -178,8 +205,10 @@ export class UsageTelemetry {
     await Promise.allSettled(this.pending);
   }
 
-  close() {
+  async close() {
     this.closed = true;
-    this.controllers.forEach((controller) => controller.abort());
+    await this.client?.optOut();
+    await this.drain();
+    await this.client?.shutdown(3000);
   }
 }

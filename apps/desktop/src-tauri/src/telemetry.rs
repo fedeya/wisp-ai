@@ -1,10 +1,46 @@
+use posthog_rs::{Client, ClientOptionsBuilder, Event};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{fs, path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 use tauri::Manager;
 
 const TOKEN: &str = "phc_se29yi8DLMmFxhRcqQrzrSs9vGLzAiEGmsaMvjotDdTE";
-const ENDPOINT: &str = "https://us.i.posthog.com/i/v0/e/";
+const HOST: &str = "https://us.i.posthog.com";
+
+fn filter_event(file: &Path, mut event: Event) -> Option<Event> {
+    let preferences: Preferences = serde_json::from_slice(&fs::read(file).ok()?).ok()?;
+    if !preferences.enabled {
+        return None;
+    }
+    let keys: Vec<_> = event
+        .properties()
+        .keys()
+        .filter(|key| {
+            ![
+                "surface",
+                "app_version",
+                "channel",
+                "os",
+                "arch",
+                "section",
+                "$process_person_profile",
+                "$geoip_disable",
+                "$lib",
+                "$lib_version",
+            ]
+            .contains(&key.as_str())
+        })
+        .cloned()
+        .collect();
+    for key in keys {
+        event.remove_prop(&key);
+    }
+    Some(event)
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Preferences {
@@ -18,7 +54,7 @@ struct Preferences {
 pub struct Telemetry {
     file: PathBuf,
     operation: Mutex<()>,
-    client: reqwest::Client,
+    client: tauri::async_runtime::Mutex<Option<Client>>,
 }
 
 pub fn release_enabled() -> bool {
@@ -32,7 +68,7 @@ impl Telemetry {
         Self {
             file: data.join("telemetry.json"),
             operation: Mutex::new(()),
-            client: reqwest::Client::new(),
+            client: tauri::async_runtime::Mutex::new(None),
         }
     }
 
@@ -101,6 +137,7 @@ impl Telemetry {
         if !release_enabled() {
             return false;
         }
+        let mut client = self.client.lock().await;
         let id = {
             let Ok(_guard) = self.operation.lock() else {
                 return false;
@@ -119,9 +156,36 @@ impl Telemetry {
         if let Some(extra) = extra.as_object() {
             properties.as_object_mut().unwrap().extend(extra.clone());
         }
-        self.client.post(ENDPOINT).timeout(Duration::from_secs(3))
-            .json(&json!({ "api_key": TOKEN, "distinct_id": id, "event": event, "properties": properties }))
-            .send().await.map(|r| r.status().is_success()).unwrap_or(false)
+        if client.is_none() {
+            let file = self.file.clone();
+            let Ok(options) = ClientOptionsBuilder::default()
+                .api_key(TOKEN.to_string())
+                .host(HOST)
+                .request_timeout_seconds(3u64)
+                .max_capture_attempts(1u32)
+                .disable_geoip(true)
+                .is_server(false)
+                .before_send(move |event| filter_event(&file, event))
+                .build()
+            else {
+                return false;
+            };
+            *client = Some(posthog_rs::client(options).await);
+        }
+        let mut sdk_event = Event::new(event, id.as_str());
+        for (key, value) in properties.as_object().unwrap() {
+            if sdk_event.insert_prop(key, value).is_err() {
+                return false;
+            }
+        }
+        // Confirm delivery before persisting firstOpenSent; no manual HTTP protocol.
+        client
+            .as_ref()
+            .unwrap()
+            .capture_immediate(sdk_event)
+            .await
+            .map(|summary| summary.submitted() == 1 && summary.all_persisted())
+            .unwrap_or(false)
     }
 
     pub async fn opened(&self) {
@@ -218,6 +282,24 @@ mod tests {
         assert!(!telemetry.enabled());
         assert!(telemetry.settings(None).is_err());
         assert_eq!(fs::read(&telemetry.file).unwrap(), b"broken");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn sdk_hook_rechecks_opt_out_and_removes_ambient_properties() {
+        let (directory, telemetry) = fixture();
+        assert!(telemetry.enabled());
+        let mut event = Event::new("app_active", "random-installation");
+        event.insert_prop("app_version", "0.1.0").unwrap();
+        event.insert_prop("email", "PRIVATE").unwrap();
+        let filtered = filter_event(&telemetry.file, event.clone()).unwrap();
+        assert_eq!(
+            filtered.properties().get("app_version"),
+            Some(&json!("0.1.0"))
+        );
+        assert!(!filtered.properties().contains_key("email"));
+        telemetry.settings(Some(false)).unwrap();
+        assert!(filter_event(&telemetry.file, event).is_none());
         fs::remove_dir_all(directory).unwrap();
     }
 }

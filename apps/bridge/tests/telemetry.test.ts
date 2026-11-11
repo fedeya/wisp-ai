@@ -2,12 +2,19 @@ import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { UsageTelemetry } from '../src/telemetry.ts';
 
 let directory: string;
 const installationId = randomUUID();
 const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+const instances: UsageTelemetry[] = [];
+function createTelemetry(version = '0.1.0', release = true) {
+  const instance = new UsageTelemetry(directory, version, release);
+  instances.push(instance);
+  return instance;
+}
 async function preference(enabled: boolean) {
   await writeFile(
     path.join(directory, 'telemetry.json'),
@@ -20,17 +27,28 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', fetch);
 });
 afterEach(async () => {
+  await Promise.all(instances.splice(0).map((instance) => instance.close()));
   vi.unstubAllGlobals();
   await rm(directory, { recursive: true, force: true });
 });
 function events() {
-  return fetch.mock.calls.map((call) =>
-    JSON.parse(String((call as unknown as [string, RequestInit])[1].body)),
-  );
+  return fetch.mock.calls.flatMap((call) => {
+    const body = (call as unknown as [string, RequestInit])[1].body;
+    const bytes = typeof body === 'string' ? Buffer.from(body) : Buffer.from(body as Uint8Array);
+    const payload = JSON.parse(
+      (bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes).toString(),
+    );
+    return (payload.batch ?? [payload]).map(
+      (event: { distinct_id?: string; properties: Record<string, unknown> }) => ({
+        ...event,
+        distinct_id: event.distinct_id ?? event.properties.distinct_id,
+      }),
+    );
+  });
 }
 
 test('development runs never send or create telemetry preferences', async () => {
-  const telemetry = new UsageTelemetry(directory, '0.1.0', false);
+  const telemetry = createTelemetry('0.1.0', false);
   telemetry.chat('chat', 'completed', 10);
   await telemetry.drain();
   expect(fetch).not.toHaveBeenCalled();
@@ -38,7 +56,7 @@ test('development runs never send or create telemetry preferences', async () => 
 });
 
 test('missing and corrupt preferences fail closed', async () => {
-  const telemetry = new UsageTelemetry(directory, '0.1.0', true);
+  const telemetry = createTelemetry();
   telemetry.chat('chat', 'completed', 10);
   await telemetry.drain();
   await writeFile(path.join(directory, 'telemetry.json'), '{broken');
@@ -49,7 +67,7 @@ test('missing and corrupt preferences fail closed', async () => {
 
 test('the live native opt-out stops new events without restarting the bridge', async () => {
   await preference(true);
-  const telemetry = new UsageTelemetry(directory, '0.1.1-nightly.53.1', true);
+  const telemetry = createTelemetry('0.1.1-nightly.53.1');
   telemetry.chat('hover', 'completed', 120.8);
   await telemetry.drain();
   const event = events().find((event) => event.event === 'chat_completed');
@@ -79,7 +97,7 @@ test('the live native opt-out stops new events without restarting the bridge', a
 
 test('tool telemetry drops private labels, inputs, results and custom tool names', async () => {
   await preference(true);
-  const telemetry = new UsageTelemetry(directory, '0.1.0', true);
+  const telemetry = createTelemetry();
   const observe = telemetry.toolObserver();
   for (const [id, name] of [
     ['a', 'wow__query_character'],
@@ -106,7 +124,7 @@ test('tool telemetry drops private labels, inputs, results and custom tool names
 
 test('addon polls are deduplicated and only valid versions are sent', async () => {
   await preference(true);
-  const telemetry = new UsageTelemetry(directory, '0.1.0', true);
+  const telemetry = createTelemetry();
   telemetry.game('0.1.0');
   telemetry.game('0.1.0');
   telemetry.game('a character name');
@@ -119,13 +137,13 @@ test('addon polls are deduplicated and only valid versions are sent', async () =
   ).toEqual(['0.1.0', 'unknown']);
 });
 
-test('network failures never escape to gameplay and shutdown cancels telemetry', async () => {
+test('network failures never escape to gameplay and shutdown stops future telemetry', async () => {
   await preference(true);
   fetch.mockRejectedValueOnce(Error('offline'));
-  const telemetry = new UsageTelemetry(directory, '0.1.0', true);
+  const telemetry = createTelemetry();
   telemetry.chat('chat', 'completed', 10);
   await expect(telemetry.drain()).resolves.toBeUndefined();
-  telemetry.close();
+  await telemetry.close();
   const count = fetch.mock.calls.length;
   telemetry.chat('chat', 'completed', 10);
   await telemetry.drain();

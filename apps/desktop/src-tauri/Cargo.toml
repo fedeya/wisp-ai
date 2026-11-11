@@ -23,6 +23,7 @@ sha2 = "0.10"
 dirs = "6"
 prost = "0.14"
 uuid = { version = "1", features = ["v4"] }
+posthog-rs = { version = "0.31.2", default-features = false, features = ["async-client"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

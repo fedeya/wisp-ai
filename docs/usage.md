@@ -90,7 +90,7 @@ Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from applicati
 | Data                                            | Path relative to the data root                   |
 | ----------------------------------------------- | ------------------------------------------------ |
 | Configuration                                   | `config.local.json`                              |
-| Usage analytics preference and installation ID   | `telemetry.json`                                 |
+| Usage analytics preference and installation ID  | `telemetry.json`                                 |
 | Chats, routines, run history, memory and panels | `runtime/wisp.sqlite`                            |
 | Tool choices / custom MCP metadata              | `runtime/capabilities.json` / `runtime/mcp.json` |
 | Agent log                                       | `runtime/eve.log`                                |
