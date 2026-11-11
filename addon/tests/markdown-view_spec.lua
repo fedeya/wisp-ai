@@ -288,6 +288,7 @@ it(
         settled(ns, original)
         ns.UI.RenderMessageRow(row, chat, original, 600, true)
         assert.is_true(tableWidget:IsShown())
+        row.scripts.OnUpdate(row, 1)
         assert.is_truthy(row.rich.prose[1]:GetText():find("dense", 1, true))
     end
 )
@@ -357,12 +358,12 @@ it("preserves native markup and finishes the reveal when the row is hidden", fun
     local chat = { id = "chat", status = "working", messages = { original } }
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.equal("|cffe3c77eA bold start|r", row.text:GetText())
-    assert.equal(0, row.text:GetAlpha())
+    assert.equal("|cffe3c77eA|r", row.text:GetText())
     row.scripts.OnUpdate(row, 0.1)
-    assert.is_true(row.text:GetAlpha() > 0 and row.text:GetAlpha() < 1)
+    assert.is_truthy(row.text:GetText():match("^|cffe3c77eA bold .+|r$"))
+    assert.is_true(#row.text:GetText() < #"|cffe3c77eA bold start|r")
     row.scripts.OnUpdate(row, 1)
-    assert.equal(1, row.text:GetAlpha())
+    assert.equal("|cffe3c77eA bold start|r", row.text:GetText())
 
     original.text = original.text .. "\n\nAnother paragraph."
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
@@ -370,6 +371,44 @@ it("preserves native markup and finishes the reveal when the row is hidden", fun
     row.scripts.OnHide(row)
     assert.equal("Another paragraph.", row.rich.prose[2]:GetText())
     assert.is_nil(row.scripts.OnUpdate)
+end)
+
+it("keeps the first formatted paragraph revealing when more paragraphs arrive", function()
+    local env, ns = setup()
+    local original = message("Primero, **revisá la misión** antes de salir.")
+    original.streaming = true
+    local chat = { id = "chat", status = "working", messages = { original } }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, original, 400, true)
+    assert.equal("P", row.text:GetText())
+    row.scripts.OnUpdate(row, 0.06)
+    local visible = row.text:GetText()
+    assert.is_true(#visible > 1 and #visible < #"Primero,")
+
+    original.text = original.text .. "\n\nDespués, **volvé al campamento**.\n\nListo."
+    ns.UI.RenderMessageRow(row, chat, original, 400, true)
+    assert.equal(visible, row.rich.prose[1]:GetText())
+    assert.equal("", row.rich.prose[2]:GetText())
+    assert.equal("", row.rich.prose[3]:GetText())
+    row.scripts.OnUpdate(row, 1)
+    assert.equal("Listo.", row.rich.prose[3]:GetText())
+end)
+
+it("clips inline colors around whole native links and textures", function()
+    local _, ns = setup()
+    local renderer = ns.Markdown.InlineRenderer
+    local link = "|Hquest:166|h[Quest ||h label]|h"
+    local icon = "|TIcon:12:12|t"
+    local text = "|cffe3c77eÉ" .. link .. icon .. "|| fin|r"
+    local visible, ranges = renderer.WritingText(text)
+    assert.equal("É\1\1| fin", visible)
+    assert.equal("", (renderer.WritingPrefix(text, visible, ranges, 1)))
+    assert.equal("|cffe3c77eÉ|r", (renderer.WritingPrefix(text, visible, ranges, 2)))
+    assert.equal("|cffe3c77eÉ" .. link .. "|r", (renderer.WritingPrefix(text, visible, ranges, 3)))
+    assert.equal(
+        "|cffe3c77eÉ" .. link .. icon .. "|||r",
+        (renderer.WritingPrefix(text, visible, ranges, 5))
+    )
 end)
 
 it("uses current metadata with a cached view and preserves user native links", function()

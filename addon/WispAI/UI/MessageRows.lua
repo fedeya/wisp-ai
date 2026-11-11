@@ -5,6 +5,8 @@ local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
 local truncateUtf8 = ns.Shared.Text.TruncateUtf8Bytes
+local writingText, writingPrefix =
+    ns.Markdown.InlineRenderer.WritingText, ns.Markdown.InlineRenderer.WritingPrefix
 local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
@@ -15,26 +17,17 @@ local TOOL_STATES = {
 }
 local toolGroupsExpanded = {}
 
-local function drawWriting(entry, progress)
-    if entry.formatted then
-        entry.alpha = entry.startAlpha + (1 - entry.startAlpha) * progress
-        entry.font:SetAlpha(entry.alpha)
-    else
-        local bytes = entry.start + math.floor((#entry.text - entry.start) * progress)
-        entry.prefix = truncateUtf8(entry.text, bytes)
-        setText(entry.font, entry.prefix)
-    end
+local function drawWriting(entry, bytes)
+    local prefix, shown = writingPrefix(entry.text, entry.visible, entry.ranges, bytes)
+    entry.shown = shown
+    setText(entry.font, prefix)
 end
 
 local function finishWriting(row)
     local writing = row.writing
     if writing then
         for _, entry in ipairs(writing.entries) do
-            if entry.formatted then
-                entry.font:SetAlpha(1)
-            else
-                setText(entry.font, entry.text)
-            end
+            setText(entry.font, entry.text)
         end
         row.writing = nil
         row:SetScript("OnUpdate", nil)
@@ -52,7 +45,7 @@ local function updateWriting(row, elapsed)
         while writing.index <= #writing.entries do
             local entry = writing.entries[writing.index]
             local progress = math.max(0, math.min(1, (position - entry.offset) / entry.bytes))
-            drawWriting(entry, progress)
+            drawWriting(entry, entry.start + math.floor(entry.bytes * progress))
             if progress < 1 then
                 break
             end
@@ -61,12 +54,68 @@ local function updateWriting(row, elapsed)
     end
 end
 
+local function matchWritingLayout(views, previous, interrupted)
+    if not previous then
+        return
+    end
+    local changed = #views ~= #previous.order
+    if not changed then
+        for index, view in ipairs(views) do
+            if view.font ~= previous.order[index] then
+                changed = true
+                break
+            end
+        end
+    end
+    if not changed then
+        return
+    end
+    local prefix = {}
+    for _, font in ipairs(previous.order) do
+        local visible = previous.fonts[font]
+        local active = interrupted and interrupted.byFont[font]
+        prefix[#prefix + 1] = active and visible:sub(1, active.shown) or visible
+        if active and active.shown < #visible then
+            break
+        end
+    end
+    local shown = table.concat(prefix):gsub("%s+", "")
+    local starts, position = {}, 1
+    for _, view in ipairs(views) do
+        local start = 0
+        for index = 1, #view.visible do
+            if position > #shown then
+                break
+            end
+            local byte = view.visible:byte(index)
+            if byte == 32 or (byte >= 9 and byte <= 13) then
+                start = index
+            elseif byte == shown:byte(position) then
+                start, position = index, position + 1
+            else
+                return
+            end
+        end
+        starts[view.font] = start
+    end
+    if position > #shown then
+        return starts
+    end
+end
+
 local function revealWriting(row, fonts, source, previous, interrupted, streaming, pending)
-    local snapshot = { source = source, fonts = {}, streaming = streaming, pending = pending }
+    local snapshot = {
+        source = source,
+        fonts = {},
+        order = {},
+        streaming = streaming,
+        pending = pending,
+    }
     row.writingSnapshot = snapshot
     if not fonts or not row:IsVisible() then
         return
     end
+    snapshot.order = fonts
     local previousSource = previous and previous.source or ""
     local appended = source:sub(1, #previousSource) == previousSource
     -- Match existing fonts first. If Markdown changed the layout, fall back
@@ -78,33 +127,41 @@ local function revealWriting(row, fonts, source, previous, interrupted, streamin
     if previous and previousSource ~= "" and previous.pending and not pending and appended then
         remaining = #source
     end
-    local entries, bytes = {}, 0
-    for index = #fonts, 1, -1 do
-        local font = fonts[index]
+    if interrupted then
+        for _, entry in ipairs(interrupted.entries) do
+            remaining = remaining + #entry.visible - entry.shown
+        end
+    end
+    local views = {}
+    for index, font in ipairs(fonts) do
         local text = font:GetText() or ""
-        snapshot.fonts[font] = text
+        local visible, ranges = writingText(text)
+        snapshot.fonts[font] = visible
+        views[index] = { font = font, text = text, visible = visible, ranges = ranges }
+    end
+    local layoutStarts = appended and matchWritingLayout(views, previous, interrupted)
+    local entries, bytes = {}, 0
+    for index = #views, 1, -1 do
+        local view = views[index]
+        local font, visible = view.font, view.visible
         local before = previous and previous.fonts[font]
         local active = interrupted and interrupted.byFont[font]
-        local start = #text - math.min(#text, remaining)
-        remaining = math.max(0, remaining - #text)
-        if before and text:sub(1, #before) == before then
-            start = active and active.prefix and #active.prefix or #before
+        local start = #visible - math.min(#visible, remaining)
+        remaining = math.max(0, remaining - #visible)
+        if layoutStarts then
+            start = layoutStarts[font]
+        elseif before then
+            local shown = active and active.shown or #before
+            if visible:sub(1, shown) == before:sub(1, shown) then
+                start = shown
+            end
         end
-        local hasMarkup = text:find("|", 1, true) ~= nil
-        if appended and (start < #text or (hasMarkup and active and before == text)) then
-            start = #truncateUtf8(text, start)
-            local entry = {
-                font = font,
-                text = text,
-                start = start,
-                prefix = not hasMarkup and text:sub(1, start) or nil,
-                formatted = hasMarkup,
-                startAlpha = hasMarkup
-                    and (active and active.alpha or (before and before ~= "" and 0.75 or 0)),
-                bytes = math.max(#text - start, hasMarkup and 24 or 1),
-            }
-            entries[#entries + 1] = entry
-            bytes = bytes + entry.bytes
+        if appended and start < #visible then
+            start = #truncateUtf8(visible, start)
+            view.start = start
+            view.bytes = #visible - start
+            entries[#entries + 1] = view
+            bytes = bytes + view.bytes
         end
     end
     if #entries == 0 then
@@ -126,16 +183,16 @@ local function revealWriting(row, fonts, source, previous, interrupted, streamin
         offset = offset + entry.bytes
         writing.entries[#writing.entries + 1] = entry
         writing.byFont[entry.font] = entry
-        drawWriting(entry, 0)
+        drawWriting(entry, entry.start)
     end
     row.writing = writing
     local first = writing.entries[1]
-    if first.start == 0 and not first.formatted then
-        local leading = first.text:find("%S") or 1
-        local firstBytes = (first.text:find("[^\128-\191]", leading + 1) or #first.text + 1) - 1
+    if first.start == 0 then
+        local leading = first.visible:find("%S") or 1
+        local firstBytes = (first.visible:find("[^\128-\191]", leading + 1) or #first.visible + 1)
+            - 1
         writing.elapsed = writing.duration * firstBytes / writing.bytes
-        first.prefix = first.text:sub(1, firstBytes)
-        setText(first.font, first.prefix)
+        drawWriting(first, firstBytes)
     end
     -- Keep the first glyph visible while syntax is pending. Starting the
     -- reveal on the raw preview would replay the same text after formatting.
