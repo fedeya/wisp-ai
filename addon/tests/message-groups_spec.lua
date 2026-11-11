@@ -290,6 +290,55 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             replyRow.scripts.OnUpdate(replyRow, 1)
             check.equal(reply.text, replyRow.text:GetText())
 
+            local simulation = {
+                id = "simulation-after-text",
+                role = "tool",
+                text = "Simulating DPS",
+                tool = { status = "running", label = "Simulating DPS" },
+            }
+            local messages = ns.chats[1].messages
+            table.insert(messages, simulation)
+            refresh()
+            assert(group.spinner:IsPlaying() and group.y > replyRow.y)
+            check.equal("Simulating DPS", group.text:GetText())
+
+            simulation.tool.status, simulation.tool.label = "completed", "Simulated DPS"
+            refresh()
+            assert(
+                group.spinner:IsPlaying(),
+                "the loader stays on while the comparison is prepared"
+            )
+            check.equal("Simulated DPS  +2", group.text:GetText())
+
+            table.insert(messages, {
+                id = "presentation-progress-comparison",
+                role = "tool",
+                text = "Creating comparison",
+                tool = { status = "running", label = "Creating comparison" },
+            })
+            refresh()
+            assert(group.spinner:IsPlaying() and not progress:IsShown())
+            check.equal("Creating comparison", group.text:GetText())
+
+            table.remove(messages)
+            table.insert(messages, {
+                id = "simulation-comparison",
+                role = "assistant",
+                text = "",
+                ui = { { id = "comparison-card", kind = "card", title = "DPS comparison" } },
+                parts = { { type = "ui", id = "comparison-card" } },
+            })
+            refresh()
+            assert(not group.spinner:IsPlaying() and not progress:IsShown())
+            local comparisonRow
+            for _, row in ipairs(visibleRows()) do
+                if row.replyView and row.replyView.messageId == "simulation-comparison" then
+                    comparisonRow = row
+                end
+            end
+            assert(comparisonRow and comparisonRow.rich.widgets["comparison-card"]:IsShown())
+            assert(comparisonRow.y > group.y)
+
             table.insert(ns.chats[1].messages, {
                 id = "final-only",
                 role = "assistant",

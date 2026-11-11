@@ -9,6 +9,8 @@ import { newChat } from '../src/chat-lifecycle.ts';
 import { ReplyProjection } from '../src/reply-stream.ts';
 import { rebuildHistory } from '../src/history.ts';
 import { replyContent } from '../src/reply-content.ts';
+import { projectChats } from '../src/chat-projection.ts';
+import { createSessionState } from '../src/session-state.ts';
 
 const panel = {
   nodes: [
@@ -105,6 +107,56 @@ test('text, a validated presentation and subsequent text form one ordered assist
   ]);
   expect(f.chat.messages[0].ui).toEqual(panel.nodes);
   expect(replyContent(f.chat.messages[0])).not.toHaveProperty('replyFormat');
+});
+
+test('a comparison has live progress after prose without persisting a tool row', async () => {
+  const f = fixture();
+  f.chat.status = 'working';
+  const state = createSessionState([f.chat]);
+  state.activeChat = f.chat.id;
+  const rows = () => projectChats(state).chats[0].messages!;
+  f.text('before', 'I will compare the two setups.');
+  f.emit('call.input', { callId: 'comparison', name: PRESENT_UI_TOOL, delta: '{"no' });
+  expect(rows().map((m) => m.role)).toEqual(['assistant']);
+  f.emit('call.input', { callId: 'comparison', delta: 'des":[{' });
+  expect(rows().at(-1)).toMatchObject({
+    role: 'tool',
+    text: 'Creating panel',
+    tool: { status: 'running' },
+  });
+  f.emit('call.input', { callId: 'comparison', delta: '"kind":"comparison"' });
+  expect(rows().at(-1)?.text).toBe('Creating comparison');
+  let accepted = false;
+  const accepting = f.accept('comparison').then(() => (accepted = true));
+  await Promise.resolve();
+  expect(accepted).toBe(false);
+  f.emit('call.requested', {
+    callId: 'comparison',
+    capability: { name: PRESENT_UI_TOOL, kind: 'tool' },
+    input: panel,
+  });
+  await accepting;
+  expect(rows().at(-1)?.text).toBe('Creating comparison');
+  expect(f.chat.messages.map((m) => m.role)).toEqual(['assistant']);
+  f.settle('comparison');
+  expect(rows().map((m) => m.role)).toEqual(['assistant']);
+  expect(rows()[0].ui).toEqual(panel.nodes);
+  expect(f.chat.activity).toEqual([]);
+});
+
+test('reference registration stays out of presentation progress', () => {
+  const f = fixture();
+  f.chat.status = 'working';
+  const state = createSessionState([f.chat]);
+  state.activeChat = f.chat.id;
+  f.text('before', 'Preparing the reply.');
+  f.emit('call.input', { callId: 'refs', name: PRESENT_UI_TOOL, delta: '{"nodes":[],' });
+  f.emit('call.requested', {
+    callId: 'refs',
+    capability: { name: PRESENT_UI_TOOL, kind: 'tool' },
+    input: { nodes: [], references: { spell: { kind: 'spell', id: 122, label: 'Nova' } } },
+  });
+  expect(projectChats(state).chats[0].messages?.map((m) => m.role)).toEqual(['assistant']);
 });
 
 test('panels keep call order under out-of-order settlement and duplicate replay', () => {

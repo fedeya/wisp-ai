@@ -1,5 +1,6 @@
 import type { SessionState } from './session-state.ts';
-import { replyContent } from './reply-content.ts';
+import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
+import { replyContent, replyPresentationProgress } from './reply-content.ts';
 export function projectChats(state: SessionState, now = Date.now()) {
   let ordinaryCount = 0;
   let otherCount = 0;
@@ -54,7 +55,7 @@ export function projectChats(state: SessionState, now = Date.now()) {
                   return [];
                 }
                 const display = replyContent(m);
-                return display
+                const rows = display
                   ? [
                       {
                         ...display,
@@ -63,6 +64,16 @@ export function projectChats(state: SessionState, now = Date.now()) {
                       },
                     ]
                   : [];
+                const presentation = c.status === 'working' && replyPresentationProgress(m);
+                if (presentation) {
+                  rows.push({
+                    id: 'presentation-progress-' + presentation.id,
+                    role: 'tool',
+                    text: presentation.label,
+                    tool: { ...presentation, name: PRESENT_UI_TOOL, status: 'running' },
+                  });
+                }
+                return rows;
               })
             : undefined,
       })),

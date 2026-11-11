@@ -27,7 +27,7 @@ export function applyEvent(chat: Chat, rawEvent: unknown, parts: ReplyProjection
   if (event.type === 'call.requested') {
     const cap = data.capability as { name?: string; label?: string; kind?: string } | undefined;
     if (cap?.name === PRESENT_UI_TOOL) {
-      parts.requestPresentation(chat, String(data.callId));
+      parts.requestPresentation(chat, String(data.callId), data.input);
       return parts.flush(chat);
     }
     if (cap?.name === SKIP_TIP_TOOL) {
@@ -50,6 +50,11 @@ export function applyEvent(chat: Chat, rawEvent: unknown, parts: ReplyProjection
       });
       return true;
     }
+  } else if (event.type === 'call.input') {
+    return typeof data.delta === 'string' &&
+      parts.presentationInput(chat, String(data.callId), data.delta, data.name)
+      ? parts.flush(chat)
+      : false;
   } else if (event.type === 'call.settled') {
     parts.settlePresentation(String(data.callId), data.output, data.outcome === 'completed');
     const call = chat.activity.find((c) => c.id === data.callId);

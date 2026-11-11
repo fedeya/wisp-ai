@@ -21,6 +21,12 @@ local function drawWriting(entry, bytes)
     local prefix, shown = writingPrefix(entry.text, entry.visible, entry.ranges, bytes)
     entry.shown = shown
     setText(entry.font, prefix)
+    if entry.marker then
+        local markerVisible = shown >= entry.markerStart
+        if entry.marker:IsShown() ~= markerVisible then
+            entry.marker:SetShown(markerVisible)
+        end
+    end
 end
 
 local function finishWriting(row)
@@ -28,6 +34,9 @@ local function finishWriting(row)
     if writing then
         for _, entry in ipairs(writing.entries) do
             setText(entry.font, entry.text)
+            if entry.marker then
+                entry.marker:Show()
+            end
         end
         row.writing = nil
         row:SetScript("OnUpdate", nil)
@@ -160,6 +169,10 @@ local function revealWriting(row, fonts, source, previous, interrupted, streamin
             start = #truncateUtf8(visible, start)
             view.start = start
             view.bytes = #visible - start
+            if font.marker and font.marker:IsShown() then
+                view.markerStart = visible:find("%S")
+                view.marker = view.markerStart and font.marker
+            end
             entries[#entries + 1] = view
             bytes = bytes + view.bytes
         end
@@ -524,15 +537,15 @@ end
 
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId, groupOffset = {}, {}, nil, nil
-    local hasReplyText, turnStart = false, 1
+    local hasReplyContent, turnStart = false, 1
     local function flushTools(currentTurn)
         if not groupId then
             return
         end
         local group = {}
-        local spinning = currentTurn and chat.status == "working" and not hasReplyText
+        local spinning = currentTurn and chat.status == "working" and not hasReplyContent
         local running = appendToolGroup(group, chat.id, calls, groupId, spinning)
-        local active = currentTurn and chat.status == "working" and running
+        local active = spinning and running
         group[1].turnSpinning = spinning
         -- While a call runs, its group occupies the current activity slot.
         local offset = active and #messages + 1 or groupOffset
@@ -543,6 +556,8 @@ function ns.UI.DisplayMessages(chat)
     end
     for index, message in ipairs(chat and chat.messages or {}) do
         if message.role == "tool" then
+            -- A new call resumes activity even if Wisp has already sent a preamble.
+            hasReplyContent = false
             if ns.db.showTools then
                 groupId = groupId or ("tools-" .. (message.id or index))
                 calls[#calls + 1] = message
@@ -555,17 +570,17 @@ function ns.UI.DisplayMessages(chat)
         then
             if message.role == "user" or message.role == "system" then
                 flushTools(false)
-                hasReplyText = false
+                hasReplyContent = false
                 turnStart = #messages + 2
-            elseif isTextReply(message) then
-                hasReplyText = true
+            elseif message.role == "assistant" then
+                hasReplyContent = true
             end
             messages[#messages + 1] = message
         end
     end
     local hasToolActivity = groupId ~= nil
     flushTools(true)
-    return messages, hasToolActivity, hasReplyText, turnStart
+    return messages, hasToolActivity, hasReplyContent, turnStart
 end
 
 -- An observed chat can receive the new question and its complete reply together.

@@ -37,7 +37,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}
     local previousSpeaker, previousMessage
-    local messages, hasToolActivity, hasReplyText, turnStart = ns.UI.DisplayMessages(chat)
+    local messages, hasToolActivity, hasReplyContent, turnStart = ns.UI.DisplayMessages(chat)
     local animateTurn = ns.UI.ObserveReplyTurn(replyTurn, chat, messages[turnStart - 1])
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
@@ -67,7 +67,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local showProgress = chat
         and chat.status == "working"
         and not hasToolActivity
-        and not hasReplyText
+        and not hasReplyContent
         and not ns.UI.Activity.IsSending(chat)
     if showProgress and previousSpeaker and previousSpeaker ~= "assistant" then
         y = y + 12

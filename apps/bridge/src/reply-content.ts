@@ -2,14 +2,26 @@ import type { Message } from './chat.ts';
 import { LegacyReplyStream } from './legacy-reply.ts';
 
 // Streaming previews are ephemeral; canonical text and parts always persist in full.
-const previews = new WeakMap<Message, Message | null>();
-export function setReplyPreview(message: Message, preview: Message | null) {
-  previews.set(message, preview);
+export type PresentationProgress = { id: string; label: string };
+const previews = new WeakMap<
+  Message,
+  { message: Message | null; presentation?: PresentationProgress }
+>();
+export function setReplyPreview(
+  message: Message,
+  preview: Message | null,
+  presentation?: PresentationProgress,
+) {
+  previews.set(message, { message: preview, presentation });
+}
+
+export function replyPresentationProgress(message: Message) {
+  return previews.get(message)?.presentation;
 }
 
 // Decode reply events for transport and restored model history. Markdown stays text.
 export function replyContent(original: Message): Message | null {
-  const preview = previews.get(original);
+  const preview = previews.get(original)?.message;
   if (preview === null) {
     return null;
   }

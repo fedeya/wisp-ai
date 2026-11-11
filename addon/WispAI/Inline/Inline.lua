@@ -282,7 +282,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     local offset = scroll:GetVerticalScroll()
     local preserveScroll = chat and preserveScrollForChat == chat.id
     local follow = not preserveScroll and previousRange - offset < 30
-    local messages, hasToolActivity, hasReplyText, turnStart = ns.UI.DisplayMessages(chat)
+    local messages, hasToolActivity, hasReplyContent, turnStart = ns.UI.DisplayMessages(chat)
     local animateTurn = ns.UI.ObserveReplyTurn(replyTurn, chat, messages[turnStart - 1])
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
@@ -330,7 +330,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     local working = chat and chat.status == "working"
     local showBusy = working
         and not hasToolActivity
-        and not hasReplyText
+        and not hasReplyContent
         and not ns.UI.Activity.IsSending(chat)
     busy:SetShown(showBusy)
     ns.UI.Activity.SetSpinner(busy, showBusy == true)

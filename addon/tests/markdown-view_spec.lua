@@ -394,6 +394,35 @@ it("keeps the first formatted paragraph revealing when more paragraphs arrive", 
     assert.equal("Listo.", row.rich.prose[3]:GetText())
 end)
 
+it("reveals each list marker with the first visible text in its item", function()
+    local env, ns = setup()
+    local original = message(
+        "This opening paragraph is still being written.\n\n- **First item** has more text.\n- Second item."
+    )
+    original.streaming = true
+    local chat = { id = "chat", status = "working", messages = { original } }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, original, 400, true)
+    local first, second = row.rich.prose[2], row.rich.prose[3]
+    assert.equal("•", first.marker:GetText())
+    assert.is_false(first.marker:IsShown())
+    assert.is_false(second.marker:IsShown())
+    row.scripts.OnUpdate(row, 0.06)
+    assert.is_false(first.marker:IsShown())
+    assert.is_false(second.marker:IsShown())
+    for _ = 1, 35 do
+        if first:GetText() ~= "" then
+            break
+        end
+        row.scripts.OnUpdate(row, 0.02)
+    end
+    assert.is_true(first.marker:IsShown())
+    assert.is_false(second.marker:IsShown())
+    row.scripts.OnHide(row)
+    assert.is_true(second.marker:IsShown())
+    assert.equal("Second item.", second:GetText())
+end)
+
 it("clips inline colors around whole native links and textures", function()
     local _, ns = setup()
     local renderer = ns.Markdown.InlineRenderer

@@ -1,7 +1,11 @@
-import { replyPresentation, type ReplyPresentation } from '@wisp/protocol/reply-presentation';
+import {
+  PRESENT_UI_TOOL,
+  replyPresentation,
+  type ReplyPresentation,
+} from '@wisp/protocol/reply-presentation';
 import type { ReferenceCatalog } from '@wisp/protocol/rich-reference';
 import type { Chat, Message, ReplyPart } from './chat.ts';
-import { setReplyPreview } from './reply-content.ts';
+import { setReplyPreview, type PresentationProgress } from './reply-content.ts';
 
 export class ReplyStream {
   text = '';
@@ -31,6 +35,8 @@ interface Group {
 interface Presentation {
   group: Group;
   pending: boolean;
+  requested: boolean;
+  label?: string;
   accepted?: ReplyPresentation;
   value?: ReplyPresentation;
 }
@@ -48,6 +54,7 @@ export class ReplyProjection {
   streams = new Map<string, { reply: ReplyStream; group: Group; part: TextPart }>();
   private groups: Group[] = [];
   private presentations = new Map<string, Presentation>();
+  private presentationInputs = new Map<string, string>();
   private components = new Map<string, Component>();
   private roots = new Map<string, string[]>();
   private references: ReferenceCatalog = Object.create(null);
@@ -71,6 +78,7 @@ export class ReplyProjection {
     this.streams.clear();
     this.kinds.clear();
     this.presentations.clear();
+    this.presentationInputs.clear();
     this.components.clear();
     this.roots.clear();
     this.skipCalls.clear();
@@ -136,23 +144,80 @@ export class ReplyProjection {
     this.update(state.group);
   }
 
-  requestPresentation(chat: Chat, callId: string) {
-    if (this.presentations.has(callId)) {
+  presentationInput(chat: Chat, callId: string, delta: string, name: unknown) {
+    const buffered = this.presentationInputs.get(callId);
+    if (name !== PRESENT_UI_TOOL && (name !== undefined || buffered === undefined)) {
+      return false;
+    }
+    const previous = buffered ?? '';
+    const existing = this.presentations.get(callId);
+    if (
+      (existing && (existing.requested || !existing.pending)) ||
+      existing?.label === 'Creating comparison' ||
+      previous.length >= 2048
+    ) {
+      return false;
+    }
+    // Recognize a nodes-first panel before its full input arrives. The
+    // validated request determines the final label and handles other key orders.
+    const prefix = previous + delta.slice(0, 2048 - previous.length);
+    this.presentationInputs.set(callId, prefix);
+    if (/^\s*\{\s*"nodes"\s*:\s*\[\s*\{/.test(prefix)) {
+      const label = /"kind"\s*:\s*"comparison"/.test(prefix)
+        ? 'Creating comparison'
+        : 'Creating panel';
+      if (label !== existing?.label) {
+        this.setPresentation(chat, callId, label);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  requestPresentation(chat: Chat, callId: string, input?: unknown) {
+    this.presentationInputs.delete(callId);
+    const existing = this.presentations.get(callId);
+    if (existing && (existing.requested || !existing.pending)) {
       return;
     }
-    const group = this.group(chat, 'presentation-' + callId);
-    this.presentations.set(callId, { group, pending: true });
-    group.segments.push({ type: 'presentation', callId });
-    this.update(group);
+    const nodes = (input as { nodes?: { kind?: unknown }[] } | undefined)?.nodes;
+    const label =
+      Array.isArray(nodes) && nodes.length
+        ? nodes.some((node) => node?.kind === 'comparison')
+          ? 'Creating comparison'
+          : 'Creating panel'
+        : input === undefined
+          ? existing?.label
+          : undefined;
+    const presentation = this.setPresentation(chat, callId, label);
+    presentation.requested = true;
     for (const resolve of this.waiters.get(callId) ?? []) {
       resolve();
     }
   }
 
+  private setPresentation(chat: Chat, callId: string, label?: string) {
+    const existing = this.presentations.get(callId);
+    if (existing) {
+      if (existing.pending && existing.label !== label) {
+        existing.label = label;
+        existing.group.force = true;
+      }
+      return existing;
+    }
+    const group = this.group(chat, 'presentation-' + callId);
+    const presentation = { group, pending: true, requested: false, label };
+    this.presentations.set(callId, presentation);
+    group.force ||= Boolean(label);
+    group.segments.push({ type: 'presentation', callId });
+    this.update(group);
+    return presentation;
+  }
+
   async acceptPresentation(callId: string, input: unknown, signal: AbortSignal) {
     const active = AbortSignal.any([signal, this.turn.signal, AbortSignal.timeout(5000)]);
     active.throwIfAborted();
-    if (!this.presentations.has(callId)) {
+    if (!this.presentations.get(callId)?.requested) {
       await new Promise<void>((resolve, reject) => {
         const waiting = this.waiters.get(callId) ?? new Set<() => void>();
         const cleanup = () => {
@@ -252,6 +317,7 @@ export class ReplyProjection {
   }
 
   settlePresentation(callId: string, output: unknown, success: boolean) {
+    this.presentationInputs.delete(callId);
     if (this.skipCalls.delete(callId) && success) {
       this.noTip = true;
     }
@@ -344,6 +410,7 @@ export class ReplyProjection {
       presentation.pending = false;
       presentation.accepted = undefined;
     }
+    this.presentationInputs.clear();
     for (const group of this.groups) {
       this.update(group);
     }
@@ -355,14 +422,23 @@ export class ReplyProjection {
       if (!force && !group.force && group.message.streaming && now - group.lastAt < 600) {
         continue;
       }
-      const signature = JSON.stringify(group.message);
+      let progress: PresentationProgress | undefined;
+      for (const segment of group.segments) {
+        if (segment.type === 'presentation') {
+          const presentation = this.presentations.get(segment.callId);
+          if (presentation?.pending && presentation.label) {
+            progress = { id: segment.callId, label: presentation.label };
+          }
+        }
+      }
+      const signature = JSON.stringify([group.message, progress]);
       if (signature === group.signature) {
         continue;
       }
       group.signature = signature;
       group.lastAt = now;
       group.force = false;
-      setReplyPreview(group.message, { ...group.message });
+      setReplyPreview(group.message, { ...group.message }, progress);
       changed = true;
     }
     return changed;
