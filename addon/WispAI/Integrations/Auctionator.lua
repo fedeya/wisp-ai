@@ -1,6 +1,6 @@
 -- Auctionator readiness and read-only cached price adapter.
 local _, ns = ...
-local integer = ns.Integrations._IsInteger
+local integer = ns.Shared.Numbers.IsNonNegativeInteger
 
 function ns.Integrations._AuctionatorReport()
     local api = Auctionator and Auctionator.API and Auctionator.API.v1

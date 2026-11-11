@@ -1,5 +1,6 @@
 -- Wisp's checked, reusable transport. Only the W2 wire format is supported.
 local _, ns = ...
+local integer = ns.Shared.Numbers.IsNonNegativeInteger
 local character
 local function missingAPI()
     if
@@ -192,10 +193,9 @@ local function readControl()
     if
         ok
         and type(control) == "table"
-        and type(control.r) == "number"
+        and integer(control.r)
         and control.r > 0
         and control.r <= 9007199254740991
-        and control.r % 1 == 0
     then
         incoming.revision = control.r
         return incoming

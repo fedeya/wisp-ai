@@ -1,14 +1,12 @@
 -- Reconstruct immutable transport snapshots before the UI merges optimistic state.
 local _, ns = ...
+local numbers = ns.Shared.Numbers
 local baseline
 local baselineEpoch = 0
 local preparedProjection
 local forbidden = { __proto__ = true, constructor = true, prototype = true }
 local function integer(value, minimum)
-    return type(value) == "number"
-        and value >= minimum
-        and value <= 9007199254740991
-        and value % 1 == 0
+    return numbers.IsNonNegativeInteger(value) and value >= minimum and value <= 9007199254740991
 end
 local function copyStats(phase)
     local stats = {
@@ -29,7 +27,7 @@ local function clone(value, depth, stats, owned)
     assert(depth <= 32, "Snapshot depth exceeded")
     if type(value) ~= "table" then
         if type(value) == "number" then
-            assert(value == value and math.abs(value) ~= math.huge, "Invalid number")
+            assert(numbers.IsFinite(value), "Invalid number")
         else
             assert(
                 value == nil or type(value) == "string" or type(value) == "boolean",

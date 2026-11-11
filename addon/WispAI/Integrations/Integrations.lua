@@ -1,17 +1,9 @@
--- Shared helpers, readiness aggregation and protected inspection dispatch.
+-- Provider metadata, readiness aggregation and protected inspection dispatch.
 local _, ns = ...
 
 function ns.Integrations._AddonVersion(name)
     local get = C_AddOns and C_AddOns.GetAddOnMetadata or GetAddOnMetadata
     return get and tostring(get(name, "Version") or "unknown"):sub(1, 80) or "unknown"
-end
-
-function ns.Integrations._IsInteger(value)
-    return type(value) == "number"
-        and value == value
-        and value >= 0
-        and value < math.huge
-        and value % 1 == 0
 end
 
 function ns.Integrations.IntegrationReport()

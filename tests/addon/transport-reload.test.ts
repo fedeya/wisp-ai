@@ -87,7 +87,12 @@ function bulkPayload(session,revision)
  payload={v=1,session=session,rev=revision,connected=true,chats={},acks={1}}
 end
 `);
-  for (const name of ['Transport/Downlink.lua', 'Transport/Transport.lua']) {
+  for (const name of [
+    'Namespace.lua',
+    'Shared/Numbers.lua',
+    'Transport/Downlink.lua',
+    'Transport/Transport.lua',
+  ]) {
     run(
       `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + name, 'utf8'))}))('WispAI',ns)`,
     );

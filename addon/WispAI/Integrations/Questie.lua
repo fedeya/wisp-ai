@@ -1,6 +1,8 @@
 -- QuestieDB Forever readiness and read-only quest/location adapters.
 local _, ns = ...
-local integer = ns.Integrations._IsInteger
+local integer = ns.Shared.Numbers.IsNonNegativeInteger
+local finite = ns.Shared.Numbers.IsFinite
+local trimText = ns.Shared.Text.TruncateUtf8Bytes
 
 local function reads(entity)
     return entity and type(entity.Get) == "function" and type(entity.Exists) == "function" or false
@@ -45,17 +47,6 @@ function ns.Integrations._QuestieReport()
     }
 end
 
-local function trimText(value, limit)
-    local last = math.min(#value, limit)
-    while last > 0 do
-        local nextByte = value:byte(last + 1)
-        if not nextByte or nextByte < 128 or nextByte >= 192 then
-            break
-        end
-        last = last - 1
-    end
-    return value:sub(1, last)
-end
 local function questDB()
     local db = LibQuestieDB
     assert(db and db.flavor and db.flavor.expansion == "Forever", "QuestieDB Forever is required")
@@ -121,7 +112,7 @@ function ns.Integrations.ReadQuestieQuest(args)
             local size, highest, array = 0, 0, true
             for key in pairs(out) do
                 size = size + 1
-                if type(key) ~= "number" or key < 1 or key % 1 ~= 0 then
+                if not integer(key) or key < 1 then
                     array = false
                 else
                     highest = math.max(highest, key)
@@ -280,10 +271,6 @@ function ns.Integrations.ReadQuestieChain(args)
         maxDepth = maxDepth,
         note = "Database relations, not a recommended route or proof of eligibility. Group prerequisites require all; single prerequisites are alternatives. Unknown relation fields and missing records remain unknown.",
     }
-end
-
-local function finite(value)
-    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
 end
 
 local function findLocations(entityName, args)

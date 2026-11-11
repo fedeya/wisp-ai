@@ -1,5 +1,9 @@
 local _, ns = ...
 
+ns.Shared = ns.Shared or {}
+ns.Shared.Numbers = ns.Shared.Numbers or {}
+ns.Shared.Text = ns.Shared.Text or {}
+
 -- One private namespace per subsystem; Core owns shared session state.
 ns.Core = ns.Core or {}
 ns.Chat = ns.Chat or {}

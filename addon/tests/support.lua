@@ -28,6 +28,15 @@ end
 
 function M.addon(name, env)
     setfenv(assert(loadfile("addon/WispAI/Namespace.lua")), env)("WispAI", env.ns)
+    if not env.ns.Shared.Numbers.IsFinite then
+        setfenv(assert(loadfile("addon/WispAI/Shared/Numbers.lua")), env)("WispAI", env.ns)
+    end
+    if not env.ns.Shared.Text.TruncateUtf8Bytes then
+        setfenv(assert(loadfile("addon/WispAI/Shared/Text.lua")), env)("WispAI", env.ns)
+    end
+    if name == "UI/RichUI.lua" and not env.ns.UI.Widgets then
+        M.addon("UI/Widgets.lua", env)
+    end
     if name == "UI/MessageFormat.lua" and not env.ns.Markdown then
         for _, dependency in ipairs({ "Syntax", "Block", "Parser" }) do
             M.addon("Markdown/" .. dependency .. ".lua", env)
@@ -36,8 +45,8 @@ function M.addon(name, env)
     end
     if name == "UI/Window.lua" then
         for _, dependency in ipairs({
-            "UI/RichUI.lua",
             "UI/Widgets.lua",
+            "UI/RichUI.lua",
             "UI/EmojiData.lua",
             "UI/Emoji.lua",
             "UI/MessageFormat.lua",

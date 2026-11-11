@@ -189,7 +189,12 @@ ns.Chat.ReceiveSnapshot=function(data)
  if mutateOptimistic then data.chats[1].messages[#data.chats[1].messages+1]={text='optimistic'}end
 end
 `);
-  for (const file of ['Transport/Downlink.lua', 'Transport/Transport.lua']) {
+  for (const file of [
+    'Namespace.lua',
+    'Shared/Numbers.lua',
+    'Transport/Downlink.lua',
+    'Transport/Transport.lua',
+  ]) {
     run(
       `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,
     );
@@ -462,6 +467,27 @@ test('patches keep an immutable authoritative baseline despite optimistic UI cha
   );
   expect(h.lastAck()?.n).toBeUndefined();
   h.run("assert(applications==3 and displayed.chats[1].messages[1].text=='Hola ☀️ chau!')");
+});
+
+test('shared numeric checks preserve positive JSON-safe revisions and finite snapshot values', () => {
+  const h = harness();
+  h.run(`
+for _,revision in ipairs({0,-1,1.5,0/0,math.huge,-math.huge,9007199254740992,'1',false}) do
+ local ok,err=pcall(ns.Transport.ApplyDownlink,{r=revision,s={}})
+ assert(not ok and err:find('Invalid snapshot revision',1,true))
+ assert(ns.rev==0 and applications==0)
+end
+for _,value in ipairs({0/0,math.huge,-math.huge}) do
+ local envelope=nativeDeserialize(${JSON.stringify(JSON.stringify({ r: 1, s: snapshot(1) }))})
+ envelope.s.chats[1].messages[1].amount=value
+ local ok,err=pcall(ns.Transport.ApplyDownlink,envelope)
+ assert(not ok and err:find('Invalid number',1,true))
+ assert(ns.rev==0 and applications==0)
+end
+ns.Transport.ApplyDownlink(nativeDeserialize(${JSON.stringify(JSON.stringify({ r: Number.MAX_SAFE_INTEGER, s: snapshot(Number.MAX_SAFE_INTEGER) }))}))
+assert(ns.rev==9007199254740991 and applications==1)
+`);
+  expect(h.snapshots).toEqual([snapshot(Number.MAX_SAFE_INTEGER)]);
 });
 
 test('a small patch copies changed paths and one UI projection while preserving a large canonical history', () => {

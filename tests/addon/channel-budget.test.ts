@@ -40,9 +40,12 @@ function transportHarness() {
     return 0;
   });
   lua.lua_setglobal(L, to_luastring('publishRevision'));
-  run(
-    `assert(load(${JSON.stringify(readFileSync('addon/WispAI/Transport/Transport.lua', 'utf8'))}))('WispAI',ns); ns.Transport.StartTransport()`,
-  );
+  for (const name of ['Namespace.lua', 'Shared/Numbers.lua', 'Transport/Transport.lua']) {
+    run(
+      `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + name, 'utf8'))}))('WispAI',ns)`,
+    );
+  }
+  run('ns.Transport.StartTransport()');
   return run;
 }
 

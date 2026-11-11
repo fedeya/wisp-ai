@@ -15,6 +15,8 @@ local ns = {
     Advice = {},
 }
 local root = arg[1] or "addon/WispAI"
+assert(loadfile(root .. "/Namespace.lua"))("WispAI", ns)
+assert(loadfile(root .. "/Shared/Text.lua"))("WispAI", ns)
 for _, name in ipairs({ "Syntax", "Block", "Parser" }) do
     assert(loadfile(root .. "/Markdown/" .. name .. ".lua"))("WispAI", ns)
 end

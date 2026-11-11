@@ -1,6 +1,6 @@
 -- Syndicator readiness and read-only cached inventory adapter.
 local _, ns = ...
-local integer = ns.Integrations._IsInteger
+local integer = ns.Shared.Numbers.IsNonNegativeInteger
 
 function ns.Integrations._SyndicatorReport()
     local api = Syndicator and Syndicator.API

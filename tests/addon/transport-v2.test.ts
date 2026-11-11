@@ -67,9 +67,11 @@ end
 ns.Core.Log=function(text)logs[#logs+1]=tostring(text)end
 `);
   run(beforeLoad);
-  run(
-    `assert(load(${JSON.stringify(readFileSync('addon/WispAI/Transport/Transport.lua', 'utf8'))}))('WispAI',ns)`,
-  );
+  for (const name of ['Namespace.lua', 'Shared/Numbers.lua', 'Transport/Transport.lua']) {
+    run(
+      `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + name, 'utf8'))}))('WispAI',ns)`,
+    );
+  }
   const activate = () =>
     run(
       "playerGuid='Player-Test-GUID';ns.Transport.StartTransport();assert(ns.transportStats.version==2)",

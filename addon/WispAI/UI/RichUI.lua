@@ -1,4 +1,5 @@
 local _, ns = ...
+local text = ns.UI.Widgets.SetText
 function ns.UI.RichSignature(value)
     if type(value) ~= "table" then
         return tostring(value)
@@ -14,12 +15,6 @@ function ns.UI.RichSignature(value)
         parts[#parts + 1] = tostring(key) .. ":" .. ns.UI.RichSignature(value[key])
     end
     return "{" .. table.concat(parts, "\30") .. "}"
-end
-local function text(font, value)
-    if font.value ~= value then
-        font.value = value
-        font:SetText(value)
-    end
 end
 local function font(parent, style)
     local f = parent:CreateFontString(nil, "OVERLAY", style or "GameFontNormal")

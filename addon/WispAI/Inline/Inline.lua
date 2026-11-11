@@ -1,4 +1,5 @@
 local _, ns = ...
+local set = ns.UI.Widgets.SetText
 BINDING_HEADER_WISPAI = "Wisp"
 BINDING_NAME_WISPAI_INLINE = "Ask about hovered reference"
 local panel, entry, title, scroll, content, busy, send
@@ -88,12 +89,6 @@ function ns.Inline.RefreshInlineBindings()
         C_Timer.After(0, function()
             bindingStatus("ready", first or (ns.db and ns.db.inlineBinding))
         end)
-    end
-end
-local function set(font, value)
-    if font._inlineText ~= value then
-        font._inlineText = value
-        font:SetText(value)
     end
 end
 function ns.Inline.InlineCurrent()

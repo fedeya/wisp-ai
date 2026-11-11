@@ -21,6 +21,7 @@ Helpers and widget state stay local to their owning file.
 
 | Directory                       | Responsibility                                                     |
 | ------------------------------- | ------------------------------------------------------------------ |
+| `Shared/`                       | Pure cross-subsystem number validation and UTF-8 byte truncation   |
 | `Chat/`                         | Conversation commands and incoming snapshot reconciliation         |
 | `Transport/`                    | Wire frames, retries, downlink state and timing                    |
 | `Character/`                    | Live collectors, inspections and the training catalog              |
@@ -35,7 +36,14 @@ Helpers and widget state stay local to their owning file.
 See [the Lua guidelines](../docs/lua-guidelines.md) for naming, API boundaries,
 formatting, validation, performance practices and the required local checks.
 
-`Integrations/Integrations.lua` owns shared helpers, readiness aggregation and
+`Shared/Numbers.lua` owns finite-number and non-negative-integer checks. Consumers
+keep their own range constraints, including the transport's JSON-safe integer
+limit. `Shared/Text.lua` truncates strings by bytes without splitting UTF-8
+characters and reports truncation; it does not validate UTF-8. These modules load
+immediately after `Namespace.lua`. UI text caching belongs to `UI/Widgets.lua`;
+RichUI and Inline reuse `ns.UI.Widgets.SetText`.
+
+`Integrations/Integrations.lua` owns provider metadata, readiness aggregation and
 protected inspection dispatch. Each provider owns its readiness checks and reads
 in one file: `Questie.lua` (quests, chains and NPC/object locations),
 `Syndicator.lua` (cached inventory) and `Auctionator.lua` (cached prices).

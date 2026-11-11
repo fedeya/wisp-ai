@@ -1,24 +1,9 @@
 local _, ns = ...
+local prefix = ns.Shared.Text.TruncateUtf8Bytes
 local templates = setmetatable({}, { __mode = "k" })
 
 local function escaped(value)
     return (tostring(value or ""):gsub("|", "||"))
-end
-
-local function prefix(value, bytes)
-    if #value <= bytes then
-        return value, false
-    end
-    local after = bytes + 1
-    while
-        after > 1
-        and value:byte(after)
-        and value:byte(after) >= 128
-        and value:byte(after) < 192
-    do
-        after = after - 1
-    end
-    return value:sub(1, after - 1), true
 end
 
 -- A template contains static WoW text plus reference keys. Reformatting item
