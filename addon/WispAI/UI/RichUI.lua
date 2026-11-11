@@ -338,7 +338,7 @@ function ns.UI.PanelAction(chat, message, node, values)
         ns.UI.Refresh()
     end
 end
-function ns.UI.RenderRichUI(host, chat, message, width)
+function ns.UI.RenderRichUI(host, chat, message, width, collectProse)
     if not host.widgets and ns.UI.LinkWidget then
         ns.UI.LinkWidget(host)
     end
@@ -608,7 +608,8 @@ function ns.UI.RenderRichUI(host, chat, message, width)
     if ns.Markdown and ns.Markdown.TextStyle then
         ns.Markdown.TextStyle.Hide(host.prose)
     end
-    local proseCount, writingTail = 0, nil
+    local proseCount = 0
+    local writingFonts = collectProse and {} or nil
     local function indent(value)
         return math.max(0, math.min(tonumber(value) or 0, math.max(0, width - 40)))
     end
@@ -627,7 +628,6 @@ function ns.UI.RenderRichUI(host, chat, message, width)
         and (message._markdown or (message.ui and #message.ui > 0))
     then
         for _, part in ipairs(message.parts) do
-            writingTail = nil
             if part.type == "ui" then
                 local node = nodes[part.id]
                 if node and not node.parent then
@@ -671,18 +671,13 @@ function ns.UI.RenderRichUI(host, chat, message, width)
                     f:Show()
                     y = y + f:GetStringHeight() + 8
                 end
-                if
-                    message.streaming
-                    and not part.style
-                    and not part.styled
-                    and not part.text:find("|", 1, true)
-                then
+                if writingFonts then
                     local f = host.prose[proseCount]
                     if f and f:IsShown() then
-                        writingTail = f
+                        writingFonts[#writingFonts + 1] = f
                         for _, run in ipairs(f.runs or {}) do
                             if run:IsShown() then
-                                writingTail = run
+                                writingFonts[#writingFonts + 1] = run
                             end
                         end
                     end
@@ -710,5 +705,5 @@ function ns.UI.RenderRichUI(host, chat, message, width)
     end
     host:SetWidth(width)
     host:SetHeight(math.max(1, y))
-    return y, pending, writingTail
+    return y, pending, writingFonts
 end

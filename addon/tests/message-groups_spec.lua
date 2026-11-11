@@ -211,6 +211,10 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             table.insert(ns.chats[1].messages, completedCall)
             refresh()
             assert(not progress:IsShown(), "completed calls occupy the activity slot")
+            local waitingGroup = findRow("Reading quests")
+            assert(waitingGroup.continuing:IsShown())
+            check.equal("Working…", waitingGroup.continuing:GetText())
+            check.same({ 0, 1 / 8, 0, 1 }, waitingGroup.icon.texCoord)
 
             local call = {
                 id = "t3b",
@@ -226,6 +230,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             local group = findRow("Reading talents")
             assert(group.disclosure:IsShown() and group.text:GetText() == "Reading talents")
+            assert(not group.continuing:IsShown())
             assert(not progress:IsShown(), "the active tool replaces the thinking row")
             assert(#ns.chats[1].messages == 7, "grouping must not rewrite saved history")
             local _, _, _, labelLeft = group.text:GetPoint()
@@ -269,6 +274,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             call.tool.resultPreview = "Talents are unavailable | retry"
             refresh()
             assert(not progress:IsShown() and group.text:GetText() == "2 tool calls")
+            assert(group.continuing:IsShown())
             check.same({ 2 / 8, 3 / 8, 0, 1 }, child.icon.texCoord)
             assert(not child.toolSpinner:IsPlaying())
             check.equal(
@@ -282,9 +288,24 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             table.insert(ns.chats[1].messages, reply)
             refresh()
             assert(findRow(reply.text):IsShown() and not progress:IsShown())
+            assert(not group.continuing:IsShown())
             reply.streaming = false
             refresh()
             assert(not progress:IsShown(), "thinking stays hidden after the last text chunk")
+
+            table.insert(ns.chats[1].messages, {
+                id = "final-only",
+                role = "assistant",
+                phase = "reply",
+                streaming = false,
+                text = "A reply delivered as a single snapshot",
+            })
+            ns.chats[1].status = "done"
+            refresh()
+            local finalOnly = findRow("A")
+            assert(finalOnly:IsShown() and finalOnly.scripts.OnUpdate)
+            finalOnly.scripts.OnUpdate(finalOnly, 1)
+            check.equal("A reply delivered as a single snapshot", finalOnly.text:GetText())
 
             ns.chats[1].messages =
                 { { id = "long", role = "assistant", text = string.rep("Long reply ", 1000) } }

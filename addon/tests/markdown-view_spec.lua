@@ -312,16 +312,22 @@ it("reveals streamed prose without cutting UTF-8 or remeasuring the row", functi
     original.text = original.text .. " Sigue la segunda."
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
     assert.equal(partial, row.text:GetText())
-    row.scripts.OnUpdate(row, 0.4)
+    row.scripts.OnUpdate(row, 1)
     assert.equal(original.text, row.text:GetText())
     assert.is_nil(row.scripts.OnUpdate)
 
     original.text = original.text .. "\n\nPárrafo nuevo."
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
     assert.equal("P", row.rich.prose[2]:GetText())
+    original.text = original.text .. "\n\n**Cierre en negrita.**"
     original.streaming = false
+    chat.status = "done"
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
+    assert.equal("P", row.rich.prose[2]:GetText())
+    assert.equal("", row.rich.prose[3]:GetText())
+    row.scripts.OnUpdate(row, 1)
     assert.equal("Párrafo nuevo.", row.rich.prose[2]:GetText())
+    assert.equal("Cierre en negrita.", row.rich.prose[3]:GetText())
     assert.is_nil(row.scripts.OnUpdate)
 end)
 
@@ -333,7 +339,11 @@ it("preserves native markup and finishes the reveal when the row is hidden", fun
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
     assert.equal("|cffe3c77eA bold start|r", row.text:GetText())
-    assert.is_nil(row.scripts.OnUpdate)
+    assert.equal(0, row.text:GetAlpha())
+    row.scripts.OnUpdate(row, 0.1)
+    assert.is_true(row.text:GetAlpha() > 0 and row.text:GetAlpha() < 1)
+    row.scripts.OnUpdate(row, 1)
+    assert.equal(1, row.text:GetAlpha())
 
     original.text = original.text .. "\n\nAnother paragraph."
     ns.UI.RenderMessageRow(row, chat, original, 210, true)

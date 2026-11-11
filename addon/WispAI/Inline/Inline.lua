@@ -4,7 +4,7 @@ BINDING_HEADER_WISPAI = "Wisp"
 BINDING_NAME_WISPAI_INLINE = "Ask about hovered reference"
 local panel, entry, title, scroll, content, busy, send
 local rows = {}
-local newMessages, renderedChat
+local newMessages, renderedChat, renderedWorking
 local bindingCapture, hotkey, bindingEvents, lastActivation, bindingSignature
 local mouseKeys = { LeftButton = "BUTTON1", RightButton = "BUTTON2", MiddleButton = "BUTTON3" }
 local function combination(key)
@@ -281,7 +281,8 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     local offset = scroll:GetVerticalScroll()
     local preserveScroll = chat and preserveScrollForChat == chat.id
     local follow = not preserveScroll and previousRange - offset < 30
-    local messages, hasToolActivity, hasReplyText = ns.UI.DisplayMessages(chat)
+    local animateTurn = chat and renderedChat == chat.id and renderedWorking
+    local messages, hasToolActivity, hasReplyText, turnStart = ns.UI.DisplayMessages(chat)
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = chat.id .. ":" .. (message.id or index)
@@ -295,7 +296,8 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
             local speaker = ns.UI.MessageSpeaker(message)
             y = y + ns.UI.MessageGap(previousMessage, message)
             local showAuthor = speaker ~= "assistant" or previousSpeaker ~= speaker
-            ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
+            local animateReply = animateTurn and index >= turnStart and message.phase == "reply"
+            ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
             previousSpeaker, previousMessage = speaker, message
             local h = row.height
             ns.UI.PositionMessageRow(row, content, y, width)
@@ -353,7 +355,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         scroll:SetVerticalScroll(follow and bottom or math.min(offset, bottom))
     end
     ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
-    renderedChat = chat and chat.id
+    renderedChat, renderedWorking = chat and chat.id, working
     uiWidgets.SetText(send, working and "Stop" or "Ask")
 end
 function ns.Inline.OpenInline()

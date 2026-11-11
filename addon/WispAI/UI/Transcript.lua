@@ -2,7 +2,7 @@ local _, ns = ...
 local box, button = ns.UI.Widgets.Box, ns.UI.Widgets.Button
 local transcript, content, scrollBar, newMessages
 local rows, scrollPositions = {}, {}
-local renderedChat
+local renderedChat, renderedWorking
 local rendering, scrollRange = false, 0
 
 function ns.UI.ScrollTranscript(delta)
@@ -36,7 +36,9 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local width = math.max(100, transcript:GetWidth() - 6)
     local y, used = 0, {}
     local previousSpeaker, previousMessage
-    local messages, hasToolActivity, hasReplyText = ns.UI.DisplayMessages(chat)
+    local working = chat and chat.status == "working"
+    local animateTurn = not switched and renderedWorking
+    local messages, hasToolActivity, hasReplyText, turnStart = ns.UI.DisplayMessages(chat)
     for index, message in ipairs(messages) do
         if message.role ~= "tool" or ns.db.showTools then
             local key = id .. ":" .. (message.id or tostring(index))
@@ -49,7 +51,8 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
             local speaker = ns.UI.MessageSpeaker(message)
             y = y + ns.UI.MessageGap(previousMessage, message)
             local showAuthor = speaker ~= "assistant" or previousSpeaker ~= speaker
-            ns.UI.RenderMessageRow(row, chat, message, width, showAuthor)
+            local animateReply = animateTurn and index >= turnStart and message.phase == "reply"
+            ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
             previousSpeaker, previousMessage = speaker, message
             ns.UI.PositionMessageRow(row, content, y, width)
             if not row:IsShown() then
@@ -82,7 +85,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     scrollBar:SetValue(position)
     transcript:SetVerticalScroll(position)
     ns.UI.UpdateNewMessages(newMessages, chat, follow, switched)
-    renderedChat = id
+    renderedChat, renderedWorking = id, working
     rendering = false
 end
 

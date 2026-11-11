@@ -54,6 +54,12 @@ end
 function methods:GetText()
     return self.text
 end
+function methods:SetAlpha(alpha)
+    self.alpha = alpha
+end
+function methods:GetAlpha()
+    return self.alpha or 1
+end
 function methods:SetFontObject(font)
     if self.font == font then
         return
