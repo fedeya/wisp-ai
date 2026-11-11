@@ -23,7 +23,8 @@ local function macroCode(value, info)
         then
             commands = commands + 1
             local color = command:sub(1, 1) == "/" and "|cff8fb7c6" or "|cffb0aa8e"
-            tail = escaped(tail):gsub("(%[[^%]\n]*%])", function(condition)
+            -- Stop at the next opener so unmatched '[' cannot rescan overlapping suffixes.
+            tail = escaped(tail):gsub("(%[[^%[%]\n]*%])", function(condition)
                 -- Each word closes its color so wrapping into another font string is safe.
                 return (condition:gsub("%S+", "|cffaca0c2%0|r"))
             end)

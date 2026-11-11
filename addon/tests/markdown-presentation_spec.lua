@@ -265,3 +265,21 @@ it("colors macro commands and conditions while keeping code literal across reflo
         assert.is_nil(helper.rowText(row):find("|cff", 1, true))
     end
 end)
+
+it("bounds synchronous macro formatting for near-limit unmatched conditions", function()
+    local _, ns = setup()
+    for _, source in ipairs({
+        "/say " .. string.rep("[", 65000) .. "\n",
+        "/cast " .. string.rep("[", 64000) .. "[mod:shift] Fuego\n",
+    }) do
+        local tree = assert(ns.Markdown.Parse("```macro\n" .. source .. "```"))
+        local started = os.clock()
+        local formatted = ns.Markdown.InlineRenderer.Render(tree)
+        -- A generous CPU budget catches suffix rescans without measuring parser/UI scheduling.
+        assert.is_true(os.clock() - started < 1, "Macro formatting exceeded one CPU second")
+        assert.equal(source, formatted:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""))
+        if source:find("mod:shift", 1, true) then
+            assert.is_truthy(formatted:find("|cffaca0c2[mod:shift]|r", 1, true))
+        end
+    end
+end)
