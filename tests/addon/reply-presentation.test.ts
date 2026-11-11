@@ -87,6 +87,8 @@ test('Eve presentation parts reach the shared Lua view with source, order and re
     run('ns = { db = {} }');
     for (const file of [
       'Namespace',
+      'Shared/Text',
+      'UI/Widgets',
       'UI/RichUI',
       'UI/EmojiData',
       'UI/Emoji',
