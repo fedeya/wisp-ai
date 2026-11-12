@@ -302,117 +302,67 @@ it(
         settled(ns, original)
         ns.UI.RenderMessageRow(row, chat, original, 600, true)
         assert.is_true(tableWidget:IsShown())
-        row.scripts.OnUpdate(row, 1)
+        assert.is_true(row.rich.prose[1]:IsShown())
         assert.is_truthy(row.rich.prose[1]:GetText():find("dense", 1, true))
     end
 )
 
-it("reveals streamed prose without cutting UTF-8 or remeasuring the row", function()
+it("reveals each streamed paragraph whole and reserves the final row height", function()
     local env, ns = setup()
-    local original = message("")
+    local original = message("Ésta es una primera tanda de texto.")
     original.streaming = true
     local chat = { id = "chat", status = "working", messages = { original } }
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.is_nil(row.scripts.OnUpdate)
-    original.text = "Ésta es una primera tanda de texto."
-    ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    local height = row.height
-    assert.equal("É", row.text:GetText())
-    row.scripts.OnUpdate(row, 0.15)
-    local partial = row.text:GetText()
-    assert.is_true(#partial > #"É" and #partial < #original.text)
-    assert.equal(height, row.height)
-
-    original.text = original.text .. " Sigue la segunda."
-    ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.equal(partial, row.text:GetText())
-    row.scripts.OnUpdate(row, 1)
     assert.equal(original.text, row.text:GetText())
     assert.is_nil(row.scripts.OnUpdate)
 
-    original.text = original.text .. "\n\nPárrafo nuevo."
+    original.text = original.text .. "\n\nSegundo párrafo.\n\n**Tercero.**\n\nCuarto."
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.equal("P", row.rich.prose[2]:GetText())
-    original.text = original.text .. "\n\n**Cierre en negrita.**"
+    local height = row.height
+    assert.equal("Ésta es una primera tanda de texto.", helper.rendered(row.rich.prose[1]))
+    assert.is_true(row.rich.prose[2]:IsShown())
+    assert.is_false(row.rich.prose[3]:IsShown())
+    assert.is_false(row.rich.prose[4]:IsShown())
+
+    row.scripts.OnUpdate(row, 0.04)
+    ns.UI.RenderMessageRow(row, chat, original, 340, true)
+    assert.is_true(row.rich.prose[2]:IsShown())
+    assert.is_false(row.rich.prose[3]:IsShown())
+    row.scripts.OnUpdate(row, 0.04)
+    assert.equal("Tercero.", helper.rendered(row.rich.prose[3]))
+    assert.is_false(row.rich.prose[4]:IsShown())
+
     original.streaming = false
     chat.status = "done"
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.equal("P", row.rich.prose[2]:GetText())
-    assert.equal("", row.rich.prose[3]:GetText())
+    assert.equal(height, row.height)
+    assert.is_true(row.rich.prose[3]:IsShown())
     row.scripts.OnUpdate(row, 1)
-    assert.equal("Párrafo nuevo.", row.rich.prose[2]:GetText())
-    assert.equal("Cierre en negrita.", row.rich.prose[3]:GetText())
+    assert.equal("Cuarto.", helper.rendered(row.rich.prose[4]))
+    assert.equal(height, row.height)
     assert.is_nil(row.scripts.OnUpdate)
 end)
 
-it("holds the first glyph until the first long reply is formatted", function()
+it("replaces a pending preview with formatted blocks without replaying it", function()
     local env, ns = setup()
     local original =
         message("Primero, revisá la quest.\n\n" .. string.rep("- **Opción** con detalles.\n", 26))
-    original.streaming = false
     local chat = { id = "chat", status = "done", messages = { original } }
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     ns.UI.RenderMessageRow(row, chat, original, 300, true, true)
-    assert.equal("P", row.text:GetText())
+    assert.is_truthy(row.text:GetText():find("Primero, revisá la quest.", 1, true))
     assert.is_nil(row.scripts.OnUpdate)
     settled(ns, original)
     ns.UI.RenderMessageRow(row, chat, original, 300, true)
-    assert.equal("P", row.rich.prose[1]:GetText())
-    assert.equal("", row.rich.prose[2]:GetText())
-    row.scripts.OnUpdate(row, 1)
     assert.equal("Primero, revisá la quest.", row.rich.prose[1]:GetText())
+    assert.is_true(row.rich.prose[2]:IsShown())
     assert.is_nil(row.scripts.OnUpdate)
 end)
 
-it("preserves native markup and finishes the reveal when the row is hidden", function()
+it("reveals list markers and styled spans together and finishes when hidden", function()
     local env, ns = setup()
-    local original = message("**A bold start**")
-    original.streaming = true
-    local chat = { id = "chat", status = "working", messages = { original } }
-    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
-    ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.equal("|cffe3c77eA|r", row.text:GetText())
-    row.scripts.OnUpdate(row, 0.1)
-    assert.is_truthy(row.text:GetText():match("^|cffe3c77eA bold .+|r$"))
-    assert.is_true(#row.text:GetText() < #"|cffe3c77eA bold start|r")
-    row.scripts.OnUpdate(row, 1)
-    assert.equal("|cffe3c77eA bold start|r", row.text:GetText())
-
-    original.text = original.text .. "\n\nAnother paragraph."
-    ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.is_function(row.scripts.OnUpdate)
-    row.scripts.OnHide(row)
-    assert.equal("Another paragraph.", row.rich.prose[2]:GetText())
-    assert.is_nil(row.scripts.OnUpdate)
-end)
-
-it("keeps the first formatted paragraph revealing when more paragraphs arrive", function()
-    local env, ns = setup()
-    local original = message("Primero, **revisá la misión** antes de salir.")
-    original.streaming = true
-    local chat = { id = "chat", status = "working", messages = { original } }
-    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
-    ns.UI.RenderMessageRow(row, chat, original, 400, true)
-    assert.equal("P", row.text:GetText())
-    row.scripts.OnUpdate(row, 0.06)
-    local visible = row.text:GetText()
-    assert.is_true(#visible > 1 and #visible < #"Primero,")
-
-    original.text = original.text .. "\n\nDespués, **volvé al campamento**.\n\nListo."
-    ns.UI.RenderMessageRow(row, chat, original, 400, true)
-    assert.equal(visible, row.rich.prose[1]:GetText())
-    assert.equal("", row.rich.prose[2]:GetText())
-    assert.equal("", row.rich.prose[3]:GetText())
-    row.scripts.OnUpdate(row, 1)
-    assert.equal("Listo.", row.rich.prose[3]:GetText())
-end)
-
-it("reveals each list marker with the first visible text in its item", function()
-    local env, ns = setup()
-    local original = message(
-        "This opening paragraph is still being written.\n\n- **First item** has more text.\n- Second item."
-    )
+    local original = message("**Opening.**\n\n- **First item** has more text.\n- Second item.")
     original.streaming = true
     local chat = { id = "chat", status = "working", messages = { original } }
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
@@ -420,94 +370,50 @@ it("reveals each list marker with the first visible text in its item", function(
     local first, second = row.rich.prose[2], row.rich.prose[3]
     assert.equal("•", first.marker:GetText())
     assert.is_false(first.marker:IsShown())
+    assert.is_false(first:IsShown())
+    assert.is_false(first.runs[1]:IsShown())
     assert.is_false(second.marker:IsShown())
-    row.scripts.OnUpdate(row, 0.06)
-    assert.is_false(first.marker:IsShown())
-    assert.is_false(second.marker:IsShown())
-    for _ = 1, 35 do
-        if first:GetText() ~= "" then
-            break
-        end
-        row.scripts.OnUpdate(row, 0.02)
-    end
+
+    row.scripts.OnUpdate(row, 0.08)
     assert.is_true(first.marker:IsShown())
+    assert.equal("First item has more text.", helper.rendered(first))
     assert.is_false(second.marker:IsShown())
     row.scripts.OnHide(row)
     assert.is_true(second.marker:IsShown())
-    assert.equal("Second item.", second:GetText())
+    assert.equal("Second item.", helper.rendered(second))
+    assert.is_nil(row.scripts.OnUpdate)
+
+    ns.UI.RenderMessageRow(row, chat, original, 320, true)
+    assert.is_true(second.marker:IsShown())
+    assert.is_nil(row.scripts.OnUpdate)
 end)
 
-it("keeps a list item's marker and all of its spans in a single reveal unit", function()
+it("includes the fallback list font and marker in the same reveal unit", function()
     local env, ns = setup()
     local display = settled(ns, message("- **First** item has wrapped text.\n- Second item."))
-    for _, exhausted in ipairs({ false, true }) do
-        local host = env.CreateFrame("Frame")
-        host.styledExtras = exhausted and 256 or 0
-        local _, _, units = ns.UI.RenderRichUI(host, {}, display, 150, true)
-        assert.equal(2, #units)
-        local first = units[1]
-        assert.equal(host.prose[1], first.fonts[1])
-        if exhausted then
-            assert.equal(1, #first.fonts)
-            local text = ns.Markdown.InlineRenderer.WritingText(first.fonts[1]:GetText())
-            assert.equal("First item has wrapped text.", text)
-        else
-            assert.is_true(#first.fonts > 1)
-        end
-        local firstMarker, secondMarker = host.prose[1].marker, host.prose[2].marker
-        assert.equal("•", firstMarker:GetText())
-        first.setStarted(false)
-        assert.is_false(firstMarker:IsShown())
-        assert.is_true(secondMarker:IsShown())
-        first.setStarted(true)
-        assert.is_true(firstMarker:IsShown())
-    end
+    local host = env.CreateFrame("Frame")
+    host.styledExtras = 256
+    local _, _, units = ns.UI.RenderRichUI(host, {}, display, 150, true)
+    assert.same({ host.prose[1], host.prose[1].marker }, units[1])
+    assert.is_truthy(host.prose[1]:GetText():find("item has wrapped text.", 1, true))
 end)
 
-it("starts an item's marker with its first text span that contains a glyph", function()
+it("reveals Markdown rules and code decorations as whole blocks", function()
     local env, ns = setup()
-    local row = env.CreateFrame("Frame")
-    local original = {
-        role = "assistant",
-        text = "- First",
-        streaming = true,
-        _markdown = true,
-        parts = {
-            {
-                type = "text",
-                text = "- First",
-                _markdown = true,
-                marker = "- ",
-                runs = { { text = " " }, { text = "First" } },
-            },
-        },
-    }
-    local writing = ns.UI.Writing.BeginLayout(row, false, original, true)
-    local _, _, units = ns.UI.RenderRichUI(row, {}, original, 150, true)
-    ns.UI.Writing.Reveal(row, units, writing)
-    local first = row.prose[1]
-    assert.equal(" ", first:GetText())
-    assert.is_false(first.marker:IsShown())
-    row.scripts.OnUpdate(row, 0.06)
-    assert.is_true(first.marker:IsShown())
-    assert.is_truthy(first.runs[1]:GetText():match("^F"))
-end)
-
-it("clips inline colors around whole native links and textures", function()
-    local _, ns = setup()
-    local renderer = ns.Markdown.InlineRenderer
-    local link = "|Hquest:166|h[Quest ||h label]|h"
-    local icon = "|TIcon:12:12|t"
-    local text = "|cffe3c77eÉ" .. link .. icon .. "|| fin|r"
-    local visible, ranges = renderer.WritingText(text)
-    assert.equal("É\1\1| fin", visible)
-    assert.equal("", (renderer.WritingPrefix(text, visible, ranges, 1)))
-    assert.equal("|cffe3c77eÉ|r", (renderer.WritingPrefix(text, visible, ranges, 2)))
-    assert.equal("|cffe3c77eÉ" .. link .. "|r", (renderer.WritingPrefix(text, visible, ranges, 3)))
-    assert.equal(
-        "|cffe3c77eÉ" .. link .. icon .. "|||r",
-        (renderer.WritingPrefix(text, visible, ranges, 5))
-    )
+    local original = message("Intro.\n\n---\n\n```lua\ncode()\n```")
+    local chat = { id = "chat", status = "done", messages = { original } }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, original, 400, true, true)
+    local rule = row.rich.prose[2].decorations[1]
+    local code = row.rich.prose[3]
+    assert.is_false(rule:IsShown())
+    assert.is_false(code.decorations[1]:IsShown())
+    row.scripts.OnUpdate(row, 0.08)
+    assert.is_true(rule:IsShown())
+    assert.is_false(code:IsShown())
+    row.scripts.OnUpdate(row, 0.08)
+    assert.is_true(code.decorations[1]:IsShown())
+    assert.equal("code()", helper.rendered(code))
 end)
 
 it("uses current metadata with a cached view and preserves user native links", function()

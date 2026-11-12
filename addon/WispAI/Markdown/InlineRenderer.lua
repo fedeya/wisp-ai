@@ -211,92 +211,9 @@ local function preview(value)
     return ns.UI.Emoji.Render(escaped(text)) .. (clipped and "\n..." or "")
 end
 
-local function closeTag(text, from, marker)
-    local pipe = text:find("|", from, true)
-    while pipe do
-        local tag = text:sub(pipe + 1, pipe + 1)
-        if tag == marker then
-            return pipe
-        end
-        pipe = text:find("|", pipe + (tag == "|" and 2 or 1), true)
-    end
-end
-
--- Map visible bytes to safe cuts in a rendered font string. Links and icons
--- take one step each, while color tags take no time in the reveal.
-local function writingText(text)
-    local pipe = text:find("|", 1, true)
-    if not pipe then
-        return text
-    end
-    local parts, ranges, bytes, position, colored = {}, {}, 0, 1, false
-    local function append(first, last, atom)
-        local part = atom or text:sub(first, last)
-        bytes = bytes + #part
-        parts[#parts + 1] = part
-        ranges[#ranges + 1] =
-            { lastByte = bytes, first = first, last = last, atom = atom, colored = colored }
-    end
-    while pipe do
-        if position < pipe then
-            append(position, pipe - 1)
-        end
-        local tag = text:sub(pipe + 1, pipe + 1)
-        local last = math.min(pipe + 1, #text)
-        if tag == "c" and text:sub(pipe + 2, pipe + 9):match("^%x%x%x%x%x%x%x%x$") then
-            colored, last = true, pipe + 9
-        elseif tag == "r" then
-            colored = false
-        elseif tag == "|" then
-            append(pipe, last, "|")
-        else
-            if tag == "H" then
-                local label = closeTag(text, pipe + 2, "h")
-                local close = label and closeTag(text, label + 2, "h")
-                last = close and close + 1 or last
-            elseif tag == "T" or tag == "A" then
-                local close = closeTag(text, pipe + 2, tag:lower())
-                last = close and close + 1 or last
-            end
-            append(pipe, last, "\1")
-        end
-        position = last + 1
-        pipe = text:find("|", position, true)
-    end
-    if position <= #text then
-        append(position, #text)
-    end
-    return table.concat(parts), ranges
-end
-
-local function writingPrefix(text, visible, ranges, bytes)
-    if bytes >= #visible then
-        return text, #visible
-    end
-    local prefix = sharedText.TruncateUtf8Bytes(visible, bytes)
-    if not ranges or prefix == "" then
-        return prefix, #prefix
-    end
-    local low, high = 1, #ranges
-    while low < high do
-        local middle = math.floor((low + high) / 2)
-        if ranges[middle].lastByte < #prefix then
-            low = middle + 1
-        else
-            high = middle
-        end
-    end
-    local range = ranges[low]
-    local before = low > 1 and ranges[low - 1].lastByte or 0
-    local last = range.atom and range.last or (range.first + #prefix - before - 1)
-    return text:sub(1, last) .. (range.colored and "|r" or ""), #prefix
-end
-
 ns.Markdown.InlineRenderer = {
     Render = render,
     Literal = escaped,
     Preview = preview,
-    WritingText = writingText,
-    WritingPrefix = writingPrefix,
 }
 ns.UI.FormatText = formatted

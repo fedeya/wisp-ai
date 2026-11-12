@@ -611,7 +611,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 end
             end
             row.text:SetShown(not interleaved)
-            writingUnits = writing and not interleaved and { { fonts = { row.text } } } or nil
+            writingUnits = writing and not interleaved and { { row.text } } or nil
             row.height = top
                 + math.max(
                     1,
