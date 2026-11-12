@@ -119,6 +119,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Quest progression',
     'Read active and completed quests, and your reputations.',
   ],
+  inspect_pet: [
+    'Inspect pet',
+    'Read your active owned pet, learned abilities and pet-bar autocast states.',
+  ],
   inspect_target: ['Inspect target', 'Read the selected NPC or enemy.'],
   read_chat: [
     'Read WoW chat',

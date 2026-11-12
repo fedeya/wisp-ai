@@ -133,6 +133,7 @@ export const trainingInput = z
     limit: z.number().int().min(1).max(100).default(30),
   })
   .refine((input) => input.minLevel <= input.maxLevel, 'Invalid level range');
+export const petInput = z.strictObject({});
 export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('merchant'),
@@ -142,6 +143,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
     }),
   }),
   z.object({ kind: z.literal('quest_rewards'), args: questRewardsInput }),
+  z.strictObject({ kind: z.literal('pet'), args: petInput }),
   z.object({ kind: z.literal('training'), args: trainingInput }),
   z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
   z.object({ kind: z.literal('questie_quest'), args: questInput }),

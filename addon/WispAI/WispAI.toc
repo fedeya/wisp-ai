@@ -27,6 +27,7 @@ ChatHistory\ChatHistory.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
+Character\Pet.lua
 Character\Inspect.lua
 Character\Merchant.lua
 Character\QuestRewards.lua

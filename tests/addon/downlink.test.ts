@@ -648,6 +648,64 @@ test('addon settings pause both reusable reads and ACK saves without discarding 
   expect(h.lastAck()?.n).toBeUndefined();
 });
 
+test('pet maximum escaped result preserves useful partial data through production Send and checked framing', () => {
+  const h = harness();
+  h.run('function CreateFrame()return {RegisterEvent=function()end,SetScript=function()end}end');
+  for (const file of ['Shared/Text.lua', 'Character/Pet.lua', 'Character/Inspect.lua']) {
+    h.run(
+      `assert(load(${JSON.stringify(readFileSync('addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,
+    );
+  }
+  h.run(`
+Enum.SpellBookSpellBank={Pet=1};Enum.SpellBookItemType={Spell=1,PetAction=3}
+function UnitExists(unit)assert(unit=='pet');return true end
+function UnitGUID(unit)return unit=='pet' and 'Pet-1' or 'Player-Test-GUID' end
+function UnitName()return 'Wolf' end
+function UnitLevel()return 60 end
+C_SpellBook={HasPetSpells=function()return 100000 end,
+ GetSpellBookItemInfo=function(i,bank)
+  assert(bank==1 and i<=64)
+  return {itemType=1,spellID=i,name=string.rep(string.char(1),96)}
+ end}
+function GetPetActionInfo(i)
+ assert(i<=10);return string.rep(string.char(2),96),nil,false,false,true,false,i
+end
+petResult=ns.Character.Inspect({kind='pet',args={}})
+assert(petResult.status=='available')
+assert(#nativeSerialize(petResult)<=16384)
+assert(petResult.data.learned.status=='partial' and petResult.data.learned.omitted)
+assert(#petResult.data.learned.entries>0 and #petResult.data.learned.entries<64)
+ns.Transport.Send({type='state_result',chat=string.rep('c',200),requestId=string.rep('r',200),data=petResult})
+assert(ns.transportStats.error==nil)
+`);
+  const decoder = new MailboxDecoder(UPLINK_KIND);
+  let complete;
+  let consumed = 0;
+  for (let tick = 0; tick < 100 && !complete; tick++) {
+    h.run('now=now+.04;timers[.04]()');
+    while (consumed < h.saved.length) {
+      complete = decoder.add(h.saved[consumed++]) || complete;
+    }
+  }
+  expect(complete).toBeTruthy();
+  const json = inflateMessage(complete!);
+  expect(json.length).toBeLessThan(20000);
+  const packet = JSON.parse(json.toString());
+  expect(packet).toMatchObject({
+    type: 'state_result',
+    data: {
+      status: 'available',
+      data: {
+        presence: 'present',
+        learned: { status: 'partial', complete: false, omitted: true },
+      },
+    },
+  });
+  expect(packet.data.data.learned.entries[0].spellId).toBe(1);
+  expect(packet.data.data.actionBar.entries).toHaveLength(10);
+  expect(packet.data.data.actionBar.entries[0].autocast).toBe('disabled');
+});
+
 test('incoming data and its ACK wait for the current multipart uplink to finish', () => {
   const h = harness();
   const text = Array.from({ length: 160 }, (_, i) => 'value-' + i.toString(36)).join('|');
