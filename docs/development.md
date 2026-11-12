@@ -310,7 +310,7 @@ are assigned from the first message before model preparation, without waiting fo
 Specialized tools stay in Eve's catalog until found with `eve__search` and
 called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
 history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
-and `Turn timing` entries for receipt, admission and first visible text latency.
+and structured `chat.turn_timing` entries for preparation, admission and the first text received by the bridge.
 
 ### Runtime boundaries
 

@@ -57,14 +57,14 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     const selected: string[] = [];
     let active = 0;
     let maxActive = 0;
-    const log = vi.fn();
+    const logger = { error: vi.fn() };
     stop = startRoutineScheduler({
       state,
       routineStore: store,
       capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
       isStopping: () => false,
       isReady: () => true,
-      log,
+      logger,
       changed: () => settledA.resolve(),
       run: async (chat) => {
         selected.push(chat.routineId!);
@@ -105,7 +105,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     releaseB.resolve();
     await stop();
     expect(store.history().map((run) => run.status)).toEqual(['done', 'done']);
-    expect(log).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
   } finally {
     releaseA.resolve();
     releaseB.resolve();

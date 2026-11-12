@@ -23,6 +23,7 @@ import type { Simulator } from './simulation.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { proxyConnectionModel } from './model-proxy.ts';
 import { proxyModel } from './model-proxy.ts';
+import type { Logger } from 'pino';
 import type { WowheadSearch } from './web-search.ts';
 import { chooseChatModel } from './chat-model.ts';
 import { characterIdentity, conversationTitle, queryCharacterSections } from './context.ts';
@@ -33,7 +34,7 @@ export interface MemoryView {
   requestId?: string;
 }
 interface AgentDependencies {
-  log?: (message: string) => void;
+  logger?: Pick<Logger, 'info'>;
   token: string;
   auth: ChatGPTAuth;
   connections: ModelConnections;
@@ -95,7 +96,7 @@ export function createAgentHandler(deps: AgentDependencies) {
     ) {
       try {
         if (req.url === '/model/responses') {
-          await proxyModel(req, res, auth, deps.log);
+          await proxyModel(req, res, auth, deps.logger);
         } else {
           await proxyConnectionModel(req, res, connections);
         }

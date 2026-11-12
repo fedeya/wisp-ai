@@ -27,7 +27,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     sessions: { create: vi.fn(async () => ({ session })), attach: () => session },
   } as unknown as Pick<Client, 'sessions'>;
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
-  const log = vi.fn();
+  const logger = { info: vi.fn(), error: vi.fn() };
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
   const run = createTurnRunner({
@@ -47,7 +47,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     accountBusy: () => false,
     isCurrent: () => current,
     changed,
-    log,
+    logger,
     flushSnapshot,
   });
   return {
@@ -56,7 +56,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     send,
     client,
     models,
-    log,
+    logger,
     flushSnapshot,
     changed,
     changeCharacter: () => {
@@ -80,11 +80,9 @@ test('a complete turn projects streamed content and settles once', async () => {
   ).toBe('Hello');
   expect(f.send).toHaveBeenCalledTimes(1);
   expect(f.flushSnapshot).toHaveBeenCalledTimes(1);
-  const timing = JSON.parse(
-    String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
-      'Turn timing: '.length,
-    ),
-  );
+  const timing = f.logger.info.mock.calls.find(
+    ([fields]) => fields?.event === 'chat.turn_timing',
+  )?.[0];
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
 });
@@ -340,12 +338,11 @@ test('old assistant messages cannot count as the first text of a new turn', asyn
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
   await f.run(f.chat, 'Next question');
-  const timing = JSON.parse(
-    String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
-      'Turn timing: '.length,
-    ),
-  );
-  expect(timing).not.toHaveProperty('firstTextMs');
+  const timing = f.logger.info.mock.calls.find(
+    ([fields]) => fields?.event === 'chat.turn_timing',
+  )?.[0];
+  expect(timing).toBeDefined();
+  expect(timing.firstTextMs).toBeUndefined();
 });
 
 test('a turn keeps its quest reading available to tools without inserting it into model input', async () => {
