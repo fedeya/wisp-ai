@@ -15,6 +15,7 @@ read_globals = {
     "C_EncodingUtil",
     "C_Item",
     "C_Map",
+    "C_MerchantFrame",
     "C_QuestLog",
     "C_Reputation",
     "C_SkillInfo",
@@ -58,7 +59,6 @@ read_globals = {
     "GetMacroInfo",
     "GetMoney",
     "GetMerchantNumItems",
-    "GetMerchantItemInfo",
     "GetMerchantItemLink",
     "MerchantFrame",
     "GetNumAuctionItems",
@@ -119,6 +119,7 @@ read_globals = {
     "date",
     "debugprofilestop",
     "hooksecurefunc",
+    "issecretvalue",
     "strsplit",
     "time",
 }

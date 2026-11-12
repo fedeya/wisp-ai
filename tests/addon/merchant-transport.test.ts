@@ -101,7 +101,10 @@ local function text(n)
  end
  return table.concat(out)
 end
-function GetMerchantItemInfo()return text(200),nil,120,5,17,true,false,false end
+GetMerchantItemInfo=nil
+C_MerchantFrame={GetItemInfo=function()
+ return {name=text(200),price=120,stackCount=5,numAvailable=17,isPurchasable=true,isUsable=false,hasExtendedCost=false}
+end}
 function GetMerchantItemLink(i)return 'item:'..i..':'..text(490) end
 C_TooltipInfo={GetMerchantItem=function()
  local lines={}

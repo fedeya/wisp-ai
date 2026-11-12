@@ -40,9 +40,20 @@ describe("current merchant inspection", function()
         GetMerchantNumItems = function()
             return 3
         end
-        GetMerchantItemInfo = function(i)
-            return "Supply", nil, i == 3 and 0 or 120, 5, i == 2 and 0 or -1, true, false, i == 3
-        end
+        GetMerchantItemInfo = nil
+        C_MerchantFrame = {
+            GetItemInfo = function(i)
+                return {
+                    name = "Supply",
+                    price = i == 3 and 0 or 120,
+                    stackCount = 5,
+                    numAvailable = i == 2 and 0 or -1,
+                    isPurchasable = true,
+                    isUsable = false,
+                    hasExtendedCost = i == 3,
+                }
+            end,
+        }
         GetMerchantItemLink = function(i)
             return "item:" .. i
         end
@@ -122,8 +133,8 @@ describe("current merchant inspection", function()
         assert.is_true(data.truncated)
         assert.equals("Requires Level 10", data.offers[1].tooltip[1].left)
         assert.equals("available", data.offers[1].requirementsStatus)
-        env.GetMerchantItemInfo = function()
-            return "Unknown", nil, nil, nil, nil
+        env.C_MerchantFrame.GetItemInfo = function()
+            return { name = "Unknown" }
         end
         local unknown = read().data.offers[1]
         assert.equals("unknown", unknown.costStatus)
@@ -131,7 +142,7 @@ describe("current merchant inspection", function()
         assert.is_nil(unknown.isUsable)
         assert.is_nil(unknown.bundleSize)
         assert.equals("unavailable", read({ limit = 41 }).status)
-        env.GetMerchantItemInfo = function()
+        env.C_MerchantFrame.GetItemInfo = function()
             error("restricted")
         end
         assert.equals("unavailable", read().data.offers[1].status)
@@ -139,15 +150,21 @@ describe("current merchant inspection", function()
 
     it("rejects mid-capture changes, hidden/buyback windows and unavailable APIs", function()
         fire("MERCHANT_SHOW")
-        env.GetMerchantItemInfo = function()
+        env.C_MerchantFrame.GetItemInfo = function()
             fire("MERCHANT_UPDATE")
-            return "Changed", nil, 1, 1, -1, true, true, false
+            return {
+                name = "Changed",
+                price = 1,
+                stackCount = 1,
+                numAvailable = -1,
+                hasExtendedCost = false,
+            }
         end
         assert.equals("unavailable", read().status)
         env.MerchantFrame.selectedTab = 2
         assert.equals("unavailable", read().status)
         env.MerchantFrame.selectedTab = 1
-        env.GetMerchantItemInfo = nil
+        env.C_MerchantFrame = nil
         assert.equals("unavailable", read().status)
         fire("PLAYER_ENTERING_WORLD")
         assert.equals("unavailable", read().status)
@@ -159,9 +176,17 @@ describe("current merchant inspection", function()
         env.GetMerchantNumItems = function()
             return 1000
         end
-        env.GetMerchantItemInfo = function()
+        env.C_MerchantFrame.GetItemInfo = function()
             calls = calls + 1
-            return string.rep("é", 300), nil, 0 / 0, 5, 3, false, false, false
+            return {
+                name = string.rep("é", 300),
+                price = 0 / 0,
+                stackCount = 5,
+                numAvailable = 3,
+                isPurchasable = false,
+                isUsable = false,
+                hasExtendedCost = false,
+            }
         end
         local data = read({ offset = 500, limit = 40 }).data
         assert.equals(40, calls)
@@ -213,8 +238,16 @@ describe("current merchant inspection", function()
             env.GetMerchantItemLink = function()
                 return "item:" .. string.rep("9", 400)
             end
-            env.GetMerchantItemInfo = function()
-                return "Free", nil, 0, 5, 8, true, true, false
+            env.C_MerchantFrame.GetItemInfo = function()
+                return {
+                    name = "Free",
+                    price = 0,
+                    stackCount = 5,
+                    numAvailable = 8,
+                    isPurchasable = true,
+                    isUsable = true,
+                    hasExtendedCost = false,
+                }
             end
             local offer = read().data.offers[1]
             assert.is_nil(offer.itemId)
@@ -223,4 +256,206 @@ describe("current merchant inspection", function()
             assert.equals(1, math.floor(offer.availableCount / offer.bundleSize))
         end
     )
+
+    it("uses only the current struct API and preserves the exact variant link", function()
+        local oldCalls = 0
+        env.GetMerchantItemInfo = function()
+            oldCalls = oldCalls + 1
+            error("removed API must never be called")
+        end
+        local link = "|cffa335ee|Hitem:123:7:0:0:0:0:99:0:80:0:0:2:42:17|h[Variant]|h|r"
+        env.GetMerchantItemLink = function()
+            return link
+        end
+        fire("MERCHANT_SHOW")
+        local result = read({ limit = 1 })
+        assert.equals("available", result.status)
+        assert.same({ "Supply", 120, 5, "unlimited", true, false, link, 123 }, {
+            result.data.offers[1].name,
+            result.data.offers[1].costCopper,
+            result.data.offers[1].bundleSize,
+            result.data.offers[1].stockStatus,
+            result.data.offers[1].isPurchasable,
+            result.data.offers[1].isUsable,
+            result.data.offers[1].link,
+            result.data.offers[1].itemId,
+        })
+        assert.equals(0, oldCalls)
+    end)
+
+    it(
+        "keeps no-return, restricted and malformed records unavailable without defaulting prices",
+        function()
+            fire("MERCHANT_SHOW")
+            local readers = {
+                function() end,
+                function()
+                    error("restricted")
+                end,
+                function()
+                    return false
+                end,
+                function()
+                    return "not a struct"
+                end,
+                function()
+                    return { name = 123 }
+                end,
+                function()
+                    return {}
+                end,
+                function()
+                    return setmetatable({}, {
+                        __index = function()
+                            error("restricted field")
+                        end,
+                    })
+                end,
+            }
+            for _, reader in ipairs(readers) do
+                env.C_MerchantFrame.GetItemInfo = reader
+                local result = read({ limit = 1 })
+                assert.equals("available", result.status)
+                local offer = result.data.offers[1]
+                assert.equals("unavailable", offer.status)
+                assert.equals("unknown", offer.costStatus)
+                assert.is_nil(offer.costCopper)
+                assert.is_nil(offer.bundleSize)
+                assert.is_true(result.data.incomplete)
+            end
+            for _, namespace in ipairs({ false, {}, { GetItemInfo = true } }) do
+                env.C_MerchantFrame = namespace
+                assert.equals("unavailable", read().status)
+            end
+            env.C_MerchantFrame = nil
+            assert.equals("unavailable", read().status)
+        end
+    )
+
+    it(
+        "rejects secret or malformed fields independently before comparison or serialization",
+        function()
+            fire("MERCHANT_SHOW")
+            local secret = setmetatable({}, {
+                __index = function()
+                    error("secret was indexed")
+                end,
+                __tostring = function()
+                    error("secret was stringified")
+                end,
+            })
+            env.issecretvalue = function(value)
+                return rawequal(value, secret)
+            end
+            local valid = {
+                name = "Supply",
+                price = 120,
+                stackCount = 5,
+                numAvailable = 10,
+                isPurchasable = false,
+                isUsable = false,
+                hasExtendedCost = false,
+            }
+            for _, key in ipairs({
+                "price",
+                "stackCount",
+                "numAvailable",
+                "isPurchasable",
+                "isUsable",
+                "hasExtendedCost",
+                "currencyID",
+            }) do
+                for _, bad in ipairs({ secret, "malformed" }) do
+                    local info = {}
+                    for k, v in pairs(valid) do
+                        info[k] = v
+                    end
+                    info[key] = bad
+                    env.C_MerchantFrame.GetItemInfo = function()
+                        return info
+                    end
+                    local offer = read({ limit = 1 }).data.offers[1]
+                    assert.equals("available", offer.status)
+                    if key == "price" or key == "hasExtendedCost" or key == "currencyID" then
+                        assert.equals("unknown", offer.costStatus)
+                        assert.is_nil(offer.costCopper)
+                    elseif key == "stackCount" then
+                        assert.is_nil(offer.bundleSize)
+                    elseif key == "numAvailable" then
+                        assert.equals("unknown", offer.stockStatus)
+                        assert.is_nil(offer.availableCount)
+                    else
+                        assert.is_nil(offer[key])
+                    end
+                end
+            end
+            env.C_MerchantFrame.GetItemInfo = function()
+                return secret
+            end
+            assert.equals("unavailable", read().data.offers[1].status)
+            env.C_MerchantFrame.GetItemInfo = function()
+                return { name = secret }
+            end
+            assert.equals("unavailable", read().data.offers[1].status)
+            env.C_MerchantFrame.GetItemInfo = function()
+                return valid
+            end
+            env.GetMerchantItemLink = function()
+                return secret
+            end
+            local unlinked = read().data.offers[1]
+            assert.equals("available", unlinked.status)
+            assert.is_nil(unlinked.link)
+            assert.is_nil(unlinked.itemId)
+            env.C_MerchantFrame.GetItemInfo = function()
+                return setmetatable({ name = "Readable", stackCount = 5, numAvailable = -1 }, {
+                    __index = function()
+                        error("restricted field")
+                    end,
+                })
+            end
+            local offer = read().data.offers[1]
+            assert.equals("available", offer.status)
+            assert.equals("unknown", offer.costStatus)
+            assert.equals(5, offer.bundleSize)
+            assert.equals("unlimited", offer.stockStatus)
+        end
+    )
+
+    it("maps current currency and zero values without filling undocumented missing data", function()
+        fire("MERCHANT_SHOW")
+        local info = {
+            name = "Offer",
+            price = 0,
+            stackCount = 5,
+            numAvailable = 0,
+            isPurchasable = false,
+            isUsable = false,
+            hasExtendedCost = false,
+            currencyID = 0,
+        }
+        env.C_MerchantFrame.GetItemInfo = function()
+            return info
+        end
+        local offer = read().data.offers[1]
+        assert.equals("copper", offer.costStatus)
+        assert.equals(0, offer.costCopper)
+        assert.equals("limited", offer.stockStatus)
+        assert.equals(0, offer.availableCount)
+        assert.is_false(offer.isPurchasable)
+        info.currencyID = 81
+        offer = read().data.offers[1]
+        assert.equals("unsupported", offer.costStatus)
+        assert.is_nil(offer.costCopper)
+        info.currencyID = nil
+        info.stackCount = 0
+        info.price = nil
+        info.numAvailable = nil
+        offer = read().data.offers[1]
+        assert.equals("unknown", offer.costStatus)
+        assert.equals("unknown", offer.stockStatus)
+        assert.is_nil(offer.costCopper)
+        assert.is_nil(offer.availableCount)
+        assert.is_nil(offer.bundleSize)
+    end)
 end)

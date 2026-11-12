@@ -22,25 +22,45 @@ events:SetScript("OnEvent", function(_, event)
     end
 end)
 
+local function accessible(value)
+    return not issecretvalue or not issecretvalue(value)
+end
+
+-- A native record may be absent/restricted, or individual fields inaccessible.
+-- Never compare, coerce or serialize a secret; keep unreadable fields unknown.
+local function field(record, key)
+    local ok, value = pcall(function()
+        return record[key]
+    end)
+    if ok and accessible(value) then
+        return value, true
+    end
+    return nil, false
+end
+
 local function integer(value, minimum)
-    return type(value) == "number"
+    return accessible(value)
+        and type(value) == "number"
         and ns.Shared.Numbers.IsFinite(value)
         and value >= minimum
         and value <= 9007199254740991
         and value == math.floor(value)
 end
 local function text(value, limit)
-    if type(value) == "string" then
+    if accessible(value) and type(value) == "string" then
         return ns.Shared.Text.TruncateUtf8Bytes(value, limit)
     end
 end
 local function boolean(value)
-    if type(value) == "boolean" then
+    if accessible(value) and type(value) == "boolean" then
         return value
     end
 end
 
 local function id(value)
+    if not accessible(value) then
+        return nil
+    end
     local number = tonumber(value)
     return integer(number, 1) and number or nil
 end
@@ -74,7 +94,10 @@ function ns.Character.ReadMerchant(args)
     assert(MerchantFrame.selectedTab == 1, "Select the merchant offers tab first")
     assert(UnitGUID("npc") == merchantGUID, "Merchant changed; reopen the merchant window")
     assert(
-        GetMerchantNumItems and GetMerchantItemInfo and GetMerchantItemLink,
+        type(GetMerchantNumItems) == "function"
+            and type(C_MerchantFrame) == "table"
+            and type(C_MerchantFrame.GetItemInfo) == "function"
+            and type(GetMerchantItemLink) == "function",
         "Merchant API is unavailable"
     )
     local offset, limit = args.offset or 0, args.limit or 20
@@ -88,21 +111,32 @@ function ns.Character.ReadMerchant(args)
     local offers, incomplete = {}, false
     local offerBytes = 2 -- array delimiters
     for index = offset + 1, math.min(count, offset + limit, 540) do
-        local ok, name, _, price, bundle, stock, purchasable, usable, extended, currency =
-            pcall(GetMerchantItemInfo, index)
+        -- Index comes only from the validated public bounds/count, never native
+        -- secret data. Forever uses the Mainline-family struct, not a tuple.
+        local ok, info = pcall(C_MerchantFrame.GetItemInfo, index)
+        local name = ok
+            and accessible(info)
+            and type(info) == "table"
+            and text(field(info, "name"), 200)
         local offer = {
             index = index,
             status = "unavailable",
             costStatus = "unknown",
             stockStatus = "unknown",
         }
-        if ok and type(name) == "string" then
-            offer.status, offer.name = "available", text(name, 200)
+        if name then
+            local price = field(info, "price")
+            local bundle = field(info, "stackCount")
+            local stock = field(info, "numAvailable")
+            local extended = field(info, "hasExtendedCost")
+            local currency, currencyKnown = field(info, "currencyID")
+            offer.status, offer.name = "available", name
             local linkOK, link = pcall(GetMerchantItemLink, index)
             offer.link = linkOK and text(link, 512) or nil
             offer.itemId = offer.link and id(offer.link:match("item:(%d+)")) or nil
             offer.bundleSize = integer(bundle, 1) and bundle or nil
-            offer.isPurchasable, offer.isUsable = boolean(purchasable), boolean(usable)
+            offer.isPurchasable = boolean(field(info, "isPurchasable"))
+            offer.isUsable = boolean(field(info, "isUsable"))
             if stock == -1 then
                 offer.stockStatus = "unlimited"
             elseif integer(stock, 0) then
@@ -112,6 +146,7 @@ function ns.Character.ReadMerchant(args)
                 offer.costStatus = "unsupported"
             elseif
                 extended == false
+                and currencyKnown
                 and (currency == nil or currency == 0)
                 and integer(price, 0)
             then
