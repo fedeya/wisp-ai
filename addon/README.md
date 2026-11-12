@@ -46,20 +46,46 @@ RichUI and Inline reuse `ns.UI.Widgets.SetText`.
 `UI/Window.lua` composes the main chat window and owns its position, minimize/resize
 behavior and refresh entry point. Its components keep widget and cache state local:
 
-| Module                      | Responsibility                                                     |
-| --------------------------- | ------------------------------------------------------------------ |
-| `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog   |
-| `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation  |
-| `UI/Composer.lua`           | Multiline input, cursor scrolling, send/stop and responsive layout |
-| `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators  |
-| `UI/ConversationStatus.lua` | Conversation title, connection state and context usage             |
-| `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                    |
+| Module                      | Responsibility                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog                    |
+| `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation                   |
+| `UI/Composer.lua`           | Multiline input, cursor scrolling, send/stop and responsive layout                  |
+| `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators                   |
+| `UI/ConversationStatus.lua` | Conversation title, connection state and context usage                              |
+| `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                                     |
+| `UI/SettingsPresets.lua`    | Native desired CVar definition list, explicit save/delete and fresh review controls |
 
 The composer reports its bottom inset to the transcript through a callback wired
 by the window. `UI/ModelControls.lua` owns model/effort controls without changing
 composer or transcript geometry. Activity ticks update indicators without
 rerendering messages. The manifest loads these components before the window;
 the offline UI fixtures follow the same dependency order.
+
+### Native desired settings presets
+
+**Settings → CVar presets** opens the dedicated native window. Players explicitly
+name and select 1–12 discovered numeric/boolean CVars and desired values; the picker
+is bounded to 60 discovered targets and signals truncation, not a complete catalog.
+`Settings/Settings.lua` owns definition validation, native character ownership,
+owner/ID/revision-checked deletion and `WispAIDB.settingsPresets` persistence through
+the existing SavedVariables lifecycle in `Core.lua`. Definitions are immutable,
+bounded to 30 locally, and contain desired values—not old before/after snapshots.
+
+Save/list/select/Review and confirmed Delete perform no game writes or model/
+transport calls. Review rediscovers every selected target and delegates to a new
+ordinary preview transaction. Its **At review** values remain snapshot readings
+after mutation. Deliberate Apply/Undo use `Actions.PerformAction` and the existing
+transaction engine, keeping owner/session, capability/pending, combat, stale-value
+and readback guards. Missing/incompatible/read-only targets block the whole review;
+Undo must not overwrite intervening player edits. Delete has a separate confirmation
+and cancel path; it neither undoes CVars nor deletes transaction history.
+
+Character-owned definitions do not imply character-local CVars: scope is unknown
+and may be account-wide. There are no preset agent tools, generic panel actions,
+automatic switching, profiles, imports or scripts. Real-client CVar support/scope,
+native layout and SavedVariables logout/restart still require physical validation.
+See the [player reference](../docs/reference.md#native-desired-cvar-presets).
 
 `Integrations/Integrations.lua` owns provider metadata, readiness aggregation and
 protected inspection dispatch. Each provider owns its readiness checks and reads

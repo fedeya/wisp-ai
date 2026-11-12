@@ -533,11 +533,206 @@ local function check(option, value)
     end
     return option.normalize and option.normalize(value) or value
 end
+
+local function presetIdentity(read, ...)
+    local ok, value = pcall(read, ...)
+    assert(ok, "Active character identity is unavailable")
+    -- Secret native scalars may report a normal Lua type but forbid comparisons.
+    if _G.issecretvalue then
+        local checked, secret = pcall(_G.issecretvalue, value)
+        assert(checked and not secret, "Active character identity is unavailable")
+    end
+    if _G.canaccessvalue then
+        local checked, accessible = pcall(_G.canaccessvalue, value)
+        assert(checked and accessible, "Active character identity is unavailable")
+    end
+    assert(type(value) == "string" and value ~= "", "Active character identity is unavailable")
+    return value
+end
+-- Shared by definition ownership and the native window's session/character guard.
+function ns.Settings.PresetCharacter()
+    return { realm = presetIdentity(GetRealmName), name = presetIdentity(UnitName, "player") }
+end
+local function presetOwner()
+    assert(type(ns.session) == "string" and ns.session ~= "", "Active session unavailable")
+    local character = ns.Settings.PresetCharacter()
+    return character.realm .. ":" .. character.name
+end
+local function presets()
+    if ns.db.settingsPresets == nil then
+        ns.db.settingsPresets = {}
+    end
+    assert(type(ns.db.settingsPresets) == "table", "Saved preset collection is invalid")
+    return ns.db.settingsPresets
+end
+local function presetName(name)
+    assert(
+        type(name) == "string"
+            and #name >= 1
+            and #name <= 48
+            and name:find("%S")
+            and not name:find("[%c|]"),
+        "Use a plain preset name (1–48 bytes)"
+    )
+    return name
+end
+local function storedEntries(entries)
+    assert(type(entries) == "table" and #entries >= 1 and #entries <= 12, "Saved preset is invalid")
+    local count, seen = 0, {}
+    for index, entry in pairs(entries) do
+        count = count + 1
+        assert(
+            type(index) == "number"
+                and index >= 1
+                and index <= #entries
+                and index == math.floor(index),
+            "Saved preset entries are invalid"
+        )
+        assert(
+            type(entry) == "table"
+                and type(entry.id) == "string"
+                and #entry.id <= 400
+                and entry.id:match("^cvar:[%w_]+$")
+                and not seen[entry.id],
+            "Saved CVar ID is invalid"
+        )
+        seen[entry.id] = true
+        assert(
+            type(entry.value) == "string"
+                and numbers.IsFinite(tonumber(entry.value))
+                and tostring(tonumber(entry.value)) == entry.value,
+            "Saved desired value is invalid"
+        )
+    end
+    assert(count == #entries, "Saved preset entries are invalid")
+end
+local function presetEntries(entries, stored)
+    assert(type(entries) == "table" and #entries >= 1 and #entries <= 12, "Select 1 to 12 CVars")
+    if stored then
+        storedEntries(entries)
+    end
+    local count = 0
+    for index in pairs(entries) do
+        count = count + 1
+        assert(
+            type(index) == "number"
+                and index >= 1
+                and index <= #entries
+                and index == math.floor(index),
+            "Preset entries must be a list"
+        )
+    end
+    assert(count == #entries, "Preset entries must be a list")
+    local result, seen = {}, {}
+    for _, entry in ipairs(entries) do
+        assert(
+            type(entry) == "table"
+                and type(entry.id) == "string"
+                and #entry.id <= 400
+                and entry.id:match("^cvar:[%w_]+$")
+                and not seen[entry.id],
+            "Use unique exact discovered CVar IDs"
+        )
+        seen[entry.id] = true
+        local option = resolve(entry.id)
+        local current = option and tonumber(option.read())
+        assert(
+            option and option.id == entry.id and numbers.IsFinite(current),
+            "CVar is missing or not numeric/boolean"
+        )
+        local value = stored and tonumber(entry.value) or entry.value
+        assert(
+            type(value) == "boolean" or numbers.IsFinite(value),
+            "Desired value must be numeric or boolean"
+        )
+        assert(
+            type(value) ~= "boolean" or current == 0 or current == 1,
+            "Boolean target is incompatible"
+        )
+        local normalized = check(option, value)
+        assert(numbers.IsFinite(tonumber(normalized)), "CVar normalization is incompatible")
+        assert(not stored or normalized == entry.value, "Saved CVar value is incompatible")
+        result[#result + 1] = { id = entry.id, value = normalized }
+    end
+    return result
+end
+local function getPreset(id, revision)
+    local item = presets()[id]
+    assert(
+        item and item.id == id and item.owner == presetOwner(),
+        "Preset unavailable for this character"
+    )
+    assert(
+        item.revision == 1 and revision == item.revision,
+        "Preset revision changed; select it again"
+    )
+    presetName(item.name)
+    return item
+end
+-- Definitions contain only desired values. Ownership is always taken from native APIs.
+function ns.Settings.SavePreset(name, entries)
+    local identity = presetOwner()
+    presetName(name)
+    local normalized = presetEntries(entries, false)
+    local count = 0
+    for _, item in pairs(presets()) do
+        count = count + 1
+        assert(count <= 30 and type(item) == "table", "Saved preset collection is invalid")
+        assert(
+            item.owner ~= identity or item.name ~= name,
+            "A preset with this name already exists"
+        )
+    end
+    assert(count < 30, "Preset collection is full (30)")
+    ns.db.settingsPresetCounter = (ns.db.settingsPresetCounter or 0) + 1
+    local id = ns.session .. "-preset-" .. ns.db.settingsPresetCounter
+    assert(not presets()[id], "Preset ID already exists")
+    presets()[id] = { id = id, owner = identity, name = name, revision = 1, entries = normalized }
+    return id
+end
+function ns.Settings.ListPresets()
+    local identity, result = presetOwner(), {}
+    local count = 0
+    for id, item in pairs(presets()) do
+        count = count + 1
+        assert(count <= 30 and type(item) == "table", "Saved preset collection is invalid")
+        if item.owner == identity then
+            getPreset(id, item.revision)
+            local entries = {}
+            storedEntries(item.entries)
+            for index, entry in ipairs(item.entries) do
+                entries[index] = { id = entry.id, value = entry.value }
+            end
+            result[#result + 1] =
+                { id = id, name = item.name, revision = item.revision, entries = entries }
+        end
+    end
+    table.sort(result, function(a, b)
+        return a.name < b.name
+    end)
+    return result
+end
+-- Explicit UI confirmation precedes this call; deletion never changes CVars or transactions.
+function ns.Settings.DeletePreset(id, revision)
+    getPreset(id, revision)
+    presets()[id] = nil
+    return true
+end
 function ns.Settings.UpdateSettings(args)
     if InCombatLockdown and InCombatLockdown() then
         error("Leave combat before changing settings")
     end
     if args.operation == "preview" then
+        if args.presetId then
+            local item = getPreset(args.presetId, args.revision)
+            -- Resolve and validate every target before creating an ordinary new transaction.
+            local entries = presetEntries(item.entries, true)
+            local requests = {}
+            for index, entry in ipairs(entries) do
+                requests[index] = { id = entry.id, value = tonumber(entry.value) }
+            end
+            return ns.Settings.UpdateSettings({ operation = "preview", changes = requests })
+        end
         local changes, seen = {}, {}
         for _, request in ipairs(args.changes or {}) do
             if seen[request.id] then
