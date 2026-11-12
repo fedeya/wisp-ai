@@ -333,7 +333,6 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         and not hasReplyContent
         and not ns.UI.Activity.IsSending(chat)
     busy:SetShown(showBusy)
-    ns.UI.Activity.SetSpinner(busy, showBusy == true)
     if showBusy then
         local active = "Thinking…"
         for _, call in ipairs(chat.activity or {}) do
@@ -348,16 +347,21 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
             y = y + 12
         end
         busy.author:SetShown(showAuthor)
-        busy.icon:ClearAllPoints()
-        busy.icon:SetPoint("TOPLEFT", 0, -top - 1)
         busy.title:ClearAllPoints()
-        busy.title:SetPoint("TOPLEFT", 20, -top)
+        busy.title:SetPoint("TOPLEFT", 0, -top)
         busy.title:SetPoint("RIGHT", 0, 0)
-        uiWidgets.SetText(busy.title, active)
+        ns.UI.Activity.SetLoadingText(
+            busy,
+            busy.title,
+            ns.Markdown.InlineRenderer.Literal(active),
+            true
+        )
         busy:ClearAllPoints()
         busy:SetPoint("TOPLEFT", 0, -y)
         busy:SetSize(width, top + 23)
         y = y + busy:GetHeight()
+    else
+        ns.UI.Activity.SetLoadingText(busy)
     end
     content:SetWidth(width)
     content:SetHeight(math.max(1, y))
@@ -538,9 +542,6 @@ function ns.Inline.InitInline()
     end)
     newMessages:Hide()
     busy = CreateFrame("Frame", "WispAIInlineProgress", content)
-    busy.icon = busy:CreateTexture(nil, "ARTWORK")
-    busy.icon:SetSize(14, 14)
-    ns.UI.Activity.SetIcon(busy.icon, 1, uiWidgets.GOLD)
     busy.author = uiWidgets.Label(busy, "Wisp AI", uiWidgets.GOLD)
     busy.author:SetPoint("TOPLEFT", 0, 0)
     busy.title = uiWidgets.Label(busy, "Thinking…", uiWidgets.MUTED)
