@@ -210,10 +210,11 @@ local acknowledgmentUntil = 0
 local nextReceive, emptyDelay, activeUntil = 0, 0.5, 0
 ns.transportStats = { loads = 0, unchanged = 0, version = 2 }
 ns.slot = 1
-local function unavailable(reason)
+local function unavailable(reason, recovery)
     local message = "Wisp bridge v2 is unavailable: "
         .. reason
-        .. ". Update WoW and restart after installing Wisp."
+        .. ". "
+        .. (recovery or "Update WoW and restart after installing Wisp.")
     ns.transportStats.error = message
     if not unavailableLogged then
         ns.Core.Log(message)
@@ -748,6 +749,22 @@ function ns.Transport.StartTransport()
     if unsupported then
         return unavailable("missing " .. unsupported)
     end
+    ns.Transport.needsDesktopSetup = false
+    for _, helper in ipairs({
+        "WispAI_B128",
+        "WispAI_S0001",
+        "WispAI_S0256",
+        "WispAI_S0257",
+        "WispAI_S1024",
+    }) do
+        if not C_AddOns.DoesAddOnExist(helper) then
+            ns.Transport.needsDesktopSetup = true
+            return unavailable(
+                "helper channels are missing (" .. helper .. ")",
+                "Open /wisp for setup instructions."
+            )
+        end
+    end
     -- Cold login can expose the Lua files before UnitGUID is ready.
     character = UnitGUID("player")
     if not character then
@@ -757,17 +774,6 @@ function ns.Transport.StartTransport()
     reusable = supportsMailbox ~= nil and supportsMailbox ~= false
     ns.reusableDownlink = reusable
     ns.transportStats.mailboxVersion = reusable and 1 or nil
-    for _, helper in ipairs({
-        "WispAI_B128",
-        "WispAI_S0001",
-        "WispAI_S0256",
-        "WispAI_S0257",
-        "WispAI_S1024",
-    }) do
-        if not C_AddOns.DoesAddOnExist(helper) then
-            return unavailable("helper channels are missing (" .. helper .. ")")
-        end
-    end
     transportStarted = true
     ns.transportStats.error = nil
     transmitting = C_Timer.NewTicker(0.04, function()

@@ -5,7 +5,8 @@ local sessionTitle, status, contextMeter
 function ns.UI.ConversationStatus.Refresh(chat)
     setText(
         status,
-        ns.exhausted and "Channels exhausted: /reload"
+        ns.Transport.needsDesktopSetup and "Setup required"
+            or ns.exhausted and "Channels exhausted: /reload"
             or (ns.connected and "Connected" or "Waiting for bridge...")
     )
     local usage = chat and chat.usage

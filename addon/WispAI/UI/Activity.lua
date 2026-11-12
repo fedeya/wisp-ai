@@ -1,6 +1,7 @@
 local _, ns = ...
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
+local SETUP_URL = "https://wisp.fedeya.sh/setup"
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
     "|cffaca189",
@@ -103,22 +104,26 @@ function ns.UI.Activity.Refresh(chat)
     local working = chat and chat.status == "working"
     local empty = not chat or not chat.messages or #chat.messages == 0
     local waiting = not ns.connected
+    local needsSetup = waiting and ns.Transport.needsDesktopSetup == true
     local loading = chat and chat.messages == nil
     emptyState:SetShown(empty and not working)
-    emptyState.loading = waiting or loading
+    emptyState.loading = not needsSetup and (waiting or loading)
+    emptyState.setup:SetShown(needsSetup)
     if empty and not working then
-        setText(
-            emptyState.title,
-            waiting and "Waiting for bridge" or (loading and "Loading conversation" or "Ask Wisp")
-        )
-        setText(
-            emptyState.detail,
-            waiting and "Keep the Wisp desktop app open. Your chat will appear when it connects."
-                or (
-                    loading and "Fetching your messages."
-                    or "Ask about your character, quests, equipment or where to go next."
-                )
-        )
+        local title = "Ask Wisp"
+        local detail = "Ask about your character, quests, equipment or where to go next."
+        if needsSetup then
+            title = "Set up Wisp for Windows"
+            detail =
+                "Download Wisp for Windows. In Overview, choose your WoW folder and install the addon. Then restart WoW."
+        elseif waiting then
+            title = "Waiting for bridge"
+            detail = "Keep the Wisp desktop app open. Your chat will appear when it connects."
+        elseif loading then
+            title, detail = "Loading conversation", "Fetching your messages."
+        end
+        setText(emptyState.title, title)
+        setText(emptyState.detail, detail)
         for _, dot in ipairs(emptyState.dots) do
             dot:SetShown(emptyState.loading)
         end
@@ -227,6 +232,7 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     replyGlow:Hide()
     emptyState = CreateFrame("Frame", "WispAIChatPlaceholder", chatPanel)
     emptyState:SetAllPoints(transcript)
+    emptyState:SetFrameLevel(transcript:GetFrameLevel() + 1)
     emptyState:EnableMouse(false)
     emptyState.title = label(emptyState, "", GOLD)
     emptyState.title:SetPoint("CENTER", 0, 20)
@@ -237,6 +243,11 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     emptyState.detail:SetPoint("RIGHT", -20, 0)
     emptyState.detail:SetJustifyH("CENTER")
     emptyState.detail:SetWordWrap(true)
+    emptyState.setup = ns.UI.Widgets.Button(emptyState, "Copy download link", 150, function()
+        ns.UI.Widgets.ShowCopyUrl(SETUP_URL)
+    end)
+    emptyState.setup:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
+    emptyState.setup:Hide()
     emptyState.dots = {}
     for index = 1, 3 do
         local dot = label(emptyState, ".", GOLD)

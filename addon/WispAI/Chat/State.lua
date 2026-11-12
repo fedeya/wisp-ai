@@ -103,7 +103,7 @@ function ns.Chat.DeleteChat(id)
     ns.UI.Refresh()
 end
 function ns.Chat.Submit()
-    if ns.modelPending and ns.modelPending[ns.active] then
+    if ns.Transport.needsDesktopSetup or (ns.modelPending and ns.modelPending[ns.active]) then
         return
     end
     local text = (ns.draft:GetText() or ""):match("^%s*(.-)%s*$")
