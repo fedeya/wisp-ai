@@ -62,6 +62,7 @@ function M.addon(name, env)
             "UI/Activity.lua",
             "UI/Transcript.lua",
             "UI/Composer.lua",
+            "UI/RecentErrors.lua",
             "UI/ConversationStatus.lua",
         }) do
             M.addon(dependency, env)

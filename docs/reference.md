@@ -68,3 +68,28 @@ Example equipment comparison (the agent resolves learned spell and candidate ite
 ```
 
 Build prerequisites are in [development](development.md#build-and-run-on-windows); packaged Windows apps include the binary, so players do not need Go/protoc. See the [pinned manifest](../simulator/manifest.json), [adapter](../apps/bridge/src/simulation.ts), [attribution](../NOTICE) and [MIT license](../simulator/LICENSE-WoWSims.txt).
+
+## Recent game notices
+
+The addon header's **Notices** opens local review. Explicitly enable capture for
+this session, select a readable observed notice, and choose **Explain → edit unsent
+question**. Nothing is submitted until **Send to Wisp**. Ordinary composer drafts
+are preserved separately. Review text is discarded on disable, expiry, close or
+conversation/character changes; reload starts disabled. This is not a record of
+every error or proof that red text was displayed, nor an attribution to an action.
+
+The deferred `wow__inspect_game_errors({ requested: true })` reads the same bounded
+30-record / 120-second buffer only when explicitly requested by the player.
+Proactive turns cannot read it. Authenticated active-session/transport and
+capability admission remain in force. Results include observed type/text,
+first/latest ages, delivery counts, and omission/expiry/eviction/clipping coverage;
+complete Inspect JSON is bounded to 24 KiB, dropping oldest returned records with
+`wireOmitted` reported. Disabled, empty or restricted is not proof no notices
+occurred. No optional game-message enrichment or gameplay actions are performed.
+
+Capture, local browsing and unsent review stay in addon memory, outside ordinary
+draft storage, automatic context snapshots and diagnostics. **Manual Send and
+requested tool reads enter normal Wisp conversation storage/model access**; this
+does not promise submitted conversations are disk-free. Fresh bag or target data
+describes now, not the historical attempt. Native readability/UI acceptance is
+still unverified; offline evidence uses synthetic source-derived tuples only.

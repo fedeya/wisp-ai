@@ -395,6 +395,9 @@ end
 inspectors.chat = function(args)
     return ns.ChatHistory.ReadChatHistory(args)
 end
+inspectors.game_errors = function()
+    return ns.RecentErrors.Read()
+end
 function ns.Character.Inspect(inspection)
     if inspection and ns.Integrations.InspectIntegration then
         local result = ns.Integrations.InspectIntegration(inspection)
@@ -426,7 +429,7 @@ function ns.Character.Inspect(inspection)
         return { status = "unavailable", error = "Unknown inspection" }
     end
     local ok, data = pcall(read, inspection.args or {})
-    return {
+    local result = {
         capturedAt = time(),
         character = UnitName("player"),
         source = inspection.kind == "training" and "Bundled What's Training? Forever catalog"
@@ -435,6 +438,11 @@ function ns.Character.Inspect(inspection)
         data = ok and data or nil,
         error = not ok and tostring(data) or nil,
     }
+    if inspection.kind == "game_errors" and ok then
+        result.source = "WoW addon local UI_ERROR_MESSAGE observation"
+        return ns.RecentErrors.BoundResult(result)
+    end
+    return result
 end
 
 local function readWaypoint()

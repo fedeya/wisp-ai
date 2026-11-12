@@ -124,6 +124,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read WoW chat',
     'Read recent messages from the game chat channels enabled in Wisp settings.',
   ],
+  inspect_game_errors: [
+    'Read recent game notices',
+    'On request only, read readable notices captured after local opt-in (session memory, 120 seconds).',
+  ],
   query_training: [
     'Ability catalog',
     'Look up Forever class abilities, levels, base prices and requirements without visiting a trainer.',

@@ -102,14 +102,16 @@ function ns.Chat.DeleteChat(id)
     ns.Transport.Send({ type = "delete", chat = id, nextChat = ns.active })
     ns.UI.Refresh()
 end
-function ns.Chat.Submit()
+-- Optional explicit text is owned by a separate local review editor. Never copy
+-- it into the ordinary SavedVariables-backed composer or clear that draft.
+function ns.Chat.Submit(reviewText)
     if ns.modelPending and ns.modelPending[ns.active] then
         return
     end
-    local text = (ns.draft:GetText() or ""):match("^%s*(.-)%s*$")
+    local text = (reviewText or ns.draft:GetText() or ""):match("^%s*(.-)%s*$")
     local chat = ns.Chat.Current()
     if text == "" or (chat and chat.status == "working") then
-        return
+        return false
     end
     if not ns.active or ns.active == "" then
         ns.Chat.NewChat()
@@ -141,9 +143,12 @@ function ns.Chat.Submit()
         chat.status = "working"
         chat.lastActivityAt = activityTime()
     end
-    ns.draft:SetText("")
-    ns.db.drafts[ns.active] = ""
+    if not reviewText then
+        ns.draft:SetText("")
+        ns.db.drafts[ns.active] = ""
+    end
     ns.UI.Refresh()
+    return true
 end
 function ns.Chat.MemoryAction(action, slot, key, text)
     ns.memoryCounter = (ns.memoryCounter or 0) + 1

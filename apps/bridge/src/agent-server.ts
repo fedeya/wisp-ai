@@ -410,6 +410,9 @@ export function createAgentHandler(deps: AgentDependencies) {
       const inspection =
         req.url === '/inspect' ? rpcRequests.inspect.parse(raw).inspection : undefined;
       const action = req.url === '/action' ? rpcRequests.action.parse(raw).action : undefined;
+      if (inspection?.kind === 'game_errors' && chat.proactive) {
+        throw new Error('Automatic suggestions cannot read local game notices');
+      }
       const tool = action
         ? actionTools[action.kind]
         : inspection
@@ -428,6 +431,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 trainer: 'inspect_trainer',
                 training: 'query_training',
                 chat: 'read_chat',
+                game_errors: 'inspect_game_errors',
                 resources: 'query_resources',
                 compare_items: 'compare_items',
                 auctions: 'inspect_auctions',
