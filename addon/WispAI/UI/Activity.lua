@@ -2,6 +2,17 @@ local _, ns = ...
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
+local WAVE = {
+    "|cffaca189",
+    "|cffc4b698",
+    "|cffdfcfae",
+    "|cfff4e9cb",
+    "|cfffff8e6",
+    "|cfff4e9cb",
+    "|cffdfcfae",
+    "|cffc4b698",
+    "|cffaca189",
+}
 local header, replyGlow, emptyState, progress
 local progressTick = 0
 
@@ -11,33 +22,70 @@ function ns.UI.Activity.SetIcon(texture, cell, tint)
     texture:SetVertexColor(unpack(tint))
 end
 
-function ns.UI.Activity.SetSpinner(row, spinning)
-    row.spinning = spinning
-    if spinning and not row.spinner then
-        local group = row.icon:CreateAnimationGroup()
-        local spin = group:CreateAnimation("Rotation")
-        spin:SetDegrees(-360)
-        spin:SetDuration(1.3)
-        group:SetLooping("REPEAT")
-        row.spinner = group
-        row:HookScript("OnHide", function()
-            group:Stop()
-        end)
-        row:HookScript("OnShow", function()
-            if row.spinning then
-                group:Play()
-            end
-        end)
+local function animateText(loader, elapsed)
+    loader.elapsed = loader.elapsed + elapsed
+    if loader.elapsed < 1 / 30 then
+        return
     end
-    if row.spinner then
-        if spinning and row:IsVisible() then
-            if not row.spinner:IsPlaying() then
-                row.spinner:Play()
-            end
-        else
-            row.spinner:Stop()
+    local text, starts = loader.text, loader.starts
+    local count = #starts - 1
+    loader.cursor = (loader.cursor + loader.elapsed * math.max(19, count / 1.8))
+        % (count + #WAVE + 8)
+    loader.elapsed = 0
+    local first = math.floor(loader.cursor) - #WAVE + 2
+    if first == loader.first then
+        return
+    end
+    loader.first = first
+    local left, right = math.max(1, first), math.min(count, first + #WAVE - 1)
+    if left > right then
+        setText(loader.font, text)
+        return
+    end
+    local pieces = { text:sub(1, starts[left] - 1) }
+    for index = left, right do
+        pieces[#pieces + 1] = WAVE[index - first + 1]
+            .. text:sub(starts[index], starts[index + 1] - 1)
+            .. "|r"
+    end
+    pieces[#pieces + 1] = text:sub(starts[right + 1])
+    setText(loader.font, table.concat(pieces))
+end
+
+-- Labels contain literal text with any pipe characters escaped for WoW.
+function ns.UI.Activity.SetLoadingText(row, font, text, active)
+    local loader = row.loadingText
+    if not active then
+        if loader and loader:IsShown() then
+            loader:Hide()
+            setText(loader.font, loader.text)
         end
+        if font then
+            setText(font, text)
+        end
+        return
     end
+    if not loader then
+        loader = CreateFrame("Frame", nil, row)
+        loader:SetScript("OnUpdate", animateText)
+        row.loadingText = loader
+    end
+    if loader.text ~= text or not loader:IsShown() then
+        local starts, index = {}, 1
+        while index <= #text do
+            starts[#starts + 1] = index
+            if text:sub(index, index + 1) == "||" then
+                index = index + 2
+            else
+                index = text:find("[^\128-\191]", index + 1) or #text + 1
+            end
+        end
+        starts[#starts + 1] = index
+        loader.font, loader.text, loader.starts = font, text, starts
+        loader.cursor, loader.elapsed, loader.first = 0, 0, nil
+        setText(font, text)
+    end
+    loader:Show()
 end
 
 function ns.UI.Activity.IsSending(chat)
@@ -101,7 +149,13 @@ function ns.UI.Activity.Refresh(chat)
                 end
             end
         end
-        setText(progress.title, activity or (phase .. "…"))
+        progress.titleText = ns.Markdown.InlineRenderer.Literal(activity or phase)
+        ns.UI.Activity.SetLoadingText(
+            progress,
+            progress.title,
+            progress.titleText,
+            progress:IsShown()
+        )
         setText(progress.detail, detail)
         title = "Wisp AI - " .. (sending and "Sending" or phase) .. " " .. elapsed
     elseif chat then
@@ -117,7 +171,7 @@ end
 -- Returns the next transcript offset, including the working assistant row.
 function ns.UI.Activity.LayoutProgress(y, width, showAuthor, visible)
     progress:SetShown(visible == true)
-    ns.UI.Activity.SetSpinner(progress, visible == true)
+    ns.UI.Activity.SetLoadingText(progress, progress.title, progress.titleText, visible == true)
     if not visible then
         return y
     end
@@ -125,10 +179,8 @@ function ns.UI.Activity.LayoutProgress(y, width, showAuthor, visible)
         progress.showAuthor = showAuthor
         progress.author:SetShown(showAuthor)
         progress:SetHeight(showAuthor and 43 or 23)
-        progress.icon:ClearAllPoints()
-        progress.icon:SetPoint("TOPLEFT", 0, showAuthor and -21 or -1)
         progress.title:ClearAllPoints()
-        progress.title:SetPoint("TOPLEFT", 20, showAuthor and -20 or 0)
+        progress.title:SetPoint("TOPLEFT", 0, showAuthor and -20 or 0)
         progress.title:SetPoint("RIGHT", -65, 0)
         progress.elapsed:ClearAllPoints()
         progress.elapsed:SetPoint("TOPRIGHT", -2, showAuthor and -20 or 0)
@@ -194,14 +246,12 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     end
     progress = CreateFrame("Frame", "WispAIProgress", content)
     progress:SetHeight(43)
-    progress.icon = progress:CreateTexture(nil, "ARTWORK")
-    progress.icon:SetSize(14, 14)
-    ns.UI.Activity.SetIcon(progress.icon, 1, GOLD)
     progress.author = label(progress, "Wisp AI", GOLD)
     progress.author:SetPoint("TOPLEFT", 0, 0)
-    progress.title = label(progress, "", MUTED)
+    progress.titleText = "Thinking"
+    progress.title = label(progress, progress.titleText, MUTED)
     progress.title:SetFontObject(ChatFontNormal)
-    progress.title:SetPoint("TOPLEFT", 20, -20)
+    progress.title:SetPoint("TOPLEFT", 0, -20)
     progress.title:SetPoint("RIGHT", -65, 0)
     progress.title:SetWordWrap(false)
     progress.elapsed = label(progress, "", MUTED)

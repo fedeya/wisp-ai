@@ -289,7 +289,7 @@ local function toolCallRow(chatId, call, id, callId, indent)
     }
 end
 
-local function appendToolGroup(messages, chatId, calls, id, spinning)
+local function appendToolGroup(messages, chatId, calls, id, loading)
     if #calls == 1 then
         local call = calls[1]
         messages[#messages + 1] = toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0)
@@ -313,7 +313,7 @@ local function appendToolGroup(messages, chatId, calls, id, spinning)
         role = "tool",
         text = running
             or (
-                expanded and not spinning and (#calls .. " tool calls")
+                expanded and not loading and (#calls .. " tool calls")
                 or (latest .. "  +" .. (#calls - 1))
             ),
         tool = { status = running and "running" or (failed and "failed" or "completed") },
@@ -335,13 +335,13 @@ end
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId = {}, {}, nil
     local hasReplyContent, turnStart = false, 1
-    local function flushTools(spinning)
+    local function flushTools(loading)
         if not groupId then
             return
         end
         local header = #messages + 1
-        appendToolGroup(messages, chat.id, calls, groupId, spinning)
-        messages[header].turnSpinning = spinning
+        appendToolGroup(messages, chat.id, calls, groupId, loading)
+        messages[header].turnLoading = loading
         calls, groupId = {}, nil
     end
     for index, message in ipairs(chat and chat.messages or {}) do
@@ -465,7 +465,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
         .. "\31"
         .. (message.toolDetail or "")
         .. "\31"
-        .. tostring(message.turnSpinning)
+        .. tostring(message.turnLoading)
         .. "\31"
         .. (sending and "sending" or "")
     if row.signature ~= signature then
@@ -521,24 +521,25 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             local indent = message.toolIndent or 0
             row.icon:ClearAllPoints()
             row.icon:SetPoint("TOPLEFT", indent, -top - 1)
-            row.icon:Show()
             local state = tool and tool.status or "completed"
-            local spinning = message.turnSpinning
+            local loading = message.turnLoading
                 or (indent > 0 and state == "running" and chat.status == "working")
-            local icon = spinning and TOOL_STATES.running
-                or TOOL_STATES[state]
-                or TOOL_STATES.failed
-            ns.UI.Activity.SetIcon(row.icon, icon.cell, icon.tint)
-            ns.UI.Activity.SetSpinner(row, spinning)
-            local textLeft = indent + 20
+            row.icon:SetShown(not loading)
+            if not loading then
+                local icon = TOOL_STATES[state] or TOOL_STATES.failed
+                ns.UI.Activity.SetIcon(row.icon, icon.cell, icon.tint)
+            end
+            local textLeft = indent + (loading and 0 or 20)
             local chevronSpace = row.groupKey and (row.chevron:GetWidth() + CHEVRON_GAP) or 0
             local textWidth = math.max(1, width - textLeft - chevronSpace)
             row.text:SetPoint("TOPLEFT", textLeft, -top)
             row.text:SetWidth(textWidth)
-            row.text:SetTextColor(unpack(TEXT))
-            setText(
+            row.text:SetTextColor(unpack(loading and MUTED or TEXT))
+            ns.UI.Activity.SetLoadingText(
+                row,
                 row.text,
-                ns.Markdown.InlineRenderer.Literal(tool and tool.label or message.text)
+                ns.Markdown.InlineRenderer.Literal(tool and tool.label or message.text),
+                loading
             )
             local headerHeight = math.max(18, row.text:GetStringHeight())
             local labelWidth = row.text.GetUnboundedStringWidth
@@ -583,7 +584,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             end
         else
             row.icon:Hide()
-            ns.UI.Activity.SetSpinner(row, false)
+            ns.UI.Activity.SetLoadingText(row)
             local interleaved = message.parts
                 and #message.parts > 0
                 and not message._markdownSimple

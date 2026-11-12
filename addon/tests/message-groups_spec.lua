@@ -1,6 +1,10 @@
 local helper = require("addon.tests.support")
 local check = require("luassert")
 
+local function isLoading(row)
+    return row.loadingText and row.loadingText:IsVisible()
+end
+
 local function setup(env)
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
@@ -169,7 +173,15 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             assert(progress:IsShown(), "past replies do not suppress thinking in a new turn")
             assert(progress.author:IsShown() and progress:GetHeight() == 43)
-            assert(progress.spinner:IsPlaying())
+            assert(isLoading(progress))
+            local loading = progress.loadingText
+            loading.scripts.OnUpdate(loading, 0.2)
+            local initial = progress.title:GetText()
+            loading.scripts.OnUpdate(loading, 0.2)
+            local animated = progress.title:GetText()
+            assert(animated ~= initial and animated:find("|c", 1, true))
+            local plain = animated:gsub("|c" .. string.rep("%x", 8), ""):gsub("|r", "")
+            check.equal("Thinking", plain)
             local pending = { chat = "chat" }
             ns.pendingMessages.u2 = pending
             ns.workStarted.chat = GetTime()
@@ -201,13 +213,11 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
 
             table.insert(ns.chats[1].messages, completedCall)
             refresh()
-            assert(not progress:IsShown() and not progress.spinner:IsPlaying())
+            assert(not progress:IsShown() and not isLoading(progress))
             local waitingGroup = findRow("Reading quests")
-            assert(waitingGroup.spinner:IsPlaying())
-            check.same(progress.icon.texCoord, waitingGroup.icon.texCoord)
-            local _, _, _, thinkingX, thinkingY = progress.icon:GetPoint()
-            local _, _, _, toolX, toolY = waitingGroup.icon:GetPoint()
-            check.same({ thinkingX, thinkingY }, { toolX, toolY })
+            assert(isLoading(waitingGroup) and not waitingGroup.icon:IsShown())
+            local _, _, _, toolX, toolY = waitingGroup.text:GetPoint()
+            check.same({ 0, -20 }, { toolX, toolY })
 
             local call = {
                 id = "t3b",
@@ -223,7 +233,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             local group = findRow("Reading talents")
             assert(group.disclosure:IsShown() and group.text:GetText() == "Reading talents")
-            assert(group.spinner:IsPlaying())
+            assert(isLoading(group) and not group.icon:IsShown())
             assert(not progress:IsShown(), "the active tool replaces the thinking row")
             assert(#ns.chats[1].messages == 7, "grouping must not rewrite saved history")
             local _, _, _, labelLeft = group.text:GetPoint()
@@ -255,8 +265,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(group.text:GetText() == "Reading talents")
             check.same({ 0, 1 / 8, 0, 1 }, findRow("Reading quests").icon.texCoord)
             local child = findRow("Reading talents", group)
-            check.same({ 1 / 8, 2 / 8, 0, 1 }, child.icon.texCoord)
-            assert(child.spinner:IsPlaying() and child.disclosure:IsShown())
+            assert(isLoading(child) and not child.icon:IsShown() and child.disclosure:IsShown())
             local detailOffset = scrollToBottom()
             child.disclosure.scripts.OnClick()
             assert(viewport:GetVerticalScrollRange() > detailOffset)
@@ -268,9 +277,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             call.tool.resultPreview = "Talents are unavailable | retry"
             refresh()
             assert(not progress:IsShown() and group.text:GetText() == "Tried to read talents  +1")
-            assert(group.spinner:IsPlaying())
+            assert(isLoading(group))
             check.same({ 2 / 8, 3 / 8, 0, 1 }, child.icon.texCoord)
-            assert(not child.spinner:IsPlaying())
+            assert(not isLoading(child) and child.icon:IsShown())
             check.equal(
                 'Input  {"sections":["talents"]}\n\nResult  Talents are unavailable || retry',
                 child.toolDetail:GetText()
@@ -283,7 +292,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             assert(replyRow:IsShown() and not progress:IsShown())
             check.equal("S", replyRow.text:GetText())
-            assert(not group.spinner:IsPlaying())
+            assert(not isLoading(group) and group.icon:IsShown())
             reply.streaming = false
             refresh()
             assert(not progress:IsShown(), "thinking stays hidden after the last text chunk")
@@ -302,12 +311,12 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local simulationGroup = findRow("Simulating DPS")
             check.equal("Tried to read talents  +1", group.text:GetText())
             assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
-            assert(not group.spinner:IsPlaying() and simulationGroup.spinner:IsPlaying())
+            assert(not isLoading(group) and isLoading(simulationGroup))
 
             simulation.tool.status, simulation.tool.label = "completed", "Simulated DPS"
             refresh()
             assert(
-                simulationGroup.spinner:IsPlaying(),
+                isLoading(simulationGroup),
                 "the loader stays on while the comparison is prepared"
             )
             check.equal("Simulated DPS", simulationGroup.text:GetText())
@@ -320,7 +329,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 tool = { status = "running", label = "Creating comparison" },
             })
             refresh()
-            assert(simulationGroup.spinner:IsPlaying() and not progress:IsShown())
+            assert(isLoading(simulationGroup) and not progress:IsShown())
             check.equal("Creating comparison", simulationGroup.text:GetText())
             assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
 
@@ -333,7 +342,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 parts = { { type = "ui", id = "comparison-card" } },
             })
             refresh()
-            assert(not simulationGroup.spinner:IsPlaying() and not progress:IsShown())
+            assert(not isLoading(simulationGroup) and not progress:IsShown())
             local comparisonRow
             for _, row in ipairs(visibleRows()) do
                 if row.replyView and row.replyView.messageId == "simulation-comparison" then

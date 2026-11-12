@@ -69,6 +69,20 @@ it("applies the profile's entities and hard breaks to native UI labels too", fun
     assert.equal(expected, host.widgets.label.title:GetText())
 end)
 
+it("wraps the first words after a styled span together", function()
+    local env, ns = setup()
+    local host = env.CreateFrame("Frame")
+    local view = settled(ns, message("**1234567890** para cuando vas\n\n- Another block"))
+    ns.UI.RenderRichUI(host, {}, view, 98)
+    local block = host.prose[1]
+    local first, last = block.runs[1], block.runs[2]
+    assert.equal("para cuando ", first:GetText())
+    assert.equal("vas", last:GetText())
+    local _, _, _, _, firstY = first:GetPoint()
+    local _, _, _, _, lastY = last:GetPoint()
+    assert.is_true(firstY > lastY)
+end)
+
 it("preserves canonical source, native component ordering and reference data", function()
     local _, ns = setup()
     local source = "Before.\r\n\r\nA|B\r\n---|---\r\n[[ref:robe]]|Equipped\r\n\r\nAfter ñ."

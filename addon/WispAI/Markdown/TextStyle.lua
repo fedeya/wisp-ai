@@ -249,12 +249,15 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                                 end
                                 styleFont(measure, span, block.level)
                                 measure:SetText(chunk .. token)
-                                if chunk ~= "" and x + stringWidth(measure) > available then
+                                if x + stringWidth(measure) > available then
                                     flushChunk()
                                     if lineUsed then
-                                        newLine()
+                                        measure:SetText(token)
+                                        if x + stringWidth(measure) > available then
+                                            newLine()
+                                        end
                                     end
-                                    if block.kind ~= "code" then
+                                    if not lineUsed and block.kind ~= "code" then
                                         token = token:gsub("^ +", "")
                                     end
                                 end
