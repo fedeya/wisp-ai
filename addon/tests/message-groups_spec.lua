@@ -181,7 +181,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local animated = progress.title:GetText()
             assert(animated ~= initial and animated:find("|c", 1, true))
             local plain = animated:gsub("|c" .. string.rep("%x", 8), ""):gsub("|r", "")
-            check.equal("Thinking…", plain)
+            check.equal("Thinking", plain)
             local pending = { chat = "chat" }
             ns.pendingMessages.u2 = pending
             ns.workStarted.chat = GetTime()

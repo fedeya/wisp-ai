@@ -149,7 +149,7 @@ function ns.UI.Activity.Refresh(chat)
                 end
             end
         end
-        progress.titleText = ns.Markdown.InlineRenderer.Literal(activity or (phase .. "…"))
+        progress.titleText = ns.Markdown.InlineRenderer.Literal(activity or phase)
         ns.UI.Activity.SetLoadingText(
             progress,
             progress.title,
@@ -248,7 +248,7 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     progress:SetHeight(43)
     progress.author = label(progress, "Wisp AI", GOLD)
     progress.author:SetPoint("TOPLEFT", 0, 0)
-    progress.titleText = "Thinking…"
+    progress.titleText = "Thinking"
     progress.title = label(progress, progress.titleText, MUTED)
     progress.title:SetFontObject(ChatFontNormal)
     progress.title:SetPoint("TOPLEFT", 0, -20)

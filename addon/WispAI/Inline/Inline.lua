@@ -334,7 +334,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         and not ns.UI.Activity.IsSending(chat)
     busy:SetShown(showBusy)
     if showBusy then
-        local active = "Thinking…"
+        local active = "Thinking"
         for _, call in ipairs(chat.activity or {}) do
             if call.status == "running" then
                 active = call.label or call.name or active
@@ -544,7 +544,7 @@ function ns.Inline.InitInline()
     busy = CreateFrame("Frame", "WispAIInlineProgress", content)
     busy.author = uiWidgets.Label(busy, "Wisp AI", uiWidgets.GOLD)
     busy.author:SetPoint("TOPLEFT", 0, 0)
-    busy.title = uiWidgets.Label(busy, "Thinking…", uiWidgets.MUTED)
+    busy.title = uiWidgets.Label(busy, "Thinking", uiWidgets.MUTED)
     busy.title:SetFontObject(ChatFontNormal)
     busy.title:SetWordWrap(false)
     busy:Hide()
