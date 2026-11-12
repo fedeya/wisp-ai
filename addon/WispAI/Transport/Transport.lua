@@ -322,6 +322,9 @@ local function frames(packet)
             envelope[key] = value
         end
     end
+    if ns.Character._BoundMailPacket then
+        ns.Character._BoundMailPacket(envelope, 60000)
+    end
     local body = C_EncodingUtil.CompressString(
         C_EncodingUtil.SerializeJSON(envelope),
         Enum.CompressionMethod.Zlib

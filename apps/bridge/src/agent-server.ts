@@ -433,6 +433,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 resources: 'query_resources',
                 compare_items: 'compare_items',
                 quest_rewards: 'inspect_quest_rewards',
+                mail: 'inspect_mail',
                 auctions: 'inspect_auctions',
                 lockouts: 'inspect_lockouts',
                 macros: 'inspect_macros',
@@ -440,6 +441,9 @@ export function createAgentHandler(deps: AgentDependencies) {
               } as const
             )[inspection.kind]
           : 'query_character';
+      if (inspection?.kind === 'mail' && chat.proactive) {
+        throw new Error('Mail inspection requires an explicit player request');
+      }
       if (!capabilitySettings.enabled('tool:' + tool)) {
         throw new Error('This tool is disabled in Settings');
       }
