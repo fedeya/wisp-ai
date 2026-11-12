@@ -10,7 +10,7 @@ use windows_sys::Win32::{
     UI::WindowsAndMessaging::{
         GetAncestor, GetDlgItem, GetParent, GetPropW, GetWindowLongW, IsWindow, IsWindowVisible,
         PostMessageW, SendMessageTimeoutW, SetPropW, ShowWindowAsync, GA_ROOT, GWL_STYLE,
-        SMTO_ABORTIFHUNG, SW_HIDE, WM_COMMAND, WM_GETTEXT, WS_DISABLED,
+        SMTO_ABORTIFHUNG, SW_HIDE, SW_SHOWNA, WM_COMMAND, WM_GETTEXT, WS_DISABLED,
     },
 };
 
@@ -21,6 +21,7 @@ struct Installer {
     status: usize,
     cancel: usize,
     trace: PathBuf,
+    presented: AtomicBool,
     terminal: AtomicBool,
     failed: AtomicBool,
 }
@@ -64,7 +65,6 @@ fn updater_ready(
         window.app_handle().exit(0);
         return Err("The installer is no longer available.".into());
     }
-    window.show().map_err(|error| error.to_string())?;
     if unsafe {
         SetPropW(
             installer.label as HWND,
@@ -88,20 +88,29 @@ fn updater_status(
     let alive = unsafe { IsWindow(root) } != 0;
     let done = property(installer.label, windows_sys::w!("WispProgressDone"));
     let success = property(installer.label, windows_sys::w!("WispProgressSucceeded"));
+    let preparing = || UpdateStatus {
+        phase: "preparing",
+        percent: None,
+        log: vec![],
+        error: None,
+    };
     if done && !success {
         window.app_handle().exit(0);
-        return UpdateStatus {
-            phase: "preparing",
-            percent: None,
-            log: vec![],
-            error: None,
-        };
+        return preparing();
     }
-    if alive
-        && unsafe { IsWindowVisible(root) } != 0
-        && unsafe { GetWindowLongW(root, GWL_STYLE) } as u32 & WS_DISABLED == 0
-    {
-        unsafe { ShowWindowAsync(root, SW_HIDE) };
+    if alive && unsafe { IsWindowVisible(root) } != 0 {
+        // NSIS hides its window after acknowledging the ready signal.
+        if !installer.presented.load(Ordering::Acquire) {
+            return preparing();
+        }
+        if unsafe { GetWindowLongW(root, GWL_STYLE) } as u32 & WS_DISABLED == 0 {
+            unsafe { ShowWindowAsync(root, SW_HIDE) };
+        }
+    } else if !installer.presented.swap(true, Ordering::AcqRel) && window.show().is_err() {
+        // If showing Svelte fails after the handoff, give the installer its window back.
+        unsafe { ShowWindowAsync(root, SW_SHOWNA) };
+        window.app_handle().exit(0);
+        return preparing();
     }
 
     let failed = !alive
@@ -226,6 +235,7 @@ pub(crate) fn run(args: &[String]) {
         status: unsafe { GetDlgItem(page, 1006) } as usize,
         cancel: unsafe { GetDlgItem(root, 2) } as usize,
         trace: trace.into(),
+        presented: AtomicBool::new(false),
         terminal: AtomicBool::new(false),
         failed: AtomicBool::new(false),
     };
