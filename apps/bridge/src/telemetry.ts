@@ -17,6 +17,7 @@ const propertyKeys = new Set([
   'mode',
   'outcome',
   'duration_ms',
+  'error_code',
   'addon_version',
   'tool',
   '$process_person_profile',
@@ -34,7 +35,9 @@ const versionSchema = z
   .string()
   .regex(/^\d+\.\d+\.\d+(?:-nightly\.\d+\.\d+)?$/)
   .max(80);
-type Outcome = 'completed' | 'failed' | 'cancelled' | 'needs_input';
+export type ChatOutcome = 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'timeout';
+type GameConnectionError = 'session_replaced' | 'engine_not_ready' | 'addon_ack_missing';
+const gameConnectionTimeoutMs = 30_000;
 type Properties = Record<string, string | number | boolean>;
 
 // All outbound fields are constructed here. No prompts, tool inputs/outputs, labels,
@@ -44,6 +47,7 @@ export class UsageTelemetry {
   private client?: PostHog;
   private activeDay = '';
   private addonDay = '';
+  private gameConnectionStartedAt?: number;
   private closed = false;
   private dataRoot: string;
   private version: string;
@@ -133,7 +137,7 @@ export class UsageTelemetry {
     }
   }
 
-  chat(mode: 'chat' | 'hover' | 'routine' | 'tip', outcome: Outcome, duration: number) {
+  chat(mode: 'chat' | 'hover' | 'routine' | 'tip', outcome: ChatOutcome, duration: number) {
     this.active();
     this.record('chat_completed', {
       mode,
@@ -152,6 +156,35 @@ export class UsageTelemetry {
     this.addonDay = day;
     this.active();
     this.record('game_connected', { addon_version: parsed.success ? parsed.data : 'unknown' });
+  }
+
+  gameConnectionStarted() {
+    if (!this.release || this.closed) return;
+    const now = performance.now();
+    this.finishGameConnection(now, 'session_replaced');
+    this.gameConnectionStartedAt = now;
+  }
+
+  gameConnectionProgress(connected: boolean, hasReadySnapshot: boolean) {
+    const started = this.gameConnectionStartedAt;
+    if (started === undefined) return;
+    const now = performance.now();
+    if (connected) {
+      this.finishGameConnection(now);
+    } else if (now - started >= gameConnectionTimeoutMs) {
+      this.finishGameConnection(now, hasReadySnapshot ? 'addon_ack_missing' : 'engine_not_ready');
+    }
+  }
+
+  private finishGameConnection(now: number, error?: GameConnectionError) {
+    const started = this.gameConnectionStartedAt;
+    if (started === undefined) return;
+    this.gameConnectionStartedAt = undefined;
+    this.record('game_connection_finished', {
+      outcome: error === 'session_replaced' ? 'failed' : error ? 'timeout' : 'connected',
+      duration_ms: Math.round(now - started),
+      ...(error ? { error_code: error } : {}),
+    });
   }
 
   toolObserver() {

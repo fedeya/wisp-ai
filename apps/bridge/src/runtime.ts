@@ -307,7 +307,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isReady: () => eveReady,
     });
     resources.defer(stopRoutineScheduler);
-    const receive = createPacketReceiver({
+    const receivePacket = createPacketReceiver({
       telemetry,
       state,
       client,
@@ -333,6 +333,14 @@ export async function startBridge(options: BridgeOptions = {}) {
       changed,
       log,
     });
+    const receive: typeof receivePacket = (packet) => {
+      const previousSession = state.activeTransport;
+      observeGameConnection();
+      receivePacket(packet);
+      if (state.activeTransport !== previousSession) {
+        telemetry.gameConnectionStarted();
+      }
+    };
     const transport = new DiskTransport(config.wow, receive, (error) =>
       log('Game transport failed: ' + errorMessage(error)),
     );
@@ -455,14 +463,20 @@ export async function startBridge(options: BridgeOptions = {}) {
       3000,
     );
     resources.defer(() => clearInterval(health));
+    function gameConnected() {
+      return Boolean(
+        state.activeTransport &&
+        state.firstReadyRevision &&
+        transport.peerRevision >= state.firstReadyRevision,
+      );
+    }
+    function observeGameConnection() {
+      telemetry.gameConnectionProgress(gameConnected(), Boolean(state.firstReadyRevision));
+    }
     function desktopStatus(): Status {
       return {
         ready: eveReady,
-        gameConnected: Boolean(
-          state.activeTransport &&
-          state.firstReadyRevision &&
-          transport.peerRevision >= state.firstReadyRevision,
-        ),
+        gameConnected: gameConnected(),
         auth: auth.state(),
         connections: connections.list(),
         modelConnected: connections.connected(config.model || ''),
@@ -616,7 +630,10 @@ export async function startBridge(options: BridgeOptions = {}) {
         });
       }
     }
-    const publish = setInterval(publishSnapshot, 400);
+    const publish = setInterval(() => {
+      observeGameConnection();
+      publishSnapshot();
+    }, 400);
     log('Wisp started. WoW: ' + config.wow);
     resources.defer(() => clearInterval(publish));
     function stop() {

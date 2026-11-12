@@ -9,7 +9,19 @@ import { chooseChatModel } from './chat-model.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
-import type { UsageTelemetry } from './telemetry.ts';
+import type { ChatOutcome, UsageTelemetry } from './telemetry.ts';
+
+function isTimeout(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  if ('name' in error && error.name === 'TimeoutError') return true;
+  return (
+    'code' in error &&
+    (error.code === 'ETIMEDOUT' ||
+      error.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+      error.code === 'UND_ERR_HEADERS_TIMEOUT' ||
+      error.code === 'UND_ERR_BODY_TIMEOUT')
+  );
+}
 
 interface TurnDependencies {
   telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver'>;
@@ -56,6 +68,8 @@ export function createTurnRunner(deps: TurnDependencies) {
     const controller = new AbortController();
     const started = performance.now();
     const observeTool = deps.telemetry?.toolObserver();
+    let outcome: ChatOutcome = 'cancelled';
+    let timedOut = false;
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
@@ -154,18 +168,19 @@ export function createTurnRunner(deps: TurnDependencies) {
         chat.tipSkipped = parts.noTip;
       }
       if (result.status === 'failed') {
+        timedOut = isTimeout(result.error);
         throw new Error(
           safeErrorMessage(result.error.message || 'The response failed. Please try again.'),
         );
       }
-      settleTurn(
-        chat,
+      const status =
         result.status === 'awaiting-input'
           ? 'needs_input'
           : result.status === 'cancelled'
             ? 'cancelled'
-            : 'done',
-      );
+            : 'done';
+      settleTurn(chat, status);
+      outcome = status === 'done' ? 'completed' : status;
       chat.unread = chat.id !== activeChat();
       if (!parts.hasContent && chat.status === 'done' && !chat.proactive) {
         chat.messages.push({ role: 'system', text: 'The turn completed without a text response.' });
@@ -174,12 +189,14 @@ export function createTurnRunner(deps: TurnDependencies) {
       if (!ownsTurn()) {
         return;
       }
-      settleTurn(
-        chat,
-        !controller.signal.aborted && isCurrent(chat) && currentTransport() === owner
-          ? 'error'
-          : 'interrupted',
-      );
+      const failed = !controller.signal.aborted && isCurrent(chat) && currentTransport() === owner;
+      settleTurn(chat, failed ? 'error' : 'interrupted');
+      if (failed) {
+        outcome =
+          timedOut || isTimeout(error) || (error instanceof Error && isTimeout(error.cause))
+            ? 'timeout'
+            : 'failed';
+      }
       parts.flush(chat, Date.now(), true);
       chat.eveId = undefined;
       chat.messages.push({
@@ -195,13 +212,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     } finally {
       deps.telemetry?.chat(
         chat.routineId ? 'routine' : chat.proactive ? 'tip' : chat.inline ? 'hover' : 'chat',
-        chat.status === 'done'
-          ? 'completed'
-          : chat.status === 'needs_input'
-            ? 'needs_input'
-            : chat.status === 'error'
-              ? 'failed'
-              : 'cancelled',
+        outcome,
         performance.now() - started,
       );
       log(
