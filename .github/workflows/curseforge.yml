@@ -1,0 +1,102 @@
+name: CurseForge addon
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag, for example v0.1.2
+        required: true
+        type: string
+      upload:
+        description: Upload to CurseForge as well as creating the ZIP
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: curseforge-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  addon:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - uses: ./.github/actions/setup-workspace
+      - name: Package the published addon
+        id: package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $tag = $env:RELEASE_TAG
+          if ($tag -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+            throw 'Choose a stable release tag in vX.Y.Z format.'
+          }
+          $version = $tag.Substring(1)
+          $release = gh release view $tag --json body,isDraft,isPrerelease,publishedAt,assets | ConvertFrom-Json
+          $assets = $release.assets.name
+          if ($release.isDraft -or $release.isPrerelease -or !$release.publishedAt -or
+              'latest.json' -notin $assets -or "WispAI-$version-windows-x64-setup.exe" -notin $assets) {
+            throw 'Publish the stable GitHub release with its installer and update manifest first.'
+          }
+          $ref = "refs/tags/$tag"
+          git fetch --no-tags origin "${ref}:${ref}"
+          $sourceVersion = (git show "${ref}:package.json" | ConvertFrom-Json).version
+          if ($sourceVersion -cne $version) { throw 'Release tag does not match the app version.' }
+
+          $stage = Join-Path $env:RUNNER_TEMP 'curseforge-addon'
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          git archive --format=tar --output="$stage/source.tar" "${ref}:addon" WispAI
+          tar -xf "$stage/source.tar" -C $stage
+          $addon = Join-Path $stage 'WispAI'
+          git show "${ref}:LICENSE" | Set-Content -LiteralPath "$addon/LICENSE" -Encoding utf8
+          git show "${ref}:NOTICE" | Set-Content -LiteralPath "$addon/NOTICE" -Encoding utf8
+          node --input-type=module -e 'import { stampAddonVersions } from "./scripts/addon-version.ts"; await stampAddonVersions(process.argv[1], process.argv[2]);' $addon $version
+          $zip = Join-Path $env:RUNNER_TEMP "WispAI-$version.zip"
+          Compress-Archive -LiteralPath $addon -DestinationPath $zip
+          Set-Content -LiteralPath "$stage/changelog.md" -Value $release.body -Encoding utf8
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "changelog=$stage/changelog.md" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WispAI-CurseForge-${{ inputs.tag || github.event.release.tag_name }}
+          path: ${{ steps.package.outputs.zip }}
+          if-no-files-found: error
+      - name: Upload to CurseForge
+        if: (github.event_name == 'release' && vars.CURSEFORGE_PROJECT_ID != '') || inputs.upload
+        env:
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID }}
+          CURSEFORGE_API_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          ADDON_ZIP: ${{ steps.package.outputs.zip }}
+          CHANGELOG: ${{ steps.package.outputs.changelog }}
+        run: |
+          if ($env:CURSEFORGE_PROJECT_ID -notmatch '^[1-9][0-9]*$' -or !$env:CURSEFORGE_API_TOKEN) {
+            throw 'Set the CURSEFORGE_PROJECT_ID variable and CURSEFORGE_API_TOKEN secret in GitHub Actions.'
+          }
+          $metadata = @{
+            displayName = "Wisp AI $env:RELEASE_TAG"
+            releaseType = 'release'
+            gameVersionNames = @('1.60.1')
+            changelogType = 'markdown'
+            changelog = Get-Content -LiteralPath $env:CHANGELOG -Raw
+          } | ConvertTo-Json -Compress
+          $headers = @{ 'X-Api-Token' = $env:CURSEFORGE_API_TOKEN }
+          $url = "https://wow.curseforge.com/api/projects/$env:CURSEFORGE_PROJECT_ID/upload-file"
+          $upload = Invoke-RestMethod -Method Post -Uri $url -Headers $headers -Form @{
+            metadata = $metadata
+            file = Get-Item -LiteralPath $env:ADDON_ZIP
+          }
+          if (!$upload.id) { throw 'CurseForge did not return an uploaded file ID.' }
+          "Submitted CurseForge file $($upload.id) for review." >> $env:GITHUB_STEP_SUMMARY
