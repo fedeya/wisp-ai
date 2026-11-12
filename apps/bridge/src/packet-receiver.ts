@@ -26,7 +26,7 @@ import { resumeChat, isEmptyDraft } from './sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
 import type { UsageTelemetry } from './telemetry.ts';
-import type { BridgeLog } from './logger.ts';
+import type { Logger } from 'pino';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -47,7 +47,7 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  log: BridgeLog;
+  logger: Pick<Logger, 'info' | 'warn'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
@@ -68,7 +68,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     interrupt,
     runtime,
     changed,
-    log,
+    logger,
   } = deps;
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
@@ -100,10 +100,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             .attach(chat.eveId)
             .cancel()
             .catch((error) =>
-              log(
-                'Session cancellation failed',
+              logger.warn(
                 { event: 'session.cancel_failed', error: errorMessage(error) },
-                'warn',
+                'Session cancellation failed',
               ),
             );
         }
@@ -151,10 +150,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       void capabilitySettings
         .publish()
         .catch((error) =>
-          log(
-            'Integration update failed',
+          logger.warn(
             { event: 'integration.update_failed', error: errorMessage(error) },
-            'warn',
+            'Integration update failed',
           ),
         );
       changed();
@@ -173,7 +171,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      log('Message delivery: ' + JSON.stringify(delivery));
+      logger.info('Message delivery: ' + JSON.stringify(delivery));
     }
     if (packet.type === 'model_catalog') {
       void refreshModelCatalog();
@@ -220,10 +218,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
               .attach(previous)
               .end({ reason: 'AI model or connection changed' })
               .catch((error) =>
-                log(
-                  'Session cleanup failed',
+                logger.warn(
                   { event: 'session.cleanup_failed', error: errorMessage(error) },
-                  'warn',
+                  'Session cleanup failed',
                 ),
               );
           }
@@ -253,7 +250,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           })
           .safeParse(data);
         if (timing.success) {
-          log('First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }));
+          logger.info(
+            'First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }),
+          );
         }
         changed();
         return;
@@ -271,10 +270,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         path.join(runtime, 'inline-status.json'),
         JSON.stringify(status, null, 2),
       ).catch((error) =>
-        log(
-          'Inline diagnostic save failed',
+        logger.warn(
           { event: 'addon.inline_status_save_failed', error: errorMessage(error) },
-          'warn',
+          'Inline diagnostic save failed',
         ),
       );
       changed();
@@ -303,10 +301,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             .observe(identity, event.data)
             .then(changed)
             .catch((error) =>
-              log(
-                'Routine event failed',
+              logger.warn(
                 { event: 'routine.event_failed', error: errorMessage(error) },
-                'warn',
+                'Routine event failed',
               ),
             );
         }
@@ -325,10 +322,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           .mutate(identity, input.data)
           .then(changed)
           .catch((error) =>
-            log(
-              'Routine action failed',
+            logger.warn(
               { event: 'routine.action_failed', error: errorMessage(error) },
-              'warn',
+              'Routine action failed',
             ),
           );
       }

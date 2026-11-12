@@ -5,7 +5,7 @@ import { readCompletedResponse } from './response-stream.ts';
 import type { ChatGPTAuth } from './chatgpt-auth.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { modelTiming } from './model-timing.ts';
-import type { BridgeLog } from './logger.ts';
+import type { Logger } from 'pino';
 
 export async function proxyConnectionModel(
   req: IncomingMessage,
@@ -60,7 +60,7 @@ export async function proxyModel(
   req: IncomingMessage,
   res: ServerResponse,
   auth: ChatGPTAuth,
-  log?: BridgeLog,
+  logger?: Pick<Logger, 'info'>,
 ) {
   const abort = new AbortController();
   res.on('close', () => {
@@ -108,8 +108,12 @@ export async function proxyModel(
     res.end();
     return;
   }
-  if (log) {
-    await pipeline(Readable.fromWeb(response.body as never), modelTiming(body, started, log), res);
+  if (logger) {
+    await pipeline(
+      Readable.fromWeb(response.body as never),
+      modelTiming(body, started, logger),
+      res,
+    );
   } else {
     await pipeline(Readable.fromWeb(response.body as never), res);
   }
