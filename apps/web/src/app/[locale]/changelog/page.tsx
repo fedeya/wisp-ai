@@ -10,13 +10,15 @@ import { Icon } from '../../../components/icon';
 
 export async function generateMetadata({ params }: LocalePageProps) {
   const locale = await resolveLocale(params);
+  const title = locale === 'es' ? 'Novedades — Wisp AI' : 'Changelog — Wisp AI';
   return pageMetadata(
-    locale === 'es' ? 'Novedades — Wisp AI' : 'Changelog — Wisp AI',
+    title,
     locale === 'es'
       ? 'Las novedades, mejoras y correcciones de Wisp.'
       : 'New features, improvements and fixes in Wisp.',
     '/changelog',
     locale,
+    { path: '/changelog/social-image', alt: title },
   );
 }
 export default async function Changelog({

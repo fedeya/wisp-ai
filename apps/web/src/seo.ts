@@ -9,9 +9,11 @@ export function pageMetadata(
   description: string,
   path: string,
   locale: Locale = 'en',
+  socialImage?: { path: string; alt: string },
 ): Metadata {
-  const image = localizedPath(locale, '/opengraph-image');
   const t = getTranslator(locale);
+  const image = localizedPath(locale, socialImage?.path ?? '/opengraph-image');
+  const imageAlt = socialImage?.alt ?? t('Wisp AI — AI companion for WoW: Forever');
   return {
     title,
     description,
@@ -36,11 +38,16 @@ export function pageMetadata(
           url: image,
           width: 1200,
           height: 630,
-          alt: t('Wisp AI — AI companion for WoW: Forever'),
+          alt: imageAlt,
         },
       ],
     },
-    twitter: { card: 'summary_large_image', title, description, images: [image] },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+      images: socialImage ? [{ url: image, alt: imageAlt }] : [image],
+    },
   };
 }
 
