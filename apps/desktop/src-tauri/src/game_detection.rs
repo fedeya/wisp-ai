@@ -187,10 +187,19 @@ fn scan(
 
 #[tauri::command]
 pub async fn detect_game_folders(on_found: tauri::ipc::Channel<String>) -> Vec<String> {
-    detect_with(move |folder| {
+    let started = Instant::now();
+    let folders = detect_with(move |folder| {
         let _ = on_found.send(folder);
     })
-    .await
+    .await;
+    tracing::info!(
+        component = "desktop",
+        event = "wow.folder_detection_finished",
+        count = folders.len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "WoW folder detection finished"
+    );
+    folders
 }
 
 async fn detect_with(mut on_found: impl FnMut(String) + Send + 'static) -> Vec<String> {
