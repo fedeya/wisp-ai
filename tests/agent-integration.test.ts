@@ -43,6 +43,7 @@ test(
           'tool:query_character': true,
           'tool:inspect_merchant': true,
           'tool:inspect_quest_rewards': true,
+          'tool:inspect_pet': true,
         },
       }),
     );
@@ -124,17 +125,19 @@ test(
         const result =
           request.inspection.kind === 'quest_rewards'
             ? rewardsObservation
-            : request.inspection.kind === 'questie_quest'
-              ? {
-                  status: 'available',
-                  data: {
+            : request.inspection.kind === 'pet'
+              ? { status: 'available', capturedAt: 123, data: { presence: 'absent' } }
+              : request.inspection.kind === 'questie_quest'
+                ? {
                     status: 'available',
-                    questId: 166,
-                    data: { name: 'The Defias Brotherhood' },
-                    reference: { kind: 'quest', id: 166 },
-                  },
-                }
-              : { status: 'completed', data: { settings: [], verified: true } };
+                    data: {
+                      status: 'available',
+                      questId: 166,
+                      data: { name: 'The Defias Brotherhood' },
+                      reference: { kind: 'quest', id: 166 },
+                    },
+                  }
+                : { status: 'completed', data: { settings: [], verified: true } };
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
@@ -180,6 +183,8 @@ test(
         21: { name: 'eve__search', input: { query: 'wow__inspect_quest_rewards' } },
         22: { name: 'eve__tool', input: { name: 'wow__inspect_quest_rewards', input: {} } },
         23: { name: 'wisp__present_ui', input: rewardsPanel },
+        25: { name: 'eve__search', input: { query: 'wow__inspect_pet' } },
+        26: { name: 'eve__tool', input: { name: 'wow__inspect_pet', input: {} } },
       };
       const call = plannedCalls[count];
       const output: Record<string, unknown>[] = [];
@@ -593,6 +598,29 @@ test(
           inspection: { kind: 'quest_rewards', args: {} },
         }),
       );
+
+      // inspect_pet stays deferred and uses native Eve discovery/execution.
+      const petLookup = await session.send('Inspect my current pet', {
+        signal: AbortSignal.timeout(15000),
+      });
+      for await (const _event of petLookup.stream({ signal: AbortSignal.timeout(15000) })) {
+        /* Local model fixture only. */
+      }
+      expect((await petLookup.result()).status).toBe('completed');
+      expect(names(0)).not.toContain('wow__inspect_pet');
+      const petSearch = (
+        requests[25]!.input as { type?: string; call_id?: string; output?: string }[]
+      ).find(
+        (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-25',
+      )!.output!;
+      expect(JSON.parse(petSearch).results).toContainEqual(
+        expect.objectContaining({ tool: 'wow__inspect_pet' }),
+      );
+      expect(toolCalls.at(-1)).toMatchObject({
+        eveSession: session.id,
+        inspection: { kind: 'pet', args: {} },
+      });
+      expect(JSON.stringify(requests[26])).toContain('absent');
 
       if (executable) {
         await stopEveProcess(child);

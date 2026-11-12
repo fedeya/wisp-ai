@@ -43,6 +43,9 @@ characters and reports truncation; it does not validate UTF-8. These modules loa
 immediately after `Namespace.lua`. UI text caching belongs to `UI/Widgets.lua`;
 RichUI and Inline reuse `ns.UI.Widgets.SetText`.
 
+`Character/Pet.lua` owns the bounded, fresh read-only active owned-pet inspection;
+see [its contract and Forever API pin](../docs/inspect-pet.md).
+
 `UI/Window.lua` composes the main chat window and owns its position, minimize/resize
 behavior and refresh entry point. Its components keep widget and cache state local:
 

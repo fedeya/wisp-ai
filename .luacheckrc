@@ -71,6 +71,7 @@ read_globals = {
     "GetQuestItemInfo",
     "GetQuestItemInfoLootType",
     "GetQuestItemLink",
+    "GetPetActionInfo",
     "GetQuestLogRewardXP",
     "GetRealZoneText",
     "GetRealmName",

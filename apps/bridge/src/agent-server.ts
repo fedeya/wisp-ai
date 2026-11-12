@@ -423,6 +423,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 item_prices: 'get_item_prices',
                 reference: 'inspect_reference',
                 progression: 'query_progression',
+                pet: 'inspect_pet',
                 target: 'inspect_target',
                 trainer: 'inspect_trainer',
                 merchant: 'inspect_merchant',

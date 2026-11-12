@@ -6,6 +6,9 @@ end
 function inspectors.quest_rewards()
     return ns.Character.ReadQuestRewards()
 end
+function inspectors.pet()
+    return ns.Character.ReadPet()
+end
 local function tooltip(link)
     if not C_TooltipInfo or not C_TooltipInfo.GetHyperlink then
         return nil
@@ -432,9 +435,15 @@ function ns.Character.Inspect(inspection)
         return { status = "unavailable", error = "Unknown inspection" }
     end
     local ok, data = pcall(read, inspection.args or {})
+    local character
+    -- inspect_pet already has session-scoped provenance; do not attach an
+    -- unrelated, potentially restricted/unbounded player name to its budget.
+    if inspection.kind ~= "pet" then
+        character = UnitName("player")
+    end
     return {
         capturedAt = time(),
-        character = UnitName("player"),
+        character = character,
         source = inspection.kind == "training" and "Bundled What's Training? Forever catalog"
             or "WoW addon live API",
         status = ok and "available" or "unavailable",
