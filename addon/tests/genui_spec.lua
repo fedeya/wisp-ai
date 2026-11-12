@@ -32,6 +32,66 @@ it("native layout places prose on both sides of a panel", function()
     assert(host.widgets.panel.point[5] == 0)
 end)
 
+it("fades each live native panel once while preserving its layout", function()
+    local env = helper.env()
+    setup(env)
+    env.strmatch = string.match
+    for _, file in ipairs({ "LibStub.lua", "LibAnimate.lua", "Animations.lua" }) do
+        helper.fixture("addon/WispAI/Libs/LibAnimate/" .. file, env)
+    end
+    env.ns = helper.namespace()
+    helper.addon("UI/Window.lua", env)
+
+    local animate = env.LibStub("LibAnimate")
+    local row = env.ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    local chat = { id = "chat", status = "working" }
+    local message = {
+        id = "reply",
+        role = "assistant",
+        text = "A|B\n---|---\nx|y",
+        ui = { { id = "history", kind = "card", title = "History" } },
+    }
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false)
+    message.ui[2] = { id = "panel", kind = "card", title = "New panel" }
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
+    local host, height = row.rich, row.height
+    local panel = host.widgets.panel
+    local anchor = panel.point[5]
+    assert.equal(0, panel:GetAlpha())
+    assert.equal(1, host.widgets.history:GetAlpha())
+    assert.equal(1, host.widgets.markdown_table_1:GetAlpha())
+
+    env.UI_TEST.now = 0.09
+    animate.driverFrame.scripts.OnUpdate()
+    assert.is_true(panel:GetAlpha() > 0 and panel:GetAlpha() < 1)
+    assert.equal(anchor, panel.point[5])
+    assert.equal(height, row.height)
+    message.ui[2].title = "Updated panel"
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
+    assert.equal(height, row.height)
+    assert.is_true(panel:GetAlpha() > 0)
+
+    message.streaming = true
+    message.text = message.text .. "\n\nMore prose."
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
+    assert.is_true(row.height > height)
+    assert.is_true(panel:GetAlpha() > 0 and panel:GetAlpha() < 1)
+
+    panel.scripts.OnHide(panel)
+    assert.is_false(animate:IsAnimating(panel))
+    assert.equal(1, panel:GetAlpha())
+    env.ns.UI.RenderMessageRow(row, chat, message, 320, false, true)
+    assert.equal(1, panel:GetAlpha())
+
+    message.ui[3] = { id = "second", kind = "card", title = "Another panel" }
+    env.ns.UI.RenderMessageRow(row, chat, message, 320, false, true)
+    assert.equal(0, host.widgets.second:GetAlpha())
+    env.UI_TEST.now = 0.3
+    animate.driverFrame.scripts.OnUpdate()
+    assert.equal(1, host.widgets.second:GetAlpha())
+    assert.is_false(animate.driverFrame:IsShown())
+end)
+
 it(
     "native components preserve local edits across snapshots and dispatch registered button IDs",
     function()
