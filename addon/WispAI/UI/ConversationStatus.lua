@@ -7,7 +7,7 @@ function ns.UI.ConversationStatus.Refresh(chat)
         status,
         ns.Transport.needsDesktopSetup and "Setup required"
             or ns.exhausted and "Channels exhausted: /reload"
-            or (ns.connected and "Connected" or "Waiting for bridge...")
+            or (ns.connected and "Connected" or "Open Wisp Desktop")
     )
     local usage = chat and chat.usage
     local window = ns.contextPolicy and ns.contextPolicy.windowTokens
@@ -24,7 +24,7 @@ function ns.UI.ConversationStatus.Build(chatPanel)
     sessionTitle:SetPoint("TOPLEFT", 12, -9)
     sessionTitle:SetPoint("RIGHT", -12, 0)
     sessionTitle:SetWordWrap(false)
-    status = label(chatPanel, "Waiting for bridge...", MUTED)
+    status = label(chatPanel, "Open Wisp Desktop", MUTED)
     status:SetPoint("BOTTOMLEFT", 12, 6)
     contextMeter = CreateFrame("Button", "WispAIContextUsage", chatPanel)
     contextMeter:SetSize(112, 16)

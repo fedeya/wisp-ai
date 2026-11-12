@@ -113,12 +113,11 @@ function ns.UI.Activity.Refresh(chat)
         local title = "Ask Wisp"
         local detail = "Ask about your character, quests, equipment or where to go next."
         if needsSetup then
-            title = "Set up Wisp for Windows"
+            title = "Finish Wisp setup"
             detail =
-                "Download Wisp for Windows. In Overview, choose your WoW folder and install the addon. Then restart WoW."
+                "Open Wisp Desktop. In Overview, select your WoW folder and choose Install / update addon. Then restart WoW."
         elseif waiting then
-            title = "Waiting for bridge"
-            detail = "Keep the Wisp desktop app open. Your chat will appear when it connects."
+            title, detail = "Open Wisp Desktop to connect", ""
         elseif loading then
             title, detail = "Loading conversation", "Fetching your messages."
         end
@@ -243,7 +242,7 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     emptyState.detail:SetPoint("RIGHT", -20, 0)
     emptyState.detail:SetJustifyH("CENTER")
     emptyState.detail:SetWordWrap(true)
-    emptyState.setup = ns.UI.Widgets.Button(emptyState, "Copy download link", 150, function()
+    emptyState.setup = ns.UI.Widgets.Button(emptyState, "Setup help", 120, function()
         ns.UI.Widgets.ShowCopyUrl(SETUP_URL)
     end)
     emptyState.setup:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)

@@ -147,12 +147,15 @@ it(
             "refresh must keep the title to the right of the logo"
         )
         local state = UI_TEST.frames.WispAIChatPlaceholder
-        assert(state:IsShown() and state.loading and state.title:GetText() == "Waiting for bridge")
+        assert(state:IsShown() and state.loading)
+        assert(state.title:GetText() == "Open Wisp Desktop to connect")
+        assert(state.detail:GetText() == "")
         assert(state.mouseEnabled == false)
         assert(not state.setup:IsShown(), "a disconnected bridge should not prompt a download")
         ns.Transport.needsDesktopSetup = true
         ns.UI.Refresh()
-        assert(state.setup:IsShown() and state.title:GetText() == "Set up Wisp for Windows")
+        assert(state.setup:IsShown() and state.title:GetText() == "Finish Wisp setup")
+        assert(state.setup:GetText() == "Setup help")
         assert(not state.loading and not state.dots[1]:IsShown())
         state.setup.scripts.OnClick()
         assert(UI_TEST.popup.id == "WISPAI_COPY_URL")
