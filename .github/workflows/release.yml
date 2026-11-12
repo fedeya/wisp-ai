@@ -5,7 +5,7 @@ on:
     tags: ['v*']
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -29,14 +29,29 @@ jobs:
         env:
           RELEASE_BASE_SHA: ${{ github.event.before }}
   validate:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/check.yml
+  validate-before-build:
+    if: github.ref != 'refs/heads/main'
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/check.yml
   windows:
-    needs: [validate, release-inputs]
-    if: needs.release-inputs.outputs.app == 'true'
+    needs: [release-inputs, validate-before-build]
+    if: >-
+      !cancelled() &&
+      needs.release-inputs.result == 'success' &&
+      needs.release-inputs.outputs.app == 'true' &&
+      (github.ref == 'refs/heads/main' || needs.validate-before-build.result == 'success')
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      nightly: ${{ steps.release.outputs.nightly }}
     env:
       CARGO_INCREMENTAL: '0'
     steps:
@@ -88,6 +103,7 @@ jobs:
         with:
           name: Wisp-windows-x64
           if-no-files-found: ignore
+          overwrite: true
           path: |
             dist/*-setup.exe
             dist/*.sha256
@@ -97,29 +113,49 @@ jobs:
             dist/release-notes.md
       - name: Verify installer before publishing
         run: node scripts/verify-installer.ts
-      - if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+  publish:
+    needs: [validate, windows]
+    if: >-
+      !cancelled() &&
+      needs.windows.result == 'success' &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+      (github.ref == 'refs/heads/main' && needs.validate.result == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+      - uses: actions/download-artifact@v4
         with:
-          tag_name: ${{ steps.release.outputs.tag }}
-          name: ${{ steps.release.outputs.tag }}
+          name: Wisp-windows-x64
+          path: dist
+      - name: Restore the built nightly version
+        if: needs.windows.outputs.nightly == 'true'
+        run: node scripts/release-version.ts "$RELEASE_VERSION"
+        env:
+          RELEASE_VERSION: ${{ needs.windows.outputs.version }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.windows.outputs.tag }}
+          name: ${{ needs.windows.outputs.tag }}
           target_commitish: ${{ github.sha }}
           draft: true
-          prerelease: ${{ steps.release.outputs.nightly == 'true' }}
+          prerelease: ${{ needs.windows.outputs.nightly == 'true' }}
           body_path: dist/release-notes.md
           files: |
             dist/*-setup.exe
             dist/*.sha256
             dist/*.sig
       - name: Attach updater manifest with release notes
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         run: node scripts/finalize-release.ts
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.tag }}
-          RELEASE_NIGHTLY: ${{ steps.release.outputs.nightly }}
+          RELEASE_TAG: ${{ needs.windows.outputs.tag }}
+          RELEASE_NIGHTLY: ${{ needs.windows.outputs.nightly }}
       # GITHUB_TOKEN publications do not trigger another release-event workflow.
       - name: Refresh website after publishing Nightly
-        if: steps.release.outputs.nightly == 'true' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
+        if: needs.windows.outputs.nightly == 'true'
         run: node scripts/revalidate-web.ts
         env:
           WEB_REVALIDATION_SECRET: ${{ secrets.WEB_REVALIDATION_SECRET }}

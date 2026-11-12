@@ -78,10 +78,11 @@ tests keep their existing skips when the required binaries are absent.
 CI runs the general TypeScript suites on Ubuntu, excluding
 `apps/bridge/tests/simulation.test.ts`. A separate Windows job runs that complete
 file against the pinned simulator, so engine tests do not silently skip on Linux.
-Windows release calls the same validation workflow before packaging; pushes to
-`main` use that validation instead of starting a second copy of CI. The release
+On `main`, Windows release runs the validation workflow in parallel with packaging
+and installer verification. Nightly publication waits for both to pass. The release
 input check gates only packaging, so web/docs-only pushes still receive all checks
-without building or publishing an installer. Tags and manual releases always package.
+without building or publishing an installer. Tag builds and manual builds outside
+`main` wait for validation before packaging. Manual builds always request packaging.
 
 The shared `setup-simulator` action caches the executable, manifest, class/item
 metadata and license for both validation and packaging. Its key includes the Go
