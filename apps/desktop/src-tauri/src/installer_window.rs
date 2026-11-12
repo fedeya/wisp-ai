@@ -9,8 +9,9 @@ use windows_sys::Win32::{
     Foundation::{HWND, LPARAM},
     UI::WindowsAndMessaging::{
         GetAncestor, GetDlgItem, GetParent, GetPropW, GetWindowLongW, IsWindow, IsWindowVisible,
-        PostMessageW, SendMessageTimeoutW, SetPropW, ShowWindowAsync, GA_ROOT, GWL_STYLE,
-        SMTO_ABORTIFHUNG, SW_HIDE, SW_SHOWNA, WM_COMMAND, WM_GETTEXT, WS_DISABLED,
+        PostMessageW, SendMessageTimeoutW, SetLayeredWindowAttributes, SetPropW, ShowWindowAsync,
+        GA_ROOT, GWL_STYLE, LWA_ALPHA, SMTO_ABORTIFHUNG, SW_HIDE, SW_SHOWNA, WM_COMMAND,
+        WM_GETTEXT, WS_DISABLED,
     },
 };
 
@@ -108,7 +109,10 @@ fn updater_status(
         }
     } else if !installer.presented.swap(true, Ordering::AcqRel) && window.show().is_err() {
         // If showing Svelte fails after the handoff, give the installer its window back.
-        unsafe { ShowWindowAsync(root, SW_SHOWNA) };
+        unsafe {
+            SetLayeredWindowAttributes(root, 0, 255, LWA_ALPHA);
+            ShowWindowAsync(root, SW_SHOWNA);
+        }
         window.app_handle().exit(0);
         return preparing();
     }

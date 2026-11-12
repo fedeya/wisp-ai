@@ -64,9 +64,6 @@ FunctionEnd
     !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Wisp will reopen automatically."
     ${IfNot} ${Silent}
       SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:Wisp AI"
-      ShowWindow $HWNDPARENT ${SW_SHOW}
-      BringToFront
-      !insertmacro WispUpdateStage "installer-visible"
     ${EndIf}
   ${EndIf}
   InitPluginsDir
@@ -77,6 +74,16 @@ FunctionEnd
   ${AndIf} $PassiveMode = 1
   ${AndIfNot} ${Silent}
     !insertmacro WispTryCustomWindow
+  ${EndIf}
+  ${If} $UpdateMode = 1
+  ${AndIfNot} ${Silent}
+    ${If} $WispUpdateProgressProcess == ""
+      ShowWindow $HWNDPARENT ${SW_SHOW}
+      BringToFront
+      !insertmacro WispUpdateStage "installer-visible"
+    ${Else}
+      !insertmacro WispUpdateStage "updater-ready"
+    ${EndIf}
   ${EndIf}
   ExecWait '"$PLUGINSDIR\wisp-update-helper.exe" --prepare-update' $0
   ${If} $0 != 0
