@@ -4,7 +4,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { UsageTelemetry } from '../src/telemetry.ts';
+import { UsageTelemetry, type ChatErrorCode } from '../src/telemetry.ts';
 
 let directory: string;
 const installationId = randomUUID();
@@ -120,6 +120,32 @@ test('tool telemetry drops private labels, inputs, results and custom tool names
       .sort(),
   ).toEqual(['external_tool', 'query_character']);
   expect(JSON.stringify(events())).not.toMatch(/PRIVATE|Alice|my-private|callId/);
+});
+
+test('chat telemetry only sends allowlisted failure codes', async () => {
+  await preference(true);
+  const telemetry = createTelemetry();
+  telemetry.chat('chat', 'failed', 10, 'model_auth_failed');
+  telemetry.chat('hover', 'failed', 20, 'PRIVATE PROVIDER ERROR' as ChatErrorCode);
+  telemetry.chat('routine', 'timeout', 30);
+  telemetry.chat('chat', 'completed', 40, 'turn_stream_failed');
+  telemetry.chat('chat', 'cancelled', 50, 'turn_stream_failed');
+  telemetry.chat('chat', 'needs_input', 60);
+  await telemetry.drain();
+
+  const chats = events()
+    .filter((event) => event.event === 'chat_completed')
+    .map((event) => event.properties)
+    .sort((a, b) => a.duration_ms - b.duration_ms);
+  expect(chats.map(({ error_code }) => error_code)).toEqual([
+    'model_auth_failed',
+    'unknown',
+    'timeout',
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  expect(JSON.stringify(chats)).not.toContain('PRIVATE PROVIDER ERROR');
 });
 
 test('addon polls are deduplicated and only valid versions are sent', async () => {

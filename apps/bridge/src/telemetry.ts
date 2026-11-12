@@ -36,6 +36,20 @@ const versionSchema = z
   .regex(/^\d+\.\d+\.\d+(?:-nightly\.\d+\.\d+)?$/)
   .max(80);
 export type ChatOutcome = 'completed' | 'failed' | 'cancelled' | 'needs_input' | 'timeout';
+const chatErrorCodeSchema = z.enum([
+  'capability_sync_failed',
+  'engine_not_ready',
+  'account_busy',
+  'model_preparation_failed',
+  'model_auth_failed',
+  'model_catalog_failed',
+  'turn_start_failed',
+  'turn_stream_failed',
+  'turn_result_failed',
+  'timeout',
+  'unknown',
+]);
+export type ChatErrorCode = z.infer<typeof chatErrorCodeSchema>;
 type GameConnectionError = 'session_replaced' | 'engine_not_ready' | 'addon_ack_missing';
 const gameConnectionTimeoutMs = 30_000;
 type Properties = Record<string, string | number | boolean>;
@@ -137,12 +151,24 @@ export class UsageTelemetry {
     }
   }
 
-  chat(mode: 'chat' | 'hover' | 'routine' | 'tip', outcome: ChatOutcome, duration: number) {
+  chat(
+    mode: 'chat' | 'hover' | 'routine' | 'tip',
+    outcome: ChatOutcome,
+    duration: number,
+    errorCode?: ChatErrorCode,
+  ) {
     this.active();
+    const failureCode =
+      outcome === 'timeout'
+        ? 'timeout'
+        : outcome === 'failed'
+          ? (chatErrorCodeSchema.safeParse(errorCode).data ?? 'unknown')
+          : undefined;
     this.record('chat_completed', {
       mode,
       outcome,
       duration_ms: Math.max(0, Math.round(duration)),
+      ...(failureCode ? { error_code: failureCode } : {}),
     });
   }
 
