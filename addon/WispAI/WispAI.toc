@@ -28,6 +28,7 @@ Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
 Character\Pet.lua
+Character\Mail.lua
 Character\Inspect.lua
 Character\Merchant.lua
 Character\QuestRewards.lua

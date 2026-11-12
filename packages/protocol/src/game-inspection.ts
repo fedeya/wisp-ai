@@ -83,6 +83,9 @@ export const compareInput = z.object({
 });
 // WISP-039: current dialog only; callers cannot select a quest or request an action.
 export const questRewardsInput = z.strictObject({});
+export const mailInput = z.strictObject({
+  limit: z.number().int().min(1).max(50).default(10),
+});
 export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
   limit: z.number().int().min(1).max(50).default(20),
@@ -146,6 +149,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('quest_rewards'), args: questRewardsInput }),
   z.strictObject({ kind: z.literal('pet'), args: petInput }),
   z.strictObject({ kind: z.literal('lockouts'), args: lockoutsInput }),
+  z.strictObject({ kind: z.literal('mail'), args: mailInput }),
   z.object({ kind: z.literal('training'), args: trainingInput }),
   z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
   z.object({ kind: z.literal('questie_quest'), args: questInput }),

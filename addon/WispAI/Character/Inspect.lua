@@ -9,6 +9,9 @@ end
 function inspectors.pet()
     return ns.Character.ReadPet()
 end
+function inspectors.mail(args)
+    return ns.Character.ReadMail(args)
+end
 local function tooltip(link)
     if not C_TooltipInfo or not C_TooltipInfo.GetHyperlink then
         return nil
@@ -444,15 +447,20 @@ function ns.Character.Inspect(inspection)
     if inspection.kind ~= "pet" then
         character = UnitName("player")
     end
-    return {
+    local result = {
         capturedAt = time(),
         character = character,
-        source = inspection.kind == "training" and "Bundled What's Training? Forever catalog"
+        source = inspection.kind == "mail" and "WoW already-loaded mailbox cache"
+            or inspection.kind == "training" and "Bundled What's Training? Forever catalog"
             or "WoW addon live API",
         status = ok and "available" or "unavailable",
         data = ok and data or nil,
         error = not ok and tostring(data) or nil,
     }
+    if inspection.kind == "mail" and ok then
+        ns.Character._BoundMailResult(result, 48000)
+    end
+    return result
 end
 
 local function readWaypoint()

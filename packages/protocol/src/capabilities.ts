@@ -143,6 +143,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read the open turn-in dialog’s guaranteed rewards and alternatives with exact item links and cached stats. Never selects or claims rewards.',
   ],
   query_resources: ['Read resources', 'Read money, bag contents, free space and skill ranks.'],
+  inspect_mail: [
+    'Read loaded mail',
+    'Read attachments, money, COD and expiry at the open mailbox; never private text or mail actions.',
+  ],
   inspect_auctions: [
     'Read auction results',
     'Read the auction results currently loaded in the auction house.',
