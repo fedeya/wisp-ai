@@ -64,6 +64,8 @@ read_globals = {
     "GetNumAuctionItems",
     "GetNumBindings",
     "GetNumMacros",
+    "GetNumSavedInstances",
+    "GetSavedInstanceInfo",
     "GetNumTrainerServices",
     "GetNumQuestChoices",
     "GetNumQuestRewards",

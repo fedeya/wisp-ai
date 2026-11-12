@@ -318,6 +318,23 @@ and `Turn timing` entries for receipt, admission and first visible text latency.
 
 ### Runtime boundaries
 
+Saved-instance reads use deferred `wow__inspect_lockouts` and the `lockouts` skill.
+`Character/Lockouts.lua` observes `UPDATE_INSTANCE_INFO` without requesting it and
+rereads only the native saved-instance cache on demand. Read capture time is not
+cache-update time or server freshness; initial age is explicitly unobserved.
+Identity/session/world transitions invalidate event provenance, and mid-read
+identity/session/update changes discard the reading. Reads scan at most 100 rows,
+return at most 20, clip native strings through Shared/Text, and reserve escaped
+JSON/envelope bytes within a 20,000-byte upper bound. Missing/restricted fields
+remain unknown; cached zero is not evidence of raid or loot availability.
+No refresh, lockout mutation, boss expansion or live access is performed by tests.
+The applicable native tuple caller is Gethe/wow-ui-source `forever` SHA
+`4cd0ab752a77164f654ccbca9d0c1fe8dafceebe`,
+`Blizzard_RaidFrame/Mainline/RaidInfoFrameSocialView.lua:85–103`, selected by its
+Mainline-family TOC (Forever/Camelot is Mainline-family, not Retail-only).
+Native third-party readability and Windows/Forever rendering still need human
+validation; offline public/secret-value fixtures are not that evidence.
+
 Replies stream as ordinary Markdown text. The Eve tool `wisp__present_ui`
 inserts a complete, schema-validated native panel or declares inline entity
 references. Its authenticated `/present` RPC reserves component IDs, immutable

@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { rpcRequests, rpcResponses } from '@wisp/protocol/agent-rpc';
+import { lockoutsReading } from '@wisp/protocol/lockouts';
 import { actionTools } from '@wisp/protocol/game-actions';
 import { routineInput, routineEvents } from '@wisp/protocol/routines';
 import { panelInput } from '@wisp/protocol/panels';
@@ -433,6 +434,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 compare_items: 'compare_items',
                 quest_rewards: 'inspect_quest_rewards',
                 auctions: 'inspect_auctions',
+                lockouts: 'inspect_lockouts',
                 macros: 'inspect_macros',
                 map: 'inspect_map',
               } as const
@@ -485,6 +487,19 @@ export function createAgentHandler(deps: AgentDependencies) {
         },
         abort.signal,
       );
+      if (inspection?.kind === 'lockouts') {
+        if (!capabilitySettings.enabled('tool:inspect_lockouts')) {
+          throw new Error('This tool is disabled in Settings');
+        }
+        if (
+          chat.status !== 'working' ||
+          chat.eveId !== eveSession ||
+          chat.owner !== currentTransport()
+        ) {
+          throw new Error('Lockout read belongs to an obsolete character session');
+        }
+        lockoutsReading.parse(result);
+      }
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
     } catch (error) {
       res.writeHead(503).end(error instanceof Error ? error.message : String(error));

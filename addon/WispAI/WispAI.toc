@@ -31,6 +31,7 @@ Character\Pet.lua
 Character\Inspect.lua
 Character\Merchant.lua
 Character\QuestRewards.lua
+Character\Lockouts.lua
 Actions\Game.lua
 Settings\Settings.lua
 Markdown\Syntax.lua
