@@ -86,8 +86,12 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     end
     ns.draft:SetScript("OnCursorChanged", revealCursor)
     ns.draft:SetScript("OnTextChanged", function(self)
+        if ns.active then
+            ns.db.drafts[ns.active] = self:GetText()
+        end
         inputScroll:UpdateScrollChildRect()
         scrollInput(self:GetText() == "" and 0 or inputScroll:GetVerticalScroll())
+        ns.UI.TaskStarters.Refresh(ns.Chat.Current())
     end)
     inputScroll:SetScript("OnSizeChanged", function(_, width)
         ns.draft:SetWidth(width)

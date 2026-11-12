@@ -27,6 +27,7 @@ ChatHistory\ChatHistory.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
+Character\TaskContext.lua
 Character\Inspect.lua
 Actions\Game.lua
 Settings\Settings.lua
@@ -51,6 +52,7 @@ UI\Memory.lua
 UI\Sidebar.lua
 UI\SettingsPanel.lua
 UI\Activity.lua
+UI\TaskStarters.lua
 UI\Transcript.lua
 UI\Composer.lua
 UI\ConversationStatus.lua

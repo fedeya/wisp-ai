@@ -60,6 +60,7 @@ function M.addon(name, env)
             "UI/Sidebar.lua",
             "UI/SettingsPanel.lua",
             "UI/Activity.lua",
+            "UI/TaskStarters.lua",
             "UI/Transcript.lua",
             "UI/Composer.lua",
             "UI/ConversationStatus.lua",

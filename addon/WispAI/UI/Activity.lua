@@ -123,6 +123,7 @@ function ns.UI.Activity.Refresh(chat)
             dot:SetShown(emptyState.loading)
         end
     end
+    ns.UI.TaskStarters.Refresh(chat)
     local title = "Wisp AI"
     if working then
         local now = GetTime()
@@ -229,14 +230,11 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     emptyState:SetAllPoints(transcript)
     emptyState:EnableMouse(false)
     emptyState.title = label(emptyState, "", GOLD)
-    emptyState.title:SetPoint("CENTER", 0, 20)
     emptyState.title:SetJustifyH("CENTER")
     emptyState.detail = label(emptyState, "", MUTED)
-    emptyState.detail:SetPoint("TOP", emptyState.title, "BOTTOM", 0, -10)
-    emptyState.detail:SetPoint("LEFT", 20, 0)
-    emptyState.detail:SetPoint("RIGHT", -20, 0)
     emptyState.detail:SetJustifyH("CENTER")
     emptyState.detail:SetWordWrap(true)
+    ns.UI.TaskStarters.Build(emptyState)
     emptyState.dots = {}
     for index = 1, 3 do
         local dot = label(emptyState, ".", GOLD)

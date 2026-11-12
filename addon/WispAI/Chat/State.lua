@@ -17,11 +17,16 @@ local function discardEmptyDraft()
         and not chat.routineId
         and not chat.inline
         and not chat.proactive
+        and (not ns.draft or ns.draft:GetText() == "")
+        and (ns.db.drafts[chat.id] or "") == ""
     then
         ns.Chat.DeleteChat(chat.id)
     end
 end
 function ns.Chat.NewChat()
+    if ns.draft and ns.active then
+        ns.db.drafts[ns.active] = ns.draft:GetText()
+    end
     discardEmptyDraft()
     ns.chatCounter = (ns.chatCounter or 0) + 1
     ns.active = ns.session .. "-chat-" .. ns.chatCounter
@@ -36,6 +41,9 @@ function ns.Chat.NewChat()
         lastActivityAt = activityTime(),
     }
     ns.pendingChats[ns.active] = ns.chats[#ns.chats]
+    if ns.draft then
+        ns.draft:SetText("")
+    end
     ns.Transport.Send({ type = "new", chat = ns.active })
     if ns.UI.Refresh then
         ns.UI.Refresh()
