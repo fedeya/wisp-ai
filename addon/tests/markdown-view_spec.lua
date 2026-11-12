@@ -423,6 +423,62 @@ it("reveals each list marker with the first visible text in its item", function(
     assert.equal("Second item.", second:GetText())
 end)
 
+it("keeps a list item's marker and all of its spans in a single reveal unit", function()
+    local env, ns = setup()
+    local display = settled(ns, message("- **First** item has wrapped text.\n- Second item."))
+    for _, exhausted in ipairs({ false, true }) do
+        local host = env.CreateFrame("Frame")
+        host.styledExtras = exhausted and 256 or 0
+        local _, _, units = ns.UI.RenderRichUI(host, {}, display, 150, true)
+        assert.equal(2, #units)
+        local first = units[1]
+        assert.equal(host.prose[1], first.fonts[1])
+        if exhausted then
+            assert.equal(1, #first.fonts)
+            local text = ns.Markdown.InlineRenderer.WritingText(first.fonts[1]:GetText())
+            assert.equal("First item has wrapped text.", text)
+        else
+            assert.is_true(#first.fonts > 1)
+        end
+        local firstMarker, secondMarker = host.prose[1].marker, host.prose[2].marker
+        assert.equal("•", firstMarker:GetText())
+        first.setStarted(false)
+        assert.is_false(firstMarker:IsShown())
+        assert.is_true(secondMarker:IsShown())
+        first.setStarted(true)
+        assert.is_true(firstMarker:IsShown())
+    end
+end)
+
+it("starts an item's marker with its first text span that contains a glyph", function()
+    local env, ns = setup()
+    local row = env.CreateFrame("Frame")
+    local original = {
+        role = "assistant",
+        text = "- First",
+        streaming = true,
+        _markdown = true,
+        parts = {
+            {
+                type = "text",
+                text = "- First",
+                _markdown = true,
+                marker = "- ",
+                runs = { { text = " " }, { text = "First" } },
+            },
+        },
+    }
+    local writing = ns.UI.Writing.BeginLayout(row, false, original, true)
+    local _, _, units = ns.UI.RenderRichUI(row, {}, original, 150, true)
+    ns.UI.Writing.Reveal(row, units, writing)
+    local first = row.prose[1]
+    assert.equal(" ", first:GetText())
+    assert.is_false(first.marker:IsShown())
+    row.scripts.OnUpdate(row, 0.06)
+    assert.is_true(first.marker:IsShown())
+    assert.is_truthy(first.runs[1]:GetText():match("^F"))
+end)
+
 it("clips inline colors around whole native links and textures", function()
     local _, ns = setup()
     local renderer = ns.Markdown.InlineRenderer

@@ -338,7 +338,7 @@ function ns.UI.PanelAction(chat, message, node, values)
         ns.UI.Refresh()
     end
 end
-function ns.UI.RenderRichUI(host, chat, message, width, collectProse)
+function ns.UI.RenderRichUI(host, chat, message, width, collectWriting)
     if not host.widgets and ns.UI.LinkWidget then
         ns.UI.LinkWidget(host)
     end
@@ -609,7 +609,7 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectProse)
         ns.Markdown.TextStyle.Hide(host.prose)
     end
     local proseCount = 0
-    local writingFonts = collectProse and {} or nil
+    local writingUnits = collectWriting and {} or nil
     local function indent(value)
         return math.max(0, math.min(tonumber(value) or 0, math.max(0, width - 40)))
     end
@@ -634,13 +634,21 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectProse)
                     root(node, part.indent)
                 end
             elseif part.type == "text" and part.text ~= "" then
+                local unit
                 if
                     part._markdown
                     and (part.runs or part.style == "rule")
                     and ns.Markdown.TextStyle
                 then
-                    y, proseCount =
-                        ns.Markdown.TextStyle.Render(host, host.prose, part, width, y, proseCount)
+                    y, proseCount, unit = ns.Markdown.TextStyle.Render(
+                        host,
+                        host.prose,
+                        part,
+                        width,
+                        y,
+                        proseCount,
+                        collectWriting
+                    )
                     y = y + 8
                 else
                     proseCount = proseCount + 1
@@ -670,17 +678,12 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectProse)
                     uiWidgets.SetText(f, part._markdown and part.text or rendered(part.text))
                     f:Show()
                     y = y + f:GetStringHeight() + 8
-                end
-                if writingFonts then
-                    local f = host.prose[proseCount]
-                    if f and f:IsShown() then
-                        writingFonts[#writingFonts + 1] = f
-                        for _, run in ipairs(f.runs or {}) do
-                            if run:IsShown() then
-                                writingFonts[#writingFonts + 1] = run
-                            end
-                        end
+                    if writingUnits then
+                        unit = { fonts = { f } }
                     end
+                end
+                if unit then
+                    writingUnits[#writingUnits + 1] = unit
                 end
             end
         end
@@ -705,5 +708,5 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectProse)
     end
     host:SetWidth(width)
     host:SetHeight(math.max(1, y))
-    return y, pending, writingFonts
+    return y, pending, writingUnits
 end

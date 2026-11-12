@@ -54,8 +54,31 @@ local function stringWidth(font)
     return font.GetUnboundedStringWidth and font:GetUnboundedStringWidth() or font:GetStringWidth()
 end
 
-function layout.Render(host, pool, part, width, y, count)
+local function renderMarker(host, font, block, inset, top, unit)
+    local text = block.task
+            and (block.checked and "|TInterface\\Buttons\\UI-CheckBox-Check:18:18|t" or "|TInterface\\Buttons\\UI-CheckBox-Up:18:18|t")
+        or (block.marker:match("^%d") and block.marker or "•")
+    local marker = font.marker or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
+    font.marker = marker
+    marker:SetFontObject(ChatFontNormal)
+    marker:SetText(text)
+    marker:SetTextColor(unpack(block.checked and { 0.5, 0.78, 0.55 } or ns.UI.Widgets.GOLD))
+    marker:SetJustifyH("RIGHT")
+    marker:SetWidth(math.min(20, math.max(1, inset - 3)))
+    marker:ClearAllPoints()
+    marker:SetPoint("TOPRIGHT", host, "TOPLEFT", inset - 6, -top)
+    marker:Show()
+    if unit then
+        unit.setStarted = function(started)
+            marker:SetShown(started)
+        end
+    end
+end
+
+-- A reveal unit owns every font span in this block and the visibility of its list marker.
+function layout.Render(host, pool, part, width, y, count, collectWriting)
     count = count or 0
+    local unit = collectWriting and { fonts = {} } or nil
     host.markdownMeasure = host.markdownMeasure
         or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
     local measure = host.markdownMeasure
@@ -153,6 +176,9 @@ function layout.Render(host, pool, part, width, y, count)
                 run:SetWidth(math.max(1, math.min(length + 1, available - x)))
                 ns.UI.Widgets.SetText(run, rendered)
                 run:Show()
+                if unit then
+                    unit.fonts[#unit.fonts + 1] = run
+                end
                 local h, w = run:GetStringHeight(), math.min(length, available - x)
                 if span.code and block.kind ~= "code" then
                     decoration = decoration + 1
@@ -242,14 +268,22 @@ function layout.Render(host, pool, part, width, y, count)
                     -- Preserve the complete shared formatter output rather than
                     -- growing an unbounded set of inline widgets for dense prose.
                     layout.Hide({ f })
-                    styleFont(f, { text = part.text, code = block.kind == "code" }, block.level)
+                    local text = block.kind == "list" and part.text:sub(#part.marker + 1)
+                        or part.text
+                    styleFont(f, { text = text, code = block.kind == "code" }, block.level)
                     f:ClearAllPoints()
                     f:SetPoint("TOPLEFT", left, -top)
                     f:SetWidth(math.max(1, width - left))
                     f:SetTextColor(unpack(block.level and HEADING or ns.UI.Widgets.TEXT))
-                    ns.UI.Widgets.SetText(f, part.text)
+                    ns.UI.Widgets.SetText(f, text)
                     f:Show()
-                    return top + f:GetStringHeight() + (block.level and 6 or 0), count
+                    if unit then
+                        unit.fonts = { f }
+                    end
+                    if block.kind == "list" then
+                        renderMarker(host, f, block, inset, top, unit)
+                    end
+                    return top + f:GetStringHeight() + (block.level and 6 or 0), count, unit
                 end
                 y = y + (lineUsed and math.max(16, lineHeight) or 0)
                 if block.kind == "code" then
@@ -278,20 +312,7 @@ function layout.Render(host, pool, part, width, y, count)
                         { 0.65, 0.55, 0.34, 0.8 }
                     )
                 elseif block.kind == "list" then
-                    local markerText = block.task
-                            and (block.checked and "|TInterface\\Buttons\\UI-CheckBox-Check:18:18|t" or "|TInterface\\Buttons\\UI-CheckBox-Up:18:18|t")
-                        or (block.marker:match("^%d") and block.marker or "•")
-                    f.marker = f.marker or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
-                    f.marker:SetFontObject(ChatFontNormal)
-                    f.marker:SetText(markerText)
-                    f.marker:SetTextColor(
-                        unpack(block.checked and { 0.5, 0.78, 0.55 } or ns.UI.Widgets.GOLD)
-                    )
-                    f.marker:SetJustifyH("RIGHT")
-                    f.marker:SetWidth(math.min(20, math.max(1, inset - 3)))
-                    f.marker:ClearAllPoints()
-                    f.marker:SetPoint("TOPRIGHT", host, "TOPLEFT", inset - 6, -top)
-                    f.marker:Show()
+                    renderMarker(host, f, block, inset, top, unit)
                 end
                 if block.kind == "heading" then
                     y = y + 6
@@ -299,7 +320,7 @@ function layout.Render(host, pool, part, width, y, count)
             end
         end
     end
-    return y, count
+    return y, count, unit and #unit.fonts > 0 and unit or nil
 end
 
 ns.Markdown.TextStyle = layout

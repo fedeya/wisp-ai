@@ -4,9 +4,7 @@ local GOLD, TEXT, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.TEXT, ns.UI.Widgets.
 local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
-local truncateUtf8 = ns.Shared.Text.TruncateUtf8Bytes
-local writingText, writingPrefix =
-    ns.Markdown.InlineRenderer.WritingText, ns.Markdown.InlineRenderer.WritingPrefix
+local writer = ns.UI.Writing
 local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
@@ -16,205 +14,6 @@ local TOOL_STATES = {
     failed = { cell = 2, tint = { 0.85, 0.52, 0.46 } },
 }
 local toolGroupsExpanded = {}
-
-local function drawWriting(entry, bytes)
-    local prefix, shown = writingPrefix(entry.text, entry.visible, entry.ranges, bytes)
-    entry.shown = shown
-    setText(entry.font, prefix)
-    if entry.marker then
-        local markerVisible = shown >= entry.markerStart
-        if entry.marker:IsShown() ~= markerVisible then
-            entry.marker:SetShown(markerVisible)
-        end
-    end
-end
-
-local function finishWriting(row)
-    local writing = row.writing
-    if writing then
-        for _, entry in ipairs(writing.entries) do
-            setText(entry.font, entry.text)
-            if entry.marker then
-                entry.marker:Show()
-            end
-        end
-        row.writing = nil
-        row:SetScript("OnUpdate", nil)
-    end
-end
-
-local function updateWriting(row, elapsed)
-    local writing = row.writing
-    writing.elapsed = writing.elapsed + elapsed
-    if writing.elapsed >= writing.duration then
-        finishWriting(row)
-    elseif writing.elapsed - writing.updated >= 0.02 then
-        writing.updated = writing.elapsed
-        local position = writing.bytes * writing.elapsed / writing.duration
-        while writing.index <= #writing.entries do
-            local entry = writing.entries[writing.index]
-            local progress = math.max(0, math.min(1, (position - entry.offset) / entry.bytes))
-            drawWriting(entry, entry.start + math.floor(entry.bytes * progress))
-            if progress < 1 then
-                break
-            end
-            writing.index = writing.index + 1
-        end
-    end
-end
-
-local function matchWritingLayout(views, previous, interrupted)
-    if not previous then
-        return
-    end
-    local changed = #views ~= #previous.order
-    if not changed then
-        for index, view in ipairs(views) do
-            if view.font ~= previous.order[index] then
-                changed = true
-                break
-            end
-        end
-    end
-    if not changed then
-        return
-    end
-    local prefix = {}
-    for _, font in ipairs(previous.order) do
-        local visible = previous.fonts[font]
-        local active = interrupted and interrupted.byFont[font]
-        prefix[#prefix + 1] = active and visible:sub(1, active.shown) or visible
-        if active and active.shown < #visible then
-            break
-        end
-    end
-    local shown = table.concat(prefix):gsub("%s+", "")
-    local starts, position = {}, 1
-    for _, view in ipairs(views) do
-        local start = 0
-        for index = 1, #view.visible do
-            if position > #shown then
-                break
-            end
-            local byte = view.visible:byte(index)
-            if byte == 32 or (byte >= 9 and byte <= 13) then
-                start = index
-            elseif byte == shown:byte(position) then
-                start, position = index, position + 1
-            else
-                return
-            end
-        end
-        starts[view.font] = start
-    end
-    if position > #shown then
-        return starts
-    end
-end
-
-local function revealWriting(row, fonts, source, previous, interrupted, streaming, pending)
-    local snapshot = {
-        source = source,
-        fonts = {},
-        order = {},
-        streaming = streaming,
-        pending = pending,
-    }
-    row.writingSnapshot = snapshot
-    if not fonts or not row:IsVisible() then
-        return
-    end
-    snapshot.order = fonts
-    local previousSource = previous and previous.source or ""
-    local appended = source:sub(1, #previousSource) == previousSource
-    -- Match existing fonts first. If Markdown changed the layout, fall back
-    -- to the amount of new source measured from the end of the reply.
-    local remaining = appended and #source:sub(#previousSource + 1):gsub("^%s+", "") or 0
-    if previousSource == "" then
-        remaining = math.huge
-    end
-    if previous and previousSource ~= "" and previous.pending and not pending and appended then
-        remaining = #source
-    end
-    if interrupted then
-        for _, entry in ipairs(interrupted.entries) do
-            remaining = remaining + #entry.visible - entry.shown
-        end
-    end
-    local views = {}
-    for index, font in ipairs(fonts) do
-        local text = font:GetText() or ""
-        local visible, ranges = writingText(text)
-        snapshot.fonts[font] = visible
-        views[index] = { font = font, text = text, visible = visible, ranges = ranges }
-    end
-    local layoutStarts = appended and matchWritingLayout(views, previous, interrupted)
-    local entries, bytes = {}, 0
-    for index = #views, 1, -1 do
-        local view = views[index]
-        local font, visible = view.font, view.visible
-        local before = previous and previous.fonts[font]
-        local active = interrupted and interrupted.byFont[font]
-        local start = #visible - math.min(#visible, remaining)
-        remaining = math.max(0, remaining - #visible)
-        if layoutStarts then
-            start = layoutStarts[font]
-        elseif before then
-            local shown = active and active.shown or #before
-            if visible:sub(1, shown) == before:sub(1, shown) then
-                start = shown
-            end
-        end
-        if appended and start < #visible then
-            start = #truncateUtf8(visible, start)
-            view.start = start
-            view.bytes = #visible - start
-            if font.marker and font.marker:IsShown() then
-                view.markerStart = visible:find("%S")
-                view.marker = view.markerStart and font.marker
-            end
-            entries[#entries + 1] = view
-            bytes = bytes + view.bytes
-        end
-    end
-    if #entries == 0 then
-        return
-    end
-    local writing = {
-        entries = {},
-        byFont = {},
-        index = 1,
-        bytes = bytes,
-        elapsed = 0,
-        updated = 0,
-        duration = math.min(0.9, math.max(0.14, bytes * 0.012)),
-    }
-    local offset = 0
-    for index = #entries, 1, -1 do
-        local entry = entries[index]
-        entry.offset = offset
-        offset = offset + entry.bytes
-        writing.entries[#writing.entries + 1] = entry
-        writing.byFont[entry.font] = entry
-        drawWriting(entry, entry.start)
-    end
-    row.writing = writing
-    local first = writing.entries[1]
-    if first.start == 0 then
-        local leading = first.visible:find("%S") or 1
-        local firstBytes = (first.visible:find("[^\128-\191]", leading + 1) or #first.visible + 1)
-            - 1
-        writing.elapsed = writing.duration * firstBytes / writing.bytes
-        drawWriting(first, firstBytes)
-    end
-    -- Keep the first glyph visible while syntax is pending. Starting the
-    -- reveal on the raw preview would replay the same text after formatting.
-    if pending and previousSource == "" then
-        snapshot.source = ""
-        return
-    end
-    row:SetScript("OnUpdate", updateWriting)
-end
 
 ns.itemRevision = 0
 local function linked(row)
@@ -414,7 +213,7 @@ end
 local function makeRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     linked(row)
-    row:SetScript("OnHide", finishWriting)
+    row:SetScript("OnHide", writer.Finish)
     row.author = label(row, "", GOLD)
     row.author:SetPoint("TOPLEFT", 0, 0)
     row.text = label(row, "")
@@ -671,17 +470,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
         .. (sending and "sending" or "")
     if row.signature ~= signature then
         row.signature = signature
-        local previous = sameReply and row.writingSnapshot
-        local interrupted = sameReply and row.writing
-        finishWriting(row)
-        row.writingSnapshot = nil
-        local animate = animateReply
-            or interrupted
-            or (previous and (previous.streaming or previous.pending))
-            or (message.streaming and chat.status == "working")
-        local writingSource = message.role == "assistant" and animate and (message.text or "")
-            or nil
-        local writingFonts
+        local writing =
+            writer.BeginLayout(row, sameReply, message, chat.status == "working", animateReply)
+        local writingUnits
         local pending = false
         row.chatId = chat.id
         row.speaker = message.role
@@ -819,7 +610,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 end
             end
             row.text:SetShown(not interleaved)
-            writingFonts = writingSource and not interleaved and { row.text } or nil
+            writingUnits = writing and not interleaved and { { fonts = { row.text } } } or nil
             row.height = top
                 + math.max(
                     1,
@@ -834,15 +625,10 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 row.rich:Show()
                 row.rich:ClearAllPoints()
                 row.rich:SetPoint("TOPLEFT", padding, -(interleaved and top or row.height))
-                local height, waiting, prose = ns.UI.RenderRichUI(
-                    row.rich,
-                    chat,
-                    message,
-                    width - padding * 2,
-                    writingSource ~= nil
-                )
+                local height, waiting, units =
+                    ns.UI.RenderRichUI(row.rich, chat, message, width - padding * 2, writing ~= nil)
                 if interleaved then
-                    writingFonts = prose
+                    writingUnits = units
                 end
                 row.height = row.height + height
                 pending = pending or waiting == true
@@ -873,16 +659,8 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             row.delivery:SetShown(sending == true)
         end
         row:SetHeight(row.height)
-        if writingSource then
-            revealWriting(
-                row,
-                writingFonts,
-                writingSource,
-                previous,
-                interrupted,
-                message.streaming,
-                message._markdownPending
-            )
+        if writing then
+            writer.Reveal(row, writingUnits, writing)
         end
     end
 end

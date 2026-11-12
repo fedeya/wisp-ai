@@ -44,6 +44,7 @@ Markdown\InlineRenderer.lua
 Markdown\ReplyView.lua
 Markdown\TextStyle.lua
 UI\ModelControls.lua
+UI\Writing.lua
 UI\MessageRows.lua
 UI\Capabilities.lua
 UI\Memory.lua

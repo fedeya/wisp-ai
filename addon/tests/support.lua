@@ -53,6 +53,7 @@ function M.addon(name, env)
             "Markdown/ReplyView.lua",
             "Markdown/TextStyle.lua",
             "UI/ModelControls.lua",
+            "UI/Writing.lua",
             "UI/MessageRows.lua",
             "UI/Capabilities.lua",
             "UI/Memory.lua",
