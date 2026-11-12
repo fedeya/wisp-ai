@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { settingsRead } from './settings.ts';
+import { lockoutsInput } from './lockouts.ts';
 export const npcLocationsInput = z
   .strictObject({
     mode: z.enum(['npc', 'class_trainers', 'services']).default('npc'),
@@ -144,6 +145,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('quest_rewards'), args: questRewardsInput }),
   z.strictObject({ kind: z.literal('pet'), args: petInput }),
+  z.strictObject({ kind: z.literal('lockouts'), args: lockoutsInput }),
   z.object({ kind: z.literal('training'), args: trainingInput }),
   z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
   z.object({ kind: z.literal('questie_quest'), args: questInput }),

@@ -405,6 +405,9 @@ inspectors.chat = function(args)
     return ns.ChatHistory.ReadChatHistory(args)
 end
 function ns.Character.Inspect(inspection)
+    if inspection and inspection.kind == "lockouts" then
+        return ns.Character.ReadLockouts(inspection.args)
+    end
     if inspection and ns.Integrations.InspectIntegration then
         local result = ns.Integrations.InspectIntegration(inspection)
         if result then

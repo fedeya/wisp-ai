@@ -147,6 +147,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read auction results',
     'Read the auction results currently loaded in the auction house.',
   ],
+  inspect_lockouts: [
+    'Read cached instance lockouts',
+    'Read saved instances already cached by the game, with reset durations and observed cache-update age. Never refreshes or changes lockouts.',
+  ],
   inspect_macros: [
     'Read macros',
     'List your macros and free slots, and read macro contents when requested.',
