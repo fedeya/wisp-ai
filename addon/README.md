@@ -52,6 +52,7 @@ behavior and refresh entry point. Its components keep widget and cache state loc
 | `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation  |
 | `UI/Composer.lua`           | Multiline input, cursor scrolling, send/stop and responsive layout |
 | `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators  |
+| `UI/TaskStarters.lua`       | Local, capability-gated invitations that prepare editable drafts   |
 | `UI/ConversationStatus.lua` | Conversation title, connection state and context usage             |
 | `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                    |
 
@@ -60,6 +61,21 @@ by the window. `UI/ModelControls.lua` owns model/effort controls without changin
 composer or transcript geometry. Activity ticks update indicators without
 rerendering messages. The manifest loads these components before the window;
 the offline UI fixtures follow the same dependency order.
+
+Empty connected idle conversations offer up to three local task starters: review
+an open trainer, prioritize readable active quests, and plan a material tracker.
+Selecting one only fills an empty draft and focuses the composer; manual Send
+uses the ordinary turn and tool-admission path. Nonempty drafts are preserved.
+Trainer close removes its invitation, while a prepared prompt remains editable;
+the trainer inspector still requires a fresh open window. Capability metadata
+must be available and enabled (including parent gates); unknown state hides tasks.
+`Character/TaskContext.lua` checks at most 100 quest-log rows and caches only UI
+eligibility until quest/world events, not quest observations or recommendations.
+No model tool or transport schema is added. Offline coverage lives in
+`addon/tests/task_starters_spec.lua`; Forever/Windows layout, focus and first-use
+usefulness still require a playtest. Compare trainer/tracker discovery against
+the old empty screen, recording clicks, typing and successful tasks without
+claiming an improvement before measurement.
 
 `Integrations/Integrations.lua` owns provider metadata, readiness aggregation and
 protected inspection dispatch. Each provider owns its readiness checks and reads

@@ -100,7 +100,7 @@ function inspectors.target()
         note = "Target coordinates and fight difficulty were not inferred.",
     }
 end
-local trainerOpen, auctionOpen = false, false
+local trainerOpen, auctionOpen = nil, false
 local inspectionEvents = CreateFrame("Frame")
 for _, event in ipairs({
     "TRAINER_SHOW",
@@ -121,14 +121,18 @@ inspectionEvents:SetScript("OnEvent", function(_, event)
         auctionOpen = false
     end
 end)
+-- An observed close overrides a frame that may still be visible during its event.
+function ns.Character.IsTrainerOpen()
+    if trainerOpen ~= nil then
+        return trainerOpen
+    end
+    return ClassTrainerFrame and ClassTrainerFrame:IsShown() or false
+end
 function inspectors.training(args)
     return ns.Character.QueryTraining(args)
 end
 function inspectors.trainer()
-    assert(
-        trainerOpen or (ClassTrainerFrame and ClassTrainerFrame:IsShown()),
-        "Talk to a trainer and keep the trainer window open first"
-    )
+    assert(ns.Character.IsTrainerOpen(), "Talk to a trainer and keep the trainer window open first")
     assert(GetNumTrainerServices and GetTrainerServiceInfo, "Trainer services API is unavailable")
     local services = {}
     for index = 1, math.min(GetNumTrainerServices(), 300) do
