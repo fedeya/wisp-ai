@@ -14,11 +14,19 @@ export async function generateMetadata({ params }: Props) {
   const locale = await resolveLocale(params);
   const { version } = await params;
   const release = await getPublishedRelease(version);
+  const path = `/changelog/${version}`;
+  const title = release ? `${release.title} — Wisp AI` : 'Wisp changelog';
   return pageMetadata(
-    release ? `${release.title} — Wisp AI` : 'Wisp changelog',
+    title,
     `Wisp ${version}`,
-    `/changelog/${version}`,
+    path,
     locale,
+    release
+      ? {
+          path: `${path}/social-image`,
+          alt: `${title} · ${release.channel === 'nightly' ? 'Nightly' : 'Stable'}`,
+        }
+      : undefined,
   );
 }
 export default async function ReleasePage({ params }: Props) {
