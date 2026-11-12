@@ -25,7 +25,7 @@ interface TurnDependencies {
   isCurrent: (chat: Chat) => boolean;
   changed: () => void;
   log: (message: string) => void;
-  flushFirstText?: () => void;
+  flushSnapshot?: () => void;
 }
 export function createTurnRunner(deps: TurnDependencies) {
   const {
@@ -126,15 +126,18 @@ export function createTurnRunner(deps: TurnDependencies) {
       for await (const event of response.stream({ signal: controller.signal })) {
         assertCurrent();
         const sourceRevision = parts.sourceRevision;
+        const progressRevision = parts.presentationProgressRevision;
         const visibleChanged = applyEvent(chat, event, parts);
         observeTool?.(event);
         if (visibleChanged && !chat.proactive) {
-          if (
+          const firstText =
             firstTextMs === undefined &&
-            [...parts.streams.values()].some((state) => state.reply.view().text)
-          ) {
+            [...parts.streams.values()].some((state) => state.reply.view().text);
+          if (firstText) {
             firstTextMs = Math.round(performance.now() - started);
-            deps.flushFirstText?.();
+          }
+          if (firstText || progressRevision !== parts.presentationProgressRevision) {
+            deps.flushSnapshot?.();
           }
         }
         if (visibleChanged || parts.sourceRevision !== sourceRevision) {

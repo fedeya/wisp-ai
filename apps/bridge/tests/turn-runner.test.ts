@@ -28,7 +28,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
   } as unknown as Pick<Client, 'sessions'>;
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
   const log = vi.fn();
-  const flushFirstText = vi.fn();
+  const flushSnapshot = vi.fn();
   const changed = vi.fn();
   const run = createTurnRunner({
     telemetry,
@@ -48,7 +48,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     isCurrent: () => current,
     changed,
     log,
-    flushFirstText,
+    flushSnapshot,
   });
   return {
     chat,
@@ -57,7 +57,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     client,
     models,
     log,
-    flushFirstText,
+    flushSnapshot,
     changed,
     changeCharacter: () => {
       transport = 'two';
@@ -79,7 +79,7 @@ test('a complete turn projects streamed content and settles once', async () => {
       .join(''),
   ).toBe('Hello');
   expect(f.send).toHaveBeenCalledTimes(1);
-  expect(f.flushFirstText).toHaveBeenCalledTimes(1);
+  expect(f.flushSnapshot).toHaveBeenCalledTimes(1);
   const timing = JSON.parse(
     String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
       'Turn timing: '.length,
@@ -87,6 +87,46 @@ test('a complete turn projects streamed content and settles once', async () => {
   );
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
+});
+
+test('a streamed comparison requests publication before the tool settles', async () => {
+  const f = fixture();
+  const state = createSessionState([f.chat]);
+  state.activeChat = f.chat.id;
+  const previews: string[] = [];
+  f.flushSnapshot.mockImplementation(() => {
+    const row = projectChats(state).chats[0].messages?.at(-1);
+    if (row?.role === 'tool') {
+      previews.push(row.text);
+    }
+  });
+  let previewsBeforeSettlement: string[] = [];
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {
+      yield {
+        type: 'content.delta',
+        data: { partId: 'reply', kind: 'text', delta: 'I will compare the setups.' },
+      };
+      yield {
+        type: 'call.input',
+        data: {
+          callId: 'comparison',
+          name: PRESENT_UI_TOOL,
+          delta: '{"nodes":[{"kind":"comparison"',
+        },
+      };
+      previewsBeforeSettlement = [...previews];
+      yield {
+        type: 'call.settled',
+        data: { callId: 'comparison', outcome: 'failed' },
+      };
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  }));
+  await f.run(f.chat, 'Compare my setups');
+  expect(f.chat.status).toBe('done');
+  expect(previewsBeforeSettlement).toEqual(['Creating comparison']);
+  expect(projectChats(state).chats[0].messages?.some((m) => m.role === 'tool')).toBe(false);
 });
 
 test('real streamed turns report their mode, outcome and tool lifecycle to telemetry', async () => {

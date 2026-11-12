@@ -286,7 +286,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isStopping: () => shutdownRequested,
       accountBusy: () => accountBusy,
       isCurrent: (chat) => state.chats.includes(chat),
-      flushFirstText: () =>
+      flushSnapshot: () =>
         queueMicrotask(() => {
           dirty = true;
           publishSnapshot();
