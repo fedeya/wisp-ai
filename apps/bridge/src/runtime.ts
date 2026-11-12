@@ -25,7 +25,7 @@ import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './turn-runner.ts';
 import { errorMessage } from './errors.ts';
-import { bridgeLogger as logger } from './logger.ts';
+import { addonLogger, bridgeLogger as logger } from './logger.ts';
 import { MemoryStore } from './memory-store.ts';
 import { IntegrationState } from './integration-state.ts';
 import { existsSync, closeSync } from 'node:fs';
@@ -333,6 +333,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       runtime,
       changed,
       logger,
+      addonLogger,
     });
     const receive: typeof receivePacket = (packet) => {
       const previousSession = state.activeTransport;

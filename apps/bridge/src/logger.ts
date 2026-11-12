@@ -11,3 +11,4 @@ const rootLogger = pino({
 });
 
 export const bridgeLogger = rootLogger.child({ component: 'bridge' });
+export const addonLogger = rootLogger.child({ component: 'addon' });

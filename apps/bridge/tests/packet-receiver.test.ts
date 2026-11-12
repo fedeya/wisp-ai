@@ -29,6 +29,7 @@ function fixture() {
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
   const flushAcknowledgment = vi.fn();
+  const addonLogger = { info: vi.fn() };
   const receive = createPacketReceiver({
     state,
     pending,
@@ -51,9 +52,21 @@ function fixture() {
     runtime: 'unused',
     changed: () => {},
     flushAcknowledgment,
-    logger: { info: vi.fn(), warn: vi.fn() },
+    logger: { warn: vi.fn() },
+    addonLogger,
   });
-  return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
+  return {
+    state,
+    pending,
+    receive,
+    cancel,
+    end,
+    interrupt,
+    run,
+    models,
+    flushAcknowledgment,
+    addonLogger,
+  };
 }
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
@@ -84,6 +97,59 @@ test('interactive receipt requests an immediate acknowledgement publish, includi
   expect(f.flushAcknowledgment).toHaveBeenCalledTimes(2);
   expect(f.state.acknowledgments).toContain(11);
   expect(f.run).toHaveBeenCalledTimes(1);
+});
+
+test('delivery and visible text can be correlated using the addon message ID', () => {
+  const f = fixture();
+  const delivery = { messageId: 'message', ms: 40, queueMs: 5, retries: 1 };
+  const envelope = { session: 'one', at: 1 };
+  f.receive(packetSchema.parse({ ...envelope, type: 'poll', seq: 1, transport: { delivery } }));
+  f.receive(packetSchema.parse({ ...envelope, type: 'poll', seq: 2, transport: { delivery } }));
+  f.receive(
+    packetSchema.parse({
+      ...envelope,
+      type: 'inline_status',
+      seq: 3,
+      data: { event: 'first_text', messageId: 'message', totalMs: 240, afterSendingMs: 200 },
+    }),
+  );
+  expect(f.addonLogger.info.mock.calls.map(([fields]) => fields)).toEqual([
+    { event: 'addon.message_delivery', ...delivery },
+    {
+      event: 'addon.first_text',
+      messageId: 'message',
+      totalMs: 240,
+      afterSendingMs: 200,
+    },
+  ]);
+});
+
+test('transport profiles log allowlisted timings and handle empty Lua tables', () => {
+  const f = fixture();
+  const frames = { count: 3, mean: 11, max: 14, p95: 14 };
+  const profile = {
+    event: 'transport_profile',
+    label: 'private fixture',
+    elapsedMs: 2000,
+    frames,
+    work: { reset: frames, unexpected: 'private fixture' },
+    downlinkResyncs: 1,
+  };
+  const envelope = { type: 'inline_status', session: 'one', at: 1 };
+  f.receive(packetSchema.parse({ ...envelope, seq: 1, data: profile }));
+  f.receive(packetSchema.parse({ ...envelope, seq: 2, data: { ...profile, work: [] } }));
+  f.receive(packetSchema.parse({ ...envelope, seq: 3, data: { ...profile, elapsedMs: -1 } }));
+  const expected = {
+    event: 'addon.transport_profile',
+    elapsedMs: 2000,
+    frames,
+    work: { reset: frames },
+    downlinkResyncs: 1,
+  };
+  expect(f.addonLogger.info.mock.calls.map(([fields]) => fields)).toEqual([
+    expected,
+    { ...expected, work: {} },
+  ]);
 });
 
 test('quest sync primes turn context but a new addon session cannot reuse its revision', () => {

@@ -27,6 +27,38 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-li
 import { errorMessage } from './errors.ts';
 import type { UsageTelemetry } from './telemetry.ts';
 import type { Logger } from 'pino';
+const milliseconds = z.number().nonnegative();
+const optionalCount = z.int().nonnegative().optional();
+const distribution = z.object({
+  count: z.int().nonnegative(),
+  mean: milliseconds,
+  max: milliseconds,
+  p50: milliseconds.optional(),
+  p95: milliseconds.optional(),
+  p99: milliseconds.optional(),
+});
+const profileWork = z.object({
+  ack: distribution.optional(),
+  apply: distribution.optional(),
+  decode_apply: distribution.optional(),
+  reset: distribution.optional(),
+  send: distribution.optional(),
+});
+const transportProfile = z.object({
+  elapsedMs: milliseconds,
+  frames: distribution,
+  // WoW serializes an empty Lua table as an array.
+  work: z.union([profileWork, z.tuple([]).transform(() => ({}))]),
+  compactAck: z.boolean().optional(),
+  bulkAvailable: z.boolean().optional(),
+  startSlot: optionalCount,
+  endSlot: optionalCount,
+  totalBulkLoads: optionalCount,
+  downlinkFrames: optionalCount,
+  downlinkMessages: optionalCount,
+  downlinkResyncs: optionalCount,
+});
+
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -47,7 +79,8 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  logger: Pick<Logger, 'info' | 'warn'>;
+  logger: Pick<Logger, 'warn'>;
+  addonLogger: Pick<Logger, 'info'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
@@ -69,6 +102,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     runtime,
     changed,
     logger,
+    addonLogger,
   } = deps;
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
@@ -171,7 +205,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      logger.info('Message delivery: ' + JSON.stringify(delivery));
+      addonLogger.info(
+        {
+          event: 'addon.message_delivery',
+          ...delivery,
+        },
+        'Message delivery',
+      );
     }
     if (packet.type === 'model_catalog') {
       void refreshModelCatalog();
@@ -250,8 +290,29 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           })
           .safeParse(data);
         if (timing.success) {
-          logger.info(
-            'First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }),
+          const { messageId, totalMs, afterSendingMs } = timing.data;
+          addonLogger.info(
+            {
+              event: 'addon.first_text',
+              messageId,
+              totalMs,
+              afterSendingMs,
+            },
+            'First text visible in WoW',
+          );
+        }
+        changed();
+        return;
+      }
+      if (data?.event === 'transport_profile') {
+        const profile = transportProfile.safeParse(data);
+        if (profile.success) {
+          addonLogger.info(
+            {
+              event: 'addon.transport_profile',
+              ...profile.data,
+            },
+            'WoW transport profile',
           );
         }
         changed();
