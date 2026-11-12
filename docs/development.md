@@ -186,7 +186,16 @@ disabled. Eve's own analytics remain disabled with `DO_NOT_TRACK=1` in child
 processes; this does not override Wisp's separately managed user preference.
 
 `apps/bridge/src/telemetry.ts` reads the native preference before each send and
-reports `chat_completed`, `tool_executed`, `game_connected` and daily `app_active`.
+reports `chat_completed`, `tool_executed`, `game_connected`,
+`game_connection_finished` and daily `app_active`.
+Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
+`timeout` when the underlying error identifies a timeout.
+A connection attempt starts when the bridge accepts a new addon session and
+succeeds when the addon acknowledges the first ready snapshot. The outcome is
+`timeout` after 30 seconds (`engine_not_ready` or `addon_ack_missing`) or
+`failed` if another session replaces the pending attempt (`session_replaced`).
+The event includes elapsed milliseconds. An addon that never sends a valid
+session packet cannot be measured by this event.
 All agent tool settlements use this one path; no provider tracing, prompts or tool
 payloads are sent. Built-in names come from the public capability catalog; custom
 tools become `external_tool`. Addon versions are validated, polling is deduplicated,
@@ -206,14 +215,15 @@ long as the app data directory is preserved.
 
 Suggested PostHog insights for the shared project:
 
-| Question                          | Event and aggregation                                                   |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| First tracked installations       | `app_first_open`, unique installation IDs                               |
-| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`       |
-| Feature use                       | `tool_executed`, event count, breakdown by `tool`                       |
-| Queries and failures              | `chat_completed`, event count, breakdown by `mode` / `outcome`          |
-| Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version` |
-| Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`     |
+| Question                          | Event and aggregation                                                                        |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| First tracked installations       | `app_first_open`, unique installation IDs                                                    |
+| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`                            |
+| Feature use                       | `tool_executed`, event count, breakdown by `tool`                                            |
+| Queries and failures              | `chat_completed`, event count, breakdown by `mode` / `outcome`                               |
+| Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version`                      |
+| Addon handshake reliability       | `game_connection_finished`, event count by `outcome` / `error_code` and median `duration_ms` |
+| Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`                          |
 
 Actual installer download counts come from the `download_count` values on GitHub
 release assets. They include repeated/automated downloads and upgrades; do not

@@ -103,6 +103,34 @@ test('real streamed turns report their mode, outcome and tool lifecycle to telem
   expect(telemetry.chat).toHaveBeenLastCalledWith('routine', 'completed', expect.any(Number));
 });
 
+test('chat telemetry distinguishes failed, timed-out and interrupted turns', async () => {
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const f = fixture(true, telemetry);
+  f.send.mockRejectedValueOnce(Error('Private provider error'));
+  await f.run(f.chat, 'Private question');
+  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'failed', expect.any(Number));
+
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {},
+    result: async () => ({
+      status: 'failed',
+      sessionEnded: false,
+      error: { name: 'TimeoutError', code: 'unknown', message: 'Private provider error' },
+    }),
+  }));
+  await f.run(f.chat, 'Private question');
+  expect(f.chat.status).toBe('error');
+  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'timeout', expect.any(Number));
+
+  f.send.mockImplementationOnce(async () => {
+    f.run.interrupt(f.chat);
+    throw new DOMException('Private provider error', 'TimeoutError');
+  });
+  await f.run(f.chat, 'Private question');
+  expect(f.chat.status).toBe('interrupted');
+  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'cancelled', expect.any(Number));
+});
+
 test('plain source schedules persistence before a reply can be rendered', async () => {
   const f = fixture();
   f.send.mockImplementationOnce(async () => ({

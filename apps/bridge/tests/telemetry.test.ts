@@ -137,6 +137,68 @@ test('addon polls are deduplicated and only valid versions are sent', async () =
   ).toEqual(['0.1.0', 'unknown']);
 });
 
+test('game handshakes record one stable outcome per observed session', async () => {
+  await preference(true);
+  const telemetry = createTelemetry();
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+  try {
+    telemetry.gameConnectionProgress(false, false);
+    telemetry.gameConnectionStarted();
+    clock.mockReturnValue(2000);
+    telemetry.gameConnectionProgress(true, true);
+    telemetry.gameConnectionProgress(true, true);
+
+    telemetry.gameConnectionStarted();
+    clock.mockReturnValue(31_999);
+    telemetry.gameConnectionProgress(false, false);
+    clock.mockReturnValue(32_000);
+    telemetry.gameConnectionProgress(false, false);
+    telemetry.gameConnectionProgress(true, true);
+
+    telemetry.gameConnectionStarted();
+    clock.mockReturnValue(62_000);
+    telemetry.gameConnectionProgress(false, true);
+
+    telemetry.gameConnectionStarted();
+    clock.mockReturnValue(63_000);
+    telemetry.gameConnectionStarted();
+
+    await telemetry.drain();
+    const attempts = events().filter((event) => event.event === 'game_connection_finished');
+    expect(attempts).toHaveLength(4);
+    expect(attempts.map((event) => event.properties)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channel: 'stable',
+          app_version: '0.1.0',
+          outcome: 'connected',
+          duration_ms: 2000,
+        }),
+        expect.objectContaining({
+          outcome: 'timeout',
+          error_code: 'engine_not_ready',
+          duration_ms: 30_000,
+        }),
+        expect.objectContaining({
+          outcome: 'timeout',
+          error_code: 'addon_ack_missing',
+          duration_ms: 30_000,
+        }),
+        expect.objectContaining({
+          outcome: 'failed',
+          error_code: 'session_replaced',
+          duration_ms: 1000,
+        }),
+      ]),
+    );
+    expect(
+      attempts.find((event) => event.properties.outcome === 'connected').properties,
+    ).not.toHaveProperty('error_code');
+  } finally {
+    clock.mockRestore();
+  }
+});
+
 test('network failures never escape to gameplay and shutdown stops future telemetry', async () => {
   await preference(true);
   fetch.mockRejectedValueOnce(Error('offline'));
