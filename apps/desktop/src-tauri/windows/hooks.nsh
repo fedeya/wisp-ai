@@ -39,7 +39,7 @@ Function WispUpdateWindowInit
     ClearErrors
     ${GetOptions} $CMDLINE "/P" $0
     ${IfNot} ${Errors}
-      !insertmacro WispCreateUpdateControls
+      !insertmacro WispCreateUpdateSignal
     ${EndIf}
   ${EndIf}
 FunctionEnd
@@ -97,22 +97,15 @@ FunctionEnd
   ${EndIf}
   !insertmacro WispUpdateStage "copying-files"
   ${If} $WispUpdateProgressProcess != ""
-    !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Installing the update…"
-    System::Call 'user32::SetPropW(p $WispUpdatePercent, w "WispProgressInstalling", p 1)'
+    System::Call 'user32::SetPropW(p $WispUpdateSignal, w "WispProgressInstalling", p 1)'
   ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro WispUpdateStage "files-installed"
   ${If} $WispUpdateProgressProcess != ""
+    System::Call 'user32::SetPropW(p $WispUpdateSignal, w "WispProgressSucceeded", p 1)'
     !insertmacro WispStopProgress
-    SendMessage $WispUpdatePercent ${WM_SETTEXT} 0 "STR:100%"
-    !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Reopening Wisp…"
-    Push $0
-    SendMessage $mui.InstFilesPage.ProgressBar ${PBM_GETRANGE} 0 0 $0
-    SendMessage $mui.InstFilesPage.ProgressBar ${PBM_SETPOS} $0 0
-    Pop $0
-    Sleep 350
   ${ElseIf} $UpdateMode = 1
     !insertmacro MUI_HEADER_TEXT "Opening Wisp AI" "The update is installed. Wisp is reopening automatically."
   ${EndIf}
