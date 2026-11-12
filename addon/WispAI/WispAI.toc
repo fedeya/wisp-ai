@@ -8,9 +8,6 @@
 ## DefaultState: enabled
 ## OptionalDeps: QuestieDB, Questie, Syndicator, Auctionator
 
-Libs\LibAnimate\LibStub.lua
-Libs\LibAnimate\LibAnimate.lua
-Libs\LibAnimate\Animations.lua
 Namespace.lua
 Shared\Numbers.lua
 Shared\Text.lua

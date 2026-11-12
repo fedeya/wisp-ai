@@ -49,7 +49,6 @@ it(
         env.time = function()
             return 123
         end
-        env.strmatch = string.match
         env.SlashCmdList = {}
         for _, name in ipairs(manifest()) do
             setfenv(assert(loadfile(root .. name)), env)("WispAI", ns)

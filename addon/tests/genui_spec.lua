@@ -35,14 +35,9 @@ end)
 it("fades each live native panel once while preserving its layout", function()
     local env = helper.env()
     setup(env)
-    env.strmatch = string.match
-    for _, file in ipairs({ "LibStub.lua", "LibAnimate.lua", "Animations.lua" }) do
-        helper.fixture("addon/WispAI/Libs/LibAnimate/" .. file, env)
-    end
     env.ns = helper.namespace()
     helper.addon("UI/Window.lua", env)
 
-    local animate = env.LibStub("LibAnimate")
     local row = env.ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     local chat = { id = "chat", status = "working" }
     local message = {
@@ -57,39 +52,37 @@ it("fades each live native panel once while preserving its layout", function()
     local host, height = row.rich, row.height
     local panel = host.widgets.panel
     local anchor = panel.point[5]
-    assert.equal(0, panel:GetAlpha())
-    assert.equal(1, host.widgets.history:GetAlpha())
-    assert.equal(1, host.widgets.markdown_table_1:GetAlpha())
+    local fade = panel.entranceFade
+    assert.is_true(fade:IsPlaying())
+    assert.equal("Alpha", fade.animation.kind)
+    assert.equal(0, fade.animation.fromAlpha)
+    assert.equal(1, fade.animation.toAlpha)
+    assert.equal(0.18, fade.animation.duration)
+    assert.is_nil(host.widgets.history.entranceFade)
+    assert.is_nil(host.widgets.markdown_table_1.entranceFade)
 
-    env.UI_TEST.now = 0.09
-    animate.driverFrame.scripts.OnUpdate()
-    assert.is_true(panel:GetAlpha() > 0 and panel:GetAlpha() < 1)
-    assert.equal(anchor, panel.point[5])
-    assert.equal(height, row.height)
     message.ui[2].title = "Updated panel"
     env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
     assert.equal(height, row.height)
-    assert.is_true(panel:GetAlpha() > 0)
+    assert.equal(anchor, panel.point[5])
+    assert.equal(1, fade.playCount)
 
     message.streaming = true
     message.text = message.text .. "\n\nMore prose."
     env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
     assert.is_true(row.height > height)
-    assert.is_true(panel:GetAlpha() > 0 and panel:GetAlpha() < 1)
+    assert.is_true(fade:IsPlaying())
+    assert.equal(1, fade.playCount)
 
     panel.scripts.OnHide(panel)
-    assert.is_false(animate:IsAnimating(panel))
+    assert.is_false(fade:IsPlaying())
     assert.equal(1, panel:GetAlpha())
     env.ns.UI.RenderMessageRow(row, chat, message, 320, false, true)
-    assert.equal(1, panel:GetAlpha())
+    assert.is_false(fade:IsPlaying())
 
     message.ui[3] = { id = "second", kind = "card", title = "Another panel" }
     env.ns.UI.RenderMessageRow(row, chat, message, 320, false, true)
-    assert.equal(0, host.widgets.second:GetAlpha())
-    env.UI_TEST.now = 0.3
-    animate.driverFrame.scripts.OnUpdate()
-    assert.equal(1, host.widgets.second:GetAlpha())
-    assert.is_false(animate.driverFrame:IsShown())
+    assert.is_true(host.widgets.second.entranceFade:IsPlaying())
 end)
 
 it(

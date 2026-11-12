@@ -1,12 +1,19 @@
 local _, ns = ...
 local uiWidgets = ns.UI.Widgets
-local animate = LibStub and LibStub("LibAnimate", true)
 
 local function fadePanel(panel)
-    animate:Animate(panel, "fadeIn", { duration = 0.18 })
-    panel:SetScript("OnHide", function(self)
-        animate:Stop(self)
-    end)
+    if not panel.entranceFade then
+        local group = panel:CreateAnimationGroup()
+        local alpha = group:CreateAnimation("Alpha")
+        alpha:SetFromAlpha(0)
+        alpha:SetToAlpha(1)
+        alpha:SetDuration(0.18)
+        panel.entranceFade = group
+        panel:SetScript("OnHide", function(self)
+            self.entranceFade:Stop()
+        end)
+    end
+    panel.entranceFade:Play()
 end
 
 function ns.UI.RichSignature(value)
@@ -632,7 +639,7 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
         local presented = host.presentedRoots
         if presented and not node._markdown and not presented[node.id] then
             presented[node.id] = true
-            if animate and animatePanels and w:IsVisible() then
+            if animatePanels and w:IsVisible() then
                 fadePanel(w)
             end
         end

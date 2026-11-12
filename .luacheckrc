@@ -1,6 +1,5 @@
 -- Lua 5.1 in WoW; the host and optional integrations supply these read-only APIs.
 std = "lua51"
-exclude_files = { "addon/WispAI/Libs/LibAnimate/**" }
 max_line_length = false -- StyLua owns wrapping, including long catalog strings.
 ignore = { "211/_" } -- Positional API results may deliberately be discarded.
 read_globals = {
