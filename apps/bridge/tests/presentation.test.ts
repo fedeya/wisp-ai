@@ -159,6 +159,28 @@ test('reference registration stays out of presentation progress', () => {
   expect(projectChats(state).chats[0].messages?.map((m) => m.role)).toEqual(['assistant']);
 });
 
+test('a comparison starts showing progress after a streamed references field', () => {
+  const f = fixture();
+  f.chat.status = 'working';
+  const state = createSessionState([f.chat]);
+  state.activeChat = f.chat.id;
+  f.text('before', 'I will compare the two setups.');
+  const references = Object.fromEntries(
+    Array.from({ length: 45 }, (_, index) => [
+      'spell' + index,
+      { kind: 'spell', id: index + 1, label: 'Spell ' + index },
+    ]),
+  );
+  f.emit('call.input', {
+    callId: 'comparison',
+    name: PRESENT_UI_TOOL,
+    delta: '{"references":' + JSON.stringify(references) + ',"no',
+  });
+  expect(projectChats(state).chats[0].messages?.map((m) => m.role)).toEqual(['assistant']);
+  f.emit('call.input', { callId: 'comparison', delta: 'des":[{"kind":"comparison"' });
+  expect(projectChats(state).chats[0].messages?.at(-1)?.text).toBe('Creating comparison');
+});
+
 test('panels keep call order under out-of-order settlement and duplicate replay', () => {
   const f = fixture();
   f.request('one');

@@ -7,6 +7,8 @@ import type { ReferenceCatalog } from '@wisp/protocol/rich-reference';
 import type { Chat, Message, ReplyPart } from './chat.ts';
 import { setReplyPreview, type PresentationProgress } from './reply-content.ts';
 
+const MAX_PRESENTATION_PREFIX = 32_768;
+
 export class ReplyStream {
   text = '';
   finished = false;
@@ -49,6 +51,7 @@ interface Component {
 // calls occupy a stable position but never become visible tool/activity rows.
 export class ReplyProjection {
   sourceRevision = 0;
+  presentationProgressRevision = 0;
   noTip = false;
   kinds = new Map<string, string>();
   streams = new Map<string, { reply: ReplyStream; group: Group; part: TextPart }>();
@@ -154,15 +157,14 @@ export class ReplyProjection {
     if (
       (existing && (existing.requested || !existing.pending)) ||
       existing?.label === 'Creating comparison' ||
-      previous.length >= 2048
+      previous.length >= MAX_PRESENTATION_PREFIX
     ) {
       return false;
     }
-    // Recognize a nodes-first panel before its full input arrives. The
-    // validated request determines the final label and handles other key orders.
-    const prefix = previous + delta.slice(0, 2048 - previous.length);
+    // References can precede nodes and occupy most of the presentation input.
+    const prefix = previous + delta.slice(0, MAX_PRESENTATION_PREFIX - previous.length);
     this.presentationInputs.set(callId, prefix);
-    if (/^\s*\{\s*"nodes"\s*:\s*\[\s*\{/.test(prefix)) {
+    if (/"nodes"\s*:\s*\[\s*\{/.test(prefix)) {
       const label = /"kind"\s*:\s*"comparison"/.test(prefix)
         ? 'Creating comparison'
         : 'Creating panel';
@@ -202,13 +204,19 @@ export class ReplyProjection {
       if (existing.pending && existing.label !== label) {
         existing.label = label;
         existing.group.force = true;
+        if (label) {
+          this.presentationProgressRevision++;
+        }
       }
       return existing;
     }
     const group = this.group(chat, 'presentation-' + callId);
     const presentation = { group, pending: true, requested: false, label };
     this.presentations.set(callId, presentation);
-    group.force ||= Boolean(label);
+    if (label) {
+      group.force = true;
+      this.presentationProgressRevision++;
+    }
     group.segments.push({ type: 'presentation', callId });
     this.update(group);
     return presentation;
