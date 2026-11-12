@@ -430,6 +430,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 chat: 'read_chat',
                 resources: 'query_resources',
                 compare_items: 'compare_items',
+                quest_rewards: 'inspect_quest_rewards',
                 auctions: 'inspect_auctions',
                 macros: 'inspect_macros',
                 map: 'inspect_map',

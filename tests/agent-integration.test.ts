@@ -13,6 +13,7 @@ import { ReplyProjection } from '@wisp/bridge/reply-stream';
 import { turnInput } from '@wisp/bridge/context';
 import { rebuildHistory } from '../apps/bridge/src/history.ts';
 import { replyContent } from '../apps/bridge/src/reply-content.ts';
+import { observeQuestRewards } from './addon/quest-rewards-fixture.ts';
 
 test(
   'the real Eve agent and AI SDK middleware complete an offline streamed turn',
@@ -41,12 +42,43 @@ test(
           'tool:get_quest': true,
           'tool:query_character': true,
           'tool:inspect_merchant': true,
+          'tool:inspect_quest_rewards': true,
         },
       }),
     );
     const requests: Record<string, unknown>[] = [];
     const toolCalls: unknown[] = [];
     const trace: unknown[] = [];
+    const rewardsObservation = observeQuestRewards();
+    const rewardsPanel = {
+      nodes: [
+        {
+          id: 'quest_rewards',
+          kind: 'table',
+          title: 'Solo leveling rewards',
+          columns: [
+            { label: 'Offer' },
+            { label: 'Exact variant' },
+            { label: 'Quantity' },
+            { label: 'Raw INT / slots' },
+          ],
+          rows: [
+            ...rewardsObservation.data.choices.options.map((item: any) => [
+              'Choice ' + item.index,
+              item.link,
+              String(item.quantity),
+              item.stats ? String(item.stats.INT) + ' / 11,12' : 'unknown (loading)',
+            ]),
+            ...rewardsObservation.data.guaranteed.options.map((item: any) => [
+              'Guaranteed (not ranked)',
+              item.link,
+              String(item.quantity),
+              String(item.stats.INT),
+            ]),
+          ],
+        },
+      ],
+    };
     let activeProjection: ReplyProjection | undefined;
     const text = 'Offline integration passed.';
     const model = createServer(async (req, res) => {
@@ -90,17 +122,19 @@ test(
         const request = JSON.parse(body);
         toolCalls.push(request);
         const result =
-          request.inspection.kind === 'questie_quest'
-            ? {
-                status: 'available',
-                data: {
+          request.inspection.kind === 'quest_rewards'
+            ? rewardsObservation
+            : request.inspection.kind === 'questie_quest'
+              ? {
                   status: 'available',
-                  questId: 166,
-                  data: { name: 'The Defias Brotherhood' },
-                  reference: { kind: 'quest', id: 166 },
-                },
-              }
-            : { status: 'completed', data: { settings: [], verified: true } };
+                  data: {
+                    status: 'available',
+                    questId: 166,
+                    data: { name: 'The Defias Brotherhood' },
+                    reference: { kind: 'quest', id: 166 },
+                  },
+                }
+              : { status: 'completed', data: { settings: [], verified: true } };
         res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
@@ -142,6 +176,10 @@ test(
         // WISP-037: native deferred merchant discovery and execution.
         17: { name: 'eve__search', input: { query: 'wow__inspect_merchant' } },
         18: { name: 'eve__tool', input: { name: 'wow__inspect_merchant', input: { limit: 2 } } },
+        20: { name: 'eve__skill', input: { name: 'quests' } },
+        21: { name: 'eve__search', input: { query: 'wow__inspect_quest_rewards' } },
+        22: { name: 'eve__tool', input: { name: 'wow__inspect_quest_rewards', input: {} } },
+        23: { name: 'wisp__present_ui', input: rewardsPanel },
       };
       const call = plannedCalls[count];
       const output: Record<string, unknown>[] = [];
@@ -165,7 +203,15 @@ test(
           arguments: JSON.stringify(call.input),
         });
       } else {
-        output.push(message(count === 14 ? '\n\nDespués de la comparación.' : text));
+        output.push(
+          message(
+            count === 24
+              ? 'For solo leveling, choice 1 offers 4 INT versus 2 on each equipped ring (slots 11 and 12); choice 2 offers 2. Choice 3 is uncached, so this is conditional, not a confident overall winner. The guaranteed reward is not selectable. Raw stats only, not DPS.'
+              : count === 14
+                ? '\n\nDespués de la comparación.'
+                : text,
+          ),
+        );
       }
       const events: Record<string, unknown>[] = [
         {
@@ -505,6 +551,48 @@ test(
       expect(toolCalls.at(-1)).toMatchObject({
         inspection: { kind: 'merchant', args: { offset: 0, limit: 2 } },
       });
+
+      const rewardsChat = newChat('rewards', 'test');
+      const rewardsProjection = new ReplyProjection();
+      activeProjection = rewardsProjection;
+      const rewardTurn = await session.send(
+        turnInput(
+          'Which current reward helps me level solo? Keep the guaranteed item separate.',
+          undefined,
+          { ...rewardsChat, titleGenerated: true },
+        ),
+        { signal: AbortSignal.timeout(15000) },
+      );
+      for await (const event of rewardTurn.stream({ signal: AbortSignal.timeout(15000) })) {
+        applyEvent(rewardsChat, event, rewardsProjection);
+      }
+      rewardsProjection.finish();
+      rewardsProjection.flush(rewardsChat, Date.now(), true);
+      expect((await rewardTurn.result()).status).toBe('completed');
+      const rewardOutput = requests[22]!.input as {
+        type?: string;
+        call_id?: string;
+        output?: string;
+      }[];
+      expect(
+        JSON.parse(
+          rewardOutput.find(
+            (item) => item.type === 'function_call_output' && item.call_id === 'tool-call-22',
+          )!.output!,
+        ),
+      ).toMatchObject(rewardsObservation);
+      expect(JSON.stringify(requests[21])).toContain('wow__inspect_quest_rewards');
+      expect(JSON.stringify(requests[20])).toContain('never rank them as selectable');
+      expect(names(19)).not.toContain('wow__inspect_quest_rewards');
+      const rewardReply = rewardsChat.messages.at(-1)!;
+      expect(rewardReply.ui).toEqual(rewardsPanel.nodes);
+      expect(rewardReply.text).toContain('conditional');
+      expect(rewardReply.text).toContain('not selectable');
+      expect(toolCalls).toContainEqual(
+        expect.objectContaining({
+          inspection: { kind: 'quest_rewards', args: {} },
+        }),
+      );
 
       if (executable) {
         await stopEveProcess(child);

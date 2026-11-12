@@ -29,6 +29,7 @@ Character\Training.lua
 Character\Capture.lua
 Character\Inspect.lua
 Character\Merchant.lua
+Character\QuestRewards.lua
 Actions\Game.lua
 Settings\Settings.lua
 Markdown\Syntax.lua

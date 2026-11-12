@@ -3,6 +3,9 @@ local inspectors = {}
 function inspectors.merchant(args)
     return ns.Character.ReadMerchant(args)
 end
+function inspectors.quest_rewards()
+    return ns.Character.ReadQuestRewards()
+end
 local function tooltip(link)
     if not C_TooltipInfo or not C_TooltipInfo.GetHyperlink then
         return nil
