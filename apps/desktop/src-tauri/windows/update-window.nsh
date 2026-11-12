@@ -5,6 +5,15 @@
 
 Var WispUpdatePercent
 Var WispUpdateProgressProcess
+Var WispUpdateLogo
+
+!macro WispCreateUpdateControls
+  ; Keep these on the GUI thread so they survive a failed installation.
+  System::Call 'user32::CreateWindowExW(i 0, w "Static", p 0, i 0x40000203, i 0, i 0, i 0, i 0, p $HWNDPARENT, p 0, p 0, p 0) p.s'
+  Pop $WispUpdateLogo
+  System::Call 'user32::CreateWindowExW(i 0, w "Static", p 0, i 0x40000002, i 0, i 0, i 0, i 0, p $HWNDPARENT, p 0, p 0, p 0) p.s'
+  Pop $WispUpdatePercent
+!macroend
 
 ; Use dialog units so the layout follows the installer font and Windows scaling.
 !macro WispPlaceControl control x y width height
@@ -60,12 +69,12 @@ Var WispUpdateProgressProcess
   ShowWindow $mui.Button.Cancel ${SW_HIDE}
 
   ; Load the installer icon at the size of the logo control.
-  System::Call 'user32::CreateWindowExW(i 0, w "Static", p 0, i 0x50000203, i 0, i 0, i 0, i 0, p $HWNDPARENT, p 0, p 0, p 0) p.r5'
-  !insertmacro WispPlaceControl $5 111 12 50 46
+  !insertmacro WispPlaceControl $WispUpdateLogo 111 12 50 46
   System::Call 'kernel32::GetModuleHandleW(p 0) p.r6'
   System::Call 'user32::LoadImageW(p r6, p 103, i 1, i r4, i r4, i 0x8000) p.r6'
-  SendMessage $5 ${STM_SETICON} $6 0
-  SetCtlColors $5 "" "${WISP_UPDATE_BACKGROUND}"
+  SendMessage $WispUpdateLogo ${STM_SETICON} $6 0
+  SetCtlColors $WispUpdateLogo "" "${WISP_UPDATE_BACKGROUND}"
+  ShowWindow $WispUpdateLogo ${SW_SHOW}
 
   CreateFont $0 "Segoe UI" 17 700
   SendMessage $mui.Header.Text ${WM_SETFONT} $0 1
@@ -78,9 +87,8 @@ Var WispUpdateProgressProcess
   !insertmacro WispPlaceControl $mui.Header.SubText 24 97 191 14
 
   ; Right-aligned percentage in the same row as the current installation stage.
-  System::Call 'user32::CreateWindowExW(i 0, w "Static", w "", i 0x50000002, i 0, i 0, i 0, i 0, p $HWNDPARENT, p 0, p 0, p 0) p.s'
-  Pop $WispUpdatePercent
   SetCtlColors $WispUpdatePercent "${WISP_UPDATE_ACCENT}" "${WISP_UPDATE_BACKGROUND}"
+  ShowWindow $WispUpdatePercent ${SW_SHOW}
   CreateFont $5 "Segoe UI" 10 400
   SendMessage $mui.Header.SubText ${WM_SETFONT} $5 1
   CreateFont $5 "Segoe UI" 10 700
@@ -104,6 +112,7 @@ Var WispUpdateProgressProcess
   Push $4
 
   SetCtlColors $mui.InstFilesPage "" "${WISP_UPDATE_BACKGROUND}"
+  SetCtlColors $mui.InstFilesPage.Text "${WISP_UPDATE_FOREGROUND}" "${WISP_UPDATE_BACKGROUND}"
   !insertmacro WispPlaceControl $mui.InstFilesPage 24 113 224 8
   !insertmacro WispPlaceControl $mui.InstFilesPage.ProgressBar 0 0 224 5
   ShowWindow $mui.InstFilesPage.Text ${SW_HIDE}
@@ -153,4 +162,51 @@ Var WispUpdateProgressProcess
     System::Call 'kernel32::CloseHandle(p $WispUpdateProgressProcess)'
     StrCpy $WispUpdateProgressProcess ""
   ${EndIf}
+!macroend
+
+!macro WispTryCustomWindow
+  Push $0
+  Push $1
+  Push $2
+  ; HIGHCONTRASTW is 12 bytes in NSIS. Keep the native UI if Windows
+  ; requests a contrast theme or if the settings query fails.
+  System::Call '*(i 12, i 0, p 0) p.r0'
+  System::Call 'user32::SystemParametersInfoW(i 0x42, i 12, p r0, i 0) i.r1'
+  ${If} $1 != 0
+    System::Call '*$0(i, i.r1)'
+    IntOp $1 $1 & 1
+    ${If} $1 == 0
+      ${If} $WispUpdatePercent != 0
+      ${AndIf} $WispUpdateLogo != 0
+        !insertmacro WispStartProgress
+        ${If} $WispUpdateProgressProcess != ""
+          StrCpy $2 0
+          ${Do}
+            System::Call 'user32::GetPropW(p $WispUpdatePercent, w "WispProgressReady") p.r1'
+            ${If} $1 != 0
+              !insertmacro WispStyleUpdateFrame
+              !insertmacro WispStyleUpdateProgress
+              !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Preparing the update…"
+              System::Call 'user32::SetPropW(p $WispUpdatePercent, w "WispProgressStyled", p 1)'
+              ${ExitDo}
+            ${EndIf}
+            System::Call 'kernel32::WaitForSingleObject(p $WispUpdateProgressProcess, i 25) i.r1'
+            ${If} $1 != 258 ; WAIT_TIMEOUT
+              !insertmacro WispStopProgress
+              ${ExitDo}
+            ${EndIf}
+            IntOp $2 $2 + 1
+            ${If} $2 == 48
+              !insertmacro WispStopProgress
+              ${ExitDo}
+            ${EndIf}
+          ${Loop}
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  System::Free $0
+  Pop $2
+  Pop $1
+  Pop $0
 !macroend

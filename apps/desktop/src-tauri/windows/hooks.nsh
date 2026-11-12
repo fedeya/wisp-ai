@@ -39,7 +39,7 @@ Function WispUpdateWindowInit
     ClearErrors
     ${GetOptions} $CMDLINE "/P" $0
     ${IfNot} ${Errors}
-      !insertmacro WispStyleUpdateFrame
+      !insertmacro WispCreateUpdateControls
     ${EndIf}
   ${EndIf}
 FunctionEnd
@@ -52,8 +52,7 @@ FunctionEnd
   ${If} $UpdateMode = 1
   ${AndIf} $PassiveMode = 1
   ${AndIfNot} ${Silent}
-    !insertmacro WispStopProgress
-    ShowWindow $WispUpdatePercent ${SW_HIDE}
+  ${AndIf} $WispUpdateProgressProcess == ""
     MessageBox MB_OK|MB_ICONEXCLAMATION "${message}"
   ${EndIf}
   Abort "${message}"
@@ -64,10 +63,6 @@ FunctionEnd
   ${If} $UpdateMode = 1
     !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Wisp will reopen automatically."
     ${IfNot} ${Silent}
-      ${If} $PassiveMode = 1
-        !insertmacro WispStyleUpdateProgress
-        !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Preparing the update…"
-      ${EndIf}
       SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:Wisp AI"
       ShowWindow $HWNDPARENT ${SW_SHOW}
       BringToFront
@@ -78,6 +73,11 @@ FunctionEnd
   SetOutPath "$PLUGINSDIR"
   File /oname=wisp-update-helper.exe "${MAINBINARYSRCPATH}"
   !insertmacro WispUpdateStage "helper-extracted"
+  ${If} $UpdateMode = 1
+  ${AndIf} $PassiveMode = 1
+  ${AndIfNot} ${Silent}
+    !insertmacro WispTryCustomWindow
+  ${EndIf}
   ExecWait '"$PLUGINSDIR\wisp-update-helper.exe" --prepare-update' $0
   ${If} $0 != 0
     !insertmacro WispAbortInstall "Wisp could not stop safely. Finish the active reply, exit Wisp from the tray, and try again."
@@ -96,15 +96,15 @@ FunctionEnd
     ${EndIf}
   ${EndIf}
   !insertmacro WispUpdateStage "copying-files"
-  ${If} $WispUpdatePercent != ""
+  ${If} $WispUpdateProgressProcess != ""
     !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Installing the update…"
-    !insertmacro WispStartProgress
+    System::Call 'user32::SetPropW(p $WispUpdatePercent, w "WispProgressInstalling", p 1)'
   ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro WispUpdateStage "files-installed"
-  ${If} $WispUpdatePercent != ""
+  ${If} $WispUpdateProgressProcess != ""
     !insertmacro WispStopProgress
     SendMessage $WispUpdatePercent ${WM_SETTEXT} 0 "STR:100%"
     !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Reopening Wisp…"
