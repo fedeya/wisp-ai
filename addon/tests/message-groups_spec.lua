@@ -30,6 +30,21 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             setfenv(1, env)
             setup(env)
 
+            local thinkingTimers = {}
+            C_Timer.After = function(delay, callback)
+                if delay > 0 then
+                    table.insert(thinkingTimers, callback)
+                end
+            end
+            local function finishThinkingDelay()
+                assert(#thinkingTimers > 0)
+                local timers = thinkingTimers
+                thinkingTimers = {}
+                for _, callback in ipairs(timers) do
+                    callback()
+                end
+            end
+
             ns.db = { sidebar = true, showTools = true, drafts = {} }
             ns.active = "chat"
             ns.connected = true
@@ -68,11 +83,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 UI_TEST.frames.WispAIInline:Show()
             end
             function refresh()
-                if surface == "main" then
-                    ns.UI.Refresh()
-                else
-                    ns.Inline.RefreshInline()
-                end
+                ns.UI.Refresh()
             end
             function visibleRows()
                 local result = {}
@@ -215,9 +226,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             refresh()
             assert(not progress:IsShown() and not isLoading(progress))
             local waitingGroup = findRow("Reading quests")
-            assert(isLoading(waitingGroup) and not waitingGroup.icon:IsShown())
+            assert(not isLoading(waitingGroup) and waitingGroup.icon:IsShown())
             local _, _, _, toolX, toolY = waitingGroup.text:GetPoint()
-            check.same({ 0, -20 }, { toolX, toolY })
+            check.same({ 20, -20 }, { toolX, toolY })
 
             local call = {
                 id = "t3b",
@@ -231,6 +242,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             }
             table.insert(ns.chats[1].messages, call)
             refresh()
+            finishThinkingDelay()
             local group = findRow("Reading talents")
             assert(group.disclosure:IsShown() and group.text:GetText() == "Reading talents")
             assert(isLoading(group) and not group.icon:IsShown())
@@ -276,8 +288,8 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             call.tool.label = "Tried to read talents"
             call.tool.resultPreview = "Talents are unavailable | retry"
             refresh()
-            assert(not progress:IsShown() and group.text:GetText() == "Tried to read talents  +1")
-            assert(isLoading(group))
+            assert(not progress:IsShown() and group.text:GetText() == "2 tool calls")
+            assert(not isLoading(group) and group.icon:IsShown())
             check.same({ 2 / 8, 3 / 8, 0, 1 }, child.icon.texCoord)
             assert(not isLoading(child) and child.icon:IsShown())
             check.equal(
@@ -286,6 +298,10 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             )
             group.disclosure.scripts.OnClick()
             assert(not child:IsShown())
+            check.equal("Tried to read talents  +1", group.text:GetText())
+            finishThinkingDelay()
+            assert(progress:IsShown() and isLoading(progress))
+            check.equal("Thinking", progress.title:GetText())
 
             reply.text = "Second answer"
             table.insert(ns.chats[1].messages, reply)
@@ -315,12 +331,12 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
 
             simulation.tool.status, simulation.tool.label = "completed", "Simulated DPS"
             refresh()
-            assert(
-                isLoading(simulationGroup),
-                "the loader stays on while the comparison is prepared"
-            )
+            assert(not isLoading(simulationGroup) and simulationGroup.icon:IsShown())
             check.equal("Simulated DPS", simulationGroup.text:GetText())
             assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
+            assert(not progress:IsShown())
+            finishThinkingDelay()
+            assert(progress:IsShown() and isLoading(progress))
 
             table.insert(messages, {
                 id = "presentation-progress-comparison",
@@ -334,6 +350,8 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             assert(group.y < replyRow.y and replyRow.y < simulationGroup.y)
 
             table.remove(messages)
+            refresh()
+            assert(not progress:IsShown())
             table.insert(messages, {
                 id = "simulation-comparison",
                 role = "assistant",
@@ -342,6 +360,7 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 parts = { { type = "ui", id = "comparison-card" } },
             })
             refresh()
+            finishThinkingDelay()
             assert(not isLoading(simulationGroup) and not progress:IsShown())
             local comparisonRow
             for _, row in ipairs(visibleRows()) do

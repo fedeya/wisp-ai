@@ -335,6 +335,7 @@ end
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId = {}, {}, nil
     local hasReplyContent, turnStart = false, 1
+    local lastTool, hasRunningTool
     local function flushTools(loading)
         if not groupId then
             return
@@ -348,6 +349,8 @@ function ns.UI.DisplayMessages(chat)
         if message.role == "tool" then
             -- A new call resumes activity even if Wisp has already sent a preamble.
             hasReplyContent = false
+            lastTool = message.id or index
+            hasRunningTool = hasRunningTool or (message.tool and message.tool.status == "running")
             if ns.db.showTools then
                 groupId = groupId or ("tools-" .. (message.id or index))
                 calls[#calls + 1] = message
@@ -359,6 +362,7 @@ function ns.UI.DisplayMessages(chat)
         then
             -- Visible replies close the preceding batch at its position in the transcript.
             flushTools(false)
+            lastTool, hasRunningTool = nil, nil
             if message.role == "user" or message.role == "system" then
                 hasReplyContent = false
                 turnStart = #messages + 2
@@ -368,9 +372,9 @@ function ns.UI.DisplayMessages(chat)
             messages[#messages + 1] = message
         end
     end
-    local hasToolActivity = groupId ~= nil
+    local hasToolActivity = groupId ~= nil and hasRunningTool
     flushTools(hasToolActivity and chat.status == "working")
-    return messages, hasToolActivity, hasReplyContent, turnStart
+    return messages, hasToolActivity, hasReplyContent, turnStart, not hasRunningTool and lastTool
 end
 
 -- An observed chat can receive the new question and its complete reply together.
