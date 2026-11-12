@@ -6,7 +6,7 @@ test('model observation forwards bytes immediately and logs only timings and cac
   const tap = modelTiming(
     { model: 'test', instructions: 'private instructions', tools: [] },
     performance.now(),
-    (_message, fields) => logs.push(fields ?? {}),
+    (_message, fields) => logs.push(fields),
   );
   const chunks: Buffer[] = [];
   tap.on('data', (chunk: Buffer) => chunks.push(chunk));

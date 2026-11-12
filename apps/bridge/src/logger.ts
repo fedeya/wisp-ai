@@ -2,12 +2,12 @@ import pino from 'pino';
 
 export type BridgeLog = (
   message: string,
-  fields?: { event: string; [key: string]: unknown },
+  fields: { event: string; [key: string]: unknown },
   level?: 'info' | 'warn' | 'error',
 ) => void;
 
 const logger = pino({
-  base: { component: 'bridge' },
+  base: null,
   timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
   formatters: { level: (label) => ({ level: label.toUpperCase() }) },
   redact: {
@@ -17,5 +17,5 @@ const logger = pino({
 });
 
 export const log: BridgeLog = (message, fields, level = 'info') => {
-  logger[level](fields ?? {}, message);
+  logger[level]({ component: 'bridge', ...fields }, message);
 };

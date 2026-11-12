@@ -27,6 +27,38 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-li
 import { errorMessage } from './errors.ts';
 import type { UsageTelemetry } from './telemetry.ts';
 import type { BridgeLog } from './logger.ts';
+const milliseconds = z.number().nonnegative();
+const optionalCount = z.int().nonnegative().optional();
+const distribution = z.object({
+  count: z.int().nonnegative(),
+  mean: milliseconds,
+  max: milliseconds,
+  p50: milliseconds.optional(),
+  p95: milliseconds.optional(),
+  p99: milliseconds.optional(),
+});
+const profileWork = z.object({
+  ack: distribution.optional(),
+  apply: distribution.optional(),
+  decode_apply: distribution.optional(),
+  reset: distribution.optional(),
+  send: distribution.optional(),
+});
+const transportProfile = z.object({
+  elapsedMs: milliseconds,
+  frames: distribution,
+  // WoW serializes an empty Lua table as an array.
+  work: z.union([profileWork, z.tuple([]).transform(() => ({}))]),
+  compactAck: z.boolean().optional(),
+  bulkAvailable: z.boolean().optional(),
+  startSlot: optionalCount,
+  endSlot: optionalCount,
+  totalBulkLoads: optionalCount,
+  downlinkFrames: optionalCount,
+  downlinkMessages: optionalCount,
+  downlinkResyncs: optionalCount,
+});
+
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -173,7 +205,11 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      log('Message delivery: ' + JSON.stringify(delivery));
+      log('Message delivery', {
+        component: 'addon',
+        event: 'addon.message_delivery',
+        ...delivery,
+      });
     }
     if (packet.type === 'model_catalog') {
       void refreshModelCatalog();
@@ -253,7 +289,26 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           })
           .safeParse(data);
         if (timing.success) {
-          log('First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }));
+          const { messageId, totalMs, afterSendingMs } = timing.data;
+          log('First text visible in WoW', {
+            component: 'addon',
+            event: 'addon.first_text',
+            messageId,
+            totalMs,
+            afterSendingMs,
+          });
+        }
+        changed();
+        return;
+      }
+      if (data?.event === 'transport_profile') {
+        const profile = transportProfile.safeParse(data);
+        if (profile.success) {
+          log('WoW transport profile', {
+            component: 'addon',
+            event: 'addon.transport_profile',
+            ...profile.data,
+          });
         }
         changed();
         return;
