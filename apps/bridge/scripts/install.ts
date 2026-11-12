@@ -1,5 +1,7 @@
-import { mkdir, readFile, writeFile, cp, access } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, writeFile, cp, access, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { SLOT_COUNT, BIT_COUNT, luaJson } from '@wisp/protocol/protocol';
 import { migrateGameSaves, retireLegacyAddons } from '../src/rename-migration.ts';
@@ -21,10 +23,29 @@ const addonVersion = toc.match(/^##[\t ]*Version:[\t ]*([^\r\n]+)/m)?.[1].trim()
 const versionHeader = addonVersion ? `## Version: ${addonVersion}\n` : '';
 const payloadDir = path.join(addons, 'WispAI_Payload');
 await mkdir(payloadDir, { recursive: true });
-await writeFile(
-  path.join(payloadDir, 'Payload.lua'),
-  luaJson(JSON.stringify({ v: 1, session: '', connected: false })),
-);
+const payloadFile = path.join(payloadDir, 'Payload.lua');
+const payloadTemporary = payloadFile + '.' + randomUUID() + '.tmp';
+try {
+  await writeFile(
+    payloadTemporary,
+    luaJson(JSON.stringify({ v: 1, session: '', connected: false })),
+  );
+  // The game may load the payload during installation. Publish it in one rename.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rename(payloadTemporary, payloadFile);
+      break;
+    } catch (error) {
+      if (attempt >= 5) {
+        throw error;
+      }
+      await delay(30);
+    }
+  }
+} catch (error) {
+  await rm(payloadTemporary, { force: true }).catch(() => {});
+  throw error;
+}
 for (let n = 1; n <= BIT_COUNT; n++) {
   const name = `WispAI_B${String(n).padStart(3, '0')}`;
   await mkdir(path.join(addons, name), { recursive: true });
