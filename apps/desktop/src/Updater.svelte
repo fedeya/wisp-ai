@@ -57,39 +57,79 @@
   });
 </script>
 
-<main class:failed>
-  <header data-tauri-drag-region>Wisp AI</header>
-  <section class="hero" aria-live="polite">
-    <div class="logo"><img src={logo} alt="" /></div>
+<main
+  class="min-h-dvh border border-solid border-border bg-[#14191d] px-[25px] pt-[15px] pb-[24px] [background-image:radial-gradient(ellipse_at_15%_0%,#243a38_0%,transparent_58%)]"
+>
+  <header
+    class="h-[30px] text-[12px] font-semibold text-muted select-none"
+    data-tauri-drag-region
+  >
+    Wisp AI
+  </header>
+  <section
+    class={[
+      "mt-[10px] flex min-h-[92px] items-center gap-[17px]",
+      failed ? "mb-[15px]" : "mb-[25px]",
+    ]}
+    aria-live="polite"
+  >
+    <div
+      class="grid size-[68px] flex-none place-items-center rounded-[18px] border border-solid border-[#45625c] bg-[#1b2c2a]"
+    >
+      <img class="size-[57px] object-contain" src={logo} alt="" />
+    </div>
     <div>
-      <h1>{failed ? "Couldn't update Wisp" : "Updating Wisp"}</h1>
-      <p>
+      <h1 class="m-0 text-[25px] tracking-[-0.7px]">
+        {failed ? "Couldn't update Wisp" : "Updating Wisp"}
+      </h1>
+      <p
+        class={[
+          "mt-[5px] text-[13px] [overflow-wrap:anywhere]",
+          failed ? "text-[#e8aca5]" : "text-muted",
+        ]}
+      >
         {failed ? (update.error ?? status) : "Wisp will reopen automatically."}
       </p>
     </div>
   </section>
 
   {#if failed}
-    <section class="diagnostics">
-      <h2>Installation log</h2>
+    <section
+      class="overflow-hidden rounded-[12px] border border-solid border-border bg-[#11171a]"
+    >
+      <h2
+        class="border-0 border-b border-solid border-[#2a3438] px-[12px] py-[10px] text-[12px] text-[#c5d3d1]"
+      >
+        Installation log
+      </h2>
       <!-- svelte-ignore a11y_no_noninteractive_tabindex (Allow keyboard scrolling in the log.) -->
       <pre
+        class="m-0 max-h-[113px] min-h-[72px] overflow-auto px-[12px] py-[10px] whitespace-pre-wrap text-[#adbcbf] [font:11px/1.6_Consolas,monospace] [overflow-wrap:anywhere]"
         bind:this={logPanel}
         tabindex="0"
         aria-label="Installation log">{update.log.join("\n")}</pre>
     </section>
-    <footer>
-      <button bind:this={closeButton} onclick={() => invoke("updater_close")}
-        >Close</button
+    <footer class="mt-[17px] flex justify-end">
+      <button
+        class="min-w-[92px] cursor-pointer rounded-[8px] border border-solid border-[#518178] bg-[#29443f] px-[17px] py-[8px] font-semibold text-[#dcf3ed] hover:bg-[#355951] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent"
+        bind:this={closeButton}
+        onclick={() => invoke("updater_close")}>Close</button
       >
     </footer>
   {:else}
-    <section class="progress">
-      <div class="progress-label">
+    <section
+      class="rounded-[12px] border border-solid border-border bg-surface px-[16px] py-[15px]"
+    >
+      <div
+        class="mb-[10px] flex justify-between gap-[12px] text-[13px] text-[#c5d3d1]"
+      >
         <span>{status}</span>
-        {#if update.percent !== null}<strong>{update.percent}%</strong>{/if}
+        {#if update.percent !== null}
+          <strong class="text-accent tabular-nums">{update.percent}%</strong>
+        {/if}
       </div>
       <progress
+        class="block h-[6px] w-full appearance-none rounded-[10px] accent-accent [&::-webkit-progress-bar]:rounded-[10px] [&::-webkit-progress-bar]:bg-[#344146] [&::-webkit-progress-value]:rounded-[10px] [&::-webkit-progress-value]:bg-accent"
         max={100}
         value={update.percent ?? undefined}
         aria-label={status}
@@ -97,160 +137,3 @@
     </section>
   {/if}
 </main>
-
-<style>
-  main {
-    min-height: 100dvh;
-    padding: 15px 25px 24px;
-    border: 1px solid #2e393e;
-    background:
-      radial-gradient(ellipse at 15% 0%, #243a38 0%, transparent 58%), #14191d;
-  }
-
-  header {
-    height: 30px;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 600;
-    user-select: none;
-  }
-
-  .hero {
-    display: flex;
-    align-items: center;
-    gap: 17px;
-    min-height: 92px;
-    margin: 10px 0 25px;
-  }
-
-  .logo {
-    display: grid;
-    flex: 0 0 68px;
-    width: 68px;
-    height: 68px;
-    place-items: center;
-    border: 1px solid #45625c;
-    border-radius: 18px;
-    background: #1b2c2a;
-  }
-
-  .logo img {
-    width: 57px;
-    height: 57px;
-    object-fit: contain;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 25px;
-    letter-spacing: -0.7px;
-  }
-
-  p {
-    margin: 5px 0 0;
-    color: var(--muted);
-    font-size: 13px;
-    overflow-wrap: anywhere;
-  }
-
-  .progress {
-    padding: 15px 16px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #1c2328;
-  }
-
-  .progress-label {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 10px;
-    color: #c5d3d1;
-    font-size: 13px;
-  }
-
-  strong {
-    color: var(--accent);
-    font-variant-numeric: tabular-nums;
-  }
-
-  progress {
-    display: block;
-    width: 100%;
-    height: 6px;
-    appearance: none;
-    border-radius: 10px;
-    accent-color: var(--accent);
-  }
-
-  progress::-webkit-progress-bar {
-    border-radius: 10px;
-    background: #344146;
-  }
-
-  progress::-webkit-progress-value {
-    border-radius: 10px;
-    background: var(--accent);
-  }
-
-  .failed .hero {
-    margin-bottom: 15px;
-  }
-
-  .failed .hero p {
-    color: #e8aca5;
-  }
-
-  .diagnostics {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #11171a;
-    overflow: hidden;
-  }
-
-  .diagnostics h2 {
-    padding: 10px 12px;
-    border-bottom: 1px solid #2a3438;
-    color: #c5d3d1;
-    font-size: 12px;
-  }
-
-  pre {
-    min-height: 72px;
-    max-height: 113px;
-    margin: 0;
-    padding: 10px 12px;
-    overflow: auto;
-    color: #adbcbf;
-    font:
-      11px/1.6 Consolas,
-      monospace;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
-  footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 17px;
-  }
-
-  button {
-    min-width: 92px;
-    padding: 8px 17px;
-    border: 1px solid #518178;
-    border-radius: 8px;
-    background: #29443f;
-    color: #dcf3ed;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  button:hover {
-    background: #355951;
-  }
-  button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-  }
-</style>
