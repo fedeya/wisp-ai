@@ -108,6 +108,9 @@ export const chatHistoryInput = z.strictObject({
   channelName: z.string().trim().min(1).max(120).optional(),
   channelIndex: z.number().int().min(1).max(99).optional(),
 });
+export const gameErrorsInput = z.strictObject({
+  requested: z.literal(true),
+});
 export const trainingInput = z
   .object({
     class: z
@@ -132,6 +135,7 @@ export const trainingInput = z
   })
   .refine((input) => input.minLevel <= input.maxLevel, 'Invalid level range');
 export const inspectionSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('game_errors'), args: gameErrorsInput }),
   z.object({ kind: z.literal('training'), args: trainingInput }),
   z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
   z.object({ kind: z.literal('questie_quest'), args: questInput }),

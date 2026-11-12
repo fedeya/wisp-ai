@@ -51,6 +51,7 @@ behavior and refresh entry point. Its components keep widget and cache state loc
 | `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog   |
 | `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation  |
 | `UI/Composer.lua`           | Multiline input, cursor scrolling, send/stop and responsive layout |
+| `UI/RecentErrors.lua`       | Local notice selection and a separate memory-only review editor    |
 | `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators  |
 | `UI/ConversationStatus.lua` | Conversation title, connection state and context usage             |
 | `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                    |
@@ -60,6 +61,27 @@ by the window. `UI/ModelControls.lua` owns model/effort controls without changin
 composer or transcript geometry. Activity ticks update indicators without
 rerendering messages. The manifest loads these components before the window;
 the offline UI fixtures follow the same dependency order.
+
+The header's **Notices** button opens a separate, screen-clamped 420×310 review
+window without shrinking the minimum chat viewport. Capture is off after every
+reload, logout or character change. `Character/RecentErrors.lua` owns the local
+opt-in `UI_ERROR_MESSAGE` subscription, 30-record / rolling-120-second buffer and
+secret checks before reading either event field. Equal complete type/text may
+coalesce; counts describe deliveries, not attempts. Text is UTF-8-boundary clipped
+to 512 bytes; clipped prefixes are never coalesced. Coverage reports omitted
+secret/malformed deliveries, clipping, expiry and eviction. There is no blacklist
+or `GetGameMessageInfo` enrichment, nor a claim that an event was displayed.
+
+Scroll the list, select a notice and choose **Explain → edit unsent question**.
+The separate editor never enters the ordinary composer or SavedVariables-backed
+drafts. Enter edits; only **Send to Wisp** submits. Disable, expiry, selection loss,
+conversation change and closing discard unsent review text. Ordinary drafts keep
+their existing persistence. Capture/browse/edit do not call transport, models,
+diagnostics or gameplay actions. Explicit Send and requested tool reads use normal
+conversation persistence/model access; submitted chat is not disk-free.
+`tests/addon/recent-errors.test.ts` exercises production modules with Fengari and
+source-derived synthetic event tuples, not an observed native payload. Physical
+Forever readability, rendering, focus and cost remain native acceptance gates.
 
 `Integrations/Integrations.lua` owns provider metadata, readiness aggregation and
 protected inspection dispatch. Each provider owns its readiness checks and reads
