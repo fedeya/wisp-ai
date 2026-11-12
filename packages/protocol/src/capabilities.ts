@@ -134,6 +134,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read bounded offers and bundle prices from the currently open merchant; never purchases.',
   ],
   compare_items: ['Compare equipment', 'Compare item stats with current equipment.'],
+  inspect_quest_rewards: [
+    'Read current quest rewards',
+    'Read the open turn-in dialog’s guaranteed rewards and alternatives with exact item links and cached stats. Never selects or claims rewards.',
+  ],
   query_resources: ['Read resources', 'Read money, bag contents, free space and skill ranks.'],
   inspect_auctions: [
     'Read auction results',

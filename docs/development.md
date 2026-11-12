@@ -275,6 +275,10 @@ presentation stay directly listed. Skills and tool discovery do not change permi
 definitions and bridge checks remain authoritative. Keep parameter details in tool
 schemas and enforceable constraints in code.
 
+The [current turn-in reward reader](quest-rewards.md) follows this native path
+and reads only a player-opened reward dialog. Its exact-link raw stats are not
+the existing ID-only item comparator or a DPS simulation.
+
 `tests/agent-integration.test.ts` exercises native skill discovery/activation,
 native tool discovery/execution, permission denial and follow-up turns with the
 real Eve agent and an offline model. Prompt edits still need gameplay evaluation
