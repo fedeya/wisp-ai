@@ -69,8 +69,9 @@
     }
   }
   async function save() {
-    if (!preview || !valid || !recipient || !confirmed || busy || app.locked)
+    if (!preview || !valid || !recipient || !confirmed || busy || app.locked) {
       return;
+    }
     busy = true;
     error = "";
     try {
