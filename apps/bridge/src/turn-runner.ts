@@ -6,10 +6,11 @@ import { sendChatTurn } from './agent-session.ts';
 import { beginTurn, settleTurn } from './chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
 import { chooseChatModel } from './chat-model.ts';
+import { ChatGPTAuthError } from './chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
-import type { ChatOutcome, UsageTelemetry } from './telemetry.ts';
+import type { ChatErrorCode, ChatOutcome, UsageTelemetry } from './telemetry.ts';
 
 function isTimeout(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
@@ -69,6 +70,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     const started = performance.now();
     const observeTool = deps.telemetry?.toolObserver();
     let outcome: ChatOutcome = 'cancelled';
+    let failureCode: ChatErrorCode = 'capability_sync_failed';
     let timedOut = false;
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
@@ -103,13 +105,17 @@ export function createTurnRunner(deps: TurnDependencies) {
     try {
       await capabilitySettings.publish();
       if (!isReady()) {
+        failureCode = 'engine_not_ready';
         throw new Error('Eve is still starting. Please try again in a few seconds.');
       }
       if (accountBusy()) {
+        failureCode = 'account_busy';
         throw Error('Finish the connection operation first.');
       }
+      failureCode = 'model_preparation_failed';
       const chosenModel = chat.modelSettings?.model || defaultModel();
       await models.prepare(chosenModel);
+      failureCode = 'model_catalog_failed';
       const available = await models.models();
       assertCurrent();
       chat.modelSettings = chooseChatModel(
@@ -119,6 +125,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       );
       assertCurrent();
       preparedMs = Math.round(performance.now() - started);
+      failureCode = 'turn_start_failed';
       const response = await sendChatTurn(
         client,
         chat,
@@ -137,6 +144,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
       changed();
+      failureCode = 'turn_stream_failed';
       for await (const event of response.stream({ signal: controller.signal })) {
         assertCurrent();
         const sourceRevision = parts.sourceRevision;
@@ -162,6 +170,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           changed();
         }
       }
+      failureCode = 'turn_result_failed';
       const result = await response.result({ signal: controller.signal });
       assertCurrent();
       if (result.sessionEnded) {
@@ -199,6 +208,9 @@ export function createTurnRunner(deps: TurnDependencies) {
           timedOut || isTimeout(error) || (error instanceof Error && isTimeout(error.cause))
             ? 'timeout'
             : 'failed';
+        if (error instanceof ChatGPTAuthError && failureCode === 'model_preparation_failed') {
+          failureCode = 'model_auth_failed';
+        }
       }
       parts.flush(chat, Date.now(), true);
       chat.eveId = undefined;
@@ -217,6 +229,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         chat.routineId ? 'routine' : chat.proactive ? 'tip' : chat.inline ? 'hover' : 'chat',
         outcome,
         performance.now() - started,
+        outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? failureCode : undefined,
       );
       log(
         'Turn timing: ' +

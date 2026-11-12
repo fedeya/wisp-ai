@@ -190,6 +190,8 @@ reports `chat_completed`, `tool_executed`, `game_connected`,
 `game_connection_finished` and daily `app_active`.
 Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
 `timeout` when the underlying error identifies a timeout.
+Failed and timed-out chats include an allowlisted `error_code`. Codes identify
+a known condition or the stage that failed. Error messages stay in local logs.
 A connection attempt starts when the bridge accepts a new addon session and
 succeeds when the addon acknowledges the first ready snapshot. The outcome is
 `timeout` after 30 seconds (`engine_not_ready` or `addon_ack_missing`) or
@@ -220,7 +222,7 @@ Suggested PostHog insights for the shared project:
 | First tracked installations       | `app_first_open`, unique installation IDs                                                    |
 | Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`                            |
 | Feature use                       | `tool_executed`, event count, breakdown by `tool`                                            |
-| Queries and failures              | `chat_completed`, event count, breakdown by `mode` / `outcome`                               |
+| Queries and failures              | `chat_completed`, event count, breakdown by `mode`, `outcome` or `error_code`                |
 | Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version`                      |
 | Addon handshake reliability       | `game_connection_finished`, event count by `outcome` / `error_code` and median `duration_ms` |
 | Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`                          |

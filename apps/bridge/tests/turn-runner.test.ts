@@ -1,6 +1,7 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
 import { createTurnRunner } from '../src/turn-runner.ts';
+import { ChatGPTAuthError } from '../src/chatgpt-auth.ts';
 import { newChat } from '../src/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/context.ts';
 import { projectChats } from '../src/chat-projection.ts';
@@ -27,13 +28,16 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     sessions: { create: vi.fn(async () => ({ session })), attach: () => session },
   } as unknown as Pick<Client, 'sessions'>;
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
+  const prepare = vi.fn(async (_model: string) => {});
+  const isReady = vi.fn(() => true);
+  const accountBusy = vi.fn(() => false);
   const log = vi.fn();
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
   const run = createTurnRunner({
     telemetry,
     client,
-    models: { models, prepare: async () => {} },
+    models: { models, prepare },
     capabilitySettings: {
       publish: async () => {},
       enabled: () => titlesEnabled,
@@ -42,9 +46,9 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     currentTransport: () => transport,
     activeChat: () => 'chat',
     defaultModel: () => 'model',
-    isReady: () => true,
+    isReady,
     isStopping: () => false,
-    accountBusy: () => false,
+    accountBusy,
     isCurrent: () => current,
     changed,
     log,
@@ -56,6 +60,9 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     send,
     client,
     models,
+    prepare,
+    isReady,
+    accountBusy,
     log,
     flushSnapshot,
     changed,
@@ -136,11 +143,38 @@ test('real streamed turns report their mode, outcome and tool lifecycle to telem
   f.chat.inline = true;
   await f.run(f.chat, 'Private question');
   expect(observe).toHaveBeenCalledWith(expect.objectContaining({ type: 'content.delta' }));
-  expect(telemetry.chat).toHaveBeenCalledWith('hover', 'completed', expect.any(Number));
+  expect(telemetry.chat).toHaveBeenCalledWith('hover', 'completed', expect.any(Number), undefined);
   f.chat.inline = false;
   f.chat.routineId = 'private-routine-id';
   await f.run(f.chat, 'Private routine');
-  expect(telemetry.chat).toHaveBeenLastCalledWith('routine', 'completed', expect.any(Number));
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'routine',
+    'completed',
+    expect.any(Number),
+    undefined,
+  );
+});
+
+test('chat telemetry distinguishes early failures before a turn reaches the engine', async () => {
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const f = fixture(true, telemetry);
+  f.isReady.mockReturnValueOnce(false);
+  f.accountBusy.mockReturnValueOnce(true);
+  f.prepare.mockRejectedValueOnce(new ChatGPTAuthError('Private account details'));
+  f.prepare.mockRejectedValueOnce(new Error('Private model details'));
+  f.models.mockRejectedValueOnce(new Error('Private model catalog details'));
+
+  for (const code of [
+    'engine_not_ready',
+    'account_busy',
+    'model_auth_failed',
+    'model_preparation_failed',
+    'model_catalog_failed',
+  ]) {
+    await f.run(f.chat, 'Private question');
+    expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'failed', expect.any(Number), code);
+  }
+  expect(f.send).not.toHaveBeenCalled();
 });
 
 test('chat telemetry distinguishes failed, timed-out and interrupted turns', async () => {
@@ -148,7 +182,28 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
   const f = fixture(true, telemetry);
   f.send.mockRejectedValueOnce(Error('Private provider error'));
   await f.run(f.chat, 'Private question');
-  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'failed', expect.any(Number));
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'failed',
+    expect.any(Number),
+    'turn_start_failed',
+  );
+
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {},
+    result: async () => ({
+      status: 'failed',
+      sessionEnded: false,
+      error: { name: 'Error', code: 'private-provider-code', message: 'Private provider error' },
+    }),
+  }));
+  await f.run(f.chat, 'Private question');
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'failed',
+    expect.any(Number),
+    'turn_result_failed',
+  );
 
   f.send.mockImplementationOnce(async () => ({
     stream: async function* () {},
@@ -160,7 +215,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
   }));
   await f.run(f.chat, 'Private question');
   expect(f.chat.status).toBe('error');
-  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'timeout', expect.any(Number));
+  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'timeout', expect.any(Number), 'timeout');
 
   f.send.mockImplementationOnce(async () => {
     f.run.interrupt(f.chat);
@@ -168,7 +223,12 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
   });
   await f.run(f.chat, 'Private question');
   expect(f.chat.status).toBe('interrupted');
-  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'cancelled', expect.any(Number));
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'cancelled',
+    expect.any(Number),
+    undefined,
+  );
 });
 
 test('plain source schedules persistence before a reply can be rendered', async () => {
