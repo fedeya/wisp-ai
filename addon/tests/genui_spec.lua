@@ -32,6 +32,59 @@ it("native layout places prose on both sides of a panel", function()
     assert(host.widgets.panel.point[5] == 0)
 end)
 
+it("fades each live native panel once while preserving its layout", function()
+    local env = helper.env()
+    setup(env)
+    env.ns = helper.namespace()
+    helper.addon("UI/Window.lua", env)
+
+    local row = env.ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    local chat = { id = "chat", status = "working" }
+    local message = {
+        id = "reply",
+        role = "assistant",
+        text = "A|B\n---|---\nx|y",
+        ui = { { id = "history", kind = "card", title = "History" } },
+    }
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false)
+    message.ui[2] = { id = "panel", kind = "card", title = "New panel" }
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
+    local host, height = row.rich, row.height
+    local panel = host.widgets.panel
+    local anchor = panel.point[5]
+    local fade = panel.entranceFade
+    assert.is_true(fade:IsPlaying())
+    assert.equal("Alpha", fade.animation.kind)
+    assert.equal(0, fade.animation.fromAlpha)
+    assert.equal(1, fade.animation.toAlpha)
+    assert.equal(0.18, fade.animation.duration)
+    assert.is_nil(host.widgets.history.entranceFade)
+    assert.is_nil(host.widgets.markdown_table_1.entranceFade)
+
+    message.ui[2].title = "Updated panel"
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
+    assert.equal(height, row.height)
+    assert.equal(anchor, panel.point[5])
+    assert.equal(1, fade.playCount)
+
+    message.streaming = true
+    message.text = message.text .. "\n\nMore prose."
+    env.ns.UI.RenderMessageRow(row, chat, message, 300, false, true)
+    assert.is_true(row.height > height)
+    assert.is_true(fade:IsPlaying())
+    assert.equal(1, fade.playCount)
+
+    panel.scripts.OnHide(panel)
+    assert.is_false(fade:IsPlaying())
+    assert.equal(1, panel:GetAlpha())
+    env.ns.UI.RenderMessageRow(row, chat, message, 320, false, true)
+    assert.is_false(fade:IsPlaying())
+
+    message.ui[3] = { id = "second", kind = "card", title = "Another panel" }
+    env.ns.UI.RenderMessageRow(row, chat, message, 320, false, true)
+    assert.is_true(host.widgets.second.entranceFade:IsPlaying())
+end)
+
 it(
     "native components preserve local edits across snapshots and dispatch registered button IDs",
     function()

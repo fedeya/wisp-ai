@@ -607,11 +607,20 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                     row.rich = CreateFrame("Frame", nil, row)
                     linked(row.rich)
                 end
+                if not sameReply or not row.rich.presentedRoots then
+                    row.rich.presentedRoots = {}
+                end
                 row.rich:Show()
                 row.rich:ClearAllPoints()
                 row.rich:SetPoint("TOPLEFT", padding, -(interleaved and top or row.height))
-                local height, waiting, units =
-                    ns.UI.RenderRichUI(row.rich, chat, message, width - padding * 2, writing ~= nil)
+                local height, waiting, units = ns.UI.RenderRichUI(
+                    row.rich,
+                    chat,
+                    message,
+                    width - padding * 2,
+                    writing ~= nil,
+                    message.role == "assistant" and animateReply
+                )
                 if interleaved then
                     writingUnits = units
                 end

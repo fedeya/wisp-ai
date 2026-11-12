@@ -157,10 +157,21 @@ function methods:CreateAnimationGroup()
     return widget("AnimationGroup", nil, self)
 end
 function methods:CreateAnimation(kind)
-    return widget(kind, nil, self)
+    self.animation = widget(kind, nil, self)
+    return self.animation
+end
+function methods:SetFromAlpha(alpha)
+    self.fromAlpha = alpha
+end
+function methods:SetToAlpha(alpha)
+    self.toAlpha = alpha
+end
+function methods:SetDuration(duration)
+    self.duration = duration
 end
 function methods:Play()
     self.playing = true
+    self.playCount = (self.playCount or 0) + 1
 end
 function methods:Stop()
     self.playing = false
