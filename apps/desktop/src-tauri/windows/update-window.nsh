@@ -13,7 +13,8 @@ Var WispUpdateProgressProcess
   Push $2
   Push $3
   ; NSIS is 32-bit. Keep the process handle to join the updater before cleanup.
-  System::Call '*(i 68, p 0, p 0, p 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, &i2 0, &i2 0, p 0, p 0, p 0, p 0) p.r0'
+  ; STARTUPINFOW has eight DWORDs after lpTitle, ending with dwFlags.
+  System::Call '*(i 68, p 0, p 0, p 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, &i2 0, &i2 0, p 0, p 0, p 0, p 0) p.r0'
   System::Call '*(p 0, p 0, i 0, i 0) p.r1'
   StrCpy $3 '"$PLUGINSDIR\wisp-update-helper.exe" --installer-progress-svelte $mui.InstFilesPage.ProgressBar $WispUpdateSignal "$WispUpdateLog"'
   System::Call 'kernel32::CreateProcessW(w "$PLUGINSDIR\wisp-update-helper.exe", w r3, p 0, p 0, i 0, i 0, p 0, p 0, p r0, p r1) i.r2'
