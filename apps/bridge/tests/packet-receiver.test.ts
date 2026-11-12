@@ -12,7 +12,6 @@ import { PanelStore } from '../src/panels.ts';
 import { newChat } from '../src/chat-lifecycle.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
 import type { AccountModel } from '../src/chat-model.ts';
-import type { BridgeLog } from '../src/logger.ts';
 
 function fixture() {
   const database = new ApplicationDatabase('unused');
@@ -30,7 +29,7 @@ function fixture() {
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
   const flushAcknowledgment = vi.fn();
-  const log = vi.fn<BridgeLog>();
+  const addonLogger = { info: vi.fn() };
   const receive = createPacketReceiver({
     state,
     pending,
@@ -53,9 +52,21 @@ function fixture() {
     runtime: 'unused',
     changed: () => {},
     flushAcknowledgment,
-    log,
+    logger: { warn: vi.fn() },
+    addonLogger,
   });
-  return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment, log };
+  return {
+    state,
+    pending,
+    receive,
+    cancel,
+    end,
+    interrupt,
+    run,
+    models,
+    flushAcknowledgment,
+    addonLogger,
+  };
 }
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
@@ -102,10 +113,9 @@ test('delivery and visible text can be correlated using the addon message ID', (
       data: { event: 'first_text', messageId: 'message', totalMs: 240, afterSendingMs: 200 },
     }),
   );
-  expect(f.log.mock.calls.map(([, fields]) => fields)).toEqual([
-    { component: 'addon', event: 'addon.message_delivery', ...delivery },
+  expect(f.addonLogger.info.mock.calls.map(([fields]) => fields)).toEqual([
+    { event: 'addon.message_delivery', ...delivery },
     {
-      component: 'addon',
       event: 'addon.first_text',
       messageId: 'message',
       totalMs: 240,
@@ -130,14 +140,13 @@ test('transport profiles log allowlisted timings and handle empty Lua tables', (
   f.receive(packetSchema.parse({ ...envelope, seq: 2, data: { ...profile, work: [] } }));
   f.receive(packetSchema.parse({ ...envelope, seq: 3, data: { ...profile, elapsedMs: -1 } }));
   const expected = {
-    component: 'addon',
     event: 'addon.transport_profile',
     elapsedMs: 2000,
     frames,
     work: { reset: frames },
     downlinkResyncs: 1,
   };
-  expect(f.log.mock.calls.map(([, fields]) => fields)).toEqual([
+  expect(f.addonLogger.info.mock.calls.map(([fields]) => fields)).toEqual([
     expected,
     { ...expected, work: {} },
   ]);

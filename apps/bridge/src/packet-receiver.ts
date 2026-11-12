@@ -26,7 +26,7 @@ import { resumeChat, isEmptyDraft } from './sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
 import type { UsageTelemetry } from './telemetry.ts';
-import type { BridgeLog } from './logger.ts';
+import type { Logger } from 'pino';
 const milliseconds = z.number().nonnegative();
 const optionalCount = z.int().nonnegative().optional();
 const distribution = z.object({
@@ -79,7 +79,8 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  log: BridgeLog;
+  logger: Pick<Logger, 'warn'>;
+  addonLogger: Pick<Logger, 'info'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
@@ -100,7 +101,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     interrupt,
     runtime,
     changed,
-    log,
+    logger,
+    addonLogger,
   } = deps;
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
@@ -132,10 +134,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             .attach(chat.eveId)
             .cancel()
             .catch((error) =>
-              log(
-                'Session cancellation failed',
+              logger.warn(
                 { event: 'session.cancel_failed', error: errorMessage(error) },
-                'warn',
+                'Session cancellation failed',
               ),
             );
         }
@@ -183,10 +184,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       void capabilitySettings
         .publish()
         .catch((error) =>
-          log(
-            'Integration update failed',
+          logger.warn(
             { event: 'integration.update_failed', error: errorMessage(error) },
-            'warn',
+            'Integration update failed',
           ),
         );
       changed();
@@ -205,11 +205,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      log('Message delivery', {
-        component: 'addon',
-        event: 'addon.message_delivery',
-        ...delivery,
-      });
+      addonLogger.info(
+        {
+          event: 'addon.message_delivery',
+          ...delivery,
+        },
+        'Message delivery',
+      );
     }
     if (packet.type === 'model_catalog') {
       void refreshModelCatalog();
@@ -256,10 +258,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
               .attach(previous)
               .end({ reason: 'AI model or connection changed' })
               .catch((error) =>
-                log(
-                  'Session cleanup failed',
+                logger.warn(
                   { event: 'session.cleanup_failed', error: errorMessage(error) },
-                  'warn',
+                  'Session cleanup failed',
                 ),
               );
           }
@@ -290,13 +291,15 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           .safeParse(data);
         if (timing.success) {
           const { messageId, totalMs, afterSendingMs } = timing.data;
-          log('First text visible in WoW', {
-            component: 'addon',
-            event: 'addon.first_text',
-            messageId,
-            totalMs,
-            afterSendingMs,
-          });
+          addonLogger.info(
+            {
+              event: 'addon.first_text',
+              messageId,
+              totalMs,
+              afterSendingMs,
+            },
+            'First text visible in WoW',
+          );
         }
         changed();
         return;
@@ -304,11 +307,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       if (data?.event === 'transport_profile') {
         const profile = transportProfile.safeParse(data);
         if (profile.success) {
-          log('WoW transport profile', {
-            component: 'addon',
-            event: 'addon.transport_profile',
-            ...profile.data,
-          });
+          addonLogger.info(
+            {
+              event: 'addon.transport_profile',
+              ...profile.data,
+            },
+            'WoW transport profile',
+          );
         }
         changed();
         return;
@@ -326,10 +331,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         path.join(runtime, 'inline-status.json'),
         JSON.stringify(status, null, 2),
       ).catch((error) =>
-        log(
-          'Inline diagnostic save failed',
+        logger.warn(
           { event: 'addon.inline_status_save_failed', error: errorMessage(error) },
-          'warn',
+          'Inline diagnostic save failed',
         ),
       );
       changed();
@@ -358,10 +362,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             .observe(identity, event.data)
             .then(changed)
             .catch((error) =>
-              log(
-                'Routine event failed',
+              logger.warn(
                 { event: 'routine.event_failed', error: errorMessage(error) },
-                'warn',
+                'Routine event failed',
               ),
             );
         }
@@ -380,10 +383,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           .mutate(identity, input.data)
           .then(changed)
           .catch((error) =>
-            log(
-              'Routine action failed',
+            logger.warn(
               { event: 'routine.action_failed', error: errorMessage(error) },
-              'warn',
+              'Routine action failed',
             ),
           );
       }

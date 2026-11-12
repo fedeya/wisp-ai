@@ -4,7 +4,7 @@ import type { RoutineStore } from './routines.ts';
 import type { CapabilitySettings } from './capabilities.ts';
 import { newChat } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
-import type { BridgeLog } from './logger.ts';
+import type { Logger } from 'pino';
 interface SchedulerDependencies {
   state: SessionState;
   routineStore: RoutineStore;
@@ -13,10 +13,11 @@ interface SchedulerDependencies {
   isReady: () => boolean;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   changed: () => void;
-  log: BridgeLog;
+  logger: Pick<Logger, 'error'>;
 }
 export function startRoutineScheduler(deps: SchedulerDependencies) {
-  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed, log } = deps;
+  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed, logger } =
+    deps;
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
     state.chats.push(chat);
@@ -101,10 +102,9 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
       );
     })()
       .catch((error) =>
-        log(
-          'Routine dispatch failed',
+        logger.error(
           { event: 'routine.dispatch_failed', error: errorMessage(error) },
-          'error',
+          'Routine dispatch failed',
         ),
       )
       .finally(() => {

@@ -7,7 +7,7 @@ import { beginTurn, settleTurn } from './chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
 import { chooseChatModel } from './chat-model.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
-import type { BridgeLog } from './logger.ts';
+import type { Logger } from 'pino';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
 import type { ChatOutcome, UsageTelemetry } from './telemetry.ts';
@@ -37,7 +37,7 @@ interface TurnDependencies {
   accountBusy: () => boolean;
   isCurrent: (chat: Chat) => boolean;
   changed: () => void;
-  log: BridgeLog;
+  logger: Pick<Logger, 'info' | 'error'>;
   flushSnapshot?: () => void;
 }
 export function createTurnRunner(deps: TurnDependencies) {
@@ -53,7 +53,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     accountBusy,
     isCurrent,
     changed,
-    log,
+    logger,
   } = deps;
   const generations = new WeakMap<Chat, symbol>();
   const running = new Set<Promise<void>>();
@@ -207,8 +207,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         role: 'system',
         text: error instanceof Error ? error.message : String(error),
       });
-      log(
-        'Turn failed',
+      logger[failed ? 'error' : 'info'](
         {
           event: 'chat.turn_failed',
           chat: chat.id,
@@ -216,7 +215,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           outcome,
           error: safeErrorMessage(error instanceof Error ? error.message : String(error)),
         },
-        failed ? 'error' : 'info',
+        'Turn failed',
       );
     } finally {
       deps.telemetry?.chat(
@@ -224,16 +223,19 @@ export function createTurnRunner(deps: TurnDependencies) {
         outcome,
         performance.now() - started,
       );
-      log('Turn timing', {
-        event: 'chat.turn_timing',
-        chat: chat.id,
-        messageId,
-        outcome,
-        preparedMs,
-        admittedMs,
-        firstTextMs,
-        totalMs: Math.round(performance.now() - started),
-      });
+      logger.info(
+        {
+          event: 'chat.turn_timing',
+          chat: chat.id,
+          messageId,
+          outcome,
+          preparedMs,
+          admittedMs,
+          firstTextMs,
+          totalMs: Math.round(performance.now() - started),
+        },
+        'Turn timing',
+      );
       clearInterval(streaming);
       if (projections.get(chat)?.parts === parts) {
         projections.delete(chat);
