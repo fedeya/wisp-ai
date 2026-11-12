@@ -129,6 +129,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Look up Forever class abilities, levels, base prices and requirements without visiting a trainer.',
   ],
   inspect_trainer: ['Inspect trainer', 'Read offers from the trainer window currently open.'],
+  inspect_merchant: [
+    'Inspect merchant',
+    'Read bounded offers and bundle prices from the currently open merchant; never purchases.',
+  ],
   compare_items: ['Compare equipment', 'Compare item stats with current equipment.'],
   query_resources: ['Read resources', 'Read money, bag contents, free space and skill ranks.'],
   inspect_auctions: [
