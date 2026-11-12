@@ -247,17 +247,33 @@ async fn start_bridge(host: tauri::State<'_, Host>) -> Result<(), String> {
         .stdin(Stdio::null())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)
         .stderr(log);
-    *child = Some(
-        command
-            .spawn()
-            .map_err(|e| format!("Cannot start Wisp: {e}"))?,
+    let process = command.spawn().map_err(|error| {
+        tracing::error!(
+            component = "desktop",
+            event = "bridge.spawn_failed",
+            kind = ?error.kind(),
+            "Could not spawn the bridge"
+        );
+        format!("Cannot start Wisp: {error}")
+    })?;
+    tracing::info!(
+        component = "desktop",
+        event = "bridge.spawned",
+        pid = process.id(),
+        "Spawned the bridge"
     );
+    *child = Some(process);
     Ok(())
 }
 
 async fn stop_host(host: &Host) -> Result<(), String> {
     match host.request("POST", "/stop", json!({})).await {
         Ok(_) => {
+            tracing::info!(
+                component = "desktop",
+                event = "bridge.stop_requested",
+                "Bridge accepted the stop request"
+            );
             for _ in 0..50 {
                 if host.request("GET", "/status", json!({})).await.is_err() {
                     break;
@@ -360,7 +376,7 @@ fn open_logs(app: tauri::AppHandle, host: tauri::State<'_, Host>) -> Result<(), 
 fn read_logs(host: tauri::State<'_, Host>) -> String {
     use std::io::{Read, Seek, SeekFrom};
     let mut output = String::new();
-    for name in ["bridge.log", "eve.log", "update.log"] {
+    for name in ["desktop.log", "bridge.log", "eve.log", "update.log"] {
         if let Ok(mut file) = fs::File::open(host.data.join("runtime").join(name)) {
             let len = file.metadata().map(|m| m.len()).unwrap_or(0);
             let _ = file.seek(SeekFrom::Start(len.saturating_sub(12000)));
@@ -450,6 +466,22 @@ fn show_main_window(app: &tauri::AppHandle) {
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
+}
+
+fn init_desktop_log(data: &Path) -> std::io::Result<()> {
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(data.join("runtime/desktop.log"))?;
+    tracing_subscriber::fmt()
+        .with_env_filter("wisp=info")
+        .json()
+        .flatten_event(true)
+        .with_current_span(false)
+        .with_span_list(false)
+        .with_writer(Mutex::new(file))
+        .try_init()
+        .map_err(std::io::Error::other)
 }
 
 fn main() {
@@ -556,6 +588,9 @@ fn main() {
             let data = app.path().app_data_dir()?;
             update_trace::append(&data, "app-opened");
             fs::create_dir_all(data.join("runtime"))?;
+            if let Err(error) = init_desktop_log(&data) {
+                eprintln!("Could not initialize desktop diagnostics: {error}");
+            }
             app.manage(telemetry::Telemetry::new(&data));
             telemetry::start(app.handle().clone());
             let payload = std::env::var_os("WISP_PAYLOAD_ROOT")
@@ -608,6 +643,12 @@ fn main() {
                     }
                 })
                 .build(app)?;
+            tracing::info!(
+                component = "desktop",
+                event = "desktop.started",
+                version = app.package_info().version.to_string(),
+                "Desktop initialized"
+            );
             Ok(())
         })
         .on_window_event(|window, event| {
