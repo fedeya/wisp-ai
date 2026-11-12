@@ -1,6 +1,5 @@
-import { test, expect, vi } from 'vitest';
+import { afterEach, beforeEach, test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
-import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -12,23 +11,13 @@ import { newChat } from '../apps/bridge/src/chat-lifecycle.ts';
 import { GameRequests } from '../apps/bridge/src/game-requests.ts';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { lockoutsReading } from '@wisp/protocol/lockouts';
+import { observeLockouts } from './addon/lockouts-fixture.ts';
 
-// Real native Lua 5.1 modules, isolated public API fixtures. Only JSON encoding
-// lives in the fixture; there is no parallel lockout implementation here.
-function nativeReading(updated: boolean | 'oversized' = false) {
-  return JSON.parse(
-    execFileSync(
-      'lua',
-      [
-        'addon/tests/fixtures/lockouts-rpc.lua',
-        updated === 'oversized' ? updated : updated ? 'updated' : 'initial',
-      ],
-      { encoding: 'utf8', timeout: 5000 },
-    ),
-  );
-}
+// Portability sentinel: both complete scenarios must work without external Lua.
+beforeEach(() => vi.stubEnv('PATH', ''));
+afterEach(() => vi.unstubAllEnvs());
 
-test('deferred Eve lockout tool -> authenticated active-session RPC -> native Lua cached read', async () => {
+test('deferred Eve lockout tool -> authenticated active-session RPC -> Fengari production Lua cached read', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-lockouts-'));
   const settings = new CapabilitySettings(path.join(directory, 'choices.json'));
   settings.agentFile = path.join(directory, 'agent.json');
@@ -56,7 +45,7 @@ test('deferred Eve lockout tool -> authenticated active-session RPC -> native Lu
           status: 'unavailable',
         });
       }
-      pending.receive(request.id, 'addon', chat.id, nativeReading(changed));
+      pending.receive(request.id, 'addon', chat.id, observeLockouts(changed));
     });
   });
   const server = createServer(
@@ -160,8 +149,8 @@ test('deferred Eve lockout tool -> authenticated active-session RPC -> native Lu
   }
 });
 
-test('native escaped UTF-8 output includes envelope budget, clipping and omitted coverage', () => {
-  const result = lockoutsReading.parse(nativeReading('oversized'));
+test('Fengari escaped UTF-8 output includes envelope budget, clipping and omitted coverage', () => {
+  const result = lockoutsReading.parse(observeLockouts('oversized'));
   if (result.status === 'unavailable') throw Error(result.error);
   expect(result.status).toBe('partial');
   expect(result.data).toMatchObject({
