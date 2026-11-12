@@ -5,6 +5,7 @@ import { readCompletedResponse } from './response-stream.ts';
 import type { ChatGPTAuth } from './chatgpt-auth.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { modelTiming } from './model-timing.ts';
+import type { BridgeLog } from './logger.ts';
 
 export async function proxyConnectionModel(
   req: IncomingMessage,
@@ -59,7 +60,7 @@ export async function proxyModel(
   req: IncomingMessage,
   res: ServerResponse,
   auth: ChatGPTAuth,
-  log?: (message: string) => void,
+  log?: BridgeLog,
 ) {
   const abort = new AbortController();
   res.on('close', () => {

@@ -23,6 +23,7 @@ import type { Simulator } from './simulation.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { proxyConnectionModel } from './model-proxy.ts';
 import { proxyModel } from './model-proxy.ts';
+import type { BridgeLog } from './logger.ts';
 import type { WowheadSearch } from './web-search.ts';
 import { chooseChatModel } from './chat-model.ts';
 import { characterIdentity, conversationTitle, queryCharacterSections } from './context.ts';
@@ -33,7 +34,7 @@ export interface MemoryView {
   requestId?: string;
 }
 interface AgentDependencies {
-  log?: (message: string) => void;
+  log?: BridgeLog;
   token: string;
   auth: ChatGPTAuth;
   connections: ModelConnections;

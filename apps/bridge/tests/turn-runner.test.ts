@@ -80,11 +80,7 @@ test('a complete turn projects streamed content and settles once', async () => {
   ).toBe('Hello');
   expect(f.send).toHaveBeenCalledTimes(1);
   expect(f.flushSnapshot).toHaveBeenCalledTimes(1);
-  const timing = JSON.parse(
-    String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
-      'Turn timing: '.length,
-    ),
-  );
+  const timing = f.log.mock.calls.find(([, fields]) => fields?.event === 'chat.turn_timing')?.[1];
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
 });
@@ -340,12 +336,9 @@ test('old assistant messages cannot count as the first text of a new turn', asyn
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
   await f.run(f.chat, 'Next question');
-  const timing = JSON.parse(
-    String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
-      'Turn timing: '.length,
-    ),
-  );
-  expect(timing).not.toHaveProperty('firstTextMs');
+  const timing = f.log.mock.calls.find(([, fields]) => fields?.event === 'chat.turn_timing')?.[1];
+  expect(timing).toBeDefined();
+  expect(timing.firstTextMs).toBeUndefined();
 });
 
 test('a turn keeps its quest reading available to tools without inserting it into model input', async () => {

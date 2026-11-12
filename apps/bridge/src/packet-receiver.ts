@@ -26,6 +26,7 @@ import { resumeChat, isEmptyDraft } from './sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
 import type { UsageTelemetry } from './telemetry.ts';
+import type { BridgeLog } from './logger.ts';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -46,7 +47,7 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  log: (message: string) => void;
+  log: BridgeLog;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
@@ -98,7 +99,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           void client.sessions
             .attach(chat.eveId)
             .cancel()
-            .catch((error) => log('Session cancellation failed: ' + errorMessage(error)));
+            .catch((error) =>
+              log(
+                'Session cancellation failed',
+                { event: 'session.cancel_failed', error: errorMessage(error) },
+                'warn',
+              ),
+            );
         }
       }
       state.activeTransport = packet.session;
@@ -143,7 +150,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
       void capabilitySettings
         .publish()
-        .catch((error) => log('Integration update failed: ' + error.message));
+        .catch((error) =>
+          log(
+            'Integration update failed',
+            { event: 'integration.update_failed', error: errorMessage(error) },
+            'warn',
+          ),
+        );
       changed();
     }
     if (packet.heartbeat && !newTransport) {
@@ -206,7 +219,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             void client.sessions
               .attach(previous)
               .end({ reason: 'AI model or connection changed' })
-              .catch((error) => log('Session cleanup failed: ' + errorMessage(error)));
+              .catch((error) =>
+                log(
+                  'Session cleanup failed',
+                  { event: 'session.cleanup_failed', error: errorMessage(error) },
+                  'warn',
+                ),
+              );
           }
           chat.modelSettings = selected;
           chat.modelError = undefined;
@@ -251,7 +270,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       void writeFile(
         path.join(runtime, 'inline-status.json'),
         JSON.stringify(status, null, 2),
-      ).catch((error) => log('Inline diagnostic save failed: ' + errorMessage(error)));
+      ).catch((error) =>
+        log(
+          'Inline diagnostic save failed',
+          { event: 'addon.inline_status_save_failed', error: errorMessage(error) },
+          'warn',
+        ),
+      );
       changed();
       return;
     }
@@ -277,7 +302,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           void routineStore
             .observe(identity, event.data)
             .then(changed)
-            .catch((e) => log('Routine event failed: ' + e.message));
+            .catch((error) =>
+              log(
+                'Routine event failed',
+                { event: 'routine.event_failed', error: errorMessage(error) },
+                'warn',
+              ),
+            );
         }
       }
       return;
@@ -293,7 +324,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         void routineStore
           .mutate(identity, input.data)
           .then(changed)
-          .catch((e) => log('Routine action failed: ' + e.message));
+          .catch((error) =>
+            log(
+              'Routine action failed',
+              { event: 'routine.action_failed', error: errorMessage(error) },
+              'warn',
+            ),
+          );
       }
       return;
     }

@@ -7,6 +7,7 @@ import { beginTurn, settleTurn } from './chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
 import { chooseChatModel } from './chat-model.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
+import type { BridgeLog } from './logger.ts';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
 import type { ChatOutcome, UsageTelemetry } from './telemetry.ts';
@@ -36,7 +37,7 @@ interface TurnDependencies {
   accountBusy: () => boolean;
   isCurrent: (chat: Chat) => boolean;
   changed: () => void;
-  log: (message: string) => void;
+  log: BridgeLog;
   flushSnapshot?: () => void;
 }
 export function createTurnRunner(deps: TurnDependencies) {
@@ -207,10 +208,15 @@ export function createTurnRunner(deps: TurnDependencies) {
         text: error instanceof Error ? error.message : String(error),
       });
       log(
-        'Turn failed: ' +
-          chat.id +
-          ': ' +
-          safeErrorMessage(error instanceof Error ? error.message : String(error)),
+        'Turn failed',
+        {
+          event: 'chat.turn_failed',
+          chat: chat.id,
+          messageId,
+          outcome,
+          error: safeErrorMessage(error instanceof Error ? error.message : String(error)),
+        },
+        failed ? 'error' : 'info',
       );
     } finally {
       deps.telemetry?.chat(
@@ -218,17 +224,16 @@ export function createTurnRunner(deps: TurnDependencies) {
         outcome,
         performance.now() - started,
       );
-      log(
-        'Turn timing: ' +
-          JSON.stringify({
-            chat: chat.id,
-            messageId,
-            preparedMs,
-            admittedMs,
-            firstTextMs,
-            totalMs: Math.round(performance.now() - started),
-          }),
-      );
+      log('Turn timing', {
+        event: 'chat.turn_timing',
+        chat: chat.id,
+        messageId,
+        outcome,
+        preparedMs,
+        admittedMs,
+        firstTextMs,
+        totalMs: Math.round(performance.now() - started),
+      });
       clearInterval(streaming);
       if (projections.get(chat)?.parts === parts) {
         projections.delete(chat);

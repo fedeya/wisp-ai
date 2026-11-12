@@ -2,11 +2,11 @@ import { test, expect } from 'vitest';
 import { modelTiming } from '../src/model-timing.ts';
 
 test('model observation forwards bytes immediately and logs only timings and cache metadata', async () => {
-  const logs: string[] = [];
+  const logs: Record<string, unknown>[] = [];
   const tap = modelTiming(
     { model: 'test', instructions: 'private instructions', tools: [] },
     performance.now(),
-    (line) => logs.push(line),
+    (_message, fields) => logs.push(fields ?? {}),
   );
   const chunks: Buffer[] = [];
   tap.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -31,8 +31,9 @@ test('model observation forwards bytes immediately and logs only timings and cac
   await new Promise<void>((resolve) => tap.on('finish', resolve));
   expect(Buffer.concat(chunks)).toEqual(Buffer.concat([delta, complete]));
   expect(logs).toHaveLength(1);
-  expect(logs[0]).not.toContain('private');
-  const record = JSON.parse(logs[0]!.slice('Model timing: '.length));
+  const record = logs[0]!;
+  expect(JSON.stringify(record)).not.toContain('private');
+  expect(record.event).toBe('model.timing');
   expect(record.cachedTokens).toBe(2048);
   expect(record.inputTokens).toBe(3000);
   expect(record.firstTextMs).toBeGreaterThanOrEqual(0);

@@ -1,13 +1,10 @@
 import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { createHash } from 'node:crypto';
+import type { BridgeLog } from './logger.ts';
 
 // Forward original chunks immediately; observe metadata without logging content.
-export function modelTiming(
-  body: Record<string, unknown>,
-  started: number,
-  log: (message: string) => void,
-) {
+export function modelTiming(body: Record<string, unknown>, started: number, log: BridgeLog) {
   const decoder = new StringDecoder('utf8');
   let buffer = '',
     firstTextMs: number | undefined;
@@ -50,19 +47,17 @@ export function modelTiming(
             firstTextMs = Math.round(performance.now() - started);
           }
           if (event.type === 'response.completed') {
-            log(
-              'Model timing: ' +
-                JSON.stringify({
-                  model: body.model,
-                  prefixHash,
-                  tools: Array.isArray(body.tools) ? body.tools.length : 0,
-                  instructionsChars: instructions.length,
-                  firstTextMs,
-                  totalMs: Math.round(performance.now() - started),
-                  inputTokens: event.response?.usage?.input_tokens,
-                  cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
-                }),
-            );
+            log('Model timing', {
+              event: 'model.timing',
+              model: body.model,
+              prefixHash,
+              tools: Array.isArray(body.tools) ? body.tools.length : 0,
+              instructionsChars: instructions.length,
+              firstTextMs,
+              totalMs: Math.round(performance.now() - started),
+              inputTokens: event.response?.usage?.input_tokens,
+              cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
+            });
           }
         } catch {
           /* Observability must never interrupt a response. */

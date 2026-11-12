@@ -4,6 +4,7 @@ import type { RoutineStore } from './routines.ts';
 import type { CapabilitySettings } from './capabilities.ts';
 import { newChat } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
+import type { BridgeLog } from './logger.ts';
 interface SchedulerDependencies {
   state: SessionState;
   routineStore: RoutineStore;
@@ -12,7 +13,7 @@ interface SchedulerDependencies {
   isReady: () => boolean;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   changed: () => void;
-  log: (message: string) => void;
+  log: BridgeLog;
 }
 export function startRoutineScheduler(deps: SchedulerDependencies) {
   const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed, log } = deps;
@@ -99,7 +100,13 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
         summary,
       );
     })()
-      .catch((error) => log('Routine dispatch failed: ' + errorMessage(error)))
+      .catch((error) =>
+        log(
+          'Routine dispatch failed',
+          { event: 'routine.dispatch_failed', error: errorMessage(error) },
+          'error',
+        ),
+      )
       .finally(() => {
         dispatchingRoutine = false;
         changed();

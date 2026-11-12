@@ -25,6 +25,7 @@ import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './turn-runner.ts';
 import { errorMessage } from './errors.ts';
+import { log } from './logger.ts';
 import { MemoryStore } from './memory-store.ts';
 import { IntegrationState } from './integration-state.ts';
 import { existsSync, closeSync } from 'node:fs';
@@ -225,7 +226,11 @@ export async function startBridge(options: BridgeOptions = {}) {
     );
     resources.defer(() => mcpRelay.close());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
-      log('Conversation save failed: ' + errorMessage(error)),
+      log(
+        'Conversation save failed',
+        { event: 'chat.save_failed', error: errorMessage(error) },
+        'error',
+      ),
     );
     const state = createSessionState(await chatStore.load());
     resources.defer(async () => {
@@ -259,9 +264,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       });
     }
     mcpRelay.readOnlyMode = () => state.chats.some((c) => c.proactive && c.status === 'working');
-    function log(message: string) {
-      console.log(new Date().toISOString(), message);
-    }
     function changed() {
       dirty = true;
       if (!shutdownRequested) {
@@ -342,7 +344,11 @@ export async function startBridge(options: BridgeOptions = {}) {
       }
     };
     const transport = new DiskTransport(config.wow, receive, (error) =>
-      log('Game transport failed: ' + errorMessage(error)),
+      log(
+        'Game transport failed',
+        { event: 'transport.failed', error: errorMessage(error) },
+        'error',
+      ),
     );
     resources.defer(() => transport.stop());
     const server = createServer(
@@ -397,11 +403,16 @@ export async function startBridge(options: BridgeOptions = {}) {
           ...(config.model ? { WOW_MODEL: config.model } : {}),
           DO_NOT_TRACK: '1',
         },
-        onError: (error) => log('Could not start Eve: ' + error.message),
+        onError: (error) =>
+          log(
+            'Could not start Eve',
+            { event: 'eve.spawn_failed', error: errorMessage(error) },
+            'error',
+          ),
         onExit: (code) => {
           eveReady = false;
           changed();
-          log('Eve exited: ' + code);
+          log('Eve exited', { event: 'eve.exited', code });
         },
       });
     }
@@ -451,7 +462,7 @@ export async function startBridge(options: BridgeOptions = {}) {
               }
               eveReady = true;
               changed();
-              log('Eve ready.');
+              log('Eve ready', { event: 'eve.ready' });
             }
           })
           .catch(() => {
@@ -537,7 +548,17 @@ export async function startBridge(options: BridgeOptions = {}) {
         },
         requestStop: () => {
           shutdownRequested = true;
-          setTimeout(() => void stop().catch((error) => log(errorMessage(error))), 200);
+          setTimeout(
+            () =>
+              void stop().catch((error) =>
+                log(
+                  'Bridge shutdown failed',
+                  { event: 'bridge.shutdown_failed', error: errorMessage(error) },
+                  'error',
+                ),
+              ),
+            200,
+          );
         },
       }),
       options.desktopPort,
@@ -549,7 +570,13 @@ export async function startBridge(options: BridgeOptions = {}) {
       if (JSON.stringify(capabilitySettings.snapshot()) !== before) {
         void capabilitySettings
           .publish()
-          .catch((error) => log('Integration update failed: ' + error.message));
+          .catch((error) =>
+            log(
+              'Integration update failed',
+              { event: 'integration.update_failed', error: errorMessage(error) },
+              'warn',
+            ),
+          );
         changed();
       }
     }, 30000);
@@ -626,7 +653,11 @@ export async function startBridge(options: BridgeOptions = {}) {
         void transport.publish(snapshot).catch((error) => {
           snapshots.invalidate();
           dirty = true;
-          log('Failed to publish reply: ' + error.message);
+          log(
+            'Failed to publish reply',
+            { event: 'transport.publish_failed', error: errorMessage(error) },
+            'warn',
+          );
         });
       }
     }
@@ -634,7 +665,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       observeGameConnection();
       publishSnapshot();
     }, 400);
-    log('Wisp started. WoW: ' + config.wow);
+    log('Wisp started', { event: 'bridge.started', version: bridgeVersion });
     resources.defer(() => clearInterval(publish));
     function stop() {
       shutdownRequested = true;
@@ -644,7 +675,15 @@ export async function startBridge(options: BridgeOptions = {}) {
     }
     return { state, receive, stop };
   } catch (error) {
-    await resources.close().catch((cleanupError) => console.error(errorMessage(cleanupError)));
+    await resources
+      .close()
+      .catch((cleanupError) =>
+        log(
+          'Bridge cleanup failed',
+          { event: 'bridge.cleanup_failed', error: errorMessage(cleanupError) },
+          'error',
+        ),
+      );
     throw error;
   }
 }
