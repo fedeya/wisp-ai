@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod game_detection;
+#[cfg(windows)]
+mod installer_progress;
 mod telemetry;
 mod update_trace;
 mod updates;
@@ -454,6 +456,11 @@ fn show_main_window(app: &tauri::AppHandle) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(windows)]
+    if args.get(1).map(String::as_str) == Some("--installer-progress") {
+        installer_progress::show(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--prepare-update") {
         if let Err(error) = prepare_update() {
             eprintln!("{error}");
