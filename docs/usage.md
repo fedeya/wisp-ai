@@ -37,6 +37,23 @@ Replies arrive in batches, with tool/progress indicators while Wisp works. The c
 
 Ask Wisp to save a tracker for your character. Panels survive chats and reloads; restore hidden ones with **Show saved panels** in-game or the desktop **Panels** page. Bag counts, money, level and quest completion update locally without model calls. Panel buttons send follow-up questions; ordinary reply cards are temporary unless saved.
 
+On desktop **Panels**, **Export template** shares a passive Forever tracker with
+one to three item-count goals. Review the full preview before copying: titles,
+labels and notes are untrusted text and may contain personal information. Export
+omits character ownership, instance IDs, position, timestamps and current readings.
+Copy explicitly, or select the manual-copy text if clipboard access fails.
+
+Choose **Import template**, paste the text, and choose **Preview template**.
+Review every item ID, label, layout and goal; edit target quantities, explicitly
+select a known local recipient, then confirm **Create new tracker**. Import works
+offline without AI and creates a fresh instance (up to 12 per character), never
+overwrites, and leaves the tracker hidden until explicitly shown. Counts begin
+unknown and use only that character's local bags. Uncached/unresolved item data
+stays unavailable; template labels do not establish item identity or compatibility.
+Version 1 supports only plain text, column/row/card containers, and bound
+stat/progress nodes. Buttons, actions, reference catalogs, links/assets and other
+components are ineligible, not silently converted. Other game versions are rejected.
+
 Ask Wisp in chat to create a routine, for example “Every two levels, review my spells and rotation.” Open **Routines** in the in-game sidebar to browse routines and their run conversations; the desktop **Routines** page also offers pause, resume, delete and run history. Supported triggers include level, equipment, money, bags, quests, spells, talents and zone changes, plus intervals of at least one minute. Filters use the event’s documented fields. “Every two levels” can use even levels; Wisp should explain the exact saved condition. Routines run only while that character and the desktop app are connected. Combat and active turns delay work; repeated events and missed intervals coalesce. Automatic runs are read-only and can remain silent when there is nothing useful to report. Each useful run has its own conversation, where you can ask follow-up questions. Routine definitions and history are saved locally in wisp.sqlite; they are independent of their creation chat. Old Suggestions toggles are replaced by explicit routines; they are not automatically enabled.
 
 ## Controls, privacy and limits

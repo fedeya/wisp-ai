@@ -1,6 +1,17 @@
 import { z } from 'zod';
 import { connectionSetup, connectionDiscovery } from './providers.js';
 import { searchSetup } from './search.js';
+import { parseTemplate, TEMPLATE_BYTES } from './panel-template.js';
+const templateText = z
+  .string()
+  .max(TEMPLATE_BYTES)
+  .superRefine((s, ctx) => {
+    try {
+      parseTemplate(s);
+    } catch {
+      ctx.addIssue({ code: 'custom', message: 'Invalid passive tracker template' });
+    }
+  });
 const id = z.string().min(1).max(200);
 export const desktopInputs = {
   '/auth/start': z.object({ profileId: id.optional(), newAccount: z.boolean().optional() }),
@@ -15,6 +26,12 @@ export const desktopInputs = {
   '/search/remove-exa': z.strictObject({}),
   '/integrations/set': z.object({ id, enabled: z.boolean() }),
   '/mcps/remove': z.object({ name: id }),
+  '/panels/export': z.strictObject({ characterKey: id, id }),
+  '/panels/import': z.strictObject({
+    characterKey: id,
+    template: templateText,
+    confirmed: z.literal(true),
+  }),
   '/panels/action': z.object({
     characterKey: z.string().min(1),
     id,

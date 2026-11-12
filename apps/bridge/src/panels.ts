@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { parseTemplate, instantiateTemplate } from '@wisp/protocol/panel-template';
 import { readPanels, savePanels } from './db/product-store.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { panelContent, panelInput, type Panel } from '@wisp/protocol/panels';
@@ -15,6 +17,11 @@ export class PanelStore {
   }
   list(characterKey: string) {
     return this.panels.filter((p) => p.characterKey === characterKey);
+  }
+  async importTemplate(characterKey: string, raw: string) {
+    const panel = instantiateTemplate(parseTemplate(raw), `template_${randomUUID()}`);
+    await this.mutate(characterKey, { operation: 'save', panel });
+    return panel;
   }
   async mutate(characterKey: string, input: z.infer<typeof panelInput>) {
     const work = this.queue
