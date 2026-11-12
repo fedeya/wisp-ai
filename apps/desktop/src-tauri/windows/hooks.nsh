@@ -2,6 +2,7 @@
 ; memory, credentials and the Eve workspace live outside $INSTDIR in AppData.
 ; tauri.conf.json uses zlib to reduce the time spent extracting these resources.
 !define MUI_CUSTOMFUNCTION_GUIINIT WispUpdateWindowInit
+!include "${__FILEDIR__}\update-window.nsh"
 
 Var WispUpdateLog
 !macro WispUpdateStage stage
@@ -31,36 +32,55 @@ Var WispUpdateLog
   Pop $0
 !macroend
 
-; Keep the updater visible after the desktop app hands off to NSIS. This also
-; applies when the update was started by an older installed Wisp version.
 Function WispUpdateWindowInit
   ClearErrors
   ${GetOptions} $CMDLINE "/UPDATE" $0
   ${IfNot} ${Errors}
-    SendMessage $HWNDPARENT 0x000C 0 "STR:Updating Wisp AI"
-    ShowWindow $HWNDPARENT 5
-    BringToFront
+    ClearErrors
+    ${GetOptions} $CMDLINE "/P" $0
+    ${IfNot} ${Errors}
+      !insertmacro WispCreateUpdateSignal
+    ${EndIf}
   ${EndIf}
-  !insertmacro WispUpdateStage "installer-visible"
 FunctionEnd
+
+Function .onGUIEnd
+  !insertmacro WispStopProgress
+FunctionEnd
+
+!macro WispAbortInstall message
+  ${If} $UpdateMode = 1
+  ${AndIf} $PassiveMode = 1
+  ${AndIfNot} ${Silent}
+  ${AndIf} $WispUpdateProgressProcess == ""
+    MessageBox MB_OK|MB_ICONEXCLAMATION "${message}"
+  ${EndIf}
+  Abort "${message}"
+!macroend
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro WispUpdateStage "installer-ready"
   ${If} $UpdateMode = 1
-    !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Wisp will reopen automatically. Your chats and settings are kept."
+    !insertmacro MUI_HEADER_TEXT "Updating Wisp AI" "Wisp will reopen automatically."
     ${IfNot} ${Silent}
-      SendMessage $HWNDPARENT 0x000C 0 "STR:Updating Wisp AI"
-      ShowWindow $HWNDPARENT 5
+      SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:Wisp AI"
+      ShowWindow $HWNDPARENT ${SW_SHOW}
       BringToFront
+      !insertmacro WispUpdateStage "installer-visible"
     ${EndIf}
   ${EndIf}
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
   File /oname=wisp-update-helper.exe "${MAINBINARYSRCPATH}"
   !insertmacro WispUpdateStage "helper-extracted"
+  ${If} $UpdateMode = 1
+  ${AndIf} $PassiveMode = 1
+  ${AndIfNot} ${Silent}
+    !insertmacro WispTryCustomWindow
+  ${EndIf}
   ExecWait '"$PLUGINSDIR\wisp-update-helper.exe" --prepare-update' $0
   ${If} $0 != 0
-    Abort "Wisp could not stop safely. Finish the active reply, exit Wisp from the tray, and try again."
+    !insertmacro WispAbortInstall "Wisp could not stop safely. Finish the active reply, exit Wisp from the tray, and try again."
   ${EndIf}
   !insertmacro WispUpdateStage "bridge-stopped"
   SetOutPath "$INSTDIR"
@@ -72,15 +92,21 @@ FunctionEnd
   ${AndIf} ${FileExists} "$INSTDIR\payload\package.json"
     RMDir /r "$INSTDIR\payload"
     ${If} ${FileExists} "$INSTDIR\payload\*.*"
-      Abort "Wisp resources are still in use. Exit Wisp from the tray and try again."
+      !insertmacro WispAbortInstall "Wisp resources are still in use. Exit Wisp from the tray and try again."
     ${EndIf}
   ${EndIf}
   !insertmacro WispUpdateStage "copying-files"
+  ${If} $WispUpdateProgressProcess != ""
+    System::Call 'user32::SetPropW(p $WispUpdateSignal, w "WispProgressInstalling", p 1)'
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro WispUpdateStage "files-installed"
-  ${If} $UpdateMode = 1
+  ${If} $WispUpdateProgressProcess != ""
+    System::Call 'user32::SetPropW(p $WispUpdateSignal, w "WispProgressSucceeded", p 1)'
+    !insertmacro WispStopProgress
+  ${ElseIf} $UpdateMode = 1
     !insertmacro MUI_HEADER_TEXT "Opening Wisp AI" "The update is installed. Wisp is reopening automatically."
   ${EndIf}
 !macroend

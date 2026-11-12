@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod game_detection;
+#[cfg(windows)]
+mod installer_window;
 mod telemetry;
 mod update_trace;
 mod updates;
@@ -486,6 +488,11 @@ fn init_desktop_log(data: &Path) -> std::io::Result<()> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(windows)]
+    if args.get(1).map(String::as_str) == Some("--installer-progress-svelte") {
+        installer_window::run(&args[2..]);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--prepare-update") {
         if let Err(error) = prepare_update() {
             eprintln!("{error}");
