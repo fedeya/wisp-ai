@@ -3,6 +3,7 @@ local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup"
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
+local THINKING_DELAY = 0.35
 local WAVE = {
     "|cffaca189",
     "|cffc4b698",
@@ -97,6 +98,37 @@ function ns.UI.Activity.IsSending(chat)
             end
         end
     end
+    return false
+end
+
+-- Reuse the progress row after a settled tool, once the gap is long enough to show it.
+function ns.UI.Activity.ShowProgress(view, chat, hasToolActivity, hasReplyContent, settledTool)
+    if
+        not chat
+        or chat.status ~= "working"
+        or hasToolActivity
+        or hasReplyContent
+        or ns.UI.Activity.IsSending(chat)
+    then
+        view.toolWait = nil
+        return false
+    end
+    if not settledTool then
+        view.toolWait = nil
+        return true
+    end
+    local wait = view.toolWait
+    if wait and wait.chat == chat.id and wait.tool == settledTool then
+        return wait.ready
+    end
+    wait = { chat = chat.id, tool = settledTool, ready = false }
+    view.toolWait = wait
+    C_Timer.After(THINKING_DELAY, function()
+        if view.toolWait == wait then
+            wait.ready = true
+            ns.UI.Refresh()
+        end
+    end)
     return false
 end
 
