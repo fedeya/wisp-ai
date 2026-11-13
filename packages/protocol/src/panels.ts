@@ -25,6 +25,8 @@ export const panelContent = z
   .object({
     id: key,
     title: z.string().min(1).max(100),
+    requireItemData: z.boolean().optional(),
+    initiallyHidden: z.boolean().optional(),
     ui: z.array(uiNode).min(1).max(48),
     references: z.record(key, referenceSchema).default({}),
     bindings: z.array(panelBinding).max(24).default([]),

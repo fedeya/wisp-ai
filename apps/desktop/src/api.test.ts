@@ -10,6 +10,17 @@ test('invalid desktop commands are rejected before crossing IPC', async () => {
   ).rejects.toThrow();
   expect(invoke).not.toHaveBeenCalled();
 });
+test('template import admission rejects invalid/oversized or unconfirmed payloads before IPC', async () => {
+  for (const template of ['{}', ' '.repeat(28001)]) {
+    await expect(
+      request('/panels/import', { characterKey: 'B', template, confirmed: true }),
+    ).rejects.toThrow();
+  }
+  await expect(
+    request('/panels/import', { characterKey: 'B', template: '{}', confirmed: false }),
+  ).rejects.toThrow();
+  expect(invoke).not.toHaveBeenCalled();
+});
 test('malformed status and native info do not become trusted UI state', async () => {
   vi.mocked(invoke).mockResolvedValue({ ready: true });
   await expect(request('/status')).rejects.toThrow();
