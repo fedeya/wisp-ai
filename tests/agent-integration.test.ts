@@ -40,6 +40,7 @@ test(
           'tool:get_settings': true,
           'tool:get_quest': true,
           'tool:query_character': true,
+          'tool:inspect_merchant': true,
         },
       }),
     );
@@ -138,6 +139,9 @@ test(
           name: 'eve__tool',
           input: { name: 'questie__get_quest', input: { questId: 166 } },
         },
+        // WISP-037: native deferred merchant discovery and execution.
+        17: { name: 'eve__search', input: { query: 'wow__inspect_merchant' } },
+        18: { name: 'eve__tool', input: { name: 'wow__inspect_merchant', input: { limit: 2 } } },
       };
       const call = plannedCalls[count];
       const output: Record<string, unknown>[] = [];
@@ -486,6 +490,20 @@ test(
           inputPreview: '{"questId":166}',
           resultPreview: expect.stringContaining('The Defias Brotherhood'),
         },
+      });
+
+      // WISP-037: discovery must keep the tool deferred, then invoke its real RPC module.
+      const merchantLookup = await session.send('Inspect the merchant I opened', {
+        signal: AbortSignal.timeout(15000),
+      });
+      for await (const _event of merchantLookup.stream({ signal: AbortSignal.timeout(15000) })) {
+        /* Offline model drives native Eve search/tool, not a custom tool registry. */
+      }
+      expect((await merchantLookup.result()).status).toBe('completed');
+      expect(names(16)).not.toContain('wow__inspect_merchant');
+      expect(JSON.stringify(requests[17])).toContain('wow__inspect_merchant');
+      expect(toolCalls.at(-1)).toMatchObject({
+        inspection: { kind: 'merchant', args: { offset: 0, limit: 2 } },
       });
 
       if (executable) {
