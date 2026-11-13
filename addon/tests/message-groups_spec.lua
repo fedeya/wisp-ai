@@ -291,13 +291,11 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             table.insert(ns.chats[1].messages, reply)
             refresh()
             assert(replyRow:IsShown() and not progress:IsShown())
-            check.equal("S", replyRow.text:GetText())
+            check.equal(reply.text, replyRow.text:GetText())
             assert(not isLoading(group) and group.icon:IsShown())
             reply.streaming = false
             refresh()
             assert(not progress:IsShown(), "thinking stays hidden after the last text chunk")
-            replyRow.scripts.OnUpdate(replyRow, 1)
-            check.equal(reply.text, replyRow.text:GetText())
 
             local simulation = {
                 id = "simulation-after-text",
@@ -362,10 +360,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             })
             ns.chats[1].status = "done"
             refresh()
-            local finalOnly = findRow("A")
-            assert(finalOnly:IsShown() and finalOnly.scripts.OnUpdate)
-            finalOnly.scripts.OnUpdate(finalOnly, 1)
-            check.equal("A reply delivered as a single snapshot", finalOnly.text:GetText())
+            local finalOnly = findRow("A reply delivered as a single snapshot")
+            assert(finalOnly:IsShown())
+            check.is_nil(finalOnly.scripts.OnUpdate)
 
             local fresh = { id = "fresh", status = "idle", messages = {} }
             table.insert(ns.chats, fresh)
@@ -387,10 +384,9 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             }
             fresh.status = "done"
             refresh()
-            local firstReply = findRow("Z")
-            check.equal("Z", firstReply.text:GetText())
-            firstReply.scripts.OnUpdate(firstReply, 1)
-            check.equal("Zebra starts the first reply.", firstReply.text:GetText())
+            local firstReply = findRow("Zebra starts the first reply.")
+            assert(firstReply:IsShown())
+            check.is_nil(firstReply.scripts.OnUpdate)
             if surface == "main" then
                 ns.active = "chat"
             else

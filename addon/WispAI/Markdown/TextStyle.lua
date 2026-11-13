@@ -69,16 +69,14 @@ local function renderMarker(host, font, block, inset, top, unit)
     marker:SetPoint("TOPRIGHT", host, "TOPLEFT", inset - 6, -top)
     marker:Show()
     if unit then
-        unit.setStarted = function(started)
-            marker:SetShown(started)
-        end
+        unit[#unit + 1] = marker
     end
 end
 
--- A reveal unit owns every font span in this block and the visibility of its list marker.
+-- A reveal unit contains all the regions shown with this block.
 function layout.Render(host, pool, part, width, y, count, collectWriting)
     count = count or 0
-    local unit = collectWriting and { fonts = {} } or nil
+    local unit = collectWriting and {} or nil
     host.markdownMeasure = host.markdownMeasure
         or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
     local measure = host.markdownMeasure
@@ -177,7 +175,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                 ns.UI.Widgets.SetText(run, rendered)
                 run:Show()
                 if unit then
-                    unit.fonts[#unit.fonts + 1] = run
+                    unit[#unit + 1] = run
                 end
                 local h, w = run:GetStringHeight(), math.min(length, available - x)
                 if span.code and block.kind ~= "code" then
@@ -214,6 +212,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                 end
             end
             if block.kind == "rule" then
+                decoration = 1
                 texture(host, f, 1, 0, y + 5, width, 1, { 0.5, 0.43, 0.29, 0.6 })
                 y = y + 12
             else
@@ -281,7 +280,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                     ns.UI.Widgets.SetText(f, text)
                     f:Show()
                     if unit then
-                        unit.fonts = { f }
+                        unit = { f }
                     end
                     if block.kind == "list" then
                         renderMarker(host, f, block, inset, top, unit)
@@ -321,9 +320,14 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                     y = y + 6
                 end
             end
+            if unit then
+                for index = 1, decoration do
+                    unit[#unit + 1] = f.decorations[index]
+                end
+            end
         end
     end
-    return y, count, unit and #unit.fonts > 0 and unit or nil
+    return y, count, unit and #unit > 0 and unit or nil
 end
 
 ns.Markdown.TextStyle = layout

@@ -702,7 +702,7 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
                     f:Show()
                     y = y + f:GetStringHeight() + 8
                     if writingUnits then
-                        unit = { fonts = { f } }
+                        unit = { f }
                     end
                 end
                 if unit then
