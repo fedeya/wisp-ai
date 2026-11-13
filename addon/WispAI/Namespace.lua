@@ -21,6 +21,7 @@ ns.UI.Memory = ns.UI.Memory or {}
 ns.UI.Capabilities = ns.UI.Capabilities or {}
 ns.UI.Sidebar = ns.UI.Sidebar or {}
 ns.UI.SettingsPanel = ns.UI.SettingsPanel or {}
+ns.UI.SettingsPresets = ns.UI.SettingsPresets or {}
 ns.UI.Activity = ns.UI.Activity or {}
 ns.UI.Transcript = ns.UI.Transcript or {}
 ns.UI.Composer = ns.UI.Composer or {}

@@ -167,5 +167,9 @@ function ns.UI.SettingsPanel.Build(frame, body)
     back:SetPoint("LEFT", chatButton, "RIGHT", 10, 0)
     ns.UI.Capabilities.Build(settings)
     ns.UI.Memory.Build(settings)
+    local presetsButton = button(settings, "CVar presets", 120, function()
+        ns.UI.SettingsPresets.Show()
+    end)
+    presetsButton:SetPoint("TOPRIGHT", -20, -15)
     return settings
 end

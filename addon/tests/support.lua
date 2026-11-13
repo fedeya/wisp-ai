@@ -58,6 +58,7 @@ function M.addon(name, env)
             "UI/Capabilities.lua",
             "UI/Memory.lua",
             "UI/Sidebar.lua",
+            "UI/SettingsPresets.lua",
             "UI/SettingsPanel.lua",
             "UI/Activity.lua",
             "UI/Transcript.lua",

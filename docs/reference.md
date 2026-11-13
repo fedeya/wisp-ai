@@ -15,6 +15,48 @@ Wisp reads character state on demand and can inspect references, compare item st
 
 Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/bridge/src/thewowdb.ts), [Everloot’s allowlist](../apps/agent/agent/connections/everloot.ts), [Wowhead search](../apps/bridge/src/wowhead-search.ts) and the agent instructions.
 
+## Native desired CVar presets
+
+In the in-game Wisp window, open **Settings → CVar presets**. This is a local
+player control, not a natural-language save/list tool or a desktop settings profile.
+
+1. Choose **New preset**, enter a name, explicitly check **1–12** discovered numeric
+   or boolean CVars, and enter their desired numbers or `true`/`false`. No targets
+   or desired values are selected for you. The picker shows at most the first
+   **60 discovered targets**, not every game setting; it reports truncation.
+2. **Save definition** stores the name and normalized desired values only. Choose
+   its name under **Saved presets** to see the saved desired definition.
+3. **Review changes** rediscovers all selected targets and creates a **new** preview
+   from their current native readings. Save, list, selection and Review make no
+   game writes, model calls or transport requests. **At review** labels an immutable
+   reading, not a continuously live value—even after Apply or Undo.
+4. Deliberately choose **Apply changes** to use the existing settings transaction
+   engine and verified readback. **Undo changes** restores the values immediately
+   before that Apply only if they remain safe to restore. A manual change after
+   preview blocks stale Apply; a manual change after Apply blocks destructive Undo.
+
+Definitions belong to the verified current character. **This does not make the
+CVars character-local**: their native scope is unknown here and may be account-wide.
+Missing, read-only, incompatible, wrong-owner or stale-revision targets block the
+entire review, without partial application. Apply/Undo retain character/session,
+combat, current-value and capability gates; disconnected, disabled, unavailable
+or pending capabilities block the native mutation buttons. Each later Review
+gets a new transaction ID; there is no automatic switching or historical replay.
+
+Select a definition, choose **Delete preset**, then confirm **Delete definition**
+or **Cancel**. Deletion checks current owner, exact ID and selected revision. It
+removes only that definition: no game writes or model/transport calls, no undo of
+applied settings, and no erasure of transaction history. Names are limited to
+48 bytes, with no overwrite of an existing name for that owner; the local
+collection holds at most 30 definitions. There is no rename/edit/import feature.
+
+Definitions persist in the addon's existing **WispAIDB SavedVariables**, restored
+after the game saves and reloads them. Only supported discovered numeric/boolean
+CVars are included—not keybindings, scripts, addon profiles or complete game
+configuration. Actual CVar support/scope and SavedVariables logout/restart behavior
+depend on the client; offline fixtures and approximate UI reconstructions do not
+establish real-client appearance, availability or scope.
+
 ## Custom MCP connections
 
 In desktop **Tools & MCPs**, choose **Add MCP**:
