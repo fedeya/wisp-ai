@@ -410,7 +410,7 @@ test('the provider directory exposes the registry and preserves manual model set
   await fireEvent.input(providerSearch, { target: { value: 'anthropic' } });
   await openProvider('Claude', 'Claude');
   expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: 'Add models manually' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Manage models' }));
   await fireEvent.input(screen.getByLabelText('Connection name'), {
     target: { value: 'My Claude' },
   });
@@ -461,28 +461,56 @@ test('the provider directory exposes the registry and preserves manual model set
 });
 
 test.each([
-  { existingDefault: true, selection: 'Luna', overview: 'Wisp is ready' },
-  { existingDefault: false, selection: 'Choose a model', overview: 'Connect your AI account' },
+  {
+    provider: 'openrouter' as const,
+    name: 'OpenRouter',
+    existingDefault: true,
+    selection: 'Luna',
+    overview: 'Wisp is ready',
+  },
+  {
+    provider: 'gateway' as const,
+    name: 'Vercel AI Gateway',
+    existingDefault: false,
+    selection: 'Choose a model',
+    overview: 'Connect your AI account',
+  },
 ])(
-  'discovery saves the model list and keeps the default selection at $selection',
-  async ({ existingDefault, selection, overview }) => {
+  '$name only saves the models the user adds and keeps the default at $selection',
+  async ({ provider, name, existingDefault, selection, overview }) => {
     if (!existingDefault) {
       status.auth = { status: 'signed_out', revision: 1, profiles: [] };
       status.model = '';
     }
-    const models = [
-      { id: 'claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 },
-      { id: 'claude-haiku', name: 'Claude Haiku', contextWindow: 200000 },
+    const model = { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 };
+    const catalog = [
+      { ...model, supportsTools: true },
+      {
+        id: 'anthropic/claude-haiku',
+        name: 'Claude Haiku',
+        contextWindow: 200000,
+        supportsTools: true,
+      },
+      { id: 'example/text-only', supportsTools: false },
+      { id: 'example/unknown' },
     ];
+    let discoveryCalls = 0;
     const id = '35302f8c-128a-48fb-98a1-9eb03bb71f72';
     const original = vi.mocked(request).getMockImplementation()!;
     vi.mocked(request).mockImplementation(async (route, body) => {
       if (route === '/connections/discover') {
-        return { models: [...models, models[0], { id: 'manual-only' }] } as never;
+        discoveryCalls += 1;
+        return { models: discoveryCalls === 1 ? catalog : catalog.slice(1) } as never;
       }
       if (route === '/connections/save') {
         status.connections = [
-          { id, provider: 'anthropic', name: 'Anthropic / Claude', hasKey: true, models },
+          {
+            id,
+            provider,
+            name,
+            hasKey: true,
+            models: (body as { models: (typeof model)[] }).models,
+          },
         ];
       }
       if (route === '/auth/models') {
@@ -510,31 +538,51 @@ test.each([
       expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
     }
     await openProviderPicker();
-    await openProvider('Claude', 'Claude');
+    await openProvider(name, name);
     await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
-    await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
-    await screen.findByText('2 models available after saving');
-    expect(
-      screen.getByRole('button', { name: 'Manage models' }).getAttribute('aria-expanded'),
-    ).toBe('false');
+    const discover = screen.getByRole<HTMLButtonElement>('button', { name: 'Discover models' });
+    await fireEvent.click(discover);
+    const search = await screen.findByRole('searchbox', { name: 'Search provider models' });
     const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save connection' });
+    expect(save.disabled).toBe(true);
+    const toolFilter = screen.getByRole<HTMLInputElement>('checkbox', {
+      name: 'Tool calling only',
+    });
+    expect(toolFilter.checked).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Add example/unknown' })).toBeNull();
+    await fireEvent.click(toolFilter);
+    expect(screen.getByText('Tool calling unknown')).toBeTruthy();
+    expect(screen.getByText('No tool calling')).toBeTruthy();
+    await fireEvent.input(search, { target: { value: 'sonnet' } });
+    expect(screen.queryByRole('button', { name: 'Add anthropic/claude-haiku' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Add anthropic/claude-sonnet' }));
+    await screen.findByText('1 model selected for Wisp');
+    await fireEvent.click(screen.getByRole('button', { name: 'Test anthropic/claude-sonnet' }));
+    expect(request).toHaveBeenCalledWith(
+      '/connections/test',
+      expect.objectContaining({ models: [model] }),
+    );
+    await waitFor(() => expect(discover.disabled).toBe(false));
+    await fireEvent.click(discover);
+    await screen.findByText('No models match your search.');
+    expect(screen.getByText('1 model selected for Wisp')).toBeTruthy();
     await waitFor(() => expect(save.disabled).toBe(false));
     await fireEvent.click(save);
     await waitFor(() =>
       expect(request).toHaveBeenCalledWith(
         '/connections/save',
-        expect.objectContaining({ models }),
+        expect.objectContaining({ models: [model] }),
       ),
     );
     expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
     await fireEvent.click(screen.getByRole('link', { name: 'Back to Connections' }));
-    await screen.findByRole('link', { name: 'Manage Claude' });
+    await screen.findByRole('link', { name: `Manage ${name}` });
     expect(screen.queryByRole('heading', { name: 'Connect your first provider' })).toBeNull();
     const selector = await screen.findByRole('combobox', { name: 'Default model for new chats' });
     await waitFor(() => expect(selector.textContent).toBe(selection));
-    expect(
-      within(await openSelect(selector)).getByRole('option', { name: 'Claude Haiku' }),
-    ).toBeTruthy();
+    const choices = within(await openSelect(selector));
+    expect(choices.getByRole('option', { name: 'Claude Sonnet' })).toBeTruthy();
+    expect(choices.queryByRole('option', { name: 'Claude Haiku' })).toBeNull();
   },
 );
 

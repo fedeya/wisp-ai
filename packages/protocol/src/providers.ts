@@ -128,6 +128,9 @@ export const connectionModel = z.object({
   contextWindow: z.number().int().positive().max(100_000_000).optional(),
   reasoningEfforts: z.array(reasoningEffort).max(8).optional(),
 });
+export const discoveredConnectionModel = connectionModel.extend({
+  supportsTools: z.boolean().optional(),
+});
 export const maxConnectionModels = 200;
 
 export const connectionConfig = z.object({
@@ -146,6 +149,7 @@ export const connectionView = connectionConfig.extend({ hasKey: z.boolean() });
 export type ConnectionConfig = z.infer<typeof connectionConfig>;
 export type ConnectionSetup = z.infer<typeof connectionSetup>;
 export type ConnectionModel = z.infer<typeof connectionModel>;
+export type DiscoveredConnectionModel = z.infer<typeof discoveredConnectionModel>;
 export type ConnectionView = z.infer<typeof connectionView>;
 
 export function connectionModelSlug(connection: string, model: string) {

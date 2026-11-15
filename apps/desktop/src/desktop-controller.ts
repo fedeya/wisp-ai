@@ -131,14 +131,14 @@ function createDesktopSession() {
   async function work(
     label: string,
     action: () => Promise<unknown>,
-    success?: string,
+    success?: string | null,
     target = '',
   ) {
     if (disposed || getState().busy) return false;
     update({ busy: label, busyTarget: target, failed: false, feedback: '' });
     try {
       await action();
-      update({ feedback: success || getState().feedback || 'Done.' });
+      if (success !== null) update({ feedback: success || getState().feedback || 'Done.' });
       return true;
     } catch (error) {
       update({ failed: true, feedback: String(error).replace(/^Error: /, '') });

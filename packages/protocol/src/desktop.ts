@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { capabilityViewSchema } from './capabilities.js';
 import { savedRoutine, routineRun } from './routines.js';
-import { connectionView, connectionModel } from './providers.js';
+import { connectionView, discoveredConnectionModel } from './providers.js';
 import { searchState } from './search.js';
 export const desktopInfoSchema = z.object({
   wow: z.string().nullable().optional(),
@@ -71,5 +71,5 @@ export const desktopResponses = {
   '/auth/start': z.object({ authorizationUrl: z.string().url() }).passthrough(),
   '/auth/cancel': authStateSchema,
   '/auth/disconnect': authStateSchema,
-  '/connections/discover': z.object({ models: z.array(connectionModel) }),
+  '/connections/discover': z.object({ models: z.array(discoveredConnectionModel) }),
 };
