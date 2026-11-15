@@ -6,6 +6,7 @@ import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 import { z } from 'zod';
 import type { SecretVault } from './secret-vault.ts';
 import { accountModel, type AccountModel, type AccountModelInput } from './chat-model.ts';
+import { sendChatGPTCallbackPage } from './chatgpt-callback-page.ts';
 
 const ISSUER = 'https://auth.openai.com',
   RESOURCE = 'https://api.openai.com/v1';
@@ -226,7 +227,7 @@ export class ChatGPTAuth {
           supplied.length !== expected.length ||
           !timingSafeEqual(supplied, expected)
         ) {
-          res.writeHead(400).end('This sign-in attempt is invalid or expired. Return to Wisp.');
+          sendChatGPTCallbackPage(res, 'error', 'This sign-in attempt is invalid or expired.');
           return;
         }
         current.consumed = true;
@@ -293,10 +294,11 @@ export class ChatGPTAuth {
             await this.persist();
             throw new ChatGPTAuthError('Sign-in cancelled.');
           }
-          this.message = tokens.scopes.includes('chatgpt.tokens.use.direct')
+          const hasPlanPermission = tokens.scopes.includes('chatgpt.tokens.use.direct');
+          this.message = hasPlanPermission
             ? ''
             : 'Connected account, but ChatGPT plan use was not granted. Continue with ChatGPT to authorize plan use.';
-          res.end('Wisp is connected. You can close this tab and return to the app.');
+          sendChatGPTCallbackPage(res, hasPlanPermission ? 'connected' : 'permission-required');
         } catch (error) {
           this.message =
             error instanceof ChatGPTAuthError
@@ -304,7 +306,7 @@ export class ChatGPTAuth {
               : current.controller.signal.aborted
                 ? 'Sign-in cancelled.'
                 : 'Sign-in could not be completed. Return to Wisp and try again.';
-          res.writeHead(400).end(this.message);
+          sendChatGPTCallbackPage(res, 'error', this.message);
         } finally {
           if (this.pending?.id === id) {
             this.pending = undefined;
@@ -318,7 +320,7 @@ export class ChatGPTAuth {
           }, 100).unref();
         }
       })().catch(() => {
-        res.writeHead(400).end('Sign-in failed. Return to Wisp.');
+        sendChatGPTCallbackPage(res, 'error');
         void this.cancel();
       });
     });

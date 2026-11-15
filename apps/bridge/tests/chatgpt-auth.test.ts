@@ -110,7 +110,7 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
     nonce = u.searchParams.get('nonce')!;
     return u;
   }
-  async function callback(u: URL, overrides: Record<string, string> = {}) {
+  async function callbackResponse(u: URL, overrides: Record<string, string> = {}) {
     const callback = new URL(u.searchParams.get('redirect_uri')!);
     callback.search = new URLSearchParams({
       code: 'test-code',
@@ -118,9 +118,11 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
       client_id: audience,
       ...overrides,
     }).toString();
-    const r = await fetch(callback);
-    await r.text();
-    return r.status;
+    const response = await fetch(callback);
+    return { status: response.status, headers: response.headers, html: await response.text() };
+  }
+  async function callback(u: URL, overrides: Record<string, string> = {}) {
+    return (await callbackResponse(u, overrides)).status;
   }
   return {
     auth,
@@ -130,6 +132,7 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
     calls,
     start,
     callback,
+    callbackResponse,
     setNonce: (v: string) => {
       nonce = v;
     },
@@ -168,9 +171,22 @@ test('independent OAuth uses PKCE and verified identity; only safe state is publ
   assert.equal(u.searchParams.get('resource'), 'https://api.openai.com/v1');
   assert.match(u.searchParams.get('scope')!, /chatgpt.tokens.use.direct/);
   assert.equal(new URL(u.searchParams.get('redirect_uri')!).hostname, '127.0.0.1');
-  assert.equal(await f.callback(u, { state: 'incorrect' }), 400);
+  const expired = await f.callbackResponse(u, { state: 'incorrect' });
+  assert.equal(expired.status, 400);
+  assert.match(expired.html, /<h1[^>]*>ChatGPT sign-in failed<\/h1>/);
+  assert.match(expired.html, /This sign-in attempt is invalid or expired/);
   assert.equal(f.auth.state().status, 'authorizing');
-  assert.equal(await f.callback(u), 200);
+  const connected = await f.callbackResponse(u);
+  assert.equal(connected.status, 200);
+  assert.equal(connected.headers.get('content-type'), 'text/html; charset=utf-8');
+  assert.equal(connected.headers.get('cache-control'), 'no-store');
+  assert.equal(connected.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(connected.html, /<h1[^>]*>ChatGPT connected<\/h1>/);
+  assert.match(connected.html, /Return to Wisp/);
+  assert.doesNotMatch(
+    connected.html,
+    /test-code|player@example\.test|access-private|refresh-private/,
+  );
   assert.equal(f.auth.state().status, 'connected');
   assert.equal(f.auth.state().account, 'player@example.test');
   const exchange = f.calls.find((c) => c.body.get('grant_type') === 'authorization_code')!.body;
@@ -241,7 +257,10 @@ test('rotating refresh is single flight and never retries ambiguous refresh toke
 test('missing plan consent cannot invoke inference', async (t) => {
   const f = await fixture(t);
   f.setScopes('openid profile email');
-  assert.equal(await f.callback(await f.start()), 200);
+  const pending = await f.callbackResponse(await f.start());
+  assert.equal(pending.status, 200);
+  assert.match(pending.html, /<h1[^>]*>One more step<\/h1>/);
+  assert.match(pending.html, /Select Continue with ChatGPT to grant access/);
   assert.equal(f.auth.state().status, 'plan_permission_required');
   await assert.rejects(() => f.auth.accessToken(), /Allow Wisp/);
 });
