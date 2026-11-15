@@ -1,9 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  skipTrailingSlashRedirect: true,
+  async redirects() {
+    return [
+      {
+        // Keep canonical URLs while preserving the trailing slash on PostHog requests.
+        source: '/:path((?!_wa(?:/|$)).+)/',
+        destination: '/:path',
+        permanent: true,
+      },
+    ];
+  },
   async rewrites() {
     // Match the portfolio's first-party Rybbit proxy; expose only tracking endpoints.
-    return [
+    const rybbit = [
       'script.js',
       'replay.js',
       'metrics.js',
@@ -16,6 +27,21 @@ const nextConfig = {
       source: `/_fm/${path}`,
       destination: `https://rybbit.fedeminaya.com/api/${path}`,
     }));
+    return [
+      ...rybbit,
+      {
+        source: '/_wa/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/_wa/array/:path*',
+        destination: 'https://us-assets.i.posthog.com/array/:path*',
+      },
+      {
+        source: '/_wa/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+    ];
   },
   async headers() {
     return [

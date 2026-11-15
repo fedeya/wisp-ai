@@ -4,7 +4,8 @@ import posthog from 'posthog-js';
 const projectToken =
   process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN ||
   'phc_se29yi8DLMmFxhRcqQrzrSs9vGLzAiEGmsaMvjotDdTE';
-const host = process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://us.i.posthog.com';
+const proxyPath = '/_wa';
+const host = process.env.NEXT_PUBLIC_POSTHOG_HOST || proxyPath;
 let initialized = false;
 
 export type DownloadDetails = {
@@ -21,6 +22,7 @@ export function initializeAnalytics() {
   try {
     posthog.init(projectToken, {
       api_host: host,
+      ...(host === proxyPath ? { ui_host: 'https://us.posthog.com' } : {}),
       defaults: '2025-05-24',
       capture_pageview: 'history_change',
       capture_pageleave: true,

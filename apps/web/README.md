@@ -137,12 +137,13 @@ Enable **First-Party Proxy** in Rybbit Site Settings → Privacy & Security so
 forwarded visitor IPs are interpreted correctly. Only tracking endpoints are
 exposed; the dashboard and administrative API are not proxied.
 
-Production pages also use PostHog in the shared Wisp project. Its public ingestion
-token and US host are configured in `src/analytics.ts`; no deployment variables
-are required. Optional build-time `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` and
-`NEXT_PUBLIC_POSTHOG_HOST` overrides select another project or region. These are
-public browser values, not personal API keys. Next.js does not read `VITE_*` values.
-Development and Vercel previews do not initialize PostHog.
+Production pages also use PostHog in the shared Wisp project through the
+first-party `/_wa/` proxy to PostHog US. The public ingestion token is set in
+`src/analytics.ts`, and `next.config.mjs` routes API and asset requests to their
+respective hosts. No deployment variables are required. Set
+`NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` at build time to select another project, or
+`NEXT_PUBLIC_POSTHOG_HOST` to use a different browser endpoint directly.
+Both values are public. Development and Vercel previews do not initialize PostHog.
 
 PostHog records pageviews, including client-side route/language changes, and
 `download_clicked` with `surface: web`, `platform: windows-x64`, `location`, `locale`,

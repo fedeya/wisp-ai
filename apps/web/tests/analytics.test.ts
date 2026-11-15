@@ -18,10 +18,15 @@ test('download tracking is inactive until the production layout initializes it',
 });
 
 test('download events include release attribution and survive navigation using a beacon', async () => {
+  vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', '');
   const { initializeAnalytics, trackDownload } = await import('../src/analytics.ts');
   initializeAnalytics();
   initializeAnalytics();
   expect(sdk.init).toHaveBeenCalledTimes(1);
+  expect(sdk.init).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ api_host: '/_wa', ui_host: 'https://us.posthog.com' }),
+  );
   trackDownload({
     location: 'changelog',
     locale: 'es',

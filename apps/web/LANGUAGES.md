@@ -16,7 +16,8 @@ Setup, the animated conversations and controls, metadata and social cards.
   parameters and anchors without a document reload (Next Link navigation), and stores the choice in a one-year SameSite=Lax
   preference cookie (Secure on HTTPS). No translation service runs. Production
   pages load Rybbit analytics through the first-party `/_fm/` proxy and PostHog
-  for pageviews and download clicks. Both are disabled in development and previews.
+  through `/_wa/` for pageviews and download clicks. Both are disabled in
+  development and previews.
 - Language-negotiating redirects are private/no-store and vary by language and
   cookie. Assets, sitemap and robots are not subject to locale negotiation.
 
