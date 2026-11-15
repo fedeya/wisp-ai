@@ -1,6 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { useForm, useSelector } from '@tanstack/react-form';
-import { useImperativeHandle, useState, type RefObject } from 'react';
+import { useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { request, type Mcp } from '../../../api';
 import Icon from '../../ui/Icon';
 import { button } from '../../ui/Controls/styles';
@@ -33,22 +33,39 @@ const checkRowClass =
   'check-row gap-[9px] mx-0 my-[15px] flex items-center text-[#b6c9cf] text-[12px]';
 const checkboxClass = 'w-[15px] h-[15px] min-h-[0] [accent-color:var(--accent)]';
 
+const argsError = 'Arguments must be a JSON array of strings.';
+const envError = 'Environment must be a JSON object with string values.';
+
+function parseJson(input: string): unknown {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return undefined;
+  }
+}
+
+function parseArgs(input: string) {
+  const args = parseJson(input);
+  return Array.isArray(args) && args.every((item) => typeof item === 'string') ? args : undefined;
+}
+
+function parseEnv(input: string) {
+  const env = parseJson(input);
+  return env &&
+    typeof env === 'object' &&
+    !Array.isArray(env) &&
+    Object.values(env).every((value) => typeof value === 'string')
+    ? env
+    : undefined;
+}
+
 function payloadFor(values: McpFields) {
   const isLocal = values.transport === 'stdio';
-  const args: unknown = isLocal ? JSON.parse(values.args) : [];
-  if (!Array.isArray(args) || args.some((argument) => typeof argument !== 'string')) {
-    throw Error('Arguments must be a JSON array of strings.');
-  }
-  const env: unknown = isLocal && values.env.trim() ? JSON.parse(values.env) : undefined;
-  if (
-    env !== undefined &&
-    (!env ||
-      typeof env !== 'object' ||
-      Array.isArray(env) ||
-      Object.values(env).some((v) => typeof v !== 'string'))
-  ) {
-    throw Error('Environment must be a JSON object with string values.');
-  }
+  const args = isLocal ? parseArgs(values.args) : [];
+  if (!args) throw Error(argsError);
+  const hasEnv = isLocal && !!values.env.trim();
+  const env = hasEnv ? parseEnv(values.env) : undefined;
+  if (hasEnv && !env) throw Error(envError);
 
   return {
     server: {
@@ -71,7 +88,13 @@ export default function McpForm({
   saved,
   firstField,
 }: McpDialogProps & { firstField: RefObject<HTMLInputElement | null> }) {
-  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
+  const argsInput = useRef<HTMLInputElement>(null);
+  const envInput = useRef<HTMLTextAreaElement>(null);
+  const errorId = useId();
+  const [notice, setNotice] = useState<{
+    kind: 'pending' | 'success' | 'error';
+    text: string;
+  } | null>(null);
   const defaultValues: McpFields = {
     name: server?.name || '',
     description: server?.description || '',
@@ -86,9 +109,22 @@ export default function McpForm({
   const form = useForm({
     defaultValues,
     onSubmitMeta: 'save' as SubmitMode,
+    validators: {
+      onSubmit: ({ value }) => {
+        if (value.transport !== 'stdio') return;
+        const args = parseArgs(value.args) ? undefined : argsError;
+        const env = value.env.trim() && !parseEnv(value.env) ? envError : undefined;
+        if (args || env) return { fields: { args, env } };
+      },
+    },
+    onSubmitInvalid: ({ formApi }) => {
+      setNotice(null);
+      const invalid = formApi.getFieldMeta('args')?.errors.length ? argsInput : envInput;
+      invalid.current?.focus();
+    },
     onSubmit: async ({ value, meta }) => {
       const save = meta === 'save';
-      setNotice({ text: save ? 'Saving connection…' : 'Testing connection…' });
+      setNotice({ kind: 'pending', text: save ? 'Saving connection…' : 'Testing connection…' });
       try {
         const result = await request<{ count: number }>(
           save ? '/mcps/save' : '/mcps/test',
@@ -97,10 +133,10 @@ export default function McpForm({
         if (save) {
           await saved();
         } else {
-          setNotice({ text: `Connected. ${result.count} tools available.` });
+          setNotice({ kind: 'success', text: `Connected. ${result.count} tools available.` });
         }
       } catch (error) {
-        setNotice({ text: String(error).replace(/^Error: /, ''), error: true });
+        setNotice({ kind: 'error', text: String(error).replace(/^Error: /, '') });
         return;
       }
       if (save) close();
@@ -139,143 +175,180 @@ export default function McpForm({
           <Icon name="close" />
         </Dialog.Close>
       </header>
-      <div className="form-grid gap-[16px] grid grid-cols-[1fr_1fr]">
+      <fieldset disabled={busy && notice?.kind === 'pending'} className="m-0 min-w-0 border-0 p-0">
+        <div className="form-grid gap-[16px] grid grid-cols-[1fr_1fr]">
+          <label className={labelClass}>
+            Name
+            <form.Field name="name">
+              {(field) => (
+                <Input
+                  ref={server ? undefined : firstField}
+                  value={field.state.value}
+                  onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                  disabled={!!server}
+                  placeholder="my_connection"
+                />
+              )}
+            </form.Field>
+          </label>
+          <label className={labelClass}>
+            Transport
+            <form.Field name="transport">
+              {(field) => (
+                <Select
+                  value={field.state.value}
+                  onChange={({ currentTarget }) =>
+                    field.handleChange(currentTarget.value as Mcp['transport'])
+                  }
+                >
+                  <option value="http">Streamable HTTP</option>
+                  <option value="sse">SSE</option>
+                  <option value="stdio">Local process (stdio)</option>
+                </Select>
+              )}
+            </form.Field>
+          </label>
+        </div>
         <label className={labelClass}>
-          Name
-          <form.Field name="name">
+          Description
+          <form.Field name="description">
             {(field) => (
               <Input
-                ref={server ? undefined : firstField}
                 value={field.state.value}
                 onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-                disabled={!!server || busy}
-                placeholder="my_connection"
+                placeholder="What can this connection help with?"
               />
             )}
           </form.Field>
         </label>
         <label className={labelClass}>
-          Transport
-          <form.Field name="transport">
+          {isLocal ? 'Executable or command' : 'Endpoint URL'}
+          <form.Field name="address">
             {(field) => (
-              <Select
+              <Input
+                ref={server ? firstField : undefined}
                 value={field.state.value}
-                onChange={({ currentTarget }) =>
-                  field.handleChange(currentTarget.value as Mcp['transport'])
-                }
-                disabled={busy}
-              >
-                <option value="http">Streamable HTTP</option>
-                <option value="sse">SSE</option>
-                <option value="stdio">Local process (stdio)</option>
-              </Select>
+                onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                placeholder={isLocal ? 'npx' : 'https://example.com/mcp'}
+              />
             )}
           </form.Field>
         </label>
-      </div>
-      <label className={labelClass}>
-        Description
-        <form.Field name="description">
-          {(field) => (
-            <Input
-              value={field.state.value}
-              onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-              placeholder="What can this connection help with?"
-            />
-          )}
-        </form.Field>
-      </label>
-      <label className={labelClass}>
-        {isLocal ? 'Executable or command' : 'Endpoint URL'}
-        <form.Field name="address">
-          {(field) => (
-            <Input
-              ref={server ? firstField : undefined}
-              value={field.state.value}
-              onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-              placeholder={isLocal ? 'npx' : 'https://example.com/mcp'}
-            />
-          )}
-        </form.Field>
-      </label>
-      {isLocal ? (
-        <>
-          <label className={labelClass}>
-            Arguments <span className="muted text-muted text-[10px]">JSON array</span>
+        {isLocal ? (
+          <>
             <form.Field name="args">
-              {(field) => (
-                <Input
-                  value={field.state.value}
-                  onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-                />
-              )}
+              {(field) => {
+                const error = field.state.meta.errors[0];
+                const inputId = errorId + '-args';
+                return (
+                  <div className={labelClass}>
+                    <label htmlFor={inputId}>
+                      Arguments <span className="muted text-muted text-[10px]">JSON array</span>
+                    </label>
+                    <Input
+                      id={inputId}
+                      ref={argsInput}
+                      value={field.state.value}
+                      onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                      aria-invalid={!!error}
+                      aria-describedby={error ? inputId + '-error' : undefined}
+                    />
+                    {error && (
+                      <span id={inputId + '-error'} className="text-[11px] text-[#efafa2]">
+                        {error}
+                      </span>
+                    )}
+                  </div>
+                );
+              }}
             </form.Field>
-          </label>
-          <label className={labelClass}>
-            Environment{' '}
-            <span className="muted text-muted text-[10px]">Blank keeps stored values</span>
             <form.Field name="env">
-              {(field) => (
-                <Textarea
-                  rows={2}
-                  value={field.state.value}
-                  onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-                  placeholder={'{"API_KEY":"…"}'}
-                />
-              )}
+              {(field) => {
+                const error = field.state.meta.errors[0];
+                const inputId = errorId + '-env';
+                return (
+                  <div className={labelClass}>
+                    <label htmlFor={inputId}>
+                      Environment{' '}
+                      <span className="muted text-muted text-[10px]">
+                        Blank keeps stored values
+                      </span>
+                    </label>
+                    <Textarea
+                      id={inputId}
+                      ref={envInput}
+                      value={field.state.value}
+                      onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                      aria-invalid={!!error}
+                      aria-describedby={error ? inputId + '-error' : undefined}
+                      rows={2}
+                      placeholder={'{"API_KEY":"…"}'}
+                    />
+                    {error && (
+                      <span id={inputId + '-error'} className="text-[11px] text-[#efafa2]">
+                        {error}
+                      </span>
+                    )}
+                  </div>
+                );
+              }}
             </form.Field>
-          </label>
-        </>
-      ) : (
-        <>
-          <label className={labelClass}>
-            Bearer token{' '}
-            <span className="muted text-muted text-[10px]">Blank keeps stored token</span>
-            <form.Field name="token">
-              {(field) => (
-                <Input
-                  type="password"
-                  value={field.state.value}
-                  onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-                  autoComplete="off"
-                />
+          </>
+        ) : (
+          <>
+            <label className={labelClass}>
+              Bearer token{' '}
+              <span className="muted text-muted text-[10px]">Blank keeps stored token</span>
+              <form.Field name="token">
+                {(field) => (
+                  <Input
+                    type="password"
+                    value={field.state.value}
+                    onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                    autoComplete="off"
+                  />
+                )}
+              </form.Field>
+              {server?.hasToken && (
+                <span className="muted text-muted text-[10px]">A token is securely stored.</span>
               )}
-            </form.Field>
-            {server?.hasToken && (
-              <span className="muted text-muted text-[10px]">A token is securely stored.</span>
+            </label>
+            <label className={checkRowClass}>
+              <form.Field name="clearToken">
+                {(field) => (
+                  <Checkbox
+                    className={checkboxClass}
+                    checked={field.state.value}
+                    onChange={({ currentTarget }) => field.handleChange(currentTarget.checked)}
+                  />
+                )}
+              </form.Field>
+              Remove stored token
+            </label>
+          </>
+        )}
+        <label className={checkRowClass}>
+          <form.Field name="enabled">
+            {(field) => (
+              <Checkbox
+                className={checkboxClass}
+                checked={field.state.value}
+                onChange={({ currentTarget }) => field.handleChange(currentTarget.checked)}
+              />
             )}
-          </label>
-          <label className={checkRowClass}>
-            <form.Field name="clearToken">
-              {(field) => (
-                <Checkbox
-                  className={checkboxClass}
-                  checked={field.state.value}
-                  onChange={({ currentTarget }) => field.handleChange(currentTarget.checked)}
-                />
-              )}
-            </form.Field>
-            Remove stored token
-          </label>
-        </>
-      )}
-      <label className={checkRowClass}>
-        <form.Field name="enabled">
-          {(field) => (
-            <Checkbox
-              className={checkboxClass}
-              checked={field.state.value}
-              onChange={({ currentTarget }) => field.handleChange(currentTarget.checked)}
-            />
-          )}
-        </form.Field>
-        Enable connection
-      </label>
+          </form.Field>
+          Enable connection
+        </label>
+      </fieldset>
+      <Dialog.Description className="text-[11px] text-muted">
+        Test the connection before saving. Local commands run on your computer.
+      </Dialog.Description>
       <p
-        className={`notice-inline text-[11px] text-muted min-h-[32px] [&.error]:text-[#efafa2]${notice?.error ? ' error' : ''}`}
-        aria-live="polite"
+        className={`notice-inline text-[11px] text-muted [&.error]:text-[#efafa2]${notice?.kind === 'error' ? ' error' : ''}`}
+        role="status"
+        aria-atomic="true"
       >
-        {notice?.text || 'Test the connection before saving. Local commands run on your computer.'}
+        {notice?.text}
       </p>
       <footer className="gap-[12px] flex justify-end mt-[22px]">
         <Button onClick={() => submit('test')} disabled={busy || !addressReady}>

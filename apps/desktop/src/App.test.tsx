@@ -644,8 +644,19 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   await fireEvent.input(name, {
     target: { value: 'my_tools' },
   });
-  await fireEvent.input(fields.getByLabelText('Endpoint URL'), {
+  const endpoint = fields.getByLabelText('Endpoint URL');
+  await fireEvent.input(endpoint, {
     target: { value: 'https://example.com/mcp' },
+  });
+  let finishSave!: () => void;
+  const beforeSave = vi.mocked(request).getMockImplementation()!;
+  vi.mocked(request).mockImplementation(async (route, body) => {
+    if (route === '/mcps/save') {
+      await new Promise<void>((resolve) => {
+        finishSave = resolve;
+      });
+    }
+    return beforeSave(route, body);
   });
   fireEvent.submit((name as HTMLInputElement).form!);
   await waitFor(() =>
@@ -660,7 +671,24 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
       },
     }),
   );
+  expect(endpoint.matches(':disabled')).toBe(true);
+  expect(fields.getByLabelText('Description').matches(':disabled')).toBe(true);
+  expect(fields.getByRole('checkbox', { name: 'Enable connection' }).matches(':disabled')).toBe(
+    true,
+  );
+  expect(
+    screen.getByRole('dialog', {
+      name: 'Add an MCP',
+      description: 'Test the connection before saving. Local commands run on your computer.',
+    }),
+  ).toBe(dialog);
+  await fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(screen.getByRole('dialog')).toBe(dialog);
+  await act(async () => {
+    finishSave();
+  });
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(add));
 
   await fireEvent.click(add);
   const localDialog = await screen.findByRole('dialog', { name: 'Add an MCP' });
@@ -675,11 +703,17 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   await fireEvent.input(args, { target: { value: '[1]' } });
   await fireEvent.click(testConnection);
   await local.findByText('Arguments must be a JSON array of strings.');
+  expect(args.getAttribute('aria-invalid')).toBe('true');
+  await waitFor(() => expect(document.activeElement).toBe(args));
   expect(request).not.toHaveBeenCalledWith('/mcps/test', expect.anything());
   await fireEvent.input(args, { target: { value: '["--flag","two words"]' } });
-  await fireEvent.input(local.getByLabelText(/Environment/), {
-    target: { value: '{"FIXTURE":"test"}' },
-  });
+  const environment = local.getByLabelText(/Environment/);
+  await fireEvent.input(environment, { target: { value: '{invalid' } });
+  await fireEvent.click(testConnection);
+  await local.findByText('Environment must be a JSON object with string values.');
+  await waitFor(() => expect(document.activeElement).toBe(environment));
+  expect(request).not.toHaveBeenCalledWith('/mcps/test', expect.anything());
+  await fireEvent.input(environment, { target: { value: '{"FIXTURE":"test"}' } });
   let finish!: () => void;
   const original = vi.mocked(request).getMockImplementation()!;
   vi.mocked(request).mockImplementation(async (route, body) => {
@@ -722,6 +756,42 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   );
   expect((edit.getByLabelText(/Bearer token/) as HTMLInputElement).value).toBe('');
   expect(edit.getByText('A token is securely stored.')).toBeTruthy();
+});
+
+test('MCP transport changes do not leave hidden local validation errors blocking HTTP saves', async () => {
+  renderApp();
+  await screen.findByText('Ready to help');
+  await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Add MCP' }));
+  const dialog = within(await screen.findByRole('dialog', { name: 'Add an MCP' }));
+  fireEvent.input(dialog.getByLabelText('Name'), { target: { value: 'local_tools' } });
+  const transport = dialog.getByLabelText('Transport');
+  fireEvent.change(transport, { target: { value: 'stdio' } });
+  fireEvent.input(dialog.getByLabelText('Executable or command'), {
+    target: { value: 'fixture-mcp' },
+  });
+  fireEvent.input(dialog.getByLabelText(/Arguments/), { target: { value: '[' } });
+  fireEvent.click(dialog.getByRole('button', { name: 'Test connection' }));
+  await dialog.findByText('Arguments must be a JSON array of strings.');
+
+  fireEvent.change(transport, { target: { value: 'http' } });
+  fireEvent.input(dialog.getByLabelText('Endpoint URL'), {
+    target: { value: 'https://example.com/mcp' },
+  });
+  fireEvent.click(dialog.getByRole('button', { name: 'Save connection' }));
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith('/mcps/save', {
+      server: {
+        name: 'local_tools',
+        description: '',
+        transport: 'http',
+        enabled: true,
+        args: [],
+        url: 'https://example.com/mcp',
+      },
+    }),
+  );
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 });
 
 test('sign-in URL is handed to the native allowlisted opener', async () => {

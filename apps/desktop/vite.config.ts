@@ -10,7 +10,7 @@ export default defineConfig({
     outDir: '../dist',
     emptyOutDir: true,
     target: ['es2022', 'chrome105', 'safari15'],
-    rollupOptions: {
+    rolldownOptions: {
       input: {
         main: fileURLToPath(new URL('./src/index.html', import.meta.url)),
         updater: fileURLToPath(new URL('./src/updater.html', import.meta.url)),
