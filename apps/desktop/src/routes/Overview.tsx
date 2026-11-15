@@ -43,6 +43,7 @@ function useOverview() {
   return useDesktop((state) => ({
     loading: state.loading,
     info: state.info,
+    addonNeedsUpdate: !!state.info?.addonOutdated || state.info?.addonUpdateNotice === 'failed',
     status: state.status,
     starting: state.starting && !state.connectionError,
     connectionError: state.connectionError,
@@ -58,7 +59,7 @@ function useOverview() {
 
 function overviewState(app: ReturnType<typeof useOverview>): keyof typeof states {
   if (app.loading) return 'loading';
-  if (app.info?.addonOutdated) return 'update';
+  if (app.addonNeedsUpdate) return 'update';
   if (!app.status?.ready) return app.starting || app.status ? 'starting' : 'stopped';
   if (!app.connected) return 'account';
   return app.status.gameConnected ? 'ready' : 'waiting';
@@ -66,7 +67,7 @@ function overviewState(app: ReturnType<typeof useOverview>): keyof typeof states
 
 export default function Overview() {
   const app = useOverview();
-  const { install, start, stop } = useDesktopActions();
+  const { install, start, stop, dismissAddonReload } = useDesktopActions();
   const navigate = useNavigate();
   const [editingInstallation, setEditingInstallation] = useState(false);
   const state = overviewState(app);
@@ -98,8 +99,20 @@ export default function Overview() {
           <h1 id="overview-title" className="text-[32px]">
             {title}
           </h1>
-          <p className="max-w-[65ch] text-muted">{description}</p>
+          <p className="max-w-[65ch] text-muted">
+            {state === 'update' && app.info?.addonUpdateNotice === 'failed'
+              ? 'Wisp couldn’t update the addon automatically. Try updating it again below.'
+              : description}
+          </p>
         </div>
+        {app.info?.addonUpdateNotice === 'reload_required' && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-accent">
+            <p role="status">Wisp updated the addon. Type /reload in WoW to finish updating.</p>
+            <Button intent="quiet" size="text" onClick={dismissAddonReload}>
+              Dismiss
+            </Button>
+          </div>
+        )}
         {showCommand && <GameCommand />}
         {state === 'account' && (
           <Button className="mt-4" intent="primary" onClick={() => void navigate('/connections')}>
@@ -144,8 +157,8 @@ export default function Overview() {
             aria-label="Connection status"
             className="grid grid-cols-3 gap-y-3 divide-x divide-border p-4"
           >
-            <ConnectionStatus label="Addon" online={!app.info.addonOutdated}>
-              {app.info.addonOutdated ? 'Update needed' : 'Installed'}
+            <ConnectionStatus label="Addon" online={!app.addonNeedsUpdate}>
+              {app.addonNeedsUpdate ? 'Update needed' : 'Installed'}
             </ConnectionStatus>
             <ConnectionStatus label="World of Warcraft" online={!!app.status?.gameConnected}>
               {app.status?.gameConnected

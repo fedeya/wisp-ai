@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod addon_update;
 mod game_detection;
 #[cfg(windows)]
 mod installer_window;
@@ -25,6 +26,7 @@ struct Host {
     data: PathBuf,
     payload: PathBuf,
     child: Mutex<Option<Child>>,
+    addon_notice: tauri::async_runtime::Mutex<Option<addon_update::Notice>>,
     client: reqwest::Client,
 }
 
@@ -184,46 +186,72 @@ async fn bridge_request(
 
 #[tauri::command]
 async fn desktop_info(
+    app: tauri::AppHandle,
     host: tauri::State<'_, Host>,
     telemetry: tauri::State<'_, telemetry::Telemetry>,
 ) -> Result<Value, String> {
-    let telemetry_enabled = telemetry.enabled();
+    // Desktop reads this before starting the bridge. Serialize the pending update
+    // with manual installs and any repeated initialization requests.
+    let mut addon_notice = host.addon_notice.lock().await;
+    let pending = host.data.join(addon_update::PENDING_FILE);
+    let check_update =
+        cfg!(all(windows, not(debug_assertions))) && addon_notice.is_none() && pending.is_file();
     let data = host.data.clone();
     let payload = host.payload.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-    let config = fs::read(data.join("config.local.json"))
-        .ok()
-        .and_then(|s| serde_json::from_slice::<Value>(&s).ok())
-        .unwrap_or(json!({}));
-    let addon_outdated = config["wow"].as_str().and_then(|wow| {
-        addon_differs(
-            &payload.join("addon/WispAI"),
-            &Path::new(wow).join("Interface/AddOns/WispAI"),
-        )
-        .ok()
-    });
-    json!({"wow":config["wow"], "configured":config["wow"].as_str().is_some(), "dataDirectory":data.to_string_lossy(), "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION"), "addonOutdated": addon_outdated, "telemetryEnabled": telemetry_enabled})
-
-    }).await.map_err(|e| e.to_string())
-}
-
-fn addon_differs(source: &Path, installed: &Path) -> std::io::Result<bool> {
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let target = installed.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
-            if addon_differs(&entry.path(), &target)? {
-                return Ok(true);
+    let (wow, mut addon_outdated, update_wow) = tauri::async_runtime::spawn_blocking(move || {
+        let wow = fs::read(data.join("config.local.json"))
+            .ok()
+            .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+            .and_then(|config| config["wow"].as_str().map(str::to_owned));
+        let addon_outdated = wow.as_deref().and_then(|wow| {
+            addon_update::differs(
+                &payload.join("addon/WispAI"),
+                &Path::new(wow).join("Interface/AddOns/WispAI"),
+            )
+            .ok()
+        });
+        let update_wow = wow
+            .as_ref()
+            .filter(|wow| check_update && addon_update::candidate(Path::new(wow), addon_outdated))
+            .cloned();
+        (wow, addon_outdated, update_wow)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    if check_update {
+        if let Some(wow) = update_wow {
+            let result = run_addon_installer(&host, wow).await;
+            telemetry::addon_install_finished(app, result.as_ref().err().map(|(code, _)| *code));
+            if result.is_ok() {
+                addon_outdated = Some(false);
+                if addon_update::wow_running() {
+                    *addon_notice = Some(addon_update::Notice::ReloadRequired);
+                }
+            } else {
+                tracing::warn!(
+                    event = "addon.auto_update_failed",
+                    "Automatic addon update failed"
+                );
+                *addon_notice = Some(addon_update::Notice::Failed);
             }
-        } else if fs::read(entry.path())? != fs::read(target).unwrap_or_default() {
-            return Ok(true);
         }
+        let _ = fs::remove_file(pending);
     }
-    Ok(false)
+    Ok(json!({
+        "wow": wow,
+        "configured": wow.is_some(),
+        "dataDirectory": host.data.to_string_lossy(),
+        "platform": std::env::consts::OS,
+        "version": env!("CARGO_PKG_VERSION"),
+        "addonOutdated": addon_outdated,
+        "addonUpdateNotice": *addon_notice,
+        "telemetryEnabled": telemetry.enabled(),
+    }))
 }
 
 #[tauri::command]
 async fn start_bridge(host: tauri::State<'_, Host>) -> Result<(), String> {
+    let _addon_install = host.addon_notice.lock().await;
     if host.request("GET", "/status", json!({})).await.is_ok() {
         return Ok(());
     }
@@ -321,7 +349,11 @@ async fn install_addon(
     host: tauri::State<'_, Host>,
     wow: String,
 ) -> Result<String, String> {
+    let mut addon_notice = host.addon_notice.lock().await;
     let result = run_addon_installer(&host, wow).await;
+    if result.is_ok() {
+        *addon_notice = None;
+    }
     telemetry::addon_install_finished(app, result.as_ref().err().map(|(code, _)| *code));
     result.map_err(|(_, message)| message)
 }
@@ -450,6 +482,7 @@ fn prepare_update() -> Result<(), String> {
         data,
         payload: PathBuf::new(),
         child: Mutex::new(None),
+        addon_notice: Default::default(),
         client: reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -630,6 +663,7 @@ fn main() {
                 data,
                 payload,
                 child: Mutex::new(None),
+                addon_notice: Default::default(),
                 client: reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
                     .build()

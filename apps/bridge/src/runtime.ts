@@ -14,7 +14,7 @@ import { GameRequests } from './game-requests.ts';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { startEveProcess, stopEveProcess } from './agent-process.ts';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'eve/client';
@@ -46,6 +46,7 @@ import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import { TheWoWDB } from './thewowdb.ts';
 import { Simulator } from './simulation.ts';
 import { appPaths, prepareEngine } from './app-paths.ts';
+import { addonVersionFromToc } from './addon-version.ts';
 export interface BridgeOptions {
   resourceRoot?: string;
   dataDirectory?: string;
@@ -63,13 +64,17 @@ export async function startBridge(options: BridgeOptions = {}) {
       process.env.WISP_RESOURCE_ROOT ||
       fileURLToPath(new URL('../../../', import.meta.url));
     const paths = appPaths(ROOT, options.dataDirectory);
-    const bridgeVersion = await readJson(
-      path.join(ROOT, 'package.json'),
-      z.object({ version: z.string().min(1) }),
-      () => ({ version: 'unknown' }),
-    )
-      .then((metadata) => metadata.version)
-      .catch(() => 'unknown');
+    const [bridgeVersion, expectedAddonVersion] = await Promise.all([
+      readJson(path.join(ROOT, 'package.json'), z.object({ version: z.string().min(1) }), () => ({
+        version: 'unknown',
+      }))
+        .then((metadata) => metadata.version)
+        .catch(() => 'unknown'),
+      readFile(path.join(ROOT, 'addon/WispAI/WispAI.toc'), 'utf8').then(
+        addonVersionFromToc,
+        () => undefined,
+      ),
+    ]);
     const runtime = paths.runtime;
     const simulator = new Simulator(ROOT, runtime);
     await prepareEngine(paths.agent, paths.engine);
@@ -588,6 +593,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         session: state.activeTransport,
         connected: eveReady,
         bridgeVersion,
+        expectedAddonVersion,
         contextPolicy: {
           windowTokens:
             state.modelCatalog.find(

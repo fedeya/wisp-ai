@@ -79,6 +79,42 @@ beforeEach(() => {
     return { ok: true, count: 3 } as never;
   });
 });
+
+test('the addon update reminder stays visible until dismissed', async () => {
+  const fallback = vi.mocked(desktop).getMockImplementation()!;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    const response = await fallback(command, args);
+    return command === 'desktop_info'
+      ? ({ ...(response as object), addonUpdateNotice: 'reload_required' } as never)
+      : response;
+  });
+  const router = renderApp();
+  const reminder = 'Wisp updated the addon. Type /reload in WoW to finish updating.';
+  expect(await screen.findByText(reminder)).toBeTruthy();
+  await act(() => router.navigate('/settings'));
+  await act(() => router.navigate('/'));
+  expect(await screen.findByText(reminder)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  expect(screen.queryByText(reminder)).toBeNull();
+});
+
+test('an automatic addon update failure still starts Wisp and offers a manual retry', async () => {
+  const fallback = vi.mocked(desktop).getMockImplementation()!;
+  let retried = false;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'install_addon') retried = true;
+    const response = await fallback(command, args);
+    return command === 'desktop_info' && !retried
+      ? ({ ...(response as object), addonOutdated: false, addonUpdateNotice: 'failed' } as never)
+      : response;
+  });
+  renderApp();
+  expect(await screen.findByText(/couldn’t update the addon automatically/)).toBeTruthy();
+  expect(desktop).toHaveBeenCalledWith('start_bridge');
+  fireEvent.click(screen.getByRole('button', { name: 'Update addon' }));
+  expect(await screen.findByText(/Addon installed\. Restart WoW/)).toBeTruthy();
+  expect(screen.queryByText(/couldn’t update the addon automatically/)).toBeNull();
+});
 afterEach(() => {
   cleanup();
   for (const router of routers.splice(0)) router.dispose();

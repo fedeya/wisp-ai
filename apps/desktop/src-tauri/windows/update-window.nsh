@@ -51,7 +51,7 @@ Var WispUpdateWindowStyle
   ; STARTUPINFOW has eight DWORDs after lpTitle, ending with dwFlags.
   System::Call '*(i 68, p 0, p 0, p 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, i 0, &i2 0, &i2 0, p 0, p 0, p 0, p 0) p.r0'
   System::Call '*(p 0, p 0, i 0, i 0) p.r1'
-  StrCpy $3 '"$PLUGINSDIR\wisp-update-helper.exe" --installer-progress-svelte $mui.InstFilesPage.ProgressBar $WispUpdateSignal "$WispUpdateLog"'
+  StrCpy $3 '"$PLUGINSDIR\wisp-update-helper.exe" --installer-progress-svelte $mui.InstFilesPage.ProgressBar $WispUpdateSignal "$WispUpdateRuntime\update.log"'
   System::Call 'kernel32::CreateProcessW(w "$PLUGINSDIR\wisp-update-helper.exe", w r3, p 0, p 0, i 0, i 0, p 0, p 0, p r0, p r1) i.r2'
   ${If} $2 != 0
     System::Call '*$1(p.s, p.r2)'

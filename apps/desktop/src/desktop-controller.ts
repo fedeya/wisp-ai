@@ -360,6 +360,12 @@ function createDesktopSession() {
           'Wisp stopped.',
         ),
       selectFolder: (wow: string) => update({ wow }),
+      dismissAddonReload: () => {
+        const { info } = getState();
+        if (info?.addonUpdateNotice === 'reload_required') {
+          update({ info: { ...info, addonUpdateNotice: null } });
+        }
+      },
       setConfirmation: (confirm: Confirmation | null) => update({ confirm }),
       setBusy: (busy: string) => update({ busy }),
       clearFeedback: () => update({ feedback: '' }),

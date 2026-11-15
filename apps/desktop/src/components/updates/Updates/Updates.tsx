@@ -277,8 +277,8 @@ export default function Updates({
           <p className="field-hint mt-3 text-[11px]! text-muted">
             Wisp downloads and verifies the update, waits for any active reply, then opens the
             Windows updater. Wisp closes during installation and reopens automatically when it is
-            ready. Your chats and settings are kept. Use Install / update addon in Overview after
-            updating, then /reload in WoW.
+            ready. Your chats and settings are kept. Wisp also updates your installed addon when
+            needed and reminds you to type /reload if WoW is open.
           </p>
         </>
       )}
