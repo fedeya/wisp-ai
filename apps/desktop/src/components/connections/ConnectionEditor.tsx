@@ -71,7 +71,7 @@ export default function ConnectionEditor({
   const app = useDesktop((state) => ({
     busy: state.busy,
     busyTarget: state.busyTarget,
-    locked: desktopLocked(state) || !state.status?.ready,
+    locked: desktopLocked(state) || !state.status,
   }));
   const { work } = useDesktopActions();
   const [discovered, setDiscovered] = useState<DiscoveredConnectionModel[]>([]);

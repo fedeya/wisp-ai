@@ -9,12 +9,14 @@ import { packetSchema } from '@wisp/protocol/protocol';
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat-lifecycle.ts';
 
-async function fixture() {
+async function fixture(configured = true) {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
-  await writeFile(
-    path.join(dataDirectory, 'config.local.json'),
-    JSON.stringify({ wow: path.join(dataDirectory, 'wow') }),
-  );
+  if (configured) {
+    await writeFile(
+      path.join(dataDirectory, 'config.local.json'),
+      JSON.stringify({ wow: path.join(dataDirectory, 'wow') }),
+    );
+  }
   let child: ChildProcess | undefined;
   const options: BridgeOptions = {
     dataDirectory,
@@ -256,8 +258,12 @@ test('a late startup failure closes the agent and already-started runtime resour
   }
 });
 
-test('desktop API configures a local provider and selects its default without ChatGPT', async () => {
-  const f = await fixture();
+test('desktop API saves a provider and model without WoW or a working Eve process', async () => {
+  const f = await fixture(false);
+  const startAgent = vi.fn(() => {
+    throw Error('Agent unavailable');
+  });
+  f.options.startAgent = startAgent;
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
     bridge = await startBridge(f.options);
@@ -283,8 +289,14 @@ test('desktop API configures a local provider and selects its default without Ch
     expect(models).toMatchObject([{ slug: `connection:${id}:local-test`, efforts: [] }]);
     await request('/auth/model', { model: models[0].slug });
     const status = statusSchema.parse(await request('/status'));
-    expect(status.modelConnected).toBe(true);
+    expect(startAgent).toHaveBeenCalled();
+    expect(status).toMatchObject({ ready: false, gameConnected: false, modelConnected: true });
     expect(status.auth.status).toBe('signed_out');
+    expect(
+      JSON.parse(await readFile(path.join(f.dataDirectory, 'config.local.json'), 'utf8')),
+    ).toEqual({
+      model: models[0].slug,
+    });
     expect(status.connections[0]?.models[0]?.contextWindow).toBe(64000);
     await request('/connections/remove', { id });
     expect((await request('/status')).modelConnected).toBe(false);

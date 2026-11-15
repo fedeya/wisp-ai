@@ -12,7 +12,7 @@ export default function ApiConnections({ provider }: { provider: ProviderId }) {
     busy: state.busy,
     busyTarget: state.busyTarget,
     locked: desktopLocked(state),
-    online: !!state.status?.ready,
+    online: !!state.status,
     connections: state.status?.connections,
   }));
   const { loadModels, setConfirmation, work } = useDesktopActions();
@@ -48,7 +48,11 @@ export default function ApiConnections({ provider }: { provider: ProviderId }) {
           </Button>
         )}
       </div>
-      {!app.online && <p className="mt-3 text-muted">Start Wisp to manage API connections.</p>}
+      {!app.online && (
+        <p className="mt-3 text-muted">
+          API connections are unavailable while the Wisp service is unreachable.
+        </p>
+      )}
       {connections.map((connection) => (
         <div
           key={connection.id}

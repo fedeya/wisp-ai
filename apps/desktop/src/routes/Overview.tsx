@@ -26,9 +26,17 @@ const states = {
     title: 'Wisp is starting',
     description: 'Your connections will update when the local service is ready.',
   },
-  stopped: {
-    title: 'Start Wisp to continue',
-    description: 'Start the local service to reconnect to WoW and your AI provider.',
+  unavailable: {
+    title: 'Wisp is unavailable',
+    description: 'Open Diagnostics to check the local service.',
+  },
+  setup: {
+    title: 'Set up World of Warcraft',
+    description: 'Install the Wisp addon to use your companion in game.',
+  },
+  agent: {
+    title: 'Waiting for the agent',
+    description: 'You can manage AI providers and saved data while you wait.',
   },
   account: {
     title: 'Connect your AI account',
@@ -50,8 +58,6 @@ function useOverview() {
     loading: state.loading,
     info: state.info,
     status: state.status,
-    starting: state.starting && !state.connectionError,
-    connectionError: state.connectionError,
     connected: desktopConnected(state),
     active: desktopActive(state),
     busy: state.busy,
@@ -64,20 +70,13 @@ function useOverview() {
 
 export default function Overview() {
   const app = useOverview();
-  const { install, start, stop } = useDesktopActions();
+  const { install } = useDesktopActions();
   const navigate = useNavigate();
   const [editingInstallation, setEditingInstallation] = useState(false);
   const state = app.readiness;
   const { title, description } = states[state];
   const showCommand = state === 'ready' || state === 'waiting';
   const working = app.busy || (state === 'starting' ? 'Starting Wisp' : '');
-  const service = app.active
-    ? 'Working…'
-    : app.status?.ready
-      ? 'Running'
-      : app.starting || app.status
-        ? 'Starting…'
-        : 'Stopped';
 
   return (
     <>
@@ -115,86 +114,74 @@ export default function Overview() {
             {app.busyTarget === 'installation' ? 'Updating addon…' : 'Update addon'}
           </Button>
         )}
-        {state === 'stopped' && (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button
-              intent="primary"
-              disabled={!native || app.locked || !app.info?.configured}
-              onClick={start}
-            >
-              Start Wisp
-            </Button>
-            {app.connectionError && (
-              <Button intent="quiet" onClick={() => void navigate('/diagnostics')}>
-                View diagnostics
-              </Button>
-            )}
-          </div>
+        {(state === 'unavailable' || state === 'agent') && (
+          <Button className="mt-4" intent="quiet" onClick={() => void navigate('/diagnostics')}>
+            View diagnostics
+          </Button>
         )}
         <div className="has-[.action-progress:not(:empty)]:mt-3">
           <ActionProgress label={working || (state === 'loading' ? 'Checking connections' : '')} />
         </div>
       </Card>
 
-      {!app.loading && app.info?.configured && (
-        <>
-          <Card
-            aria-label="Connection status"
-            className="grid grid-cols-3 gap-y-3 divide-x divide-border p-4"
-          >
-            <ConnectionStatus label="Addon" online={!app.info.addonOutdated}>
-              {app.info.addonOutdated ? 'Update needed' : 'Installed'}
-            </ConnectionStatus>
-            <ConnectionStatus label="World of Warcraft" online={!!app.status?.gameConnected}>
-              {app.status?.gameConnected
-                ? 'Connected'
-                : app.status?.ready
-                  ? 'Waiting for game'
-                  : 'Not checked'}
-            </ConnectionStatus>
-            <ConnectionStatus label="Default model" online={app.connected}>
-              {app.connected
-                ? app.modelName || app.status?.model || 'Connected'
-                : app.status?.ready
-                  ? 'Not connected'
-                  : 'Not checked'}
-            </ConnectionStatus>
-          </Card>
-          <Card kind="installation" className={editingInstallation ? 'mb-3' : ''}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <span className="text-muted">
-                  <Icon name="folder" />
-                </span>
-                <div>
-                  <h2>Installation details</h2>
-                  <p className="text-[13px] text-muted">
-                    Wisp service <span aria-hidden="true">·</span> <span>{service}</span>
-                  </p>
+      {!app.loading &&
+        app.info &&
+        (app.info.configured ? (
+          <>
+            <Card
+              aria-label="Connection status"
+              className="grid grid-cols-3 gap-y-3 divide-x divide-border p-4"
+            >
+              <ConnectionStatus label="Addon" online={!app.info.addonOutdated}>
+                {app.info.addonOutdated ? 'Update needed' : 'Installed'}
+              </ConnectionStatus>
+              <ConnectionStatus label="World of Warcraft" online={!!app.status?.gameConnected}>
+                {app.status?.gameConnected
+                  ? 'Connected'
+                  : app.status?.ready
+                    ? 'Waiting for game'
+                    : 'Not checked'}
+              </ConnectionStatus>
+              <ConnectionStatus label="Default model" online={app.connected}>
+                {app.connected
+                  ? app.modelName || app.status?.model || 'Connected'
+                  : app.status
+                    ? 'Not connected'
+                    : 'Not checked'}
+              </ConnectionStatus>
+            </Card>
+            <Card kind="installation" className={editingInstallation ? 'mb-3' : ''}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="text-muted">
+                    <Icon name="folder" />
+                  </span>
+                  <div>
+                    <h2>Installation details</h2>
+                    <p className="text-[13px] text-muted">
+                      {app.active ? 'Working…' : app.info.wow}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    intent="quiet"
+                    aria-expanded={editingInstallation}
+                    aria-controls="overview-installation"
+                    onClick={() => setEditingInstallation((editing) => !editing)}
+                  >
+                    {editingInstallation ? 'Done' : 'Manage installation'}
+                  </Button>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  intent="quiet"
-                  aria-expanded={editingInstallation}
-                  aria-controls="overview-installation"
-                  onClick={() => setEditingInstallation((editing) => !editing)}
-                >
-                  {editingInstallation ? 'Done' : 'Manage installation'}
-                </Button>
-                {app.status && (
-                  <Button intent="quiet" disabled={app.locked} onClick={stop}>
-                    Stop Wisp
-                  </Button>
-                )}
-              </div>
+            </Card>
+            <div id="overview-installation" hidden={!editingInstallation}>
+              {editingInstallation && <GameInstallation />}
             </div>
-          </Card>
-          <div id="overview-installation" hidden={!editingInstallation}>
-            {editingInstallation && <GameInstallation />}
-          </div>
-        </>
-      )}
+          </>
+        ) : (
+          <GameInstallation firstRun />
+        ))}
     </>
   );
 }

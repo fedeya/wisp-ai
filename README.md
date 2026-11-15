@@ -21,7 +21,9 @@ These are example prompts, not recorded results:
 
 Download the [Windows x64 installer](https://github.com/fedeya/wisp-ai/releases/download/v0.0.7/WispAI-0.0.7-windows-x64-setup.exe) from [Releases](https://github.com/fedeya/wisp-ai/releases), or [build from source](docs/development.md#build-and-run-on-windows).
 
-Once the desktop app is running:
+Wisp starts automatically when you open the desktop app. You can choose **Set up WoW later** to manage your AI providers and saved data before installing the addon.
+
+To use Wisp in WoW:
 
 1. In **Overview**, select the WoW folder containing `Wow.exe` and install/update the addon.
 2. In **AI Providers**, choose **Add provider** to find **ChatGPT**, **Claude**, **Gemini**, gateways and compatible endpoints. After connecting, return to **AI Providers** to select a **Default model**. See [AI connections](docs/usage.md#ai-connections) for API setup.

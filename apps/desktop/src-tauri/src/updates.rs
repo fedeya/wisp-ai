@@ -149,12 +149,10 @@ pub async fn install_update(
         .map_err(|e| e.to_string())?;
     super::update_trace::append(&host.data, "download-verified");
     let _ = app.emit("update-progress", json!({"phase": "waiting"}));
+    let _lifecycle = host.lifecycle.lock().await;
     // /stop atomically refuses active turns. Retry only that refusal, preserving replies.
     loop {
-        match tauri::async_runtime::spawn_blocking(super::prepare_update)
-            .await
-            .map_err(|e| e.to_string())?
-        {
+        match super::stop_host(&host).await {
             Ok(()) => break,
             Err(error) if error == "Wait for the active turn before stopping Wisp" => {
                 tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_secs(1)))
@@ -169,7 +167,7 @@ pub async fn install_update(
     // The NSIS hook also waits for the bridge process to finish releasing its files.
     if let Err(error) = update.install(bytes) {
         super::update_trace::append(&host.data, "installer-launch-failed");
-        let _ = super::start_bridge(host).await;
+        let _ = super::start_host(&host).await;
         return Err(error.to_string());
     }
     app.restart();

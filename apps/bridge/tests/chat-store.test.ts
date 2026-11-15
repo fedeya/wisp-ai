@@ -294,7 +294,7 @@ test.each(['incompatible schema', 'corrupt database'])(
   },
 );
 
-test('installation import snapshots WAL data and detaches engine sessions only in the copy', async () => {
+test('installation import replaces an empty workspace and snapshots WAL data without modifying the source', async () => {
   const f = await fixture();
   const source = path.join(f.root, 'old');
   const destination = path.join(f.root, 'new');
@@ -310,8 +310,16 @@ test('installation import snapshots WAL data and detaches engine sessions only i
       '{stale JSON must not override SQLite',
     );
     await writeFile(path.join(source, 'config.local.json'), JSON.stringify({ wow: 'test' }));
+    const empty = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
+    await empty.load();
+    await empty.close();
+    await writeFile(path.join(destination, 'runtime/chatgpt-host.json'), 'new host');
+    await writeFile(path.join(source, 'runtime/chatgpt-host.json'), 'old host');
     // No desktop endpoint: source DB remains open with committed WAL pages.
     await migrateDesktop(source, destination, '');
+    expect(await readFile(path.join(destination, 'runtime/chatgpt-host.json'), 'utf8')).toBe(
+      'old host',
+    );
     const imported = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
     try {
       const chats = await imported.load();

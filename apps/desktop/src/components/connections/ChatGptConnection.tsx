@@ -64,7 +64,7 @@ export default function ChatGptConnection() {
       {auth?.message && <p className="muted text-muted text-[13px]">{auth.message}</p>}
       {!app.status && (
         <div className="empty-inline text-[12px] text-[#c0a77a] mt-[22px]">
-          Start Wisp to manage your account.{' '}
+          Your account is unavailable while the Wisp service is unreachable.{' '}
           <Button intent="quiet" size="text" onClick={() => void navigate('/')}>
             Go to Overview
           </Button>

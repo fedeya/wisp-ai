@@ -25,12 +25,10 @@ export function startBridgeLifecycle({
       return;
     }
     onDesktopInfo(info);
-    if (info.configured) {
-      try {
-        await launchBridge();
-      } catch (error) {
-        onError(String(error));
-      }
+    try {
+      await launchBridge();
+    } catch (error) {
+      onError(String(error));
     }
     await refresh();
     if (disposed) {

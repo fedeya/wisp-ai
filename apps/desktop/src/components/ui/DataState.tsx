@@ -9,7 +9,6 @@ export default function DataState() {
     ({ loading, starting, connectionError }) => ({ loading, starting, connectionError }),
   );
   const navigate = useNavigate();
-  const startingService = starting && !connectionError;
   return (
     <Card
       kind="empty"
@@ -28,12 +27,12 @@ export default function DataState() {
         <>
           <Icon name="link" size={30} />
           <h2 className="text-[21px]">
-            {startingService ? 'Wisp is starting' : 'Connect to Wisp to view your data'}
+            {starting ? 'Wisp is starting' : 'Your workspace is unavailable'}
           </h2>
           <p className="mx-auto text-muted text-[13px] max-w-[400px] mt-[12px] mb-[23px]">
-            {startingService
+            {starting
               ? 'Your workspace will appear when the service is ready.'
-              : 'Your saved data is unavailable while Wisp is stopped or unreachable.'}
+              : 'Wisp could not reach the local service to load your saved data.'}
           </p>
           <Button onClick={() => void navigate('/')}>
             Go to Overview

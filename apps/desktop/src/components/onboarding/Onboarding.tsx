@@ -18,12 +18,12 @@ import OnboardingProvider from './OnboardingProvider';
 export default function Onboarding() {
   const app = useDesktop((state) => ({
     configured: !!state.info?.configured,
-    ready: !!state.status?.ready,
+    online: !!state.status,
     starting: state.starting && !state.connectionError,
     loading: state.loading,
     busy: state.busy,
   }));
-  const { finishOnboarding, start } = useDesktopActions();
+  const { finishOnboarding } = useDesktopActions();
   const [provider, setProvider] = useState<ProviderId>();
   const title = useRef<HTMLHeadingElement>(null);
 
@@ -41,11 +41,9 @@ export default function Onboarding() {
             <img className="h-10 w-8 object-contain" src={logo} alt="" />
             <strong className="text-[18px]">Wisp</strong>
           </div>
-          {app.configured && (
-            <Button intent="quiet" size="text" onClick={finishOnboarding} disabled={!!app.busy}>
-              Connect later
-            </Button>
-          )}
+          <Button intent="quiet" size="text" onClick={finishOnboarding} disabled={!!app.busy}>
+            {app.configured ? 'Connect later' : 'Set up WoW later'}
+          </Button>
         </header>
         <ol className="mb-5 grid list-none grid-cols-2 gap-3 p-0" aria-label="Setup progress">
           <SetupStep number={1} current={!app.configured} done={app.configured}>
@@ -65,7 +63,7 @@ export default function Onboarding() {
         </div>
         {!app.configured ? (
           <GameInstallation firstRun />
-        ) : app.ready ? (
+        ) : app.online ? (
           <>
             {provider ? (
               <OnboardingProvider
@@ -121,10 +119,7 @@ export default function Onboarding() {
             ) : (
               <>
                 <h2>The Wisp service is unavailable</h2>
-                <p className="mb-3 text-muted">Start Wisp to connect a provider.</p>
-                <Button intent="primary" onClick={start}>
-                  Start Wisp
-                </Button>
+                <p className="text-muted">Open Diagnostics after setup to check the service.</p>
               </>
             )}
           </Card>

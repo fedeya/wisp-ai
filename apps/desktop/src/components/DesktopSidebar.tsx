@@ -20,7 +20,9 @@ const readinessLabels = {
   loading: 'Checking Wisp…',
   update: 'Addon update needed',
   starting: 'Starting Wisp…',
-  stopped: 'Wisp stopped',
+  unavailable: 'Wisp unavailable',
+  setup: 'Set up WoW',
+  agent: 'Waiting for the agent',
   account: 'Connect an AI provider',
   waiting: 'Waiting for WoW',
   ready: 'Wisp is ready',
@@ -45,7 +47,7 @@ export default function DesktopSidebar() {
   const dotColor =
     readiness === 'ready'
       ? 'bg-accent'
-      : readiness === 'update' || readiness === 'account'
+      : readiness === 'update' || readiness === 'account' || readiness === 'setup'
         ? 'bg-[#e8ba78]'
         : 'bg-muted';
 

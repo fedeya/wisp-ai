@@ -72,7 +72,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       .catch(() => 'unknown');
     const runtime = paths.runtime;
     const simulator = new Simulator(ROOT, runtime);
-    await prepareEngine(paths.agent, paths.engine);
     await mkdir(runtime, { recursive: true });
     const databaseFile = applicationDatabaseFile(runtime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
@@ -91,20 +90,19 @@ export async function startBridge(options: BridgeOptions = {}) {
         : [];
       return { status: 'available', entries: [...preferences, ...character] };
     }
-    let config = await readJson(
+    const configSchema = z.object({
+      wow: z.string().min(1).optional(),
+      // Earlier installers saved an empty string before model selection.
+      model: z.preprocess(
+        (value) => (value === '' ? undefined : value),
+        z.string().min(1).optional(),
+      ),
+      mcpConfig: z.string().min(1).optional(),
+    });
+    let config = await readJson<z.infer<typeof configSchema>>(
       paths.config,
-      z.object({
-        wow: z.string().min(1),
-        // Earlier installers saved an empty string before model selection.
-        model: z.preprocess(
-          (value) => (value === '' ? undefined : value),
-          z.string().min(1).optional(),
-        ),
-        mcpConfig: z.string().min(1).optional(),
-      }),
-      () => {
-        throw Error('Choose a WoW folder and install the addon first.');
-      },
+      configSchema,
+      () => ({}),
     );
     const mcpFile = config.mcpConfig
       ? path.resolve(paths.dataRoot, config.mcpConfig)
@@ -344,13 +342,16 @@ export async function startBridge(options: BridgeOptions = {}) {
         telemetry.gameConnectionStarted();
       }
     };
-    const transport = new DiskTransport(config.wow, receive, (error) =>
+    const transport = config.wow
+      ? new DiskTransport(config.wow, receive, logTransportError)
+      : undefined;
+    function logTransportError(error: unknown) {
       logger.error(
         { event: 'transport.failed', error: errorMessage(error) },
         'Game transport failed',
-      ),
-    );
-    resources.defer(() => transport.stop());
+      );
+    }
+    if (transport) resources.defer(() => transport.stop());
     const server = createServer(
       createAgentHandler({
         logger,
@@ -385,12 +386,12 @@ export async function startBridge(options: BridgeOptions = {}) {
     });
     const agentOrigin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
     await writeFile(path.join(runtime, 'bridge.pid'), String(process.pid));
-    await transport.start();
+    await transport?.start().catch(logTransportError);
     const eveLog = await import('node:fs').then((fs) =>
       fs.openSync(path.join(runtime, 'eve.log'), 'a'),
     );
     resources.defer(() => closeSync(eveLog));
-    function startEve() {
+    function spawnEve() {
       return (options.startAgent || startEveProcess)({
         root: paths.engine,
         logFile: eveLog,
@@ -415,12 +416,41 @@ export async function startBridge(options: BridgeOptions = {}) {
         },
       });
     }
-    let eve = startEve();
-    resources.defer(() => killEve());
+    let eve: ReturnType<typeof spawnEve> | undefined;
+    let enginePrepared = false;
+    function startEve() {
+      if (!enginePrepared) return;
+      try {
+        eve = spawnEve();
+      } catch (error) {
+        logger.error(
+          { event: 'eve.spawn_failed', error: errorMessage(error) },
+          'Could not start Eve',
+        );
+      }
+    }
     async function killEve() {
-      await stopEveProcess(eve);
+      if (eve) {
+        await stopEveProcess(eve);
+        eve = undefined;
+      }
       eveReady = false;
     }
+    const engineStartup = prepareEngine(paths.agent, paths.engine)
+      .then(() => {
+        enginePrepared = true;
+        if (!shutdownRequested) startEve();
+      })
+      .catch((error) => {
+        logger.error(
+          { event: 'eve.prepare_failed', error: errorMessage(error) },
+          'Could not prepare Eve',
+        );
+      });
+    resources.defer(async () => {
+      await engineStartup;
+      await killEve();
+    });
     let accountBusy = false;
     let accountWork: Promise<unknown> | undefined;
     resources.defer(async () => {
@@ -443,40 +473,43 @@ export async function startBridge(options: BridgeOptions = {}) {
         }
       }
     }
-    const health = setInterval(
-      () =>
-        void client
-          .health()
-          .then(async () => {
-            if (!eveReady) {
-              contextWindowTokens = undefined;
-              try {
-                const info = await client.info();
-                const window = info.agent.model?.contextWindowTokens;
-                if (typeof window === 'number' && Number.isSafeInteger(window) && window > 0) {
-                  contextWindowTokens = window;
-                }
-              } catch {
-                // Unknown capacity is displayed as unknown, never a made-up limit.
+    const health = setInterval(() => {
+      if (!eve) return;
+      const current = eve;
+      void client
+        .health()
+        .then(async () => {
+          if (eve === current && !eveReady) {
+            let windowTokens: number | undefined;
+            try {
+              const info = await client.info();
+              const window = info.agent.model?.contextWindowTokens;
+              if (typeof window === 'number' && Number.isSafeInteger(window) && window > 0) {
+                windowTokens = window;
               }
-              eveReady = true;
-              changed();
-              logger.info({ event: 'eve.ready' }, 'Eve ready');
+            } catch {
+              // Unknown capacity is displayed as unknown, never a made-up limit.
             }
-          })
-          .catch(() => {
-            if (eveReady) {
-              eveReady = false;
-              changed();
-            }
-          }),
-      3000,
-    );
+            if (eve !== current || current.exitCode !== null || current.signalCode !== null) return;
+            contextWindowTokens = windowTokens;
+            eveReady = true;
+            changed();
+            logger.info({ event: 'eve.ready' }, 'Eve ready');
+          }
+        })
+        .catch(() => {
+          if (eve === current && eveReady) {
+            eveReady = false;
+            changed();
+          }
+        });
+    }, 3000);
     resources.defer(() => clearInterval(health));
     function gameConnected() {
       return Boolean(
         state.activeTransport &&
         state.firstReadyRevision &&
+        transport &&
         transport.peerRevision >= state.firstReadyRevision,
       );
     }
@@ -538,11 +571,12 @@ export async function startBridge(options: BridgeOptions = {}) {
           const updated = { ...config, model };
           await writeJson(paths.config, updated);
           config = updated;
+          if (!enginePrepared) return;
           await killEve();
           if (shutdownRequested) {
             return;
           }
-          eve = startEve();
+          startEve();
           changed();
         },
         requestStop: () => {
@@ -579,7 +613,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     }, 30000);
     resources.defer(() => clearInterval(integrationHealth));
     function publishSnapshot() {
-      if (!dirty || !state.activeTransport) {
+      if (!transport || !dirty || !state.activeTransport) {
         return;
       }
       dirty = false;
@@ -669,6 +703,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       state.chats.forEach(run.interrupt);
       return resources.close();
     }
+    await engineStartup;
     return { state, receive, stop };
   } catch (error) {
     await resources

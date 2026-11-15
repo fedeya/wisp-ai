@@ -38,7 +38,7 @@ interface ReceiverDependencies {
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryStore: MemoryStore;
-  transport: () => Pick<DiskTransport, 'resetSession' | 'setCursor'>;
+  transport: () => Pick<DiskTransport, 'resetSession' | 'setCursor'> | undefined;
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Promise<void>;
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
@@ -119,7 +119,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       state.memoryView = undefined;
       state.acknowledgments = [];
       state.handled.clear();
-      transport().resetSession();
+      transport()?.resetSession();
       void refreshModelCatalog();
     }
     packet.context = contextCache.resolve(packet.context);
@@ -141,7 +141,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       packet.nextSlot! >= 1 &&
       packet.nextSlot! <= 1024
     ) {
-      transport().setCursor(packet.nextSlot!, Number(packet.receivedRev || 0));
+      transport()?.setCursor(packet.nextSlot!, Number(packet.receivedRev || 0));
     }
     if (integrationState.receive(packet.integrations) && integrationState.report) {
       deps.telemetry?.game(integrationState.report.version);

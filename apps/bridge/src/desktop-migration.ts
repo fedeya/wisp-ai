@@ -1,6 +1,7 @@
-import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { ChatStore, conversationInstanceId } from './chat-store.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import {
@@ -59,6 +60,41 @@ async function stopPreviousBridge(source: string) {
   }
 }
 
+async function clearEmptyWorkspace(destination: string) {
+  const runtime = path.join(destination, 'runtime');
+  const existing = await findApplicationDatabase(runtime);
+  if (!existing) return;
+
+  const secretFiles = await readdir(path.join(destination, 'secrets')).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  });
+  const database = new DatabaseSync(existing, { readOnly: true, timeout: 5000 });
+  try {
+    const saved = database
+      .prepare(`
+      SELECT EXISTS (
+        SELECT 1 FROM chats
+        UNION ALL SELECT 1 FROM routines
+        UNION ALL SELECT 1 FROM routine_runs
+        UNION ALL SELECT 1 FROM panels
+        UNION ALL SELECT 1 FROM memory_entries
+      ) AS present
+    `)
+      .get();
+    if (saved?.present || secretFiles.length) {
+      throw Error('This installation already has saved data; no data was overwritten.');
+    }
+  } finally {
+    database.close();
+  }
+
+  // Starting the desktop creates these files even before the first setup.
+  // Recreate the empty database so legacy JSON can be imported on a clean schema.
+  await rm(existing);
+  await rm(path.join(runtime, 'chatgpt-host.json'), { force: true });
+}
+
 export async function migrateDesktop(
   source: string,
   destination: string,
@@ -86,6 +122,7 @@ export async function migrateDesktop(
   // Use SQLite's snapshot API so committed WAL pages are included as well.
   const databaseFile = path.join(destination, 'runtime', DATABASE_NAME);
   const sourceDatabase = await findApplicationDatabase(path.join(source, 'runtime'));
+  await clearEmptyWorkspace(destination);
   if (sourceDatabase) {
     await copyDatabaseSnapshot(sourceDatabase, databaseFile);
   }

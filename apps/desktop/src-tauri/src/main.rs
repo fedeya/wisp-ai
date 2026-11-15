@@ -25,6 +25,7 @@ struct Host {
     data: PathBuf,
     payload: PathBuf,
     child: Mutex<Option<Child>>,
+    lifecycle: tauri::async_runtime::Mutex<()>,
     client: reqwest::Client,
 }
 
@@ -39,6 +40,20 @@ fn hidden(command: &mut Command) {
 }
 
 impl Host {
+    fn child_running(&self) -> Result<bool, String> {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| "Application state is unavailable.")?;
+        match child.as_mut() {
+            Some(process) => process
+                .try_wait()
+                .map(|status| status.is_none())
+                .map_err(|error| error.to_string()),
+            None => Ok(false),
+        }
+    }
+
     fn node(&self) -> PathBuf {
         let engine = self.payload.join("wisp-engine.exe");
         if engine.is_file() {
@@ -88,7 +103,7 @@ impl Host {
         let raw = tauri::async_runtime::spawn_blocking(move || fs::read(identity_path))
             .await
             .map_err(|e| e.to_string())?
-            .map_err(|_| "Start Wisp first.")?;
+            .map_err(|_| "The Wisp service is not running.")?;
         let identity: Value =
             serde_json::from_slice(&raw).map_err(|_| "Invalid bridge identity.")?;
         let port = identity["port"]
@@ -109,10 +124,10 @@ impl Host {
                 format!("http://127.0.0.1:{port}{route}"),
             )
             .bearer_auth(token)
-            .timeout(Duration::from_secs(if route == "/mcps/test" {
-                90
-            } else {
-                40
+            .timeout(Duration::from_secs(match route {
+                "/mcps/test" => 90,
+                "/status" | "/stop" => 3,
+                _ => 40,
             }));
         let response = if method == "GET" {
             request
@@ -224,21 +239,18 @@ fn addon_differs(source: &Path, installed: &Path) -> std::io::Result<bool> {
 
 #[tauri::command]
 async fn start_bridge(host: tauri::State<'_, Host>) -> Result<(), String> {
-    if host.request("GET", "/status", json!({})).await.is_ok() {
+    let _operation = host.lifecycle.lock().await;
+    start_host(&host).await
+}
+
+async fn start_host(host: &Host) -> Result<(), String> {
+    if host.child_running()? || host.request("GET", "/status", json!({})).await.is_ok() {
         return Ok(());
-    }
-    if !host.data.join("config.local.json").is_file() {
-        return Err("Choose your WoW folder and install the addon first.".into());
     }
     let mut child = host
         .child
         .lock()
         .map_err(|_| "Application state is unavailable.")?;
-    if let Some(process) = child.as_mut() {
-        if process.try_wait().map_err(|e| e.to_string())?.is_none() {
-            return Ok(());
-        }
-    }
     let log = fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -269,37 +281,46 @@ async fn start_bridge(host: tauri::State<'_, Host>) -> Result<(), String> {
 }
 
 async fn stop_host(host: &Host) -> Result<(), String> {
-    match host.request("POST", "/stop", json!({})).await {
-        Ok(_) => {
-            tracing::info!(
-                component = "desktop",
-                event = "bridge.stop_requested",
-                "Bridge accepted the stop request"
-            );
-            for _ in 0..50 {
-                if host.request("GET", "/status", json!({})).await.is_err() {
-                    break;
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        match host.request("POST", "/stop", json!({})).await {
+            Ok(_) => break,
+            Err(error)
+                if error == "The Wisp service is not running."
+                    || error == "The Wisp bridge is not responding." =>
+            {
+                if !host.child_running()? {
+                    return Ok(());
                 }
-                tauri::async_runtime::spawn_blocking(|| {
-                    std::thread::sleep(Duration::from_millis(100))
-                })
-                .await
-                .map_err(|e| e.to_string())?;
+                // The child may still be opening the desktop API.
+                wait_for_bridge(deadline).await?;
             }
-            Ok(())
+            Err(error) => return Err(error),
         }
-        Err(error)
-            if error == "Start Wisp first." || error == "The Wisp bridge is not responding." =>
-        {
-            Ok(())
-        }
-        Err(error) => Err(error),
     }
+
+    tracing::info!(
+        component = "desktop",
+        event = "bridge.stop_requested",
+        "Bridge accepted the stop request"
+    );
+    // The listener closes before the child releases SQLite and Eve.
+    while host.child_running()? {
+        wait_for_bridge(deadline).await?;
+    }
+    while host.request("GET", "/status", json!({})).await.is_ok() {
+        wait_for_bridge(deadline).await?;
+    }
+    Ok(())
 }
 
-#[tauri::command]
-async fn stop_bridge(host: tauri::State<'_, Host>) -> Result<(), String> {
-    stop_host(&host).await
+async fn wait_for_bridge(deadline: std::time::Instant) -> Result<(), String> {
+    if std::time::Instant::now() >= deadline {
+        return Err("The Wisp service did not stop. See Diagnostics for details.".into());
+    }
+    tauri::async_runtime::spawn_blocking(|| std::thread::sleep(Duration::from_millis(100)))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -321,9 +342,13 @@ async fn install_addon(
     host: tauri::State<'_, Host>,
     wow: String,
 ) -> Result<String, String> {
+    let _operation = host.lifecycle.lock().await;
     let result = run_addon_installer(&host, wow).await;
     telemetry::addon_install_finished(app, result.as_ref().err().map(|(code, _)| *code));
-    result.map_err(|(_, message)| message)
+    let restart = start_host(&host).await;
+    let message = result.map_err(|(_, message)| message)?;
+    restart?;
+    Ok(message)
 }
 
 async fn run_addon_installer(
@@ -418,9 +443,19 @@ fn read_logs(host: tauri::State<'_, Host>) -> String {
 
 #[tauri::command]
 async fn import_legacy(host: tauri::State<'_, Host>, source: String) -> Result<String, String> {
+    let _operation = host.lifecycle.lock().await;
     if host.data.join("config.local.json").exists() {
         return Err("Import is available before configuring this installation, to avoid overwriting your data.".into());
     }
+    stop_host(&host).await?;
+    let result = run_legacy_import(&host, source).await;
+    let restart = start_host(&host).await;
+    let message = result?;
+    restart?;
+    Ok(message)
+}
+
+async fn run_legacy_import(host: &Host, source: String) -> Result<String, String> {
     let mut command = host.command("scripts/migrate-desktop.ts")?;
     command
         .arg(source)
@@ -437,7 +472,7 @@ async fn import_legacy(host: tauri::State<'_, Host>, source: String) -> Result<S
             .take(1000)
             .collect());
     }
-    Ok("Imported your previous Wisp data. You can start Wisp now.".into())
+    Ok("Imported your previous Wisp data.".into())
 }
 
 fn prepare_update() -> Result<(), String> {
@@ -450,6 +485,7 @@ fn prepare_update() -> Result<(), String> {
         data,
         payload: PathBuf::new(),
         child: Mutex::new(None),
+        lifecycle: tauri::async_runtime::Mutex::new(()),
         client: reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -603,7 +639,6 @@ fn main() {
             desktop_info,
             game_detection::detect_game_folders,
             start_bridge,
-            stop_bridge,
             pick_folder,
             install_addon,
             open_sign_in,
@@ -630,6 +665,7 @@ fn main() {
                 data,
                 payload,
                 child: Mutex::new(None),
+                lifecycle: tauri::async_runtime::Mutex::new(()),
                 client: reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
                     .build()
@@ -662,6 +698,7 @@ fn main() {
                         let app = app.clone();
                         tauri::async_runtime::spawn(async move {
                             let host = app.state::<Host>();
+                            let _operation = host.lifecycle.lock().await;
                             match stop_host(&host).await {
                                 Ok(()) => app.exit(0),
                                 Err(error) => {

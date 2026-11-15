@@ -65,8 +65,8 @@ export default function Connections() {
     else configured.set(connection.provider, [connection]);
   }
 
-  const ready = !!status?.ready;
-  const canAddProvider = ready && configured.size < providerDefinitions.length;
+  const online = !!status;
+  const canAddProvider = online && configured.size < providerDefinitions.length;
 
   return (
     <ProviderPicker configured={new Set(configured.keys())}>
@@ -76,7 +76,7 @@ export default function Connections() {
         </h1>
         {canAddProvider && configured.size > 0 && <AddProviderTrigger />}
       </header>
-      {!ready ? (
+      {!online ? (
         <DataState />
       ) : configured.size === 0 ? (
         <Card

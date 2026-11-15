@@ -774,9 +774,7 @@ test('an active reply disables operations that would interrupt the bridge', asyn
   status.activeTurns = 1;
   renderApp();
   await screen.findByText('Working…');
-  expect((screen.getByRole('button', { name: 'Stop Wisp' }) as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(screen.queryByRole('button', { name: 'Stop Wisp' })).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Manage installation' }));
   expect(
     (
@@ -1121,11 +1119,18 @@ test('unreachable data pages do not report empty collections', async () => {
   vi.mocked(request).mockImplementation((route, body) =>
     route === '/status' ? Promise.reject(new Error('Service unreachable')) : original(route, body),
   );
+  const nativeCall = vi.mocked(desktop).getMockImplementation()!;
+  vi.mocked(desktop).mockImplementation((command, args) =>
+    command === 'start_bridge'
+      ? Promise.reject(new Error('Could not start Wisp'))
+      : nativeCall(command, args),
+  );
   renderApp();
-  await screen.findByText('Start Wisp to continue');
+  await screen.findByRole('heading', { name: 'Wisp is unavailable' });
+  expect(screen.queryByRole('button', { name: 'Start Wisp' })).toBeNull();
   for (const page of ['Memory', 'Panels', 'Routines', 'Integrations', 'AI Providers']) {
     await fireEvent.click(screen.getByRole('link', { name: page }));
-    expect(await screen.findByText('Connect to Wisp to view your data')).toBeTruthy();
+    expect(await screen.findByText('Your workspace is unavailable')).toBeTruthy();
     expect(screen.queryByText('No panels yet.')).toBeNull();
     expect(screen.queryByText('No routines yet')).toBeNull();
     expect(screen.getByRole('button', { name: 'Go to Overview' })).toBeTruthy();
@@ -1147,6 +1152,24 @@ test('data pages show loading while the first status request is pending', async 
   await waitFor(() => expect(finish).toBeDefined());
   finish(status);
   await screen.findByText('No panels yet.');
+});
+
+test('starts Wisp automatically and lets you manage providers with WoW setup deferred', async () => {
+  mockUnconfiguredDetection(Promise.resolve([]));
+  status.ready = false;
+  status.gameConnected = false;
+  renderApp();
+
+  await fireEvent.click(await screen.findByRole('button', { name: 'Set up WoW later' }));
+  await screen.findByRole('heading', { name: 'Set up World of Warcraft' });
+  expect(desktop).toHaveBeenCalledWith('start_bridge');
+  await openConnections();
+  expect(screen.getByRole('button', { name: 'Add provider' })).toBeTruthy();
+
+  cleanup();
+  renderApp();
+  await screen.findByRole('heading', { name: 'Set up World of Warcraft' });
+  expect(screen.queryByRole('button', { name: 'Set up WoW later' })).toBeNull();
 });
 
 test('first-time setup resumes at the provider step and opens Overview after saving a model', async () => {
