@@ -33,11 +33,32 @@ local function button(parent, text, width, click)
     return b
 end
 
+local function showCopyUrl(url)
+    StaticPopupDialogs.WISPAI_COPY_URL = StaticPopupDialogs.WISPAI_COPY_URL
+        or {
+            text = "Copy web address (Ctrl+C)",
+            button2 = "Close",
+            hasEditBox = true,
+            maxLetters = 2048,
+            OnShow = function(popup, value)
+                local edit = popup.GetEditBox and popup:GetEditBox() or popup.editBox
+                edit:SetText(value)
+                edit:SetFocus()
+                edit:HighlightText()
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+        }
+    StaticPopup_Show("WISPAI_COPY_URL", nil, nil, url)
+end
+
 ns.UI.Widgets = {
     Label = label,
     SetText = setText,
     Box = box,
     Button = button,
+    ShowCopyUrl = showCopyUrl,
     GOLD = GOLD,
     TEXT = TEXT,
     MUTED = MUTED,

@@ -51,7 +51,7 @@ function fixture() {
     runtime: 'unused',
     changed: () => {},
     flushAcknowledgment,
-    log: () => {},
+    logger: { info: vi.fn(), warn: vi.fn() },
   });
   return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
 }

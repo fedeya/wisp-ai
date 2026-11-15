@@ -1,5 +1,21 @@
 local _, ns = ...
 local uiWidgets = ns.UI.Widgets
+
+local function fadePanel(panel)
+    if not panel.entranceFade then
+        local group = panel:CreateAnimationGroup()
+        local alpha = group:CreateAnimation("Alpha")
+        alpha:SetFromAlpha(0)
+        alpha:SetToAlpha(1)
+        alpha:SetDuration(0.18)
+        panel.entranceFade = group
+        panel:SetScript("OnHide", function(self)
+            self.entranceFade:Stop()
+        end)
+    end
+    panel.entranceFade:Play()
+end
+
 function ns.UI.RichSignature(value)
     if type(value) ~= "table" then
         return tostring(value)
@@ -338,7 +354,7 @@ function ns.UI.PanelAction(chat, message, node, values)
         ns.UI.Refresh()
     end
 end
-function ns.UI.RenderRichUI(host, chat, message, width, collectWriting)
+function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animatePanels)
     if not host.widgets and ns.UI.LinkWidget then
         ns.UI.LinkWidget(host)
     end
@@ -620,6 +636,13 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting)
         w:ClearAllPoints()
         w:SetPoint("TOPLEFT", left, -y)
         y = y + h + 8
+        local presented = host.presentedRoots
+        if presented and not node._markdown and not presented[node.id] then
+            presented[node.id] = true
+            if animatePanels and w:IsVisible() then
+                fadePanel(w)
+            end
+        end
     end
     if
         message.parts

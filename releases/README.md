@@ -32,6 +32,25 @@ Do not publish from a checkout containing unfinished work. A failed preparation
 may leave local version/notes changes to inspect before retrying. Release tooling
 does not publish npm packages or automatically publish stable drafts.
 
+### CurseForge addon
+
+Create the WoW Addons project in [CurseForge for Authors](https://authors.curseforge.com/)
+and explain that Wisp Desktop for Windows is required. Link the
+[setup guide](https://wisp.fedeya.sh/setup) in the project description.
+
+After publishing the matching stable GitHub release, run **CurseForge addon**
+from GitHub Actions with its tag and **Upload** unchecked. Download the workflow
+artifact, extract the inner `WispAI-X.Y.Z.zip`, and submit that ZIP under
+**Files > Upload File** as a **Release** for **Forever 1.60.1**.
+
+For subsequent releases, set the Actions repository variable
+`CURSEFORGE_PROJECT_ID` to the numeric project ID and the Actions repository
+secret `CURSEFORGE_API_TOKEN` to a
+[CurseForge author token](https://authors.curseforge.com/#/api-tokens).
+Publishing a stable GitHub release then submits the matching addon ZIP and
+changelog to CurseForge for review. The manual workflow also accepts **Upload**
+for a published stable tag that still needs to be submitted.
+
 ## Nightly
 
 Pushes to `main` run validation once through the release workflow. App packaging

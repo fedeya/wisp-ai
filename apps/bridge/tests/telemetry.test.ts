@@ -68,7 +68,7 @@ test('missing and corrupt preferences fail closed', async () => {
 test('the live native opt-out stops new events without restarting the bridge', async () => {
   await preference(true);
   const telemetry = createTelemetry('0.1.1-nightly.53.1');
-  telemetry.chat('hover', 'completed', 120.8);
+  telemetry.chat('hover', 'completed', 120.8, undefined, 0);
   await telemetry.drain();
   const event = events().find((event) => event.event === 'chat_completed');
   expect(event.distinct_id).toBe(installationId);
@@ -78,6 +78,7 @@ test('the live native opt-out stops new events without restarting the bridge', a
     channel: 'nightly',
     mode: 'hover',
     duration_ms: 121,
+    first_text_ms: 0,
   });
   expect(event.properties.$process_person_profile).toBe(false);
   const count = fetch.mock.calls.length;
@@ -88,11 +89,11 @@ test('the live native opt-out stops new events without restarting the bridge', a
   await preference(true);
   telemetry.chat('routine', 'completed', 10);
   await telemetry.drain();
-  expect(
-    events()
-      .filter((event) => event.event === 'chat_completed')
-      .at(-1).properties.mode,
-  ).toBe('routine');
+  const properties = events()
+    .filter((event) => event.event === 'chat_completed')
+    .at(-1).properties;
+  expect(properties.mode).toBe('routine');
+  expect(properties).not.toHaveProperty('first_text_ms');
 });
 
 test('tool telemetry drops private labels, inputs, results and custom tool names', async () => {

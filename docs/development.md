@@ -177,7 +177,10 @@ preservation of user data.
 `apps/desktop/src-tauri/src/telemetry.rs` owns `telemetry.json` in the app data
 directory and creates the installation UUID and default-on preference. It reports
 `app_first_open`, `app_opened`, `app_active` and `desktop_section_viewed`, including
-before WoW is configured. The native Settings command persists changes atomically.
+before WoW is configured. Installing or updating the addon from Desktop reports
+`addon_install_finished` with a completion outcome and, on failure, an allowlisted
+`error_code`. Installer output and local paths stay on the device.
+The native Settings command persists changes atomically.
 The public PostHog ingestion token and US endpoint match the website project.
 
 The native host sets `WISP_TELEMETRY_RELEASE=1` only in release builds without
@@ -192,6 +195,8 @@ Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
 `timeout` when the underlying error identifies a timeout.
 Failed and timed-out chats include an allowlisted `error_code`. Codes identify
 a known condition or the stage that failed. Error messages stay in local logs.
+When the turn produces visible streamed text, `first_text_ms` measures the
+elapsed time from turn start to the first text that the bridge projects.
 A connection attempt starts when the bridge accepts a new addon session and
 succeeds when the addon acknowledges the first ready snapshot. The outcome is
 `timeout` after 30 seconds (`engine_not_ready` or `addon_ack_missing`) or
@@ -223,7 +228,9 @@ Suggested PostHog insights for the shared project:
 | Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`                            |
 | Feature use                       | `tool_executed`, event count, breakdown by `tool`                                            |
 | Queries and failures              | `chat_completed`, event count, breakdown by `mode`, `outcome` or `error_code`                |
+| Time until the first reply text   | `chat_completed`, percentiles of `first_text_ms` by `mode`                                   |
 | Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version`                      |
+| Desktop addon install results     | `addon_install_finished`, event count by `outcome` and `error_code`                          |
 | Addon handshake reliability       | `game_connection_finished`, event count by `outcome` / `error_code` and median `duration_ms` |
 | Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`                          |
 
@@ -312,7 +319,7 @@ are assigned from the first message before model preparation, without waiting fo
 Specialized tools stay in Eve's catalog until found with `eve__search` and
 called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
 history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
-and `Turn timing` entries for receipt, admission and first visible text latency.
+and structured `chat.turn_timing` entries for preparation, admission and the first text received by the bridge.
 
 ### Runtime boundaries
 

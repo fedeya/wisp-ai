@@ -8,6 +8,7 @@ import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
 import { chooseChatModel } from './chat-model.ts';
 import { ChatGPTAuthError } from './chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
+import type { Logger } from 'pino';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
 import type { ChatErrorCode, ChatOutcome, UsageTelemetry } from './telemetry.ts';
@@ -37,7 +38,7 @@ interface TurnDependencies {
   accountBusy: () => boolean;
   isCurrent: (chat: Chat) => boolean;
   changed: () => void;
-  log: (message: string) => void;
+  logger: Pick<Logger, 'info' | 'error'>;
   flushSnapshot?: () => void;
 }
 export function createTurnRunner(deps: TurnDependencies) {
@@ -53,7 +54,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     accountBusy,
     isCurrent,
     changed,
-    log,
+    logger,
   } = deps;
   const generations = new WeakMap<Chat, symbol>();
   const running = new Set<Promise<void>>();
@@ -218,11 +219,15 @@ export function createTurnRunner(deps: TurnDependencies) {
         role: 'system',
         text: error instanceof Error ? error.message : String(error),
       });
-      log(
-        'Turn failed: ' +
-          chat.id +
-          ': ' +
-          safeErrorMessage(error instanceof Error ? error.message : String(error)),
+      logger[failed ? 'error' : 'info'](
+        {
+          event: 'chat.turn_failed',
+          chat: chat.id,
+          messageId,
+          outcome,
+          error: safeErrorMessage(error instanceof Error ? error.message : String(error)),
+        },
+        'Turn failed',
       );
     } finally {
       deps.telemetry?.chat(
@@ -230,17 +235,20 @@ export function createTurnRunner(deps: TurnDependencies) {
         outcome,
         performance.now() - started,
         outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? failureCode : undefined,
+        firstTextMs,
       );
-      log(
-        'Turn timing: ' +
-          JSON.stringify({
-            chat: chat.id,
-            messageId,
-            preparedMs,
-            admittedMs,
-            firstTextMs,
-            totalMs: Math.round(performance.now() - started),
-          }),
+      logger.info(
+        {
+          event: 'chat.turn_timing',
+          chat: chat.id,
+          messageId,
+          outcome,
+          preparedMs,
+          admittedMs,
+          firstTextMs,
+          totalMs: Math.round(performance.now() - started),
+        },
+        'Turn timing',
       );
       clearInterval(streaming);
       if (projections.get(chat)?.parts === parts) {

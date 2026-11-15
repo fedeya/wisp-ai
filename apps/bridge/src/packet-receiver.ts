@@ -26,6 +26,7 @@ import { resumeChat, isEmptyDraft } from './sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from './chat-lifecycle.ts';
 import { errorMessage } from './errors.ts';
 import type { UsageTelemetry } from './telemetry.ts';
+import type { Logger } from 'pino';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -46,7 +47,7 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  log: (message: string) => void;
+  logger: Pick<Logger, 'info' | 'warn'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
@@ -67,7 +68,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     interrupt,
     runtime,
     changed,
-    log,
+    logger,
   } = deps;
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
@@ -98,7 +99,12 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           void client.sessions
             .attach(chat.eveId)
             .cancel()
-            .catch((error) => log('Session cancellation failed: ' + errorMessage(error)));
+            .catch((error) =>
+              logger.warn(
+                { event: 'session.cancel_failed', error: errorMessage(error) },
+                'Session cancellation failed',
+              ),
+            );
         }
       }
       state.activeTransport = packet.session;
@@ -143,7 +149,12 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
       void capabilitySettings
         .publish()
-        .catch((error) => log('Integration update failed: ' + error.message));
+        .catch((error) =>
+          logger.warn(
+            { event: 'integration.update_failed', error: errorMessage(error) },
+            'Integration update failed',
+          ),
+        );
       changed();
     }
     if (packet.heartbeat && !newTransport) {
@@ -160,7 +171,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      log('Message delivery: ' + JSON.stringify(delivery));
+      logger.info('Message delivery: ' + JSON.stringify(delivery));
     }
     if (packet.type === 'model_catalog') {
       void refreshModelCatalog();
@@ -206,7 +217,12 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             void client.sessions
               .attach(previous)
               .end({ reason: 'AI model or connection changed' })
-              .catch((error) => log('Session cleanup failed: ' + errorMessage(error)));
+              .catch((error) =>
+                logger.warn(
+                  { event: 'session.cleanup_failed', error: errorMessage(error) },
+                  'Session cleanup failed',
+                ),
+              );
           }
           chat.modelSettings = selected;
           chat.modelError = undefined;
@@ -234,7 +250,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           })
           .safeParse(data);
         if (timing.success) {
-          log('First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }));
+          logger.info(
+            'First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }),
+          );
         }
         changed();
         return;
@@ -251,7 +269,12 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       void writeFile(
         path.join(runtime, 'inline-status.json'),
         JSON.stringify(status, null, 2),
-      ).catch((error) => log('Inline diagnostic save failed: ' + errorMessage(error)));
+      ).catch((error) =>
+        logger.warn(
+          { event: 'addon.inline_status_save_failed', error: errorMessage(error) },
+          'Inline diagnostic save failed',
+        ),
+      );
       changed();
       return;
     }
@@ -277,7 +300,12 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           void routineStore
             .observe(identity, event.data)
             .then(changed)
-            .catch((e) => log('Routine event failed: ' + e.message));
+            .catch((error) =>
+              logger.warn(
+                { event: 'routine.event_failed', error: errorMessage(error) },
+                'Routine event failed',
+              ),
+            );
         }
       }
       return;
@@ -293,7 +321,12 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         void routineStore
           .mutate(identity, input.data)
           .then(changed)
-          .catch((e) => log('Routine action failed: ' + e.message));
+          .catch((error) =>
+            logger.warn(
+              { event: 'routine.action_failed', error: errorMessage(error) },
+              'Routine action failed',
+            ),
+          );
       }
       return;
     }

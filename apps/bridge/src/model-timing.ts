@@ -1,12 +1,13 @@
 import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { createHash } from 'node:crypto';
+import type { Logger } from 'pino';
 
 // Forward original chunks immediately; observe metadata without logging content.
 export function modelTiming(
   body: Record<string, unknown>,
   started: number,
-  log: (message: string) => void,
+  logger: Pick<Logger, 'info'>,
 ) {
   const decoder = new StringDecoder('utf8');
   let buffer = '',
@@ -50,18 +51,19 @@ export function modelTiming(
             firstTextMs = Math.round(performance.now() - started);
           }
           if (event.type === 'response.completed') {
-            log(
-              'Model timing: ' +
-                JSON.stringify({
-                  model: body.model,
-                  prefixHash,
-                  tools: Array.isArray(body.tools) ? body.tools.length : 0,
-                  instructionsChars: instructions.length,
-                  firstTextMs,
-                  totalMs: Math.round(performance.now() - started),
-                  inputTokens: event.response?.usage?.input_tokens,
-                  cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
-                }),
+            logger.info(
+              {
+                event: 'model.timing',
+                model: body.model,
+                prefixHash,
+                tools: Array.isArray(body.tools) ? body.tools.length : 0,
+                instructionsChars: instructions.length,
+                firstTextMs,
+                totalMs: Math.round(performance.now() - started),
+                inputTokens: event.response?.usage?.input_tokens,
+                cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
+              },
+              'Model timing',
             );
           }
         } catch {

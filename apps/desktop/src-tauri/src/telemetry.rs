@@ -27,6 +27,8 @@ fn filter_event(file: &Path, mut event: Event) -> Option<Event> {
                 "os",
                 "arch",
                 "section",
+                "outcome",
+                "error_code",
                 "$process_person_profile",
                 "$geoip_disable",
                 "$lib",
@@ -49,6 +51,29 @@ struct Preferences {
     installation_id: String,
     #[serde(default, rename = "firstOpenSent")]
     first_open_sent: bool,
+}
+
+#[derive(Clone, Copy)]
+pub enum AddonInstallError {
+    InvalidGameFolder,
+    BridgeStop,
+    InstallerUnavailable,
+    InstallerLaunch,
+    InstallerFailed,
+}
+
+fn addon_install_properties(error: Option<AddonInstallError>) -> Value {
+    let Some(error) = error else {
+        return json!({ "outcome": "completed" });
+    };
+    let code = match error {
+        AddonInstallError::InvalidGameFolder => "invalid_game_folder",
+        AddonInstallError::BridgeStop => "bridge_stop_failed",
+        AddonInstallError::InstallerUnavailable => "installer_unavailable",
+        AddonInstallError::InstallerLaunch => "installer_launch_failed",
+        AddonInstallError::InstallerFailed => "installer_failed",
+    };
+    json!({ "outcome": "failed", "error_code": code })
 }
 
 pub struct Telemetry {
@@ -252,6 +277,16 @@ pub fn start(app: tauri::AppHandle) {
     });
 }
 
+pub fn addon_install_finished(app: tauri::AppHandle, error: Option<AddonInstallError>) {
+    if release_enabled() {
+        tauri::async_runtime::spawn(async move {
+            app.state::<Telemetry>()
+                .send("addon_install_finished", addon_install_properties(error))
+                .await;
+        });
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,6 +335,28 @@ mod tests {
         assert!(!filtered.properties().contains_key("email"));
         telemetry.settings(Some(false)).unwrap();
         assert!(filter_event(&telemetry.file, event).is_none());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn addon_install_payload_keeps_result_and_code_through_sdk_filter() {
+        let (directory, telemetry) = fixture();
+        assert!(telemetry.enabled());
+        for (error, expected) in [
+            (None, json!({ "outcome": "completed" })),
+            (
+                Some(AddonInstallError::InstallerFailed),
+                json!({ "outcome": "failed", "error_code": "installer_failed" }),
+            ),
+        ] {
+            let mut event = Event::new("addon_install_finished", "random-installation");
+            let properties = addon_install_properties(error);
+            for (key, value) in properties.as_object().unwrap() {
+                event.insert_prop(key, value).unwrap();
+            }
+            let filtered = filter_event(&telemetry.file, event).unwrap();
+            assert_eq!(json!(filtered.properties()), expected);
+        }
         fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -152,6 +152,19 @@ assert(next(timers)==nil and saves==0 and resets==0 and loads==0)
   expect(decodeFrame(h.saved())?.kind).toBe(UPLINK_KIND);
 });
 
+test('missing helper files require desktop setup even before the character is ready', () => {
+  const h = transportHarness(false);
+  h.run(`
+states['WispAI_S1024']=nil
+assert(not ns.Transport.StartTransport() and ns.Transport.needsDesktopSetup)
+assert(next(timers)==nil)
+states['WispAI_S1024']=false
+assert(not ns.Transport.StartTransport() and not ns.Transport.needsDesktopSetup)
+`);
+  h.activate();
+  h.run('assert(timers[.04] and not ns.Transport.needsDesktopSetup)');
+});
+
 test('missing, corrupt, zero-generation and noncanonical readiness consume no bulk channels', () => {
   const h = transportHarness();
   h.run("ns.Transport.Send({type='hello'});timers[.04]()");

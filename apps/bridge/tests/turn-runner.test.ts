@@ -31,7 +31,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
   const prepare = vi.fn(async (_model: string) => {});
   const isReady = vi.fn(() => true);
   const accountBusy = vi.fn(() => false);
-  const log = vi.fn();
+  const logger = { info: vi.fn(), error: vi.fn() };
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
   const run = createTurnRunner({
@@ -51,7 +51,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     accountBusy,
     isCurrent: () => current,
     changed,
-    log,
+    logger,
     flushSnapshot,
   });
   return {
@@ -63,7 +63,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     prepare,
     isReady,
     accountBusy,
-    log,
+    logger,
     flushSnapshot,
     changed,
     changeCharacter: () => {
@@ -87,11 +87,9 @@ test('a complete turn projects streamed content and settles once', async () => {
   ).toBe('Hello');
   expect(f.send).toHaveBeenCalledTimes(1);
   expect(f.flushSnapshot).toHaveBeenCalledTimes(1);
-  const timing = JSON.parse(
-    String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
-      'Turn timing: '.length,
-    ),
-  );
+  const timing = f.logger.info.mock.calls.find(
+    ([fields]) => fields?.event === 'chat.turn_timing',
+  )?.[0];
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
 });
@@ -143,7 +141,17 @@ test('real streamed turns report their mode, outcome and tool lifecycle to telem
   f.chat.inline = true;
   await f.run(f.chat, 'Private question');
   expect(observe).toHaveBeenCalledWith(expect.objectContaining({ type: 'content.delta' }));
-  expect(telemetry.chat).toHaveBeenCalledWith('hover', 'completed', expect.any(Number), undefined);
+  const timing = f.logger.info.mock.calls.find(
+    ([fields]) => fields?.event === 'chat.turn_timing',
+  )?.[0];
+  expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
+  expect(telemetry.chat).toHaveBeenCalledWith(
+    'hover',
+    'completed',
+    expect.any(Number),
+    undefined,
+    timing.firstTextMs,
+  );
   f.chat.inline = false;
   f.chat.routineId = 'private-routine-id';
   await f.run(f.chat, 'Private routine');
@@ -152,6 +160,7 @@ test('real streamed turns report their mode, outcome and tool lifecycle to telem
     'completed',
     expect.any(Number),
     undefined,
+    expect.any(Number),
   );
 });
 
@@ -172,7 +181,13 @@ test('chat telemetry distinguishes early failures before a turn reaches the engi
     'model_catalog_failed',
   ]) {
     await f.run(f.chat, 'Private question');
-    expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'failed', expect.any(Number), code);
+    expect(telemetry.chat).toHaveBeenLastCalledWith(
+      'chat',
+      'failed',
+      expect.any(Number),
+      code,
+      undefined,
+    );
   }
   expect(f.send).not.toHaveBeenCalled();
 });
@@ -187,6 +202,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     'failed',
     expect.any(Number),
     'turn_start_failed',
+    undefined,
   );
 
   f.send.mockImplementationOnce(async () => ({
@@ -203,6 +219,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     'failed',
     expect.any(Number),
     'turn_result_failed',
+    undefined,
   );
 
   f.send.mockImplementationOnce(async () => ({
@@ -215,7 +232,13 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
   }));
   await f.run(f.chat, 'Private question');
   expect(f.chat.status).toBe('error');
-  expect(telemetry.chat).toHaveBeenLastCalledWith('chat', 'timeout', expect.any(Number), 'timeout');
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'timeout',
+    expect.any(Number),
+    'timeout',
+    undefined,
+  );
 
   f.send.mockImplementationOnce(async () => {
     f.run.interrupt(f.chat);
@@ -227,6 +250,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     'chat',
     'cancelled',
     expect.any(Number),
+    undefined,
     undefined,
   );
 });
@@ -384,7 +408,8 @@ test.each(['character', 'delete', 'interrupt'] as const)(
 );
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {
-  const f = fixture();
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const f = fixture(true, telemetry);
   f.chat.messages.push({ role: 'assistant', text: 'Previous answer' });
   f.send.mockImplementationOnce(async () => ({
     stream: async function* () {
@@ -400,12 +425,18 @@ test('old assistant messages cannot count as the first text of a new turn', asyn
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
   await f.run(f.chat, 'Next question');
-  const timing = JSON.parse(
-    String(f.log.mock.calls.find(([line]) => line.startsWith('Turn timing: '))?.[0]).slice(
-      'Turn timing: '.length,
-    ),
+  const timing = f.logger.info.mock.calls.find(
+    ([fields]) => fields?.event === 'chat.turn_timing',
+  )?.[0];
+  expect(timing).toBeDefined();
+  expect(timing.firstTextMs).toBeUndefined();
+  expect(telemetry.chat).toHaveBeenCalledWith(
+    'chat',
+    'completed',
+    expect.any(Number),
+    undefined,
+    undefined,
   );
-  expect(timing).not.toHaveProperty('firstTextMs');
 });
 
 test('a turn keeps its quest reading available to tools without inserting it into model input', async () => {

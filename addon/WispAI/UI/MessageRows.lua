@@ -99,23 +99,7 @@ local function linked(row)
     row:SetScript("OnHyperlinkClick", function(self, link, text, mouse)
         local url = ns.Markdown.Links.Decode(link)
         if url then
-            StaticPopupDialogs.WISPAI_COPY_URL = StaticPopupDialogs.WISPAI_COPY_URL
-                or {
-                    text = "Copy web address (Ctrl+C)",
-                    button2 = "Close",
-                    hasEditBox = true,
-                    maxLetters = 2048,
-                    OnShow = function(popup, value)
-                        local edit = popup.GetEditBox and popup:GetEditBox() or popup.editBox
-                        edit:SetText(value)
-                        edit:SetFocus()
-                        edit:HighlightText()
-                    end,
-                    timeout = 0,
-                    whileDead = true,
-                    hideOnEscape = true,
-                }
-            StaticPopup_Show("WISPAI_COPY_URL", nil, nil, url)
+            ns.UI.Widgets.ShowCopyUrl(url)
             return
         end
         if IsShiftKeyDown() then
@@ -623,11 +607,20 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                     row.rich = CreateFrame("Frame", nil, row)
                     linked(row.rich)
                 end
+                if not sameReply or not row.rich.presentedRoots then
+                    row.rich.presentedRoots = {}
+                end
                 row.rich:Show()
                 row.rich:ClearAllPoints()
                 row.rich:SetPoint("TOPLEFT", padding, -(interleaved and top or row.height))
-                local height, waiting, units =
-                    ns.UI.RenderRichUI(row.rich, chat, message, width - padding * 2, writing ~= nil)
+                local height, waiting, units = ns.UI.RenderRichUI(
+                    row.rich,
+                    chat,
+                    message,
+                    width - padding * 2,
+                    writing ~= nil,
+                    message.role == "assistant" and animateReply
+                )
                 if interleaved then
                     writingUnits = units
                 end

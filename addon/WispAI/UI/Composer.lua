@@ -18,6 +18,7 @@ end
 function ns.UI.Composer.Refresh(chat)
     ns.UI.RefreshModelControls()
     layout()
+    send:SetEnabled(not ns.Transport.needsDesktopSetup)
     local sendText = chat and chat.status == "working" and "Stop" or "Send"
     if send.lastText ~= sendText then
         send.lastText = sendText

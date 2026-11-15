@@ -17,6 +17,7 @@ const propertyKeys = new Set([
   'mode',
   'outcome',
   'duration_ms',
+  'first_text_ms',
   'error_code',
   'addon_version',
   'tool',
@@ -156,6 +157,7 @@ export class UsageTelemetry {
     outcome: ChatOutcome,
     duration: number,
     errorCode?: ChatErrorCode,
+    firstTextMs?: number,
   ) {
     this.active();
     const failureCode =
@@ -168,6 +170,7 @@ export class UsageTelemetry {
       mode,
       outcome,
       duration_ms: Math.max(0, Math.round(duration)),
+      ...(firstTextMs === undefined ? {} : { first_text_ms: firstTextMs }),
       ...(failureCode ? { error_code: failureCode } : {}),
     });
   }
