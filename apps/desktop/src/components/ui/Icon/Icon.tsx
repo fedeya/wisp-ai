@@ -1,3 +1,4 @@
+import ArrowLeft from 'lucide-react/icons/arrow-left';
 import ArrowRight from 'lucide-react/icons/arrow-right';
 import Brain from 'lucide-react/icons/brain';
 import Check from 'lucide-react/icons/check';
@@ -13,6 +14,7 @@ import Plus from 'lucide-react/icons/plus';
 import Puzzle from 'lucide-react/icons/puzzle';
 import RefreshCw from 'lucide-react/icons/refresh-cw';
 import ScrollText from 'lucide-react/icons/scroll-text';
+import Server from 'lucide-react/icons/server';
 import Settings from 'lucide-react/icons/settings';
 import Sparkles from 'lucide-react/icons/sparkles';
 import SquareTerminal from 'lucide-react/icons/square-terminal';
@@ -21,6 +23,7 @@ import X from 'lucide-react/icons/x';
 
 const icons = {
   arrow: ArrowRight,
+  back: ArrowLeft,
   brain: Brain,
   check: Check,
   chevronDown: ChevronDown,
@@ -37,6 +40,7 @@ const icons = {
   puzzle: Puzzle,
   refresh: RefreshCw,
   scrollText: ScrollText,
+  server: Server,
   settings: Settings,
   spark: Sparkles,
   workflow: Workflow,

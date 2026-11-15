@@ -31,7 +31,7 @@ function renderNavigation(page: DesktopPage) {
     <NavLink
       key={page.path}
       to={page.path}
-      end
+      end={page.name !== 'Connections'}
       className={({ isActive }) => navigationLink({ selected: isActive })}
     >
       <Icon name={page.icon} size={18} />

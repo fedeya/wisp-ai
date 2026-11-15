@@ -23,7 +23,9 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
   const savedModel = app.savedModel ?? '';
   const defaultModel = app.models.some(({ slug }) => slug === savedModel)
     ? savedModel
-    : app.models[0]?.slug || '';
+    : onFinish
+      ? app.models[0]?.slug || ''
+      : '';
 
   const modelForm = useForm({
     defaultValues,
@@ -99,7 +101,7 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
                   value: slug,
                   label: displayName,
                 }))}
-                placeholder="Connect a provider first"
+                placeholder={app.models.length ? 'Choose a model' : 'No models available'}
                 disabled={locked || !app.models.length}
               />
             )}

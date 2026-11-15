@@ -16,3 +16,8 @@ The local simulation engine is WoWSims Forever, using StewBagger's levelsim bran
 Original project: https://github.com/wowsims/forever
 Level support: https://github.com/StewBagger/forever-levelsim/tree/levelsim
 WoWSims is MIT licensed. See simulator/LICENSE-WoWSims.txt and manifest.json.
+
+Desktop AI provider logos are sourced from Lobe Icons static SVG 1.102.0.
+https://github.com/lobehub/lobe-icons
+See apps/desktop/src/assets/providers/LICENSE.txt for the MIT license.
+Brand marks belong to their respective owners.

@@ -87,7 +87,18 @@ afterEach(() => {
 
 async function openConnections() {
   await fireEvent.click(screen.getByRole('link', { name: 'AI Providers' }));
-  await screen.findByRole('heading', { name: 'Default model' });
+  await screen.findByRole('heading', { name: 'AI Providers', level: 1 });
+}
+
+async function openProviderPicker() {
+  await fireEvent.click(screen.getByRole('button', { name: 'Add provider' }));
+  return screen.findByRole('dialog', { name: 'Add provider' });
+}
+
+async function openProvider(action: string, provider: string) {
+  await fireEvent.click(screen.getByRole('link', { name: action }));
+  await screen.findByRole('heading', { level: 1, name: provider });
+  expect(screen.getByRole('link', { name: 'AI Providers', current: 'page' })).toBeTruthy();
 }
 
 async function openSearchSettings() {
@@ -260,9 +271,10 @@ test('AI Providers links to collapsed web search settings in Integrations withou
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
-  expect(
-    screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
-  ).toEqual(['ChatGPT', 'API connections', 'Default model']);
+  expect(screen.getByRole('heading', { name: 'ChatGPT' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Claude' })).toBeNull();
+  expect(await screen.findByRole('heading', { name: 'Default model' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'Web search' })).toBeNull();
   await fireEvent.click(screen.getByRole('link', { name: 'Configure web search in Integrations' }));
   await screen.findByRole('heading', { name: 'Integrations' });
   const configure = screen.getByRole('button', { name: 'Configure web search' });
@@ -380,29 +392,37 @@ test('Exa testing is available without a key and saving clears the password fiel
     expect((screen.getByLabelText('Exa API key (optional)') as HTMLInputElement).value).toBe(''),
   );
 });
-test('API connections expose the provider registry and save a model with protected-key input', async () => {
+test('the provider directory exposes the registry and preserves manual model setup', async () => {
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
-  await fireEvent.click(screen.getByRole('button', { name: 'Add connection' }));
-  const provider = await screen.findByRole('combobox', { name: 'Provider' });
-  const providers = within(await openSelect(provider));
-  expect(providers.getAllByRole('option')).toHaveLength(20);
-  expect(providers.getByRole('option', { name: 'Google / Gemini' })).toBeTruthy();
-  expect(providers.getByRole('option', { name: 'OpenRouter' })).toBeTruthy();
-  expect(providers.queryByRole('option', { name: /Bedrock/ })).toBeNull();
-  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+  const providers = within(await openProviderPicker());
+  expect(providers.getAllByRole('link')).toHaveLength(19);
+  expect(providers.getByRole('link', { name: 'Gemini' })).toBeTruthy();
+  expect(providers.getByRole('link', { name: 'OpenRouter' })).toBeTruthy();
+  expect(providers.queryByRole('link', { name: 'ChatGPT' })).toBeNull();
+  expect(providers.queryByRole('link', { name: /Bedrock/ })).toBeNull();
+  const providerSearch = providers.getByRole('searchbox', { name: 'Search providers' });
+  await fireEvent.input(providerSearch, {
+    target: { value: 'vercel' },
+  });
+  expect(screen.getByRole('link', { name: 'Vercel AI Gateway' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'OpenRouter' })).toBeNull();
+  await fireEvent.input(providerSearch, { target: { value: 'anthropic' } });
+  await openProvider('Claude', 'Claude');
+  expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Manage models' }));
   await fireEvent.input(screen.getByLabelText('Connection name'), {
     target: { value: 'My Claude' },
   });
   const key = screen.getByLabelText('API key');
   expect(key.getAttribute('type')).toBe('password');
   await fireEvent.input(key, { target: { value: 'test-api-key' } });
-  const draftModel = screen.getByLabelText('Models available in Wisp');
+  const draftModel = screen.getByLabelText('Model ID');
   const addModel = screen.getByRole('button', { name: 'Add model' });
   await fireEvent.input(draftModel, { target: { value: 'discarded-model' } });
   await fireEvent.click(addModel);
-  await fireEvent.input(screen.getByLabelText('Models available in Wisp'), {
+  await fireEvent.input(screen.getByLabelText('Model ID'), {
     target: { value: 'claude-test' },
   });
   await fireEvent.input(screen.getByLabelText('Context window in tokens'), {
@@ -441,6 +461,129 @@ test('API connections expose the provider registry and save a model with protect
   await waitFor(() => expect(screen.queryByLabelText('API key')).toBeNull());
 });
 
+test.each([
+  {
+    provider: 'openrouter' as const,
+    name: 'OpenRouter',
+    existingDefault: true,
+    selection: 'Luna',
+    overview: 'Wisp is ready',
+  },
+  {
+    provider: 'gateway' as const,
+    name: 'Vercel AI Gateway',
+    existingDefault: false,
+    selection: 'Choose a model',
+    overview: 'Connect your AI account',
+  },
+])(
+  '$name only saves the models the user adds and keeps the default at $selection',
+  async ({ provider, name, existingDefault, selection, overview }) => {
+    if (!existingDefault) {
+      status.auth = { status: 'signed_out', revision: 1, profiles: [] };
+      status.model = '';
+    }
+    const model = { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 };
+    const catalog = [
+      { ...model, supportsTools: true },
+      {
+        id: 'anthropic/claude-haiku',
+        name: 'Claude Haiku',
+        contextWindow: 200000,
+        supportsTools: true,
+      },
+      { id: 'example/text-only', supportsTools: false },
+      { id: 'example/unknown' },
+    ];
+    let discoveryCalls = 0;
+    const id = '35302f8c-128a-48fb-98a1-9eb03bb71f72';
+    const original = vi.mocked(request).getMockImplementation()!;
+    vi.mocked(request).mockImplementation(async (route, body) => {
+      if (route === '/connections/discover') {
+        discoveryCalls += 1;
+        return { models: discoveryCalls === 1 ? catalog : catalog.slice(1) } as never;
+      }
+      if (route === '/connections/save') {
+        status.connections = [
+          {
+            id,
+            provider,
+            name,
+            hasKey: true,
+            models: (body as { models: (typeof model)[] }).models,
+          },
+        ];
+      }
+      if (route === '/auth/models') {
+        return {
+          models: [
+            ...(existingDefault ? [{ slug: 'luna', displayName: 'Luna', efforts: ['low'] }] : []),
+            ...status.connections.flatMap((connection) =>
+              connection.models.map((model) => ({
+                slug: `connection:${id}:${model.id}`,
+                displayName: model.name,
+                efforts: [],
+              })),
+            ),
+          ],
+        } as never;
+      }
+      return original(route, body);
+    });
+    renderApp();
+    await screen.findByRole('heading', { name: overview });
+    await openConnections();
+    if (!existingDefault) {
+      expect(screen.getByRole('heading', { name: 'Connect your first provider' })).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: 'Add provider' })).toHaveLength(1);
+      expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
+    }
+    await openProviderPicker();
+    await openProvider(name, name);
+    await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
+    const discover = screen.getByRole<HTMLButtonElement>('button', { name: 'Discover models' });
+    await fireEvent.click(discover);
+    const search = await screen.findByRole('searchbox', { name: 'Search provider models' });
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save connection' });
+    expect(save.disabled).toBe(true);
+    expect(screen.queryByRole('checkbox', { name: 'Tool calling only' })).toBeNull();
+    expect(screen.getByText('2 models')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add example/unknown' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add example/text-only' })).toBeNull();
+    expect(screen.queryByText('Tool calling')).toBeNull();
+    await fireEvent.input(search, { target: { value: 'sonnet' } });
+    expect(screen.queryByRole('button', { name: 'Add anthropic/claude-haiku' })).toBeNull();
+    await fireEvent.click(screen.getByRole('button', { name: 'Add anthropic/claude-sonnet' }));
+    await screen.findByText('1 model selected for Wisp');
+    await fireEvent.click(screen.getByRole('button', { name: 'Test anthropic/claude-sonnet' }));
+    expect(request).toHaveBeenCalledWith(
+      '/connections/test',
+      expect.objectContaining({ models: [model] }),
+    );
+    await waitFor(() => expect(discover.disabled).toBe(false));
+    await fireEvent.click(discover);
+    await screen.findByText('No models match your search.');
+    expect(screen.getByText('1 model selected for Wisp')).toBeTruthy();
+    await waitFor(() => expect(save.disabled).toBe(false));
+    await fireEvent.click(save);
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        '/connections/save',
+        expect.objectContaining({ models: [model] }),
+      ),
+    );
+    expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
+    await fireEvent.click(screen.getByRole('link', { name: 'Back to AI Providers' }));
+    await screen.findByRole('link', { name: `Manage ${name}` });
+    expect(screen.queryByRole('heading', { name: 'Connect your first provider' })).toBeNull();
+    const selector = await screen.findByRole('combobox', { name: 'Default model for new chats' });
+    await waitFor(() => expect(selector.textContent).toBe(selection));
+    const choices = within(await openSelect(selector));
+    expect(choices.getByRole('option', { name: 'Claude Sonnet' })).toBeTruthy();
+    expect(choices.queryByRole('option', { name: 'Claude Haiku' })).toBeNull();
+  },
+);
+
 test('an API default enables the workspace while ChatGPT stays disconnected', async () => {
   status.auth.status = 'signed_out';
   status.modelConnected = true;
@@ -452,18 +595,42 @@ test('an API default enables the workspace while ChatGPT stays disconnected', as
       hasKey: true,
       models: [{ id: 'claude-test', contextWindow: 200000 }],
     },
+    {
+      id: 'a5f4f84f-e053-410a-955f-b59a22b3a201',
+      provider: 'gateway',
+      name: 'My Gateway',
+      hasKey: false,
+      models: [{ id: 'gateway-test', contextWindow: 200000 }],
+    },
   ];
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
+  expect(
+    within(screen.getByRole('listitem', { name: 'Claude' })).getByText('Key saved'),
+  ).toBeTruthy();
+  expect(screen.queryByRole('listitem', { name: 'Gemini' })).toBeNull();
+  expect(
+    within(screen.getByRole('listitem', { name: 'Vercel AI Gateway' })).getByText(
+      'API key missing',
+    ),
+  ).toBeTruthy();
+  expect(
+    within(screen.getByRole('listitem', { name: 'ChatGPT' })).getByText('Reconnect needed'),
+  ).toBeTruthy();
+  await openProvider('Reconnect ChatGPT', 'ChatGPT');
   expect(screen.getByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'OpenAI API' })).toBeTruthy();
+  expect(screen.queryByText('My Claude')).toBeNull();
+  await fireEvent.click(screen.getByRole('link', { name: 'Back to AI Providers' }));
+  await openProvider('Manage Claude', 'Claude');
   expect(screen.getByText('My Claude')).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   expect(
     ((await screen.findByLabelText('API key (leave blank to keep saved key)')) as HTMLInputElement)
       .value,
   ).toBe('');
-  expect(screen.getByRole<HTMLButtonElement>('combobox', { name: 'Provider' }).disabled).toBe(true);
+  expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
 });
 test('an event listener that finishes registering after unmount is immediately removed', async () => {
   let finish: ((stop: () => void) => void) | undefined;
@@ -546,7 +713,6 @@ test('provider-neutral navigation and per-chat default model controls use the br
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
-  expect(screen.getByRole('button', { name: 'Add account' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'AI Providers' })).toBeTruthy();
   await chooseOption(
     await screen.findByRole('combobox', { name: 'Default model for new chats' }),
@@ -568,6 +734,8 @@ test('account selection is a draft until submitted and remains available for rec
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
+  await openProvider('Manage ChatGPT', 'ChatGPT');
+  expect(screen.getByRole('button', { name: 'Add account' })).toBeTruthy();
 
   const accounts = screen.getByRole('combobox', { name: 'Saved accounts' });
   expect(accounts.textContent).toBe('First account');
@@ -813,6 +981,8 @@ test('sign-in URL is handed to the native allowlisted opener', async () => {
   renderApp();
   await screen.findByText('Connect your AI account');
   await openConnections();
+  await openProviderPicker();
+  await openProvider('ChatGPT', 'ChatGPT');
   expect(screen.queryByRole('button', { name: 'Add account' })).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Continue with ChatGPT' }));
   await waitFor(() =>
@@ -918,7 +1088,7 @@ test('the next action follows the missing connection', async () => {
   status.auth.status = 'signed_out';
   renderApp();
   await fireEvent.click(await screen.findByRole('button', { name: 'Connect AI' }));
-  expect(await screen.findByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
+  expect(await screen.findByRole('link', { name: 'Reconnect ChatGPT' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'AI Providers' }).getAttribute('aria-current')).toBe(
     'page',
   );
@@ -953,7 +1123,7 @@ test('unreachable data pages do not report empty collections', async () => {
   );
   renderApp();
   await screen.findByText('Start Wisp to continue');
-  for (const page of ['Memory', 'Panels', 'Routines', 'Integrations']) {
+  for (const page of ['Memory', 'Panels', 'Routines', 'Integrations', 'AI Providers']) {
     await fireEvent.click(screen.getByRole('link', { name: page }));
     expect(await screen.findByText('Connect to Wisp to view your data')).toBeTruthy();
     expect(screen.queryByText('No panels yet.')).toBeNull();

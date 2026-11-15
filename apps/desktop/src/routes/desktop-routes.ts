@@ -7,6 +7,15 @@ import Connections from './Connections';
 import Integrations from './Integrations';
 import Overview from './Overview';
 
+export const connectionsPage = {
+  name: 'Connections',
+  Component: Connections,
+  path: '/connections',
+  group: 'setup',
+  icon: 'plug',
+  title: 'AI Providers',
+} as const;
+
 export const desktopPages = [
   {
     name: 'Overview',
@@ -17,15 +26,7 @@ export const desktopPages = [
     title: 'Overview',
     caption: 'Check your game connection, addon and AI provider.',
   },
-  {
-    name: 'Connections',
-    Component: Connections,
-    path: '/connections',
-    group: 'setup',
-    icon: 'plug',
-    title: 'AI Providers',
-    caption: 'Connect ChatGPT or an API provider and choose your default model.',
-  },
+  connectionsPage,
   {
     name: 'Integrations',
     Component: Integrations,

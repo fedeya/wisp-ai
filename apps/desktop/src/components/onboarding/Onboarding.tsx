@@ -54,7 +54,7 @@ export default function Onboarding() {
               <>
                 <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1 [&>section]:mb-3">
                   <ChatGptConnection firstRun />
-                  <ApiConnections firstRun />
+                  <ApiConnections />
                 </div>
                 <DefaultModelSettings onFinish={finishOnboarding} />
               </>
