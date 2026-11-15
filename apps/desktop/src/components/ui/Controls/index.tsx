@@ -33,8 +33,8 @@ export function Badge({ positive, className, ...props }: BadgeProps) {
 
 type CardProps = ComponentProps<'section'> & VariantProps<typeof card>;
 
-export function Card({ kind, ready, className, ...props }: CardProps) {
-  return <section {...props} className={card({ kind, ready, class: className })} />;
+export function Card({ kind, density, ready, className, ...props }: CardProps) {
+  return <section {...props} className={card({ kind, density, ready, class: className })} />;
 }
 
 export function Input({ type = 'text', className, ...props }: ComponentProps<'input'>) {

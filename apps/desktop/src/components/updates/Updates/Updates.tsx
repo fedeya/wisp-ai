@@ -348,7 +348,7 @@ export default function Updates({
           </section>
         )}
       </Card>
-      <Card className="p-4 max-sm:p-3">
+      <Card density="compact">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <h3 className="m-0 text-[14px] font-semibold">

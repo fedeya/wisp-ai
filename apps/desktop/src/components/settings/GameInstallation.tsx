@@ -25,7 +25,7 @@ export default function GameInstallation({ firstRun = false }: { firstRun?: bool
   const folderDisabled = !native || !!app.busy;
 
   return (
-    <Card className="mb-0">
+    <Card density={firstRun ? undefined : 'compact'} className="mb-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2>{firstRun ? 'Install the Wisp addon' : 'Game installation'}</h2>

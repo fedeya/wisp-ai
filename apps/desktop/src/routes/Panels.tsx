@@ -19,10 +19,10 @@ export default function Panels() {
   const { gameConnected, panels } = app.status;
   if (!panels.length) {
     return (
-      <Card kind="empty" className="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]">
+      <Card kind="empty" density="compact" className="[&_>_svg]:mb-2 [&_>_svg]:text-[#577e7c]">
         <Icon name="panel" size={34} />
         <h2 className="text-[21px]">No panels yet.</h2>
-        <p className="mx-auto text-muted text-[13px] max-w-[400px] mt-[12px] mb-[23px]">
+        <p className="mx-auto mt-1 mb-0 max-w-[400px] text-[13px] text-muted">
           Ask Wisp in game to create a tracker or panel. Your saved panels will appear here.
         </p>
       </Card>
@@ -40,12 +40,13 @@ export default function Panels() {
         <Card
           key={panel.id}
           kind="panel"
+          density="compact"
           className="gap-[20px] flex justify-between items-center max-xl:gap-[12px] max-xl:items-stretch max-xl:flex-col"
         >
           <div className="integration-top gap-[18px] flex items-center justify-between flex-[1]">
             <div>
               <h2>{panel.title}</h2>
-              <p className="text-muted text-[13px]">{panel.character}</p>
+              <p className="mt-1 text-[13px] text-muted">{panel.character}</p>
             </div>
             <Badge>{panel.bindings?.length || 0} tracked values</Badge>
           </div>

@@ -21,15 +21,15 @@ export default function Diagnostics() {
   }, [showLogs]);
 
   return (
-    <Card>
-      <div className="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted">
-        <div>
-          <h2>Local activity</h2>
-          <p className="text-muted text-[13px]">
+    <Card density="compact">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="m-0 text-[14px] font-semibold">Local activity</h2>
+          <p className="mb-0 mt-1 text-[13px] text-muted">
             Logs stay on your computer. Review them before sharing.
           </p>
         </div>
-        <div className="actions gap-[10px] mt-0 flex flex-wrap items-center">
+        <div className="flex flex-wrap items-center gap-2">
           <ActionProgress label={app.busyTarget === '' ? app.busy : ''} />
           <Button onClick={showLogs} disabled={!!app.busy}>
             <Icon name="refresh" size={16} />
@@ -42,16 +42,21 @@ export default function Diagnostics() {
       </div>
       {app.connectionError && (
         <p
-          className="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#332522] text-[#f0b4aa] mb-[20px] text-[13px] leading-[1.5] [&_.icon-button]:ml-auto"
+          className="mt-3 mb-0 rounded-[8px] border border-solid border-[#70473f] bg-[#332522] px-3 py-2 text-[13px] text-[#f0b4aa] [overflow-wrap:anywhere]"
           role="status"
         >
           Last connection error: {app.connectionError}
         </p>
       )}
-      <pre className="logs border border-solid border-[#293a41] p-[18px] [background:#10171b] rounded-[9px] min-h-[320px] max-h-[55vh] overflow-auto text-[11px] [font-family:ui-monospace,_Consolas,_monospace] font-normal not-italic leading-[1.7] text-[#a5b7be] [white-space:pre-wrap] [word-break:break-word] mt-[22px]">
+      <pre
+        role="region"
+        aria-label="Local logs"
+        tabIndex={0}
+        className="logs catalog-scroll mt-3 mb-0 min-h-[min(240px,40vh)] max-h-[55vh] overflow-auto rounded-[8px] border border-solid border-border bg-[#10171b] p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#a5b7be] [overflow-wrap:anywhere]"
+      >
         {app.logs || 'No activity loaded yet. Refresh to read the local bridge logs.'}
       </pre>
-      <p className="field-hint text-[11px]! text-muted mt-[12px]">
+      <p className="mt-2 mb-0 text-[12px] text-muted [overflow-wrap:anywhere]">
         Data location: {app.info?.dataDirectory || 'Available in the installed app'}
       </p>
     </Card>

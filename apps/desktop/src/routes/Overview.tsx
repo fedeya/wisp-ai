@@ -162,15 +162,19 @@ export default function Overview() {
                     : 'Not checked'}
               </ConnectionStatus>
             </Card>
-            <Card kind="installation" className={editingInstallation ? 'mb-3' : ''}>
+            <Card
+              kind="installation"
+              density="compact"
+              className={editingInstallation ? 'mb-3' : ''}
+            >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="text-muted">
                     <Icon name="folder" />
                   </span>
-                  <div>
+                  <div className="min-w-0">
                     <h2>Installation details</h2>
-                    <p className="text-[13px] text-muted">
+                    <p className="mt-1 text-[13px] text-muted [overflow-wrap:anywhere]">
                       {app.active ? 'Working…' : app.info.wow}
                     </p>
                   </div>

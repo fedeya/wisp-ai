@@ -19,9 +19,9 @@ export default function Memory() {
 
   if (!entries.length) {
     return (
-      <Card kind="empty" className="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]">
+      <Card kind="empty" density="compact">
         <h2 className="text-[21px]">No memory controls available</h2>
-        <p className="mx-auto text-muted text-[13px] max-w-[400px] mt-[12px] mb-[23px]">
+        <p className="mx-auto mt-1 mb-0 max-w-[400px] text-[13px] text-muted">
           Memory preferences will appear when Wisp makes them available.
         </p>
       </Card>
@@ -29,11 +29,16 @@ export default function Memory() {
   }
 
   return entries.map((entry) => (
-    <Card key={entry.id} kind="toggle" className="gap-[22px] flex items-center justify-between">
+    <Card
+      key={entry.id}
+      kind="toggle"
+      density="compact"
+      className="flex items-center justify-between gap-3"
+    >
       <div className="toggle-description gap-[18px] flex items-center">
         <div>
           <h2 className="text-[15px] max-lg:text-[14px]">{entry.name}</h2>
-          <p className="text-muted text-[12px]">{entry.description}</p>
+          <p className="mt-1 text-[12px] text-muted">{entry.description}</p>
         </div>
       </div>
       <div className="row-controls gap-[14px] flex items-center shrink-0">

@@ -53,6 +53,7 @@ export const card = tv({
       panel: 'panel-row px-[22px] py-[18px]',
       empty: 'empty-state px-[30px] py-[64px] text-center',
     },
+    density: { compact: 'p-4 max-sm:p-3' },
     ready: { true: 'border-[#365b51]' },
   },
   defaultVariants: { kind: 'default' },

@@ -41,11 +41,11 @@ export default function TelemetrySettings() {
   }
 
   return (
-    <Card>
-      <div className="flex items-center justify-between gap-6">
-        <div>
-          <h2>Usage analytics</h2>
-          <p className="mt-2 text-[13px] leading-relaxed text-muted">
+    <Card density="compact">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="m-0 text-[14px] font-semibold">Usage analytics</h2>
+          <p className="mb-0 mt-1 text-[13px] text-muted">
             Help improve Wisp by sharing usage data.
           </p>
         </div>

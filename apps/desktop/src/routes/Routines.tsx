@@ -20,7 +20,7 @@ export default function Routines() {
 
   return (
     <>
-      <Card>
+      <Card density="compact">
         <h2>{routines.length ? 'Create another routine in game' : 'No routines yet'}</h2>
         <p className="text-muted text-[13px]">
           Try “Every two levels, review my spells and rotation” or “When I change weapons, review my
@@ -35,7 +35,7 @@ export default function Routines() {
           .filter((run) => run.routineId === id && run.characterKey === characterKey)
           .reverse();
         return (
-          <Card key={target}>
+          <Card key={target} density="compact">
             <div className="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted">
               <div>
                 <h2>{routine.title}</h2>
@@ -89,7 +89,7 @@ export default function Routines() {
             <p className="muted text-muted text-[13px]">
               {routine.triggers.map(describeRoutineTrigger).join(' or ')}
             </p>
-            <details className="routine-history border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[18px] pt-[16px]">
+            <details className="routine-history border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-3 pt-3">
               <summary className="cursor-pointer text-muted text-[13px]">
                 Run history ({runs.length})
               </summary>
