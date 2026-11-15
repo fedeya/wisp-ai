@@ -21,6 +21,26 @@ import {
 } from '@wisp/protocol/game-inspection';
 import { integrationContext } from '@wisp/protocol/capabilities';
 
+test('only item references can request a cooldown', () => {
+  const args = { kind: 'item', id: 3827 };
+  assert.deepEqual(inspectionSchema.parse({ kind: 'reference', args }), {
+    kind: 'reference',
+    args,
+  });
+  const withCooldown = { ...args, includeCooldown: true };
+  assert.deepEqual(inspectionSchema.parse({ kind: 'reference', args: withCooldown }), {
+    kind: 'reference',
+    args: withCooldown,
+  });
+  assert.equal(
+    inspectionSchema.safeParse({
+      kind: 'reference',
+      args: { ...withCooldown, kind: 'spell' },
+    }).success,
+    false,
+  );
+});
+
 test('actual new Eve definitions follow per-API readiness, parent switches and expiration', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-addon-tools-'));
   const previous = process.env.WOW_CAPABILITIES_FILE;

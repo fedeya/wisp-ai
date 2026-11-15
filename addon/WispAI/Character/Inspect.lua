@@ -49,9 +49,57 @@ local function itemDetails(id)
         tooltip = tooltip(link),
     }
 end
+
+local function readPublic(fn, ...)
+    if type(fn) ~= "function" then
+        return
+    end
+    local ok, a, b, c = pcall(fn, ...)
+    if
+        ok and (not issecretvalue or not (issecretvalue(a) or issecretvalue(b) or issecretvalue(c)))
+    then
+        return a, b, c
+    end
+end
+
+local function itemCooldown(id)
+    local get = C_Container and C_Container.GetItemCooldown
+    local expectsBoolean = type(get) ~= "function"
+    if expectsBoolean then
+        get = C_Item and C_Item.GetItemCooldown
+    end
+    local start, duration, enabled = readPublic(get, id)
+    local now = readPublic(GetTime)
+    local isFinite = ns.Shared.Numbers.IsFinite
+    -- The container API reports 1 for enabled; the item API reports true.
+    if
+        enabled ~= (expectsBoolean and true or 1)
+        or not (isFinite(start) and isFinite(duration) and isFinite(now))
+        or start < 0
+        or duration < 0
+        or start > now
+    then
+        return { status = "unavailable", state = "unknown" }
+    end
+    local remaining = math.max(0, duration - (now - start))
+    return {
+        status = "available",
+        state = remaining == 0 and "no_active_cooldown" or "cooldown",
+        remainingSeconds = remaining,
+    }
+end
+
 function inspectors.reference(args)
     if args.kind == "item" then
-        return itemDetails(args.id)
+        if args.includeCooldown ~= true then
+            return itemDetails(args.id)
+        end
+        local ok, details = pcall(itemDetails, args.id)
+        if not ok then
+            details = { id = args.id, status = "unavailable" }
+        end
+        details.cooldown = itemCooldown(args.id)
+        return details
     end
     if args.kind == "spell" or args.kind == "talent" then
         assert(C_Spell and C_Spell.GetSpellInfo, "Spell API is unavailable")
@@ -101,66 +149,14 @@ function inspectors.target()
     }
 end
 
-local HEARTHSTONE_ITEM_ID = 6948
-
-local function readPublic(fn, ...)
-    if type(fn) ~= "function" then
-        return
-    end
-    local ok, a, b, c = pcall(fn, ...)
-    if
-        ok and (not issecretvalue or not (issecretvalue(a) or issecretvalue(b) or issecretvalue(c)))
-    then
-        return a, b, c
-    end
-end
-
-local function hearthstoneCooldown()
-    local get = C_Container and C_Container.GetItemCooldown
-    local expectsBoolean = type(get) ~= "function"
-    if expectsBoolean then
-        get = C_Item and C_Item.GetItemCooldown
-    end
-    local start, duration, enabled = readPublic(get, HEARTHSTONE_ITEM_ID)
-    local now = readPublic(GetTime)
-    local isFinite = ns.Shared.Numbers.IsFinite
-    -- The container API reports 1 for enabled; the item API reports true.
-    if
-        enabled ~= (expectsBoolean and true or 1)
-        or not (isFinite(start) and isFinite(duration) and isFinite(now))
-        or start < 0
-        or duration < 0
-        or start > now
-    then
-        return { status = "unavailable", state = "unknown" }
-    end
-    local remaining = math.max(0, duration - (now - start))
-    return {
-        status = "available",
-        state = remaining == 0 and "ready" or "cooldown",
-        remainingSeconds = remaining,
-    }
-end
-
 function inspectors.hearthstone()
     local name = readPublic(GetBindLocation)
-    local count =
-        readPublic(C_Item and C_Item.GetItemCount, HEARTHSTONE_ITEM_ID, false, false, false, false)
-    local result = {
-        itemId = HEARTHSTONE_ITEM_ID,
-        bind = { status = "unavailable" },
-        bags = { status = "unavailable" },
-        cooldown = { status = "unavailable", state = "unknown" },
-    }
     if type(name) == "string" and name:find("%S") then
-        result.bind = { status = "available", name = ns.Shared.Text.TruncateUtf8Bytes(name, 180) }
+        return {
+            bind = { status = "available", name = ns.Shared.Text.TruncateUtf8Bytes(name, 180) },
+        }
     end
-    if ns.Shared.Numbers.IsNonNegativeInteger(count) then
-        result.bags = { status = "available", count = count, owned = count > 0 }
-        result.cooldown = count > 0 and hearthstoneCooldown()
-            or { status = "not_applicable", state = "not_owned" }
-    end
-    return result
+    return { bind = { status = "unavailable" } }
 end
 
 local trainerOpen, auctionOpen = false, false

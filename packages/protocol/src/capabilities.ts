@@ -140,10 +140,7 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'List your macros and free slots, and read macro contents when requested.',
   ],
   inspect_map: ['Read maps', 'Look up maps and read your current map pin.'],
-  inspect_hearthstone: [
-    'Inspect Hearthstone',
-    'Read the standard Hearthstone in your bags, its cooldown and your bind location.',
-  ],
+  inspect_hearthstone: ['Read Hearthstone bind', 'Read where your Hearthstone takes you.'],
   set_map_waypoint: [
     'Mark map',
     'Place a map pin and show directions when navigation is available.',

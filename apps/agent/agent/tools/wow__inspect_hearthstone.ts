@@ -8,9 +8,9 @@ export default enabledTool(
   defineTool({
     deferred: true,
     description:
-      'Read the standard Hearthstone (item 6948) in the character’s bags, its remaining cooldown in seconds, and the current bind location name. Each field can be unavailable independently. Use for personalized travel advice or questions about where the Hearthstone goes or when it is ready.',
+      'Read the character’s current Hearthstone bind location by name. For the standard Hearthstone’s cooldown, use wow__inspect_reference with kind=item, id=6948, includeCooldown=true.',
     inputSchema: z.strictObject({}),
-    label: { start: () => 'Checking Hearthstone', complete: () => 'Checked Hearthstone' },
+    label: { start: () => 'Reading Hearthstone bind', complete: () => 'Read Hearthstone bind' },
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',

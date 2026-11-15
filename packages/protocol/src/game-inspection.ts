@@ -68,10 +68,16 @@ export const storedItemInput = z.strictObject({
 export const itemPricesInput = z.strictObject({
   itemIds: z.array(z.number().int().positive()).min(1).max(20),
 });
-export const referenceInput = z.object({
-  kind: z.enum(['item', 'spell', 'quest', 'talent']),
-  id: z.number().int().positive(),
-});
+export const referenceInput = z
+  .object({
+    kind: z.enum(['item', 'spell', 'quest', 'talent']),
+    id: z.number().int().positive(),
+    includeCooldown: z.boolean().optional().describe('Read the current timer for an item only.'),
+  })
+  .refine(
+    (args) => !args.includeCooldown || args.kind === 'item',
+    'Item cooldowns require kind=item',
+  );
 export const progressionInput = z.object({
   questIds: z.array(z.number().int().positive()).max(40).default([]),
   factionIds: z.array(z.number().int().positive()).max(20).default([]),
