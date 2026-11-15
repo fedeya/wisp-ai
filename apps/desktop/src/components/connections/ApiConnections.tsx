@@ -1,5 +1,6 @@
 import { providerDefinitions, type ConnectionView } from '@wisp/protocol/providers';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Button, Card } from '../ui/Controls';
@@ -87,10 +88,12 @@ export default function ApiConnections({ firstRun = false }: { firstRun?: boolea
         <ConnectionEditor connection={editing.connection} close={() => setEditing(null)} />
       )}
       {!firstRun && (
-        <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
-          API keys are protected by your operating system. Configure Exa under Web search to use web
-          search with API models. Game tools and other enabled databases work independently of the
-          search service.
+        <p className="mt-4 text-[13px] text-muted">
+          API keys are protected by your operating system.{' '}
+          <Link to="/integrations" className="text-accent">
+            Configure web search in Integrations
+          </Link>
+          .
         </p>
       )}
     </Card>

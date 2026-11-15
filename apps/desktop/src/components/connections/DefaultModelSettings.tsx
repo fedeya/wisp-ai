@@ -55,15 +55,8 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
   const canSave = !locked && !!model && (model !== savedModel || (!!onFinish && app.connected));
 
   return (
-    <Card kind="provider" className={onFinish ? 'p-5' : undefined}>
-      {!onFinish && <h2>Default model</h2>}
-      <div
-        className={
-          onFinish
-            ? undefined
-            : 'field-section mt-[26px] border-t border-solid border-border pt-[22px]'
-        }
-      >
+    <Card kind="provider" className="p-5">
+      <div>
         {app.modelsError && (
           <p
             className="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#332522] text-[#f0b4aa] mb-[20px] text-[13px] leading-[1.5] [&_.icon-button]:ml-auto"
@@ -73,14 +66,7 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
           </p>
         )}
         <div className="label-row flex items-center justify-between">
-          <label
-            className={
-              onFinish ? 'text-[16px] font-semibold' : 'text-[12px] font-medium text-[#bdcccf]'
-            }
-            htmlFor="models"
-          >
-            Default model for new chats
-          </label>
+          <h2>Default model</h2>
           <Button
             intent="quiet"
             size="text"
@@ -98,6 +84,9 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
             if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
           }}
         >
+          <label className="sr-only" htmlFor="models">
+            Default model for new chats
+          </label>
           <modelForm.Field name="model">
             {(field) => (
               <Select
@@ -124,16 +113,10 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
           </Button>
         </form>
         <ActionProgress label={app.busyTarget === 'model' ? app.busy : ''} />
-        <p className="field-hint text-[11px]! text-muted mt-[12px]">
-          You can choose a different model and effort inside each chat.
+        <p className="mt-3 text-[13px] text-muted">
+          Used for new chats. You can change the model and effort in each chat.
         </p>
       </div>
-      {!onFinish && (
-        <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
-          <Icon name="check" size={16} />
-          Credentials stay protected by your operating system.
-        </p>
-      )}
     </Card>
   );
 }

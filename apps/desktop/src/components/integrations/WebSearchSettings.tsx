@@ -1,7 +1,10 @@
+import { Collapsible } from '@base-ui/react/collapsible';
 import { useForm, useSelector } from '@tanstack/react-form';
 import { desktop, request, type Status } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Badge, Button, Card, Input, Select } from '../ui/Controls';
+import { button } from '../ui/Controls/styles';
+import Icon from '../ui/Icon';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
@@ -23,7 +26,7 @@ function searchInput({ provider, apiKey }: SearchFields, savedProvider: SearchPr
   return { provider: provider ?? savedProvider, apiKey: apiKey.trim() || undefined };
 }
 
-export default function SearchConnection() {
+export default function WebSearchSettings() {
   const app = useDesktop((state) => ({
     busy: state.busy,
     busyTarget: state.busyTarget,
@@ -34,6 +37,7 @@ export default function SearchConnection() {
   const { setConfirmation, work } = useDesktopActions();
   const saved = app.search;
   const savedProvider = saved?.provider ?? 'auto';
+  const providerLabel = searchProviders.find(({ value }) => value === savedProvider)?.label;
   const form = useForm({
     defaultValues,
     onSubmit: async ({ value, formApi }) => {
@@ -50,23 +54,33 @@ export default function SearchConnection() {
   const disabled = app.locked || !app.online || submitting;
 
   return (
-    <Card kind="provider">
-      <div className="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted">
+    <Collapsible.Root render={<Card kind="provider" className="p-5" />}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2>Web search</h2>
           <p className="text-muted text-[13px]">
             Search globally across the public web, independently of your chat model.
           </p>
         </div>
-        <Badge positive={saved?.hasExaKey}>
-          {saved?.hasExaKey ? 'Exa key saved' : 'Exa public · no key needed'}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge positive={app.online && savedProvider !== 'disabled'}>
+            {app.online ? providerLabel : 'Service unavailable'}
+          </Badge>
+          <Collapsible.Trigger className={button({ class: '[&[data-panel-open]>svg]:rotate-180' })}>
+            Configure web search
+            <Icon name="chevronDown" size={16} />
+          </Collapsible.Trigger>
+        </div>
       </div>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!disabled && !form.state.isSubmitting) void form.handleSubmit();
-        }}
+      <Collapsible.Panel
+        render={
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!disabled && !form.state.isSubmitting) void form.handleSubmit();
+            }}
+          />
+        }
         className="search-form field-section gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid"
       >
         <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="search-provider">
@@ -166,7 +180,7 @@ export default function SearchConnection() {
           )}
         </div>
         <ActionProgress label={app.busyTarget === 'search' ? app.busy : ''} />
-      </form>
-    </Card>
+      </Collapsible.Panel>
+    </Collapsible.Root>
   );
 }

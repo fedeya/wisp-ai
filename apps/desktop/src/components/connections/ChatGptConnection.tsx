@@ -99,7 +99,7 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
               : 'Continue with ChatGPT'}
           <Icon name="arrow" size={17} />
         </Button>
-        {!firstRun && (
+        {!firstRun && !!auth?.profiles.length && (
           <Button onClick={() => signIn(undefined, true)} disabled={locked || !app.status}>
             Add account
           </Button>

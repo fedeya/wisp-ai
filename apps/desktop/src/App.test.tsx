@@ -87,7 +87,12 @@ afterEach(() => {
 
 async function openConnections() {
   await fireEvent.click(screen.getByRole('link', { name: 'Connections' }));
-  await screen.findByRole('heading', { name: 'Web search' });
+  await screen.findByRole('heading', { name: 'Default model' });
+}
+
+async function openSearchSettings() {
+  await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Configure web search' }));
 }
 
 test.each([
@@ -96,7 +101,7 @@ test.each([
 ])('notifications expire after $duration ms (failed: $failed)', async ({ failed, duration }) => {
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
-  await openConnections();
+  await openSearchSettings();
   if (failed) {
     vi.mocked(request).mockRejectedValueOnce(new Error('Could not save settings'));
   }
@@ -250,12 +255,20 @@ test('search again waits for fresh results and ignores updates from the previous
   expect(screen.queryByLabelText('Detected Forever installations')).toBeNull();
 });
 
-test('search settings keep Exa separate from model connections and do not reveal saved keys', async () => {
+test('Connections links to collapsed web search settings in Integrations without exposing saved keys', async () => {
   status.search = { provider: 'auto', hasExaKey: true };
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
-  expect(screen.getByRole('heading', { name: 'Web search' })).toBeTruthy();
+  expect(
+    screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+  ).toEqual(['ChatGPT', 'API connections', 'Default model']);
+  await fireEvent.click(screen.getByRole('link', { name: 'Configure web search in Integrations' }));
+  await screen.findByRole('heading', { name: 'Integrations' });
+  const configure = screen.getByRole('button', { name: 'Configure web search' });
+  expect(configure.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.queryByRole('combobox', { name: 'Search service' })).toBeNull();
+  await fireEvent.click(configure);
   const key = screen.getByLabelText(
     'Exa API key (optional) (leave blank to keep saved key)',
   ) as HTMLInputElement;
@@ -288,7 +301,7 @@ test('saving search settings queues a fresh status read behind an in-flight poll
   status.search = oldSearch;
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
-  await openConnections();
+  await openSearchSettings();
   const refresh = desktopStore.getState().actions.refresh;
   await act(refresh);
 
@@ -346,7 +359,7 @@ test('Exa testing is available without a key and saving clears the password fiel
   status.search = { provider: 'auto', hasExaKey: false };
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
-  await openConnections();
+  await openSearchSettings();
   expect((screen.getByRole('button', { name: 'Test Exa' }) as HTMLButtonElement).disabled).toBe(
     false,
   );
@@ -533,6 +546,7 @@ test('provider-neutral navigation and per-chat default model controls use the br
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
+  expect(screen.getByRole('button', { name: 'Add account' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'AI connections' })).toBeTruthy();
   await chooseOption(
     await screen.findByRole('combobox', { name: 'Default model for new chats' }),
@@ -799,6 +813,7 @@ test('sign-in URL is handed to the native allowlisted opener', async () => {
   renderApp();
   await screen.findByText('Connect your AI account');
   await openConnections();
+  expect(screen.queryByRole('button', { name: 'Add account' })).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Continue with ChatGPT' }));
   await waitFor(() =>
     expect(desktop).toHaveBeenCalledWith('open_sign_in', {

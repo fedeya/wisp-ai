@@ -30,7 +30,7 @@ export const desktopPages = [
     path: '/integrations',
     icon: 'tools',
     title: 'Integrations',
-    caption: 'Choose which addons, data sources and tools Wisp can use.',
+    caption: 'Manage web search, game addons, and other tools Wisp can use.',
   },
   {
     name: 'Memory',
