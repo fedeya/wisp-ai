@@ -84,6 +84,11 @@ export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
+export const flightPathsInput = z.strictObject({
+  origin: z.string().trim().min(1).max(120).optional(),
+  destination: z.string().trim().min(1).max(120).optional(),
+  limit: z.number().int().min(1).max(40).default(20),
+});
 export const chatHistoryInput = z.strictObject({
   channels: z
     .array(
@@ -145,6 +150,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('progression'), args: progressionInput }),
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
+  z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
   z.object({
     kind: z.literal('macros'),
     args: z.object({

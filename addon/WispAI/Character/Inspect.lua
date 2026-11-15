@@ -429,7 +429,8 @@ function ns.Character.Inspect(inspection)
     return {
         capturedAt = time(),
         character = UnitName("player"),
-        source = inspection.kind == "training" and "Bundled What's Training? Forever catalog"
+        source = inspection.kind == "flight_paths" and "WoW flight maps"
+            or (inspection.kind == "training" and "Bundled What's Training? Forever catalog")
             or "WoW addon live API",
         status = ok and "available" or "unavailable",
         data = ok and data or nil,
@@ -518,6 +519,10 @@ function inspectors.map(args)
         waypointStatus = C_Map.GetUserWaypoint and "available" or "unavailable",
         note = "Localized map metadata only, not NPC positions. Search covers the current world hierarchy, not necessarily every map.",
     }
+end
+
+function inspectors.flight_paths(args)
+    return ns.Character.ReadFlightPaths(args)
 end
 
 ns.Character._ReadWaypoint = readWaypoint

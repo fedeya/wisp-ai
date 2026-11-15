@@ -139,6 +139,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read macros',
     'List your macros and free slots, and read macro contents when requested.',
   ],
+  inspect_flight_paths: [
+    'Read flight paths',
+    'Find flight points on the world map and read routes from the flight master maps your character has opened.',
+  ],
   inspect_map: ['Read maps', 'Look up maps and read your current map pin.'],
   set_map_waypoint: [
     'Mark map',

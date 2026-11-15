@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '../apps/bridge/src/integration-state.ts';
 import { dynamicEvaluate } from './node_modules/eve/dist/src/dynamic/definition.js';
+import flightPaths from '../apps/agent/agent/tools/wow__inspect_flight_paths.ts';
 import quest from '../apps/agent/agent/tools/questie__get_quest.ts';
 import chain from '../apps/agent/agent/tools/questie__get_quest_chain.ts';
 import object from '../apps/agent/agent/tools/questie__find_object_locations.ts';
@@ -16,6 +17,7 @@ import {
   storedItemInput,
   itemPricesInput,
   objectLocationsInput,
+  inspectionSchema,
 } from '@wisp/protocol/game-inspection';
 import { integrationContext } from '@wisp/protocol/capabilities';
 
@@ -46,11 +48,13 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     for (const definition of [quest, chain, object, stored, prices]) {
       assert.equal(await resolve(definition), null);
     }
+    assert.equal(await resolve(flightPaths), null);
     assert.ok(state.receive(report));
     await settings.publish();
     for (const definition of [quest, chain, stored, prices]) {
       assert.ok(await resolve(definition));
     }
+    assert.ok(await resolve(flightPaths));
     assert.equal(
       await resolve(object),
       null,
@@ -80,6 +84,7 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     state.reset();
     await settings.publish();
     assert.equal(await resolve(chain), null);
+    assert.equal(await resolve(flightPaths), null);
   } finally {
     if (previous === undefined) {
       delete process.env.WOW_CAPABILITIES_FILE;
@@ -97,4 +102,15 @@ test('new inspection inputs bound work and reject executable or cross-version ar
   assert.equal(itemPricesInput.safeParse({ itemIds: Array(21).fill(1) }).success, false);
   assert.equal(objectLocationsInput.safeParse({}).success, false);
   assert.equal(objectLocationsInput.safeParse({ objectId: 99, mapId: 1454 }).success, true);
+});
+
+test('flight path inspection trims destination names and bounds the result limit', () => {
+  assert.deepEqual(
+    inspectionSchema.parse({ kind: 'flight_paths', args: { destination: ' Lakeshire ' } }),
+    { kind: 'flight_paths', args: { destination: 'Lakeshire', limit: 20 } },
+  );
+  assert.equal(
+    inspectionSchema.safeParse({ kind: 'flight_paths', args: { limit: 41 } }).success,
+    false,
+  );
 });

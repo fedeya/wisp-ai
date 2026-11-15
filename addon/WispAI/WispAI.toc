@@ -27,6 +27,7 @@ ChatHistory\ChatHistory.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
+Character\FlightPaths.lua
 Character\Inspect.lua
 Actions\Game.lua
 Settings\Settings.lua
