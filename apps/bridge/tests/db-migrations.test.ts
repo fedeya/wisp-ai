@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
+import { ApplicationDatabase } from '../src/db/application-database.ts';
 import { migrateDatabase, migrationsFolder } from '../src/db/migrate.ts';
 import { newChat } from '../src/chat-lifecycle.ts';
 import { ChatStore } from '../src/chat-store.ts';
@@ -162,6 +164,24 @@ test('startup succeeds when another connection commits after Drizzle reads the e
     first.close();
     second.close();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('startup retries WAL activation while another connection holds a read lock', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-wal-'));
+  const file = path.join(root, 'wisp.sqlite');
+  const reader = new DatabaseSync(file);
+  const database = new ApplicationDatabase(file);
+  reader.exec('BEGIN; SELECT count(*) FROM sqlite_schema;');
+  const release = delay(250).then(() => reader.exec('COMMIT;'));
+  try {
+    await database.initialize();
+    expect(database.connection.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
+  } finally {
+    await release;
+    await database.close();
+    reader.close();
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
 

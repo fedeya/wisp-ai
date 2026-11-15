@@ -1,9 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
+import { setTimeout as delay } from 'node:timers/promises';
 import { migrateDatabase } from './migrate.ts';
 import { preparePrivateDatabase } from './private-file.ts';
 import { importProductData } from './product-store.ts';
 
 export type ApplicationOrm = Omit<ReturnType<typeof migrateDatabase>, '$client'>;
+
+const busyTimeoutMs = 5000;
+const sqliteBusy = 5;
 
 export class ApplicationDatabase {
   readonly file: string;
@@ -41,8 +45,30 @@ export class ApplicationDatabase {
   }
   private async open() {
     await preparePrivateDatabase(this.file);
-    this.client = new DatabaseSync(this.file, { timeout: 5000 });
-    this.client.exec('PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;');
+    this.client = new DatabaseSync(this.file, { timeout: 0 });
+    const deadline = performance.now() + busyTimeoutMs;
+    for (;;) {
+      try {
+        this.client.exec('PRAGMA journal_mode=WAL;');
+        break;
+      } catch (error) {
+        // WAL activation needs an exclusive lock. Yield between attempts so
+        // another connection can release its lock, including in this process.
+        if (
+          !(error instanceof Error) ||
+          !('errcode' in error) ||
+          typeof error.errcode !== 'number' ||
+          (error.errcode & 0xff) !== sqliteBusy ||
+          performance.now() >= deadline
+        ) {
+          throw error;
+        }
+        await delay(25);
+      }
+    }
+    this.client.exec(
+      `PRAGMA busy_timeout=${busyTimeoutMs}; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;`,
+    );
     this.db = migrateDatabase(this.client);
   }
   async initializeProducts() {

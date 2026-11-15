@@ -1,6 +1,33 @@
-import { chmod, mkdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises';
 import { closeSync, openSync } from 'node:fs';
 import path from 'node:path';
+
+export async function writeMigrationBackup(file: string, contents: Buffer) {
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  const handle = await open(temporary, 'wx', 0o600);
+  try {
+    try {
+      await handle.writeFile(contents);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      // Publish only complete backups and preserve any backup already in place.
+      await link(temporary, file);
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
+        !(await readFile(file)).equals(contents)
+      ) {
+        throw error;
+      }
+    }
+  } finally {
+    await unlink(temporary);
+  }
+}
 
 // SQLite inherits the database mode for new WAL/SHM files on POSIX. Create the
 // database before SQLite opens it, and tighten any already-existing sidecars.

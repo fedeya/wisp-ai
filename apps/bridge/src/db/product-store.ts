@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { and, eq } from 'drizzle-orm';
@@ -8,6 +8,7 @@ import { savedRoutine, routineRun, type Routine, type RoutineRun } from '@wisp/p
 import { panelContent, type Panel } from '@wisp/protocol/panels';
 import { memoryEntry } from '@wisp/protocol/agent-rpc';
 import type { ApplicationOrm } from './application-database.ts';
+import { writeMigrationBackup } from './private-file.ts';
 import { routines, routineRuns, panels, memoryScopes, memoryEntries, metadata } from './schema.ts';
 
 type Orm = ApplicationOrm;
@@ -277,16 +278,7 @@ export async function importProductData(file: string, db: Orm) {
   for (const { file, original } of sources) {
     const digest = createHash('sha256').update(original).digest('hex');
     const backup = file.replace(/\.json$/, `.pre-sqlite-${digest}.json`);
-    try {
-      await writeFile(backup, original, { flag: 'wx', mode: 0o600 });
-    } catch (error) {
-      if (
-        (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
-        !(await readFile(backup)).equals(original)
-      ) {
-        throw error;
-      }
-    }
+    await writeMigrationBackup(backup, original);
   }
   db.transaction(
     () => {

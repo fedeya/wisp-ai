@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { and, eq, sql } from 'drizzle-orm';
@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
 import { ApplicationDatabase, type ApplicationOrm } from './db/application-database.ts';
+import { writeMigrationBackup } from './db/private-file.ts';
 import { chats as chatTable, messages as messageTable, chatInstanceState } from './db/schema.ts';
 import {
   encodeChat,
@@ -147,16 +148,7 @@ export class ChatStore {
     const digest = original && createHash('sha256').update(original).digest('hex');
     if (original) {
       const backup = path.join(path.dirname(this.legacyFile), `chats.pre-sqlite-${digest}.json`);
-      try {
-        await writeFile(backup, original, { flag: 'wx', mode: 0o600 });
-      } catch (error) {
-        if (
-          (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
-          !(await readFile(backup)).equals(original)
-        ) {
-          throw error;
-        }
-      }
+      await writeMigrationBackup(backup, original);
     }
     this.transaction(() => {
       if (initialized()) {

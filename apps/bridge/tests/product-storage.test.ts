@@ -278,7 +278,7 @@ test('independent stores preserve concurrent edits and a routine can only be cla
 
 test("three processes import once and update memory without losing each other's entries", async () =>
   fixture(async (root, file, openDb) => {
-    await legacy(root);
+    const sources = await legacy(root);
     const source = `import { MemoryStore } from '@wisp/bridge/memory-store';
     import { ApplicationDatabase } from '@wisp/bridge/db/application-database';
     const database = new ApplicationDatabase(process.argv[1]);
@@ -306,9 +306,15 @@ test("three processes import once and update memory without losing each other's 
     inspect(file, (db) =>
       expect(db.prepare('SELECT count(*) AS n FROM routine_runs').get()!.n).toBe(1),
     );
-    expect(
-      (await readdir(path.join(root, 'memory'))).filter((name) => name.includes('pre-sqlite')),
-    ).toHaveLength(1);
+    for (const [name, original] of sources) {
+      const digest = createHash('sha256').update(original).digest('hex');
+      const backup = path.join(root, name.replace(/\.json$/, `.pre-sqlite-${digest}.json`));
+      expect(await readFile(backup, 'utf8')).toBe(original);
+      const prefix = path.basename(name, '.json') + '.pre-sqlite-';
+      expect(
+        (await readdir(path.dirname(backup))).filter((entry) => entry.startsWith(prefix)),
+      ).toEqual([path.basename(backup)]);
+    }
   }));
 
 test('a failed SQL mutation rolls back records and the next valid mutation still works', async () =>

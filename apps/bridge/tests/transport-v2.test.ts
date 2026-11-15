@@ -84,11 +84,12 @@ async function fixture(
   };
 }
 
-async function waitFor(predicate: () => Promise<boolean>, timeout = 2500) {
+async function waitFor<T>(read: () => Promise<T>, timeout = 2500) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    if (await predicate()) {
-      return;
+    const result = await read();
+    if (result) {
+      return result;
     }
     await delay(15);
   }
@@ -349,15 +350,15 @@ async function drainMailbox(
   let previous: Buffer | undefined;
   let count = 0;
   for (;;) {
-    await waitFor(async () => {
-      const bytes = readDownlink(await readFile(f.file, 'utf8'))!;
-      return (
-        Boolean((decodeFrame(bytes)?.flags ?? 0) & COMPRESSED) &&
-        !bytes.equals(previous ?? Buffer.alloc(0))
-      );
+    const { bytes, frame } = await waitFor(async () => {
+      const bytes = readDownlink(await readFile(f.file, 'utf8'));
+      if (bytes && !previous?.equals(bytes)) {
+        const frame = decodeFrame(bytes);
+        if (frame?.kind === kind && (frame.flags & COMPRESSED) !== 0) {
+          return { bytes, frame };
+        }
+      }
     });
-    const bytes = readDownlink(await readFile(f.file, 'utf8'))!;
-    const frame = decodeFrame(bytes)!;
     previous = bytes;
     const message = decoder.add(bytes);
     const envelope = message && JSON.parse(inflateMessage(message).toString('utf8'));
@@ -472,7 +473,9 @@ test(
 test('publications coalesce without replacing unacknowledged data and patches use the exact acknowledged base', async () => {
   const f = await fixture();
   try {
-    await mailbox(f);
+    // The fixture explicitly reads each uplink. Keep the watcher and watchdog
+    // out of this test so only the simulated peer drives acknowledgements.
+    await f.send({ ...f.hello, mailboxVersion: 1, bulkAvailable: false });
     const first = {
       rev: 1,
       chats: [{ id: 'c', messages: [{ text: 'Unchanged '.repeat(500), ui: ['a', 'b'] }] }],
