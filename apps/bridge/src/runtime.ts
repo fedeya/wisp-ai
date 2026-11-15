@@ -500,6 +500,18 @@ export async function startBridge(options: BridgeOptions = {}) {
           ...p,
           character: characterLabel(p.characterKey, ' - '),
         })),
+        panelRecipients: [
+          ...new Set([
+            state.currentCharacterKey,
+            ...state.chats.map((c) => c.characterKey),
+            ...panelStore.panels.map((p) => p.characterKey),
+          ]),
+        ]
+          .filter((key): key is string => Boolean(key))
+          .map((characterKey) => ({
+            characterKey,
+            label: characterLabel(characterKey, ' - '),
+          })),
         routines: routineStore.list(),
         routineRuns: routineStore.history({ includeSilent: false, limit: 200 }),
       };

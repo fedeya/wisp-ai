@@ -20,7 +20,7 @@ end
 local function stateFor(panel)
     ns.db.panelState = ns.db.panelState or {}
     local key = keyFor(panel)
-    ns.db.panelState[key] = ns.db.panelState[key] or {}
+    ns.db.panelState[key] = ns.db.panelState[key] or { hidden = panel.initiallyHidden == true }
     return ns.db.panelState[key]
 end
 local function reading(binding)
@@ -54,7 +54,18 @@ function ns.Panels.BoundPanel(panel)
     for _, binding in ipairs(panel.bindings or {}) do
         local node = nodes[binding.nodeId]
         if node then
-            local ok, value = pcall(reading, binding)
+            local ok, value = pcall(function()
+                if panel.requireItemData and binding.source == "item_count" then
+                    if
+                        not C_Item
+                        or not C_Item.GetItemInfo
+                        or not C_Item.GetItemInfo(binding.itemId)
+                    then
+                        return nil
+                    end
+                end
+                return reading(binding)
+            end)
             local known = ok and type(value) == "number" and value == value and value >= 0
             if node.kind == "progress" then
                 node.value = known and math.min(1, value / (binding.target or 1)) or 0
@@ -247,6 +258,7 @@ function ns.Panels.InitPanels()
         "PLAYER_LEVEL_UP",
         "QUEST_LOG_UPDATE",
         "PLAYER_EQUIPMENT_CHANGED",
+        "GET_ITEM_INFO_RECEIVED",
     }) do
         events:RegisterEvent(event)
     end

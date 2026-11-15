@@ -272,6 +272,17 @@ export function createDesktopController() {
       panel.id,
     );
   }
+  async function exportPanelTemplate(panel: Panel) {
+    const result = await request<{ template: string }>('/panels/export', {
+      id: panel.id,
+      characterKey: panel.characterKey,
+    });
+    return result.template;
+  }
+  async function importPanelTemplate(characterKey: string, template: string) {
+    await request('/panels/import', { characterKey, template, confirmed: true });
+    await refresh();
+  }
   function removeMcp(server: Mcp) {
     confirm = {
       label: `Remove “${server.name}”?`,
@@ -519,6 +530,8 @@ export function createDesktopController() {
     setIntegration,
     edit,
     panelAction,
+    exportPanelTemplate,
+    importPanelTemplate,
     removeMcp,
   };
 }

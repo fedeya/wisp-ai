@@ -1,4 +1,6 @@
 import { desktopInputs } from '@wisp/protocol/desktop-inputs';
+import { exportTemplate } from '@wisp/protocol/panel-template';
+import { parseCharacterKey } from '@wisp/protocol/character-key';
 import type { Status } from '@wisp/protocol/desktop';
 import { mcpSetup, type McpManager } from './mcp-manager.ts';
 import type { ModelConnections } from './model-connections.ts';
@@ -173,6 +175,30 @@ export function createDesktopHandler(deps: DesktopDependencies) {
       }
       changed();
       return { ok: true };
+    }
+    if (method === 'POST' && url === '/panels/export') {
+      const data = desktopInputs['/panels/export'].parse(raw);
+      const panel = panelStore.list(data.characterKey).find((p) => p.id === data.id);
+      if (!panel) throw Error('Panel not found');
+      if (parseCharacterKey(data.characterKey).game !== 'WoW Forever') {
+        throw Error('Only WoW Forever trackers are supported');
+      }
+      return { template: JSON.stringify(exportTemplate(panel)) };
+    }
+    if (method === 'POST' && url === '/panels/import') {
+      const data = desktopInputs['/panels/import'].parse(raw);
+      const known = new Set([
+        currentCharacterKey(),
+        ...getChats().map((c) => c.characterKey),
+        ...panelStore.panels.map((p) => p.characterKey),
+      ]);
+      if (!known.has(data.characterKey)) throw Error('Choose a known local character');
+      if (parseCharacterKey(data.characterKey).game !== 'WoW Forever') {
+        throw Error('Incompatible recipient game');
+      }
+      const panel = await panelStore.importTemplate(data.characterKey, data.template);
+      changed();
+      return { ok: true, id: panel.id };
     }
     if (method === 'POST' && url === '/routines/action') {
       const data = desktopInputs['/routines/action'].parse(raw);

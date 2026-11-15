@@ -158,6 +158,8 @@ fn permitted(method: &str, route: &str) -> bool {
                 "/mcps/save",
                 "/mcps/remove",
                 "/panels/action",
+                "/panels/export",
+                "/panels/import",
                 "/routines/action",
                 "/routines/open",
                 "/simulator/character",
@@ -677,6 +679,10 @@ mod tests {
         assert!(permitted("POST", "/mcps/save"));
         assert!(permitted("POST", "/routines/action"));
         assert!(permitted("POST", "/routines/open"));
+        assert!(permitted("POST", "/panels/export"));
+        assert!(permitted("POST", "/panels/import"));
+        assert!(!permitted("GET", "/panels/export"));
+        assert!(!permitted("GET", "/panels/import"));
         assert!(!permitted("POST", "/suggestions"));
         assert!(!permitted("GET", "http://example.com"));
         assert!(!permitted("POST", "/model/responses"));

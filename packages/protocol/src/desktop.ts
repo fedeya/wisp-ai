@@ -57,6 +57,7 @@ export const statusSchema = z.object({
   mcps: z.array(mcpSchema),
   integrations: z.array(capabilityViewSchema),
   panels: z.array(panelSchema),
+  panelRecipients: z.array(z.object({ characterKey: z.string(), label: z.string() })).optional(),
   routines: z.array(savedRoutine),
   routineRuns: z.array(routineRun),
 });
