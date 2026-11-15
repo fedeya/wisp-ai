@@ -93,11 +93,12 @@ leave the previous feed intact. Re-running a workflow generates a distinct build
   existing installs).
 - Nightly feed: GitHub `releases/download/nightly/latest.json`. Manifest URLs point
   to immutable versioned artifacts, never a moving installer.
-- The addon version lives in `addon/WispAI/WispAI.toc`. Bump it when releasing
-  changes to the addon or its generated transport helpers. Desktop packages the
-  authored version, and generated helpers inherit it. `/wisp diag` reports the
-  loaded addon and desktop/bridge versions and checks the loaded addon against
-  the version bundled with Desktop.
+- Windows packaging calculates the addon version as `1.0.N`. Each first-parent
+  commit that changes `addon/WispAI` or `packages/protocol/src/addon-helpers.ts`
+  increments `N` from the introduction of automatic versioning. Stable and nightly
+  builds use the same rule. Packaging writes the result into the bundled TOC, and
+  generated helpers inherit it. `/wisp diag` checks the loaded addon against the
+  version bundled with Desktop.
 - App Settings → App updates persists the selected channel. Fresh Nightly installs
   default to Nightly; stable installs default to Stable. Switching clears pending
   updates. Returning from Nightly explicitly permits an older stable version;

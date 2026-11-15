@@ -6,15 +6,13 @@ import path from 'node:path';
 import { Client } from 'eve/client';
 import { installerBuildVersion } from './installer-version.ts';
 import { addonVersionFromToc } from '../apps/bridge/src/addon-version.ts';
+import { addonReleaseVersion } from './addon-release-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {
   throw Error('Run installer verification in a disposable Windows CI profile.');
 }
 const sourceVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
-const addonVersion = addonVersionFromToc(await readFile('addon/WispAI/WispAI.toc', 'utf8'));
-if (!addonVersion) {
-  throw Error('Missing addon version in source TOC.');
-}
+const addonVersion = addonReleaseVersion(process.cwd());
 const installer = path.resolve(
   process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
 );
@@ -95,7 +93,9 @@ try {
   ]) {
     const toc = await readFile(path.join(wow, 'Interface/AddOns', relative), 'utf8');
     if (addonVersionFromToc(toc) !== addonVersion) {
-      throw Error('Installed addon version does not match the source TOC: ' + relative);
+      throw Error(
+        'Installed addon version does not match the expected release version: ' + relative,
+      );
     }
   }
   const payloadFiles = (await readdir(payload, { recursive: true, withFileTypes: true })).filter(
