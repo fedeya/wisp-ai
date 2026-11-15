@@ -35,6 +35,11 @@ excluded explicitly, following Eve's own optional-engine setup; installs do not
 need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
 `turbo prune @wisp/web` can export an isolated web workspace from the same lockfile.
 
+### Contributor skills
+
+See the [contributor skill index](../.agents/skills/README.md) for the project
+guidance on desktop React, Tauri, and testing.
+
 ### Pull request descriptions
 
 Use the [visual-pr contributor skill](../.agents/skills/visual-pr/SKILL.md) when

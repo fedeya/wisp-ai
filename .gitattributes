@@ -2,3 +2,9 @@
 *.tga binary
 # Unified diff context contains intentional whitespace.
 scripts/simulator-downranking.patch -whitespace
+
+# Preserve Markdown hard breaks and code examples in imported contributor skills.
+.agents/skills/vercel-composition-patterns/**/*.md whitespace=-blank-at-eol
+.agents/skills/vercel-react-best-practices/**/*.md whitespace=-blank-at-eol
+.agents/skills/vite/**/*.md whitespace=-blank-at-eol
+.agents/skills/vitest/**/*.md whitespace=-blank-at-eol
