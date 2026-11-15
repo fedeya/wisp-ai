@@ -94,12 +94,18 @@ test('the packaged addon version is inherited by the installed addon and helpers
     await writeFile(stagedToc, toc);
     await stampAddonReleaseVersion(stagedToc, '2.0.1');
 
+    const config = path.join(root, 'data/config.local.json');
+    const savedModel = { model: 'local-model' };
     for (const desktopVersion of ['0.1.3', '0.1.4-nightly.123.2']) {
+      const managedByDesktop = desktopVersion.includes('nightly');
+      if (managedByDesktop) await writeFile(config, JSON.stringify(savedModel));
       await writeFile(
         path.join(payload, 'package.json'),
         JSON.stringify({ version: desktopVersion }),
       );
-      await promisify(execFile)(process.execPath, ['apps/bridge/scripts/install.ts', wow], {
+      const args = ['apps/bridge/scripts/install.ts', wow];
+      if (managedByDesktop) args.push('--skip-config');
+      await promisify(execFile)(process.execPath, args, {
         cwd: process.cwd(),
         windowsHide: true,
         timeout: 30000,
@@ -109,6 +115,9 @@ test('the packaged addon version is inherited by the installed addon and helpers
           WISP_DATA_DIR: path.join(root, 'data'),
         },
       });
+      expect(JSON.parse(await readFile(config, 'utf8'))).toEqual(
+        managedByDesktop ? savedModel : { wow },
+      );
       const helpers = (await readdir(installed)).filter((name) => /^WispAI_[BS]\d+$/.test(name));
       expect(helpers).toHaveLength(1152);
       expect(await readFile(path.join(installed, 'WispAI/WispAI.toc'), 'utf8')).toBe(

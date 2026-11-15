@@ -122,6 +122,7 @@ export class DiskTransport {
   }
   async start() {
     await this.scan(true);
+    if (this.stopped) return;
     this.timer = setInterval(() => {
       this.scans ??= this.scan(false)
         .catch(this.onError)
@@ -145,7 +146,7 @@ export class DiskTransport {
   async scan(baseline: boolean) {
     const account = path.join(this.wow, 'WTF', 'Account');
     const walk = async (dir: string, depth: number): Promise<void> => {
-      if (depth > 4) {
+      if (this.stopped || depth > 4) {
         return;
       }
       let entries;
@@ -155,6 +156,7 @@ export class DiskTransport {
         return;
       }
       for (const entry of entries) {
+        if (this.stopped) return;
         const file = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           await walk(file, depth + 1);
@@ -180,6 +182,7 @@ export class DiskTransport {
     await walk(account, 0);
   }
   async read(file: string, baseline: boolean) {
+    if (this.stopped) return;
     const work = (this.reads.get(file) || Promise.resolve())
       .catch(() => {})
       .then(() => this.readCurrent(file, baseline));
@@ -202,6 +205,7 @@ export class DiskTransport {
     } catch {
       return;
     }
+    if (this.stopped) return;
     const mailboxFrame = readUplink(text);
     let mailboxDecoder = this.mailboxDecoders.get(file);
     if (!mailboxDecoder) {
@@ -660,12 +664,14 @@ export class DiskTransport {
     this.generation = randomBytes(4).readUInt32BE() || 1;
     this.notificationSequence = 0;
   }
-  stop() {
+  async stop() {
     this.stopped = true;
     clearInterval(this.timer);
     clearInterval(this.controlTimer);
     for (const w of this.watchers) {
       w.close();
     }
+    await Promise.allSettled([this.scans, ...this.reads.values()]);
+    await Promise.allSettled([this.writing, this.controlWriting]);
   }
 }

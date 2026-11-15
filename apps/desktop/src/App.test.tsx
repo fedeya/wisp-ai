@@ -80,15 +80,31 @@ beforeEach(() => {
   });
 });
 
-test('the addon update reminder stays visible until dismissed', async () => {
+test('AI Providers stays available while the addon updates and the reload reminder can be dismissed', async () => {
   const fallback = vi.mocked(desktop).getMockImplementation()!;
+  let finishUpdate!: () => void;
+  const updating = new Promise<void>((resolve) => {
+    finishUpdate = resolve;
+  });
   vi.mocked(desktop).mockImplementation(async (command, args) => {
-    const response = await fallback(command, args);
-    return command === 'desktop_info'
-      ? ({ ...(response as object), addonUpdateNotice: 'reload_required' } as never)
-      : response;
+    if (command === 'auto_update_addon') {
+      await updating;
+      return {
+        wow: 'E:\\WoW',
+        addonOutdated: false,
+        addonUpdateNotice: 'reload_required',
+      } as never;
+    }
+    return fallback(command, args);
   });
   const router = renderApp();
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  expect(desktop).toHaveBeenNthCalledWith(1, 'start_bridge');
+  await openConnections();
+  expect(screen.getByRole('button', { name: 'Add provider' })).toBeTruthy();
+
+  await act(async () => finishUpdate());
+  await act(() => router.navigate('/'));
   const reminder = 'Wisp updated the addon. Type /reload in WoW to finish updating.';
   expect(await screen.findByText(reminder)).toBeTruthy();
   await act(() => router.navigate('/settings'));
@@ -100,14 +116,11 @@ test('the addon update reminder stays visible until dismissed', async () => {
 
 test('an automatic addon update failure still starts Wisp and offers a manual retry', async () => {
   const fallback = vi.mocked(desktop).getMockImplementation()!;
-  let retried = false;
-  vi.mocked(desktop).mockImplementation(async (command, args) => {
-    if (command === 'install_addon') retried = true;
-    const response = await fallback(command, args);
-    return command === 'desktop_info' && !retried
-      ? ({ ...(response as object), addonOutdated: false, addonUpdateNotice: 'failed' } as never)
-      : response;
-  });
+  vi.mocked(desktop).mockImplementation(async (command, args) =>
+    command === 'auto_update_addon'
+      ? ({ wow: 'E:\\WoW', addonOutdated: false, addonUpdateNotice: 'failed' } as never)
+      : fallback(command, args),
+  );
   renderApp();
   expect(await screen.findByText(/couldn’t update the addon automatically/)).toBeTruthy();
   expect(desktop).toHaveBeenCalledWith('start_bridge');
@@ -1250,7 +1263,6 @@ test('starts Wisp automatically and lets you manage providers with WoW setup def
 test('first-time setup resumes at the provider step and opens Overview after saving a model', async () => {
   const original = vi.mocked(desktop).getMockImplementation()!;
   let installed = false;
-  let serviceRestarting = false;
   status.ready = false;
   status.gameConnected = false;
   status.auth = { status: 'signed_out', profiles: [], revision: 1 };
@@ -1268,7 +1280,6 @@ test('first-time setup resumes at the provider step and opens Overview after sav
     }
     if (command === 'install_addon') {
       installed = true;
-      serviceRestarting = true;
     }
     if (command === 'pick_folder') {
       return 'D:\\WoW' as never;
@@ -1277,9 +1288,6 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   });
   const originalRequest = vi.mocked(request).getMockImplementation()!;
   vi.mocked(request).mockImplementation(async (route, body) => {
-    if (route === '/status' && serviceRestarting) {
-      throw Error('The Wisp service is starting.');
-    }
     if (route === '/auth/models' && status.auth.status === 'signed_out') {
       return { models: [] } as never;
     }
@@ -1300,14 +1308,12 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   await fireEvent.click(install);
   await waitFor(() => expect(desktop).toHaveBeenCalledWith('install_addon', { wow: 'D:\\WoW' }));
   await screen.findByRole('heading', { name: 'Connect AI' });
-  expect(await screen.findByText('Preparing AI providers…')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Start Wisp' })).toBeNull();
-
-  serviceRestarting = false;
-  await act(() => desktopStore.getState().actions.refresh());
   expect(await screen.findByRole('heading', { name: 'Choose your provider' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'ChatGPT' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Start Wisp' })).toBeNull();
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'start_bridge'),
+  ).toHaveLength(1);
 
   cleanup();
   renderApp();
