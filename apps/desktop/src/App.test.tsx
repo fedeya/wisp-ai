@@ -1194,22 +1194,26 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   await waitFor(() => expect(install.disabled).toBe(false));
   await fireEvent.click(install);
   await waitFor(() => expect(desktop).toHaveBeenCalledWith('install_addon', { wow: 'D:\\WoW' }));
-  await screen.findByRole('heading', { name: 'Connect your AI provider' });
+  await screen.findByRole('heading', { name: 'Connect AI' });
 
   cleanup();
   renderApp();
   await fireEvent.click(await screen.findByRole('button', { name: 'ChatGPT' }));
-  await screen.findByRole('heading', { level: 1, name: 'ChatGPT' });
-  expect(screen.getByRole('heading', { name: 'ChatGPT subscription' })).toBeTruthy();
-  expect(screen.getByRole('heading', { name: 'OpenAI API' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
+  await screen.findByRole('heading', { level: 2, name: 'ChatGPT' });
+  expect(screen.getByRole('heading', { level: 1, name: 'Connect AI' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Subscription' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: 'Use API key' }));
+  expect(screen.getByLabelText('API key')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: 'Back to ChatGPT' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Continue with ChatGPT' }));
+  await waitFor(() => expect(desktop).toHaveBeenCalledWith('open_sign_in', expect.anything()));
   expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Add account' })).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
 
-  status.auth.status = 'connected';
-  status.auth.revision += 1;
+  status.auth = { ...status.auth, status: 'connected', revision: status.auth.revision + 1 };
   await act(() => desktopStore.getState().actions.refresh());
+  expect(await screen.findByRole('heading', { name: 'ChatGPT added' })).toBeTruthy();
   expect(screen.getByRole('combobox', { name: 'Default model for new chats' }).textContent).toBe(
     'Choose a model',
   );
@@ -1248,10 +1252,16 @@ test('onboarding searches the provider catalog and suggests a single saved model
       status.connections = [
         { id, name: 'OpenRouter', provider: 'openrouter', hasKey: true, models: [model] },
       ];
+      return { id } as never;
     }
     if (route === '/auth/models') {
       return {
-        models: status.connections.length ? [{ slug, displayName: model.name, efforts: [] }] : [],
+        models: status.connections.length
+          ? [
+              { slug, displayName: `OpenRouter / ${model.name}`, efforts: [] },
+              { slug: 'luna', displayName: 'Luna', efforts: [] },
+            ]
+          : [],
       } as never;
     }
     if (route === '/auth/model') {
@@ -1262,7 +1272,7 @@ test('onboarding searches the provider catalog and suggests a single saved model
   });
   renderApp();
   await fireEvent.click(await screen.findByRole('button', { name: 'Gemini' }));
-  await screen.findByRole('heading', { level: 1, name: 'Gemini' });
+  await screen.findByRole('heading', { level: 2, name: 'Gemini' });
   await fireEvent.click(screen.getByRole('button', { name: 'Back to providers' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Browse providers' }));
   const catalog = within(await screen.findByRole('dialog', { name: 'Browse providers' }));
@@ -1271,17 +1281,26 @@ test('onboarding searches the provider catalog and suggests a single saved model
   });
   expect(catalog.queryByRole('button', { name: 'Vercel AI Gateway' })).toBeNull();
   await fireEvent.click(catalog.getByRole('button', { name: 'OpenRouter' }));
-  await screen.findByRole('heading', { level: 1, name: 'OpenRouter' });
+  await screen.findByRole('heading', { level: 2, name: 'OpenRouter' });
+  expect(screen.getByRole('heading', { level: 1, name: 'Connect AI' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'API connections' })).toBeNull();
+  expect(screen.getByRole('link', { name: /Get API key/ }).getAttribute('href')).toBe(
+    'https://openrouter.ai/settings/keys',
+  );
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
   await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'fixture-only' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
   await fireEvent.click(await screen.findByRole('button', { name: `Add ${model.id}` }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Back to API key' }));
+  expect(screen.getByLabelText<HTMLInputElement>('API key').value).toBe('fixture-only');
+  await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
+  expect(await screen.findByRole('button', { name: `Added ${model.id}` })).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Save connection' }));
-  expect(
-    (await screen.findByRole('combobox', { name: 'Default model for new chats' })).textContent,
-  ).toBe(model.name);
+  expect(await screen.findByRole('heading', { name: 'OpenRouter added' })).toBeTruthy();
+  expect(await screen.findByText(model.name)).toBeTruthy();
+  expect(screen.queryByRole('combobox', { name: 'Default model for new chats' })).toBeNull();
   expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
   await fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
   await screen.findByRole('heading', { name: 'Wisp is ready' });
@@ -1296,7 +1315,7 @@ test('Connect later leaves provider setup accessible from Overview', async () =>
   status.model = '';
   renderApp();
   await fireEvent.click(await screen.findByRole('button', { name: 'Claude' }));
-  await screen.findByRole('heading', { level: 1, name: 'Claude' });
+  await screen.findByRole('heading', { level: 2, name: 'Claude' });
   await fireEvent.click(screen.getByRole('button', { name: 'Connect later' }));
   await screen.findByRole('heading', { name: 'Connect your AI account' });
   await openConnections();

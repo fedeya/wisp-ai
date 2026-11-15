@@ -8,10 +8,11 @@ import {
   type DiscoveredConnectionModel,
   type ProviderId,
 } from '@wisp/protocol/providers';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Button, Input, NumberInput } from '../ui/Controls';
+import Icon from '../ui/Icon';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ModelCatalog from './ModelCatalog';
@@ -20,6 +21,12 @@ import { modelProvider, ProviderLogo } from './provider-directory';
 const labelClass = 'text-[12px] font-medium text-[#bdcccf]';
 const modelFieldsClass =
   'api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]';
+const keyPages: Partial<Record<ProviderId, string>> = {
+  anthropic: 'https://platform.claude.com/settings/keys',
+  google: 'https://aistudio.google.com/apikey',
+  openai: 'https://platform.openai.com/api-keys',
+  openrouter: 'https://openrouter.ai/settings/keys',
+};
 
 type ConnectionFields = {
   name: string;
@@ -54,10 +61,12 @@ export default function ConnectionEditor({
   connection,
   provider,
   close,
+  onConnected,
 }: {
   connection?: ConnectionView;
   provider: ProviderId;
   close: () => void;
+  onConnected?: (connectionId: string) => void;
 }) {
   const app = useDesktop((state) => ({
     busy: state.busy,
@@ -67,6 +76,7 @@ export default function ConnectionEditor({
   const { work } = useDesktopActions();
   const [discovered, setDiscovered] = useState<DiscoveredConnectionModel[]>([]);
   const [showModelSettings, setShowModelSettings] = useState(false);
+  const [showSelectedSettings, setShowSelectedSettings] = useState(false);
   const defaultValues: ConnectionFields = {
     name: connection?.name || '',
     apiKey: '',
@@ -81,13 +91,14 @@ export default function ConnectionEditor({
       await work(
         'Saving AI connection',
         async () => {
-          await request('/connections/save', {
+          const saved = await request<{ id: string }>('/connections/save', {
             ...connectionDetails(provider, connection?.id, value),
             models: value.models,
           });
-          close();
+          if (onConnected) onConnected(saved.id);
+          else close();
         },
-        'Connection saved.',
+        onConnected ? null : 'Connection saved.',
         'connection-editor',
       );
     },
@@ -105,6 +116,15 @@ export default function ConnectionEditor({
     );
   const canSave = canDiscover && hasModels && !modelId.trim() && formCanSubmit;
   const definition = providerDefinitions.find((item) => item.id === provider)!;
+  const setup = !!onConnected;
+  const pickingModels = setup && showModelSettings;
+  const selectedSettingsVisible = !setup || !hasModels || showSelectedSettings;
+  const compatible = provider === 'compatible';
+  const keyPage = keyPages[provider];
+  const modelsHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (pickingModels) modelsHeading.current?.focus();
+  }, [pickingModels]);
 
   function discoverModels() {
     return work(
@@ -152,15 +172,8 @@ export default function ConnectionEditor({
     );
   }
 
-  return (
-    <form
-      noValidate
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (canSave && !form.state.isSubmitting) void form.handleSubmit();
-      }}
-      className="field-section api-connection-form mt-4 grid gap-2.5 border-t [border-top-style:solid] border-t-border pt-4"
-    >
+  const nameField = (
+    <div className="grid gap-2">
       <label className={labelClass} htmlFor="ai-name">
         Connection name
       </label>
@@ -176,78 +189,123 @@ export default function ConnectionEditor({
           />
         )}
       </form.Field>
-      <label className={labelClass} htmlFor="ai-key">
-        API key{' '}
-        {connection
-          ? '(leave blank to keep saved key)'
-          : provider === 'compatible'
-            ? '(optional for local servers)'
-            : ''}
+    </div>
+  );
+  const endpointField = (
+    <div className="grid gap-2">
+      <label className={labelClass} htmlFor="ai-url">
+        Base URL
       </label>
-      <form.Field name="apiKey">
+      <form.Field name="baseURL">
         {(field) => (
           <Input
-            id="ai-key"
-            type="password"
+            id="ai-url"
             value={field.state.value}
             onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-            autoComplete="off"
-            spellCheck={false}
+            placeholder={compatible ? 'http://localhost:1234/v1' : definition.baseURL}
             disabled={app.locked}
           />
         )}
       </form.Field>
-      <form.Field name="baseURL">
-        {(field) => {
-          const input = (
+    </div>
+  );
+
+  return (
+    <form
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (setup && !pickingModels) {
+          if (canDiscover) void discoverModels();
+        } else if (canSave && !form.state.isSubmitting) {
+          void form.handleSubmit();
+        }
+      }}
+      className={
+        setup
+          ? 'grid gap-4'
+          : 'field-section api-connection-form mt-4 grid gap-2.5 border-t [border-top-style:solid] border-t-border pt-4'
+      }
+    >
+      <div hidden={pickingModels} className={pickingModels ? 'hidden' : 'grid gap-2.5'}>
+        {!setup && nameField}
+        {setup && compatible && endpointField}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className={labelClass} htmlFor="ai-key">
+            API key{' '}
+            {connection && (!setup || connection.hasKey)
+              ? '(leave blank to keep saved key)'
+              : compatible
+                ? '(optional for local servers)'
+                : ''}
+          </label>
+          {setup && keyPage && !baseURL.trim() && (
+            <a href={keyPage} target="_blank" rel="noreferrer" className="text-[13px] text-accent">
+              Get API key ↗
+            </a>
+          )}
+        </div>
+        <form.Field name="apiKey">
+          {(field) => (
             <Input
-              className={provider === 'compatible' ? undefined : 'mt-[8px]'}
-              id="ai-url"
+              id="ai-key"
+              type="password"
               value={field.state.value}
               onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-              placeholder={
-                provider === 'compatible' ? 'http://localhost:1234/v1' : definition.baseURL
-              }
+              placeholder={setup ? 'Paste your API key' : undefined}
+              autoComplete="off"
+              spellCheck={false}
               disabled={app.locked}
             />
-          );
-          return provider === 'compatible' ? (
-            <>
-              <label className={labelClass} htmlFor="ai-url">
-                Base URL
-              </label>
-              {input}
-            </>
-          ) : (
-            <details>
-              <summary className="cursor-pointer text-muted text-[13px]">Custom endpoint</summary>
-              <label htmlFor="ai-url">Base URL</label>
-              {input}
-            </details>
-          );
-        }}
-      </form.Field>
-      <div className="label-row flex flex-wrap items-center justify-between gap-2">
-        <h3 className="m-0 text-[14px] font-semibold">Models</h3>
-        <Button intent="quiet" size="text" disabled={!canDiscover} onClick={discoverModels}>
-          Discover models
-        </Button>
+          )}
+        </form.Field>
+        {!setup && compatible ? (
+          endpointField
+        ) : (
+          <details>
+            <summary className="cursor-pointer text-muted text-[13px]">
+              {setup ? 'Advanced options' : 'Custom endpoint'}
+            </summary>
+            <div className="mt-2 grid gap-3">
+              {setup && nameField}
+              {!compatible && endpointField}
+            </div>
+          </details>
+        )}
       </div>
-      <p className="m-0 text-[13px] text-muted">
-        {models.length
-          ? `${models.length} ${models.length === 1 ? 'model' : 'models'} selected for Wisp`
-          : 'Discover models and add the ones you want to use.'}
-      </p>
-      <Button
-        intent="quiet"
-        size="text"
-        className="w-fit"
-        aria-expanded={showModelSettings}
-        aria-controls="connection-model-settings"
-        onClick={() => setShowModelSettings((open) => !open)}
-      >
-        {showModelSettings ? 'Hide model settings' : 'Manage models'}
-      </Button>
+      {(!setup || pickingModels) && (
+        <>
+          <div className="label-row flex flex-wrap items-center justify-between gap-2">
+            <h3
+              ref={modelsHeading}
+              tabIndex={setup ? -1 : undefined}
+              className="m-0 text-[14px] font-semibold outline-none"
+            >
+              {setup ? 'Choose models' : 'Models'}
+            </h3>
+            <Button intent="quiet" size="text" disabled={!canDiscover} onClick={discoverModels}>
+              {setup && discovered.length ? 'Refresh models' : 'Discover models'}
+            </Button>
+          </div>
+          <p className="m-0 text-[13px] text-muted">
+            {models.length
+              ? `${models.length} ${models.length === 1 ? 'model' : 'models'} selected for Wisp`
+              : 'Discover models and add the ones you want to use.'}
+          </p>
+          {!setup && (
+            <Button
+              intent="quiet"
+              size="text"
+              className="w-fit"
+              aria-expanded={showModelSettings}
+              aria-controls="connection-model-settings"
+              onClick={() => setShowModelSettings((open) => !open)}
+            >
+              {showModelSettings ? 'Hide model settings' : 'Manage models'}
+            </Button>
+          )}
+        </>
+      )}
       <div
         id="connection-model-settings"
         hidden={!showModelSettings}
@@ -263,81 +321,105 @@ export default function ConnectionEditor({
             onAdd={addModel}
           />
         )}
-        {models.length > 0 && <h4 className="m-0 text-[13px] font-semibold">Selected models</h4>}
-        <form.Field name="models" mode="array">
-          {(field) =>
-            field.state.value.map((model, index) => (
-              <div className={modelFieldsClass} key={model.id}>
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <ProviderLogo provider={modelProvider(provider, model.id)} />
-                  <div className="min-w-0 [overflow-wrap:anywhere]">
-                    <strong className="block text-[13px]">{model.name || model.id}</strong>
-                    {model.name && model.name !== model.id && (
-                      <span className="block text-[12px] text-muted">{model.id}</span>
-                    )}
+        {setup && hasModels && (
+          <Button
+            intent="quiet"
+            size="text"
+            className="w-fit"
+            aria-controls="selected-model-settings"
+            aria-expanded={selectedSettingsVisible}
+            onClick={() => setShowSelectedSettings((open) => !open)}
+          >
+            {selectedSettingsVisible ? 'Hide selected model settings' : 'Selected model settings'}
+          </Button>
+        )}
+        <div
+          id="selected-model-settings"
+          hidden={!selectedSettingsVisible}
+          className={selectedSettingsVisible ? 'grid gap-3' : 'hidden'}
+        >
+          {models.length > 0 && <h4 className="m-0 text-[13px] font-semibold">Selected models</h4>}
+          <form.Field name="models" mode="array">
+            {(field) =>
+              field.state.value.map((model, index) => (
+                <div className={modelFieldsClass} key={model.id}>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <ProviderLogo provider={modelProvider(provider, model.id)} />
+                    <div className="min-w-0 [overflow-wrap:anywhere]">
+                      <strong className="block text-[13px]">{model.name || model.id}</strong>
+                      {model.name && model.name !== model.id && (
+                        <span className="block text-[12px] text-muted">{model.id}</span>
+                      )}
+                    </div>
+                  </div>
+                  <form.Field
+                    name={`models[${index}].contextWindow`}
+                    validators={{
+                      onChange: validateContextWindow,
+                      onSubmit: validateContextWindow,
+                    }}
+                  >
+                    {(contextField) => {
+                      const error = contextField.state.meta.errors[0];
+                      const fieldId = `model-context-${index}`;
+                      const errorId = `model-context-error-${index}`;
+                      return (
+                        <div>
+                          <label htmlFor={fieldId} className="mb-1 block text-[12px] text-muted">
+                            Context window (tokens)
+                          </label>
+                          <NumberInput
+                            id={fieldId}
+                            aria-label={`Context window for ${model.id}`}
+                            aria-invalid={!!error}
+                            aria-describedby={error ? errorId : undefined}
+                            min={1}
+                            max={100000000}
+                            value={contextField.state.value}
+                            onValueChange={(value) => {
+                              if (setup) setShowSelectedSettings(true);
+                              contextField.handleChange(value);
+                            }}
+                            placeholder="Context tokens (required)"
+                            disabled={app.locked}
+                          />
+                          {error && (
+                            <p id={errorId} role="alert" className="mt-1 text-xs text-[#f0b4aa]">
+                              {error}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    }}
+                  </form.Field>
+                  <div className="flex flex-wrap gap-1">
+                    <Button
+                      intent="quiet"
+                      disabled={!canDiscover}
+                      aria-label={`Test ${model.id}`}
+                      onClick={() => void testModel(model)}
+                    >
+                      Test
+                    </Button>
+                    <Button
+                      intent="quiet"
+                      disabled={app.locked}
+                      aria-label={`Remove ${model.id}`}
+                      onClick={() => void field.removeValue(index)}
+                    >
+                      Remove
+                    </Button>
                   </div>
                 </div>
-                <form.Field
-                  name={`models[${index}].contextWindow`}
-                  validators={{ onChange: validateContextWindow, onSubmit: validateContextWindow }}
-                >
-                  {(contextField) => {
-                    const error = contextField.state.meta.errors[0];
-                    const fieldId = `model-context-${index}`;
-                    const errorId = `model-context-error-${index}`;
-                    return (
-                      <div>
-                        <label htmlFor={fieldId} className="mb-1 block text-[12px] text-muted">
-                          Context window (tokens)
-                        </label>
-                        <NumberInput
-                          id={fieldId}
-                          aria-label={`Context window for ${model.id}`}
-                          aria-invalid={!!error}
-                          aria-describedby={error ? errorId : undefined}
-                          min={1}
-                          max={100000000}
-                          value={contextField.state.value}
-                          onValueChange={contextField.handleChange}
-                          placeholder="Context tokens (required)"
-                          disabled={app.locked}
-                        />
-                        {error && (
-                          <p id={errorId} role="alert" className="mt-1 text-xs text-[#f0b4aa]">
-                            {error}
-                          </p>
-                        )}
-                      </div>
-                    );
-                  }}
-                </form.Field>
-                <div className="flex flex-wrap gap-1">
-                  <Button
-                    intent="quiet"
-                    disabled={!canDiscover}
-                    aria-label={`Test ${model.id}`}
-                    onClick={() => void testModel(model)}
-                  >
-                    Test
-                  </Button>
-                  <Button
-                    intent="quiet"
-                    disabled={app.locked}
-                    aria-label={`Remove ${model.id}`}
-                    onClick={() => void field.removeValue(index)}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            ))
-          }
-        </form.Field>
-        {models.length > 0 && (
-          <p className="m-0 text-[12px] text-muted">
-            Each model needs a context window. Testing a model may incur provider charges.
-          </p>
-        )}
+              ))
+            }
+          </form.Field>
+          {models.length > 0 && (
+            <p className="m-0 text-[12px] text-muted">
+              Each model needs a context window. Testing a model may incur provider charges.
+            </p>
+          )}
+        </div>
         <details
           open={discovered.some(({ supportsTools }) => supportsTools === true) ? undefined : true}
         >
@@ -383,14 +465,43 @@ export default function ConnectionEditor({
           </div>
         </details>
       </div>
-      <div className="actions mt-2 flex flex-wrap items-center gap-2.5">
-        <Button type="submit" intent="primary" disabled={!canSave}>
-          Save connection
-        </Button>
-        <Button intent="quiet" disabled={app.locked} onClick={close}>
-          Cancel
-        </Button>
-      </div>
+      {setup ? (
+        <div className="actions flex flex-wrap items-center justify-between gap-2.5">
+          {pickingModels ? (
+            <Button
+              intent="quiet"
+              size="text"
+              disabled={app.locked}
+              onClick={() => setShowModelSettings(false)}
+            >
+              <Icon name="back" size={15} />
+              Back to {compatible ? 'endpoint' : 'API key'}
+            </Button>
+          ) : (
+            <Button
+              intent="quiet"
+              size="text"
+              disabled={!canDiscover}
+              onClick={() => setShowModelSettings(true)}
+            >
+              Add a model manually
+            </Button>
+          )}
+          <Button type="submit" intent="primary" disabled={pickingModels ? !canSave : !canDiscover}>
+            {pickingModels ? 'Save connection' : 'Discover models'}
+            <Icon name="arrow" size={16} />
+          </Button>
+        </div>
+      ) : (
+        <div className="actions mt-2 flex flex-wrap items-center gap-2.5">
+          <Button type="submit" intent="primary" disabled={!canSave}>
+            Save connection
+          </Button>
+          <Button intent="quiet" disabled={app.locked} onClick={close}>
+            Cancel
+          </Button>
+        </div>
+      )}
       <ActionProgress label={app.busyTarget === 'connection-editor' ? app.busy : ''} />
     </form>
   );
