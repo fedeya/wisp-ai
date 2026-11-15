@@ -13,6 +13,7 @@
   "dependencies": {
     "@base-ui/react": "1.9.0",
     "@wisp/releases": "workspace:*",
+    "lucide-react": "1.73.0",
     "motion": "14.10.1",
     "next": "16.4.5",
     "posthog-js": "1.447.10",
