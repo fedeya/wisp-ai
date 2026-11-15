@@ -2,10 +2,10 @@ import { test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 
 import App from './App';
-import { desktop, request, type Status } from '../../api';
+import { desktop, request, type Status } from './api';
 import { listen } from '@tauri-apps/api/event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
-vi.mock('../../api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
+vi.mock('./api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
 }));

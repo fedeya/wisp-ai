@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react';
 import { createMemoryRouter, NavLink, Outlet, useMatches, useNavigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
-import logo from '../../../../../assets/wisp.png';
-import { desktop, native } from '../../api';
-import ConfirmationDialog from '../ui/ConfirmationDialog';
-import Icon from '../ui/Icon';
-import { Button } from '../ui/Controls';
-import { navigationLink } from '../ui/Controls/styles';
-import Updates from '../updates/Updates';
-import { useDesktop } from '../../use-desktop';
-import { mountDesktop } from '../../desktop-controller';
-import { desktopPages, type DesktopPage } from '../../routes/desktop-routes';
+import logo from '../../../assets/wisp.png';
+import { desktop, native } from './api';
+import ConfirmationDialog from './components/ui/ConfirmationDialog';
+import Icon from './components/ui/Icon';
+import { Button } from './components/ui/Controls';
+import { navigationLink } from './components/ui/Controls/styles';
+import Updates from './components/updates/Updates';
+import { useDesktop } from './use-desktop';
+import { mountDesktop } from './desktop-controller';
+import { desktopPages, type DesktopPage } from './routes/desktop-routes';
 
 function isUtilityPage(page: DesktopPage) {
   return page.name === 'Settings' || page.name === 'Diagnostics';
