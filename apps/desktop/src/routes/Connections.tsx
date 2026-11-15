@@ -171,7 +171,7 @@ export default function Connections() {
             </Card>
           </section>
           {showModelSettings && <DefaultModelSettings />}
-          <Link to="/integrations" className="text-[13px] text-accent">
+          <Link to="/integrations/web-search" className="text-[13px] text-accent">
             Configure web search in Integrations
           </Link>
         </>

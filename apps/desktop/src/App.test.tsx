@@ -103,7 +103,7 @@ async function openProvider(action: string, provider: string) {
 
 async function openSearchSettings() {
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
-  await fireEvent.click(await screen.findByRole('button', { name: 'Configure web search' }));
+  await fireEvent.click(await screen.findByRole('link', { name: 'Configure Web search' }));
 }
 
 test.each([
@@ -116,7 +116,7 @@ test.each([
   if (failed) {
     vi.mocked(request).mockRejectedValueOnce(new Error('Could not save settings'));
   }
-  vi.useFakeTimers();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
     await fireEvent.click(screen.getByRole('button', { name: 'Save search settings' }));
     await vi.advanceTimersByTimeAsync(0);
@@ -266,7 +266,7 @@ test('search again waits for fresh results and ignores updates from the previous
   expect(screen.queryByLabelText('Detected Forever installations')).toBeNull();
 });
 
-test('AI Providers links to collapsed web search settings in Integrations without exposing saved keys', async () => {
+test('AI Providers links directly to web search settings without exposing saved keys', async () => {
   status.search = { provider: 'auto', hasExaKey: true };
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
@@ -276,11 +276,10 @@ test('AI Providers links to collapsed web search settings in Integrations withou
   expect(await screen.findByRole('heading', { name: 'Default model' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: 'Web search' })).toBeNull();
   await fireEvent.click(screen.getByRole('link', { name: 'Configure web search in Integrations' }));
-  await screen.findByRole('heading', { name: 'Integrations' });
-  const configure = screen.getByRole('button', { name: 'Configure web search' });
-  expect(configure.getAttribute('aria-expanded')).toBe('false');
-  expect(screen.queryByRole('combobox', { name: 'Search service' })).toBeNull();
-  await fireEvent.click(configure);
+  await screen.findByRole('heading', { name: 'Web search', level: 1 });
+  expect(screen.getByRole('link', { name: 'Integrations' }).getAttribute('aria-current')).toBe(
+    'page',
+  );
   const key = screen.getByLabelText(
     'Exa API key (optional) (leave blank to keep saved key)',
   ) as HTMLInputElement;
@@ -925,6 +924,8 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   await waitFor(() => expect(document.activeElement).toBe(add));
 
+  await fireEvent.click(screen.getByRole('link', { name: 'Manage Existing tools' }));
+  await screen.findByRole('heading', { name: 'Existing tools', level: 1 });
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
   const edit = within(await screen.findByRole('dialog', { name: 'Edit connection' }));
   const savedName = edit.getByLabelText('Name') as HTMLInputElement;
@@ -1023,7 +1024,12 @@ test('integration cards expose availability, master and child switches through t
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
-  expect(await screen.findByText('partial')).toBeTruthy();
+  expect(await screen.findByText('Partial')).toBeTruthy();
+  expect(screen.queryByRole('switch', { name: 'Enable Questie' })).toBeNull();
+  await fireEvent.click(screen.getByRole('link', { name: 'Manage Questie' }));
+  expect(await screen.findByRole('heading', { name: 'Questie', level: 1 })).toBe(
+    document.activeElement,
+  );
   expect(screen.getByText('Some service indexes are unavailable.')).toBeTruthy();
   await fireEvent.click(screen.getByText('Tools & capabilities (1)'));
   await fireEvent.click(screen.getByLabelText('Questie: Find NPC locations'));
@@ -1059,9 +1065,11 @@ test('built-in capabilities stay out of integrations and memory has separate con
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
-  expect(await screen.findByRole('switch', { name: 'Enable Questie' })).toBeTruthy();
-  expect(screen.queryByRole('switch', { name: 'Enable World of Warcraft' })).toBeNull();
-  expect(screen.queryByRole('switch', { name: 'Enable Wisp' })).toBeNull();
+  expect(await screen.findByRole('link', { name: 'Manage Questie' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Manage Everloot' })).toBeTruthy();
+  expect(screen.queryByRole('link', { name: 'Manage World of Warcraft' })).toBeNull();
+  expect(screen.queryByRole('link', { name: 'Manage Wisp' })).toBeNull();
+  expect(screen.getByRole('heading', { name: 'Add a server' })).toBeTruthy();
   expect(screen.queryByText('Conversation titles')).toBeNull();
   expect(screen.queryByText('Player preferences')).toBeNull();
   await fireEvent.click(screen.getByRole('link', { name: 'Memory' }));
@@ -1072,6 +1080,37 @@ test('built-in capabilities stay out of integrations and memory has separate con
       enabled: false,
     }),
   );
+});
+
+test('integration categories preserve a search when returning from addon setup', async () => {
+  const { defaultCapabilities } = await import('@wisp/protocol/capabilities');
+  status.integrations = defaultCapabilities().map((entry) => {
+    const missing = entry.id === 'integration:questie';
+    return {
+      ...entry,
+      enabled: true,
+      effective: !missing,
+      available: !missing,
+      status: missing ? 'missing' : 'ready',
+    };
+  });
+  renderApp();
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
+  const databases = screen.getByRole('region', { name: 'Game databases' });
+  expect(within(databases).getByRole('link', { name: 'Manage TheWoWDB' })).toBeTruthy();
+  expect(within(databases).getByRole('link', { name: 'Manage Everloot' })).toBeTruthy();
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Quests & navigation' }));
+  expect(screen.queryByRole('link', { name: 'Manage TheWoWDB' })).toBeNull();
+  await fireEvent.input(screen.getByRole('searchbox', { name: 'Search integrations' }), {
+    target: { value: 'questie' },
+  });
+  await fireEvent.click(screen.getByRole('link', { name: 'Setup instructions Questie' }));
+  expect(await screen.findByText('Install or update QuestieDB for WoW Forever.')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('link', { name: 'Back to Integrations' }));
+  expect(screen.getByRole('button', { name: 'Quests & navigation', pressed: true })).toBeTruthy();
+  expect(screen.getByDisplayValue('questie')).toBeTruthy();
 });
 
 test('a configured installation stays compact until explicitly opened', async () => {

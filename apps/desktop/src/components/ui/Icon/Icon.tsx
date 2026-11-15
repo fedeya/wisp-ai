@@ -5,7 +5,9 @@ import Check from 'lucide-react/icons/check';
 import ChevronDown from 'lucide-react/icons/chevron-down';
 import ChevronRight from 'lucide-react/icons/chevron-right';
 import Copy from 'lucide-react/icons/copy';
+import Database from 'lucide-react/icons/database';
 import Folder from 'lucide-react/icons/folder';
+import Globe from 'lucide-react/icons/globe';
 import House from 'lucide-react/icons/house';
 import Link2 from 'lucide-react/icons/link-2';
 import PanelsTopLeft from 'lucide-react/icons/panels-top-left';
@@ -14,6 +16,7 @@ import Plus from 'lucide-react/icons/plus';
 import Puzzle from 'lucide-react/icons/puzzle';
 import RefreshCw from 'lucide-react/icons/refresh-cw';
 import ScrollText from 'lucide-react/icons/scroll-text';
+import Search from 'lucide-react/icons/search';
 import Server from 'lucide-react/icons/server';
 import Settings from 'lucide-react/icons/settings';
 import Sparkles from 'lucide-react/icons/sparkles';
@@ -30,7 +33,9 @@ const icons = {
   chevronRight: ChevronRight,
   close: X,
   copy: Copy,
+  database: Database,
   folder: Folder,
+  globe: Globe,
   home: House,
   link: Link2,
   logs: SquareTerminal,
@@ -40,6 +45,7 @@ const icons = {
   puzzle: Puzzle,
   refresh: RefreshCw,
   scrollText: ScrollText,
+  search: Search,
   server: Server,
   settings: Settings,
   spark: Sparkles,

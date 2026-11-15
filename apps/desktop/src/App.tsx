@@ -8,7 +8,13 @@ import FeedbackToast from './components/ui/FeedbackToast';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
 import { mountDesktop } from './desktop-controller';
-import { connectionsPage, desktopPages, type DesktopPage } from './routes/desktop-routes';
+import {
+  connectionsPage,
+  desktopPages,
+  integrationsPage,
+  type DesktopPage,
+} from './routes/desktop-routes';
+import IntegrationDetails from './routes/IntegrationDetails';
 import ProviderDetails from './routes/ProviderDetails';
 import Onboarding from './components/onboarding/Onboarding';
 import { Spinner } from './components/ui/ActionProgress';
@@ -55,14 +61,16 @@ function DesktopShell() {
         <div className="flex min-h-screen">
           <DesktopSidebar />
           <main className="min-w-0 max-w-[1450px] flex-1 px-[32px] pt-[34px] pb-[80px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:pt-[26px]">
-            {page.name !== 'Overview' && page.name !== 'Connections' && (
-              <header className="page-header gap-[18px] mb-[28px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
-                <div>
-                  <h1>{page.title}</h1>
-                  <p className="text-muted text-[13px]">{page.caption}</p>
-                </div>
-              </header>
-            )}
+            {page.name !== 'Overview' &&
+              page.name !== 'Connections' &&
+              page.name !== 'Integrations' && (
+                <header className="page-header gap-[18px] mb-[28px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
+                  <div>
+                    <h1>{page.title}</h1>
+                    <p className="text-muted text-[13px]">{page.caption}</p>
+                  </div>
+                </header>
+              )}
             {!native && (
               <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-[12px] leading-[1.5] [&_.icon-button]:ml-auto">
                 Design preview. Desktop actions are available in the installed Wisp app.
@@ -97,6 +105,11 @@ export function createDesktopRouter() {
           handle: page,
         })),
         { path: '/connections/:provider', Component: ProviderDetails, handle: connectionsPage },
+        {
+          path: '/integrations/:integrationId',
+          Component: IntegrationDetails,
+          handle: integrationsPage,
+        },
       ],
     },
   ]);

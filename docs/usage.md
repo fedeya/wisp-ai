@@ -23,7 +23,7 @@ Use **Effort** in each in-game chat (including inline questions) to choose reaso
 
 Switching an API chat to another model or connection starts fresh provider-native history from the visible transcript, preserving the chat and memory. Removing a connection preserves chats but those chats need another model before continuing. There is no automatic fallback to another provider.
 
-Wowhead search works independently of the model. In **Integrations → Configure web search**, **Auto** keeps ChatGPT search for subscription chats and uses Exa for API chats. Exa works without a key through its public MCP endpoint, with free rate limits. **Exa for all chats**, **ChatGPT search only** and **Disabled** are also available. An optional Exa key uses your account’s REST API credits and billing; it is stored in the operating-system vault. **Test Exa** sends one scoped search using the entered/saved key or public access. Removing the key returns Exa to public access. Requests and source excerpts are restricted to Wowhead Forever; empty results remain unknown. Exa failures are reported without silently switching services. See [Exa’s access limits](https://exa.ai/docs/get-started/exa-mcp). Other enabled game, database and MCP tools remain available with API models. Some providers do not expose model discovery; enter model IDs and context windows manually in that case. Included adapters are covered by local transport tests, not a guarantee that every model or account supports Wisp's tools.
+Wowhead search works independently of the model. In **Integrations → Web search**, **Auto** keeps ChatGPT search for subscription chats and uses Exa for API chats. Exa works without a key through its public MCP endpoint, with free rate limits. **Exa for all chats**, **ChatGPT search only** and **Disabled** are also available. An optional Exa key uses your account’s REST API credits and billing; it is stored in the operating-system vault. **Test Exa** sends one scoped search using the entered/saved key or public access. Removing the key returns Exa to public access. Requests and source excerpts are restricted to Wowhead Forever; empty results remain unknown. Exa failures are reported without silently switching services. See [Exa’s access limits](https://exa.ai/docs/get-started/exa-mcp). Other enabled game, database and MCP tools remain available with API models. Some providers do not expose model discovery; enter model IDs and context windows manually in that case. Included adapters are covered by local transport tests, not a guarantee that every model or account supports Wisp's tools.
 
 ## Conversations and hover questions
 
@@ -150,8 +150,8 @@ For an old portable install, choose **Import your previous installation** on fir
 
 WoW character readings, inventory, progression, references, settings, maps and macros are core agent capabilities. Titles and persistent panels are also built in. These capabilities have no integration switches; game reads still require a live WoW connection. Older switches for these capabilities no longer apply. Memory remains optional with independent controls.
 
-Desktop **Integrations** and WoW **Settings > Integrations** share the same optional integration controls.
-Each integration has a master switch and individual capabilities. Disabling a parent
+Desktop **Integrations** groups tools by category and shows which addons WoW has detected. Open **Manage** for tool controls, **Setup instructions** for an addon you need to install or update, or **Add MCP** to connect a server.
+Desktop and WoW **Settings > Integrations** share the same optional capability controls. Each capability group has a master switch and individual tools. Disabling a parent
 preserves child preferences. Enabled and available capabilities are projected into
 Eve's dynamic definitions; the bridge enforces the same checks on game/RPC calls.
 

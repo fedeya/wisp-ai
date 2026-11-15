@@ -1,145 +1,271 @@
-import { desktopLocked } from '../desktop-controller';
-import { Dialog } from '@base-ui/react/dialog';
-import { useRef } from 'react';
-import type { Mcp } from '../api';
-import IntegrationCard from '../components/integrations/IntegrationCard';
-import McpDialog, { type McpFormActions } from '../components/integrations/McpDialog';
-import WebSearchSettings from '../components/integrations/WebSearchSettings';
-import { ActionProgress } from '../components/ui/ActionProgress';
+import { useEffect, useRef, type ComponentProps } from 'react';
+import { Link, useLocation, useSearchParams } from 'react-router';
+import type { Status } from '../api';
+import {
+  capabilityStatus,
+  IntegrationIcon,
+  IntegrationStatus,
+  integrationType,
+  mcpTransport,
+  needsAddonSetup,
+} from '../components/integrations/integration-presentation';
+import { McpDialogTrigger } from '../components/integrations/McpDialogTrigger';
+import { searchProviderLabel } from '../components/integrations/WebSearchSettings';
+import { Card, Input } from '../components/ui/Controls';
+import { button } from '../components/ui/Controls/styles';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
-import { button } from '../components/ui/Controls/styles';
-import { Button, Card } from '../components/ui/Controls';
 import { useDesktop } from '../use-desktop';
 
-function useIntegrations() {
-  return useDesktop((state) => ({
-    locked: desktopLocked(state),
-    busy: state.busy,
-    busyTarget: state.busyTarget,
-    setIntegration: state.actions.setIntegration,
-    testMcp: state.actions.testMcp,
-    removeMcp: state.actions.removeMcp,
-    loading: state.loading,
-    status: state.status,
-    refreshAfterWrite: state.actions.refreshAfterWrite,
-  }));
+const categories = [
+  { id: 'quests', label: 'Quests & navigation', integrations: ['integration:questie'] },
+  {
+    id: 'databases',
+    label: 'Game databases',
+    integrations: ['integration:thewowdb', 'mcp:everloot'],
+  },
+  {
+    id: 'inventory',
+    label: 'Inventory & auctions',
+    integrations: ['integration:syndicator', 'integration:auctionator'],
+  },
+  { id: 'simulation', label: 'Combat simulation', integrations: ['integration:wowsims'] },
+  { id: 'web', label: 'Web tools', integrations: ['web-search'] },
+  { id: 'other', label: 'Other integrations', integrations: [] },
+  { id: 'mcp', label: 'MCP servers', integrations: [] },
+] as const;
+
+type Category = (typeof categories)[number]['id'];
+const categoryById = new Map<string, Category>();
+for (const category of categories) {
+  for (const id of category.integrations) categoryById.set(id, category.id);
 }
 
-type IntegrationsView = ReturnType<typeof useIntegrations>;
+type Row = {
+  id: string;
+  category: Category;
+  icon: ComponentProps<typeof IntegrationIcon>['icon'];
+  name: string;
+  description: string;
+  status: ComponentProps<typeof IntegrationStatus>;
+  action: string;
+};
 
-function IntegrationList({
-  app,
-  status,
-}: {
-  app: IntegrationsView;
-  status: NonNullable<IntegrationsView['status']>;
-}) {
-  const entries = status.integrations.filter(
-    (entry) => entry.group === 'integrations' && !entry.parent,
+function directoryRows(status: Status): Row[] {
+  const entries = new Map(
+    status.integrations
+      .filter((entry) => entry.group === 'integrations' && !entry.parent)
+      .map((entry) => [entry.id, entry]),
   );
+  const web = entries.get('integration:web');
+  entries.delete('integration:web');
+  const mode = status.search?.provider;
+  const webStatus =
+    web && !web.enabled
+      ? 'Disabled'
+      : mode === 'disabled'
+        ? 'Search off'
+        : searchProviderLabel(mode);
+  const rows: Row[] = [
+    {
+      id: 'web-search',
+      category: 'web',
+      icon: 'globe',
+      name: 'Web search',
+      description: 'Search with ChatGPT or Exa and read public pages.',
+      status: { label: webStatus, tone: 'neutral' },
+      action: 'Configure',
+    },
+  ];
+  for (const server of status.mcps) {
+    const id = 'mcp:' + server.name;
+    const entry = entries.get(id);
+    entries.delete(id);
+    rows.push({
+      id,
+      category: 'mcp',
+      icon: 'server',
+      name: entry?.name ?? server.name,
+      description: server.description || mcpTransport[server.transport],
+      status: capabilityStatus(
+        entry ?? { enabled: server.enabled, available: true, status: 'configured' },
+      ),
+      action: 'Manage',
+    });
+  }
+  for (const entry of entries.values()) {
+    const { icon, label } = integrationType(entry.kind);
+    rows.push({
+      id: entry.id,
+      category: categoryById.get(entry.id) ?? 'other',
+      icon,
+      name: entry.name,
+      description: entry.description || label,
+      status: capabilityStatus(entry),
+      action: needsAddonSetup(entry) ? 'Setup instructions' : 'Manage',
+    });
+  }
+  return rows;
+}
+
+function IntegrationRow({ row, search }: { row: Row; search: string }) {
   return (
-    <>
-      <div className="toolbar flex items-center justify-between mb-[18px]">
-        <p className="muted text-muted text-[12px]">{status.mcps.length} custom connections</p>
-        <Dialog.Trigger
-          className={button({ intent: 'primary' })}
-          disabled={app.locked}
-          payload={null}
-        >
-          <Icon name="plus" size={17} />
-          Add MCP
-        </Dialog.Trigger>
+    <li className="grid grid-cols-[minmax(0,1fr)_minmax(96px,124px)_132px] items-center gap-3 px-3 py-2.5 max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-y-1">
+      <div className="flex min-w-0 items-center gap-3 max-sm:row-span-2">
+        <IntegrationIcon id={row.id} icon={row.icon} />
+        <div className="min-w-0">
+          <h3 className="m-0 text-[14px] font-semibold [overflow-wrap:anywhere]">{row.name}</h3>
+          <p className="m-0 text-[12px] leading-snug text-muted [overflow-wrap:anywhere]">
+            {row.description}
+          </p>
+        </div>
       </div>
-      <div className="connection-list">
-        {entries.map((entry) => {
-          const tools = status.integrations.filter((tool) => tool.parent === entry.id);
-          const server = status.mcps.find((item) => entry.id === 'mcp:' + item.name);
-          const updating =
-            app.busy === 'Updating integration' &&
-            (app.busyTarget === entry.id || tools.some((tool) => tool.id === app.busyTarget));
-          return (
-            <div
-              key={entry.id}
-              className="integration-group border border-solid border-border rounded-[12px] [background:var(--surface)] mb-[14px] overflow-hidden [&_.integration]:border-0 [&_.integration]:m-0 [&_.integration]:rounded-[0] [&_.integration]:[background:transparent]"
-            >
-              <IntegrationCard
-                entry={entry}
-                tools={tools}
-                locked={app.locked}
-                busy={updating ? app.busy : ''}
-                set={app.setIntegration}
-              />
-              {server && (
-                <div className="actions gap-[10px] px-[22px] py-[12px] m-0 flex flex-wrap items-center border-t-[1px] [border-top-style:solid] border-t-[var(--border)]">
-                  <ActionProgress label={app.busyTarget === entry.id ? app.busy : ''} />
-                  <Dialog.Trigger className={button()} payload={server} disabled={app.locked}>
-                    Edit
-                  </Dialog.Trigger>
-                  <Button onClick={() => app.testMcp(server)} disabled={app.locked}>
-                    Test connection
-                  </Button>
-                  <Button
-                    intent="quiet"
-                    destructive
-                    onClick={() => app.removeMcp(server)}
-                    disabled={app.locked}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              )}
-            </div>
-          );
+      <IntegrationStatus {...row.status} />
+      <Link
+        to={{ pathname: '/integrations/' + encodeURIComponent(row.id), search }}
+        aria-label={row.action + ' ' + row.name}
+        className={button({
+          class:
+            'min-h-[31px] justify-self-end px-2.5 py-1 text-[12px] no-underline hover:border-[#568780] hover:bg-[#2a3d3f] max-sm:col-start-2',
         })}
-        {entries.length === 0 && (
-          <Card kind="empty" className="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]">
-            <h2 className="text-[21px]">No game or custom integrations yet</h2>
-            <p className="mx-auto text-muted text-[13px] max-w-[400px] mt-[12px] mb-[23px]">
-              Connect WoW to discover supported addons, or add an MCP server to give Wisp more
-              tools.
-            </p>
-          </Card>
-        )}
-      </div>
-      <p className="footnote text-[11px]! text-muted mt-[12px]">
-        Changes apply to new tool calls. Disabling an integration preserves individual tool choices.
-        Addon availability updates when WoW connects.
-      </p>
-    </>
+      >
+        {row.action}
+      </Link>
+    </li>
   );
 }
 
 export default function Integrations() {
-  const app = useIntegrations();
-  const actions = useRef<Dialog.Root.Actions>(null);
-  const formRef = useRef<McpFormActions>(null);
+  const { loading, status } = useDesktop((state) => ({
+    loading: state.loading,
+    status: state.status,
+  }));
+  const [params, setParams] = useSearchParams();
+  const { search } = useLocation();
+  const title = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    title.current?.focus();
+  }, []);
+
+  const rows = status ? directoryRows(status) : [];
+  const visibleCategories = categories.filter(
+    ({ id }) => id !== 'other' || rows.some((row) => row.category === id),
+  );
+  const selected = visibleCategories.find(({ id }) => id === params.get('category'))?.id ?? 'all';
+  const query = params.get('q') ?? '';
+  const normalizedQuery = query.trim().toLowerCase();
+  const matches = rows.filter(
+    ({ category, name, description }) =>
+      (selected === 'all' || selected === category) &&
+      (name + ' ' + description).toLowerCase().includes(normalizedQuery),
+  );
+  const showAdd = !normalizedQuery && (selected === 'all' || selected === 'mcp');
+
+  function updateFilter(key: 'q' | 'category', value: string) {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  }
+
   return (
-    <Dialog.Root<Mcp | null>
-      actionsRef={actions}
-      disablePointerDismissal
-      onOpenChange={(open, details) => {
-        if (!open && details.reason !== 'imperative-action' && formRef.current?.isSubmitting()) {
-          details.cancel();
-        }
-      }}
-    >
-      {({ payload }) => (
+    <>
+      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <h1 ref={title} tabIndex={-1} className="m-0 outline-none">
+          Integrations
+        </h1>
+        {status && !loading && (
+          <label className="relative w-full max-w-[225px]">
+            <span className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-muted">
+              <Icon name="search" size={16} />
+            </span>
+            <Input
+              type="search"
+              aria-label="Search integrations"
+              placeholder="Search integrations"
+              className="min-h-[35px] py-1 pl-8 text-[13px]"
+              value={query}
+              onChange={(event) => updateFilter('q', event.currentTarget.value)}
+            />
+          </label>
+        )}
+      </header>
+      {loading || !status ? (
+        <DataState />
+      ) : (
         <>
-          <WebSearchSettings />
-          {app.loading || !app.status ? (
-            <DataState />
-          ) : (
-            <IntegrationList app={app} status={app.status} />
-          )}
-          <McpDialog
-            server={payload ?? null}
-            formRef={formRef}
-            close={() => actions.current?.close()}
-            saved={app.refreshAfterWrite}
-          />
+          <div
+            role="group"
+            aria-label="Filter by category"
+            className="mb-4 flex flex-wrap items-center gap-1"
+          >
+            {[{ id: 'all', label: 'All' }, ...visibleCategories].map(({ id, label }) => {
+              const pressed = selected === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={pressed}
+                  onClick={() => updateFilter('category', id === 'all' ? '' : id)}
+                  className={button({
+                    intent: pressed ? 'default' : 'quiet',
+                    class: 'min-h-[30px] px-2.5 py-1 text-[12px]',
+                  })}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="grid gap-[15px]">
+            {visibleCategories.map(({ id, label }) => {
+              const group = matches.filter((row) => row.category === id);
+              if (!group.length) return null;
+              const heading = 'integration-category-' + id;
+              return (
+                <section key={id} aria-labelledby={heading}>
+                  <h2
+                    id={heading}
+                    className={
+                      selected === 'all'
+                        ? 'mb-2.5 ml-px text-[13px] font-semibold text-muted'
+                        : 'sr-only'
+                    }
+                  >
+                    {label}
+                  </h2>
+                  <Card className="mb-0 rounded-[9px] p-0">
+                    <ul className="m-0 list-none divide-y [--tw-divide-style:solid] divide-border p-0">
+                      {group.map((row) => (
+                        <IntegrationRow key={row.id} row={row} search={search} />
+                      ))}
+                    </ul>
+                  </Card>
+                </section>
+              );
+            })}
+            {matches.length === 0 && !showAdd && (
+              <p role="status" className="text-[13px] text-muted">
+                No integrations match your search.
+              </p>
+            )}
+            {showAdd && (
+              <Card className="mb-0 flex flex-wrap items-center gap-3 rounded-[9px] px-3 py-2.5">
+                <IntegrationIcon icon="server" />
+                <div className="min-w-[120px] flex-1">
+                  <h2 className="m-0 text-[14px]">Add a server</h2>
+                  <p className="m-0 text-[12px] text-muted">
+                    {status.mcps.length
+                      ? 'Connect another MCP server.'
+                      : 'Connect an MCP server to give Wisp more tools.'}
+                  </p>
+                </div>
+                <McpDialogTrigger />
+              </Card>
+            )}
+          </div>
         </>
       )}
-    </Dialog.Root>
+    </>
   );
 }

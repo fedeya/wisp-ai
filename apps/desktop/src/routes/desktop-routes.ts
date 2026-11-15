@@ -16,6 +16,15 @@ export const connectionsPage = {
   title: 'AI Providers',
 } as const;
 
+export const integrationsPage = {
+  name: 'Integrations',
+  Component: Integrations,
+  path: '/integrations',
+  group: 'setup',
+  icon: 'puzzle',
+  title: 'Integrations',
+} as const;
+
 export const desktopPages = [
   {
     name: 'Overview',
@@ -27,15 +36,7 @@ export const desktopPages = [
     caption: 'Check your game connection, addon and AI provider.',
   },
   connectionsPage,
-  {
-    name: 'Integrations',
-    Component: Integrations,
-    path: '/integrations',
-    group: 'setup',
-    icon: 'puzzle',
-    title: 'Integrations',
-    caption: 'Manage web search, game addons, and other tools Wisp can use.',
-  },
+  integrationsPage,
   {
     name: 'Memory',
     Component: Memory,
