@@ -71,6 +71,18 @@ export const desktopConnected = ({ status }: DesktopState) =>
 export const desktopActive = ({ status }: DesktopState) => (status?.activeTurns ?? 0) > 0;
 export const desktopLocked = (state: DesktopState) => !!state.busy || desktopActive(state);
 
+export function desktopReadiness(
+  state: DesktopState,
+): 'loading' | 'update' | 'starting' | 'stopped' | 'account' | 'waiting' | 'ready' {
+  const { loading, info, status, starting, connectionError } = state;
+  if (loading) return 'loading';
+  if (info?.addonOutdated) return 'update';
+  const serviceStarting = starting && !connectionError;
+  if (!status?.ready) return serviceStarting || status ? 'starting' : 'stopped';
+  if (!desktopConnected(state)) return 'account';
+  return status.gameConnected ? 'ready' : 'waiting';
+}
+
 function createDesktopSession() {
   const getState = (): DesktopState => desktopStore.getState();
   let disposed = false;

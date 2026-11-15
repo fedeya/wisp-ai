@@ -8,7 +8,7 @@ On first use, Wisp reads registered installation paths from Battle.net's local `
 
 ## AI connections
 
-**Connections** keeps ChatGPT subscription sign-in and API connections side by side. API connections use native AI SDK adapters for OpenAI, Anthropic (Claude), Google (Gemini), DeepSeek, xAI, Groq, Mistral, Cerebras, Cohere, Together AI, Fireworks, DeepInfra, Alibaba (Qwen), Moonshot (Kimi), MiniMax, Baseten and Z.AI. Vercel AI Gateway and OpenRouter expose multiple vendors through one account. **OpenAI compatible / Local** supports other Chat Completions endpoints, including local servers. Bedrock, Vertex and Azure account/deployment setup are not included. The installed native Hugging Face adapter drops tool results from history, so use its Chat Completions endpoint through **OpenAI compatible / Local** instead.
+**AI Providers** keeps ChatGPT subscription sign-in and API connections side by side. API connections use native AI SDK adapters for OpenAI, Anthropic (Claude), Google (Gemini), DeepSeek, xAI, Groq, Mistral, Cerebras, Cohere, Together AI, Fireworks, DeepInfra, Alibaba (Qwen), Moonshot (Kimi), MiniMax, Baseten and Z.AI. Vercel AI Gateway and OpenRouter expose multiple vendors through one account. **OpenAI compatible / Local** supports other Chat Completions endpoints, including local servers. Bedrock, Vertex and Azure account/deployment setup are not included. The installed native Hugging Face adapter drops tool results from history, so use its Chat Completions endpoint through **OpenAI compatible / Local** instead.
 
 1. Choose **Add connection**, select a provider and enter its API key. API usage is billed separately by the provider; ChatGPT sign-in remains the subscription option.
 2. Choose **Load model list**, or enter an exact model ID. Add the models you want to use. A provider's catalog can include models that do not support tools: choose a language model with tool calling.
@@ -25,7 +25,7 @@ Wowhead search works independently of the model. In **Integrations → Configure
 
 ## Conversations and hover questions
 
-After [setup](../README.md#get-started-on-windows), use `/wisp` or `/wispai` to open chat. **+** starts a separate conversation; **−** or Escape minimizes the window. Choose model and effort per chat, or set the default for new chats in the desktop **Connections** page.
+After [setup](../README.md#get-started-on-windows), use `/wisp` or `/wispai` to open chat. **+** starts a separate conversation; **−** or Escape minimizes the window. Choose model and effort per chat, or set the default for new chats in the desktop **AI Providers** page.
 
 Shift-click supported items and spells into the input. Linked references offer native tooltips, map coordinates or macro code; a link identifies something, not whether your character owns or knows it.
 
@@ -117,7 +117,7 @@ WoW stores UI preferences and drafts in the `WispAIDB` SavedVariables. Logs may 
 
 Use **Settings > Memory** to view, edit or forget notes. Deleting a chat does not delete memory; disabling memory tools preserves notes and the editor. Memory stores preferences/plans, not current character state.
 
-**Connections** supports saved accounts, switching and disconnection. Disconnect attempts to revoke Wisp’s refresh token and clears local credentials, but leaves chats, memory and other applications’ sessions intact.
+**AI Providers** supports saved accounts, switching and disconnection. Disconnect attempts to revoke Wisp’s refresh token and clears local credentials, but leaves chats, memory and other applications’ sessions intact.
 
 ### Reading the answers
 
@@ -138,7 +138,7 @@ Missing readings and database coverage remain unknown, not zero or proof of abse
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Addon missing                 | Select the folder containing `Wow.exe`, install/update from **Overview**, fully restart WoW, and enable Wisp AI and its helpers.                                                                                                                          |
 | Disconnected or replies stop  | Keep the desktop app running. Check **Diagnostics** and `/wisp diag`; use `/wisp reconnect` for a fresh handshake or `/reload` to renew receive channels. Large payloads take several seconds. Significant game updates may change file-loading behavior. |
-| Sign-in or models unavailable | Finish browser authorization in **Connections** and refresh the model list. Expired access, identity-only consent or an ambiguous token refresh may require signing in again.                                                                             |
+| Sign-in or models unavailable | Finish browser authorization in **AI Providers** and refresh the model list. Expired access, identity-only consent or an ambiguous token refresh may require signing in again.                                                                            |
 | Tool unavailable              | Check the game connection, optional integration switches and required windows; missing APIs or source coverage can also prevent a result.                                                                                                                 |
 | App remains after closing     | Closing hides it in the tray. **Exit Wisp** stops it. If a turn is active, wait for it to finish and try again.                                                                                                                                           |
 
