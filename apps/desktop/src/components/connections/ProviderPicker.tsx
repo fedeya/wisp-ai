@@ -47,7 +47,7 @@ export default function ProviderPicker({
         <Dialog.Backdrop className="fixed inset-0 z-20 bg-[#050c10b8]" />
         <Dialog.Viewport className="fixed inset-0 z-20 grid place-items-center px-4 py-6">
           <Dialog.Popup
-            className="flex max-h-[min(460px,calc(100vh-48px))] w-full max-w-[540px] flex-col rounded-[13px] border border-solid border-[#40555a] bg-surface shadow-[0_25px_100px_#0009]"
+            className="grid h-[min(460px,calc(100dvh-48px))] w-full max-w-[540px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[13px] border border-solid border-[#40555a] bg-surface shadow-[0_25px_100px_#0009]"
             initialFocus={searchField}
           >
             <div className="grid gap-3 border-b [border-bottom-style:solid] border-b-border p-4">

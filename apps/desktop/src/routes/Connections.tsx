@@ -109,10 +109,8 @@ export default function Connections() {
         </Card>
       ) : (
         <>
-          <section className="mb-4" aria-labelledby="configured-providers-title">
-            <h2 id="configured-providers-title" className="mb-2.5">
-              Configured providers
-            </h2>
+          <section className="mb-4 grid gap-5" aria-labelledby="configured-providers-title">
+            <h2 id="configured-providers-title">Configured providers</h2>
             <Card className="mb-0 p-0">
               <ul className="m-0 list-none divide-y [--tw-divide-style:solid] divide-border p-0">
                 {[...configured].map(([provider, connections]) => {
