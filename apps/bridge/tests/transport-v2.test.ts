@@ -77,8 +77,7 @@ async function fixture(
       return frames;
     },
     async close() {
-      bridge.stop();
-      await bridge.writing.catch(() => {});
+      await bridge.stop();
       assert.ok(path.resolve(root).startsWith(base + path.sep));
       await rm(root, { recursive: true, force: true });
     },

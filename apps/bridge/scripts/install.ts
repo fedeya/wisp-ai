@@ -55,11 +55,13 @@ for (const helper of addonHelperTocs(addonVersion)) {
 }
 // Complete the helpers before Desktop can see the new main addon on disk.
 await cp(source, path.join(addons, 'WispAI'), { recursive: true });
-let config: { wow: string; model?: string } = { wow };
-try {
-  config = { ...JSON.parse(await readFile(paths.config, 'utf8')), wow };
-} catch {}
-await writeFile(paths.config, JSON.stringify(config, null, 2) + '\n');
+if (!process.argv.slice(3).includes('--skip-config')) {
+  let config: { wow: string; model?: string } = { wow };
+  try {
+    config = { ...JSON.parse(await readFile(paths.config, 'utf8')), wow };
+  } catch {}
+  await writeFile(paths.config, JSON.stringify(config, null, 2) + '\n');
+}
 const retired = await retireLegacyAddons(wow);
 if (retired.count) {
   console.log('Previous addon installation backed up to ' + retired.backup);

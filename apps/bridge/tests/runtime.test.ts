@@ -1,11 +1,12 @@
 import { test, expect, vi } from 'vitest';
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:http';
 import { startBridge, type BridgeOptions } from '../src/runtime.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
+import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/protocol/mailbox';
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat-lifecycle.ts';
 
@@ -43,6 +44,89 @@ async function fixture(configured = true) {
       child !== undefined && (child.exitCode !== null || child.signalCode !== null),
   };
 }
+
+test('addon maintenance switches WoW folders without stopping Eve or the desktop API', async () => {
+  const f = await fixture(false);
+  f.options.deferWowTransport = true;
+  const startAgent = vi.fn(f.options.startAgent!);
+  f.options.startAgent = startAgent;
+  let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
+  async function game(name: string) {
+    const folder = path.join(f.dataDirectory, name);
+    const addon = path.join(folder, 'Interface/AddOns/WispAI');
+    const file = path.join(folder, 'WTF/Account/account/realm/character/AddOns.txt');
+    await mkdir(path.dirname(file), { recursive: true });
+    await mkdir(addon, { recursive: true });
+    await writeFile(file, '');
+    await writeFile(path.join(addon, 'WispAI.toc'), '## Title: Wisp');
+    return {
+      folder,
+      async hello(session: string, seq: number) {
+        const packet = { type: 'hello', session, seq, at: seq, transportVersion: 2 };
+        const [frame] = encodeMessage(Buffer.from(JSON.stringify(packet)), UPLINK_KIND, 1, seq);
+        await writeFile(file, replaceUplink(await readFile(file, 'utf8'), frame));
+      },
+    };
+  }
+  try {
+    const first = await game('first');
+    const second = await game('second');
+    const config = path.join(f.dataDirectory, 'config.local.json');
+    await writeFile(config, JSON.stringify({ wow: first.folder }));
+    bridge = await startBridge(f.options);
+    const state = bridge.state;
+    const { port, token } = JSON.parse(
+      await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
+    );
+    async function request(route: string, body?: unknown) {
+      const response = await fetch(`http://127.0.0.1:${port}${route}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: response.status, data: await response.json() };
+    }
+    const transport = (action: 'pause' | 'resume', wow?: string) =>
+      request('/addon/transport', { action, wow });
+
+    await first.hello('cached', 1);
+    expect(state.activeTransport).toBe('');
+    expect(startAgent).toHaveBeenCalledTimes(1);
+    expect((await request('/status')).status).toBe(200);
+
+    // The upgrade path resumes the configured folder once the addon is ready.
+    expect((await transport('resume')).status).toBe(200);
+    expect(state.activeTransport).toBe('');
+    await first.hello('first', 2);
+    await vi.waitFor(() => expect(state.activeTransport).toBe('first'), { timeout: 3000 });
+
+    expect((await transport('pause')).status).toBe(200);
+    expect(state.activeTransport).toBe('');
+    const saved = await request('/connections/save', {
+      provider: 'compatible',
+      name: 'Local model',
+      baseURL: 'http://localhost:1234/v1',
+      models: [{ id: 'local-test', contextWindow: 64000 }],
+    });
+    expect(saved.status).toBe(200);
+    expect((await transport('resume', path.join(f.dataDirectory, 'missing'))).status).toBe(400);
+    expect(JSON.parse(await readFile(config, 'utf8')).wow).toBe(first.folder);
+
+    // Failed installs can restore the previous folder. Successful installs switch it.
+    expect((await transport('resume')).status).toBe(200);
+    expect((await transport('resume', second.folder)).status).toBe(200);
+    await first.hello('old-folder', 3);
+    await second.hello('second', 4);
+    await vi.waitFor(() => expect(state.activeTransport).toBe('second'), { timeout: 3000 });
+    expect(JSON.parse(await readFile(config, 'utf8')).wow).toBe(second.folder);
+    expect((await request('/status')).status).toBe(200);
+    expect(startAgent).toHaveBeenCalledTimes(1);
+    expect(f.agentStopped()).toBe(false);
+  } finally {
+    await bridge?.stop();
+    await rm(f.dataDirectory, { recursive: true, force: true });
+  }
+});
 
 test('a fresh addon installation starts before a default model is selected', async () => {
   const f = await fixture();

@@ -223,8 +223,6 @@ function createDesktopSession() {
       'Installing addon',
       async () => {
         await desktop('install_addon', { wow: getState().wow });
-        expectService();
-        loadedAccount = '';
         update({ info: await desktop<DesktopInfo>('desktop_info') });
       },
       'Addon installed. Restart WoW after the first installation; use /reload for updates.',
@@ -348,6 +346,10 @@ function createDesktopSession() {
         onDesktopInfo(info) {
           update({ info, wow: info.wow || '', onboarding: resumeOnboarding(info.configured) });
           if (!info.configured) void searchInstallations();
+        },
+        onAddonUpdate({ wow, ...addon }) {
+          const { info } = getState();
+          if (info && info.wow === wow) update({ info: { ...info, ...addon } });
         },
         launchBridge,
         refresh,

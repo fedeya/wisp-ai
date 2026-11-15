@@ -199,60 +199,34 @@ async fn bridge_request(
     host.request(&method, &route, body).await
 }
 
-#[tauri::command]
-async fn desktop_info(
-    app: tauri::AppHandle,
-    host: tauri::State<'_, Host>,
-    telemetry: tauri::State<'_, telemetry::Telemetry>,
-) -> Result<Value, String> {
-    // Desktop reads this before starting the bridge. Serialize the pending update
-    // with manual installs and any repeated initialization requests.
-    let _operation = host.lifecycle.lock().await;
-    let mut addon_notice = host.addon_notice.lock().await;
-    let pending = host.data.join(addon_update::PENDING_FILE);
-    let check_update =
-        cfg!(all(windows, not(debug_assertions))) && addon_notice.is_none() && pending.is_file();
+async fn addon_installation(host: &Host) -> Result<(Option<String>, Option<bool>), String> {
     let data = host.data.clone();
     let payload = host.payload.clone();
-    let (wow, mut addon_outdated, update_wow) = tauri::async_runtime::spawn_blocking(move || {
+    tauri::async_runtime::spawn_blocking(move || {
         let wow = fs::read(data.join("config.local.json"))
             .ok()
             .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
             .and_then(|config| config["wow"].as_str().map(str::to_owned));
-        let addon_outdated = wow.as_deref().and_then(|wow| {
+        let outdated = wow.as_deref().and_then(|folder| {
             addon_update::differs(
                 &payload.join("addon/WispAI"),
-                &Path::new(wow).join("Interface/AddOns/WispAI"),
+                &Path::new(folder).join("Interface/AddOns/WispAI"),
             )
             .ok()
         });
-        let update_wow = wow
-            .as_ref()
-            .filter(|wow| check_update && addon_update::candidate(Path::new(wow), addon_outdated))
-            .cloned();
-        (wow, addon_outdated, update_wow)
+        (wow, outdated)
     })
     .await
-    .map_err(|e| e.to_string())?;
-    if check_update {
-        if let Some(wow) = update_wow {
-            let result = run_addon_installer(&host, wow).await;
-            telemetry::addon_install_finished(app, result.as_ref().err().map(|(code, _)| *code));
-            if result.is_ok() {
-                addon_outdated = Some(false);
-                if addon_update::wow_running() {
-                    *addon_notice = Some(addon_update::Notice::ReloadRequired);
-                }
-            } else {
-                tracing::warn!(
-                    event = "addon.auto_update_failed",
-                    "Automatic addon update failed"
-                );
-                *addon_notice = Some(addon_update::Notice::Failed);
-            }
-        }
-        let _ = fs::remove_file(pending);
-    }
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn desktop_info(
+    host: tauri::State<'_, Host>,
+    telemetry: tauri::State<'_, telemetry::Telemetry>,
+) -> Result<Value, String> {
+    let (wow, addon_outdated) = addon_installation(&host).await?;
+    let addon_notice = *host.addon_notice.lock().await;
     Ok(json!({
         "wow": wow,
         "configured": wow.is_some(),
@@ -260,9 +234,62 @@ async fn desktop_info(
         "platform": std::env::consts::OS,
         "version": env!("CARGO_PKG_VERSION"),
         "addonOutdated": addon_outdated,
-        "addonUpdateNotice": *addon_notice,
+        "addonUpdateNotice": addon_notice,
         "telemetryEnabled": telemetry.enabled(),
     }))
+}
+
+#[tauri::command]
+async fn auto_update_addon(
+    app: tauri::AppHandle,
+    host: tauri::State<'_, Host>,
+) -> Result<Option<Value>, String> {
+    if !cfg!(all(windows, not(debug_assertions))) {
+        return Ok(None);
+    }
+    let _operation = host.lifecycle.lock().await;
+    let pending = host.data.join(addon_update::PENDING_FILE);
+    if !pending.is_file() {
+        return Ok(None);
+    }
+    let (wow, mut outdated) = addon_installation(&host).await?;
+    let mut notice = None;
+    if let Some(folder) = wow.as_ref() {
+        if addon_update::candidate(Path::new(folder), outdated) {
+            let result = run_addon_installer(&host, folder.clone()).await;
+            telemetry::addon_install_finished(app, result.as_ref().err().map(|(code, _)| *code));
+            match result {
+                Ok(_) => {
+                    outdated = Some(false);
+                    if addon_update::wow_running() {
+                        notice = Some(addon_update::Notice::ReloadRequired);
+                    }
+                }
+                Err((_, error)) => {
+                    tracing::warn!(
+                        event = "addon.auto_update_failed",
+                        error = %error,
+                        "Automatic addon update failed"
+                    );
+                    notice = Some(addon_update::Notice::Failed);
+                }
+            }
+        } else if let Err(error) = resume_wow_transport(&host, None).await {
+            tracing::warn!(
+                event = "addon.transport_resume_failed",
+                error = %error,
+                "Could not resume communication with WoW after checking for an addon update"
+            );
+            notice = Some(addon_update::Notice::Failed);
+        }
+    }
+    *host.addon_notice.lock().await = notice;
+    let _ = fs::remove_file(pending);
+    Ok(Some(json!({
+        "wow": wow,
+        "addonOutdated": outdated,
+        "addonUpdateNotice": notice,
+    })))
 }
 
 #[tauri::command]
@@ -285,6 +312,11 @@ async fn start_host(host: &Host) -> Result<(), String> {
         .open(host.data.join("runtime/bridge.log"))
         .map_err(|e| e.to_string())?;
     let mut command = host.command("src/main.ts")?;
+    if cfg!(all(windows, not(debug_assertions)))
+        && host.data.join(addon_update::PENDING_FILE).is_file()
+    {
+        command.env("WISP_DEFER_WOW_TRANSPORT", "1");
+    }
     command
         .stdin(Stdio::null())
         .stdout(log.try_clone().map_err(|e| e.to_string())?)
@@ -377,10 +409,7 @@ async fn install_addon(
         *addon_notice = None;
     }
     telemetry::addon_install_finished(app, result.as_ref().err().map(|(code, _)| *code));
-    let restart = start_host(&host).await;
-    let message = result.map_err(|(_, message)| message)?;
-    restart?;
-    Ok(message)
+    result.map_err(|(_, message)| message)
 }
 
 async fn run_addon_installer(
@@ -397,17 +426,42 @@ async fn run_addon_installer(
             "Choose the WoW client folder containing Wow.exe or World of Warcraft.app.".into(),
         ));
     }
-    stop_host(host)
-        .await
-        .map_err(|error| (AddonInstallError::BridgeStop, error))?;
     let mut command = host
         .command("scripts/install.ts")
         .map_err(|error| (AddonInstallError::InstallerUnavailable, error))?;
     command
-        .arg(wow)
+        .arg(&wow)
+        .arg("--skip-config")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    wait_for_service(host)
+        .await
+        .map_err(|error| (AddonInstallError::TransportPause, error))?;
+    host.request("POST", "/addon/transport", json!({"action": "pause"}))
+        .await
+        .map_err(|error| (AddonInstallError::TransportPause, error))?;
+
+    const MESSAGE: &str =
+        "Addon installed. Restart WoW after first installation; use /reload for updates.";
+    let result = match run_addon_install_command(command).await {
+        Ok(()) => resume_wow_transport(host, Some(&wow))
+            .await
+            .map_err(|error| (AddonInstallError::TransportResume, error)),
+        Err(error) => Err(error),
+    };
+    if result.is_err() {
+        restore_wow_transport(host).await;
+    }
+    result.map(|()| MESSAGE.into())
+}
+
+async fn run_addon_install_command(
+    mut command: Command,
+) -> Result<(), (telemetry::AddonInstallError, String)> {
+    use telemetry::AddonInstallError;
+
     let output = tauri::async_runtime::spawn_blocking(move || command.output())
         .await
         .map_err(|e| (AddonInstallError::InstallerLaunch, e.to_string()))?
@@ -421,7 +475,46 @@ async fn run_addon_installer(
                 .collect(),
         ));
     }
-    Ok("Addon installed. Restart WoW after first installation; use /reload for updates.".into())
+    Ok(())
+}
+
+async fn wait_for_service(host: &Host) -> Result<(), String> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        match host.request("GET", "/status", json!({})).await {
+            Ok(_) => return Ok(()),
+            Err(error) if !host.child_running()? || std::time::Instant::now() >= deadline => {
+                return Err(error);
+            }
+            Err(_) => {
+                tauri::async_runtime::spawn_blocking(|| {
+                    std::thread::sleep(Duration::from_millis(100))
+                })
+                .await
+                .map_err(|error| error.to_string())?;
+            }
+        }
+    }
+}
+
+async fn resume_wow_transport(host: &Host, wow: Option<&str>) -> Result<(), String> {
+    wait_for_service(host).await?;
+    let body = match wow {
+        Some(folder) => json!({"action": "resume", "wow": folder}),
+        None => json!({"action": "resume"}),
+    };
+    host.request("POST", "/addon/transport", body).await?;
+    Ok(())
+}
+
+async fn restore_wow_transport(host: &Host) {
+    if let Err(error) = resume_wow_transport(host, None).await {
+        tracing::warn!(
+            event = "addon.transport_resume_failed",
+            error = %error,
+            "Could not restore the WoW connection after installation failed"
+        );
+    }
 }
 
 #[tauri::command]
@@ -670,6 +763,7 @@ fn main() {
             updates::update_channel,
             bridge_request,
             desktop_info,
+            auto_update_addon,
             game_detection::detect_game_folders,
             start_bridge,
             pick_folder,
@@ -768,6 +862,7 @@ mod tests {
     #[test]
     fn desktop_routes_are_explicit() {
         assert!(permitted("GET", "/status"));
+        assert!(!permitted("POST", "/addon/transport"));
         assert!(permitted("POST", "/mcps/save"));
         assert!(permitted("POST", "/routines/action"));
         assert!(permitted("POST", "/routines/open"));

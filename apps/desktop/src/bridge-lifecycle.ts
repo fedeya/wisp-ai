@@ -1,8 +1,11 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { desktop, type DesktopInfo } from './api';
 
+type AddonInfo = Pick<DesktopInfo, 'wow' | 'addonOutdated' | 'addonUpdateNotice'>;
+
 type BridgeLifecycleOptions = {
   onDesktopInfo: (info: DesktopInfo) => void;
+  onAddonUpdate: (info: AddonInfo) => void;
   launchBridge: () => Promise<void>;
   refresh: () => Promise<void>;
   onError: (message: string) => void;
@@ -11,6 +14,7 @@ type BridgeLifecycleOptions = {
 
 export function startBridgeLifecycle({
   onDesktopInfo,
+  onAddonUpdate,
   launchBridge,
   refresh,
   onError,
@@ -20,16 +24,22 @@ export function startBridgeLifecycle({
   let unsubscribe: UnlistenFn | undefined;
 
   async function initialize() {
-    const info = await desktop<DesktopInfo>('desktop_info');
-    if (disposed) {
-      return;
-    }
-    onDesktopInfo(info);
     try {
       await launchBridge();
     } catch (error) {
       onError(String(error));
     }
+    if (disposed) return;
+    const info = await desktop<DesktopInfo>('desktop_info');
+    if (disposed) return;
+    onDesktopInfo(info);
+    void desktop<AddonInfo | null>('auto_update_addon')
+      .then((update) => {
+        if (!disposed && update) onAddonUpdate(update);
+      })
+      .catch((error) => {
+        if (!disposed) onError(String(error));
+      });
     await refresh();
     if (disposed) {
       return;

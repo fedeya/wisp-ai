@@ -56,7 +56,8 @@ struct Preferences {
 #[derive(Clone, Copy)]
 pub enum AddonInstallError {
     InvalidGameFolder,
-    BridgeStop,
+    TransportPause,
+    TransportResume,
     InstallerUnavailable,
     InstallerLaunch,
     InstallerFailed,
@@ -68,7 +69,8 @@ fn addon_install_properties(error: Option<AddonInstallError>) -> Value {
     };
     let code = match error {
         AddonInstallError::InvalidGameFolder => "invalid_game_folder",
-        AddonInstallError::BridgeStop => "bridge_stop_failed",
+        AddonInstallError::TransportPause => "transport_pause_failed",
+        AddonInstallError::TransportResume => "transport_resume_failed",
         AddonInstallError::InstallerUnavailable => "installer_unavailable",
         AddonInstallError::InstallerLaunch => "installer_launch_failed",
         AddonInstallError::InstallerFailed => "installer_failed",
