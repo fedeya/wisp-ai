@@ -8,8 +8,9 @@ import {
 import { useState } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
-import { Button, Input, NumberInput, Select } from '../ui/controls';
-import type { ConnectionsView } from './connections-view';
+import { Button, Input, NumberInput, Select } from '../ui/Controls';
+import { desktopLocked } from '../../desktop-controller';
+import { useDesktop, useDesktopActions } from '../../use-desktop';
 
 const labelClass = 'text-[12px] font-medium text-[#bdcccf]';
 const modelFieldsClass =
@@ -37,14 +38,18 @@ function connectionDetails(id: string | undefined, value: ConnectionFields) {
 }
 
 export default function ConnectionEditor({
-  app,
   connection,
   close,
 }: {
-  app: ConnectionsView;
   connection?: ConnectionView;
   close: () => void;
 }) {
+  const app = useDesktop((state) => ({
+    busy: state.busy,
+    busyTarget: state.busyTarget,
+    locked: desktopLocked(state),
+  }));
+  const { loadModels, work } = useDesktopActions();
   const [discovered, setDiscovered] = useState<ConnectionModel[]>([]);
   const defaultValues: ConnectionFields = {
     provider: connection?.provider || 'anthropic',
@@ -58,7 +63,7 @@ export default function ConnectionEditor({
   const form = useForm({
     defaultValues,
     onSubmit: ({ value }) =>
-      app.work(
+      work(
         'Saving AI connection',
         async () => {
           await request('/connections/save', {
@@ -66,13 +71,18 @@ export default function ConnectionEditor({
             models: value.models,
           });
           close();
-          await app.loadModels();
+          await loadModels();
         },
         'Connection saved. Choose a default model below.',
         'connection-editor',
       ),
   });
   const { provider, baseURL, modelId, models } = useSelector(form.store, (state) => state.values);
+  const canSave =
+    !app.locked &&
+    models.length > 0 &&
+    !modelId.trim() &&
+    models.every(({ contextWindow }) => !!contextWindow);
   const definition = providerDefinitions.find((item) => item.id === provider)!;
 
   function addModel() {
@@ -90,7 +100,14 @@ export default function ConnectionEditor({
   }
 
   return (
-    <div className="field-section api-connection-form gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid">
+    <form
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canSave && !form.state.isSubmitting) void form.handleSubmit();
+      }}
+      className="field-section api-connection-form gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid"
+    >
       <label className={labelClass} htmlFor="ai-provider">
         Provider
       </label>
@@ -196,7 +213,7 @@ export default function ConnectionEditor({
           size="text"
           disabled={app.locked || (provider === 'compatible' && !baseURL)}
           onClick={() =>
-            app.work(
+            work(
               'Loading provider models',
               async () => {
                 const result = await request<{ models: ConnectionModel[] }>(
@@ -294,7 +311,7 @@ export default function ConnectionEditor({
         <Button
           disabled={app.locked || !models.length}
           onClick={() =>
-            app.work(
+            work(
               'Testing AI connection',
               () => {
                 const value = form.state.values;
@@ -310,16 +327,7 @@ export default function ConnectionEditor({
         >
           Test first model
         </Button>
-        <Button
-          intent="primary"
-          disabled={
-            app.locked ||
-            !models.length ||
-            !!modelId.trim() ||
-            models.some((model) => !model.contextWindow)
-          }
-          onClick={() => void form.handleSubmit()}
-        >
+        <Button type="submit" intent="primary" disabled={!canSave}>
           Save connection
         </Button>
         <Button intent="quiet" disabled={app.locked} onClick={close}>
@@ -330,6 +338,6 @@ export default function ConnectionEditor({
         Testing sends a small request to the provider and may incur usage charges.
       </p>
       <ActionProgress label={app.busyTarget === 'connection-editor' ? app.busy : ''} />
-    </div>
+    </form>
   );
 }

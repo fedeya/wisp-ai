@@ -1,0 +1,166 @@
+import { useForm, useSelector } from '@tanstack/react-form';
+import { useEffect } from 'react';
+import { useNavigate } from 'react-router';
+import { request } from '../../api';
+import { ActionProgress } from '../ui/ActionProgress';
+import Icon from '../ui/Icon';
+import { Badge, Button, Card, Select } from '../ui/Controls';
+import { desktopLocked } from '../../desktop-controller';
+import { useDesktop, useDesktopActions } from '../../use-desktop';
+
+export default function ChatGptConnection() {
+  const app = useDesktop((state) => ({
+    status: state.status,
+    busy: state.busy,
+    busyTarget: state.busyTarget,
+    locked: desktopLocked(state),
+  }));
+  const { signIn, work, setConfirmation } = useDesktopActions();
+  const navigate = useNavigate();
+  const auth = app.status?.auth;
+  const activeAccount = auth?.activeId || '';
+  const accountForm = useForm({
+    defaultValues: { account: activeAccount },
+    onSubmit: ({ value }) =>
+      work(
+        'Switching account',
+        () => request('/auth/select', { profileId: value.account }),
+        undefined,
+        'accounts',
+      ),
+  });
+  const account = useSelector(accountForm.store, (state) => state.values.account);
+  useEffect(() => {
+    if (auth && account !== activeAccount && !auth.profiles.some(({ id }) => id === account)) {
+      accountForm.resetField('account');
+    }
+  }, [account, accountForm, activeAccount, auth]);
+  const chatgptConnected = auth?.status === 'connected';
+  const authorizationPending = auth?.status === 'authorizing';
+
+  return (
+    <Card kind="provider">
+      <div className="provider-heading gap-[15px] flex items-center max-xl:flex-wrap">
+        <div className="provider-symbol border border-solid border-[#36534d] [background:#243e3a] text-accent rounded-[11px] w-[47px] h-[47px] flex items-center justify-center shrink-0">
+          <Icon name="spark" size={25} />
+        </div>
+        <div>
+          <h2>ChatGPT</h2>
+          <p className="text-muted text-[13px]">
+            Connect with your subscription. No API key needed.
+          </p>
+        </div>
+        <Badge positive={chatgptConnected} className="ml-auto">
+          {chatgptConnected
+            ? 'Connected'
+            : authorizationPending
+              ? 'Waiting for browser'
+              : 'Not connected'}
+        </Badge>
+      </div>
+      {auth?.account && (
+        <p className="account-name text-[14px]! text-[#d1e3dd]! mt-[24px]">{auth.account}</p>
+      )}
+      {auth?.message && <p className="muted text-muted text-[13px]">{auth.message}</p>}
+      {!app.status && (
+        <div className="empty-inline text-[12px] text-[#c0a77a] mt-[22px]">
+          Start Wisp to manage your account.{' '}
+          <Button intent="quiet" size="text" onClick={() => void navigate('/')}>
+            Go to Overview
+          </Button>
+        </div>
+      )}
+      <div className="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
+        <ActionProgress label={app.busyTarget === '' ? app.busy : ''} />
+        <Button
+          intent={chatgptConnected ? 'default' : 'primary'}
+          onClick={() => signIn(account)}
+          disabled={app.locked || !app.status}
+        >
+          {app.busy === 'Opening sign-in'
+            ? 'Opening browser…'
+            : chatgptConnected
+              ? 'Reconnect'
+              : 'Continue with ChatGPT'}
+          <Icon name="arrow" size={17} />
+        </Button>
+        <Button onClick={() => signIn(undefined, true)} disabled={app.locked || !app.status}>
+          Add account
+        </Button>
+        {authorizationPending && (
+          <Button
+            onClick={() => work('Cancelling sign-in', () => request('/auth/cancel', {}))}
+            disabled={!!app.busy}
+          >
+            Cancel sign-in
+          </Button>
+        )}
+        {chatgptConnected && (
+          <Button
+            intent="quiet"
+            destructive
+            disabled={app.locked}
+            onClick={() =>
+              setConfirmation({
+                label:
+                  'Disconnect this AI connection? Your chats and memory will stay on this computer.',
+                run: () =>
+                  work(
+                    'Disconnecting',
+                    () => request('/auth/disconnect', {}),
+                    'Connection disconnected.',
+                  ),
+              })
+            }
+          >
+            Disconnect
+          </Button>
+        )}
+      </div>
+      {auth && auth.profiles.length > 0 && (
+        <div className="field-section border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px]">
+          <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="accounts">
+            Saved accounts
+          </label>
+          <form
+            className="inline-field gap-[12px] mt-[10px] flex items-center"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (
+                !app.locked &&
+                account &&
+                account !== activeAccount &&
+                !accountForm.state.isSubmitting
+              ) {
+                void accountForm.handleSubmit();
+              }
+            }}
+          >
+            <accountForm.Field name="account">
+              {(field) => (
+                <Select
+                  className="flex-[1]"
+                  id="accounts"
+                  name={field.name}
+                  value={field.state.value}
+                  onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                  disabled={app.locked}
+                >
+                  {auth.profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </accountForm.Field>
+            <Button type="submit" disabled={app.locked || !account || account === activeAccount}>
+              Use account
+            </Button>
+          </form>
+          <ActionProgress label={app.busyTarget === 'accounts' ? app.busy : ''} />
+        </div>
+      )}
+    </Card>
+  );
+}

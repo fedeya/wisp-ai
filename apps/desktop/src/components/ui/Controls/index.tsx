@@ -2,25 +2,25 @@ import { Button as BaseButton } from '@base-ui/react/button';
 import { Input as BaseInput } from '@base-ui/react/input';
 import type { ComponentProps } from 'react';
 import type { VariantProps } from 'tailwind-variants';
-import { badge, button, card, checkbox, field, navigationButton, textarea } from './control-styles';
+import { badge, button, card, checkbox, field, textarea } from './styles';
 
-type ButtonProps = ComponentProps<'button'> &
-  VariantProps<typeof button> & { navigation?: boolean; selected?: boolean };
+type ButtonProps = ComponentProps<'button'> & VariantProps<typeof button>;
 
 export function Button({
   intent,
   size,
   destructive,
-  navigation,
-  selected,
   className,
   type = 'button',
   ...props
 }: ButtonProps) {
-  const classes = navigation
-    ? navigationButton({ selected, class: className })
-    : button({ intent, size, destructive, class: className });
-  return <BaseButton {...props} type={type} className={classes} />;
+  return (
+    <BaseButton
+      {...props}
+      type={type}
+      className={button({ intent, size, destructive, class: className })}
+    />
+  );
 }
 
 type BadgeProps = ComponentProps<'span'> & VariantProps<typeof badge>;

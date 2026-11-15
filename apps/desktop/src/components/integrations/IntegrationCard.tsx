@@ -1,7 +1,7 @@
 import type { CapabilityView } from '@wisp/protocol/capabilities';
 import { ActionProgress } from '../ui/ActionProgress';
 import Toggle from '../ui/Toggle';
-import { Badge, Card, Checkbox } from '../ui/controls';
+import { Badge, Card, Checkbox } from '../ui/Controls';
 
 type IntegrationCardProps = {
   entry: CapabilityView;

@@ -27,72 +27,59 @@ type DesktopState = {
   detectingGame: boolean;
   detectionFailed: boolean;
   models: Model[];
-  model: string;
-  account: string;
   logs: string;
   confirm: Confirmation | null;
   connectionError: string;
   modelsError: string;
-  connected: boolean;
-  active: boolean;
-  locked: boolean;
 };
 
-export function createDesktopController() {
-  const store = createStore<DesktopState>()(() => ({
-    status: null,
-    info: null,
-    loading: true,
-    starting: false,
-    busy: '',
-    busyTarget: '',
-    feedback: '',
-    failed: false,
-    wow: '',
-    detectedFolders: [],
-    detectingGame: false,
-    detectionFailed: false,
-    models: [],
-    model: '',
-    account: '',
-    logs: '',
-    confirm: null,
-    connectionError: '',
-    modelsError: '',
-    connected: false,
-    active: false,
-    locked: false,
-  }));
-  const { getState } = store;
+const initialState: DesktopState = {
+  status: null,
+  info: null,
+  loading: true,
+  starting: false,
+  busy: '',
+  busyTarget: '',
+  feedback: '',
+  failed: false,
+  wow: '',
+  detectedFolders: [],
+  detectingGame: false,
+  detectionFailed: false,
+  models: [],
+  logs: '',
+  confirm: null,
+  connectionError: '',
+  modelsError: '',
+};
+
+export const desktopConnected = ({ status }: DesktopState) =>
+  status?.modelConnected ?? status?.auth.status === 'connected';
+export const desktopActive = ({ status }: DesktopState) => (status?.activeTurns ?? 0) > 0;
+export const desktopLocked = (state: DesktopState) => !!state.busy || desktopActive(state);
+
+function createDesktopSession() {
+  const getState = (): DesktopState => desktopStore.getState();
+  let disposed = false;
   let polling = false;
   let loadedAccount = '';
-  let bridgeLifecycle: ReturnType<typeof startBridgeLifecycle> | undefined;
+  let stopBridgeLifecycle: (() => void) | undefined;
 
   function update(patch: Partial<DesktopState>) {
-    store.setState((state) => {
-      const next = { ...state, ...patch };
-      next.connected = next.status?.modelConnected ?? next.status?.auth.status === 'connected';
-      next.active = (next.status?.activeTurns || 0) > 0;
-      next.locked = !!next.busy || next.active;
-      return next;
-    });
+    if (!disposed) desktopStore.setState(patch);
   }
 
   async function refresh() {
-    if (!native || polling) return;
+    if (!native || disposed || polling) return;
     polling = true;
     try {
       const status = await request<Status>('/status');
-      const { account, model, starting } = getState();
+      if (disposed) return;
+      const { starting } = getState();
       update({
         status,
         connectionError: '',
         starting: starting && !status.ready,
-        account:
-          account && status.auth.profiles.some((profile) => profile.id === account)
-            ? account
-            : status.auth.activeId || '',
-        model: model || status.model,
       });
       const catalogRevision = JSON.stringify([
         status.auth.activeId,
@@ -100,7 +87,7 @@ export function createDesktopController() {
         status.auth.revision,
         status.connections,
       ]);
-      if (catalogRevision !== loadedAccount && !getState().active && !getState().busy) {
+      if (catalogRevision !== loadedAccount && !desktopLocked(getState())) {
         loadedAccount = catalogRevision;
         try {
           await loadModels();
@@ -123,7 +110,7 @@ export function createDesktopController() {
     success?: string,
     target = '',
   ) {
-    if (getState().busy) return;
+    if (disposed || getState().busy) return;
     update({ busy: label, busyTarget: target, failed: false, feedback: '' });
     try {
       await action();
@@ -139,22 +126,15 @@ export function createDesktopController() {
   async function loadModels() {
     update({ models: [] });
     const { models } = await request<{ models: Model[] }>('/auth/models');
-    const { model, status } = getState();
-    update({
-      models,
-      modelsError: '',
-      model: models.some((item) => item.slug === model)
-        ? model
-        : status?.model || models[0]?.slug || '',
-    });
+    update({ models, modelsError: '' });
   }
 
-  async function signIn(add = false) {
+  async function signIn(profileId?: string, add = false) {
     await work(
       'Opening sign-in',
       async () => {
         const { authorizationUrl } = await request<{ authorizationUrl: string }>('/auth/start', {
-          profileId: add ? undefined : getState().account || undefined,
+          profileId: profileId || undefined,
           newAccount: add,
         });
         await desktop('open_sign_in', { url: authorizationUrl });
@@ -170,6 +150,7 @@ export function createDesktopController() {
   }
 
   async function launchBridge() {
+    if (disposed) return;
     update({ starting: true });
     try {
       await desktop('start_bridge');
@@ -180,9 +161,7 @@ export function createDesktopController() {
   }
 
   async function start() {
-    update({ starting: true });
     await work('Starting Wisp', launchBridge, 'Wisp is starting.');
-    if (getState().failed) update({ starting: false });
   }
 
   async function install() {
@@ -190,8 +169,7 @@ export function createDesktopController() {
     await work(
       'Installing addon',
       async () => {
-        const feedback = await desktop<string>('install_addon', { wow: getState().wow });
-        update({ feedback });
+        await desktop('install_addon', { wow: getState().wow });
         update({ info: await desktop<DesktopInfo>('desktop_info') });
         await launchBridge();
       },
@@ -202,7 +180,7 @@ export function createDesktopController() {
 
   async function importPrevious() {
     const source = await desktop<string | null>('pick_folder');
-    if (!source) return;
+    if (!source || disposed) return;
     await work(
       'Importing previous installation',
       async () => {
@@ -269,13 +247,16 @@ export function createDesktopController() {
   }
 
   async function searchInstallations() {
-    const { info, detectingGame, locked, wow: previous } = getState();
-    if (!native || bridgeLifecycle?.disposed || info?.configured || detectingGame || locked) return;
+    const state = getState();
+    const { info, detectingGame, wow: previous } = state;
+    if (!native || disposed || info?.configured || detectingGame || desktopLocked(state)) {
+      return;
+    }
     update({ detectingGame: true, detectionFailed: false, feedback: '', failed: false });
     const folders = new Set<string>();
     let accepting = true;
     const addFolder = (folder: string) => {
-      if (accepting && !bridgeLifecycle?.disposed && !getState().info?.configured) {
+      if (accepting && !disposed && !getState().info?.configured) {
         folders.add(folder);
       }
     };
@@ -287,7 +268,7 @@ export function createDesktopController() {
       update({ detectionFailed: true });
     } finally {
       accepting = false;
-      if (!bridgeLifecycle?.disposed) {
+      if (!disposed) {
         const detectedFolders = [...folders];
         update({
           detectedFolders,
@@ -308,13 +289,16 @@ export function createDesktopController() {
   }
 
   return {
-    store,
+    dispose() {
+      disposed = true;
+      stopBridgeLifecycle?.();
+    },
     mount() {
       if (!native) {
         update({ loading: false });
         return;
       }
-      bridgeLifecycle = startBridgeLifecycle({
+      stopBridgeLifecycle = startBridgeLifecycle({
         onDesktopInfo(info) {
           update({ info, wow: info.wow || '' });
           if (!info.configured) void searchInstallations();
@@ -324,7 +308,6 @@ export function createDesktopController() {
         onError: (feedback) => update({ failed: true, feedback }),
         onInitializationError: (feedback) => update({ failed: true, feedback, loading: false }),
       });
-      return bridgeLifecycle.dispose;
     },
     actions: {
       refresh,
@@ -351,8 +334,6 @@ export function createDesktopController() {
           'Wisp stopped.',
         ),
       selectFolder: (wow: string) => update({ wow }),
-      chooseAccount: (account: string) => update({ account }),
-      chooseModel: (model: string) => update({ model }),
       setConfirmation: (confirm: Confirmation | null) => update({ confirm }),
       setBusy: (busy: string) => update({ busy }),
       clearFeedback: () => update({ feedback: '' }),
@@ -360,4 +341,15 @@ export function createDesktopController() {
   };
 }
 
-export type DesktopController = ReturnType<typeof createDesktopController>;
+let session = createDesktopSession();
+export const desktopStore = createStore(() => ({ ...initialState, actions: session.actions }));
+
+export function mountDesktop() {
+  const mounted = session;
+  mounted.mount();
+  return () => {
+    mounted.dispose();
+    session = createDesktopSession();
+    desktopStore.setState({ ...initialState, actions: session.actions }, true);
+  };
+}

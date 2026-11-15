@@ -1,6 +1,16 @@
+import TelemetrySettings from '../components/settings/TelemetrySettings';
+import Diagnostics from './Diagnostics';
+import Memory from './Memory';
+import Panels from './Panels';
+import Routines from './Routines';
+import Connections from './Connections';
+import Integrations from './Integrations';
+import Overview from './Overview';
+
 export const desktopPages = [
   {
     name: 'Overview',
+    Component: Overview,
     path: '/',
     icon: 'home',
     title: 'Wisp status',
@@ -8,6 +18,7 @@ export const desktopPages = [
   },
   {
     name: 'Connections',
+    Component: Connections,
     path: '/connections',
     icon: 'link',
     title: 'AI connections',
@@ -15,6 +26,7 @@ export const desktopPages = [
   },
   {
     name: 'Integrations',
+    Component: Integrations,
     path: '/integrations',
     icon: 'tools',
     title: 'Integrations',
@@ -22,6 +34,7 @@ export const desktopPages = [
   },
   {
     name: 'Memory',
+    Component: Memory,
     path: '/memory',
     icon: 'logs',
     title: 'Memory',
@@ -29,6 +42,7 @@ export const desktopPages = [
   },
   {
     name: 'Panels',
+    Component: Panels,
     path: '/panels',
     icon: 'panel',
     title: 'Panels',
@@ -36,6 +50,7 @@ export const desktopPages = [
   },
   {
     name: 'Routines',
+    Component: Routines,
     path: '/routines',
     icon: 'spark',
     title: 'Routines',
@@ -43,6 +58,7 @@ export const desktopPages = [
   },
   {
     name: 'Settings',
+    Component: TelemetrySettings,
     path: '/settings',
     icon: 'refresh',
     title: 'Settings',
@@ -50,6 +66,7 @@ export const desktopPages = [
   },
   {
     name: 'Diagnostics',
+    Component: Diagnostics,
     path: '/diagnostics',
     icon: 'logs',
     title: 'Diagnostics',

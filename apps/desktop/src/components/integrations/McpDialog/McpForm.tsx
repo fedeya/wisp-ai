@@ -1,12 +1,13 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { useForm, useSelector } from '@tanstack/react-form';
-import { useRef, useState, type RefObject } from 'react';
-import { request, type Mcp } from '../../api';
-import Icon from '../ui/Icon';
-import { button } from '../ui/control-styles';
-import { Button, Checkbox, Input, Select, Textarea } from '../ui/controls';
+import { useImperativeHandle, useState, type RefObject } from 'react';
+import { request, type Mcp } from '../../../api';
+import Icon from '../../ui/Icon';
+import { button } from '../../ui/Controls/styles';
+import { Button, Checkbox, Input, Select, Textarea } from '../../ui/Controls';
 
 type SubmitMode = 'save' | 'test';
+export type McpFormActions = { isSubmitting: () => boolean };
 
 type McpFields = {
   name: string;
@@ -20,9 +21,9 @@ type McpFields = {
   enabled: boolean;
 };
 
-type McpDialogProps = {
+export type McpDialogProps = {
   server: Mcp | null;
-  pending: RefObject<boolean>;
+  formRef: RefObject<McpFormActions | null>;
   close: () => void;
   saved: () => Promise<void>;
 };
@@ -38,10 +39,11 @@ function payloadFor(values: McpFields) {
   if (!Array.isArray(args) || args.some((argument) => typeof argument !== 'string')) {
     throw Error('Arguments must be a JSON array of strings.');
   }
-  const env: unknown = values.env.trim() ? JSON.parse(values.env) : undefined;
+  const env: unknown = isLocal && values.env.trim() ? JSON.parse(values.env) : undefined;
   if (
-    env &&
-    (typeof env !== 'object' ||
+    env !== undefined &&
+    (!env ||
+      typeof env !== 'object' ||
       Array.isArray(env) ||
       Object.values(env).some((v) => typeof v !== 'string'))
   ) {
@@ -62,15 +64,15 @@ function payloadFor(values: McpFields) {
   };
 }
 
-function McpForm({
+export default function McpForm({
   server,
-  pending,
+  formRef,
   close,
   saved,
   firstField,
 }: McpDialogProps & { firstField: RefObject<HTMLInputElement | null> }) {
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
-  const [defaultValues] = useState<McpFields>(() => ({
+  const defaultValues: McpFields = {
     name: server?.name || '',
     description: server?.description || '',
     transport: server?.transport || 'http',
@@ -80,13 +82,11 @@ function McpForm({
     token: '',
     clearToken: false,
     enabled: server?.enabled ?? true,
-  }));
+  };
   const form = useForm({
     defaultValues,
     onSubmitMeta: 'save' as SubmitMode,
     onSubmit: async ({ value, meta }) => {
-      if (pending.current) return;
-      pending.current = true;
       const save = meta === 'save';
       setNotice({ text: save ? 'Saving connection…' : 'Testing connection…' });
       try {
@@ -102,18 +102,26 @@ function McpForm({
       } catch (error) {
         setNotice({ text: String(error).replace(/^Error: /, ''), error: true });
         return;
-      } finally {
-        pending.current = false;
       }
       if (save) close();
     },
   });
+  useImperativeHandle(formRef, () => ({ isSubmitting: () => form.state.isSubmitting }), [form]);
   const busy = useSelector(form.store, (state) => state.isSubmitting);
   const addressReady = useSelector(form.store, ({ values }) => !!values.name && !!values.address);
   const isLocal = useSelector(form.store, ({ values }) => values.transport === 'stdio');
 
+  function submit(mode: SubmitMode) {
+    if (addressReady && !form.state.isSubmitting) void form.handleSubmit(mode);
+  }
+
   return (
-    <>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit('save');
+      }}
+    >
       <header className="flex justify-between items-center mb-[22px]">
         <div>
           <p className="eyebrow gap-[8px] text-[#8fa5ac] text-[9px] font-semibold tracking-[1.3px] flex items-center">
@@ -270,34 +278,13 @@ function McpForm({
         {notice?.text || 'Test the connection before saving. Local commands run on your computer.'}
       </p>
       <footer className="gap-[12px] flex justify-end mt-[22px]">
-        <Button onClick={() => void form.handleSubmit('test')} disabled={busy || !addressReady}>
+        <Button onClick={() => submit('test')} disabled={busy || !addressReady}>
           Test connection
         </Button>
-        <Button
-          intent="primary"
-          onClick={() => void form.handleSubmit('save')}
-          disabled={busy || !addressReady}
-        >
+        <Button intent="primary" type="submit" disabled={busy || !addressReady}>
           {busy ? 'Working…' : 'Save connection'}
         </Button>
       </footer>
-    </>
-  );
-}
-
-export default function McpDialog(props: McpDialogProps) {
-  const firstField = useRef<HTMLInputElement>(null);
-  return (
-    <Dialog.Portal>
-      <Dialog.Backdrop className="fixed inset-0 z-[20] [background:#050c10b8] [backdrop-filter:blur(5px)]" />
-      <Dialog.Viewport className="fixed inset-0 z-[20] grid place-items-center p-[25px]">
-        <Dialog.Popup
-          className="dialog border border-solid border-[#3c535b] p-[27px] w-[min(600px,_100%)] max-h-[90vh] overflow-auto [background:#1c252b] rounded-[16px] [box-shadow:0_25px_100px_#0009]"
-          initialFocus={firstField}
-        >
-          <McpForm {...props} firstField={firstField} />
-        </Dialog.Popup>
-      </Dialog.Viewport>
-    </Dialog.Portal>
+    </form>
   );
 }

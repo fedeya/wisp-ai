@@ -8,7 +8,7 @@ Implementation references:
 
 - `packages/protocol/src/providers.ts`: registered provider definitions and models.
 - `apps/agent/src/providers.ts`: native provider adapter dispatch.
-- `apps/desktop/src/routes/connections/Connections.tsx`: ChatGPT sign-in and default model UI.
+- `apps/desktop/src/routes/Connections.tsx`: desktop connection settings and model selection.
 - `apps/desktop/src/components/connections/ConnectionEditor.tsx`: API/local connection forms,
   model discovery, exact IDs, context windows, testing and saving.
 - `docs/usage.md`: current setup, billing, tools and connection limits.

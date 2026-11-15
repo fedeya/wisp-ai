@@ -1,44 +1,34 @@
 import { useEffect, useState } from 'react';
-import { createMemoryRouter, Outlet, useLocation, useNavigate } from 'react-router';
+import { createMemoryRouter, NavLink, Outlet, useMatches, useNavigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
-import logo from '../../../assets/wisp.png';
-import { desktop, native } from './api';
-import TelemetrySettings from './components/settings/TelemetrySettings';
-import ConfirmationDialog from './components/ui/ConfirmationDialog';
-import Icon from './components/ui/Icon';
-import { Button } from './components/ui/controls';
-import Updates from './components/updates/Updates';
-import { DesktopContext, useDesktop } from './desktop-context';
-import { createDesktopController } from './desktop-controller';
-import Diagnostics from './routes/Diagnostics';
-import Memory from './routes/Memory';
-import Panels from './routes/Panels';
-import Routines from './routes/Routines';
-import Connections from './routes/connections/Connections';
-import { desktopPages, type DesktopPage } from './routes/desktop-routes';
-import Integrations from './routes/integrations/Integrations';
-import Overview from './routes/overview/Overview';
-
-const screens = {
-  Overview,
-  Connections,
-  Integrations,
-  Memory,
-  Panels,
-  Routines,
-  Settings: TelemetrySettings,
-  Diagnostics,
-};
+import logo from '../../../../../assets/wisp.png';
+import { desktop, native } from '../../api';
+import ConfirmationDialog from '../ui/ConfirmationDialog';
+import Icon from '../ui/Icon';
+import { Button } from '../ui/Controls';
+import { navigationLink } from '../ui/Controls/styles';
+import Updates from '../updates/Updates';
+import { useDesktop } from '../../use-desktop';
+import { mountDesktop } from '../../desktop-controller';
+import { desktopPages, type DesktopPage } from '../../routes/desktop-routes';
 
 function isUtilityPage(page: DesktopPage) {
   return page.name === 'Settings' || page.name === 'Diagnostics';
 }
 
 function DesktopShell() {
-  const app = useDesktop();
+  const app = useDesktop((state) => ({
+    showLogs: state.actions.showLogs,
+    info: state.info,
+    setBusy: state.actions.setBusy,
+    busy: state.busy,
+    clearFeedback: state.actions.clearFeedback,
+    failed: state.failed,
+    feedback: state.feedback,
+    loading: state.loading,
+  }));
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const page = desktopPages.find((item) => item.path === pathname) ?? desktopPages[0];
+  const page = (useMatches().at(-1)?.handle as DesktopPage | undefined) ?? desktopPages[0];
   const { busy, clearFeedback, failed, feedback, loading } = app;
 
   useEffect(() => {
@@ -51,22 +41,23 @@ function DesktopShell() {
     return () => clearTimeout(timer);
   }, [busy, clearFeedback, failed, feedback]);
 
-  function navigationButton(item: DesktopPage) {
-    const selected = page.name === item.name;
+  function renderNavigation(item: DesktopPage) {
     return (
-      <Button
+      <NavLink
         key={item.name}
-        navigation
-        selected={selected}
-        aria-current={selected ? 'page' : undefined}
-        onClick={() => {
-          if (!selected) void navigate(item.path);
-          else if (item.name === 'Diagnostics') void app.showLogs();
+        to={item.path}
+        end
+        className={({ isActive }) => navigationLink({ selected: isActive })}
+        onClick={(event) => {
+          if (item.name === page.name && item.name === 'Diagnostics') {
+            event.preventDefault();
+            void app.showLogs();
+          }
         }}
       >
         <Icon name={item.icon} />
         {item.name}
-      </Button>
+      </NavLink>
     );
   }
 
@@ -93,7 +84,7 @@ function DesktopShell() {
             <span className="nav-label px-[14px] pt-0 pb-[9px] text-muted text-[11px] tracking-[1px] uppercase">
               Workspace
             </span>
-            {desktopPages.filter((item) => !isUtilityPage(item)).map(navigationButton)}
+            {desktopPages.filter((item) => !isUtilityPage(item)).map(renderNavigation)}
           </nav>
           <nav
             className="utility-nav gap-[4px] flex flex-col mt-auto pt-[28px] [@media(height<=700px)]:gap-[2px] [@media(height<=700px)]:pt-[16px]"
@@ -102,7 +93,7 @@ function DesktopShell() {
             <span className="nav-label px-[14px] pt-0 pb-[9px] text-muted text-[11px] tracking-[1px] uppercase">
               Application
             </span>
-            {desktopPages.filter(isUtilityPage).map(navigationButton)}
+            {desktopPages.filter(isUtilityPage).map(renderNavigation)}
           </nav>
           <div className="rail-footer gap-[7px] px-[12px] mt-[18px] pt-[18px] pb-0 text-[#769099] tracking-[0.8px] text-[12px] flex items-center flex-wrap [@media(height<=700px)]:mt-[12px] [@media(height<=700px)]:pt-[12px]">
             <span>Wisp AI</span>
@@ -160,31 +151,22 @@ function DesktopShell() {
 }
 
 export default function App() {
-  const [controller] = useState(createDesktopController);
   const [router] = useState(() =>
     createMemoryRouter([
       {
         Component: DesktopShell,
-        children: desktopPages.map(({ name, path }) => ({
-          id: name,
-          path,
-          Component: screens[name],
+        children: desktopPages.map((page) => ({
+          id: page.name,
+          path: page.path,
+          Component: page.Component,
+          handle: page,
         })),
       },
     ]),
   );
 
-  useEffect(() => {
-    const dispose = controller.mount();
-    return () => {
-      dispose?.();
-      router.dispose();
-    };
-  }, [controller, router]);
+  useEffect(mountDesktop, []);
+  useEffect(() => () => router.dispose(), [router]);
 
-  return (
-    <DesktopContext.Provider value={controller}>
-      <RouterProvider router={router} />
-    </DesktopContext.Provider>
-  );
+  return <RouterProvider router={router} />;
 }

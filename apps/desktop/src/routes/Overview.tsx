@@ -1,12 +1,39 @@
+import { desktopConnected, desktopActive, desktopLocked } from '../desktop-controller';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { native } from '../../api';
-import { ActionProgress, Spinner } from '../../components/ui/ActionProgress';
-import Icon from '../../components/ui/Icon';
-import { Badge, Button, Card, Input, Select } from '../../components/ui/controls';
-import { useDesktop } from '../../desktop-context';
+import { native } from '../api';
+import { ActionProgress, Spinner } from '../components/ui/ActionProgress';
+import Icon from '../components/ui/Icon';
+import { Badge, Button, Card, Input, Select } from '../components/ui/Controls';
+import { useDesktop } from '../use-desktop';
 
-type OverviewState = ReturnType<typeof useDesktop>;
+function useOverview() {
+  return useDesktop((state) => ({
+    loading: state.loading,
+    info: state.info,
+    detectingGame: state.detectingGame,
+    status: state.status,
+    starting: state.starting,
+    connectionError: state.connectionError,
+    connected: desktopConnected(state),
+    active: desktopActive(state),
+    busy: state.busy,
+    locked: desktopLocked(state),
+    wow: state.wow,
+    install: state.actions.install,
+    start: state.actions.start,
+    stop: state.actions.stop,
+    busyTarget: state.busyTarget,
+    searchInstallations: state.actions.searchInstallations,
+    detectedFolders: state.detectedFolders,
+    selectFolder: state.actions.selectFolder,
+    detectionFailed: state.detectionFailed,
+    chooseFolder: state.actions.chooseFolder,
+    importPrevious: state.actions.importPrevious,
+  }));
+}
+
+type OverviewState = ReturnType<typeof useOverview>;
 
 const steps = {
   searching: {
@@ -74,7 +101,7 @@ function LiveDot({ online }: { online?: boolean }) {
 }
 
 export default function Overview() {
-  const app = useDesktop();
+  const app = useOverview();
   const navigate = useNavigate();
   const connect = () => void navigate('/connections');
   const [editingInstallation, setEditingInstallation] = useState(false);

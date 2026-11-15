@@ -2,10 +2,10 @@ import { test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 
 import App from './App';
-import { desktop, request, type Status } from './api';
+import { desktop, request, type Status } from '../../api';
 import { listen } from '@tauri-apps/api/event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
-vi.mock('./api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
+vi.mock('../../api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
 }));
@@ -74,7 +74,7 @@ afterEach(() => {
 });
 
 async function openConnections() {
-  await fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Connections' }));
   await screen.findByRole('heading', { name: 'Web search' });
 }
 
@@ -424,7 +424,7 @@ test('routines replace suggestion toggles and expose run history with character-
   ];
   render(<App />);
   await screen.findByText('Ready to help');
-  await fireEvent.click(screen.getByRole('button', { name: 'Routines' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Routines' }));
   expect(screen.queryByRole('button', { name: 'Suggestions' })).toBeNull();
   expect(screen.getByText('Mage review')).toBeTruthy();
   await fireEvent.click(screen.getByText('Run history (1)'));
@@ -463,6 +463,32 @@ test('provider-neutral navigation and per-chat default model controls use the br
   });
   await fireEvent.click(screen.getByRole('button', { name: 'Set default' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('/auth/model', { model: 'sol' }));
+});
+
+test('account selection is a draft until submitted and remains available for reconnect', async () => {
+  status.auth.profiles.push({ id: 'second', label: 'Second account', connected: true });
+  render(<App />);
+  await screen.findByText('Ready to help');
+  await openConnections();
+
+  const accounts = screen.getByLabelText<HTMLSelectElement>('Saved accounts');
+  expect(accounts.value).toBe('first');
+  fireEvent.change(accounts, { target: { value: 'second' } });
+  expect(request).not.toHaveBeenCalledWith('/auth/select', expect.anything());
+
+  fireEvent.submit(accounts.form!);
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith('/auth/select', { profileId: 'second' }),
+  );
+  const reconnect = screen.getByRole<HTMLButtonElement>('button', { name: 'Reconnect' });
+  await waitFor(() => expect(reconnect.disabled).toBe(false));
+  fireEvent.click(reconnect);
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith('/auth/start', {
+      profileId: 'second',
+      newAccount: false,
+    }),
+  );
 });
 
 test('an active reply disables operations that would interrupt the bridge', async () => {
@@ -508,7 +534,7 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   ];
   render(<App />);
   await screen.findByText('Ready to help');
-  await fireEvent.click(screen.getByRole('button', { name: 'Integrations' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   const add = await screen.findByRole('button', { name: 'Add MCP' });
   add.focus();
   await fireEvent.click(add);
@@ -522,7 +548,7 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   await fireEvent.input(fields.getByLabelText('Endpoint URL'), {
     target: { value: 'https://example.com/mcp' },
   });
-  await fireEvent.click(fields.getByRole('button', { name: 'Save connection' }));
+  fireEvent.submit((name as HTMLInputElement).form!);
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/mcps/save', {
       server: {
@@ -644,7 +670,7 @@ test('integration cards expose availability, master and child switches through t
   ];
   render(<App />);
   await screen.findByText('Ready to help');
-  await fireEvent.click(screen.getByRole('button', { name: 'Integrations' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   expect(await screen.findByText('partial')).toBeTruthy();
   expect(screen.getByText('Some service indexes are unavailable.')).toBeTruthy();
   await fireEvent.click(screen.getByText('Tools & capabilities (1)'));
@@ -680,13 +706,13 @@ test('built-in capabilities stay out of integrations and memory has separate con
   }));
   render(<App />);
   await screen.findByText('Ready to help');
-  await fireEvent.click(screen.getByRole('button', { name: 'Integrations' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   expect(await screen.findByRole('switch', { name: 'Enable Questie' })).toBeTruthy();
   expect(screen.queryByRole('switch', { name: 'Enable World of Warcraft' })).toBeNull();
   expect(screen.queryByRole('switch', { name: 'Enable Wisp' })).toBeNull();
   expect(screen.queryByText('Conversation titles')).toBeNull();
   expect(screen.queryByText('Player preferences')).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: 'Memory' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Memory' }));
   await fireEvent.click(screen.getByRole('switch', { name: 'Enable Player preferences' }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/integrations/set', {
@@ -711,7 +737,7 @@ test('the next action follows the missing connection', async () => {
   render(<App />);
   await fireEvent.click(await screen.findByRole('button', { name: 'Connect AI' }));
   expect(await screen.findByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Connections' }).getAttribute('aria-current')).toBe(
+  expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('aria-current')).toBe(
     'page',
   );
   cleanup();
@@ -732,7 +758,7 @@ test('unreachable data pages do not report empty collections', async () => {
   render(<App />);
   await screen.findByText('Start Wisp to continue');
   for (const page of ['Memory', 'Panels', 'Routines', 'Integrations']) {
-    await fireEvent.click(screen.getByRole('button', { name: page }));
+    await fireEvent.click(screen.getByRole('link', { name: page }));
     expect(await screen.findByText('Connect to Wisp to view your data')).toBeTruthy();
     expect(screen.queryByText('No panels yet.')).toBeNull();
     expect(screen.queryByText('No routines yet')).toBeNull();
@@ -750,7 +776,7 @@ test('data pages show loading while the first status request is pending', async 
       : ({ models: [] } as never),
   );
   render(<App />);
-  await fireEvent.click(screen.getByRole('button', { name: 'Panels' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Panels' }));
   expect(screen.getByText('Loading your workspace…')).toBeTruthy();
   await waitFor(() => expect(finish).toBeDefined());
   finish(status);

@@ -3,11 +3,18 @@ import { describeRoutineTrigger } from '@wisp/protocol/routines';
 import { request } from '../api';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import DataState from '../components/ui/DataState';
-import { Button, Card } from '../components/ui/controls';
-import { useDesktop } from '../desktop-context';
+import { Button, Card } from '../components/ui/Controls';
+import { useDesktop } from '../use-desktop';
 
 export default function Routines() {
-  const app = useDesktop();
+  const app = useDesktop((state) => ({
+    loading: state.loading,
+    status: state.status,
+    busyTarget: state.busyTarget,
+    busy: state.busy,
+    work: state.actions.work,
+    setConfirmation: state.actions.setConfirmation,
+  }));
   if (app.loading || !app.status) return <DataState />;
   const { routines, routineRuns, gameConnected } = app.status;
 

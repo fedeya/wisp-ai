@@ -50,17 +50,10 @@ export function startBridgeLifecycle({
     void refresh();
   }, 3000);
 
-  return {
-    get disposed() {
-      return disposed;
-    },
-    dispose() {
-      if (disposed) {
-        return;
-      }
-      disposed = true;
-      clearInterval(timer);
-      unsubscribe?.();
-    },
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    clearInterval(timer);
+    unsubscribe?.();
   };
 }

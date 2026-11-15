@@ -1,11 +1,13 @@
 import { useNavigate } from 'react-router';
-import { useDesktop } from '../../desktop-context';
+import { useDesktop } from '../../use-desktop';
 import { Spinner } from './ActionProgress';
 import Icon from './Icon';
-import { Button, Card } from './controls';
+import { Button, Card } from './Controls';
 
 export default function DataState() {
-  const { loading, starting, connectionError } = useDesktop();
+  const { loading, starting, connectionError } = useDesktop(
+    ({ loading, starting, connectionError }) => ({ loading, starting, connectionError }),
+  );
   const navigate = useNavigate();
   const startingService = starting && !connectionError;
   return (

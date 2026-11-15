@@ -1,6 +1,6 @@
 import { test, expect, vi, beforeEach } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
-import { request, desktop } from './api';
+import { request, desktop } from './index';
 vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 

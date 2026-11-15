@@ -1,10 +1,11 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
-import { useDesktop } from '../../desktop-context';
-import { button } from './control-styles';
-import { Button } from './controls';
+import { useDesktop, useDesktopActions } from '../../use-desktop';
+import { button } from './Controls/styles';
+import { Button } from './Controls';
 
 export default function ConfirmationDialog() {
-  const { confirm, setConfirmation } = useDesktop();
+  const confirm = useDesktop((state) => state.confirm);
+  const { setConfirmation } = useDesktopActions();
   return (
     <AlertDialog.Root
       open={!!confirm}

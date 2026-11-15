@@ -2,11 +2,20 @@ import { providerDefinitions, type ConnectionView } from '@wisp/protocol/provide
 import { useState } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
-import { Button, Card } from '../ui/controls';
+import { Button, Card } from '../ui/Controls';
 import ConnectionEditor from './ConnectionEditor';
-import type { ConnectionsView } from './connections-view';
+import { desktopLocked } from '../../desktop-controller';
+import { useDesktop, useDesktopActions } from '../../use-desktop';
 
-export default function ApiConnections({ app }: { app: ConnectionsView }) {
+export default function ApiConnections() {
+  const app = useDesktop((state) => ({
+    busy: state.busy,
+    busyTarget: state.busyTarget,
+    locked: desktopLocked(state),
+    online: !!state.status,
+    connections: state.status?.connections,
+  }));
+  const { loadModels, setConfirmation, work } = useDesktopActions();
   const [editing, setEditing] = useState<{ connection?: ConnectionView } | null>(null);
 
   return (
@@ -18,11 +27,11 @@ export default function ApiConnections({ app }: { app: ConnectionsView }) {
             Use your own API key. Usage is billed by the selected provider.
           </p>
         </div>
-        <Button disabled={app.locked || !app.status || !!editing} onClick={() => setEditing({})}>
+        <Button disabled={app.locked || !app.online || !!editing} onClick={() => setEditing({})}>
           Add connection
         </Button>
       </div>
-      {app.status?.connections.map((connection) => (
+      {app.connections?.map((connection) => (
         <div
           key={connection.id}
           className="api-connection-row gap-[16px] px-0 py-[16px] flex items-center justify-between border-b-[1px] [border-bottom-style:solid] border-b-[var(--border)] max-sm:items-start max-sm:flex-col"
@@ -48,14 +57,14 @@ export default function ApiConnections({ app }: { app: ConnectionsView }) {
               destructive
               disabled={app.locked || !!editing}
               onClick={() =>
-                app.confirm({
+                setConfirmation({
                   label: `Remove “${connection.name}”? Chats and memory stay on this computer. Chats using this connection will need another model.`,
                   run: () =>
-                    app.work(
+                    work(
                       'Removing AI connection',
                       async () => {
                         await request('/connections/remove', { id: connection.id });
-                        await app.loadModels();
+                        await loadModels();
                       },
                       'Connection removed.',
                       'connections',
@@ -70,11 +79,7 @@ export default function ApiConnections({ app }: { app: ConnectionsView }) {
       ))}
       <ActionProgress label={app.busyTarget === 'connections' ? app.busy : ''} />
       {editing && (
-        <ConnectionEditor
-          app={app}
-          connection={editing.connection}
-          close={() => setEditing(null)}
-        />
+        <ConnectionEditor connection={editing.connection} close={() => setEditing(null)} />
       )}
       <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
         API keys are protected by your operating system. Configure Exa under Web search to use web

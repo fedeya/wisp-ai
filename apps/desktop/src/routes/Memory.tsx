@@ -1,11 +1,19 @@
+import { desktopLocked } from '../desktop-controller';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import DataState from '../components/ui/DataState';
 import Toggle from '../components/ui/Toggle';
-import { Card } from '../components/ui/controls';
-import { useDesktop } from '../desktop-context';
+import { Card } from '../components/ui/Controls';
+import { useDesktop } from '../use-desktop';
 
 export default function Memory() {
-  const app = useDesktop();
+  const app = useDesktop((state) => ({
+    loading: state.loading,
+    status: state.status,
+    busyTarget: state.busyTarget,
+    busy: state.busy,
+    locked: desktopLocked(state),
+    setIntegration: state.actions.setIntegration,
+  }));
   if (app.loading || !app.status) return <DataState />;
   const entries = app.status.integrations.filter((entry) => entry.group === 'memory');
 

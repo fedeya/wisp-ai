@@ -1,11 +1,20 @@
+import { desktopLocked } from '../desktop-controller';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
-import { Badge, Button, Card } from '../components/ui/controls';
-import { useDesktop } from '../desktop-context';
+import { Badge, Button, Card } from '../components/ui/Controls';
+import { useDesktop } from '../use-desktop';
 
 export default function Panels() {
-  const app = useDesktop();
+  const app = useDesktop((state) => ({
+    loading: state.loading,
+    status: state.status,
+    busyTarget: state.busyTarget,
+    busy: state.busy,
+    panelAction: state.actions.panelAction,
+    locked: desktopLocked(state),
+    setConfirmation: state.actions.setConfirmation,
+  }));
   if (app.loading || !app.status) return <DataState />;
   const { gameConnected, panels } = app.status;
   if (!panels.length) {

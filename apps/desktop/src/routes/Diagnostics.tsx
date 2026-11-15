@@ -2,11 +2,19 @@ import { useEffect } from 'react';
 import { desktop } from '../api';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import Icon from '../components/ui/Icon';
-import { Button, Card } from '../components/ui/controls';
-import { useDesktop } from '../desktop-context';
+import { Button, Card } from '../components/ui/Controls';
+import { useDesktop } from '../use-desktop';
 
 export default function Diagnostics() {
-  const app = useDesktop();
+  const app = useDesktop((state) => ({
+    busyTarget: state.busyTarget,
+    busy: state.busy,
+    work: state.actions.work,
+    connectionError: state.connectionError,
+    logs: state.logs,
+    info: state.info,
+    showLogs: state.actions.showLogs,
+  }));
   const { showLogs } = app;
   useEffect(() => {
     void showLogs();

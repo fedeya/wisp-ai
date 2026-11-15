@@ -1,16 +1,31 @@
+import { desktopLocked } from '../desktop-controller';
 import { Dialog } from '@base-ui/react/dialog';
 import { useRef } from 'react';
-import type { Mcp } from '../../api';
-import IntegrationCard from '../../components/integrations/IntegrationCard';
-import McpDialog from '../../components/integrations/McpDialog';
-import { ActionProgress } from '../../components/ui/ActionProgress';
-import DataState from '../../components/ui/DataState';
-import Icon from '../../components/ui/Icon';
-import { button } from '../../components/ui/control-styles';
-import { Button, Card } from '../../components/ui/controls';
-import { useDesktop } from '../../desktop-context';
+import type { Mcp } from '../api';
+import IntegrationCard from '../components/integrations/IntegrationCard';
+import McpDialog, { type McpFormActions } from '../components/integrations/McpDialog';
+import { ActionProgress } from '../components/ui/ActionProgress';
+import DataState from '../components/ui/DataState';
+import Icon from '../components/ui/Icon';
+import { button } from '../components/ui/Controls/styles';
+import { Button, Card } from '../components/ui/Controls';
+import { useDesktop } from '../use-desktop';
 
-type IntegrationsView = ReturnType<typeof useDesktop>;
+function useIntegrations() {
+  return useDesktop((state) => ({
+    locked: desktopLocked(state),
+    busy: state.busy,
+    busyTarget: state.busyTarget,
+    setIntegration: state.actions.setIntegration,
+    testMcp: state.actions.testMcp,
+    removeMcp: state.actions.removeMcp,
+    loading: state.loading,
+    status: state.status,
+    refresh: state.actions.refresh,
+  }));
+}
+
+type IntegrationsView = ReturnType<typeof useIntegrations>;
 
 function IntegrationList({
   app,
@@ -45,7 +60,7 @@ function IntegrationList({
           return (
             <div
               key={entry.id}
-              className="integration-group border border-solid border-border rounded-[12px] [background:var(--surface)] mb-[14px] overflow-hidden [&_.integration]:border-0 [&_.integration]:border-none [&_.integration]:border-[currentColor] [&_.integration]:m-0 [&_.integration]:rounded-[0] [&_.integration]:[background:transparent]"
+              className="integration-group border border-solid border-border rounded-[12px] [background:var(--surface)] mb-[14px] overflow-hidden [&_.integration]:border-0 [&_.integration]:m-0 [&_.integration]:rounded-[0] [&_.integration]:[background:transparent]"
             >
               <IntegrationCard
                 entry={entry}
@@ -95,15 +110,17 @@ function IntegrationList({
 }
 
 export default function Integrations() {
-  const app = useDesktop();
+  const app = useIntegrations();
   const actions = useRef<Dialog.Root.Actions>(null);
-  const pending = useRef(false);
+  const formRef = useRef<McpFormActions>(null);
   return (
     <Dialog.Root<Mcp | null>
       actionsRef={actions}
       disablePointerDismissal
       onOpenChange={(open, details) => {
-        if (!open && pending.current) details.cancel();
+        if (!open && details.reason !== 'imperative-action' && formRef.current?.isSubmitting()) {
+          details.cancel();
+        }
       }}
     >
       {({ payload }) => (
@@ -115,7 +132,7 @@ export default function Integrations() {
           )}
           <McpDialog
             server={payload ?? null}
-            pending={pending}
+            formRef={formRef}
             close={() => actions.current?.close()}
             saved={app.refresh}
           />

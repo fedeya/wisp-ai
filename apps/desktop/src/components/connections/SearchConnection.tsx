@@ -1,31 +1,39 @@
 import { useForm, useSelector } from '@tanstack/react-form';
 import { useEffect } from 'react';
-import { desktop, request } from '../../api';
+import { desktop, request, type Status } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
-import { Badge, Button, Card, Input, Select } from '../ui/controls';
-import type { ConnectionsView } from './connections-view';
+import { Badge, Button, Card, Input, Select } from '../ui/Controls';
+import { desktopLocked } from '../../desktop-controller';
+import { useDesktop, useDesktopActions } from '../../use-desktop';
 
-type SearchProvider = NonNullable<NonNullable<ConnectionsView['status']>['search']>['provider'];
+type SearchProvider = NonNullable<Status['search']>['provider'];
 type SearchFields = { provider: SearchProvider; apiKey: string };
-const defaultValues: SearchFields = { provider: 'auto', apiKey: '' };
 
 function searchInput({ provider, apiKey }: SearchFields) {
   return { provider, apiKey: apiKey.trim() || undefined };
 }
 
-export default function SearchConnection({ app }: { app: ConnectionsView }) {
-  const saved = app.status?.search;
+export default function SearchConnection() {
+  const app = useDesktop((state) => ({
+    busy: state.busy,
+    busyTarget: state.busyTarget,
+    locked: desktopLocked(state),
+    online: !!state.status,
+    search: state.status?.search,
+  }));
+  const { refresh, setConfirmation, work } = useDesktopActions();
+  const saved = app.search;
   const savedProvider = saved?.provider;
-  const disabled = app.locked || !app.status;
+  const disabled = app.locked || !app.online;
+  const defaultValues: SearchFields = { provider: savedProvider ?? 'auto', apiKey: '' };
   const form = useForm({
     defaultValues,
     onSubmit: ({ value }) =>
-      app.work(
+      work(
         'Saving search settings',
         async () => {
           await request('/search/save', searchInput(value));
-          form.setFieldValue('apiKey', '');
-          await app.refresh();
+          await refresh();
           form.reset({ provider: value.provider, apiKey: '' });
         },
         'Search settings saved.',
@@ -33,12 +41,13 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
       ),
   });
   const providerDirty = useSelector(form.store, (state) => !!state.fieldMeta.provider?.isDirty);
+  const provider = useSelector(form.store, (state) => state.values.provider);
 
   useEffect(() => {
-    if (savedProvider && !providerDirty) {
-      form.setFieldValue('provider', savedProvider, { dontUpdateMeta: true });
+    if (savedProvider && provider !== savedProvider && !providerDirty) {
+      form.resetField('provider');
     }
-  }, [form, providerDirty, savedProvider]);
+  }, [form, provider, providerDirty, savedProvider]);
 
   return (
     <Card kind="provider">
@@ -53,7 +62,13 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
           {saved?.hasExaKey ? 'Exa key saved' : 'Exa public · no key needed'}
         </Badge>
       </div>
-      <div className="search-form field-section gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!disabled && !form.state.isSubmitting) void form.handleSubmit();
+        }}
+        className="search-form field-section gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid"
+      >
         <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="search-provider">
           Search service
         </label>
@@ -61,6 +76,7 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
           {(field) => (
             <Select
               id="search-provider"
+              name={field.name}
               value={field.state.value}
               onChange={({ currentTarget }) =>
                 field.handleChange(currentTarget.value as SearchProvider)
@@ -81,6 +97,7 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
           {(field) => (
             <Input
               id="exa-key"
+              name={field.name}
               type="password"
               value={field.state.value}
               onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
@@ -105,7 +122,7 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
             intent="quiet"
             disabled={!!app.busy}
             onClick={() =>
-              app.work(
+              work(
                 'Opening Exa dashboard',
                 () => desktop('open_exa_dashboard'),
                 'An API key is optional; public search works without one.',
@@ -118,7 +135,7 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
           <Button
             disabled={disabled}
             onClick={() =>
-              app.work(
+              work(
                 'Testing Exa',
                 () => request('/search/test', searchInput(form.state.values)),
                 'Exa accepted the test search. Results depend on source coverage.',
@@ -128,7 +145,7 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
           >
             Test Exa
           </Button>
-          <Button intent="primary" disabled={disabled} onClick={() => void form.handleSubmit()}>
+          <Button type="submit" intent="primary" disabled={disabled}>
             Save search settings
           </Button>
           {saved?.hasExaKey && (
@@ -137,11 +154,11 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
               destructive
               disabled={app.locked}
               onClick={() =>
-                app.confirm({
+                setConfirmation({
                   label:
                     'Remove the saved Exa API key? Searches will use public Exa access and its free rate limits.',
                   run: () =>
-                    app.work(
+                    work(
                       'Removing Exa key',
                       () => request('/search/remove-exa', {}),
                       'Exa key removed.',
@@ -155,7 +172,7 @@ export default function SearchConnection({ app }: { app: ConnectionsView }) {
           )}
         </div>
         <ActionProgress label={app.busyTarget === 'search' ? app.busy : ''} />
-      </div>
+      </form>
     </Card>
   );
 }

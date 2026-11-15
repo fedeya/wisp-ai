@@ -1,5 +1,6 @@
 import { tv } from 'tailwind-variants';
-import { fieldBase } from './field';
+const fieldBase =
+  'min-h-[39px] min-w-0 w-full rounded-[7px] border border-solid border-[#36464d] bg-[#151d22] px-[12px] py-[9px] text-[#e4ebe9] placeholder:text-[#91a1a8] focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-[3px]';
 
 const focus =
   'focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-[3px]';
@@ -23,11 +24,11 @@ export const button = tv({
   defaultVariants: { intent: 'default', size: 'default' },
 });
 
-export const navigationButton = tv({
+export const navigationLink = tv({
   base: button({
     intent: 'quiet',
     class:
-      'min-h-[45px] shrink-0 justify-start gap-[13px] px-[14px] py-[12px] text-[13px] text-[#9aadb4] [@media(height<=700px)]:min-h-[40px] [@media(height<=700px)]:py-[9px]',
+      'no-underline hover:border-[#568780] hover:bg-[#2a3d3f] active:translate-y-px min-h-[45px] shrink-0 justify-start gap-[13px] px-[14px] py-[12px] text-[13px] text-[#9aadb4] [@media(height<=700px)]:min-h-[40px] [@media(height<=700px)]:py-[9px]',
   }),
   variants: { selected: { true: 'bg-[#1e3333] text-accent' } },
 });

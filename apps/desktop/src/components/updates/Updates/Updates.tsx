@@ -1,8 +1,10 @@
 import { listen } from '@tauri-apps/api/event';
 import { renderReleaseNotes } from '@wisp/releases';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { desktop, native } from '../../api';
-import { Button, Card, Select } from '../ui/controls';
+import { useCallback, useEffect, useState } from 'react';
+import { useStore } from 'zustand';
+import { createStore } from 'zustand/vanilla';
+import { desktop, native } from '../../../api';
+import { Button, Card, Select } from '../../ui/Controls';
 
 type Release = { version: string; notes: string | null };
 type Progress = {
@@ -17,6 +19,21 @@ type UpdatesProps = {
   locked: boolean;
   openSettings: () => void;
   onBusy: (label: string) => void;
+};
+
+type UpdateOperation =
+  | { kind: 'checking' }
+  | { kind: 'changing-channel'; channel: string }
+  | { kind: 'installing'; progress: string };
+
+type UpdateState = {
+  channel: string | null;
+  operation: UpdateOperation | null;
+  release: Release | null;
+  supported: boolean;
+  error: string;
+  dismissed: string;
+  lastChecked: string;
 };
 
 function progressMessage(progress: Progress) {
@@ -36,95 +53,90 @@ export default function Updates({
   openSettings,
   onBusy,
 }: UpdatesProps) {
-  const [release, setRelease] = useState<Release | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [installing, setInstalling] = useState(false);
-  const [supported, setSupported] = useState(native);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [dismissed, setDismissed] = useState('');
-  const [lastChecked, setLastChecked] = useState('');
-  const [progress, setProgress] = useState('Preparing update…');
-  const [channel, setChannel] = useState('stable');
-  const [channelLoaded, setChannelLoaded] = useState(!native);
-  const [requestedChannel, setRequestedChannel] = useState('');
-  const operations = useRef({
-    checking: false,
-    installing: false,
-    channelLoaded: !native,
-    changingChannel: false,
-  });
+  const [updates] = useState(() =>
+    createStore<UpdateState>(() => ({
+      channel: null,
+      operation: null,
+      release: null,
+      supported: native,
+      error: '',
+      dismissed: '',
+      lastChecked: '',
+    })),
+  );
+  const { getState, setState } = updates;
+  const {
+    release,
+    operation,
+    supported,
+    error,
+    dismissed,
+    lastChecked,
+    channel: savedChannel,
+  } = useStore(updates);
+  const channel = savedChannel ?? 'stable';
+  const checking = operation?.kind === 'checking';
+  const installing = operation?.kind === 'installing';
+  const channelLoaded = savedChannel !== null;
+  const message = !lastChecked
+    ? ''
+    : !supported
+      ? 'Updates are available in the installed Windows x64 release.'
+      : release
+        ? `Version ${release.version} is available.`
+        : 'You’re up to date.';
 
   const check = useCallback(async () => {
-    const status = operations.current;
-    if (
-      !native ||
-      !status.channelLoaded ||
-      status.checking ||
-      status.installing ||
-      status.changingChannel
-    ) {
-      return;
-    }
-    status.checking = true;
-    setChecking(true);
-    setError('');
+    const state = getState();
+    if (!native || !state.channel || state.operation) return;
+    setState({ operation: { kind: 'checking' }, error: '' });
     try {
-      const result = await desktop<{ supported: boolean; update: Release | null }>('check_update');
-      setSupported(result.supported);
-      setRelease(result.update);
-      setLastChecked(new Date().toLocaleString());
-      setMessage(
-        !result.supported
-          ? 'Updates are available in the installed Windows x64 release.'
-          : result.update
-            ? `Version ${result.update.version} is available.`
-            : 'You’re up to date.',
+      const { supported, update } = await desktop<{ supported: boolean; update: Release | null }>(
+        'check_update',
       );
+      setState({ supported, release: update, lastChecked: new Date().toLocaleString() });
     } catch {
-      setError(
-        'Could not check for updates. Check your connection and try again. Public releases may not be available yet.',
-      );
+      setState({
+        error:
+          'Could not check for updates. Check your connection and try again. Public releases may not be available yet.',
+      });
     } finally {
-      status.checking = false;
-      setChecking(false);
+      setState({ operation: null });
     }
-  }, []);
+  }, [getState, setState]);
 
   async function changeChannel(next: string) {
-    const status = operations.current;
-    if (status.changingChannel) return;
-    status.changingChannel = true;
-    setRequestedChannel(next);
-    setRelease(null);
-    setDismissed('');
+    const state = getState();
+    if (!state.channel || state.operation || locked) return;
+    setState({
+      operation: { kind: 'changing-channel', channel: next },
+      release: null,
+      dismissed: '',
+      lastChecked: '',
+      error: '',
+    });
     try {
-      setChannel(await desktop<string>('update_channel', { channel: next }));
-      status.changingChannel = false;
+      const channel = await desktop<string>('update_channel', { channel: next });
+      setState({ channel, operation: null });
       await check();
     } catch (error) {
-      setError(`Could not change update channel: ${String(error)}`);
-    } finally {
-      status.changingChannel = false;
-      setRequestedChannel('');
+      setState({ operation: null, error: `Could not change update channel: ${String(error)}` });
     }
   }
 
   async function install() {
-    const status = operations.current;
-    if (!release || status.installing || locked) return;
-    status.installing = true;
-    setInstalling(true);
-    setError('');
-    setProgress('Downloading update…');
+    const state = getState();
+    if (!state.release || !state.supported || state.operation || locked) return;
+    setState({ operation: { kind: 'installing', progress: 'Downloading update…' }, error: '' });
     onBusy('Updating Wisp');
     try {
       await desktop('install_update');
     } catch (error) {
-      setError(`Update failed: ${String(error).replace(/^Error: /, '')} You can try again.`);
+      setState({
+        error: `Update failed: ${String(error).replace(/^Error: /, '')} You can try again.`,
+      });
     } finally {
-      status.installing = false;
-      setInstalling(false);
+      setState({ operation: null });
       onBusy('');
     }
   }
@@ -134,25 +146,29 @@ export default function Updates({
     let disposed = false;
     let unsubscribe: (() => void) | undefined;
     void listen<Progress>('update-progress', ({ payload }) => {
-      if (!disposed && operations.current.installing) setProgress(progressMessage(payload));
+      if (!disposed && getState().operation?.kind === 'installing') {
+        setState({ operation: { kind: 'installing', progress: progressMessage(payload) } });
+      }
     })
       .then((stop) => {
         if (disposed) stop();
         else unsubscribe = stop;
       })
       .catch(() => {
-        if (!disposed) setError('Update progress is unavailable. Restart Wisp to try again.');
+        if (!disposed) {
+          setState({ error: 'Update progress is unavailable. Restart Wisp to try again.' });
+        }
       });
     void desktop<string>('update_channel')
-      .then((saved) => {
+      .then((channel) => {
         if (disposed) return;
-        setChannel(saved);
-        operations.current.channelLoaded = true;
-        setChannelLoaded(true);
+        setState({ channel });
         return check();
       })
       .catch(() => {
-        if (!disposed) setError('Could not load the update channel. Restart Wisp to try again.');
+        if (!disposed) {
+          setState({ error: 'Could not load the update channel. Restart Wisp to try again.' });
+        }
       });
     const timer = setInterval(() => void check(), 6 * 60 * 60 * 1000);
     return () => {
@@ -160,7 +176,7 @@ export default function Updates({
       clearInterval(timer);
       unsubscribe?.();
     };
-  }, [check]);
+  }, [check, getState, setState]);
 
   if (!showSettings) {
     if (!release || dismissed === release.version) return null;
@@ -171,7 +187,7 @@ export default function Updates({
       >
         <span>Wisp {release.version} is available.</span>
         <Button onClick={openSettings}>View update</Button>
-        <Button intent="quiet" onClick={() => setDismissed(release.version)}>
+        <Button intent="quiet" onClick={() => setState({ dismissed: release.version })}>
           Later
         </Button>
       </div>
@@ -185,10 +201,7 @@ export default function Updates({
           <h2>App updates</h2>
           <p className="text-[13px] text-muted">Installed version: {version}</p>
         </div>
-        <Button
-          onClick={check}
-          disabled={!native || !channelLoaded || checking || installing || locked}
-        >
+        <Button onClick={check} disabled={!native || !channelLoaded || !!operation || locked}>
           {checking ? 'Checking…' : 'Check for updates'}
         </Button>
       </div>
@@ -199,11 +212,9 @@ export default function Updates({
         Update channel
         <Select
           className="ml-3 w-auto"
-          value={requestedChannel || channel}
+          value={operation?.kind === 'changing-channel' ? operation.channel : channel}
           onChange={({ currentTarget }) => void changeChannel(currentTarget.value)}
-          disabled={
-            !native || !channelLoaded || checking || installing || !!requestedChannel || locked
-          }
+          disabled={!native || !channelLoaded || !!operation || locked}
         >
           <option value="stable">Stable</option>
           <option value="nightly">Nightly</option>
@@ -233,7 +244,7 @@ export default function Updates({
         <p className="field-hint mt-3 text-[11px]! text-muted">Last checked: {lastChecked}</p>
       )}
       <p className="text-[13px] text-muted" role="status">
-        {installing ? progress : message}
+        {installing ? operation.progress : message}
       </p>
       {error && (
         <p
@@ -256,7 +267,7 @@ export default function Updates({
             <Button
               intent="primary"
               onClick={install}
-              disabled={!supported || installing || checking || locked}
+              disabled={!supported || !!operation || locked}
             >
               {installing ? 'Updating…' : 'Update and restart'}
             </Button>

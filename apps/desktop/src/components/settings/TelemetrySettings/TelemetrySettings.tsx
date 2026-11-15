@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { desktop, native } from '../../api';
-import Toggle from '../ui/Toggle';
-import { Card } from '../ui/controls';
+import { desktop, native } from '../../../api';
+import Toggle from '../../ui/Toggle';
+import { Card } from '../../ui/Controls';
 
 export default function TelemetrySettings() {
-  const [enabled, setEnabled] = useState(true);
-  const [loaded, setLoaded] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [pending, setPending] = useState<boolean | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -16,7 +15,6 @@ export default function TelemetrySettings() {
       .then((settings) => {
         if (!active) return;
         setEnabled(settings.enabled);
-        setLoaded(true);
       })
       .catch(() => {
         if (active) setError('Could not load usage analytics settings.');
@@ -27,9 +25,8 @@ export default function TelemetrySettings() {
   }, []);
 
   async function change(value: boolean) {
-    const previous = enabled;
-    setEnabled(value);
-    setSaving(true);
+    if (enabled === null || pending !== null) return;
+    setPending(value);
     setError('');
     try {
       const settings = await desktop<{ enabled: boolean }>('telemetry_settings', {
@@ -37,10 +34,9 @@ export default function TelemetrySettings() {
       });
       setEnabled(settings.enabled);
     } catch {
-      setEnabled(previous);
       setError('Could not save usage analytics settings. Try again.');
     } finally {
-      setSaving(false);
+      setPending(null);
     }
   }
 
@@ -55,8 +51,8 @@ export default function TelemetrySettings() {
         </div>
         <Toggle
           label="Share usage analytics"
-          checked={enabled}
-          disabled={!loaded || saving}
+          checked={pending ?? enabled ?? true}
+          disabled={enabled === null || pending !== null}
           onChange={change}
         />
       </div>
