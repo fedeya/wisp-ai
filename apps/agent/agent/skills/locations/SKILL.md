@@ -1,6 +1,6 @@
 ---
 name: locations
-description: Find NPCs, city services or trainers and place requested map markers. Use for destination, coordinate and navigation requests.
+description: Find NPCs, city services or trainers, check the Hearthstone and place requested map markers. Use for destination, coordinate and navigation requests.
 ---
 
 Locate a destination before placing a marker:
@@ -8,6 +8,7 @@ Locate a destination before placing a marker:
 - Resolve a named city's native map ID with wow__inspect_map.
 - Use questie__find_npc_locations mode=services for roles such as Transmogrifier, banker, barber or auctioneer. A role is not an NPC's personal name.
 - For class trainers, use mode=class_trainers with class and verified mapId. For other NPCs, search exact localized names or verified IDs. wow__inspect_trainer reads offers from an already-open trainer; it cannot locate one.
+- Use wow__inspect_hearthstone when travel advice depends on the standard Hearthstone. Report the localized bind name and cooldown when available. The bind name alone does not establish a map pin or coordinates.
 
 QuestieDB Forever pins are database spawn positions, not live sightings. Preserve the provider, phase and coordinate frame. Missing coverage does not prove no NPC exists. Return verified coordinates as a structured map reference.
 

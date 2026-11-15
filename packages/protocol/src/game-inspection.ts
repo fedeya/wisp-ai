@@ -159,6 +159,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
       query: z.string().min(1).max(80).optional(),
     }),
   }),
+  z.object({ kind: z.literal('hearthstone'), args: z.strictObject({}) }),
   ...(['target', 'trainer', 'resources'] as const).map((kind) =>
     z.object({ kind: z.literal(kind), args: z.object({}) }),
   ),

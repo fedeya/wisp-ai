@@ -100,6 +100,69 @@ function inspectors.target()
         note = "Target coordinates and fight difficulty were not inferred.",
     }
 end
+
+local HEARTHSTONE_ITEM_ID = 6948
+
+local function readPublic(fn, ...)
+    if type(fn) ~= "function" then
+        return
+    end
+    local ok, a, b, c = pcall(fn, ...)
+    if
+        ok and (not issecretvalue or not (issecretvalue(a) or issecretvalue(b) or issecretvalue(c)))
+    then
+        return a, b, c
+    end
+end
+
+local function hearthstoneCooldown()
+    local get = C_Container and C_Container.GetItemCooldown
+    local expectsBoolean = type(get) ~= "function"
+    if expectsBoolean then
+        get = C_Item and C_Item.GetItemCooldown
+    end
+    local start, duration, enabled = readPublic(get, HEARTHSTONE_ITEM_ID)
+    local now = readPublic(GetTime)
+    local isFinite = ns.Shared.Numbers.IsFinite
+    -- The container API reports 1 for enabled; the item API reports true.
+    if
+        enabled ~= (expectsBoolean and true or 1)
+        or not (isFinite(start) and isFinite(duration) and isFinite(now))
+        or start < 0
+        or duration < 0
+        or start > now
+    then
+        return { status = "unavailable", state = "unknown" }
+    end
+    local remaining = math.max(0, duration - (now - start))
+    return {
+        status = "available",
+        state = remaining == 0 and "ready" or "cooldown",
+        remainingSeconds = remaining,
+    }
+end
+
+function inspectors.hearthstone()
+    local name = readPublic(GetBindLocation)
+    local count =
+        readPublic(C_Item and C_Item.GetItemCount, HEARTHSTONE_ITEM_ID, false, false, false, false)
+    local result = {
+        itemId = HEARTHSTONE_ITEM_ID,
+        bind = { status = "unavailable" },
+        bags = { status = "unavailable" },
+        cooldown = { status = "unavailable", state = "unknown" },
+    }
+    if type(name) == "string" and name:find("%S") then
+        result.bind = { status = "available", name = ns.Shared.Text.TruncateUtf8Bytes(name, 180) }
+    end
+    if ns.Shared.Numbers.IsNonNegativeInteger(count) then
+        result.bags = { status = "available", count = count, owned = count > 0 }
+        result.cooldown = count > 0 and hearthstoneCooldown()
+            or { status = "not_applicable", state = "not_owned" }
+    end
+    return result
+end
+
 local trainerOpen, auctionOpen = false, false
 local inspectionEvents = CreateFrame("Frame")
 for _, event in ipairs({

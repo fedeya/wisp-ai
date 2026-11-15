@@ -22,6 +22,100 @@ local function setup(env)
     helper.addon("Actions/Game.lua", env)
 end
 
+it("reads the standard Hearthstone in bags, its bind and its remaining cooldown", function()
+    local env = helper.env()
+    setup(env)
+    env.GetBindLocation = function()
+        return "Villa Dorada"
+    end
+    env.C_Item = {
+        GetItemCount = function(
+            itemId,
+            includeBank,
+            includeCharges,
+            includeReagentBank,
+            includeWarband
+        )
+            assert.equals(6948, itemId)
+            assert.same(
+                { false, false, false, false },
+                { includeBank, includeCharges, includeReagentBank, includeWarband }
+            )
+            return 1
+        end,
+    }
+    env.GetTime = function()
+        return 110
+    end
+    env.C_Container = {
+        GetItemCooldown = function(itemId)
+            assert.equals(6948, itemId)
+            return 100, 40, 1
+        end,
+    }
+    local reading = env.ns.Character.Inspect({ kind = "hearthstone" })
+    assert.equals("available", reading.status)
+    assert.same({
+        itemId = 6948,
+        bind = { status = "available", name = "Villa Dorada" },
+        bags = { status = "available", count = 1, owned = true },
+        cooldown = { status = "available", state = "cooldown", remainingSeconds = 30 },
+    }, reading.data)
+
+    env.C_Container = nil
+    env.C_Item.GetItemCooldown = function()
+        return 0, 0, true
+    end
+    reading = env.ns.Character.Inspect({ kind = "hearthstone" })
+    assert.same({
+        status = "available",
+        state = "ready",
+        remainingSeconds = 0,
+    }, reading.data.cooldown)
+end)
+
+it(
+    "distinguishes an absent Hearthstone from restricted fields and keeps the bind independent",
+    function()
+        local env = helper.env()
+        setup(env)
+        env.GetBindLocation = function()
+            return "Stormwind"
+        end
+        local restricted = {}
+        env.issecretvalue = function(value)
+            return value == restricted
+        end
+        local count = 0
+        env.C_Item = {
+            GetItemCount = function()
+                return count
+            end,
+            GetItemCooldown = function()
+                return restricted, 0, true
+            end,
+        }
+        env.GetTime = function()
+            return 110
+        end
+        local function read()
+            return env.ns.Character.Inspect({ kind = "hearthstone" }).data
+        end
+
+        assert.same({ status = "available", count = 0, owned = false }, read().bags)
+        assert.same({ status = "not_applicable", state = "not_owned" }, read().cooldown)
+        count = restricted
+        assert.same({ status = "unavailable" }, read().bags)
+        assert.same({ status = "available", name = "Stormwind" }, read().bind)
+        count = 1
+        assert.same({ status = "unavailable", state = "unknown" }, read().cooldown)
+        env.C_Item.GetItemCooldown = function()
+            return 0, 0, 1 -- The item API uses a boolean.
+        end
+        assert.same({ status = "unavailable", state = "unknown" }, read().cooldown)
+    end
+)
+
 it(
     "turn snapshots revalidate quests but send an unchanged log only until its revision is acknowledged",
     function()

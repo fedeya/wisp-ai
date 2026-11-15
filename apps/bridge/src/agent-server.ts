@@ -433,6 +433,7 @@ export function createAgentHandler(deps: AgentDependencies) {
                 auctions: 'inspect_auctions',
                 macros: 'inspect_macros',
                 map: 'inspect_map',
+                hearthstone: 'inspect_hearthstone',
               } as const
             )[inspection.kind]
           : 'query_character';
