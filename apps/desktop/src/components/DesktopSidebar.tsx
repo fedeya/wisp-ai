@@ -8,9 +8,8 @@ import Icon from './ui/Icon';
 
 const overview = desktopPages[0];
 const mainGroups = [
-  { id: 'setup', label: 'Setup', pages: desktopPages.filter((page) => page.group === 'setup') },
+  { label: 'Setup', pages: desktopPages.filter((page) => page.group === 'setup') },
   {
-    id: 'workspace',
     label: 'Workspace',
     pages: desktopPages.filter((page) => page.group === 'workspace'),
   },
@@ -58,19 +57,8 @@ export default function DesktopSidebar() {
       </div>
       <nav className="flex flex-col gap-3" aria-label="Main navigation">
         {renderNavigation(overview)}
-        {mainGroups.map(({ id, label, pages }) => (
-          <div
-            key={id}
-            role="group"
-            aria-labelledby={`desktop-nav-${id}`}
-            className="flex flex-col gap-0.5"
-          >
-            <span
-              id={`desktop-nav-${id}`}
-              className="px-[14px] pb-1 text-[11px] tracking-[1px] text-muted uppercase"
-            >
-              {label}
-            </span>
+        {mainGroups.map(({ label, pages }) => (
+          <div key={label} role="group" aria-label={label} className="flex flex-col gap-0.5">
             {pages.map(renderNavigation)}
           </div>
         ))}
