@@ -1,6 +1,7 @@
 import ArrowRight from 'lucide-react/icons/arrow-right';
 import Check from 'lucide-react/icons/check';
 import ChevronDown from 'lucide-react/icons/chevron-down';
+import Copy from 'lucide-react/icons/copy';
 import Folder from 'lucide-react/icons/folder';
 import House from 'lucide-react/icons/house';
 import Link2 from 'lucide-react/icons/link-2';
@@ -17,6 +18,7 @@ const icons = {
   check: Check,
   chevronDown: ChevronDown,
   close: X,
+  copy: Copy,
   folder: Folder,
   home: House,
   link: Link2,

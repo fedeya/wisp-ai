@@ -1,374 +1,261 @@
-import { desktopConnected, desktopActive, desktopLocked } from '../desktop-controller';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { native } from '../api';
-import { ActionProgress, Spinner } from '../components/ui/ActionProgress';
+import GameInstallation from '../components/settings/GameInstallation';
+import { ActionProgress } from '../components/ui/ActionProgress';
+import { Button, Card, Input } from '../components/ui/Controls';
 import Icon from '../components/ui/Icon';
-import { Badge, Button, Card, Input, Select } from '../components/ui/Controls';
-import { useDesktop } from '../use-desktop';
+import { desktopActive, desktopConnected, desktopLocked } from '../desktop-controller';
+import { useDesktop, useDesktopActions } from '../use-desktop';
+
+const states = {
+  loading: {
+    title: 'Checking Wisp…',
+    description: 'Checking your installation and connections.',
+  },
+  update: {
+    title: 'Update your Wisp addon',
+    description: 'Update the addon, then type /reload in WoW.',
+  },
+  starting: {
+    title: 'Wisp is starting',
+    description: 'Your connections will update when the local service is ready.',
+  },
+  stopped: {
+    title: 'Start Wisp to continue',
+    description: 'Start the local service to reconnect to WoW and your AI provider.',
+  },
+  account: {
+    title: 'Connect your AI account',
+    description: 'Connect ChatGPT or an API provider and choose a default model.',
+  },
+  waiting: {
+    title: 'Waiting for WoW',
+    description: 'Open WoW with the Wisp addon enabled. Once in game, enter this command in chat.',
+  },
+  ready: {
+    title: 'Wisp is ready',
+    description: 'Enter this command in WoW chat to open your companion.',
+  },
+};
 
 function useOverview() {
   return useDesktop((state) => ({
     loading: state.loading,
     info: state.info,
-    detectingGame: state.detectingGame,
     status: state.status,
-    starting: state.starting,
+    starting: state.starting && !state.connectionError,
     connectionError: state.connectionError,
     connected: desktopConnected(state),
     active: desktopActive(state),
     busy: state.busy,
-    locked: desktopLocked(state),
-    wow: state.wow,
-    install: state.actions.install,
-    start: state.actions.start,
-    stop: state.actions.stop,
     busyTarget: state.busyTarget,
-    searchInstallations: state.actions.searchInstallations,
-    detectedFolders: state.detectedFolders,
-    selectFolder: state.actions.selectFolder,
-    detectionFailed: state.detectionFailed,
-    chooseFolder: state.actions.chooseFolder,
-    importPrevious: state.actions.importPrevious,
+    locked: desktopLocked(state),
+    canInstall: !!state.wow,
+    modelName: state.models.find((model) => model.slug === state.status?.model)?.displayName,
   }));
 }
 
-type OverviewState = ReturnType<typeof useOverview>;
-
-const steps = {
-  searching: {
-    title: 'Finding WoW Forever',
-    description: 'Searching for your game installation.',
-  },
-  loading: {
-    title: 'Checking Wisp…',
-    description: 'Checking your installation and connections.',
-  },
-  install: {
-    title: 'Welcome to Wisp',
-    description: 'Install the addon, connect an AI provider, and meet Wisp in game.',
-  },
-  update: {
-    title: 'Update your Wisp addon',
-    description: 'Install the latest addon, then type /reload in WoW to finish updating.',
-  },
-  starting: {
-    title: 'Getting Wisp ready…',
-    description: 'Waiting for the local service. Your connections will update automatically.',
-  },
-  start: {
-    title: 'Start Wisp to continue',
-    description: 'Your installation is saved. Start the local service to reconnect.',
-  },
-  account: {
-    title: 'Connect your AI account',
-    description: 'Connect ChatGPT or an API provider, then choose a default model.',
-  },
-  game: {
-    title: 'Ready when you enter Azeroth',
-    description: 'Open WoW with Wisp AI enabled. Already in game? Type /reload.',
-  },
-  ready: {
-    title: 'Everything is ready',
-    description: 'Open /wisp in game, or hover an item and use your inline shortcut.',
-  },
-};
-
-function nextStep(app: OverviewState): keyof typeof steps {
+function overviewState(app: ReturnType<typeof useOverview>): keyof typeof states {
   if (app.loading) return 'loading';
-  if (!app.info?.configured) return app.detectingGame ? 'searching' : 'install';
-  if (app.info.addonOutdated) return 'update';
-  if (!app.status) return app.starting && !app.connectionError ? 'starting' : 'start';
-  if (!app.status.ready) return 'starting';
+  if (app.info?.addonOutdated) return 'update';
+  if (!app.status?.ready) return app.starting || app.status ? 'starting' : 'stopped';
   if (!app.connected) return 'account';
-  return app.status.gameConnected ? 'ready' : 'game';
-}
-
-function serviceStatus(app: OverviewState) {
-  if (app.active) return 'Working…';
-  if (app.loading) return 'Checking…';
-  if (app.status?.ready) return 'Running';
-  if (app.connectionError) return 'Unavailable';
-  return app.starting || app.status ? 'Starting…' : 'Stopped';
-}
-
-function LiveDot({ online }: { online?: boolean }) {
-  return (
-    <span
-      className={`live-dot w-[6px] h-[6px] rounded-[50%] bg-[#6e7f85] inline-block shrink-0 [&.online]:bg-accent [&.online]:shadow-[0_0_10px_#77dbc633]${online ? ' online' : ''}`}
-    />
-  );
+  return app.status.gameConnected ? 'ready' : 'waiting';
 }
 
 export default function Overview() {
   const app = useOverview();
+  const { install, start, stop } = useDesktopActions();
   const navigate = useNavigate();
-  const connect = () => void navigate('/connections');
   const [editingInstallation, setEditingInstallation] = useState(false);
-  const choosingFolder = app.busy === 'Choosing folder';
-  const configured = app.info?.configured;
-  const outdated = app.info?.addonOutdated;
-  const installationOpen = !configured || !!outdated || editingInstallation;
-  const next = nextStep(app);
-  const installationBusy = !!app.busy || !native;
-  const installDisabled = app.locked || !app.wow || !native;
+  const state = overviewState(app);
+  const { title, description } = states[state];
+  const showCommand = state === 'ready' || state === 'waiting';
+  const working = app.busy || (state === 'starting' ? 'Starting Wisp' : '');
+  const service = app.active
+    ? 'Working…'
+    : app.status?.ready
+      ? 'Running'
+      : app.starting || app.status
+        ? 'Starting…'
+        : 'Stopped';
 
   return (
     <>
       <Card
-        kind="workspace"
-        ready={next === 'ready'}
-        className="[background:linear-gradient(120deg,_#1d2c2d,_var(--surface)_80%)] [&_>_.action-progress:not(:empty)]:mt-[12px]"
+        ready={showCommand}
+        className={`p-[26px] md:p-[32px] ${showCommand ? 'bg-[radial-gradient(ellipse_at_top_right,#244740,transparent_74%)]' : ''}`}
+        aria-labelledby="overview-title"
       >
-        <div className="status-heading gap-[18px] flex items-start">
-          <div className="status-symbol border border-solid border-[#3c6258] w-[52px] h-[52px] shrink-0 grid [place-items:center] [background:#243e38] rounded-[14px] text-accent">
-            <Icon name={next === 'ready' ? 'check' : 'spark'} size={27} />
-          </div>
-          <div>
-            <span className="eyebrow gap-[8px] text-[#8fa5ac] text-[9px] font-semibold tracking-[1.3px] flex items-center">
-              YOUR WORKSPACE
-            </span>
-            <h2 className="text-[25px] mt-[8px] leading-[1.3] tracking-[-0.6px] max-md:text-[23px]">
-              {steps[next].title}
-            </h2>
-            <p className="text-muted text-[14px] max-w-[570px]">{steps[next].description}</p>
-          </div>
+        <div className="mb-4 grid h-10 w-10 place-items-center rounded-[10px] border border-solid border-[#41675e] bg-[#243e38] text-accent">
+          <Icon
+            name={state === 'ready' ? 'check' : state === 'update' ? 'folder' : 'spark'}
+            size={22}
+          />
         </div>
-        <div className="actions status-actions gap-[10px] mt-[22px] flex flex-wrap items-center mr-0 mb-[24px] ml-[70px] min-h-[37px]">
-          {next === 'update' && (
-            <Button intent="primary" disabled={installDisabled} onClick={app.install}>
-              {app.busy === 'Installing addon' ? 'Updating addon…' : 'Update addon'}
-            </Button>
-          )}
-          {next === 'start' && (
-            <Button intent="primary" disabled={installationBusy} onClick={app.start}>
+        <div aria-live="polite">
+          <h1 id="overview-title" className="text-[32px]">
+            {title}
+          </h1>
+          <p className="max-w-[65ch] text-muted">{description}</p>
+        </div>
+        {showCommand && <GameCommand />}
+        {state === 'account' && (
+          <Button className="mt-4" intent="primary" onClick={() => void navigate('/connections')}>
+            Connect AI
+            <Icon name="arrow" size={16} />
+          </Button>
+        )}
+        {state === 'update' && (
+          <Button
+            className="mt-4"
+            intent="primary"
+            disabled={!native || app.locked || !app.canInstall}
+            onClick={install}
+          >
+            {app.busyTarget === 'installation' ? 'Updating addon…' : 'Update addon'}
+          </Button>
+        )}
+        {state === 'stopped' && (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button
+              intent="primary"
+              disabled={!native || app.locked || !app.info?.configured}
+              onClick={start}
+            >
               Start Wisp
             </Button>
-          )}
-          {next === 'account' && (
-            <Button intent="primary" onClick={connect}>
-              Connect AI
-              <Icon name="arrow" size={16} />
-            </Button>
-          )}
-          {next === 'game' && (
-            <>
-              <Badge>Waiting for WoW</Badge>
-              <Button intent="quiet" onClick={() => setEditingInstallation(true)}>
-                Check installation
-              </Button>
-            </>
-          )}
-          {next === 'ready' && (
-            <Badge className="good text-accent!">
-              <span className="live-dot online w-[6px] h-[6px] rounded-[50%] [background:var(--accent)] inline-block shrink-0 [box-shadow:0_0_10px_#77dbc633]" />
-              Ready to help
-            </Badge>
-          )}
-          {(next === 'loading' || next === 'starting') && <Spinner />}
-        </div>
-        <div className="connection-summary border-t-[1px] [border-top-style:solid] border-t-[var(--border)] pt-[8px] [&_>_div_>_span:nth-child(2)]:w-[150px] [&_>_div_>_span:nth-child(2)]:text-muted">
-          <div className="gap-[10px] flex items-center min-h-[46px] text-[13px]">
-            <LiveDot online={app.status?.gameConnected} />
-            <span>World of Warcraft</span>
-            <strong className="font-medium">
-              {app.loading
-                ? 'Checking…'
-                : !app.status
-                  ? 'Not checked'
-                  : app.status.gameConnected
-                    ? 'Connected'
-                    : 'Waiting for game'}
-            </strong>
-          </div>
-          <div className="gap-[10px] flex items-center min-h-[46px] text-[13px]">
-            <LiveDot online={app.connected} />
-            <span>AI provider</span>
-            <strong className="font-medium">
-              {app.loading
-                ? 'Checking…'
-                : !app.status
-                  ? 'Not checked'
-                  : app.connected
-                    ? 'Connected'
-                    : 'Not connected'}
-            </strong>
-            {!app.loading && !app.connected && app.status && (
-              <Button intent="quiet" size="text" className="ml-auto text-[12px]" onClick={connect}>
-                Connect
+            {app.connectionError && (
+              <Button intent="quiet" onClick={() => void navigate('/diagnostics')}>
+                View diagnostics
               </Button>
             )}
           </div>
-          <div className="gap-[10px] flex items-center min-h-[46px] text-[13px]">
-            <LiveDot online={app.status?.ready} />
-            <span>Wisp service</span>
-            <strong className="font-medium">{serviceStatus(app)}</strong>
-            {app.status && (
-              <Button
-                intent="quiet"
-                size="text"
-                className="ml-auto text-[12px]"
-                disabled={app.locked}
-                onClick={app.stop}
-              >
-                Stop Wisp
-              </Button>
-            )}
-          </div>
+        )}
+        <div className="has-[.action-progress:not(:empty)]:mt-3">
+          <ActionProgress label={working || (state === 'loading' ? 'Checking connections' : '')} />
         </div>
-        <ActionProgress label={app.busyTarget === '' ? app.busy : ''} />
       </Card>
-      {!app.loading && (
-        <Card kind="installation">
-          <div className="section-title gap-[18px] flex items-center justify-between max-xl:flex-wrap [&_>_svg]:text-muted">
-            <div className="installation-heading gap-[14px] flex items-center min-w-[0] [&_>_svg]:text-muted [&_>_svg]:shrink-0">
-              <Icon name="folder" size={20} />
-              <div className="min-w-[0]">
-                <h2>Game installation</h2>
-                {configured && (
-                  <p className="installation-path [overflow-wrap:anywhere] text-muted text-[13px]">
-                    {app.info?.wow || app.wow}
+
+      {!app.loading && app.info?.configured && (
+        <>
+          <Card
+            aria-label="Connection status"
+            className="grid grid-cols-3 gap-y-3 divide-x divide-border p-4"
+          >
+            <ConnectionStatus label="Addon" online={!app.info.addonOutdated}>
+              {app.info.addonOutdated ? 'Update needed' : 'Installed'}
+            </ConnectionStatus>
+            <ConnectionStatus label="World of Warcraft" online={!!app.status?.gameConnected}>
+              {app.status?.gameConnected
+                ? 'Connected'
+                : app.status?.ready
+                  ? 'Waiting for game'
+                  : 'Not checked'}
+            </ConnectionStatus>
+            <ConnectionStatus label="Default model" online={app.connected}>
+              {app.connected
+                ? app.modelName || app.status?.model || 'Connected'
+                : app.status?.ready
+                  ? 'Not connected'
+                  : 'Not checked'}
+            </ConnectionStatus>
+          </Card>
+          <Card kind="installation" className={editingInstallation ? 'mb-3' : ''}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="text-muted">
+                  <Icon name="folder" />
+                </span>
+                <div>
+                  <h2>Installation details</h2>
+                  <p className="text-[13px] text-muted">
+                    Wisp service <span aria-hidden="true">·</span> <span>{service}</span>
                   </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  intent="quiet"
+                  aria-expanded={editingInstallation}
+                  aria-controls="overview-installation"
+                  onClick={() => setEditingInstallation((editing) => !editing)}
+                >
+                  {editingInstallation ? 'Done' : 'Manage installation'}
+                </Button>
+                {app.status && (
+                  <Button intent="quiet" disabled={app.locked} onClick={stop}>
+                    Stop Wisp
+                  </Button>
                 )}
               </div>
             </div>
-            {configured ? (
-              <div className="installation-controls gap-[10px] flex items-center shrink-0 flex-wrap">
-                <Badge positive={!outdated}>{outdated ? 'Update needed' : 'Addon installed'}</Badge>
-                <Button
-                  intent="quiet"
-                  aria-expanded={installationOpen}
-                  onClick={() => setEditingInstallation((editing) => !editing)}
-                >
-                  {installationOpen && !outdated ? 'Done' : 'Manage installation'}
-                </Button>
-              </div>
-            ) : (
-              <Button
-                intent="quiet"
-                disabled={!native || app.locked || app.detectingGame}
-                onClick={app.searchInstallations}
-                aria-label="Search again"
-                title="Search again"
-              >
-                <Icon name="refresh" size={17} />
-                Search again
-              </Button>
-            )}
+          </Card>
+          <div id="overview-installation" hidden={!editingInstallation}>
+            {editingInstallation && <GameInstallation />}
           </div>
-          {installationOpen && (
-            <>
-              {!configured && app.detectingGame ? (
-                <p
-                  className="field-hint installation-search gap-[10px] flex items-center text-[11px]! text-muted mt-[12px]"
-                  role="status"
-                >
-                  <Spinner />
-                  Searching for installation…
-                </p>
-              ) : (
-                <>
-                  {!configured && app.detectedFolders.length > 1 && (
-                    <>
-                      <label
-                        className="field-hint text-[11px]! text-muted mt-[12px]"
-                        htmlFor="detected-game"
-                      >
-                        Found multiple Forever installations
-                      </label>
-                      <Select
-                        id="detected-game"
-                        aria-label="Detected Forever installations"
-                        value={app.wow || null}
-                        onValueChange={app.selectFolder}
-                        options={[
-                          ...(app.wow && !app.detectedFolders.includes(app.wow) ? [app.wow] : []),
-                          ...app.detectedFolders,
-                        ].map((folder) => ({ value: folder, label: folder }))}
-                        placeholder="Choose a Forever installation"
-                        disabled={!!app.busy}
-                      />
-                    </>
-                  )}
-                  {!configured && app.detectedFolders.length === 0 && (
-                    <p className="field-hint text-[11px]! text-muted mt-[12px]">
-                      {app.detectionFailed
-                        ? "Couldn't search automatically. Choose your folder or search again."
-                        : 'No WoW Forever installation found. Choose your folder or search again.'}
-                    </p>
-                  )}
-                  <div className="folder-field gap-[12px] mt-[17px] flex items-center">
-                    {(configured || app.detectedFolders.length < 2) && (
-                      <Input
-                        className="folder-picker cursor-pointer flex-[1]"
-                        aria-label="WoW client folder"
-                        value={app.wow}
-                        placeholder="Choose your World of Warcraft folder"
-                        disabled={installationBusy}
-                        readOnly
-                        aria-haspopup="dialog"
-                        onClick={app.chooseFolder}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') app.chooseFolder();
-                        }}
-                      />
-                    )}
-                    <Button
-                      onClick={app.chooseFolder}
-                      disabled={installationBusy}
-                      aria-busy={choosingFolder}
-                    >
-                      {choosingFolder ? (
-                        <>
-                          <Spinner />
-                          Choosing…
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="folder" size={17} />
-                          Choose folder
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {outdated && (
-                <p className="field-hint text-[11px]! text-muted mt-[12px]">
-                  Update the addon, then type /reload in WoW.
-                </p>
-              )}
-              <p className="field-hint text-[11px]! text-muted mt-[12px]">
-                <strong>Use at your own risk.</strong> We don’t know whether Blizzard permits Wisp
-                or whether using it could lead to an account ban.
-              </p>
-              <div className="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-                {((!configured && !app.detectingGame) || (configured && next !== 'update')) && (
-                  <Button intent="primary" onClick={app.install} disabled={installDisabled}>
-                    {app.busy === 'Installing addon'
-                      ? 'Installing…'
-                      : configured
-                        ? 'Install / update addon'
-                        : 'Install addon'}
-                  </Button>
-                )}
-                <ActionProgress label={app.busyTarget === 'installation' ? app.busy : ''} />
-              </div>
-              {!configured && !app.detectingGame && (
-                <Button
-                  intent="quiet"
-                  size="text"
-                  className="import mx-0 text-[12px] mt-[18px] mb-0"
-                  onClick={app.importPrevious}
-                  disabled={installationBusy || app.detectingGame}
-                >
-                  Already using Wisp? Import your previous installation.
-                </Button>
-              )}
-            </>
-          )}
-        </Card>
+        </>
       )}
     </>
+  );
+}
+
+function ConnectionStatus({
+  label,
+  online,
+  children,
+}: {
+  label: string;
+  online: boolean;
+  children: string;
+}) {
+  return (
+    <div className="min-w-0 px-3 first:pl-0">
+      <div className="text-[13px] text-muted">{label}</div>
+      <div className="mt-1 flex items-start gap-1.5 font-medium [overflow-wrap:anywhere]">
+        {online && (
+          <span className="mt-1 shrink-0 text-accent">
+            <Icon name="check" size={14} />
+          </span>
+        )}
+        <span>{children}</span>
+      </div>
+    </div>
+  );
+}
+
+function GameCommand() {
+  const input = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState('');
+
+  async function copyCommand() {
+    try {
+      await navigator.clipboard.writeText('/wisp');
+      setMessage('Copied.');
+    } catch {
+      input.current?.focus();
+      input.current?.select();
+      setMessage('Press Ctrl+C to copy.');
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2.5">
+      <Input
+        ref={input}
+        className="w-[86px] text-center font-mono text-[16px] font-semibold text-accent"
+        aria-label="WoW chat command"
+        value="/wisp"
+        readOnly
+      />
+      <Button onClick={copyCommand}>
+        <Icon name="copy" size={16} />
+        Copy command
+      </Button>
+      <span role="status" className="text-[13px] text-muted">
+        {message}
+      </span>
+    </div>
   );
 }

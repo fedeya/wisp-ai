@@ -7,7 +7,7 @@ import ConnectionEditor from './ConnectionEditor';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
-export default function ApiConnections() {
+export default function ApiConnections({ firstRun = false }: { firstRun?: boolean }) {
   const app = useDesktop((state) => ({
     busy: state.busy,
     busyTarget: state.busyTarget,
@@ -19,16 +19,21 @@ export default function ApiConnections() {
   const [editing, setEditing] = useState<{ connection?: ConnectionView } | null>(null);
 
   return (
-    <Card kind="provider">
-      <div className="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted">
+    <Card
+      kind="provider"
+      className={firstRun ? (editing ? 'col-span-full p-5' : 'p-5') : undefined}
+    >
+      <div
+        className={`section-title flex gap-4 ${firstRun ? 'flex-col items-start' : 'items-center justify-between'}`}
+      >
         <div>
-          <h2>API connections</h2>
+          <h2>{firstRun ? 'API provider' : 'API connections'}</h2>
           <p className="text-muted text-[13px]">
             Use your own API key. Usage is billed by the selected provider.
           </p>
         </div>
         <Button disabled={app.locked || !app.online || !!editing} onClick={() => setEditing({})}>
-          Add connection
+          {firstRun ? 'Add API provider' : 'Add connection'}
         </Button>
       </div>
       {app.connections?.map((connection) => (
@@ -81,11 +86,13 @@ export default function ApiConnections() {
       {editing && (
         <ConnectionEditor connection={editing.connection} close={() => setEditing(null)} />
       )}
-      <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
-        API keys are protected by your operating system. Configure Exa under Web search to use web
-        search with API models. Game tools and other enabled databases work independently of the
-        search service.
-      </p>
+      {!firstRun && (
+        <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
+          API keys are protected by your operating system. Configure Exa under Web search to use web
+          search with API models. Game tools and other enabled databases work independently of the
+          search service.
+        </p>
+      )}
     </Card>
   );
 }

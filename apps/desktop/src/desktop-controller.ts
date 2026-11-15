@@ -31,7 +31,19 @@ type DesktopState = {
   confirm: Confirmation | null;
   connectionError: string;
   modelsError: string;
+  onboarding: boolean;
 };
+
+const onboardingKey = 'wisp:onboarding:v1';
+
+function resumeOnboarding(configured: boolean) {
+  try {
+    if (!configured) localStorage.setItem(onboardingKey, 'pending');
+    return !configured || localStorage.getItem(onboardingKey) === 'pending';
+  } catch {
+    return !configured;
+  }
+}
 
 const initialState: DesktopState = {
   status: null,
@@ -51,6 +63,7 @@ const initialState: DesktopState = {
   confirm: null,
   connectionError: '',
   modelsError: '',
+  onboarding: false,
 };
 
 export const desktopConnected = ({ status }: DesktopState) =>
@@ -287,15 +300,6 @@ function createDesktopSession() {
           detectedFolders,
           wow: folders.has(previous) ? previous : detectedFolders[0] || '',
           detectingGame: false,
-          ...(detectedFolders.length && !getState().busy && !getState().feedback
-            ? {
-                failed: false,
-                feedback:
-                  detectedFolders.length === 1
-                    ? 'WoW Forever found.'
-                    : `Found ${detectedFolders.length} WoW Forever installations.`,
-              }
-            : {}),
         });
       }
     }
@@ -313,7 +317,7 @@ function createDesktopSession() {
       }
       stopBridgeLifecycle = startBridgeLifecycle({
         onDesktopInfo(info) {
-          update({ info, wow: info.wow || '' });
+          update({ info, wow: info.wow || '', onboarding: resumeOnboarding(info.configured) });
           if (!info.configured) void searchInstallations();
         },
         launchBridge,
@@ -332,6 +336,14 @@ function createDesktopSession() {
       start,
       install,
       importPrevious,
+      finishOnboarding() {
+        try {
+          localStorage.removeItem(onboardingKey);
+        } catch {
+          // Setup can still finish when webview storage is unavailable.
+        }
+        update({ onboarding: false });
+      },
       showLogs,
       setIntegration,
       panelAction,

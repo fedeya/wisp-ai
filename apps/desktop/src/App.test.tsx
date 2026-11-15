@@ -22,6 +22,7 @@ function renderApp(reactStrictMode = false) {
 }
 beforeEach(() => {
   mockIPC(() => null);
+  localStorage.clear();
   vi.clearAllMocks();
   vi.mocked(listen).mockResolvedValue(() => {});
   status = {
@@ -94,7 +95,7 @@ test.each([
   { failed: true, duration: 10000 },
 ])('notifications expire after $duration ms (failed: $failed)', async ({ failed, duration }) => {
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   if (failed) {
     vi.mocked(request).mockRejectedValueOnce(new Error('Could not save settings'));
@@ -137,7 +138,7 @@ test('detects a single Forever installation without installing or saving it', as
   await waitFor(() => expect(input.value).toBe('E:\\Blizzard\\World of Warcraft\\_forever_'));
   expect(desktop).not.toHaveBeenCalledWith('install_addon', expect.anything());
   expect(input.readOnly).toBe(true);
-  expect(screen.getByText('WoW Forever found.').closest('.notification')).toBeTruthy();
+  expect(screen.getByText('WoW Forever found.')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Choose folder' })).toBeTruthy();
   await fireEvent.click(input);
   await waitFor(() => expect(desktop).toHaveBeenCalledWith('pick_folder'));
@@ -148,9 +149,7 @@ test('additional installations keep the first selection and offer alternatives',
   mockUnconfiguredDetection(Promise.resolve(['D:\\Forever', 'E:\\Forever']));
   renderApp();
   const choices = await screen.findByLabelText('Detected Forever installations');
-  expect(
-    screen.getByText('Found 2 WoW Forever installations.').closest('.notification'),
-  ).toBeTruthy();
+  expect(screen.getByText('Found 2 WoW Forever installations.')).toBeTruthy();
   expect(choices.textContent).toBe('D:\\Forever');
   await chooseOption(choices, 'E:\\Forever');
   expect(choices.textContent).toBe('E:\\Forever');
@@ -164,7 +163,7 @@ test('search hides selection until all results are ready', async () => {
     }),
   );
   renderApp();
-  await screen.findByText('Finding WoW Forever');
+  await screen.findByText('Finding WoW Forever…');
   await waitFor(() =>
     expect(desktop).toHaveBeenCalledWith('detect_game_folders', expect.anything()),
   );
@@ -197,7 +196,7 @@ test('unsuccessful search enables manual selection and can be retried', async ()
     }),
   );
   renderApp();
-  await screen.findByText('Finding WoW Forever');
+  await screen.findByText('Finding WoW Forever…');
   finish([]);
   await fireEvent.click(await screen.findByRole('button', { name: 'Choose folder' }));
   const input = screen.getByLabelText('WoW client folder') as HTMLInputElement;
@@ -216,7 +215,7 @@ test('unsuccessful search enables manual selection and can be retried', async ()
 
 test('configured installations skip detection', async () => {
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   expect(desktop).not.toHaveBeenCalledWith('detect_game_folders', expect.anything());
 });
 
@@ -241,7 +240,7 @@ test('search again waits for fresh results and ignores updates from the previous
     return fallback(command, args);
   });
   await fireEvent.click(screen.getByRole('button', { name: 'Search again' }));
-  await screen.findByText('Finding WoW Forever');
+  await screen.findByText('Finding WoW Forever…');
   expect(screen.queryByLabelText('WoW client folder')).toBeNull();
   previous.onmessage('D:\\Stale');
   finish(['E:\\Forever']);
@@ -254,7 +253,7 @@ test('search again waits for fresh results and ignores updates from the previous
 test('search settings keep Exa separate from model connections and do not reveal saved keys', async () => {
   status.search = { provider: 'auto', hasExaKey: true };
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   expect(screen.getByRole('heading', { name: 'Web search' })).toBeTruthy();
   const key = screen.getByLabelText(
@@ -288,7 +287,7 @@ test('saving search settings queues a fresh status read behind an in-flight poll
   const newSearch = { provider: 'exa', hasExaKey: true } as const;
   status.search = oldSearch;
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   const refresh = desktopStore.getState().actions.refresh;
   await act(refresh);
@@ -346,7 +345,7 @@ test('saving search settings queues a fresh status read behind an in-flight poll
 test('Exa testing is available without a key and saving clears the password field', async () => {
   status.search = { provider: 'auto', hasExaKey: false };
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   expect((screen.getByRole('button', { name: 'Test Exa' }) as HTMLButtonElement).disabled).toBe(
     false,
@@ -370,7 +369,7 @@ test('Exa testing is available without a key and saving clears the password fiel
 });
 test('API connections expose the provider registry and save a model with protected-key input', async () => {
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   await fireEvent.click(screen.getByRole('button', { name: 'Add connection' }));
   const provider = await screen.findByRole('combobox', { name: 'Provider' });
@@ -442,7 +441,7 @@ test('an API default enables the workspace while ChatGPT stays disconnected', as
     },
   ];
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   expect(screen.getByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
   expect(screen.getByText('My Claude')).toBeTruthy();
@@ -503,7 +502,7 @@ test('routines replace suggestion toggles and expose run history with character-
     },
   ];
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Routines' }));
   expect(screen.queryByRole('button', { name: 'Suggestions' })).toBeNull();
   expect(screen.getByText('Mage review')).toBeTruthy();
@@ -532,7 +531,7 @@ test('routines replace suggestion toggles and expose run history with character-
 
 test('provider-neutral navigation and per-chat default model controls use the bridge contract', async () => {
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
   expect(screen.getByRole('heading', { name: 'AI connections' })).toBeTruthy();
   await chooseOption(
@@ -553,7 +552,7 @@ test('account selection is a draft until submitted and remains available for rec
     return original(route, body);
   });
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
 
   const accounts = screen.getByRole('combobox', { name: 'Saved accounts' });
@@ -578,14 +577,14 @@ test('account selection is a draft until submitted and remains available for rec
 
 test('the app preserves router history through StrictMode effect cleanup', async () => {
   const router = renderApp(true);
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
 
   await act(async () => {
     await router.navigate(-1);
   });
 
-  expect(screen.getByRole('heading', { name: 'Wisp status' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Wisp is ready' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBe('page');
 });
 
@@ -631,7 +630,7 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
     },
   ];
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   const add = await screen.findByRole('button', { name: 'Add MCP' });
   add.focus();
@@ -759,7 +758,7 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
 
 test('MCP transport changes do not leave hidden local validation errors blocking HTTP saves', async () => {
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   await fireEvent.click(await screen.findByRole('button', { name: 'Add MCP' }));
   const dialog = within(await screen.findByRole('dialog', { name: 'Add an MCP' }));
@@ -837,7 +836,7 @@ test('integration cards expose availability, master and child switches through t
     },
   ];
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   expect(await screen.findByText('partial')).toBeTruthy();
   expect(screen.getByText('Some service indexes are unavailable.')).toBeTruthy();
@@ -873,7 +872,7 @@ test('built-in capabilities stay out of integrations and memory has separate con
     status: 'ready',
   }));
   renderApp();
-  await screen.findByText('Ready to help');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await fireEvent.click(screen.getByRole('link', { name: 'Integrations' }));
   expect(await screen.findByRole('switch', { name: 'Enable Questie' })).toBeTruthy();
   expect(screen.queryByRole('switch', { name: 'Enable World of Warcraft' })).toBeNull();
@@ -892,7 +891,7 @@ test('built-in capabilities stay out of integrations and memory has separate con
 
 test('a configured installation stays compact until explicitly opened', async () => {
   renderApp();
-  await screen.findByText('Everything is ready');
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   expect(screen.queryByLabelText('WoW client folder')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Manage installation' }));
   expect((screen.getByLabelText('WoW client folder') as HTMLInputElement).value).toBe('E:\\WoW');
@@ -912,9 +911,9 @@ test('the next action follows the missing connection', async () => {
   status.auth.status = 'connected';
   status.gameConnected = false;
   renderApp();
-  await screen.findByText('Ready when you enter Azeroth');
+  await screen.findByRole('heading', { name: 'Waiting for WoW' });
   expect(screen.queryByRole('button', { name: 'Connect AI' })).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: 'Check installation' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Manage installation' }));
   expect(screen.getByLabelText('WoW client folder')).toBeTruthy();
 });
 
@@ -944,31 +943,51 @@ test('data pages show loading while the first status request is pending', async 
       : ({ models: [] } as never),
   );
   renderApp();
-  await fireEvent.click(screen.getByRole('link', { name: 'Panels' }));
+  await fireEvent.click(await screen.findByRole('link', { name: 'Panels' }));
   expect(screen.getByText('Loading your workspace…')).toBeTruthy();
   await waitFor(() => expect(finish).toBeDefined());
   finish(status);
   await screen.findByText('No panels yet.');
 });
 
-test('first-time setup leads from choosing a folder to installing the addon', async () => {
+test('first-time setup resumes at the provider step and opens Overview after saving a model', async () => {
   const original = vi.mocked(desktop).getMockImplementation()!;
+  let installed = false;
+  status.auth = { status: 'signed_out', profiles: [], revision: 1 };
+  status.model = '';
+  status.modelConnected = false;
   vi.mocked(desktop).mockImplementation(async (command, args) => {
     if (command === 'desktop_info') {
       return {
-        configured: false,
-        wow: '',
+        configured: installed,
+        wow: installed ? 'D:\\WoW' : '',
         version: '0.0.1',
         platform: 'windows',
         dataDirectory: 'userdata',
       } as never;
+    }
+    if (command === 'install_addon') {
+      installed = true;
     }
     if (command === 'pick_folder') {
       return 'D:\\WoW' as never;
     }
     return original(command, args);
   });
+  const originalRequest = vi.mocked(request).getMockImplementation()!;
+  vi.mocked(request).mockImplementation(async (route, body) => {
+    if (route === '/auth/models' && status.auth.status === 'signed_out') {
+      return { models: [] } as never;
+    }
+    if (route === '/auth/model') {
+      status.model = (body as { model: string }).model;
+      status.modelConnected = true;
+    }
+    return originalRequest(route, body);
+  });
   renderApp();
+  await screen.findByRole('heading', { name: 'Set up Wisp' });
+  expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
   await fireEvent.click(await screen.findByRole('button', { name: 'Choose folder' }));
   const install = (await screen.findByRole('button', {
     name: 'Install addon',
@@ -976,6 +995,33 @@ test('first-time setup leads from choosing a folder to installing the addon', as
   await waitFor(() => expect(install.disabled).toBe(false));
   await fireEvent.click(install);
   await waitFor(() => expect(desktop).toHaveBeenCalledWith('install_addon', { wow: 'D:\\WoW' }));
+  await screen.findByRole('heading', { name: 'Connect your AI provider' });
+
+  cleanup();
+  renderApp();
+  await screen.findByRole('button', { name: 'Continue with ChatGPT' });
+  expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Add account' })).toBeNull();
+  expect((screen.getByRole('button', { name: 'Finish setup' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+
+  status.auth.status = 'connected';
+  status.auth.revision += 1;
+  await act(() => desktopStore.getState().actions.refresh());
+  await chooseOption(screen.getByRole('combobox', { name: 'Default model for new chats' }), 'Sol');
+  await fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  expect(request).toHaveBeenCalledWith('/auth/model', { model: 'sol' });
+  expect(screen.getByText('Sol')).toBeTruthy();
+  expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
+
+  cleanup();
+  status.modelConnected = false;
+  status.auth.status = 'signed_out';
+  renderApp();
+  await screen.findByRole('heading', { name: 'Connect your AI account' });
+  expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
 });
 
 test('an outdated addon becomes the next action even with healthy connections', async () => {
@@ -988,7 +1034,7 @@ test('an outdated addon becomes the next action even with healthy connections', 
   });
   renderApp();
   await screen.findByText('Update your Wisp addon');
-  expect(screen.queryByText('Everything is ready')).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Wisp is ready' })).toBeNull();
   expect((screen.getByRole('button', { name: 'Update addon' }) as HTMLButtonElement).disabled).toBe(
     false,
   );

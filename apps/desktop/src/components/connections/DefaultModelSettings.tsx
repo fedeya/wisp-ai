@@ -3,12 +3,12 @@ import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import Icon from '../ui/Icon';
 import { Button, Card, Select } from '../ui/Controls';
-import { desktopLocked } from '../../desktop-controller';
+import { desktopConnected, desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
 const defaultValues: { model: string | null } = { model: null };
 
-export default function DefaultModelSettings() {
+export default function DefaultModelSettings({ onFinish }: { onFinish?: () => void }) {
   const app = useDesktop((state) => ({
     savedModel: state.status?.model,
     online: !!state.status,
@@ -17,6 +17,7 @@ export default function DefaultModelSettings() {
     busy: state.busy,
     busyTarget: state.busyTarget,
     locked: desktopLocked(state),
+    connected: desktopConnected(state),
   }));
   const { loadModels, work } = useDesktopActions();
   const savedModel = app.savedModel ?? '';
@@ -30,26 +31,39 @@ export default function DefaultModelSettings() {
       const model = app.models.some(({ slug }) => slug === value.model)
         ? value.model
         : defaultModel;
-      if (!model || model === savedModel) return;
+      if (!model) return;
+      if (model === savedModel) {
+        if (app.connected) onFinish?.();
+        return;
+      }
       const saved = await work(
         'Updating default model',
         () => request('/auth/model', { model }),
         'Default model updated.',
         'model',
       );
-      if (saved) formApi.reset();
+      if (saved) {
+        formApi.reset();
+        onFinish?.();
+      }
     },
   });
   const draft = useSelector(modelForm.store, (state) => state.values.model);
   const submitting = useSelector(modelForm.store, (state) => state.isSubmitting);
   const model = app.models.some(({ slug }) => slug === draft) ? draft : defaultModel;
   const locked = app.locked || submitting;
-  const canSave = !locked && !!model && model !== savedModel;
+  const canSave = !locked && !!model && (model !== savedModel || (!!onFinish && app.connected));
 
   return (
-    <Card kind="provider">
-      <h2>Default model</h2>
-      <div className="field-section border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px]">
+    <Card kind="provider" className={onFinish ? 'p-5' : undefined}>
+      {!onFinish && <h2>Default model</h2>}
+      <div
+        className={
+          onFinish
+            ? undefined
+            : 'field-section mt-[26px] border-t border-solid border-border pt-[22px]'
+        }
+      >
         {app.modelsError && (
           <p
             className="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#332522] text-[#f0b4aa] mb-[20px] text-[13px] leading-[1.5] [&_.icon-button]:ml-auto"
@@ -59,7 +73,12 @@ export default function DefaultModelSettings() {
           </p>
         )}
         <div className="label-row flex items-center justify-between">
-          <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="models">
+          <label
+            className={
+              onFinish ? 'text-[16px] font-semibold' : 'text-[12px] font-medium text-[#bdcccf]'
+            }
+            htmlFor="models"
+          >
             Default model for new chats
           </label>
           <Button
@@ -73,7 +92,7 @@ export default function DefaultModelSettings() {
           </Button>
         </div>
         <form
-          className="inline-field gap-[12px] mt-[10px] flex items-center"
+          className="inline-field gap-[12px] mt-[10px] flex flex-wrap items-center"
           onSubmit={(event) => {
             event.preventDefault();
             if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
@@ -82,7 +101,7 @@ export default function DefaultModelSettings() {
           <modelForm.Field name="model">
             {(field) => (
               <Select
-                className="flex-[1]"
+                className="min-w-[180px] flex-1"
                 id="models"
                 name={field.name}
                 value={model || null}
@@ -96,8 +115,12 @@ export default function DefaultModelSettings() {
               />
             )}
           </modelForm.Field>
-          <Button type="submit" disabled={!canSave}>
-            {app.busy === 'Updating default model' ? 'Saving…' : 'Set default'}
+          <Button type="submit" intent={onFinish ? 'primary' : 'default'} disabled={!canSave}>
+            {app.busy === 'Updating default model'
+              ? 'Saving…'
+              : onFinish
+                ? 'Finish setup'
+                : 'Set default'}
           </Button>
         </form>
         <ActionProgress label={app.busyTarget === 'model' ? app.busy : ''} />
@@ -105,10 +128,12 @@ export default function DefaultModelSettings() {
           You can choose a different model and effort inside each chat.
         </p>
       </div>
-      <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
-        <Icon name="check" size={16} />
-        Credentials stay protected by your operating system.
-      </p>
+      {!onFinish && (
+        <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
+          <Icon name="check" size={16} />
+          Credentials stay protected by your operating system.
+        </p>
+      )}
     </Card>
   );
 }
