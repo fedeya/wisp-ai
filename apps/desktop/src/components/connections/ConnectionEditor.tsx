@@ -1,6 +1,7 @@
 import { useForm, useSelector } from '@tanstack/react-form';
 import {
   connectionModel,
+  maxConnectionModels,
   providerDefinitions,
   type ConnectionModel,
   type ConnectionView,
@@ -50,20 +51,23 @@ function connectionDetails(id: string | undefined, value: ConnectionFields) {
 
 export default function ConnectionEditor({
   connection,
+  initialProvider,
   close,
 }: {
   connection?: ConnectionView;
+  initialProvider?: ProviderId;
   close: () => void;
 }) {
   const app = useDesktop((state) => ({
     busy: state.busy,
     busyTarget: state.busyTarget,
-    locked: desktopLocked(state),
+    locked: desktopLocked(state) || !state.status?.ready,
   }));
-  const { loadModels, work } = useDesktopActions();
+  const { work } = useDesktopActions();
   const [discovered, setDiscovered] = useState<ConnectionModel[]>([]);
+  const [showModelSettings, setShowModelSettings] = useState(false);
   const defaultValues: ConnectionFields = {
-    provider: connection?.provider || 'anthropic',
+    provider: connection?.provider ?? initialProvider ?? 'anthropic',
     name: connection?.name || '',
     apiKey: '',
     baseURL: connection?.baseURL || '',
@@ -82,26 +86,73 @@ export default function ConnectionEditor({
             models: value.models,
           });
           close();
-          await loadModels();
         },
-        'Connection saved. Choose a default model below.',
+        'Connection saved.',
         'connection-editor',
       );
     },
   });
-  const { provider, baseURL, modelId, models } = useSelector(form.store, (state) => state.values);
+  const { provider, baseURL, apiKey, modelId, models } = useSelector(
+    form.store,
+    (state) => state.values,
+  );
   const formCanSubmit = useSelector(form.store, (state) => state.canSubmit);
-  const canSave = !app.locked && models.length > 0 && !modelId.trim() && formCanSubmit;
+  const canDiscover =
+    !app.locked &&
+    (provider === 'compatible' ? !!baseURL.trim() : !!apiKey.trim() || !!connection?.hasKey);
+  const canSave =
+    !app.locked &&
+    (!initialProvider || canDiscover) &&
+    models.length > 0 &&
+    !modelId.trim() &&
+    formCanSubmit;
   const canTest =
     !app.locked &&
     models.length > 0 &&
     models.every(({ contextWindow }) => contextWindowSchema.safeParse(contextWindow).success);
   const definition = providerDefinitions.find((item) => item.id === provider)!;
+  const missingContext = discovered.some((model) => !model.contextWindow);
+
+  function discoverModels() {
+    return work(
+      'Loading provider models',
+      async () => {
+        const values = form.state.values;
+        const result = await request<{ models: ConnectionModel[] }>(
+          '/connections/discover',
+          connectionDetails(connection?.id, values),
+        );
+        const catalog = new Map<string, ConnectionModel>();
+        for (const model of result.models) {
+          const parsed = connectionModel.safeParse(model);
+          if (parsed.success) catalog.set(parsed.data.id, parsed.data);
+        }
+        const usableModels = [...catalog.values()];
+        setDiscovered(usableModels);
+        if (!initialProvider) return;
+        const enabled = new Map(values.models.map((model) => [model.id, model]));
+        for (const model of usableModels) {
+          if (enabled.size >= maxConnectionModels) break;
+          if (!enabled.has(model.id) && model.contextWindow) enabled.set(model.id, model);
+        }
+        form.setFieldValue('models', [...enabled.values()]);
+        if (enabled.size === 0) setShowModelSettings(true);
+      },
+      initialProvider ? 'Model list loaded.' : 'Models loaded. Choose models to add below.',
+      'connection-editor',
+    );
+  }
 
   function addModel() {
     const value = form.state.values;
     const id = value.modelId.trim();
-    if (!id || value.models.some((model) => model.id === id)) return;
+    if (
+      !id ||
+      value.models.length >= maxConnectionModels ||
+      value.models.some((model) => model.id === id)
+    ) {
+      return;
+    }
     const found = discovered.find((model) => model.id === id);
     void form.pushFieldValue('models', {
       ...found,
@@ -119,33 +170,37 @@ export default function ConnectionEditor({
         event.preventDefault();
         if (canSave && !form.state.isSubmitting) void form.handleSubmit();
       }}
-      className="field-section api-connection-form gap-[12px] border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px] grid"
+      className={`field-section api-connection-form grid border-t [border-top-style:solid] border-t-border ${initialProvider ? 'mt-4 gap-2.5 pt-4' : 'mt-[26px] gap-3 pt-[22px]'}`}
     >
-      <label className={labelClass} htmlFor="ai-provider">
-        Provider
-      </label>
-      <form.Field
-        name="provider"
-        listeners={{
-          onChange: () => {
-            form.setFieldValue('models', []);
-            setDiscovered([]);
-            form.setFieldValue('modelId', '');
-            form.setFieldValue('baseURL', '');
-            form.setFieldValue('apiKey', '');
-          },
-        }}
-      >
-        {(field) => (
-          <Select
-            id="ai-provider"
-            value={field.state.value}
-            onValueChange={field.handleChange}
-            options={providerOptions}
-            disabled={app.locked || !!connection}
-          />
-        )}
-      </form.Field>
+      {!initialProvider && (
+        <>
+          <label className={labelClass} htmlFor="ai-provider">
+            Provider
+          </label>
+          <form.Field
+            name="provider"
+            listeners={{
+              onChange: () => {
+                form.setFieldValue('models', []);
+                setDiscovered([]);
+                form.setFieldValue('modelId', '');
+                form.setFieldValue('baseURL', '');
+                form.setFieldValue('apiKey', '');
+              },
+            }}
+          >
+            {(field) => (
+              <Select
+                id="ai-provider"
+                value={field.state.value}
+                onValueChange={field.handleChange}
+                options={providerOptions}
+                disabled={app.locked || !!connection}
+              />
+            )}
+          </form.Field>
+        </>
+      )}
       <label className={labelClass} htmlFor="ai-name">
         Connection name
       </label>
@@ -212,126 +267,177 @@ export default function ConnectionEditor({
           );
         }}
       </form.Field>
-      <div className="label-row flex items-center justify-between">
-        <label className={labelClass} htmlFor="ai-model">
-          Models available in Wisp
-        </label>
+      <div className="label-row flex flex-wrap items-center justify-between gap-2">
+        {initialProvider ? (
+          <h3 className="m-0 text-[14px] font-semibold">Models</h3>
+        ) : (
+          <label className={labelClass} htmlFor="ai-model">
+            Models available in Wisp
+          </label>
+        )}
         <Button
           intent="quiet"
           size="text"
-          disabled={app.locked || (provider === 'compatible' && !baseURL)}
-          onClick={() =>
-            work(
-              'Loading provider models',
-              async () => {
-                const result = await request<{ models: ConnectionModel[] }>(
-                  '/connections/discover',
-                  connectionDetails(connection?.id, form.state.values),
-                );
-                setDiscovered(result.models);
-              },
-              'Models loaded. Choose models to add below.',
-              'connection-editor',
-            )
+          disabled={
+            initialProvider ? !canDiscover : app.locked || (provider === 'compatible' && !baseURL)
           }
+          onClick={discoverModels}
         >
-          Load model list
+          {initialProvider ? 'Discover models' : 'Load model list'}
         </Button>
       </div>
-      <p className="field-hint text-[11px]! text-muted mt-[12px]">
-        Choose a model with tool calling. You can enter its exact ID if the provider cannot list
-        models.
-      </p>
-      <div className={modelFieldsClass}>
-        <form.Field name="modelId">
-          {(field) => (
-            <Input
-              id="ai-model"
-              value={field.state.value}
-              onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-              list="ai-model-options"
-              placeholder={definition.example}
-              disabled={app.locked}
-            />
-          )}
-        </form.Field>
-        <datalist id="ai-model-options">
-          {discovered.map((model) => (
-            <option value={model.id} key={model.id}>
-              {model.name || model.id}
-            </option>
-          ))}
-        </datalist>
-        <form.Field name="contextWindow">
-          {(field) => (
-            <NumberInput
-              aria-label="Context window in tokens"
-              min={1}
-              max={100000000}
-              value={field.state.value}
-              onValueChange={field.handleChange}
-              placeholder="Context tokens"
-              disabled={app.locked}
-            />
-          )}
-        </form.Field>
-        <Button disabled={app.locked || !modelId.trim()} onClick={addModel}>
-          Add model
-        </Button>
-      </div>
-      <form.Field name="models" mode="array">
-        {(field) =>
-          field.state.value.map((model, index) => (
-            <div className={modelFieldsClass} key={model.id}>
-              <span className="[overflow-wrap:anywhere]">{model.id}</span>
-              <form.Field
-                name={`models[${index}].contextWindow`}
-                validators={{ onChange: validateContextWindow, onSubmit: validateContextWindow }}
-              >
-                {(contextField) => {
-                  const error = contextField.state.meta.errors[0];
-                  const errorId = `model-context-error-${index}`;
-                  return (
-                    <div>
-                      <NumberInput
-                        aria-label={`Context window for ${model.id}`}
-                        aria-invalid={!!error}
-                        aria-describedby={error ? errorId : undefined}
-                        min={1}
-                        max={100000000}
-                        value={contextField.state.value}
-                        onValueChange={contextField.handleChange}
-                        placeholder="Context tokens (required)"
-                        disabled={app.locked}
-                      />
-                      {error && (
-                        <p id={errorId} role="alert" className="mt-1 text-xs text-[#f0b4aa]">
-                          {error}
-                        </p>
-                      )}
-                    </div>
-                  );
-                }}
-              </form.Field>
-              <Button
-                intent="quiet"
-                disabled={app.locked}
-                aria-label={`Remove ${model.id}`}
-                onClick={() => void field.removeValue(index)}
-              >
-                Remove
-              </Button>
+      {initialProvider && (
+        <>
+          {models.length > 0 ? (
+            <div>
+              <p className="mt-0 text-[13px] text-accent">
+                {models.length} {models.length === 1 ? 'model' : 'models'} available after saving
+              </p>
+              <ul className="mt-2 mb-0 pl-5 text-[13px] text-muted">
+                {models.slice(0, 4).map((model) => (
+                  <li key={model.id}>{model.name || model.id}</li>
+                ))}
+                {models.length > 4 && <li>And {models.length - 4} more</li>}
+              </ul>
             </div>
-          ))
-        }
-      </form.Field>
-      <p className="field-hint text-[11px]! text-muted mt-[12px]">
-        Set the context window for every model so Wisp can manage long conversations. For local
-        models, use the tokens your server allocates. Choose reasoning per chat in game when the
-        model supports it. Default keeps the provider's setting; higher effort can use more time and
-        tokens.
-      </p>
-      <div className="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
+          ) : (
+            <p className="mt-0 text-[13px] text-muted">
+              {discovered.length > 0
+                ? 'Add a model with its context window below.'
+                : 'Discover models from this provider or add them manually.'}
+            </p>
+          )}
+          {missingContext && models.length > 0 && (
+            <p className="mt-0 text-[13px] text-muted">
+              Some discovered models need a context window before they can be added manually.
+            </p>
+          )}
+          <Button
+            intent="quiet"
+            size="text"
+            className="w-fit"
+            aria-expanded={showModelSettings}
+            aria-controls="connection-model-settings"
+            onClick={() => setShowModelSettings((open) => !open)}
+          >
+            {showModelSettings
+              ? 'Hide model settings'
+              : models.length
+                ? 'Manage models'
+                : 'Add models manually'}
+          </Button>
+        </>
+      )}
+      <div
+        id="connection-model-settings"
+        hidden={!!initialProvider && !showModelSettings}
+        className={`gap-3 ${!initialProvider || showModelSettings ? 'grid' : 'hidden'}`}
+      >
+        {initialProvider && (
+          <label htmlFor="ai-model" className={labelClass}>
+            Model ID
+          </label>
+        )}
+        <p className="field-hint text-[11px]! text-muted mt-[12px]">
+          Use models with tool calling. You can enter an exact model ID when the provider cannot
+          list models.
+        </p>
+        <div className={modelFieldsClass}>
+          <form.Field name="modelId">
+            {(field) => (
+              <Input
+                id="ai-model"
+                value={field.state.value}
+                onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                list="ai-model-options"
+                placeholder={definition.example}
+                disabled={app.locked}
+              />
+            )}
+          </form.Field>
+          <datalist id="ai-model-options">
+            {discovered.map((model) => (
+              <option value={model.id} key={model.id}>
+                {model.name || model.id}
+              </option>
+            ))}
+          </datalist>
+          <form.Field name="contextWindow">
+            {(field) => (
+              <NumberInput
+                aria-label="Context window in tokens"
+                min={1}
+                max={100000000}
+                value={field.state.value}
+                onValueChange={field.handleChange}
+                placeholder="Context tokens"
+                disabled={app.locked}
+              />
+            )}
+          </form.Field>
+          <Button
+            disabled={app.locked || !modelId.trim() || models.length >= maxConnectionModels}
+            onClick={addModel}
+          >
+            Add model
+          </Button>
+        </div>
+        <form.Field name="models" mode="array">
+          {(field) =>
+            field.state.value.map((model, index) => (
+              <div className={modelFieldsClass} key={model.id}>
+                <span className="[overflow-wrap:anywhere]">{model.id}</span>
+                <form.Field
+                  name={`models[${index}].contextWindow`}
+                  validators={{ onChange: validateContextWindow, onSubmit: validateContextWindow }}
+                >
+                  {(contextField) => {
+                    const error = contextField.state.meta.errors[0];
+                    const errorId = `model-context-error-${index}`;
+                    return (
+                      <div>
+                        <NumberInput
+                          aria-label={`Context window for ${model.id}`}
+                          aria-invalid={!!error}
+                          aria-describedby={error ? errorId : undefined}
+                          min={1}
+                          max={100000000}
+                          value={contextField.state.value}
+                          onValueChange={contextField.handleChange}
+                          placeholder="Context tokens (required)"
+                          disabled={app.locked}
+                        />
+                        {error && (
+                          <p id={errorId} role="alert" className="mt-1 text-xs text-[#f0b4aa]">
+                            {error}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  }}
+                </form.Field>
+                <Button
+                  intent="quiet"
+                  disabled={app.locked}
+                  aria-label={`Remove ${model.id}`}
+                  onClick={() => void field.removeValue(index)}
+                >
+                  Remove
+                </Button>
+              </div>
+            ))
+          }
+        </form.Field>
+        <p className="field-hint text-[11px]! text-muted mt-[12px]">
+          Set the context window for every model so Wisp can manage long conversations. For local
+          models, use the tokens your server allocates. Choose reasoning per chat in game when the
+          model supports it. Default keeps the provider's setting; higher effort can use more time
+          and tokens.
+        </p>
+      </div>
+      <div
+        className={`actions flex flex-wrap items-center gap-2.5 ${initialProvider ? 'mt-2' : 'mt-[22px]'}`}
+      >
         <Button
           disabled={!canTest}
           onClick={() =>

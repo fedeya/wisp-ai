@@ -10,7 +10,8 @@ import { navigationLink } from './components/ui/Controls/styles';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
 import { mountDesktop } from './desktop-controller';
-import { desktopPages, type DesktopPage } from './routes/desktop-routes';
+import { connectionsPage, desktopPages, type DesktopPage } from './routes/desktop-routes';
+import ProviderDetails from './routes/ProviderDetails';
 import Onboarding from './components/onboarding/Onboarding';
 import { Spinner } from './components/ui/ActionProgress';
 
@@ -51,7 +52,7 @@ function DesktopShell() {
       <NavLink
         key={item.name}
         to={item.path}
-        end
+        end={item.name !== 'Connections'}
         className={({ isActive }) => navigationLink({ selected: isActive })}
         onClick={(event) => {
           if (item.name === page.name && item.name === 'Diagnostics') {
@@ -116,7 +117,7 @@ function DesktopShell() {
             </div>
           </aside>
           <main className="px-[32px] ml-[210px] pt-[34px] pb-[80px] min-w-[0] w-[calc(100%_-_210px)] max-w-[1450px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:ml-[190px] max-md:pt-[26px] max-md:w-[calc(100%_-_190px)]">
-            {page.name !== 'Overview' && (
+            {page.name !== 'Overview' && page.name !== 'Connections' && (
               <header className="page-header gap-[18px] mb-[28px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
                 <div>
                   <h1>{page.title}</h1>
@@ -137,10 +138,6 @@ function DesktopShell() {
               onBusy={app.setBusy}
             />
             <Outlet />
-            <footer className="app-footer gap-[12px] px-[2px] flex justify-between text-muted text-[12px] pt-[18px] pb-0 mt-[8px]">
-              <span>Wisp stays available in your system tray.</span>
-              <span>History saved locally.</span>
-            </footer>
           </main>
         </div>
       )}
@@ -172,12 +169,15 @@ export function createDesktopRouter() {
   return createMemoryRouter([
     {
       Component: DesktopShell,
-      children: desktopPages.map((page) => ({
-        id: page.name,
-        path: page.path,
-        Component: page.Component,
-        handle: page,
-      })),
+      children: [
+        ...desktopPages.map((page) => ({
+          id: page.name,
+          path: page.path,
+          Component: page.Component,
+          handle: page,
+        })),
+        { path: '/connections/:provider', Component: ProviderDetails, handle: connectionsPage },
+      ],
     },
   ]);
 }

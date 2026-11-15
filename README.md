@@ -24,7 +24,7 @@ Download the [Windows x64 installer](https://github.com/fedeya/wisp-ai/releases/
 Once the desktop app is running:
 
 1. In **Overview**, select the WoW folder containing `Wow.exe` and install/update the addon.
-2. In **Connections**, sign in with **ChatGPT** (no API key needed), or add an **API connection** for Claude, Gemini, DeepSeek, Vercel AI Gateway, OpenRouter or another supported provider. Select a model and click **Set default**. See [AI connections](docs/usage.md#ai-connections) for API setup.
+2. In **Connections**, choose **Add provider** to find **ChatGPT**, **Claude**, **Gemini**, gateways and compatible endpoints. After connecting, return to **Connections** to select a **Default model**. See [AI connections](docs/usage.md#ai-connections) for API setup.
 3. Fully exit and restart WoW, then enable **Wisp AI** and its helper addons in the AddOns list.
 4. Type `/wisp` and ask a question. Keep the desktop app running; closing its window leaves it in the system tray.
 

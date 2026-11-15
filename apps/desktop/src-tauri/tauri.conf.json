@@ -45,7 +45,8 @@
     ],
     "resources": {
       "resources/payload/": "payload/",
-      "../node_modules/lucide-react/LICENSE": "licenses/lucide-react.txt"
+      "../node_modules/lucide-react/LICENSE": "licenses/lucide-react.txt",
+      "../src/assets/providers/LICENSE.txt": "licenses/lobe-icons.txt"
     },
     "publisher": "Wisp AI",
     "shortDescription": "Your AI companion in Azeroth",

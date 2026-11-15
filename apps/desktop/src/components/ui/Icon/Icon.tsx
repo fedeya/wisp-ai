@@ -1,3 +1,4 @@
+import ArrowLeft from 'lucide-react/icons/arrow-left';
 import ArrowRight from 'lucide-react/icons/arrow-right';
 import Check from 'lucide-react/icons/check';
 import ChevronDown from 'lucide-react/icons/chevron-down';
@@ -8,6 +9,7 @@ import Link2 from 'lucide-react/icons/link-2';
 import PanelsTopLeft from 'lucide-react/icons/panels-top-left';
 import Plus from 'lucide-react/icons/plus';
 import RefreshCw from 'lucide-react/icons/refresh-cw';
+import Server from 'lucide-react/icons/server';
 import Sparkles from 'lucide-react/icons/sparkles';
 import SquareTerminal from 'lucide-react/icons/square-terminal';
 import Wrench from 'lucide-react/icons/wrench';
@@ -15,6 +17,7 @@ import X from 'lucide-react/icons/x';
 
 const icons = {
   arrow: ArrowRight,
+  back: ArrowLeft,
   check: Check,
   chevronDown: ChevronDown,
   close: X,
@@ -26,6 +29,7 @@ const icons = {
   panel: PanelsTopLeft,
   plus: Plus,
   refresh: RefreshCw,
+  server: Server,
   spark: Sparkles,
   tools: Wrench,
 };

@@ -128,12 +128,14 @@ export const connectionModel = z.object({
   contextWindow: z.number().int().positive().max(100_000_000).optional(),
   reasoningEfforts: z.array(reasoningEffort).max(8).optional(),
 });
+export const maxConnectionModels = 200;
+
 export const connectionConfig = z.object({
   id: z.string().uuid(),
   provider: providerId,
   name: z.string().trim().min(1).max(80),
   baseURL: z.string().url().max(1000).optional(),
-  models: z.array(connectionModel).min(1).max(200),
+  models: z.array(connectionModel).min(1).max(maxConnectionModels),
 });
 export const connectionSetup = connectionConfig.omit({ id: true }).extend({
   id: z.string().uuid().optional(),

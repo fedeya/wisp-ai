@@ -7,6 +7,13 @@ import Connections from './Connections';
 import Integrations from './Integrations';
 import Overview from './Overview';
 
+export const connectionsPage = {
+  name: 'Connections',
+  Component: Connections,
+  path: '/connections',
+  icon: 'link',
+} as const;
+
 export const desktopPages = [
   {
     name: 'Overview',
@@ -16,14 +23,7 @@ export const desktopPages = [
     title: 'Wisp status',
     caption: 'Check your game connection, addon and AI provider.',
   },
-  {
-    name: 'Connections',
-    Component: Connections,
-    path: '/connections',
-    icon: 'link',
-    title: 'AI connections',
-    caption: 'Connect AI providers and choose your default model.',
-  },
+  connectionsPage,
   {
     name: 'Integrations',
     Component: Integrations,

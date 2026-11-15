@@ -46,13 +46,8 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
       <div
         className={`provider-heading flex ${firstRun ? 'flex-wrap items-start gap-3' : 'items-center gap-[15px] max-xl:flex-wrap'}`}
       >
-        {!firstRun && (
-          <div className="provider-symbol border border-solid border-[#36534d] [background:#243e3a] text-accent rounded-[11px] w-[47px] h-[47px] flex items-center justify-center shrink-0">
-            <Icon name="spark" size={25} />
-          </div>
-        )}
         <div>
-          <h2>ChatGPT</h2>
+          <h2>{firstRun ? 'ChatGPT' : 'ChatGPT subscription'}</h2>
           <p className="text-muted text-[13px]">
             Connect with your subscription. No API key needed.
           </p>
@@ -134,39 +129,41 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
           </Button>
         )}
       </div>
-      {auth && auth.profiles.length > (firstRun ? 1 : 0) && (
-        <div className="field-section border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px]">
-          <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="accounts">
-            Saved accounts
-          </label>
-          <form
-            className="inline-field gap-[12px] mt-[10px] flex items-center"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (canSwitch && !accountForm.state.isSubmitting) void accountForm.handleSubmit();
-            }}
-          >
-            <accountForm.Field name="account">
-              {(field) => (
-                <Select
-                  className="flex-[1]"
-                  id="accounts"
-                  name={field.name}
-                  value={account || null}
-                  onValueChange={field.handleChange}
-                  options={auth.profiles.map(({ id, label }) => ({ value: id, label }))}
-                  placeholder="Choose a saved account"
-                  disabled={locked}
-                />
-              )}
-            </accountForm.Field>
-            <Button type="submit" disabled={!canSwitch}>
-              Use account
-            </Button>
-          </form>
-          <ActionProgress label={app.busyTarget === 'accounts' ? app.busy : ''} />
-        </div>
-      )}
+      {auth &&
+        (auth.profiles.length > 1 ||
+          (!firstRun && !activeAccount && auth.profiles.length === 1)) && (
+          <div className="field-section border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px]">
+            <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="accounts">
+              Saved accounts
+            </label>
+            <form
+              className="inline-field gap-[12px] mt-[10px] flex items-center"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (canSwitch && !accountForm.state.isSubmitting) void accountForm.handleSubmit();
+              }}
+            >
+              <accountForm.Field name="account">
+                {(field) => (
+                  <Select
+                    className="flex-[1]"
+                    id="accounts"
+                    name={field.name}
+                    value={account || null}
+                    onValueChange={field.handleChange}
+                    options={auth.profiles.map(({ id, label }) => ({ value: id, label }))}
+                    placeholder="Choose a saved account"
+                    disabled={locked}
+                  />
+                )}
+              </accountForm.Field>
+              <Button type="submit" disabled={!canSwitch}>
+                Use account
+              </Button>
+            </form>
+            <ActionProgress label={app.busyTarget === 'accounts' ? app.busy : ''} />
+          </div>
+        )}
     </Card>
   );
 }
