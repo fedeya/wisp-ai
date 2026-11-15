@@ -102,6 +102,12 @@ export const packetSchema = z.discriminatedUnion('type', [
     }),
   }),
   envelope.extend({ type: z.literal('routine_action'), data: z.unknown() }),
+  envelope.extend({
+    type: z.literal('routine_history'),
+    key: identifier,
+    requestId: identifier,
+    data: z.object({ before: identifier }).optional(),
+  }),
   envelope.extend({ type: z.literal('panel_ask'), key: identifier, nodeId: identifier }),
   envelope.extend({
     type: z.literal('ui_action'),

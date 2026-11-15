@@ -729,6 +729,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         panels: state.currentCharacterKey ? panelStore.list(state.currentCharacterKey) : [],
         panelCommand: state.panelCommand,
         routineCommand: state.routineCommand,
+        routineHistory: state.routineHistory ?? true,
         routines: state.currentCharacterKey
           ? routineStore
               .list(state.currentCharacterKey)

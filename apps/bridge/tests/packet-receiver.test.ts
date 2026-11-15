@@ -29,6 +29,7 @@ function fixture() {
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
   const flushAcknowledgment = vi.fn();
+  const routineStore = new RoutineStore(database);
   const receive = createPacketReceiver({
     state,
     pending,
@@ -39,7 +40,7 @@ function fixture() {
       'sessions'
     >,
     models: { models },
-    routineStore: new RoutineStore(database),
+    routineStore,
     panelStore: new PanelStore(database),
     memoryStore: new MemoryStore(database),
     transport: () => ({ resetSession: () => {}, setCursor: () => {} }),
@@ -53,8 +54,44 @@ function fixture() {
     flushAcknowledgment,
     logger: { info: vi.fn(), warn: vi.fn() },
   });
-  return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
+  return {
+    state,
+    pending,
+    receive,
+    cancel,
+    end,
+    interrupt,
+    run,
+    models,
+    flushAcknowledgment,
+    routineStore,
+  };
 }
+
+test('routine history replies are correlated and scoped to the current addon session', () => {
+  const f = fixture();
+  const page = vi.spyOn(f.routineStore, 'addonHistoryPage').mockReturnValue({
+    runs: [],
+    next: undefined,
+  });
+  const packet = {
+    type: 'routine_history',
+    key: 'review',
+    requestId: 'page-2',
+    session: 'one',
+    seq: 20,
+    at: 1,
+    data: { before: 'previous-run' },
+  };
+
+  f.receive(packetSchema.parse(packet));
+  expect(page).toHaveBeenCalledWith('old-character', 'review', 'previous-run');
+  expect(f.state.routineHistory).toEqual({ requestId: 'page-2', routineId: 'review', runs: [] });
+  f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 2 }));
+  expect(f.state.routineHistory).toBeUndefined();
+  f.receive(packetSchema.parse({ ...packet, seq: 21 }));
+  expect(page).toHaveBeenCalledTimes(1);
+});
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
   const f = fixture();

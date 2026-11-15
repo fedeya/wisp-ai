@@ -112,6 +112,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       state.inlineChat = '';
       state.panelCommand = undefined;
       state.routineCommand = undefined;
+      state.routineHistory = undefined;
       state.routinePresence = undefined;
       integrationState.reset();
       state.firstReadyRevision = 0;
@@ -279,7 +280,11 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       return;
     }
     if (packet.context) {
-      state.currentCharacterKey = characterIdentity(packet.context) || state.currentCharacterKey;
+      const identity = characterIdentity(packet.context);
+      if (identity && identity !== state.currentCharacterKey) {
+        state.currentCharacterKey = identity;
+        state.routineHistory = undefined;
+      }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
       const identity = characterIdentity(packet.context);
@@ -328,6 +333,14 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             ),
           );
       }
+      return;
+    }
+    if (packet.type === 'routine_history') {
+      const page = state.currentCharacterKey
+        ? routineStore.addonHistoryPage(state.currentCharacterKey, packet.key, packet.data?.before)
+        : { runs: [], next: undefined };
+      state.routineHistory = { ...page, requestId: packet.requestId, routineId: packet.key };
+      changed();
       return;
     }
     if (packet.type === 'dismiss_tip' && packet.chat) {

@@ -67,6 +67,7 @@ function ns.Chat.ReceiveSnapshot(data)
     if data.routineRuns then
         ns.routineRuns = data.routineRuns
     end
+    ns.routineHistory = data.routineHistory
     if data.routineSubscriptions and ns.Advice.ReceiveRoutineSubscriptions then
         ns.Advice.ReceiveRoutineSubscriptions(data.routineSubscriptions, data.routinesEnabled)
     end

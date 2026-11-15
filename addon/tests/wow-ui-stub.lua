@@ -4,6 +4,9 @@ UI_TEST = { frames = {}, widgets = {}, textWrites = 0, hides = 0 }
 function GetTime()
     return UI_TEST.now or 0
 end
+function GetCursorPosition()
+    return UI_TEST.cursorX or 0, 0
+end
 local methods = {}
 local function widget(kind, name, parent)
     local w = setmetatable({
@@ -46,6 +49,12 @@ function methods:GetWidth()
 end
 function methods:GetHeight()
     return self.height
+end
+function methods:GetEffectiveScale()
+    return self.scale or 1
+end
+function methods:SetWordWrap(value)
+    self.wordWrap = value
 end
 function methods:SetText(t)
     self.text = t

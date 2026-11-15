@@ -6,6 +6,53 @@ import { RoutineStore } from '../src/routines.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
 
+test('addon run history pages stay scoped and stable when newer runs arrive', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-addon-routine-pages-'));
+  const scope = databaseScope();
+  const database = scope.open(path.join(root, 'wisp.sqlite'));
+  const store = new RoutineStore(database);
+  try {
+    await store.load();
+    const insert = database.connection.prepare(
+      'INSERT INTO routine_runs(id,character_key,routine_id,sort_index,title,started_at,event,status,summary,extras) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    );
+    for (let i = 0; i < 200; i++) {
+      insert.run('run-' + i, 'mage', 'review', i, 'Review', i, 'interval', 'done', 'Private', '{}');
+    }
+    insert.run('quiet', 'mage', 'review', 200, 'Review', 200, 'interval', 'no_tip', '', '{}');
+    insert.run('other', 'mage', 'other', 201, 'Other', 201, 'interval', 'done', '', '{}');
+    insert.run('foreign', 'warrior', 'review', 202, 'Review', 202, 'interval', 'done', '', '{}');
+
+    const first = store.addonHistoryPage('mage', 'review');
+    expect(first.runs.map((run) => run.id)).toEqual([
+      'run-199',
+      'run-198',
+      'run-197',
+      'run-196',
+      'run-195',
+    ]);
+    expect(first.runs[0]).not.toHaveProperty('summary');
+    expect(first.next).toBe('run-195');
+    insert.run('new', 'mage', 'review', 203, 'Review', 203, 'interval', 'done', '', '{}');
+    const seen = [...first.runs];
+    let cursor = first.next;
+    while (cursor) {
+      const page = store.addonHistoryPage('mage', 'review', cursor);
+      seen.push(...page.runs);
+      cursor = page.next;
+    }
+    expect(seen.map((run) => run.id)).toEqual(
+      Array.from({ length: 200 }, (_, index) => 'run-' + (199 - index)),
+    );
+    for (const invalidCursor of ['quiet', 'other', 'foreign']) {
+      expect(store.addonHistoryPage('mage', 'review', invalidCursor).runs).toEqual([]);
+    }
+  } finally {
+    await scope.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('routine polling and mutations stay bounded with a large silent-run history', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-large-routine-history-'));
   const scope = databaseScope();

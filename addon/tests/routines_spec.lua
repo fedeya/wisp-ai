@@ -98,7 +98,10 @@ it(
                 activity = {},
             },
         }
-        ns.routines = { { id = "mage", title = "Mage review", enabled = true } }
+        ns.routines = {
+            { id = "mage", title = "Mage review\nlong title", enabled = true },
+            { id = "quests", title = "Quest suggestions", enabled = false },
+        }
         ns.routineRuns = {
             {
                 id = "run-one",
@@ -115,6 +118,18 @@ it(
                 startedAt = 2000000,
             },
         }
+        local function run(index)
+            return {
+                id = "run-" .. index,
+                routineId = "mage",
+                event = "level_up",
+                status = "done",
+                startedAt = index * 10000,
+            }
+        end
+        for index = 1, 8 do
+            table.insert(ns.routineRuns, index, run(index))
+        end
         ns.Transport.Send = function(packet)
             UI_TEST.sent = packet
         end
@@ -135,14 +150,61 @@ it(
         ns.UI.Refresh()
         assert(not row("chat"):IsShown())
         local routine = row("routine-header:mage")
+        local quests = row("routine-header:quests")
         assert(routine and routine:IsShown())
+        assert(routine.title:GetText() == "Mage review long title" and not routine.title.wordWrap)
         routine.scripts.OnClick(routine)
         assert(ns.sidebarRoutine == "mage")
+        assert(routine:IsVisible() and quests:IsVisible())
         local result = row("run-one")
         assert(result and result:IsShown())
+        assert(row("run-5"):IsVisible() and not row("run-4"))
         result.scripts.OnClick(result)
         assert(ns.active == "run-one" and UI_TEST.sent.type == "select")
         local quiet = row("quiet")
         assert(not quiet, "silent runs must not appear in routine history")
+
+        ns.routineHistory = true
+        ns.UI.Refresh()
+        local firstRequest = UI_TEST.sent
+        assert(firstRequest.type == "routine_history" and firstRequest.key == "mage")
+        assert(not firstRequest.data, "the first page starts at the newest run")
+        ns.routineHistory = {
+            routineId = "mage",
+            requestId = firstRequest.requestId,
+            runs = { ns.routineRuns[9], run(8), run(7), run(6), run(5) },
+            next = "run-5",
+        }
+        ns.UI.Refresh()
+        local loadMore
+        for _, widget in ipairs(UI_TEST.widgets) do
+            if widget:GetText() == "Load more" and widget:IsVisible() then
+                loadMore = widget
+                break
+            end
+        end
+        assert(loadMore)
+        local _, _, _, _, questsPosition = quests:GetPoint()
+        loadMore.scripts.OnClick()
+        local secondRequest = UI_TEST.sent
+        assert(secondRequest.type == "routine_history" and secondRequest.data.before == "run-5")
+        ns.routineHistory = {
+            routineId = "mage",
+            requestId = secondRequest.requestId,
+            runs = { run(4), run(3), run(2), run(1), run(0) },
+        }
+        ns.UI.Refresh()
+        assert(row("run-4"):IsVisible() and row("run-0"):IsVisible() and not loadMore:IsShown())
+        local _, _, _, _, lastPosition = quests:GetPoint()
+        assert(
+            lastPosition >= questsPosition,
+            "additional runs must not push the next routine down"
+        )
+        local oldest = row("run-0")
+        oldest.scripts.OnClick(oldest)
+        assert(ns.active == "run-0" and ns.sidebarRoutine == "mage")
+        quests.scripts.OnClick(quests)
+        assert(ns.sidebarRoutine == "quests" and routine:IsVisible() and quests:IsVisible())
+        assert(not oldest:IsVisible() or oldest.chatId ~= "run-0")
     end
 )

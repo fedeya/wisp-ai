@@ -48,7 +48,7 @@ function ns.Chat.Current()
         end
     end
 end
-function ns.Chat.Select(id)
+function ns.Chat.Select(id, routineId)
     if ns.draft and ns.active then
         ns.db.drafts[ns.active] = ns.draft:GetText()
     end
@@ -56,20 +56,23 @@ function ns.Chat.Select(id)
         discardEmptyDraft()
     end
     ns.active = id
-    for _, chat in ipairs(ns.chats) do
-        if chat.id == id then
-            ns.sidebarTab = chat.routineId and "routines" or "chats"
-            ns.sidebarRoutine = chat.routineId
+    local chat = ns.Chat.Current()
+    if not routineId then
+        routineId = chat and chat.routineId
+        for _, run in ipairs(ns.routineRuns or {}) do
+            if run.id == id then
+                routineId = run.routineId
+                break
+            end
         end
+    end
+    if routineId or chat then
+        ns.sidebarTab = routineId and "routines" or "chats"
+        ns.sidebarRoutine = routineId
     end
     ns.db.activeChat = id
     if ns.draft then
         ns.draft:SetText(ns.db.drafts[id] or "")
-    end
-    for _, run in ipairs(ns.routineRuns or {}) do
-        if run.id == id then
-            ns.sidebarTab, ns.sidebarRoutine = "routines", run.routineId
-        end
     end
     ns.Transport.Send({ type = "select", chat = id })
     ns.UI.Refresh()

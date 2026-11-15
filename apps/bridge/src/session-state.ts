@@ -2,6 +2,7 @@ import type { Chat } from './events.ts';
 import type { AccountModel } from './chat-model.ts';
 import type { MemoryView } from './agent-server.ts';
 import type { PanelCommand } from './desktop-handler.ts';
+import type { RoutineStore } from './routines.ts';
 
 export interface RoutinePresence {
   identity: string;
@@ -20,6 +21,10 @@ export interface SessionState {
   inlineChat: string;
   currentCharacterKey?: string;
   routineCommand?: { seq: number; id: string };
+  routineHistory?: ReturnType<RoutineStore['addonHistoryPage']> & {
+    requestId: string;
+    routineId: string;
+  };
   panelCommand?: PanelCommand;
   memoryView?: MemoryView;
   memoryViewRequest?: string;

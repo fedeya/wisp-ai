@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, asc, desc, eq, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, lte, ne, or, sql } from 'drizzle-orm';
 import {
   matchesRoutineEvent,
   type Routine,
@@ -24,6 +24,8 @@ interface HistoryOptions {
   includeSilent?: boolean;
   limit?: number;
 }
+const ADDON_HISTORY_PAGE_SIZE = 5;
+
 export class RoutineStore {
   readonly database: ApplicationDatabase;
   constructor(database: ApplicationDatabase) {
@@ -69,6 +71,35 @@ export class RoutineStore {
       .all()
       .reverse()
       .map(decodeRun);
+  }
+  addonHistoryPage(characterKey: string, routineId: string, before?: string) {
+    const db = this.database.orm;
+    const scope = and(
+      eq(routineRuns.characterKey, characterKey),
+      eq(routineRuns.routineId, routineId),
+      ne(routineRuns.status, 'no_tip'),
+    );
+    const cursor = before
+      ? db
+          .select({ index: routineRuns.sortIndex })
+          .from(routineRuns)
+          .where(and(scope, eq(routineRuns.id, before)))
+      : undefined;
+    const rows = db
+      .select()
+      .from(routineRuns)
+      .where(and(scope, cursor ? lt(routineRuns.sortIndex, cursor) : undefined))
+      .orderBy(desc(routineRuns.sortIndex))
+      .limit(ADDON_HISTORY_PAGE_SIZE + 1)
+      .all();
+    const runs = rows.slice(0, ADDON_HISTORY_PAGE_SIZE).map((row) => {
+      const { summary: _summary, ...run } = decodeRun(row);
+      return run;
+    });
+    return {
+      runs,
+      next: rows.length > ADDON_HISTORY_PAGE_SIZE ? runs.at(-1)?.id : undefined,
+    };
   }
   getRun(id: string, characterKey?: string): RoutineRun | undefined {
     const row = this.database.orm

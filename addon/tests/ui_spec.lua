@@ -437,6 +437,8 @@ it(
         end
         do
             local fold = UI_TEST.frames.WispAISidebarToggle
+            local divider = UI_TEST.frames.WispAISidebarResize
+            local window = UI_TEST.frames.WispAIWindow
             local gear = UI_TEST.frames.WispAISettingsButton
             local tabs = {}
             for _, widget in ipairs(UI_TEST.widgets) do
@@ -450,6 +452,22 @@ it(
             assert(#tabs == 2 and tabs[1]:IsShown() and tabs[2]:IsShown())
             assert(fold.parent ~= gear.parent, "sidebar toggle must live in the sidebar")
             assert(gear:GetText() == "", "settings uses an icon instead of a text label")
+            local sidebar = fold.parent
+            sidebar.scale = 2
+            UI_TEST.cursorX = 100
+            divider.scripts.OnDragStart(divider)
+            UI_TEST.cursorX = 300
+            divider.scripts.OnUpdate()
+            assert(sidebar:GetWidth() == 255 and not ns.db.sidebarWidth)
+            divider.scripts.OnDragStop(divider)
+            assert(ns.db.sidebarWidth == 255 and not divider.scripts.OnUpdate)
+            local expandedWidth = window:GetWidth()
+            window:SetWidth(430)
+            ns.UI.Refresh()
+            assert(sidebar:GetWidth() == 158 and ns.db.sidebarWidth == 255)
+            window:SetWidth(expandedWidth)
+            ns.UI.Refresh()
+            assert(sidebar:GetWidth() == 255)
             fold.scripts.OnClick()
             assert(
                 not ns.db.sidebar and fold:GetText() == ">" and fold.parent:GetWidth() == 30,
@@ -460,7 +478,7 @@ it(
                 "collapsed sidebar must hide both tabs so they cannot overlap the conversation"
             )
             fold.scripts.OnClick()
-            assert(ns.db.sidebar and fold:GetText() == "<")
+            assert(ns.db.sidebar and fold:GetText() == "<" and sidebar:GetWidth() == 255)
             assert(
                 tabs[1]:IsShown() and tabs[2]:IsShown(),
                 "expanding the sidebar must restore both tabs"
