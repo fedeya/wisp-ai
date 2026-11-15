@@ -235,7 +235,7 @@ function createDesktopSession() {
     await work(
       'Reading logs',
       async () => update({ logs: await desktop<string>('read_logs') }),
-      'Local logs loaded.',
+      null,
     );
   }
 

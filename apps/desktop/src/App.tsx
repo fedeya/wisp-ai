@@ -4,8 +4,7 @@ import { RouterProvider } from 'react-router/dom';
 import { desktop, native } from './api';
 import DesktopSidebar from './components/DesktopSidebar';
 import ConfirmationDialog from './components/ui/ConfirmationDialog';
-import Icon from './components/ui/Icon';
-import { Button } from './components/ui/Controls';
+import FeedbackToast from './components/ui/FeedbackToast';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
 import { mountDesktop } from './desktop-controller';
@@ -80,25 +79,7 @@ function DesktopShell() {
           </main>
         </div>
       )}
-      {feedback && !busy && (
-        <div
-          className={`notification gap-[12px] border border-solid border-[#40695e] px-[15px] py-[13px] fixed right-[24px] bottom-[22px] z-[30] flex items-center w-[max-content] max-w-[min(580px,_calc(100vw_-_48px))] rounded-[12px] [background:#20352f] text-[#d5eee4] [box-shadow:0_8px_32px_#0005] text-[13px] leading-[1.5] [&_>_svg]:shrink-0 [&.error]:border-[#89564c] [&.error]:[background:#382824] [&.error]:text-[#ffd2c8]${failed ? ' error' : ''}`}
-          role="status"
-          aria-live="polite"
-        >
-          <Icon name={failed ? 'logs' : 'check'} size={18} />
-          <span className="[overflow-wrap:anywhere]">{feedback}</span>
-          <Button
-            intent="quiet"
-            size="icon"
-            className="shrink-0"
-            aria-label="Dismiss notification"
-            onClick={clearFeedback}
-          >
-            <Icon name="close" size={16} />
-          </Button>
-        </div>
-      )}
+      <FeedbackToast message={busy ? '' : feedback} failed={failed} onDismiss={clearFeedback} />
       <ConfirmationDialog />
     </>
   );
