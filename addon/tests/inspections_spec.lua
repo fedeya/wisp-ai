@@ -104,6 +104,59 @@ it("keeps restricted or disabled item timers unknown", function()
     assert.same(unknown, env.ns.Character.Inspect(request).data.cooldown)
 end)
 
+it("reads a spell cooldown on demand without counting the global cooldown", function()
+    local env = helper.env()
+    setup(env)
+    local calls, remainingReads, remaining, secret = 0, 0, 12.5, false
+    local duration = {
+        HasSecretValues = function()
+            return secret
+        end,
+        GetRemainingDuration = function()
+            remainingReads = remainingReads + 1
+            return remaining
+        end,
+    }
+    env.C_Spell = {
+        GetSpellInfo = function()
+            return { name = "Blink" }
+        end,
+        GetSpellCooldownDuration = function(id, ignoreGCD)
+            calls = calls + 1
+            assert.equals(1953, id)
+            assert.is_true(ignoreGCD)
+            return duration
+        end,
+    }
+    local request = { kind = "reference", args = { kind = "spell", id = 1953 } }
+    local details = env.ns.Character.Inspect(request).data
+    assert.is_nil(details.cooldown)
+    assert.equals(0, calls)
+
+    request.args.includeCooldown = true
+    details = env.ns.Character.Inspect(request).data
+    assert.equals("Blink", details.info.name)
+    assert.same({
+        status = "available",
+        state = "cooldown",
+        remainingSeconds = 12.5,
+    }, details.cooldown)
+
+    remaining = 0
+    assert.same({
+        status = "available",
+        state = "no_active_cooldown",
+        remainingSeconds = 0,
+    }, env.ns.Character.Inspect(request).data.cooldown)
+
+    secret = true
+    local unknown = { status = "unavailable", state = "unknown" }
+    assert.same(unknown, env.ns.Character.Inspect(request).data.cooldown)
+    assert.equals(2, remainingReads)
+    env.C_Spell.GetSpellCooldownDuration = nil
+    assert.same(unknown, env.ns.Character.Inspect(request).data.cooldown)
+end)
+
 it("reads just the localized Hearthstone bind without inspecting the item", function()
     local env = helper.env()
     setup(env)

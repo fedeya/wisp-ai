@@ -21,24 +21,20 @@ import {
 } from '@wisp/protocol/game-inspection';
 import { integrationContext } from '@wisp/protocol/capabilities';
 
-test('only item references can request a cooldown', () => {
+test('item and spell references can opt into cooldown readings', () => {
   const args = { kind: 'item', id: 3827 };
   assert.deepEqual(inspectionSchema.parse({ kind: 'reference', args }), {
     kind: 'reference',
     args,
   });
-  const withCooldown = { ...args, includeCooldown: true };
-  assert.deepEqual(inspectionSchema.parse({ kind: 'reference', args: withCooldown }), {
-    kind: 'reference',
-    args: withCooldown,
-  });
-  assert.equal(
-    inspectionSchema.safeParse({
-      kind: 'reference',
-      args: { ...withCooldown, kind: 'spell' },
-    }).success,
-    false,
-  );
+  for (const kind of ['item', 'spell']) {
+    const request = { kind: 'reference', args: { ...args, kind, includeCooldown: true } };
+    assert.deepEqual(inspectionSchema.parse(request), request);
+  }
+  for (const kind of ['quest', 'talent']) {
+    const request = { kind: 'reference', args: { ...args, kind, includeCooldown: true } };
+    assert.equal(inspectionSchema.safeParse(request).success, false);
+  }
 });
 
 test('actual new Eve definitions follow per-API readiness, parent switches and expiration', async () => {

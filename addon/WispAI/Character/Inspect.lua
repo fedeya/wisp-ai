@@ -62,6 +62,17 @@ local function readPublic(fn, ...)
     end
 end
 
+local function cooldownReading(remaining)
+    if not ns.Shared.Numbers.IsFinite(remaining) or remaining < 0 then
+        return { status = "unavailable", state = "unknown" }
+    end
+    return {
+        status = "available",
+        state = remaining == 0 and "no_active_cooldown" or "cooldown",
+        remainingSeconds = remaining,
+    }
+end
+
 local function itemCooldown(id)
     local get = C_Container and C_Container.GetItemCooldown
     local expectsBoolean = type(get) ~= "function"
@@ -79,14 +90,21 @@ local function itemCooldown(id)
         or duration < 0
         or start > now
     then
-        return { status = "unavailable", state = "unknown" }
+        return cooldownReading()
     end
-    local remaining = math.max(0, duration - (now - start))
-    return {
-        status = "available",
-        state = remaining == 0 and "no_active_cooldown" or "cooldown",
-        remainingSeconds = remaining,
-    }
+    return cooldownReading(math.max(0, duration - (now - start)))
+end
+
+local function spellCooldown(id)
+    -- Ignore the global cooldown so it cannot appear as the spell's own timer.
+    local duration = readPublic(C_Spell.GetSpellCooldownDuration, id, true)
+    if
+        (type(duration) == "userdata" or type(duration) == "table")
+        and readPublic(duration.HasSecretValues, duration) == false
+    then
+        return cooldownReading(readPublic(duration.GetRemainingDuration, duration))
+    end
+    return cooldownReading()
 end
 
 function inspectors.reference(args)
@@ -105,12 +123,16 @@ function inspectors.reference(args)
         assert(C_Spell and C_Spell.GetSpellInfo, "Spell API is unavailable")
         local info = C_Spell.GetSpellInfo(args.id)
         assert(info, "Spell data is not available for this ID")
-        return {
+        local details = {
             id = args.id,
             info = info,
             description = C_Spell.GetSpellDescription and C_Spell.GetSpellDescription(args.id),
             tooltip = tooltip("spell:" .. args.id),
         }
+        if args.kind == "spell" and args.includeCooldown == true then
+            details.cooldown = spellCooldown(args.id)
+        end
+        return details
     end
     assert(C_QuestLog, "Quest API is unavailable")
     local title = C_QuestLog.GetTitleForQuestID and C_QuestLog.GetTitleForQuestID(args.id)

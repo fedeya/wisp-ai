@@ -72,11 +72,14 @@ export const referenceInput = z
   .object({
     kind: z.enum(['item', 'spell', 'quest', 'talent']),
     id: z.number().int().positive(),
-    includeCooldown: z.boolean().optional().describe('Read the current timer for an item only.'),
+    includeCooldown: z
+      .boolean()
+      .optional()
+      .describe('Read the current timer for an item or spell.'),
   })
   .refine(
-    (args) => !args.includeCooldown || args.kind === 'item',
-    'Item cooldowns require kind=item',
+    (args) => !args.includeCooldown || args.kind === 'item' || args.kind === 'spell',
+    'Cooldowns require kind=item or kind=spell',
   );
 export const progressionInput = z.object({
   questIds: z.array(z.number().int().positive()).max(40).default([]),
