@@ -37,6 +37,7 @@ import { McpManager } from './mcp-manager.ts';
 import { McpRelay } from './mcp-relay.ts';
 import { NativeVault, type SecretVault } from './secret-vault.ts';
 import { startDesktopServer } from './desktop-server.ts';
+import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines.ts';
 import { routineEvents } from '@wisp/protocol/routines';
 import { ModelConnections } from './model-connections.ts';
@@ -444,11 +445,8 @@ export async function startBridge(options: BridgeOptions = {}) {
       }),
     );
     resources.defer(() => closeServer(server));
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(options.agentPort ?? 43187, '127.0.0.1', resolve);
-    });
-    const agentOrigin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
+    const agentPort = await listenOnLoopback(server, options.agentPort ?? 43187);
+    const agentOrigin = 'http://127.0.0.1:' + agentPort;
     await writeFile(path.join(runtime, 'bridge.pid'), String(process.pid));
     const eveLog = await import('node:fs').then((fs) =>
       fs.openSync(path.join(runtime, 'eve.log'), 'a'),

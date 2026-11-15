@@ -159,13 +159,15 @@ test('a fresh install has no custom MCP connections until configured', async () 
   }
 });
 
-test('custom MCP names with underscores produce legal Eve connection names', async () => {
+test('custom MCP connections use legal Eve names and the configured bridge origin', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-external-'));
   const previous = process.env.WOW_MCP_CONFIG;
   const flags = process.env.WOW_CAPABILITIES_FILE;
+  const origin = process.env.WOW_BRIDGE_URL;
   try {
     process.env.WOW_MCP_CONFIG = path.join(directory, 'mcp.json');
     process.env.WOW_CAPABILITIES_FILE = '';
+    process.env.WOW_BRIDGE_URL = 'http://127.0.0.1:49521';
     await writeFile(
       process.env.WOW_MCP_CONFIG,
       JSON.stringify({ servers: { my_tools: { enabled: true, description: 'Test' } } }),
@@ -174,7 +176,7 @@ test('custom MCP names with underscores produce legal Eve connection names', asy
     assert.ok(connections);
     assert.deepEqual(Object.keys(connections), ['my-tools']);
     assert.match(Object.keys(connections)[0], CONNECTION_SLUG_PATTERN);
-    assert.ok(connections['my-tools'].url?.endsWith('/mcp/my_tools'));
+    assert.equal(connections['my-tools'].url, 'http://127.0.0.1:49521/mcp/my_tools');
   } finally {
     if (previous === undefined) {
       delete process.env.WOW_MCP_CONFIG;
@@ -185,6 +187,11 @@ test('custom MCP names with underscores produce legal Eve connection names', asy
       delete process.env.WOW_CAPABILITIES_FILE;
     } else {
       process.env.WOW_CAPABILITIES_FILE = flags;
+    }
+    if (origin === undefined) {
+      delete process.env.WOW_BRIDGE_URL;
+    } else {
+      process.env.WOW_BRIDGE_URL = origin;
     }
     await rm(directory, { recursive: true, force: true });
   }

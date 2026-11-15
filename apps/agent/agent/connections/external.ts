@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { defineDynamic } from 'eve';
 import { defineMcpClientConnection } from 'eve/connections';
 import { capabilityEnabled, readCapabilityFlags } from '@wisp/agent/capabilities';
+import { bridgeOrigin } from '@wisp/agent/agent-rpc';
 export default defineDynamic(async () => {
   const file = process.env.WOW_MCP_CONFIG;
   if (!file) {
@@ -37,7 +38,7 @@ export default defineDynamic(async () => {
       .filter((key) => key.startsWith(prefix) && flags[key] === false)
       .map((key) => key.slice(prefix.length));
     connections[name.replace(/_/g, '-')] = defineMcpClientConnection({
-      url: 'http://127.0.0.1:43187/mcp/' + name,
+      url: bridgeOrigin() + '/mcp/' + name,
       description: server.description || name,
       tools: { block: blocked },
       ...(token ? { headers: { authorization: 'Bearer ' + token } } : {}),

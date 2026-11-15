@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { writeJson } from './json-file.ts';
 import { errorMessage } from './errors.ts';
+import { listenOnLoopback } from './loopback-server.ts';
 import path from 'node:path';
 export async function startDesktopServer(
   runtime: string,
@@ -44,11 +45,7 @@ export async function startDesktopServer(
     }
   });
   try {
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(port, '127.0.0.1', resolve);
-    });
-    const boundPort = (server.address() as { port: number }).port;
+    const boundPort = await listenOnLoopback(server, port);
     await writeJson(path.join(runtime, 'desktop.json'), {
       port: boundPort,
       token,

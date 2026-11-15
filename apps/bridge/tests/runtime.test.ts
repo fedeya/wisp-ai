@@ -328,16 +328,48 @@ test('the assembled runtime serves validated status, receives packets, persists 
   }
 });
 
-test('a late startup failure closes the agent and already-started runtime resources', async () => {
+test('occupied bridge ports fall back to distinct listeners that both clients can reach', async () => {
   const f = await fixture();
   const occupied = createServer();
   await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
   const port = (occupied.address() as { port: number }).port;
+  const startAgent = vi.fn(f.options.startAgent!);
+  let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
-    await expect(startBridge({ ...f.options, desktopPort: port })).rejects.toThrow('EADDRINUSE');
+    bridge = await startBridge({ ...f.options, agentPort: port, desktopPort: port, startAgent });
+    const { WOW_BRIDGE_URL, WOW_BRIDGE_TOKEN } = startAgent.mock.calls[0][0].environment;
+    const agentPort = Number(new URL(WOW_BRIDGE_URL!).port);
+    const desktop = JSON.parse(
+      await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
+    );
+    expect(new Set([port, agentPort, desktop.port]).size).toBe(3);
+
+    const agentResponse = await fetch(WOW_BRIDGE_URL + '/session-model?session=missing', {
+      headers: { authorization: 'Bearer ' + WOW_BRIDGE_TOKEN },
+    });
+    expect(agentResponse.status).toBe(503);
+    expect(await agentResponse.text()).toBe('No model selected for this turn.');
+
+    const desktopResponse = await fetch('http://127.0.0.1:' + desktop.port + '/status', {
+      headers: { authorization: 'Bearer ' + desktop.token },
+    });
+    expect(desktopResponse.status).toBe(200);
+    expect(statusSchema.safeParse(await desktopResponse.json()).success).toBe(true);
+  } finally {
+    await bridge?.stop();
+    await new Promise<void>((resolve) => occupied.close(() => resolve()));
+    await rm(f.dataDirectory, { recursive: true, force: true });
+  }
+});
+
+test('a late startup failure closes the agent and already-started runtime resources', async () => {
+  const f = await fixture();
+  try {
+    await expect(startBridge({ ...f.options, desktopPort: -1 })).rejects.toMatchObject({
+      code: 'ERR_SOCKET_BAD_PORT',
+    });
     await vi.waitFor(() => expect(f.agentStopped()).toBe(true));
   } finally {
-    await new Promise<void>((resolve) => occupied.close(() => resolve()));
     await rm(f.dataDirectory, { recursive: true, force: true });
   }
 });
