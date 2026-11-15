@@ -1,7 +1,7 @@
 local _, ns = ...
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
-local SETUP_URL = "https://wisp.fedeya.sh/setup"
+local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
     "|cffaca189",

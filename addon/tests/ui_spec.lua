@@ -159,7 +159,7 @@ it(
         assert(not state.loading and not state.dots[1]:IsShown())
         state.setup.scripts.OnClick()
         assert(UI_TEST.popup.id == "WISPAI_COPY_URL")
-        assert(UI_TEST.popup.data == "https://wisp.fedeya.sh/setup")
+        assert(UI_TEST.popup.data == "https://wisp.fedeya.sh/setup?utm_source=wow_addon")
         ns.Transport.needsDesktopSetup = false
         ns.UI.Refresh()
         local alpha
