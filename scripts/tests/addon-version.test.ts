@@ -7,7 +7,7 @@ import path from 'node:path';
 import { addonVersionFromToc } from '../../apps/bridge/src/addon-version.ts';
 import { addonReleaseVersion, stampAddonReleaseVersion } from '../addon-release-version.ts';
 
-test('release patch increments for addon and helper commits on the first-parent history', async () => {
+test('release patch counts addon and helper changes from the current base version', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-addon-history-'));
   if (!path.resolve(root).startsWith(path.resolve(tmpdir()) + path.sep)) {
     throw Error('Unsafe fixture directory.');
@@ -28,6 +28,7 @@ test('release patch increments for addon and helper commits on the first-parent 
     git('config', 'user.email', 'fixture@example.invalid');
     git('config', 'commit.gpgsign', 'false');
     await commit('addon/WispAI/Core.lua', 'initial addon');
+    await commit('addon/WispAI/WispAI.toc', '## Version: 1.0.0\nCore.lua\n');
     await commit('scripts/addon-release-version.ts', 'start automatic versioning');
     expect(addonReleaseVersion(root)).toBe('1.0.0');
 
@@ -48,10 +49,30 @@ test('release patch increments for addon and helper commits on the first-parent 
     git('tag', 'v0.1.4');
     git('switch', '--detach', 'v0.1.4');
     expect(addonReleaseVersion(root)).toBe('1.0.2');
+
+    git('switch', 'main');
+    await commit('apps/desktop/package.json', '{"version":"2.0.0"}');
+    expect(addonReleaseVersion(root)).toBe('1.0.2');
+
+    await commit('addon/WispAI/WispAI.toc', '## Version: 1.1.0\nCore.lua\n');
+    expect(addonReleaseVersion(root)).toBe('1.1.0');
+    await commit('addon/WispAI/WispAI.toc', '## Version: 1.1.0\n## Title: Wisp\nCore.lua\n');
+    expect(addonReleaseVersion(root)).toBe('1.1.1');
+
+    git('switch', '-c', 'addon-major');
+    await commit('addon/WispAI/WispAI.toc', '## Version: 2.0.0\n## Title: Wisp\nCore.lua\n');
+    git('switch', 'main');
+    git('merge', '--no-ff', '-m', 'Begin addon 2.0', 'addon-major');
+    expect(addonReleaseVersion(root)).toBe('2.0.0');
+    await commit('packages/protocol/src/addon-helpers.ts', 'helper change for addon 2.0');
+    expect(addonReleaseVersion(root)).toBe('2.0.1');
+
+    await commit('addon/WispAI/WispAI.toc', '## Version: 2.0.7\nCore.lua\n');
+    expect(() => addonReleaseVersion(root)).toThrow('MAJOR.MINOR.0');
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
-});
+}, 15000);
 
 test('the packaged addon version is inherited by the installed addon and helpers', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-addon-version-'));
@@ -64,14 +85,14 @@ test('the packaged addon version is inherited by the installed addon and helpers
     const wow = path.join(root, 'fake WoW');
     const saves = path.join(wow, 'WTF/Account/PLAYER/SavedVariables');
     const installed = path.join(wow, 'Interface/AddOns');
-    const toc = '## Interface: 16001\r\n## Version: 1.0.0\r\nCore.lua\r\n';
+    const toc = '## Interface: 16001\r\n## Version: 2.0.0\r\nCore.lua\r\n';
     await mkdir(addon, { recursive: true });
     await mkdir(saves, { recursive: true });
     await writeFile(path.join(wow, 'Wow.exe'), '');
     await writeFile(path.join(saves, 'WispAI.lua'), 'WispAIDB = { sidebar = false }');
     const stagedToc = path.join(addon, 'WispAI.toc');
     await writeFile(stagedToc, toc);
-    await stampAddonReleaseVersion(stagedToc, '1.0.2');
+    await stampAddonReleaseVersion(stagedToc, '2.0.1');
 
     for (const desktopVersion of ['0.1.3', '0.1.4-nightly.123.2']) {
       await writeFile(
@@ -91,11 +112,11 @@ test('the packaged addon version is inherited by the installed addon and helpers
       const helpers = (await readdir(installed)).filter((name) => /^WispAI_[BS]\d+$/.test(name));
       expect(helpers).toHaveLength(1152);
       expect(await readFile(path.join(installed, 'WispAI/WispAI.toc'), 'utf8')).toBe(
-        toc.replace('1.0.0', '1.0.2'),
+        toc.replace('2.0.0', '2.0.1'),
       );
       for (const name of helpers) {
         const helper = await readFile(path.join(installed, name, `${name}.toc`), 'utf8');
-        expect(addonVersionFromToc(helper)).toBe('1.0.2');
+        expect(addonVersionFromToc(helper)).toBe('2.0.1');
       }
       expect(await readFile(path.join(saves, 'WispAI.lua'), 'utf8')).toBe(
         'WispAIDB = { sidebar = false }',
