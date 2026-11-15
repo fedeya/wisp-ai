@@ -93,10 +93,13 @@ leave the previous feed intact. Re-running a workflow generates a distinct build
   existing installs).
 - Nightly feed: GitHub `releases/download/nightly/latest.json`. Manifest URLs point
   to immutable versioned artifacts, never a moving installer.
-- Packaging stamps the release version into the staged addon TOC. Generated
-  transport helpers inherit that version when installed. `/wisp diag` reports
-  the loaded addon and desktop/bridge versions and flags mismatches; reload WoW
-  after updating the addon. Source TOCs are labeled `development`.
+- Set the addon's base version in `addon/WispAI/WispAI.toc` as `MAJOR.MINOR.0`.
+  Update the major or minor number when the addon needs a new version series.
+  Windows packaging computes the patch from first-parent commits that change
+  `addon/WispAI` or `packages/protocol/src/addon-helpers.ts` after that base was
+  set, starting at zero. Stable and nightly builds from the same commit use the
+  same version. Packaging writes it into the bundled TOC, and generated helpers
+  inherit it. `/wisp diag` checks the loaded addon against that bundled version.
 - App Settings → App updates persists the selected channel. Fresh Nightly installs
   default to Nightly; stable installs default to Stable. Switching clears pending
   updates. Returning from Nightly explicitly permits an older stable version;

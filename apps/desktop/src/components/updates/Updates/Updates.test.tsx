@@ -33,7 +33,8 @@ test('checks on startup and shows the release notes and manual check', async () 
   render(<Updates {...props()} />);
   await screen.findByText(release.notes);
   expect(desktop).toHaveBeenCalledWith('check_update');
-  expect(screen.getByText('Installed version: 0.0.1')).toBeTruthy();
+  expect(screen.getByText('Installed version 0.0.1')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Wisp 0.3.0 is available' })).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
   expect(
     vi.mocked(desktop).mock.calls.filter(([command]) => command === 'check_update'),
@@ -74,9 +75,26 @@ test('installation locks app operations, reports waiting, and can retry after fa
   await fireEvent.click(screen.getByRole('button', { name: 'Update and restart' }));
   expect(options.onBusy).toHaveBeenCalledWith('Updating Wisp');
   expect(desktop).toHaveBeenLastCalledWith('install_update');
+  expect(screen.getByRole('heading', { name: 'Updating to Wisp 0.3.0' })).toBe(
+    document.activeElement,
+  );
+  expect(screen.queryByRole('button', { name: 'Check for updates' })).toBeNull();
+  expect(screen.getByRole('progressbar', { name: 'Update download' }).hasAttribute('value')).toBe(
+    false,
+  );
   const callback = vi.mocked(listen).mock.calls[0][1];
+  callback({
+    event: 'update-progress',
+    id: 0,
+    payload: { phase: 'downloading', downloaded: 38_000_000, total: 91_000_000 },
+  });
+  expect(
+    (await screen.findByRole('progressbar', { name: 'Update download' })).getAttribute('value'),
+  ).toBe('42');
+  expect(screen.getByText('38 of 91 MB')).toBeTruthy();
   callback({ event: 'update-progress', id: 0, payload: { phase: 'waiting' } });
   await screen.findByText('Waiting for the active reply to finish…');
+  expect(screen.queryByRole('progressbar')).toBeNull();
   callback({ event: 'update-progress', id: 0, payload: { phase: 'installing' } });
   await screen.findByText('Opening the Windows updater. Wisp will close and reopen automatically…');
   reject(Error('signature verification failed'));

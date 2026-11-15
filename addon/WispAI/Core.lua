@@ -69,10 +69,9 @@ SlashCmdList.WISPAI = function(message)
     end
     if message == "diag" then
         local stats = ns.transportStats or {}
-        local mismatch = ns.bridgeVersion
-            and ns.bridgeVersion ~= "unknown"
+        local mismatch = ns.expectedAddonVersion
             and ns.addonVersion ~= "unknown"
-            and ns.bridgeVersion ~= ns.addonVersion
+            and ns.expectedAddonVersion ~= ns.addonVersion
         ns.Core.Log(
             "Addon "
                 .. ns.addonVersion

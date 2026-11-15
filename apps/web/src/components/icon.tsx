@@ -6,6 +6,7 @@ import ChevronRight from 'lucide-react/icons/chevron-right';
 import CornerDownLeft from 'lucide-react/icons/corner-down-left';
 import Download from 'lucide-react/icons/download';
 import Globe from 'lucide-react/icons/globe';
+import Heart from 'lucide-react/icons/heart';
 import Menu from 'lucide-react/icons/menu';
 import MessageSquareText from 'lucide-react/icons/message-square-text';
 import Minus from 'lucide-react/icons/minus';
@@ -45,6 +46,7 @@ const icons = {
   enter: CornerDownLeft,
   external: ArrowUpRight,
   globe: Globe,
+  heart: Heart,
   menu: Menu,
   minus: Minus,
   pause: Pause,

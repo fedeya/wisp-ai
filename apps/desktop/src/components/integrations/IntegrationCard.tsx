@@ -1,9 +1,10 @@
 import type { CapabilityView } from '@wisp/protocol/capabilities';
 import { ActionProgress } from '../ui/ActionProgress';
 import Toggle from '../ui/Toggle';
-import { Badge, Card, Checkbox } from '../ui/Controls';
+import { Card, Checkbox } from '../ui/Controls';
 
 type IntegrationCardProps = {
+  title: string;
   entry: CapabilityView;
   tools: CapabilityView[];
   locked: boolean;
@@ -11,12 +12,19 @@ type IntegrationCardProps = {
   set: (id: string, enabled: boolean) => void;
 };
 
-export default function IntegrationCard({ entry, tools, locked, busy, set }: IntegrationCardProps) {
+export default function IntegrationCard({
+  title,
+  entry,
+  tools,
+  locked,
+  busy,
+  set,
+}: IntegrationCardProps) {
   return (
     <Card kind="integration">
       <div className="integration-top gap-[18px] flex items-center justify-between">
         <div>
-          <h2>{entry.name}</h2>
+          <h2>{title}</h2>
           <p className="text-muted text-[13px]">{entry.description}</p>
         </div>
         <div className="row-controls gap-[14px] flex items-center shrink-0">
@@ -29,14 +37,16 @@ export default function IntegrationCard({ entry, tools, locked, busy, set }: Int
           />
         </div>
       </div>
-      <div className="integration-meta gap-[12px] flex text-muted text-[12px] mt-[18px] items-center flex-wrap [&_span_+_span]:border-l-[1px] [&_span_+_span]:[border-left-style:solid] [&_span_+_span]:border-l-[#3a4a4e] [&_span_+_span]:pl-[18px]">
-        <Badge positive={entry.available}>{entry.status}</Badge>
-        <span>{entry.kind === 'mcp' ? 'MCP' : entry.kind}</span>
-        {entry.version && <span>v{entry.version}</span>}
-        <span>
-          {tools.filter((tool) => tool.effective).length}/{tools.length} active
-        </span>
-      </div>
+      {(entry.version || tools.length > 0) && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-muted">
+          {entry.version && <span>v{entry.version}</span>}
+          {tools.length > 0 && (
+            <span>
+              {tools.filter((tool) => tool.effective).length}/{tools.length} tools active
+            </span>
+          )}
+        </div>
+      )}
       {entry.reason && (
         <p className="muted integration-reason mx-0 text-muted text-[13px] mt-[12px] mb-0">
           {entry.reason}

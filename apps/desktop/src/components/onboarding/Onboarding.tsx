@@ -115,7 +115,7 @@ export default function Onboarding() {
         ) : (
           <Card>
             {app.loading || app.starting || app.busy ? (
-              <ActionProgress label={app.busy || 'Starting Wisp'} />
+              <ActionProgress label={app.busy || 'Preparing AI providers'} />
             ) : (
               <>
                 <h2>The Wisp service is unavailable</h2>

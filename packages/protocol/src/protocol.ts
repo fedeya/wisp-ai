@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { SLOT_COUNT } from './addon-helpers.js';
+
+export { BIT_COUNT, SLOT_COUNT, luaJson } from './addon-helpers.js';
 export const PREFIX = 'WispAI';
-export const BIT_COUNT = 128;
-export const SLOT_COUNT = 1024;
 const identifier = z.string().min(1).max(200);
 const envelope = z.object({
   transportVersion: z.literal(2).optional(),
@@ -110,10 +111,3 @@ export const packetSchema = z.discriminatedUnion('type', [
   }),
 ]);
 export type Packet = z.infer<typeof packetSchema>;
-export function luaJson(json: string): string {
-  let eq = '=';
-  while (json.includes(']' + eq + ']')) {
-    eq += '=';
-  }
-  return `WispAI_Receive([${eq}[${json}]${eq}])\n`;
-}

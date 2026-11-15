@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifySimulator } from './verify-simulator.ts';
 import { findNpmDirectory } from './node-runtime.ts';
-import { stampAddonVersions } from './addon-version.ts';
+import { addonReleaseVersion, stampAddonReleaseVersion } from './addon-release-version.ts';
 
 export async function stageTauri({ packaged = false } = {}) {
   const root = fileURLToPath(new URL('../', import.meta.url));
@@ -12,6 +12,7 @@ export async function stageTauri({ packaged = false } = {}) {
   if (stage !== path.join(root, 'apps', 'desktop', 'src-tauri', 'resources', 'payload')) {
     throw Error('Invalid payload directory.');
   }
+  const addonVersion = packaged ? addonReleaseVersion(root) : undefined;
   await verifySimulator(root);
   await rm(stage, { recursive: true, force: true });
   // Hoisting is restricted to the standalone deployment: Windows installer resources
@@ -53,8 +54,9 @@ export async function stageTauri({ packaged = false } = {}) {
   for (const name of ['addon/WispAI', 'simulator']) {
     await cp(path.join(root, name), path.join(stage, name), { recursive: true });
   }
-  const version = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).version;
-  await stampAddonVersions(path.join(stage, 'addon'), version);
+  if (addonVersion) {
+    await stampAddonReleaseVersion(path.join(stage, 'addon/WispAI/WispAI.toc'), addonVersion);
+  }
   for (const name of ['LICENSE', 'NOTICE']) {
     await copyFile(path.join(root, name), path.join(stage, name));
   }

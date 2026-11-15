@@ -11,6 +11,7 @@ export const desktopInfoSchema = z.object({
   version: z.string(),
   telemetryEnabled: z.boolean().optional(),
   addonOutdated: z.boolean().nullable().optional(),
+  addonUpdateNotice: z.enum(['reload_required', 'failed']).nullish(),
 });
 export const modelSchema = z.object({
   slug: z.string(),

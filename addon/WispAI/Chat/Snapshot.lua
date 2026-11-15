@@ -33,6 +33,7 @@ function ns.Chat.ReceiveSnapshot(data)
     local previousState = previous and previous.status
     ns.rev, ns.connected, ns.lastSeen = data.rev, data.connected, GetTime()
     ns.bridgeVersion = data.bridgeVersion
+    ns.expectedAddonVersion = data.expectedAddonVersion
     ns.contextPolicy = data.contextPolicy
     ns.modelCatalog = data.modelCatalog or ns.modelCatalog
     if data.capabilities then

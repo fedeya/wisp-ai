@@ -1,5 +1,6 @@
 import { containerClassName } from '../../components/ui';
 import { DownloadLink } from '../../components/download-link';
+import { ButtonLink } from '../../components/ui/button-link';
 import { getTranslator, translateData, localizedPath, type Locale } from '../../i18n';
 import { resolveLocale, type LocalePageProps } from '../../i18n/server';
 import { localizedMetadata } from '../../seo';
@@ -541,6 +542,26 @@ export default async function Home({ params }: LocalePageProps) {
             {t(' · Windows x64 · Open source')}
           </p>
           <UsageRisk locale={locale} centered />
+        </section>
+        <section
+          className={`${containerClassName} mb-12 flex flex-wrap items-center justify-between gap-x-8 gap-y-5 rounded-md border border-solid border-[#c4a16a38] bg-[#c4a16a0a] px-5 py-6 md:mb-16 md:px-8`}
+        >
+          <div>
+            <h2 className="text-[25px] tracking-[-0.4px]">{t('Enjoying Wisp?')}</h2>
+            <p className="mt-2 text-[14px] leading-[1.6] text-muted">
+              {t('Your support helps me keep improving Wisp and its addon.')}
+            </p>
+          </div>
+          <ButtonLink
+            internal
+            intent="outline"
+            href={localizedPath(locale, '/support')}
+            className="min-h-11 px-4 text-[13px]"
+          >
+            <Icon name="heart" size={15} />
+            {t('Support Wisp')}
+            <Icon name="arrow" size={15} />
+          </ButtonLink>
         </section>
       </main>
     </>

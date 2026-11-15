@@ -4,12 +4,17 @@ import { RouterProvider } from 'react-router/dom';
 import { desktop, native } from './api';
 import DesktopSidebar from './components/DesktopSidebar';
 import ConfirmationDialog from './components/ui/ConfirmationDialog';
-import Icon from './components/ui/Icon';
-import { Button } from './components/ui/Controls';
+import FeedbackToast from './components/ui/FeedbackToast';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
 import { mountDesktop } from './desktop-controller';
-import { connectionsPage, desktopPages, type DesktopPage } from './routes/desktop-routes';
+import {
+  connectionsPage,
+  desktopPages,
+  integrationsPage,
+  type DesktopPage,
+} from './routes/desktop-routes';
+import IntegrationDetails from './routes/IntegrationDetails';
 import ProviderDetails from './routes/ProviderDetails';
 import Onboarding from './components/onboarding/Onboarding';
 import { Spinner } from './components/ui/ActionProgress';
@@ -26,7 +31,9 @@ function DesktopShell() {
     onboarding: state.onboarding,
   }));
   const navigate = useNavigate();
-  const page = (useMatches().at(-1)?.handle as DesktopPage | undefined) ?? desktopPages[0];
+  const match = useMatches().at(-1);
+  const page = (match?.handle as DesktopPage | undefined) ?? desktopPages[0];
+  const fixedHeight = match?.id === integrationsPage.name;
   const { busy, clearFeedback, failed, feedback, loading } = app;
 
   useEffect(() => {
@@ -53,17 +60,21 @@ function DesktopShell() {
       ) : app.onboarding ? (
         <Onboarding />
       ) : (
-        <div className="flex min-h-screen">
+        <div className={fixedHeight ? 'flex h-screen overflow-hidden' : 'flex min-h-screen'}>
           <DesktopSidebar />
-          <main className="min-w-0 max-w-[1450px] flex-1 px-[32px] pt-[34px] pb-[80px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:pt-[26px]">
-            {page.name !== 'Overview' && page.name !== 'Connections' && (
-              <header className="page-header gap-[18px] mb-[28px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
-                <div>
-                  <h1>{page.title}</h1>
-                  <p className="text-muted text-[13px]">{page.caption}</p>
-                </div>
-              </header>
-            )}
+          <main
+            className={`min-w-0 max-w-[1450px] flex-1 px-[32px] pt-[34px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:pt-[26px] ${fixedHeight ? 'flex min-h-0 flex-col' : 'pb-[80px]'}`}
+          >
+            {page.name !== 'Overview' &&
+              page.name !== 'Connections' &&
+              page.name !== 'Integrations' && (
+                <header className="page-header gap-[18px] mb-[28px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
+                  <div>
+                    <h1>{page.title}</h1>
+                    <p className="text-muted text-[13px]">{page.caption}</p>
+                  </div>
+                </header>
+              )}
             {!native && (
               <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-[12px] leading-[1.5] [&_.icon-button]:ml-auto">
                 Design preview. Desktop actions are available in the installed Wisp app.
@@ -80,25 +91,7 @@ function DesktopShell() {
           </main>
         </div>
       )}
-      {feedback && !busy && (
-        <div
-          className={`notification gap-[12px] border border-solid border-[#40695e] px-[15px] py-[13px] fixed right-[24px] bottom-[22px] z-[30] flex items-center w-[max-content] max-w-[min(580px,_calc(100vw_-_48px))] rounded-[12px] [background:#20352f] text-[#d5eee4] [box-shadow:0_8px_32px_#0005] text-[13px] leading-[1.5] [&_>_svg]:shrink-0 [&.error]:border-[#89564c] [&.error]:[background:#382824] [&.error]:text-[#ffd2c8]${failed ? ' error' : ''}`}
-          role="status"
-          aria-live="polite"
-        >
-          <Icon name={failed ? 'logs' : 'check'} size={18} />
-          <span className="[overflow-wrap:anywhere]">{feedback}</span>
-          <Button
-            intent="quiet"
-            size="icon"
-            className="shrink-0"
-            aria-label="Dismiss notification"
-            onClick={clearFeedback}
-          >
-            <Icon name="close" size={16} />
-          </Button>
-        </div>
-      )}
+      <FeedbackToast message={busy ? '' : feedback} failed={failed} onDismiss={clearFeedback} />
       <ConfirmationDialog />
     </>
   );
@@ -116,6 +109,11 @@ export function createDesktopRouter() {
           handle: page,
         })),
         { path: '/connections/:provider', Component: ProviderDetails, handle: connectionsPage },
+        {
+          path: '/integrations/:integrationId',
+          Component: IntegrationDetails,
+          handle: integrationsPage,
+        },
       ],
     },
   ]);

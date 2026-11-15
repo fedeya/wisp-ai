@@ -87,9 +87,9 @@ export function desktopReadiness(
   | 'ready' {
   const { loading, info, status, starting } = state;
   if (loading) return 'loading';
+  if (info?.addonOutdated || info?.addonUpdateNotice === 'failed') return 'update';
   if (!status) return starting ? 'starting' : 'unavailable';
   if (!info?.configured) return 'setup';
-  if (info.addonOutdated) return 'update';
   if (!desktopConnected(state)) return 'account';
   if (!status.ready) return 'agent';
   return status.gameConnected ? 'ready' : 'waiting';
@@ -252,7 +252,7 @@ function createDesktopSession() {
     await work(
       'Reading logs',
       async () => update({ logs: await desktop<string>('read_logs') }),
-      'Local logs loaded.',
+      null,
     );
   }
 
@@ -379,6 +379,12 @@ function createDesktopSession() {
       testMcp,
       chooseFolder: () => work('Choosing folder', pickFolder, undefined, 'folder-picker'),
       selectFolder: (wow: string) => update({ wow }),
+      dismissAddonReload: () => {
+        const { info } = getState();
+        if (info?.addonUpdateNotice === 'reload_required') {
+          update({ info: { ...info, addonUpdateNotice: null } });
+        }
+      },
       setConfirmation: (confirm: Confirmation | null) => update({ confirm }),
       setBusy: (busy: string) => update({ busy }),
       clearFeedback: () => update({ feedback: '' }),

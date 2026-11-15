@@ -5,11 +5,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client } from 'eve/client';
 import { installerBuildVersion } from './installer-version.ts';
+import { addonVersionFromToc } from '../apps/bridge/src/addon-version.ts';
+import { addonReleaseVersion } from './addon-release-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {
   throw Error('Run installer verification in a disposable Windows CI profile.');
 }
 const sourceVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
+const addonVersion = addonReleaseVersion(process.cwd());
 const installer = path.resolve(
   process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
 );
@@ -89,8 +92,10 @@ try {
     'WispAI_S0001/WispAI_S0001.toc',
   ]) {
     const toc = await readFile(path.join(wow, 'Interface/AddOns', relative), 'utf8');
-    if (toc.match(/^## Version: ([^\r\n]+)/m)?.[1] !== version) {
-      throw Error('Installed addon version does not match the release: ' + relative);
+    if (addonVersionFromToc(toc) !== addonVersion) {
+      throw Error(
+        'Installed addon version does not match the expected release version: ' + relative,
+      );
     }
   }
   const payloadFiles = (await readdir(payload, { recursive: true, withFileTypes: true })).filter(
@@ -172,6 +177,7 @@ try {
     timeout: 180000,
   });
   const upgradeMilliseconds = performance.now() - upgradeStarted;
+  await access(path.join(data, 'runtime/addon-update-pending'));
   const updateStages = (await readFile(path.join(data, 'runtime/update.log'), 'utf8'))
     .trim()
     .split(/\r?\n/)
@@ -208,6 +214,7 @@ try {
   await access(path.join(data, 'preserve-on-uninstall.txt'));
   const report = {
     version,
+    addonVersion,
     installer: true,
     protectedCredentials: true,
     bundledNode: true,

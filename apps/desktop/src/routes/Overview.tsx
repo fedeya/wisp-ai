@@ -70,7 +70,7 @@ function useOverview() {
 
 export default function Overview() {
   const app = useOverview();
-  const { install } = useDesktopActions();
+  const { install, dismissAddonReload } = useDesktopActions();
   const navigate = useNavigate();
   const [editingInstallation, setEditingInstallation] = useState(false);
   const state = app.readiness;
@@ -95,8 +95,20 @@ export default function Overview() {
           <h1 id="overview-title" className="text-[32px]">
             {title}
           </h1>
-          <p className="max-w-[65ch] text-muted">{description}</p>
+          <p className="max-w-[65ch] text-muted">
+            {state === 'update' && app.info?.addonUpdateNotice === 'failed'
+              ? 'Wisp couldn’t update the addon automatically. Try updating it again below.'
+              : description}
+          </p>
         </div>
+        {app.info?.addonUpdateNotice === 'reload_required' && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px] text-accent">
+            <p role="status">Wisp updated the addon. Type /reload in WoW to finish updating.</p>
+            <Button intent="quiet" size="text" onClick={dismissAddonReload}>
+              Dismiss
+            </Button>
+          </div>
+        )}
         {showCommand && <GameCommand />}
         {state === 'account' && (
           <Button className="mt-4" intent="primary" onClick={() => void navigate('/connections')}>
@@ -132,8 +144,8 @@ export default function Overview() {
               aria-label="Connection status"
               className="grid grid-cols-3 gap-y-3 divide-x divide-border p-4"
             >
-              <ConnectionStatus label="Addon" online={!app.info.addonOutdated}>
-                {app.info.addonOutdated ? 'Update needed' : 'Installed'}
+              <ConnectionStatus label="Addon" online={state !== 'update'}>
+                {state === 'update' ? 'Update needed' : 'Installed'}
               </ConnectionStatus>
               <ConnectionStatus label="World of Warcraft" online={!!app.status?.gameConnected}>
                 {app.status?.gameConnected

@@ -1,6 +1,6 @@
 local helper = require("addon.tests.support")
 
-it("diag reports the loaded addon build, unknown bridge and actual version mismatches", function()
+it("diag compares the loaded addon with the bundled addon version", function()
     local env = helper.env()
     setfenv(1, env)
     do
@@ -21,7 +21,7 @@ it("diag reports the loaded addon build, unknown bridge and actual version misma
         C_AddOns = {
             GetAddOnMetadata = function(name, key)
                 assert(name == "WispAI" and key == "Version")
-                return "0.0.8-nightly.123.2"
+                return "1.0.0"
             end,
         }
     end
@@ -29,7 +29,7 @@ it("diag reports the loaded addon build, unknown bridge and actual version misma
 
     assert(ns.VERSION == 1)
     SlashCmdList.WISPAI("diag")
-    assert(logs[1]:find("Addon 0.0.8-nightly.123.2", 1, true))
+    assert(logs[1]:find("Addon 1.0.0", 1, true))
     assert(logs[1]:find("desktop/bridge unknown", 1, true))
     assert(not logs[1]:find("version mismatch", 1, true))
     ns.db = { drafts = {} }
@@ -43,6 +43,7 @@ it("diag reports the loaded addon build, unknown bridge and actual version misma
         rev = 1,
         connected = true,
         bridgeVersion = "0.0.7",
+        expectedAddonVersion = "1.0.1",
     })
     logs = {}
     SlashCmdList.WISPAI("diag")
@@ -53,7 +54,8 @@ it("diag reports the loaded addon build, unknown bridge and actual version misma
         session = ns.session,
         rev = 2,
         connected = true,
-        bridgeVersion = ns.addonVersion,
+        bridgeVersion = "0.0.7",
+        expectedAddonVersion = "1.0.0",
     })
     logs = {}
     SlashCmdList.WISPAI("diag")

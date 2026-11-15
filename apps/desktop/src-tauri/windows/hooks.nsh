@@ -4,22 +4,22 @@
 !define MUI_CUSTOMFUNCTION_GUIINIT WispUpdateWindowInit
 !include "${__FILEDIR__}\update-window.nsh"
 
-Var WispUpdateLog
+Var WispUpdateRuntime
 !macro WispUpdateStage stage
   Push $0
   Push $1
   ClearErrors
   ${GetOptions} $CMDLINE "/UPDATE" $0
   ${IfNot} ${Errors}
-    ${If} $WispUpdateLog == ""
-      ReadEnvStr $WispUpdateLog "WISP_DATA_DIR"
-      ${If} $WispUpdateLog == ""
-        StrCpy $WispUpdateLog "$APPDATA\com.wisp.ai"
+    ${If} $WispUpdateRuntime == ""
+      ReadEnvStr $WispUpdateRuntime "WISP_DATA_DIR"
+      ${If} $WispUpdateRuntime == ""
+        StrCpy $WispUpdateRuntime "$APPDATA\com.wisp.ai"
       ${EndIf}
-      CreateDirectory "$WispUpdateLog\runtime"
-      StrCpy $WispUpdateLog "$WispUpdateLog\runtime\update.log"
+      StrCpy $WispUpdateRuntime "$WispUpdateRuntime\runtime"
+      CreateDirectory "$WispUpdateRuntime"
     ${EndIf}
-    FileOpen $0 $WispUpdateLog a
+    FileOpen $0 "$WispUpdateRuntime\update.log" a
     ${IfNot} ${Errors}
       FileSeek $0 0 END
       System::Call 'kernel32::GetTickCount64()l.r1'
@@ -110,6 +110,16 @@ FunctionEnd
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro WispUpdateStage "files-installed"
+  ${If} $WispUpdateRuntime != ""
+    Push $0
+    ClearErrors
+    FileOpen $0 "$WispUpdateRuntime\addon-update-pending" w
+    ${IfNot} ${Errors}
+      FileClose $0
+    ${EndIf}
+    ClearErrors
+    Pop $0
+  ${EndIf}
   ${If} $WispUpdateProgressProcess != ""
     System::Call 'user32::SetPropW(p $WispUpdateSignal, w "WispProgressSucceeded", p 1)'
     !insertmacro WispStopProgress
