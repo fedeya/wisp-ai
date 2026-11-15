@@ -9,6 +9,7 @@ export const iconPaths: Record<string, string> = {
   plus: 'M12 5v14 M5 12h14',
   close: 'm6 6 12 12 M6 18 18 6',
   check: 'm5 12 4 4L19 6',
+  chevronDown: 'm6 9 6 6 6-6',
   folder: 'M3 7V4h6l3 3h9v13H3Z',
   refresh: 'M20 7v5h-5 M4 17v-5h5 M6 6a8 8 0 0 1 13 2 M5 16a8 8 0 0 0 13 2',
 };

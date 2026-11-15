@@ -6,6 +6,7 @@ import { desktopStore } from './desktop-controller';
 import { desktop, request, type Status } from './api';
 import { listen } from '@tauri-apps/api/event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
+import { chooseOption, openSelect } from './select-test-helpers';
 vi.mock('./api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
@@ -150,11 +151,9 @@ test('additional installations keep the first selection and offer alternatives',
   expect(
     screen.getByText('Found 2 WoW Forever installations.').closest('.notification'),
   ).toBeTruthy();
-  expect((choices as HTMLSelectElement).value).toBe('D:\\Forever');
-  await act(async () => {
-    await fireEvent.change(choices, { target: { value: 'E:\\Forever' } });
-  });
-  expect((choices as HTMLSelectElement).value).toBe('E:\\Forever');
+  expect(choices.textContent).toBe('D:\\Forever');
+  await chooseOption(choices, 'E:\\Forever');
+  expect(choices.textContent).toBe('E:\\Forever');
 });
 
 test('search hides selection until all results are ready', async () => {
@@ -180,14 +179,14 @@ test('search hides selection until all results are ready', async () => {
   expect(screen.queryByRole('button', { name: 'Install addon' })).toBeNull();
   progress.onmessage('D:\\Forever');
   finish(['E:\\Forever', 'D:\\Forever']);
-  const choices = (await screen.findByLabelText(
-    'Detected Forever installations',
-  )) as HTMLSelectElement;
-  expect(choices.value).toBe('E:\\Forever');
+  const choices = await screen.findByRole('combobox', { name: 'Detected Forever installations' });
+  expect(choices.textContent).toBe('E:\\Forever');
   expect((screen.getByRole('button', { name: 'Search again' }) as HTMLButtonElement).disabled).toBe(
     false,
   );
-  expect(screen.getAllByRole('option', { name: 'E:\\Forever' })).toHaveLength(1);
+  expect(
+    within(await openSelect(choices)).getAllByRole('option', { name: 'E:\\Forever' }),
+  ).toHaveLength(1);
 });
 
 test('unsuccessful search enables manual selection and can be retried', async () => {
@@ -263,13 +262,13 @@ test('search settings keep Exa separate from model connections and do not reveal
   ) as HTMLInputElement;
   expect(key.value).toBe('');
   expect(key.type).toBe('password');
-  const service = screen.getByLabelText('Search service') as HTMLSelectElement;
-  await fireEvent.change(service, { target: { value: 'exa' } });
+  const service = screen.getByRole<HTMLButtonElement>('combobox', { name: 'Search service' });
+  await chooseOption(service, 'Exa for all chats');
   status.search = { provider: 'chatgpt', hasExaKey: true };
   await fireEvent.click(screen.getByRole('button', { name: 'Test Exa' }));
   await screen.findByText('Exa accepted the test search. Results depend on source coverage.');
   await waitFor(() => expect(service.disabled).toBe(false));
-  expect(service.value).toBe('exa');
+  expect(service.textContent).toBe('Exa for all chats');
   await fireEvent.click(screen.getByRole('button', { name: 'Save search settings' }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/search/save', { provider: 'exa', apiKey: undefined }),
@@ -318,11 +317,11 @@ test('saving search settings queues a fresh status read behind an in-flight poll
   });
 
   const unfinishedPoll = refresh();
-  const provider = screen.getByLabelText<HTMLSelectElement>('Search service');
+  const provider = screen.getByRole('combobox', { name: 'Search service' });
   const key = screen.getByLabelText<HTMLInputElement>('Exa API key (optional)');
-  fireEvent.change(provider, { target: { value: 'exa' } });
+  await chooseOption(provider, 'Exa for all chats');
   fireEvent.input(key, { target: { value: 'test-key' } });
-  fireEvent.submit(provider.form!);
+  fireEvent.click(screen.getByRole('button', { name: 'Save search settings' }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/search/save', { provider: 'exa', apiKey: 'test-key' }),
   );
@@ -333,13 +332,13 @@ test('saving search settings queues a fresh status read behind an in-flight poll
     await unfinishedPoll;
   });
   await waitFor(() => expect(freshStarted).toHaveBeenCalledTimes(1));
-  expect(provider.value).toBe('exa');
+  expect(provider.textContent).toBe('Exa for all chats');
 
   await act(async () => {
     finishFresh({ ...status, search: newSearch });
   });
   await screen.findByText('Search settings saved.');
-  expect(provider.value).toBe('exa');
+  expect(provider.textContent).toBe('Exa for all chats');
   expect(key.value).toBe('');
   expect(freshStarted).toHaveBeenCalledTimes(1);
 });
@@ -374,11 +373,13 @@ test('API connections expose the provider registry and save a model with protect
   await screen.findByText('Ready to help');
   await openConnections();
   await fireEvent.click(screen.getByRole('button', { name: 'Add connection' }));
-  const provider = await screen.findByLabelText('Provider');
-  expect(provider.querySelectorAll('option')).toHaveLength(20);
-  expect(screen.getByRole('option', { name: 'Google / Gemini' })).toBeTruthy();
-  expect(screen.getByRole('option', { name: 'OpenRouter' })).toBeTruthy();
-  expect(screen.queryByRole('option', { name: /Bedrock/ })).toBeNull();
+  const provider = await screen.findByRole('combobox', { name: 'Provider' });
+  const providers = within(await openSelect(provider));
+  expect(providers.getAllByRole('option')).toHaveLength(20);
+  expect(providers.getByRole('option', { name: 'Google / Gemini' })).toBeTruthy();
+  expect(providers.getByRole('option', { name: 'OpenRouter' })).toBeTruthy();
+  expect(providers.queryByRole('option', { name: /Bedrock/ })).toBeNull();
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
   await fireEvent.input(screen.getByLabelText('Connection name'), {
     target: { value: 'My Claude' },
   });
@@ -450,7 +451,7 @@ test('an API default enables the workspace while ChatGPT stays disconnected', as
     ((await screen.findByLabelText('API key (leave blank to keep saved key)')) as HTMLInputElement)
       .value,
   ).toBe('');
-  expect((screen.getByLabelText('Provider') as HTMLSelectElement).disabled).toBe(true);
+  expect(screen.getByRole<HTMLButtonElement>('combobox', { name: 'Provider' }).disabled).toBe(true);
 });
 test('an event listener that finishes registering after unmount is immediately removed', async () => {
   let finish: ((stop: () => void) => void) | undefined;
@@ -534,12 +535,10 @@ test('provider-neutral navigation and per-chat default model controls use the br
   await screen.findByText('Ready to help');
   await openConnections();
   expect(screen.getByRole('heading', { name: 'AI connections' })).toBeTruthy();
-  await screen.findByRole('option', { name: 'Sol' });
-  await act(async () => {
-    await fireEvent.change(screen.getByLabelText('Default model for new chats'), {
-      target: { value: 'sol' },
-    });
-  });
+  await chooseOption(
+    await screen.findByRole('combobox', { name: 'Default model for new chats' }),
+    'Sol',
+  );
   await fireEvent.click(screen.getByRole('button', { name: 'Set default' }));
   await waitFor(() => expect(request).toHaveBeenCalledWith('/auth/model', { model: 'sol' }));
 });
@@ -557,12 +556,12 @@ test('account selection is a draft until submitted and remains available for rec
   await screen.findByText('Ready to help');
   await openConnections();
 
-  const accounts = screen.getByLabelText<HTMLSelectElement>('Saved accounts');
-  expect(accounts.value).toBe('first');
-  fireEvent.change(accounts, { target: { value: 'second' } });
+  const accounts = screen.getByRole('combobox', { name: 'Saved accounts' });
+  expect(accounts.textContent).toBe('First account');
+  await chooseOption(accounts, 'Second account');
   expect(request).not.toHaveBeenCalledWith('/auth/select', expect.anything());
 
-  fireEvent.submit(accounts.form!);
+  fireEvent.click(screen.getByRole('button', { name: 'Use account' }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/auth/select', { profileId: 'second' }),
   );
@@ -694,7 +693,7 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   const localDialog = await screen.findByRole('dialog', { name: 'Add an MCP' });
   const local = within(localDialog);
   expect((local.getByLabelText('Name') as HTMLInputElement).value).toBe('');
-  await fireEvent.change(local.getByLabelText('Transport'), { target: { value: 'stdio' } });
+  await chooseOption(local.getByRole('combobox', { name: 'Transport' }), 'Local process (stdio)');
   await fireEvent.input(local.getByLabelText('Name'), { target: { value: 'local_tools' } });
   const command = local.getByLabelText('Executable or command');
   await fireEvent.input(command, { target: { value: 'fixture-mcp' } });
@@ -750,7 +749,7 @@ test('MCP add dialog preserves structured arguments and saves without browser cr
   const savedName = edit.getByLabelText('Name') as HTMLInputElement;
   expect(savedName.value).toBe('existing_tools');
   expect(savedName.disabled).toBe(true);
-  expect((edit.getByLabelText('Transport') as HTMLSelectElement).value).toBe('sse');
+  expect(edit.getByRole('combobox', { name: 'Transport' }).textContent).toBe('SSE');
   expect((edit.getByLabelText('Endpoint URL') as HTMLInputElement).value).toBe(
     'https://example.com/sse',
   );
@@ -765,8 +764,8 @@ test('MCP transport changes do not leave hidden local validation errors blocking
   await fireEvent.click(await screen.findByRole('button', { name: 'Add MCP' }));
   const dialog = within(await screen.findByRole('dialog', { name: 'Add an MCP' }));
   fireEvent.input(dialog.getByLabelText('Name'), { target: { value: 'local_tools' } });
-  const transport = dialog.getByLabelText('Transport');
-  fireEvent.change(transport, { target: { value: 'stdio' } });
+  const transport = dialog.getByRole('combobox', { name: 'Transport' });
+  await chooseOption(transport, 'Local process (stdio)');
   fireEvent.input(dialog.getByLabelText('Executable or command'), {
     target: { value: 'fixture-mcp' },
   });
@@ -774,7 +773,7 @@ test('MCP transport changes do not leave hidden local validation errors blocking
   fireEvent.click(dialog.getByRole('button', { name: 'Test connection' }));
   await dialog.findByText('Arguments must be a JSON array of strings.');
 
-  fireEvent.change(transport, { target: { value: 'http' } });
+  await chooseOption(transport, 'Streamable HTTP');
   fireEvent.input(dialog.getByLabelText('Endpoint URL'), {
     target: { value: 'https://example.com/mcp' },
   });

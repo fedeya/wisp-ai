@@ -85,19 +85,15 @@ export default function DefaultModelSettings() {
                 className="flex-[1]"
                 id="models"
                 name={field.name}
-                value={model ?? ''}
-                onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                value={model || null}
+                onValueChange={field.handleChange}
+                options={app.models.map(({ slug, displayName }) => ({
+                  value: slug,
+                  label: displayName,
+                }))}
+                placeholder="Connect a provider first"
                 disabled={locked || !app.models.length}
-              >
-                <option value="" disabled>
-                  Connect a provider first
-                </option>
-                {app.models.map(({ slug, displayName }) => (
-                  <option key={slug} value={slug}>
-                    {displayName}
-                  </option>
-                ))}
-              </Select>
+              />
             )}
           </modelForm.Field>
           <Button type="submit" disabled={!canSave}>

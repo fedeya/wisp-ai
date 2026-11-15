@@ -279,19 +279,15 @@ export default function Overview() {
                       <Select
                         id="detected-game"
                         aria-label="Detected Forever installations"
-                        value={app.wow}
-                        onChange={({ currentTarget }) => app.selectFolder(currentTarget.value)}
+                        value={app.wow || null}
+                        onValueChange={app.selectFolder}
+                        options={[
+                          ...(app.wow && !app.detectedFolders.includes(app.wow) ? [app.wow] : []),
+                          ...app.detectedFolders,
+                        ].map((folder) => ({ value: folder, label: folder }))}
+                        placeholder="Choose a Forever installation"
                         disabled={!!app.busy}
-                      >
-                        {app.wow && !app.detectedFolders.includes(app.wow) && (
-                          <option value={app.wow}>{app.wow}</option>
-                        )}
-                        {app.detectedFolders.map((folder) => (
-                          <option value={folder} key={folder}>
-                            {folder}
-                          </option>
-                        ))}
-                      </Select>
+                      />
                     </>
                   )}
                   {!configured && app.detectedFolders.length === 0 && (

@@ -14,6 +14,7 @@ import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
 const labelClass = 'text-[12px] font-medium text-[#bdcccf]';
+const providerOptions = providerDefinitions.map(({ id, name }) => ({ value: id, label: name }));
 const modelFieldsClass =
   'api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]';
 
@@ -139,15 +140,10 @@ export default function ConnectionEditor({
           <Select
             id="ai-provider"
             value={field.state.value}
-            onChange={({ currentTarget }) => field.handleChange(currentTarget.value as ProviderId)}
+            onValueChange={field.handleChange}
+            options={providerOptions}
             disabled={app.locked || !!connection}
-          >
-            {providerDefinitions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
+          />
         )}
       </form.Field>
       <label className={labelClass} htmlFor="ai-name">

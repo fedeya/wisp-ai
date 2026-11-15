@@ -4,6 +4,8 @@ import type { ComponentProps } from 'react';
 import type { VariantProps } from 'tailwind-variants';
 import { badge, button, card, checkbox, field, textarea } from './styles';
 
+export { Select } from './Select';
+
 type ButtonProps = ComponentProps<'button'> & VariantProps<typeof button>;
 
 export function Button({
@@ -56,10 +58,6 @@ export function NumberInput({ value, onValueChange, ...props }: NumberInputProps
       }}
     />
   );
-}
-
-export function Select({ className, ...props }: ComponentProps<'select'>) {
-  return <select {...props} className={field({ class: className })} />;
 }
 
 export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {

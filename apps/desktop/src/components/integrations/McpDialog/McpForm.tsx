@@ -32,6 +32,11 @@ const labelClass = 'gap-[8px] mx-0 my-[15px] flex flex-col text-[#b6c9cf] text-[
 const checkRowClass =
   'check-row gap-[9px] mx-0 my-[15px] flex items-center text-[#b6c9cf] text-[12px]';
 const checkboxClass = 'w-[15px] h-[15px] min-h-[0] [accent-color:var(--accent)]';
+const transports: { value: Mcp['transport']; label: string }[] = [
+  { value: 'http', label: 'Streamable HTTP' },
+  { value: 'sse', label: 'SSE' },
+  { value: 'stdio', label: 'Local process (stdio)' },
+];
 
 const argsError = 'Arguments must be a JSON array of strings.';
 const envError = 'Environment must be a JSON object with string values.';
@@ -197,14 +202,9 @@ export default function McpForm({
               {(field) => (
                 <Select
                   value={field.state.value}
-                  onChange={({ currentTarget }) =>
-                    field.handleChange(currentTarget.value as Mcp['transport'])
-                  }
-                >
-                  <option value="http">Streamable HTTP</option>
-                  <option value="sse">SSE</option>
-                  <option value="stdio">Local process (stdio)</option>
-                </Select>
+                  onValueChange={field.handleChange}
+                  options={transports}
+                />
               )}
             </form.Field>
           </label>

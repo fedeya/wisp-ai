@@ -138,16 +138,12 @@ export default function ChatGptConnection() {
                   className="flex-[1]"
                   id="accounts"
                   name={field.name}
-                  value={account ?? ''}
-                  onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
+                  value={account || null}
+                  onValueChange={field.handleChange}
+                  options={auth.profiles.map(({ id, label }) => ({ value: id, label }))}
+                  placeholder="Choose a saved account"
                   disabled={locked}
-                >
-                  {auth.profiles.map((profile) => (
-                    <option key={profile.id} value={profile.id}>
-                      {profile.label}
-                    </option>
-                  ))}
-                </Select>
+                />
               )}
             </accountForm.Field>
             <Button type="submit" disabled={!canSwitch}>

@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
+import { chooseOption } from '../../../select-test-helpers';
 import { Button, Checkbox, Input, NumberInput, Select, Textarea } from './index';
 
 function ControlsFixture() {
@@ -28,11 +29,12 @@ function ControlsFixture() {
         <Select
           aria-label="Choice"
           value={choice}
-          onChange={({ currentTarget }) => setChoice(currentTarget.value)}
-        >
-          <option value="one">One</option>
-          <option value="two">Two</option>
-        </Select>
+          onValueChange={setChoice}
+          options={[
+            { value: 'one', label: 'One' },
+            { value: 'two', label: 'Two' },
+          ]}
+        />
         <Textarea
           aria-label="Note"
           value={note}
@@ -66,7 +68,7 @@ function ControlsFixture() {
 afterEach(cleanup);
 const values = () => JSON.parse(screen.getByTestId('values').textContent!);
 
-test('native field events update controlled state, including number coercion and empty values', () => {
+test('field interactions update controlled state, including number coercion and empty values', async () => {
   render(<ControlsFixture />);
   fireEvent.input(screen.getByRole('textbox', { name: 'Name' }), {
     target: { value: 'Player' },
@@ -74,9 +76,7 @@ test('native field events update controlled state, including number coercion and
   fireEvent.input(screen.getByRole('spinbutton', { name: 'Count' }), {
     target: { value: '12' },
   });
-  fireEvent.change(screen.getByRole('combobox', { name: 'Choice' }), {
-    target: { value: 'two' },
-  });
+  await chooseOption(screen.getByRole('combobox', { name: 'Choice' }), 'Two');
   fireEvent.input(screen.getByRole('textbox', { name: 'Note' }), {
     target: { value: 'Updated note' },
   });
@@ -95,16 +95,14 @@ test('native field events update controlled state, including number coercion and
   expect(values().count).toBeNull();
 });
 
-test('parent updates reach native controls and ordinary buttons do not submit their form', () => {
+test('parent updates reach controls and ordinary buttons do not submit their form', async () => {
   render(<ControlsFixture />);
-  fireEvent.change(screen.getByRole('combobox', { name: 'Choice' }), {
-    target: { value: 'two' },
-  });
+  await chooseOption(screen.getByRole('combobox', { name: 'Choice' }), 'Two');
   fireEvent.click(screen.getByRole('checkbox', { name: 'Enabled' }));
   fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
   expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Reset');
   expect((screen.getByRole('spinbutton', { name: 'Count' }) as HTMLInputElement).value).toBe('7');
-  expect((screen.getByRole('combobox', { name: 'Choice' }) as HTMLSelectElement).value).toBe('one');
+  expect(screen.getByRole('combobox', { name: 'Choice' }).textContent).toBe('One');
   expect((screen.getByRole('textbox', { name: 'Note' }) as HTMLTextAreaElement).value).toBe(
     'Reset note',
   );

@@ -7,6 +7,10 @@ import { desktop, native } from '../../../api';
 import { Button, Card, Select } from '../../ui/Controls';
 
 type Release = { version: string; notes: string | null };
+const updateChannels = [
+  { value: 'stable', label: 'Stable' },
+  { value: 'nightly', label: 'Nightly' },
+];
 type Progress = {
   phase: 'downloading' | 'waiting' | 'installing';
   downloaded?: number;
@@ -213,12 +217,10 @@ export default function Updates({
         <Select
           className="ml-3 w-auto"
           value={operation?.kind === 'changing-channel' ? operation.channel : channel}
-          onChange={({ currentTarget }) => void changeChannel(currentTarget.value)}
+          onValueChange={(next) => void changeChannel(next)}
+          options={updateChannels}
           disabled={!native || !channelLoaded || !!operation || locked}
-        >
-          <option value="stable">Stable</option>
-          <option value="nightly">Nightly</option>
-        </Select>
+        />
       </label>
       {channel === 'nightly' ? (
         <p className="field-hint mt-3 text-[11px]! text-muted">

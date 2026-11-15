@@ -8,6 +8,16 @@ import { useDesktop, useDesktopActions } from '../../use-desktop';
 type SearchProvider = NonNullable<Status['search']>['provider'];
 type SearchFields = { provider: SearchProvider | null; apiKey: string };
 const defaultValues: SearchFields = { provider: null, apiKey: '' };
+const searchProviders: { value: SearchProvider; label: string; description?: string }[] = [
+  {
+    value: 'auto',
+    label: 'Auto',
+    description: 'ChatGPT for subscription chats, Exa for API chats',
+  },
+  { value: 'exa', label: 'Exa for all chats' },
+  { value: 'chatgpt', label: 'ChatGPT search only' },
+  { value: 'disabled', label: 'Disabled' },
+];
 
 function searchInput({ provider, apiKey }: SearchFields, savedProvider: SearchProvider) {
   return { provider: provider ?? savedProvider, apiKey: apiKey.trim() || undefined };
@@ -68,16 +78,10 @@ export default function SearchConnection() {
               id="search-provider"
               name={field.name}
               value={field.state.value ?? savedProvider}
-              onChange={({ currentTarget }) =>
-                field.handleChange(currentTarget.value as SearchProvider)
-              }
+              onValueChange={field.handleChange}
+              options={searchProviders}
               disabled={disabled}
-            >
-              <option value="auto">Auto — ChatGPT for subscription chats, Exa for API chats</option>
-              <option value="exa">Exa for all chats</option>
-              <option value="chatgpt">ChatGPT search only</option>
-              <option value="disabled">Disabled</option>
-            </Select>
+            />
           )}
         </form.Field>
         <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="exa-key">

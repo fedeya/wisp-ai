@@ -2,6 +2,7 @@ import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
 import { desktop } from '../../../api';
+import { chooseOption } from '../../../select-test-helpers';
 import Updates from './Updates';
 
 vi.mock('../../../api', () => ({ native: true, desktop: vi.fn() }));
@@ -117,9 +118,7 @@ test('checks every six hours and stops checking when the app is unmounted', asyn
 test('switching channels persists the choice and checks the new feed', async () => {
   render(<Updates {...props()} />);
   await screen.findByText(release.notes);
-  await fireEvent.change(screen.getByRole('combobox', { name: 'Update channel' }), {
-    target: { value: 'nightly' },
-  });
+  await chooseOption(screen.getByRole('combobox', { name: 'Update channel' }), 'Nightly');
   await waitFor(() =>
     expect(desktop).toHaveBeenCalledWith('update_channel', { channel: 'nightly' }),
   );
@@ -138,7 +137,7 @@ test('a failed check after switching cannot offer the previous channel installer
     }
     throw Error('Nightly feed unavailable');
   });
-  await fireEvent.change(screen.getByRole('combobox'), { target: { value: 'nightly' } });
+  await chooseOption(screen.getByRole('combobox', { name: 'Update channel' }), 'Nightly');
   await screen.findByRole('alert');
   expect(screen.queryByRole('button', { name: 'Update and restart' })).toBeNull();
 });
