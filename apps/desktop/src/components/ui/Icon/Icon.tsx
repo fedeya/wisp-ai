@@ -6,6 +6,7 @@ import ChevronDown from 'lucide-react/icons/chevron-down';
 import ChevronRight from 'lucide-react/icons/chevron-right';
 import Copy from 'lucide-react/icons/copy';
 import Database from 'lucide-react/icons/database';
+import Download from 'lucide-react/icons/download';
 import Folder from 'lucide-react/icons/folder';
 import Globe from 'lucide-react/icons/globe';
 import House from 'lucide-react/icons/house';
@@ -34,6 +35,7 @@ const icons = {
   close: X,
   copy: Copy,
   database: Database,
+  download: Download,
   folder: Folder,
   globe: Globe,
   home: House,

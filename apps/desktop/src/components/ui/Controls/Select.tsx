@@ -12,6 +12,7 @@ type SelectProps<Value extends string> = {
   id?: string;
   name?: string;
   'aria-label'?: string;
+  'aria-describedby'?: string;
   className?: string;
   disabled?: boolean;
   placeholder?: string;
@@ -24,6 +25,7 @@ export function Select<Value extends string>({
   id,
   name,
   'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
   className,
   disabled,
   placeholder,
@@ -45,6 +47,7 @@ export function Select<Value extends string>({
       <BaseSelect.Trigger
         id={id}
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         className={field({
           class: [
             'group flex cursor-pointer items-center justify-between gap-3 rounded-[9px] text-left',
