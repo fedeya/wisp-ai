@@ -1,4 +1,4 @@
-import { providerDefinitions, type ProviderId } from '@wisp/protocol/providers';
+import { providerDefinitions, providerId, type ProviderId } from '@wisp/protocol/providers';
 import Icon from '../ui/Icon';
 
 const featured = {
@@ -14,6 +14,27 @@ const featured = {
 } satisfies Partial<Record<ProviderId, { name: string; description: string }>>;
 
 export const featuredProviders = Object.keys(featured) as (keyof typeof featured)[];
+
+const modelProviderAliases = new Map<string, ProviderId>([
+  ['mistralai', 'mistral'],
+  ['moonshot', 'moonshotai'],
+  ['qwen', 'alibaba'],
+  ['spacexai', 'xai'],
+  ['x-ai', 'xai'],
+  ['z-ai', 'zai'],
+]);
+
+export function modelProvider(provider: ProviderId, modelId: string): ProviderId {
+  if (provider !== 'openrouter' && provider !== 'gateway' && provider !== 'compatible') {
+    return provider;
+  }
+  const separator = modelId.indexOf('/');
+  if (separator === -1) return provider;
+  const namespace = modelId.slice(0, separator).toLowerCase();
+  return (
+    modelProviderAliases.get(namespace) ?? providerId.safeParse(namespace).data ?? 'compatible'
+  );
+}
 
 export function providerPresentation(id: ProviderId) {
   const definition = providerDefinitions.find((provider) => provider.id === id)!;

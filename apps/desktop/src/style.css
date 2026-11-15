@@ -76,3 +76,14 @@
     }
   }
 }
+
+@layer components {
+  :root,
+  .catalog-scroll {
+    scrollbar-color: #526c73 #192226;
+    scrollbar-width: thin;
+  }
+  .catalog-scroll {
+    scrollbar-gutter: stable;
+  }
+}

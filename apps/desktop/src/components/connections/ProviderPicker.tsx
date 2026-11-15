@@ -65,7 +65,7 @@ export default function ProviderPicker({
                 onChange={({ currentTarget }) => setQuery(currentTarget.value)}
               />
             </div>
-            <div className="min-h-0 overflow-y-auto p-2.5">
+            <div className="catalog-scroll min-h-0 overflow-y-auto p-2.5">
               {options.length ? (
                 <ul className="m-0 grid list-none gap-0.5 p-0">
                   {options.map(({ id, name, description }) => (

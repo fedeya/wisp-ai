@@ -545,14 +545,11 @@ test.each([
     const search = await screen.findByRole('searchbox', { name: 'Search provider models' });
     const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save connection' });
     expect(save.disabled).toBe(true);
-    const toolFilter = screen.getByRole<HTMLInputElement>('checkbox', {
-      name: 'Tool calling only',
-    });
-    expect(toolFilter.checked).toBe(true);
+    expect(screen.queryByRole('checkbox', { name: 'Tool calling only' })).toBeNull();
+    expect(screen.getByText('2 models')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add example/unknown' })).toBeNull();
-    await fireEvent.click(toolFilter);
-    expect(screen.getByText('Tool calling unknown')).toBeTruthy();
-    expect(screen.getByText('No tool calling')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add example/text-only' })).toBeNull();
+    expect(screen.queryByText('Tool calling')).toBeNull();
     await fireEvent.input(search, { target: { value: 'sonnet' } });
     expect(screen.queryByRole('button', { name: 'Add anthropic/claude-haiku' })).toBeNull();
     await fireEvent.click(screen.getByRole('button', { name: 'Add anthropic/claude-sonnet' }));

@@ -15,6 +15,7 @@ import { Button, Input, NumberInput, Select } from '../ui/Controls';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ModelCatalog from './ModelCatalog';
+import { modelProvider, ProviderLogo } from './provider-directory';
 
 const labelClass = 'text-[12px] font-medium text-[#bdcccf]';
 const providerOptions = providerDefinitions.map(({ id, name }) => ({ value: id, label: name }));
@@ -313,12 +314,15 @@ export default function ConnectionEditor({
           {(field) =>
             field.state.value.map((model, index) => (
               <div className={modelFieldsClass} key={model.id}>
-                <span className="[overflow-wrap:anywhere]">
-                  <strong className="block text-[13px]">{model.name || model.id}</strong>
-                  {model.name && model.name !== model.id && (
-                    <span className="block text-[12px] text-muted">{model.id}</span>
-                  )}
-                </span>
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <ProviderLogo provider={modelProvider(provider, model.id)} />
+                  <div className="min-w-0 [overflow-wrap:anywhere]">
+                    <strong className="block text-[13px]">{model.name || model.id}</strong>
+                    {model.name && model.name !== model.id && (
+                      <span className="block text-[12px] text-muted">{model.id}</span>
+                    )}
+                  </div>
+                </div>
                 <form.Field
                   name={`models[${index}].contextWindow`}
                   validators={{ onChange: validateContextWindow, onSubmit: validateContextWindow }}
@@ -377,10 +381,12 @@ export default function ConnectionEditor({
         </form.Field>
         {models.length > 0 && (
           <p className="m-0 text-[12px] text-muted">
-            Each model needs a context window. Testing tool calling may incur provider charges.
+            Each model needs a context window. Testing a model may incur provider charges.
           </p>
         )}
-        <details open={discovered.length ? undefined : true}>
+        <details
+          open={discovered.some(({ supportsTools }) => supportsTools === true) ? undefined : true}
+        >
           <summary className="cursor-pointer text-[13px] text-muted">Add a model manually</summary>
           <div className={`${modelFieldsClass} mt-2`}>
             <form.Field name="modelId">
