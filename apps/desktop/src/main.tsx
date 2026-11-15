@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
-import App from './App';
+import App, { createDesktopRouter } from './App';
 import './style.css';
 
-createRoot(document.getElementById('app')!).render(<App />);
+const router = createDesktopRouter();
+createRoot(document.getElementById('app')!).render(<App router={router} />);

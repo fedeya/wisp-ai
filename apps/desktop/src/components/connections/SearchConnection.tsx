@@ -1,5 +1,4 @@
 import { useForm, useSelector } from '@tanstack/react-form';
-import { useEffect } from 'react';
 import { desktop, request, type Status } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Badge, Button, Card, Input, Select } from '../ui/Controls';
@@ -7,10 +6,11 @@ import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
 type SearchProvider = NonNullable<Status['search']>['provider'];
-type SearchFields = { provider: SearchProvider; apiKey: string };
+type SearchFields = { provider: SearchProvider | null; apiKey: string };
+const defaultValues: SearchFields = { provider: null, apiKey: '' };
 
-function searchInput({ provider, apiKey }: SearchFields) {
-  return { provider, apiKey: apiKey.trim() || undefined };
+function searchInput({ provider, apiKey }: SearchFields, savedProvider: SearchProvider) {
+  return { provider: provider ?? savedProvider, apiKey: apiKey.trim() || undefined };
 }
 
 export default function SearchConnection() {
@@ -21,33 +21,23 @@ export default function SearchConnection() {
     online: !!state.status,
     search: state.status?.search,
   }));
-  const { refresh, setConfirmation, work } = useDesktopActions();
+  const { setConfirmation, work } = useDesktopActions();
   const saved = app.search;
-  const savedProvider = saved?.provider;
-  const disabled = app.locked || !app.online;
-  const defaultValues: SearchFields = { provider: savedProvider ?? 'auto', apiKey: '' };
+  const savedProvider = saved?.provider ?? 'auto';
   const form = useForm({
     defaultValues,
-    onSubmit: ({ value }) =>
-      work(
+    onSubmit: async ({ value, formApi }) => {
+      const saved = await work(
         'Saving search settings',
-        async () => {
-          await request('/search/save', searchInput(value));
-          await refresh();
-          form.reset({ provider: value.provider, apiKey: '' });
-        },
+        () => request('/search/save', searchInput(value, savedProvider)),
         'Search settings saved.',
         'search',
-      ),
+      );
+      if (saved) formApi.reset();
+    },
   });
-  const providerDirty = useSelector(form.store, (state) => !!state.fieldMeta.provider?.isDirty);
-  const provider = useSelector(form.store, (state) => state.values.provider);
-
-  useEffect(() => {
-    if (savedProvider && provider !== savedProvider && !providerDirty) {
-      form.resetField('provider');
-    }
-  }, [form, provider, providerDirty, savedProvider]);
+  const submitting = useSelector(form.store, (state) => state.isSubmitting);
+  const disabled = app.locked || !app.online || submitting;
 
   return (
     <Card kind="provider">
@@ -77,7 +67,7 @@ export default function SearchConnection() {
             <Select
               id="search-provider"
               name={field.name}
-              value={field.state.value}
+              value={field.state.value ?? savedProvider}
               onChange={({ currentTarget }) =>
                 field.handleChange(currentTarget.value as SearchProvider)
               }
@@ -137,7 +127,7 @@ export default function SearchConnection() {
             onClick={() =>
               work(
                 'Testing Exa',
-                () => request('/search/test', searchInput(form.state.values)),
+                () => request('/search/test', searchInput(form.state.values, savedProvider)),
                 'Exa accepted the test search. Results depend on source coverage.',
                 'search',
               )

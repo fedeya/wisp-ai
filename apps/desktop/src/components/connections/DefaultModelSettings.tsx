@@ -1,11 +1,12 @@
 import { useForm, useSelector } from '@tanstack/react-form';
-import { useEffect } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import Icon from '../ui/Icon';
 import { Button, Card, Select } from '../ui/Controls';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
+
+const defaultValues: { model: string | null } = { model: null };
 
 export default function DefaultModelSettings() {
   const app = useDesktop((state) => ({
@@ -24,26 +25,27 @@ export default function DefaultModelSettings() {
     : app.models[0]?.slug || '';
 
   const modelForm = useForm({
-    defaultValues: { model: defaultModel },
-    onSubmit: ({ value }) =>
-      work(
+    defaultValues,
+    onSubmit: async ({ value, formApi }) => {
+      const model = app.models.some(({ slug }) => slug === value.model)
+        ? value.model
+        : defaultModel;
+      if (!model || model === savedModel) return;
+      const saved = await work(
         'Updating default model',
-        () => request('/auth/model', { model: value.model }),
+        () => request('/auth/model', { model }),
         'Default model updated.',
         'model',
-      ),
+      );
+      if (saved) formApi.reset();
+    },
   });
-  const model = useSelector(modelForm.store, (state) => state.values.model);
+  const draft = useSelector(modelForm.store, (state) => state.values.model);
+  const submitting = useSelector(modelForm.store, (state) => state.isSubmitting);
+  const model = app.models.some(({ slug }) => slug === draft) ? draft : defaultModel;
+  const locked = app.locked || submitting;
+  const canSave = !locked && !!model && model !== savedModel;
 
-  useEffect(() => {
-    if (
-      app.models.length &&
-      model !== defaultModel &&
-      !app.models.some(({ slug }) => slug === model)
-    ) {
-      modelForm.resetField('model');
-    }
-  }, [app.models, defaultModel, model, modelForm]);
   return (
     <Card kind="provider">
       <h2>Default model</h2>
@@ -64,7 +66,7 @@ export default function DefaultModelSettings() {
             intent="quiet"
             size="text"
             onClick={() => work('Loading models', loadModels, 'Models refreshed.', 'model')}
-            disabled={app.locked || !app.online}
+            disabled={locked || !app.online}
           >
             <Icon name="refresh" size={14} />
             Refresh
@@ -74,15 +76,7 @@ export default function DefaultModelSettings() {
           className="inline-field gap-[12px] mt-[10px] flex items-center"
           onSubmit={(event) => {
             event.preventDefault();
-            if (
-              !app.locked &&
-              app.models.length &&
-              model &&
-              model !== savedModel &&
-              !modelForm.state.isSubmitting
-            ) {
-              void modelForm.handleSubmit();
-            }
+            if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
           }}
         >
           <modelForm.Field name="model">
@@ -91,9 +85,9 @@ export default function DefaultModelSettings() {
                 className="flex-[1]"
                 id="models"
                 name={field.name}
-                value={app.models.length ? field.state.value : ''}
+                value={model ?? ''}
                 onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-                disabled={app.locked || !app.models.length}
+                disabled={locked || !app.models.length}
               >
                 <option value="" disabled>
                   Connect a provider first
@@ -106,10 +100,7 @@ export default function DefaultModelSettings() {
               </Select>
             )}
           </modelForm.Field>
-          <Button
-            type="submit"
-            disabled={app.locked || !app.models.length || !model || model === savedModel}
-          >
+          <Button type="submit" disabled={!canSave}>
             {app.busy === 'Updating default model' ? 'Saving…' : 'Set default'}
           </Button>
         </form>

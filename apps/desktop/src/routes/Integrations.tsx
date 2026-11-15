@@ -21,7 +21,7 @@ function useIntegrations() {
     removeMcp: state.actions.removeMcp,
     loading: state.loading,
     status: state.status,
-    refresh: state.actions.refresh,
+    refreshAfterWrite: state.actions.refreshAfterWrite,
   }));
 }
 
@@ -134,7 +134,7 @@ export default function Integrations() {
             server={payload ?? null}
             formRef={formRef}
             close={() => actions.current?.close()}
-            saved={app.refresh}
+            saved={app.refreshAfterWrite}
           />
         </>
       )}

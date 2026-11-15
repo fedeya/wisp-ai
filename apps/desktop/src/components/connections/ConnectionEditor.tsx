@@ -1,5 +1,6 @@
 import { useForm, useSelector } from '@tanstack/react-form';
 import {
+  connectionModel,
   providerDefinitions,
   type ConnectionModel,
   type ConnectionView,
@@ -25,6 +26,15 @@ type ConnectionFields = {
   modelId: string;
   contextWindow: number | undefined;
 };
+
+const contextWindowSchema = connectionModel.shape.contextWindow;
+
+function validateContextWindow({ value }: { value: number | undefined }) {
+  if (value === undefined) return 'Enter a context window for this model.';
+  if (!contextWindowSchema.safeParse(value).success) {
+    return 'Enter a whole number between 1 and 100,000,000.';
+  }
+}
 
 function connectionDetails(id: string | undefined, value: ConnectionFields) {
   const provider = providerDefinitions.find((item) => item.id === value.provider)!;
@@ -62,8 +72,8 @@ export default function ConnectionEditor({
   };
   const form = useForm({
     defaultValues,
-    onSubmit: ({ value }) =>
-      work(
+    onSubmit: async ({ value }) => {
+      await work(
         'Saving AI connection',
         async () => {
           await request('/connections/save', {
@@ -75,14 +85,16 @@ export default function ConnectionEditor({
         },
         'Connection saved. Choose a default model below.',
         'connection-editor',
-      ),
+      );
+    },
   });
   const { provider, baseURL, modelId, models } = useSelector(form.store, (state) => state.values);
-  const canSave =
+  const formCanSubmit = useSelector(form.store, (state) => state.canSubmit);
+  const canSave = !app.locked && models.length > 0 && !modelId.trim() && formCanSubmit;
+  const canTest =
     !app.locked &&
     models.length > 0 &&
-    !modelId.trim() &&
-    models.every(({ contextWindow }) => !!contextWindow);
+    models.every(({ contextWindow }) => contextWindowSchema.safeParse(contextWindow).success);
   const definition = providerDefinitions.find((item) => item.id === provider)!;
 
   function addModel() {
@@ -276,18 +288,34 @@ export default function ConnectionEditor({
           field.state.value.map((model, index) => (
             <div className={modelFieldsClass} key={model.id}>
               <span className="[overflow-wrap:anywhere]">{model.id}</span>
-              <form.Field name={`models[${index}].contextWindow`}>
-                {(contextField) => (
-                  <NumberInput
-                    aria-label={`Context window for ${model.id}`}
-                    min={1}
-                    max={100000000}
-                    value={contextField.state.value}
-                    onValueChange={contextField.handleChange}
-                    placeholder="Context tokens (required)"
-                    disabled={app.locked}
-                  />
-                )}
+              <form.Field
+                name={`models[${index}].contextWindow`}
+                validators={{ onChange: validateContextWindow, onSubmit: validateContextWindow }}
+              >
+                {(contextField) => {
+                  const error = contextField.state.meta.errors[0];
+                  const errorId = `model-context-error-${index}`;
+                  return (
+                    <div>
+                      <NumberInput
+                        aria-label={`Context window for ${model.id}`}
+                        aria-invalid={!!error}
+                        aria-describedby={error ? errorId : undefined}
+                        min={1}
+                        max={100000000}
+                        value={contextField.state.value}
+                        onValueChange={contextField.handleChange}
+                        placeholder="Context tokens (required)"
+                        disabled={app.locked}
+                      />
+                      {error && (
+                        <p id={errorId} role="alert" className="mt-1 text-xs text-[#f0b4aa]">
+                          {error}
+                        </p>
+                      )}
+                    </div>
+                  );
+                }}
               </form.Field>
               <Button
                 intent="quiet"
@@ -309,7 +337,7 @@ export default function ConnectionEditor({
       </p>
       <div className="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
         <Button
-          disabled={app.locked || !models.length}
+          disabled={!canTest}
           onClick={() =>
             work(
               'Testing AI connection',

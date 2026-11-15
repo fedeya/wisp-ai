@@ -12,7 +12,7 @@ import {
 } from './api';
 import { startBridgeLifecycle } from './bridge-lifecycle';
 
-type Confirmation = { label: string; run: () => Promise<void> };
+type Confirmation = { label: string; run: () => Promise<unknown> };
 type DesktopState = {
   status: Status | null;
   info: DesktopInfo | null;
@@ -61,7 +61,7 @@ export const desktopLocked = (state: DesktopState) => !!state.busy || desktopAct
 function createDesktopSession() {
   const getState = (): DesktopState => desktopStore.getState();
   let disposed = false;
-  let polling = false;
+  let refreshInFlight: Promise<void> | undefined;
   let loadedAccount = '';
   let stopBridgeLifecycle: (() => void) | undefined;
 
@@ -69,9 +69,21 @@ function createDesktopSession() {
     if (!disposed) desktopStore.setState(patch);
   }
 
-  async function refresh() {
-    if (!native || disposed || polling) return;
-    polling = true;
+  function refresh() {
+    if (!native || disposed) return Promise.resolve();
+    refreshInFlight ??= readStatus().finally(() => {
+      refreshInFlight = undefined;
+    });
+    return refreshInFlight;
+  }
+
+  async function refreshAfterWrite() {
+    // A read started before the write completed may still contain the old values.
+    await refreshInFlight;
+    await refresh();
+  }
+
+  async function readStatus() {
     try {
       const status = await request<Status>('/status');
       if (disposed) return;
@@ -99,7 +111,6 @@ function createDesktopSession() {
     } catch (error) {
       update({ status: null, connectionError: String(error).replace(/^Error: /, '') });
     } finally {
-      polling = false;
       update({ loading: false });
     }
   }
@@ -110,16 +121,18 @@ function createDesktopSession() {
     success?: string,
     target = '',
   ) {
-    if (disposed || getState().busy) return;
+    if (disposed || getState().busy) return false;
     update({ busy: label, busyTarget: target, failed: false, feedback: '' });
     try {
       await action();
       update({ feedback: success || getState().feedback || 'Done.' });
+      return true;
     } catch (error) {
       update({ failed: true, feedback: String(error).replace(/^Error: /, '') });
+      return false;
     } finally {
       update({ busy: '', busyTarget: '' });
-      await refresh();
+      await refreshAfterWrite();
     }
   }
 
@@ -311,6 +324,7 @@ function createDesktopSession() {
     },
     actions: {
       refresh,
+      refreshAfterWrite,
       work,
       loadModels,
       signIn,

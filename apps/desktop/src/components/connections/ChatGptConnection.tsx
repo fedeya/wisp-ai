@@ -1,5 +1,4 @@
 import { useForm, useSelector } from '@tanstack/react-form';
-import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
@@ -7,6 +6,8 @@ import Icon from '../ui/Icon';
 import { Badge, Button, Card, Select } from '../ui/Controls';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
+
+const defaultValues: { account: string | null } = { account: null };
 
 export default function ChatGptConnection() {
   const app = useDesktop((state) => ({
@@ -20,21 +21,23 @@ export default function ChatGptConnection() {
   const auth = app.status?.auth;
   const activeAccount = auth?.activeId || '';
   const accountForm = useForm({
-    defaultValues: { account: activeAccount },
-    onSubmit: ({ value }) =>
-      work(
+    defaultValues,
+    onSubmit: async ({ value, formApi }) => {
+      if (!value.account || !auth?.profiles.some(({ id }) => id === value.account)) return;
+      const saved = await work(
         'Switching account',
         () => request('/auth/select', { profileId: value.account }),
         undefined,
         'accounts',
-      ),
+      );
+      if (saved) formApi.reset();
+    },
   });
-  const account = useSelector(accountForm.store, (state) => state.values.account);
-  useEffect(() => {
-    if (auth && account !== activeAccount && !auth.profiles.some(({ id }) => id === account)) {
-      accountForm.resetField('account');
-    }
-  }, [account, accountForm, activeAccount, auth]);
+  const draft = useSelector(accountForm.store, (state) => state.values.account);
+  const submitting = useSelector(accountForm.store, (state) => state.isSubmitting);
+  const account = auth?.profiles.some(({ id }) => id === draft) ? draft : activeAccount;
+  const locked = app.locked || submitting;
+  const canSwitch = !locked && !!account && account !== activeAccount;
   const chatgptConnected = auth?.status === 'connected';
   const authorizationPending = auth?.status === 'authorizing';
 
@@ -74,8 +77,8 @@ export default function ChatGptConnection() {
         <ActionProgress label={app.busyTarget === '' ? app.busy : ''} />
         <Button
           intent={chatgptConnected ? 'default' : 'primary'}
-          onClick={() => signIn(account)}
-          disabled={app.locked || !app.status}
+          onClick={() => signIn(account ?? undefined)}
+          disabled={locked || !app.status}
         >
           {app.busy === 'Opening sign-in'
             ? 'Opening browser…'
@@ -84,7 +87,7 @@ export default function ChatGptConnection() {
               : 'Continue with ChatGPT'}
           <Icon name="arrow" size={17} />
         </Button>
-        <Button onClick={() => signIn(undefined, true)} disabled={app.locked || !app.status}>
+        <Button onClick={() => signIn(undefined, true)} disabled={locked || !app.status}>
           Add account
         </Button>
         {authorizationPending && (
@@ -99,7 +102,7 @@ export default function ChatGptConnection() {
           <Button
             intent="quiet"
             destructive
-            disabled={app.locked}
+            disabled={locked}
             onClick={() =>
               setConfirmation({
                 label:
@@ -126,14 +129,7 @@ export default function ChatGptConnection() {
             className="inline-field gap-[12px] mt-[10px] flex items-center"
             onSubmit={(event) => {
               event.preventDefault();
-              if (
-                !app.locked &&
-                account &&
-                account !== activeAccount &&
-                !accountForm.state.isSubmitting
-              ) {
-                void accountForm.handleSubmit();
-              }
+              if (canSwitch && !accountForm.state.isSubmitting) void accountForm.handleSubmit();
             }}
           >
             <accountForm.Field name="account">
@@ -142,9 +138,9 @@ export default function ChatGptConnection() {
                   className="flex-[1]"
                   id="accounts"
                   name={field.name}
-                  value={field.state.value}
+                  value={account ?? ''}
                   onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-                  disabled={app.locked}
+                  disabled={locked}
                 >
                   {auth.profiles.map((profile) => (
                     <option key={profile.id} value={profile.id}>
@@ -154,7 +150,7 @@ export default function ChatGptConnection() {
                 </Select>
               )}
             </accountForm.Field>
-            <Button type="submit" disabled={app.locked || !account || account === activeAccount}>
+            <Button type="submit" disabled={!canSwitch}>
               Use account
             </Button>
           </form>

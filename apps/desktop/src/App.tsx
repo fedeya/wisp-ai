@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { createMemoryRouter, NavLink, Outlet, useMatches, useNavigate } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import logo from '../../../assets/wisp.png';
@@ -150,23 +150,22 @@ function DesktopShell() {
   );
 }
 
-export default function App() {
-  const [router] = useState(() =>
-    createMemoryRouter([
-      {
-        Component: DesktopShell,
-        children: desktopPages.map((page) => ({
-          id: page.name,
-          path: page.path,
-          Component: page.Component,
-          handle: page,
-        })),
-      },
-    ]),
-  );
+export function createDesktopRouter() {
+  return createMemoryRouter([
+    {
+      Component: DesktopShell,
+      children: desktopPages.map((page) => ({
+        id: page.name,
+        path: page.path,
+        Component: page.Component,
+        handle: page,
+      })),
+    },
+  ]);
+}
 
+export default function App({ router }: { router: ReturnType<typeof createDesktopRouter> }) {
   useEffect(mountDesktop, []);
-  useEffect(() => () => router.dispose(), [router]);
 
   return <RouterProvider router={router} />;
 }
