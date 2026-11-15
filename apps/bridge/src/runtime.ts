@@ -71,8 +71,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       .then((metadata) => metadata.version)
       .catch(() => 'unknown');
     const runtime = paths.runtime;
-    const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion);
-    resources.defer(() => telemetry.close());
     const simulator = new Simulator(ROOT, runtime);
     await prepareEngine(paths.agent, paths.engine);
     await mkdir(runtime, { recursive: true });
@@ -128,6 +126,10 @@ export async function startBridge(options: BridgeOptions = {}) {
     const mcpManager = new McpManager(mcpFile, ROOT, vault);
     await mcpManager.load();
     resources.defer(() => mcpManager.close());
+    const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
+      isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
+    });
+    resources.defer(() => telemetry.close());
     const auth = new ChatGPTAuth(runtime, vault);
     await auth.load();
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);

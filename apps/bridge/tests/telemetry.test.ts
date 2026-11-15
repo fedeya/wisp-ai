@@ -10,8 +10,12 @@ let directory: string;
 const installationId = randomUUID();
 const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
 const instances: UsageTelemetry[] = [];
-function createTelemetry(version = '0.1.0', release = true) {
-  const instance = new UsageTelemetry(directory, version, release);
+function createTelemetry(
+  version = '0.1.0',
+  release = true,
+  isCustomMcpConnection?: (name: string) => boolean,
+) {
+  const instance = new UsageTelemetry(directory, version, { release, isCustomMcpConnection });
   instances.push(instance);
   return instance;
 }
@@ -96,17 +100,31 @@ test('the live native opt-out stops new events without restarting the bridge', a
   expect(properties).not.toHaveProperty('first_text_ms');
 });
 
-test('tool telemetry drops private labels, inputs, results and custom tool names', async () => {
+test('tool telemetry counts public categories and drops private call data', async () => {
   await preference(true);
   const telemetry = createTelemetry();
   const observe = telemetry.toolObserver();
-  for (const [id, name] of [
-    ['a', 'wow__query_character'],
-    ['b', 'my-private-server__Alice-email'],
-  ]) {
+  const calls = [
+    { kind: 'tool', name: 'wow__query_character' },
+    { kind: 'tool', name: 'my-private-server__Alice-email' },
+    { kind: 'skill', name: 'PRIVATE-SKILL' },
+    { kind: 'tool', name: 'character__save_memory' },
+    { kind: 'tool', name: 'preferences__remove_memory' },
+    { kind: 'tool', name: 'everloot__item_page' },
+    { kind: 'tool', name: 'everloot-search__search_knowledge' },
+    { kind: 'tool', name: 'everloot-changes__recent_changes' },
+    { kind: 'tool', name: 'everloot-private__PRIVATE-TOOL' },
+    { kind: 'control', name: 'PRIVATE-CONTROL' },
+  ];
+  for (const [index, capability] of calls.entries()) {
+    const id = String(index);
     observe({
       type: 'call.requested',
-      data: { callId: id, capability: { name, label: 'PRIVATE LABEL' }, input: 'PRIVATE PROMPT' },
+      data: {
+        callId: id,
+        capability: { ...capability, label: 'PRIVATE LABEL' },
+        input: 'PRIVATE PROMPT',
+      },
     });
     observe({
       type: 'call.settled',
@@ -119,8 +137,35 @@ test('tool telemetry drops private labels, inputs, results and custom tool names
     events()
       .map((event) => event.properties.tool)
       .sort(),
-  ).toEqual(['external_tool', 'query_character']);
+  ).toEqual([
+    'everloot',
+    'everloot',
+    'everloot',
+    'external_tool',
+    'external_tool',
+    'memory',
+    'memory',
+    'query_character',
+    'skill',
+  ]);
   expect(JSON.stringify(events())).not.toMatch(/PRIVATE|Alice|my-private|callId/);
+});
+
+test('custom MCP connections keep their tools generic when public names overlap', async () => {
+  await preference(true);
+  const telemetry = createTelemetry('0.1.0', true, (name) => name === 'character');
+  const observe = telemetry.toolObserver();
+  observe({
+    type: 'call.requested',
+    data: {
+      callId: 'call',
+      capability: { kind: 'tool', name: 'character__save_memory' },
+    },
+  });
+  observe({ type: 'call.settled', data: { callId: 'call', outcome: 'completed' } });
+  await telemetry.drain();
+  expect(events().map((event) => event.properties.tool)).toEqual(['external_tool']);
+  expect(JSON.stringify(events())).not.toContain('save_memory');
 });
 
 test('chat telemetry only sends allowlisted failure codes', async () => {

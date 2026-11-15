@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { PostHog } from 'posthog-node';
 import path from 'node:path';
 import { z } from 'zod';
-import { publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
+import { everlootTools, publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
 import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/protocol/reply-presentation';
 
 const token = 'phc_se29yi8DLMmFxhRcqQrzrSs9vGLzAiEGmsaMvjotDdTE';
@@ -31,6 +31,19 @@ const builtinTools = new Map(
 );
 builtinTools.set(PRESENT_UI_TOOL, 'present_ui');
 builtinTools.set(SKIP_TIP_TOOL, 'skip_tip');
+for (const slot of ['character', 'preferences']) {
+  builtinTools.set(slot + '__save_memory', 'memory');
+  builtinTools.set(slot + '__remove_memory', 'memory');
+}
+for (const tool of everlootTools) {
+  const connection =
+    tool === 'search_knowledge'
+      ? 'everloot-search'
+      : tool === 'recent_changes'
+        ? 'everloot-changes'
+        : 'everloot';
+  builtinTools.set(connection + '__' + tool, 'everloot');
+}
 const preferencesSchema = z.object({ enabled: z.boolean(), installationId: z.uuid() });
 const versionSchema = z
   .string()
@@ -54,6 +67,10 @@ export type ChatErrorCode = z.infer<typeof chatErrorCodeSchema>;
 type GameConnectionError = 'session_replaced' | 'engine_not_ready' | 'addon_ack_missing';
 const gameConnectionTimeoutMs = 30_000;
 type Properties = Record<string, string | number | boolean>;
+type TelemetryOptions = {
+  release?: boolean;
+  isCustomMcpConnection?: (name: string) => boolean;
+};
 
 // All outbound fields are constructed here. No prompts, tool inputs/outputs, labels,
 // model/connection IDs, character data or free-form errors are accepted.
@@ -67,14 +84,12 @@ export class UsageTelemetry {
   private dataRoot: string;
   private version: string;
   private release: boolean;
-  constructor(
-    dataRoot: string,
-    version: string,
-    release = process.env.WISP_TELEMETRY_RELEASE === '1',
-  ) {
+  private isCustomMcpConnection?: TelemetryOptions['isCustomMcpConnection'];
+  constructor(dataRoot: string, version: string, options: TelemetryOptions = {}) {
     this.dataRoot = dataRoot;
     this.version = version;
-    this.release = release;
+    this.release = options.release ?? process.env.WISP_TELEMETRY_RELEASE === '1';
+    this.isCustomMcpConnection = options.isCustomMcpConnection;
   }
 
   private record(event: string, properties: Properties = {}) {
@@ -236,9 +251,14 @@ export class UsageTelemetry {
         if (!capability.success || capability.data.kind === 'control') {
           return;
         }
-        const name = capability.data.name;
-        // Custom MCP names can contain personal information. Only report their category.
-        const safeName = builtinTools.get(name) ?? 'external_tool';
+        const { name, kind } = capability.data;
+        let safeName = 'external_tool';
+        if (kind === 'skill') {
+          safeName = 'skill';
+        } else if (!this.isCustomMcpConnection?.(name.split('__', 1)[0])) {
+          // Custom MCP tools can share a name with an allowlisted tool.
+          safeName = builtinTools.get(name) ?? 'external_tool';
+        }
         if (calls.size < 256 && !calls.has(data.callId)) {
           calls.set(data.callId, { name: safeName, started: performance.now() });
         }

@@ -204,9 +204,12 @@ succeeds when the addon acknowledges the first ready snapshot. The outcome is
 The event includes elapsed milliseconds. An addon that never sends a valid
 session packet cannot be measured by this event.
 All agent tool settlements use this one path; no provider tracing, prompts or tool
-payloads are sent. Built-in names come from the public capability catalog; custom
-tools become `external_tool`. Addon versions are validated, polling is deduplicated,
-and metadata uses `surface: desktop`, `app_version`, `channel`, `os` and `arch`.
+payloads are sent. Built-in names come from the public capability catalog. Skill
+loads, built-in memory tools, and bundled Everloot tools report `skill`, `memory`,
+and `everloot` respectively. Custom MCP tools report only `external_tool`,
+including when their names match a built-in tool. Addon versions are validated,
+polling is deduplicated, and metadata uses `surface: desktop`, `app_version`,
+`channel`, `os` and `arch`.
 Use distinct installation IDs when counting active installs; `app_active` may be
 emitted by both host startup and bridge usage on the same day.
 
