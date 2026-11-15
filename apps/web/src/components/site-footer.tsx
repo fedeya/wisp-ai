@@ -29,6 +29,13 @@ export function SiteFooter({ locale }: { locale: Locale }) {
       <p>
         {t('Made by ')}
         <a href="https://fedeminaya.com">{t('fedeya')}</a>
+        {' · '}
+        <Link
+          href={localizedPath(locale, '/support')}
+          className="whitespace-nowrap underline underline-offset-2"
+        >
+          {t('Support Wisp')}
+        </Link>
         {t(' · GPL-3.0')}
       </p>
       <small className="block w-full text-[9px] text-[#9e9585]">
