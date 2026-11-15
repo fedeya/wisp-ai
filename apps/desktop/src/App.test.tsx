@@ -86,8 +86,8 @@ afterEach(() => {
 });
 
 async function openConnections() {
-  await fireEvent.click(screen.getByRole('link', { name: 'Connections' }));
-  await screen.findByRole('heading', { name: 'AI connections' });
+  await fireEvent.click(screen.getByRole('link', { name: 'AI Providers' }));
+  await screen.findByRole('heading', { name: 'AI Providers', level: 1 });
 }
 
 async function openProviderPicker() {
@@ -98,6 +98,7 @@ async function openProviderPicker() {
 async function openProvider(action: string, provider: string) {
   await fireEvent.click(screen.getByRole('link', { name: action }));
   await screen.findByRole('heading', { level: 1, name: provider });
+  expect(screen.getByRole('link', { name: 'AI Providers', current: 'page' })).toBeTruthy();
 }
 
 async function openSearchSettings() {
@@ -265,7 +266,7 @@ test('search again waits for fresh results and ignores updates from the previous
   expect(screen.queryByLabelText('Detected Forever installations')).toBeNull();
 });
 
-test('Connections links to collapsed web search settings in Integrations without exposing saved keys', async () => {
+test('AI Providers links to collapsed web search settings in Integrations without exposing saved keys', async () => {
   status.search = { provider: 'auto', hasExaKey: true };
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
@@ -572,7 +573,7 @@ test.each([
       ),
     );
     expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
-    await fireEvent.click(screen.getByRole('link', { name: 'Back to Connections' }));
+    await fireEvent.click(screen.getByRole('link', { name: 'Back to AI Providers' }));
     await screen.findByRole('link', { name: `Manage ${name}` });
     expect(screen.queryByRole('heading', { name: 'Connect your first provider' })).toBeNull();
     const selector = await screen.findByRole('combobox', { name: 'Default model for new chats' });
@@ -621,7 +622,7 @@ test('an API default enables the workspace while ChatGPT stays disconnected', as
   expect(screen.getByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'OpenAI API' })).toBeTruthy();
   expect(screen.queryByText('My Claude')).toBeNull();
-  await fireEvent.click(screen.getByRole('link', { name: 'Back to Connections' }));
+  await fireEvent.click(screen.getByRole('link', { name: 'Back to AI Providers' }));
   await openProvider('Manage Claude', 'Claude');
   expect(screen.getByText('My Claude')).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -712,7 +713,7 @@ test('provider-neutral navigation and per-chat default model controls use the br
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
-  expect(screen.getByRole('heading', { name: 'AI connections' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'AI Providers' })).toBeTruthy();
   await chooseOption(
     await screen.findByRole('combobox', { name: 'Default model for new chats' }),
     'Sol',
@@ -1088,7 +1089,7 @@ test('the next action follows the missing connection', async () => {
   renderApp();
   await fireEvent.click(await screen.findByRole('button', { name: 'Connect AI' }));
   expect(await screen.findByRole('link', { name: 'Reconnect ChatGPT' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Connections' }).getAttribute('aria-current')).toBe(
+  expect(screen.getByRole('link', { name: 'AI Providers' }).getAttribute('aria-current')).toBe(
     'page',
   );
   cleanup();
@@ -1101,6 +1102,20 @@ test('the next action follows the missing connection', async () => {
   expect(screen.getByLabelText('WoW client folder')).toBeTruthy();
 });
 
+test('sidebar status follows the game connection across pages and links back to Overview', async () => {
+  status.gameConnected = false;
+  renderApp();
+  await screen.findByRole('heading', { name: 'Waiting for WoW' });
+  await openConnections();
+  expect(screen.getByRole('link', { name: 'Waiting for WoW' })).toBeTruthy();
+
+  status = { ...status, gameConnected: true };
+  await act(() => desktopStore.getState().actions.refresh());
+  await fireEvent.click(screen.getByRole('link', { name: 'Wisp is ready' }));
+  expect(await screen.findByRole('heading', { name: 'Wisp is ready' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Overview', current: 'page' })).toBeTruthy();
+});
+
 test('unreachable data pages do not report empty collections', async () => {
   const original = vi.mocked(request).getMockImplementation()!;
   vi.mocked(request).mockImplementation((route, body) =>
@@ -1108,7 +1123,7 @@ test('unreachable data pages do not report empty collections', async () => {
   );
   renderApp();
   await screen.findByText('Start Wisp to continue');
-  for (const page of ['Memory', 'Panels', 'Routines', 'Integrations', 'Connections']) {
+  for (const page of ['Memory', 'Panels', 'Routines', 'Integrations', 'AI Providers']) {
     await fireEvent.click(screen.getByRole('link', { name: page }));
     expect(await screen.findByText('Connect to Wisp to view your data')).toBeTruthy();
     expect(screen.queryByText('No panels yet.')).toBeNull();
@@ -1298,6 +1313,7 @@ test('an outdated addon becomes the next action even with healthy connections', 
   });
   renderApp();
   await screen.findByText('Update your Wisp addon');
+  expect(screen.getByRole('link', { name: 'Addon update needed' })).toBeTruthy();
   expect(screen.queryByRole('heading', { name: 'Wisp is ready' })).toBeNull();
   expect((screen.getByRole('button', { name: 'Update addon' }) as HTMLButtonElement).disabled).toBe(
     false,

@@ -5,7 +5,12 @@ import GameInstallation from '../components/settings/GameInstallation';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import { Button, Card, Input } from '../components/ui/Controls';
 import Icon from '../components/ui/Icon';
-import { desktopActive, desktopConnected, desktopLocked } from '../desktop-controller';
+import {
+  desktopActive,
+  desktopConnected,
+  desktopLocked,
+  desktopReadiness,
+} from '../desktop-controller';
 import { useDesktop, useDesktopActions } from '../use-desktop';
 
 const states = {
@@ -41,6 +46,7 @@ const states = {
 
 function useOverview() {
   return useDesktop((state) => ({
+    readiness: desktopReadiness(state),
     loading: state.loading,
     info: state.info,
     status: state.status,
@@ -56,20 +62,12 @@ function useOverview() {
   }));
 }
 
-function overviewState(app: ReturnType<typeof useOverview>): keyof typeof states {
-  if (app.loading) return 'loading';
-  if (app.info?.addonOutdated) return 'update';
-  if (!app.status?.ready) return app.starting || app.status ? 'starting' : 'stopped';
-  if (!app.connected) return 'account';
-  return app.status.gameConnected ? 'ready' : 'waiting';
-}
-
 export default function Overview() {
   const app = useOverview();
   const { install, start, stop } = useDesktopActions();
   const navigate = useNavigate();
   const [editingInstallation, setEditingInstallation] = useState(false);
-  const state = overviewState(app);
+  const state = app.readiness;
   const { title, description } = states[state];
   const showCommand = state === 'ready' || state === 'waiting';
   const working = app.busy || (state === 'starting' ? 'Starting Wisp' : '');

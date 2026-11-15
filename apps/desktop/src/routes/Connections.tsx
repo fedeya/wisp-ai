@@ -72,7 +72,7 @@ export default function Connections() {
     <ProviderPicker configured={new Set(configured.keys())}>
       <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <h1 ref={title} tabIndex={-1} className="m-0 outline-none">
-          AI connections
+          AI Providers
         </h1>
         {canAddProvider && configured.size > 0 && <AddProviderTrigger />}
       </header>

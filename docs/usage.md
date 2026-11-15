@@ -8,14 +8,14 @@ On first use, Wisp reads registered installation paths from Battle.net's local `
 
 ## AI connections
 
-After installing the addon, **Connect AI** offers ChatGPT, Claude and Gemini directly. **Browse providers** opens the same searchable catalog as **Connections**. Pick a provider, connect it, then choose a default model and select **Finish setup** to open Overview. If only one model is available, Wisp suggests it. **Connect later** takes you to Overview and you can finish from **Connections**.
+After installing the addon, **Connect AI** offers ChatGPT, Claude and Gemini directly. **Browse providers** opens the same searchable catalog as **AI Providers**. Pick a provider, connect it, then choose a default model and select **Finish setup** to open Overview. If only one model is available, Wisp suggests it. **Connect later** takes you to Overview and you can finish from **AI Providers**.
 
-**Connections** lists your configured providers and their access methods. **Key saved** indicates that Wisp has an API credential for the provider. Use **Add provider** to search the catalog, including Vercel AI Gateway and OpenRouter. Open **ChatGPT** to manage a subscription account or an OpenAI API connection. API connections use native AI SDK adapters for OpenAI, Anthropic (Claude), Google (Gemini), DeepSeek, xAI, Groq, Mistral, Cerebras, Cohere, Together AI, Fireworks, DeepInfra, Alibaba (Qwen), Moonshot (Kimi), MiniMax, Baseten and Z.AI. **OpenAI compatible / Local** supports other Chat Completions endpoints, including local servers. Bedrock, Vertex and Azure account/deployment setup are not included. The installed native Hugging Face adapter drops tool results from history, so use its Chat Completions endpoint through **OpenAI compatible / Local** instead.
+**AI Providers** lists your configured providers and their access methods. **Key saved** indicates that Wisp has an API credential for the provider. Use **Add provider** to search the catalog, including Vercel AI Gateway and OpenRouter. Open **ChatGPT** to manage a subscription account or an OpenAI API connection. API connections use native AI SDK adapters for OpenAI, Anthropic (Claude), Google (Gemini), DeepSeek, xAI, Groq, Mistral, Cerebras, Cohere, Together AI, Fireworks, DeepInfra, Alibaba (Qwen), Moonshot (Kimi), MiniMax, Baseten and Z.AI. **OpenAI compatible / Local** supports other Chat Completions endpoints, including local servers. Bedrock, Vertex and Azure account/deployment setup are not included. The installed native Hugging Face adapter drops tool results from history, so use its Chat Completions endpoint through **OpenAI compatible / Local** instead.
 
 1. Open a provider and enter its API key. API usage is billed by the provider.
 2. Choose **Discover models**, search by name or ID, and use **Add** for each model you want in Wisp. The catalog lists models whose provider advertises tool calling. Reloading the catalog preserves your selection.
 3. If discovery leaves out a model, use **Add a model manually** with its exact ID. Fill in any missing context window before saving. For local models, use the context allocated by the server so Wisp can compact long conversations correctly.
-4. Use **Test** next to a selected model to send a small, potentially billable tool-calling check that executes no game actions. **Save connection** enables the selected models. To choose a **Default model** for new chats, return to **Connections**. Each chat can use another configured model in game.
+4. Use **Test** next to a selected model to send a small, potentially billable tool-calling check that executes no game actions. **Save connection** enables the selected models. To choose a **Default model** for new chats, return to **AI Providers**. Each chat can use another configured model in game.
 
 API keys are stored in the operating system's protected credential store and stay in the bridge; the agent receives only a local transport token. Editing with a blank API key retains the saved key. Custom endpoints require HTTPS, except HTTP on localhost. Only use endpoints you trust with the key and chat context. A local server may omit its key. For OpenAI-compatible endpoints, include their API prefix, typically `/v1`.
 
@@ -27,7 +27,7 @@ Wowhead search works independently of the model. In **Integrations → Configure
 
 ## Conversations and hover questions
 
-After [setup](../README.md#get-started-on-windows), use `/wisp` or `/wispai` to open chat. **+** starts a separate conversation; **−** or Escape minimizes the window. Choose model and effort per chat, or set the default for new chats in the desktop **Connections** page.
+After [setup](../README.md#get-started-on-windows), use `/wisp` or `/wispai` to open chat. **+** starts a separate conversation; **−** or Escape minimizes the window. Choose model and effort per chat, or set the default for new chats in the desktop **AI Providers** page.
 
 Shift-click supported items and spells into the input. Linked references offer native tooltips, map coordinates or macro code; a link identifies something, not whether your character owns or knows it.
 
@@ -119,7 +119,7 @@ WoW stores UI preferences and drafts in the `WispAIDB` SavedVariables. Logs may 
 
 Use **Settings > Memory** to view, edit or forget notes. Deleting a chat does not delete memory; disabling memory tools preserves notes and the editor. Memory stores preferences/plans, not current character state.
 
-**Connections** supports saved accounts, switching and disconnection. Disconnect attempts to revoke Wisp’s refresh token and clears local credentials, but leaves chats, memory and other applications’ sessions intact.
+**AI Providers** supports saved accounts, switching and disconnection. Disconnect attempts to revoke Wisp’s refresh token and clears local credentials, but leaves chats, memory and other applications’ sessions intact.
 
 ### Reading the answers
 
@@ -140,7 +140,7 @@ Missing readings and database coverage remain unknown, not zero or proof of abse
 | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Addon missing                 | Select the folder containing `Wow.exe`, install/update from **Overview**, fully restart WoW, and enable Wisp AI and its helpers.                                                                                                                          |
 | Disconnected or replies stop  | Keep the desktop app running. Check **Diagnostics** and `/wisp diag`; use `/wisp reconnect` for a fresh handshake or `/reload` to renew receive channels. Large payloads take several seconds. Significant game updates may change file-loading behavior. |
-| Sign-in or models unavailable | Finish browser authorization in **Connections** and refresh the model list. Expired access, identity-only consent or an ambiguous token refresh may require signing in again.                                                                             |
+| Sign-in or models unavailable | Finish browser authorization in **AI Providers** and refresh the model list. Expired access, identity-only consent or an ambiguous token refresh may require signing in again.                                                                            |
 | Tool unavailable              | Check the game connection, optional integration switches and required windows; missing APIs or source coverage can also prevent a result.                                                                                                                 |
 | App remains after closing     | Closing hides it in the tray. **Exit Wisp** stops it. If a turn is active, wait for it to finish and try again.                                                                                                                                           |
 

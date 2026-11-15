@@ -28,7 +28,7 @@ export const navigationLink = tv({
   base: button({
     intent: 'quiet',
     class:
-      'no-underline hover:border-[#568780] hover:bg-[#2a3d3f] active:translate-y-px min-h-[45px] shrink-0 justify-start gap-[13px] px-[14px] py-[12px] text-[13px] text-[#9aadb4] [@media(height<=700px)]:min-h-[40px] [@media(height<=700px)]:py-[9px]',
+      'no-underline hover:border-[#568780] hover:bg-[#2a3d3f] active:translate-y-px min-h-[42px] shrink-0 justify-start gap-[13px] px-[14px] py-[10px] text-[13px] text-[#9aadb4] [@media(height<=700px)]:min-h-[40px] [@media(height<=700px)]:py-[9px]',
   }),
   variants: { selected: { true: 'bg-[#1e3333] text-accent' } },
 });

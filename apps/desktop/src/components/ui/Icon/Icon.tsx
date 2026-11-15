@@ -1,25 +1,33 @@
 import ArrowLeft from 'lucide-react/icons/arrow-left';
 import ArrowRight from 'lucide-react/icons/arrow-right';
+import Brain from 'lucide-react/icons/brain';
 import Check from 'lucide-react/icons/check';
 import ChevronDown from 'lucide-react/icons/chevron-down';
+import ChevronRight from 'lucide-react/icons/chevron-right';
 import Copy from 'lucide-react/icons/copy';
 import Folder from 'lucide-react/icons/folder';
 import House from 'lucide-react/icons/house';
 import Link2 from 'lucide-react/icons/link-2';
 import PanelsTopLeft from 'lucide-react/icons/panels-top-left';
+import Plug from 'lucide-react/icons/plug';
 import Plus from 'lucide-react/icons/plus';
+import Puzzle from 'lucide-react/icons/puzzle';
 import RefreshCw from 'lucide-react/icons/refresh-cw';
+import ScrollText from 'lucide-react/icons/scroll-text';
 import Server from 'lucide-react/icons/server';
+import Settings from 'lucide-react/icons/settings';
 import Sparkles from 'lucide-react/icons/sparkles';
 import SquareTerminal from 'lucide-react/icons/square-terminal';
-import Wrench from 'lucide-react/icons/wrench';
+import Workflow from 'lucide-react/icons/workflow';
 import X from 'lucide-react/icons/x';
 
 const icons = {
   arrow: ArrowRight,
   back: ArrowLeft,
+  brain: Brain,
   check: Check,
   chevronDown: ChevronDown,
+  chevronRight: ChevronRight,
   close: X,
   copy: Copy,
   folder: Folder,
@@ -27,11 +35,15 @@ const icons = {
   link: Link2,
   logs: SquareTerminal,
   panel: PanelsTopLeft,
+  plug: Plug,
   plus: Plus,
+  puzzle: Puzzle,
   refresh: RefreshCw,
+  scrollText: ScrollText,
   server: Server,
+  settings: Settings,
   spark: Sparkles,
-  tools: Wrench,
+  workflow: Workflow,
 };
 
 export default function Icon({ name, size = 20 }: { name: keyof typeof icons; size?: number }) {
