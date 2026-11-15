@@ -32,8 +32,8 @@ export function SiteHeader({ locale, version }: { locale: Locale; version?: stri
   }, []);
 
   useEffect(() => {
-    // Match the site's md breakpoint, where the inline navigation takes over.
-    const desktop = window.matchMedia('(min-width: 761px)');
+    // Match the breakpoint where the inline navigation fits alongside the header controls.
+    const desktop = window.matchMedia('(min-width: 850px)');
     const closeOnDesktop = (event: MediaQueryListEvent) => {
       if (event.matches) {
         setMenuOpen(false);
@@ -117,7 +117,7 @@ export function SiteHeader({ locale, version }: { locale: Locale; version?: stri
           {homeLink}
           <nav
             aria-label={t('Main navigation')}
-            className="hidden gap-4 text-[#cec7ba] md:flex lg:gap-8"
+            className="hidden gap-4 text-[#cec7ba] min-[850px]:flex lg:gap-8"
           >
             {navigationLinks}
           </nav>
@@ -134,7 +134,7 @@ export function SiteHeader({ locale, version }: { locale: Locale; version?: stri
               <Icon name="download" size={15} />
             </DownloadLink>
             <Dialog.Trigger
-              className={`${menuButtonClassName} md:hidden`}
+              className={`${menuButtonClassName} min-[850px]:hidden`}
               aria-label={t('Open navigation')}
             >
               <Icon name="menu" size={20} />
