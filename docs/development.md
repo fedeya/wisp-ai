@@ -58,7 +58,7 @@ exports. This lets a package typecheck before its own build has produced `dist/`
 | `pnpm test:integration` | Cross-component tests in `tests/`, including Lua/TS transport                 |
 | `pnpm test:addon`       | Busted Lua specs and WoW fixtures in `addon/tests/`                           |
 | `pnpm lint:addon`       | Luacheck against Lua 5.1 and the WoW API globals                              |
-| `pnpm test:ui`          | Svelte components in `apps/desktop/src/` (jsdom + Testing Library)            |
+| `pnpm test:ui`          | React components in `apps/desktop/src/` (jsdom + Testing Library)             |
 | `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
 Use `pnpm test:addon`, `pnpm test:core`, `pnpm test:integration` or `pnpm test:ui`
@@ -266,7 +266,7 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 
 | Area                          | Entry points                                                                                   |
 | ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| Desktop UI and native host    | [Svelte](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
+| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)          |
 | Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent-process.ts) |
 | Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)        |
 | Shared contracts              | [protocol](../packages/protocol/src)                                                           |
@@ -361,8 +361,10 @@ Dependencies and ports can be supplied to `startBridge` for isolated integration
   reads. Every request belongs to both a transport session and a conversation.
   Runtime resources unwind on shutdown and failed startup.
 
-Desktop screens live under `apps/desktop/src/pages`; their shared session controller
-uses Svelte runes in `desktop-controller.svelte.ts`. Addon widgets, message formatting,
+Desktop screens and route definitions live under `apps/desktop/src/routes`.
+Shared UI controls and screen components live under `apps/desktop/src/components`.
+The desktop session controller in `desktop-controller.ts` exposes shared state through Zustand.
+Addon widgets, message formatting,
 message rows and model controls are separate Lua modules. `UI/Window.lua` composes
 the sidebar, transcript, composer, activity, conversation status and settings
 components; see the [addon module map](../addon/README.md) for their ownership.
@@ -375,7 +377,7 @@ explicitly with runtime package installation disabled.
 Release builds depend on the reusable CI workflow, so formatting, lint, types, all
 Vitest projects and native tests must pass before packaging and signing.
 
-`pnpm format:check` checks Oxfmt, StyLua and Svelte/CSS/HTML Prettier output; `pnpm format` writes across the workspace. For Rust, use `cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml`. The [CI workflow](../.github/workflows/check.yml) contains native test prerequisites and tests the exact installer artifact after successful release builds; packaging alone is not the full check suite.
+`pnpm format:check` checks Oxfmt, StyLua and CSS/HTML Prettier output. `pnpm format` writes across the workspace. For Rust, use `cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml`. The [CI workflow](../.github/workflows/check.yml) contains native test prerequisites and tests the exact installer artifact after successful release builds. Packaging alone is not the full check suite.
 
 [smoke-agent.mjs](../scripts/smoke-agent.mjs) is an **opt-in live diagnostic**, not an offline test: it uses the signed-in subscription and external services, consumes usage, and may put private data in reports outside the repository. It requires Windows configuration and native credentials. Its isolated sessions block game writes but do not validate browser consent; snapshot replay does not replace fresh readings in normal use. Consult the script before running it.
 

@@ -49,9 +49,8 @@ pnpm --filter @wisp/desktop exec vite --host 127.0.0.1 --port 1437
 The desktop command starts a design preview only, without Tauri or the bridge.
 Its Tailwind theme lives in `apps/desktop/src/style.css`, using the Vite plugin.
 Desktop components also use utility classes, without scoped stylesheets.
-`apps/desktop/src/ui/` contains native control components with internal Tailwind
-Variants recipes for buttons, fields, cards and badges. Input, select, textarea
-and checkbox components preserve Svelte bindings and native event attributes.
+`apps/desktop/src/components/ui/` contains shared controls and Tailwind Variants
+recipes for buttons, fields, cards and badges. React buttons and inputs use Base UI.
 The global stylesheet contains only tokens, base defaults, reduced-motion
 preferences and the spinner keyframes. Its breakpoints
 start at 651px (`sm`), 951px (`md`), 1001px (`lg`) and 1101px (`xl`).

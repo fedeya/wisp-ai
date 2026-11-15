@@ -8,9 +8,9 @@ Implementation references:
 
 - `packages/protocol/src/providers.ts`: registered provider definitions and models.
 - `apps/agent/src/providers.ts`: native provider adapter dispatch.
-- `apps/desktop/src/pages/Connections.svelte`: ChatGPT sign-in and default model UI.
-- `apps/desktop/src/ApiConnections.svelte`: API/local connection forms, model
-  discovery, exact IDs, context windows, testing and saving.
+- `apps/desktop/src/routes/connections/Connections.tsx`: ChatGPT sign-in and default model UI.
+- `apps/desktop/src/components/connections/ConnectionEditor.tsx`: API/local connection forms,
+  model discovery, exact IDs, context windows, testing and saving.
 - `docs/usage.md`: current setup, billing, tools and connection limits.
 
 Keep both language versions consistent across requirements, FAQ, privacy,

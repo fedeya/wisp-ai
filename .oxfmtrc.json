@@ -14,7 +14,6 @@
     "runtime-node.txt",
     "apps/desktop/src/**/*.css",
     "apps/desktop/src/**/*.html",
-    "apps/desktop/src/**/*.svelte",
     "**/src-tauri/target/**",
     "**/src-tauri/resources/**",
     "**/src-tauri/gen/**",

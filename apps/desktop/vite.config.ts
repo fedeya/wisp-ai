@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
+import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath } from 'node:url';
 export default defineConfig({
   root: 'src',
-  plugins: [tailwindcss(), svelte({ configFile: '../svelte.config.js' })],
+  plugins: [tailwindcss(), react()],
   server: { host: '127.0.0.1', port: 1420, strictPort: true },
   build: {
     outDir: '../dist',
