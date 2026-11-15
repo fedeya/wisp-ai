@@ -1183,16 +1183,24 @@ test('first-time setup resumes at the provider step and opens Overview after sav
 
   cleanup();
   renderApp();
-  await screen.findByRole('button', { name: 'Continue with ChatGPT' });
+  await fireEvent.click(await screen.findByRole('button', { name: 'ChatGPT' }));
+  await screen.findByRole('heading', { level: 1, name: 'ChatGPT' });
+  expect(screen.getByRole('heading', { name: 'ChatGPT subscription' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'OpenAI API' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Continue with ChatGPT' })).toBeTruthy();
   expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Add account' })).toBeNull();
-  expect((screen.getByRole('button', { name: 'Finish setup' }) as HTMLButtonElement).disabled).toBe(
-    true,
-  );
+  expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
 
   status.auth.status = 'connected';
   status.auth.revision += 1;
   await act(() => desktopStore.getState().actions.refresh());
+  expect(screen.getByRole('combobox', { name: 'Default model for new chats' }).textContent).toBe(
+    'Choose a model',
+  );
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Finish setup' }).disabled).toBe(
+    true,
+  );
   await chooseOption(screen.getByRole('combobox', { name: 'Default model for new chats' }), 'Sol');
   await fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
   await screen.findByRole('heading', { name: 'Wisp is ready' });
@@ -1206,6 +1214,78 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   renderApp();
   await screen.findByRole('heading', { name: 'Connect your AI account' });
   expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
+});
+
+test('onboarding searches the provider catalog and suggests a single saved model', async () => {
+  localStorage.setItem('wisp:onboarding:v1', 'pending');
+  status.auth = { status: 'signed_out', profiles: [], revision: 1 };
+  status.model = '';
+  status.modelConnected = false;
+  const id = '35302f8c-128a-48fb-98a1-9eb03bb71f72';
+  const model = { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 };
+  const slug = `connection:${id}:${model.id}`;
+  const original = vi.mocked(request).getMockImplementation()!;
+  vi.mocked(request).mockImplementation(async (route, body) => {
+    if (route === '/connections/discover') {
+      return { models: [{ ...model, supportsTools: true }] } as never;
+    }
+    if (route === '/connections/save') {
+      status.connections = [
+        { id, name: 'OpenRouter', provider: 'openrouter', hasKey: true, models: [model] },
+      ];
+    }
+    if (route === '/auth/models') {
+      return {
+        models: status.connections.length ? [{ slug, displayName: model.name, efforts: [] }] : [],
+      } as never;
+    }
+    if (route === '/auth/model') {
+      status.model = (body as { model: string }).model;
+      status.modelConnected = true;
+    }
+    return original(route, body);
+  });
+  renderApp();
+  await fireEvent.click(await screen.findByRole('button', { name: 'Gemini' }));
+  await screen.findByRole('heading', { level: 1, name: 'Gemini' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Back to providers' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Browse providers' }));
+  const catalog = within(await screen.findByRole('dialog', { name: 'Browse providers' }));
+  await fireEvent.input(catalog.getByRole('searchbox', { name: 'Search providers' }), {
+    target: { value: 'openrouter' },
+  });
+  expect(catalog.queryByRole('button', { name: 'Vercel AI Gateway' })).toBeNull();
+  await fireEvent.click(catalog.getByRole('button', { name: 'OpenRouter' }));
+  await screen.findByRole('heading', { level: 1, name: 'OpenRouter' });
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
+  expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
+  await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'fixture-only' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
+  await fireEvent.click(await screen.findByRole('button', { name: `Add ${model.id}` }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save connection' }));
+  expect(
+    (await screen.findByRole('combobox', { name: 'Default model for new chats' })).textContent,
+  ).toBe(model.name);
+  expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
+  await fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  expect(request).toHaveBeenCalledWith('/auth/model', { model: slug });
+  await openConnections();
+  expect(screen.getByRole('link', { name: 'Manage OpenRouter' })).toBeTruthy();
+});
+
+test('Connect later leaves provider setup accessible from Overview', async () => {
+  localStorage.setItem('wisp:onboarding:v1', 'pending');
+  status.auth = { status: 'signed_out', profiles: [], revision: 1 };
+  status.model = '';
+  renderApp();
+  await fireEvent.click(await screen.findByRole('button', { name: 'Claude' }));
+  await screen.findByRole('heading', { level: 1, name: 'Claude' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Connect later' }));
+  await screen.findByRole('heading', { name: 'Connect your AI account' });
+  await openConnections();
+  expect(screen.getByRole('heading', { name: 'Connect your first provider' })).toBeTruthy();
 });
 
 test('an outdated addon becomes the next action even with healthy connections', async () => {

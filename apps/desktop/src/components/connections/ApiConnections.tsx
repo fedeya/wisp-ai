@@ -1,8 +1,4 @@
-import {
-  providerDefinitions,
-  type ConnectionView,
-  type ProviderId,
-} from '@wisp/protocol/providers';
+import type { ConnectionView, ProviderId } from '@wisp/protocol/providers';
 import { useState } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
@@ -11,7 +7,7 @@ import ConnectionEditor from './ConnectionEditor';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
-export default function ApiConnections({ provider }: { provider?: ProviderId }) {
+export default function ApiConnections({ provider }: { provider: ProviderId }) {
   const app = useDesktop((state) => ({
     busy: state.busy,
     busyTarget: state.busyTarget,
@@ -23,17 +19,12 @@ export default function ApiConnections({ provider }: { provider?: ProviderId }) 
   const [editing, setEditing] = useState<{ connection?: ConnectionView } | null>(null);
   const [dismissedInitialEditor, dismissInitialEditor] = useState(false);
   const connections =
-    app.connections?.filter((connection) => !provider || provider === connection.provider) ?? [];
+    app.connections?.filter((connection) => provider === connection.provider) ?? [];
   const activeEditor: { connection?: ConnectionView } | null =
     editing ??
-    (provider &&
-    provider !== 'openai' &&
-    app.online &&
-    !connections.length &&
-    !dismissedInitialEditor
+    (provider !== 'openai' && app.online && !connections.length && !dismissedInitialEditor
       ? {}
       : null);
-  const firstRun = !provider;
 
   function closeEditor() {
     dismissInitialEditor(true);
@@ -41,14 +32,10 @@ export default function ApiConnections({ provider }: { provider?: ProviderId }) 
   }
 
   return (
-    <Card kind="provider" className={firstRun && editing ? 'col-span-full p-5' : 'p-5'}>
-      <div
-        className={`section-title flex gap-4 ${firstRun ? 'flex-col items-start' : 'items-center justify-between'}`}
-      >
+    <Card kind="provider" className="p-5">
+      <div className="section-title flex items-center justify-between gap-4">
         <div>
-          <h2>
-            {provider === 'openai' ? 'OpenAI API' : firstRun ? 'API provider' : 'API connections'}
-          </h2>
+          <h2>{provider === 'openai' ? 'OpenAI API' : 'API connections'}</h2>
           <p className="text-muted text-[13px]">
             {provider === 'compatible'
               ? 'Use a local or custom OpenAI-compatible endpoint.'
@@ -57,13 +44,11 @@ export default function ApiConnections({ provider }: { provider?: ProviderId }) 
         </div>
         {!activeEditor && (
           <Button disabled={app.locked || !app.online} onClick={() => setEditing({})}>
-            {firstRun ? 'Add API provider' : 'Add API connection'}
+            Add API connection
           </Button>
         )}
       </div>
-      {provider && !app.online && (
-        <p className="mt-3 text-muted">Start Wisp to manage API connections.</p>
-      )}
+      {!app.online && <p className="mt-3 text-muted">Start Wisp to manage API connections.</p>}
       {connections.map((connection) => (
         <div
           key={connection.id}
@@ -72,9 +57,6 @@ export default function ApiConnections({ provider }: { provider?: ProviderId }) 
           <div>
             <strong>{connection.name}</strong>
             <p className="muted text-muted text-[13px]">
-              {!provider && (
-                <>{providerDefinitions.find((item) => item.id === connection.provider)?.name} · </>
-              )}
               {connection.models.length} model{connection.models.length === 1 ? '' : 's'} ·{' '}
               {connection.hasKey
                 ? 'Key saved'
@@ -119,7 +101,7 @@ export default function ApiConnections({ provider }: { provider?: ProviderId }) 
       {activeEditor && (
         <ConnectionEditor
           connection={activeEditor.connection}
-          initialProvider={provider}
+          provider={provider}
           close={closeEditor}
         />
       )}

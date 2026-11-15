@@ -11,19 +11,17 @@ import {
 import { useState } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
-import { Button, Input, NumberInput, Select } from '../ui/Controls';
+import { Button, Input, NumberInput } from '../ui/Controls';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ModelCatalog from './ModelCatalog';
 import { modelProvider, ProviderLogo } from './provider-directory';
 
 const labelClass = 'text-[12px] font-medium text-[#bdcccf]';
-const providerOptions = providerDefinitions.map(({ id, name }) => ({ value: id, label: name }));
 const modelFieldsClass =
   'api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]';
 
 type ConnectionFields = {
-  provider: ProviderId;
   name: string;
   apiKey: string;
   baseURL: string;
@@ -41,12 +39,12 @@ function validateContextWindow({ value }: { value: number | undefined }) {
   }
 }
 
-function connectionDetails(id: string | undefined, value: ConnectionFields) {
-  const provider = providerDefinitions.find((item) => item.id === value.provider)!;
+function connectionDetails(provider: ProviderId, id: string | undefined, value: ConnectionFields) {
+  const definition = providerDefinitions.find((item) => item.id === provider)!;
   return {
     id,
-    provider: value.provider,
-    name: value.name.trim() || provider.name,
+    provider,
+    name: value.name.trim() || definition.name,
     apiKey: value.apiKey || undefined,
     baseURL: value.baseURL.trim() || undefined,
   };
@@ -54,11 +52,11 @@ function connectionDetails(id: string | undefined, value: ConnectionFields) {
 
 export default function ConnectionEditor({
   connection,
-  initialProvider,
+  provider,
   close,
 }: {
   connection?: ConnectionView;
-  initialProvider?: ProviderId;
+  provider: ProviderId;
   close: () => void;
 }) {
   const app = useDesktop((state) => ({
@@ -70,7 +68,6 @@ export default function ConnectionEditor({
   const [discovered, setDiscovered] = useState<DiscoveredConnectionModel[]>([]);
   const [showModelSettings, setShowModelSettings] = useState(false);
   const defaultValues: ConnectionFields = {
-    provider: connection?.provider ?? initialProvider ?? 'anthropic',
     name: connection?.name || '',
     apiKey: '',
     baseURL: connection?.baseURL || '',
@@ -85,7 +82,7 @@ export default function ConnectionEditor({
         'Saving AI connection',
         async () => {
           await request('/connections/save', {
-            ...connectionDetails(connection?.id, value),
+            ...connectionDetails(provider, connection?.id, value),
             models: value.models,
           });
           close();
@@ -95,10 +92,7 @@ export default function ConnectionEditor({
       );
     },
   });
-  const { provider, baseURL, apiKey, modelId, models } = useSelector(
-    form.store,
-    (state) => state.values,
-  );
+  const { baseURL, apiKey, modelId, models } = useSelector(form.store, (state) => state.values);
   const formCanSubmit = useSelector(form.store, (state) => state.canSubmit);
   const canDiscover =
     !app.locked &&
@@ -109,14 +103,8 @@ export default function ConnectionEditor({
       ({ contextWindow }) =>
         contextWindow !== undefined && contextWindowSchema.safeParse(contextWindow).success,
     );
-  const canSave =
-    !app.locked &&
-    (!initialProvider || canDiscover) &&
-    hasModels &&
-    !modelId.trim() &&
-    formCanSubmit;
+  const canSave = canDiscover && hasModels && !modelId.trim() && formCanSubmit;
   const definition = providerDefinitions.find((item) => item.id === provider)!;
-  const manageModels = !initialProvider || showModelSettings;
 
   function discoverModels() {
     return work(
@@ -124,7 +112,7 @@ export default function ConnectionEditor({
       async () => {
         const result = await request<{ models: DiscoveredConnectionModel[] }>(
           '/connections/discover',
-          connectionDetails(connection?.id, form.state.values),
+          connectionDetails(provider, connection?.id, form.state.values),
         );
         setDiscovered(result.models);
         setShowModelSettings(true);
@@ -156,7 +144,7 @@ export default function ConnectionEditor({
       'Testing AI model',
       () =>
         request('/connections/test', {
-          ...connectionDetails(connection?.id, form.state.values),
+          ...connectionDetails(provider, connection?.id, form.state.values),
           models: [model],
         }),
       `Tool calling verified for ${model.name || model.id}.`,
@@ -171,38 +159,8 @@ export default function ConnectionEditor({
         event.preventDefault();
         if (canSave && !form.state.isSubmitting) void form.handleSubmit();
       }}
-      className={`field-section api-connection-form grid border-t [border-top-style:solid] border-t-border ${initialProvider ? 'mt-4 gap-2.5 pt-4' : 'mt-[26px] gap-3 pt-[22px]'}`}
+      className="field-section api-connection-form mt-4 grid gap-2.5 border-t [border-top-style:solid] border-t-border pt-4"
     >
-      {!initialProvider && (
-        <>
-          <label className={labelClass} htmlFor="ai-provider">
-            Provider
-          </label>
-          <form.Field
-            name="provider"
-            listeners={{
-              onChange: () => {
-                form.setFieldValue('models', []);
-                setDiscovered([]);
-                form.setFieldValue('modelId', '');
-                form.setFieldValue('contextWindow', undefined);
-                form.setFieldValue('baseURL', '');
-                form.setFieldValue('apiKey', '');
-              },
-            }}
-          >
-            {(field) => (
-              <Select
-                id="ai-provider"
-                value={field.state.value}
-                onValueChange={field.handleChange}
-                options={providerOptions}
-                disabled={app.locked || !!connection}
-              />
-            )}
-          </form.Field>
-        </>
-      )}
       <label className={labelClass} htmlFor="ai-name">
         Connection name
       </label>
@@ -272,32 +230,28 @@ export default function ConnectionEditor({
       <div className="label-row flex flex-wrap items-center justify-between gap-2">
         <h3 className="m-0 text-[14px] font-semibold">Models</h3>
         <Button intent="quiet" size="text" disabled={!canDiscover} onClick={discoverModels}>
-          {initialProvider ? 'Discover models' : 'Load model list'}
+          Discover models
         </Button>
       </div>
-      {initialProvider && (
-        <>
-          <p className="m-0 text-[13px] text-muted">
-            {models.length
-              ? `${models.length} ${models.length === 1 ? 'model' : 'models'} selected for Wisp`
-              : 'Discover models and add the ones you want to use.'}
-          </p>
-          <Button
-            intent="quiet"
-            size="text"
-            className="w-fit"
-            aria-expanded={showModelSettings}
-            aria-controls="connection-model-settings"
-            onClick={() => setShowModelSettings((open) => !open)}
-          >
-            {showModelSettings ? 'Hide model settings' : 'Manage models'}
-          </Button>
-        </>
-      )}
+      <p className="m-0 text-[13px] text-muted">
+        {models.length
+          ? `${models.length} ${models.length === 1 ? 'model' : 'models'} selected for Wisp`
+          : 'Discover models and add the ones you want to use.'}
+      </p>
+      <Button
+        intent="quiet"
+        size="text"
+        className="w-fit"
+        aria-expanded={showModelSettings}
+        aria-controls="connection-model-settings"
+        onClick={() => setShowModelSettings((open) => !open)}
+      >
+        {showModelSettings ? 'Hide model settings' : 'Manage models'}
+      </Button>
       <div
         id="connection-model-settings"
-        hidden={!manageModels}
-        className={manageModels ? 'grid gap-3' : 'hidden'}
+        hidden={!showModelSettings}
+        className={showModelSettings ? 'grid gap-3' : 'hidden'}
       >
         {discovered.length > 0 && (
           <ModelCatalog
@@ -429,9 +383,7 @@ export default function ConnectionEditor({
           </div>
         </details>
       </div>
-      <div
-        className={`actions flex flex-wrap items-center gap-2.5 ${initialProvider ? 'mt-2' : 'mt-[22px]'}`}
-      >
+      <div className="actions mt-2 flex flex-wrap items-center gap-2.5">
         <Button type="submit" intent="primary" disabled={!canSave}>
           Save connection
         </Button>

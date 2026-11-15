@@ -23,7 +23,7 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
   const savedModel = app.savedModel ?? '';
   const defaultModel = app.models.some(({ slug }) => slug === savedModel)
     ? savedModel
-    : onFinish
+    : onFinish && app.models.length === 1
       ? app.models[0]?.slug || ''
       : '';
 
@@ -55,6 +55,9 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
   const model = app.models.some(({ slug }) => slug === draft) ? draft : defaultModel;
   const locked = app.locked || submitting;
   const canSave = !locked && !!model && (model !== savedModel || (!!onFinish && app.connected));
+  const refreshing = app.busyTarget === 'model';
+  const showPicker = !onFinish || app.models.length > 0 || (refreshing && !app.modelsError);
+  if (!showPicker && !app.modelsError) return null;
 
   return (
     <Card kind="provider" className="p-5">
@@ -68,7 +71,7 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
           </p>
         )}
         <div className="label-row flex items-center justify-between">
-          <h2>Default model</h2>
+          <h2>{showPicker ? 'Default model' : 'Models'}</h2>
           <Button
             intent="quiet"
             size="text"
@@ -79,45 +82,49 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
             Refresh
           </Button>
         </div>
-        <form
-          className="inline-field gap-[12px] mt-[10px] flex flex-wrap items-center"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
-          }}
-        >
-          <label className="sr-only" htmlFor="models">
-            Default model for new chats
-          </label>
-          <modelForm.Field name="model">
-            {(field) => (
-              <Select
-                className="min-w-[180px] flex-1"
-                id="models"
-                name={field.name}
-                value={model || null}
-                onValueChange={field.handleChange}
-                options={app.models.map(({ slug, displayName }) => ({
-                  value: slug,
-                  label: displayName,
-                }))}
-                placeholder={app.models.length ? 'Choose a model' : 'No models available'}
-                disabled={locked || !app.models.length}
-              />
-            )}
-          </modelForm.Field>
-          <Button type="submit" intent={onFinish ? 'primary' : 'default'} disabled={!canSave}>
-            {app.busy === 'Updating default model'
-              ? 'Saving…'
-              : onFinish
-                ? 'Finish setup'
-                : 'Set default'}
-          </Button>
-        </form>
-        <ActionProgress label={app.busyTarget === 'model' ? app.busy : ''} />
-        <p className="mt-3 text-[13px] text-muted">
-          Used for new chats. You can change the model and effort in each chat.
-        </p>
+        {showPicker && (
+          <form
+            className="inline-field gap-[12px] mt-[10px] flex flex-wrap items-center"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
+            }}
+          >
+            <label className="sr-only" htmlFor="models">
+              Default model for new chats
+            </label>
+            <modelForm.Field name="model">
+              {(field) => (
+                <Select
+                  className="min-w-[180px] flex-1"
+                  id="models"
+                  name={field.name}
+                  value={model || null}
+                  onValueChange={field.handleChange}
+                  options={app.models.map(({ slug, displayName }) => ({
+                    value: slug,
+                    label: displayName,
+                  }))}
+                  placeholder={app.models.length ? 'Choose a model' : 'No models available'}
+                  disabled={locked || !app.models.length}
+                />
+              )}
+            </modelForm.Field>
+            <Button type="submit" intent={onFinish ? 'primary' : 'default'} disabled={!canSave}>
+              {app.busy === 'Updating default model'
+                ? 'Saving…'
+                : onFinish
+                  ? 'Finish setup'
+                  : 'Set default'}
+            </Button>
+          </form>
+        )}
+        <ActionProgress label={refreshing ? app.busy : ''} />
+        {showPicker && (
+          <p className="mt-3 text-[13px] text-muted">
+            Used for new chats. You can change the model and effort in each chat.
+          </p>
+        )}
       </div>
     </Card>
   );

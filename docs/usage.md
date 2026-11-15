@@ -8,6 +8,8 @@ On first use, Wisp reads registered installation paths from Battle.net's local `
 
 ## AI connections
 
+After installing the addon, **Connect AI** offers ChatGPT, Claude and Gemini directly. **Browse providers** opens the same searchable catalog as **Connections**. Pick a provider, connect it, then choose a default model and select **Finish setup** to open Overview. If only one model is available, Wisp suggests it. **Connect later** takes you to Overview and you can finish from **Connections**.
+
 **Connections** lists your configured providers and their access methods. **Key saved** indicates that Wisp has an API credential for the provider. Use **Add provider** to search the catalog, including Vercel AI Gateway and OpenRouter. Open **ChatGPT** to manage a subscription account or an OpenAI API connection. API connections use native AI SDK adapters for OpenAI, Anthropic (Claude), Google (Gemini), DeepSeek, xAI, Groq, Mistral, Cerebras, Cohere, Together AI, Fireworks, DeepInfra, Alibaba (Qwen), Moonshot (Kimi), MiniMax, Baseten and Z.AI. **OpenAI compatible / Local** supports other Chat Completions endpoints, including local servers. Bedrock, Vertex and Azure account/deployment setup are not included. The installed native Hugging Face adapter drops tool results from history, so use its Chat Completions endpoint through **OpenAI compatible / Local** instead.
 
 1. Open a provider and enter its API key. API usage is billed by the provider.

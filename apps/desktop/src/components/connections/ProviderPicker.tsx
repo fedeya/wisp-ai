@@ -2,7 +2,7 @@ import { Dialog } from '@base-ui/react/dialog';
 import { providerDefinitions, type ProviderId } from '@wisp/protocol/providers';
 import { type ReactNode, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { Input } from '../ui/Controls';
+import { Button, Input } from '../ui/Controls';
 import { button } from '../ui/Controls/styles';
 import Icon from '../ui/Icon';
 import { featuredProviders, ProviderLogo, providerPresentation } from './provider-directory';
@@ -11,20 +11,24 @@ const providerOrder = new Set<ProviderId>([
   ...featuredProviders,
   ...providerDefinitions.map(({ id }) => id),
 ]);
+const optionStyle =
+  'flex w-full justify-between whitespace-normal px-2 py-1.5 text-left no-underline hover:bg-[#293b40]';
 
 export default function ProviderPicker({
   configured,
   children,
+  onSelect,
 }: {
-  configured: ReadonlySet<ProviderId>;
+  configured?: ReadonlySet<ProviderId>;
   children: ReactNode;
+  onSelect?: (provider: ProviderId) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchField = useRef<HTMLInputElement>(null);
   const search = query.trim().toLowerCase();
   const options = [...providerOrder]
-    .filter((id) => !configured.has(id))
+    .filter((id) => !configured?.has(id))
     .map((id) => ({ id, ...providerPresentation(id) }))
     .filter(({ id, name, description }) =>
       [id, name, description].some((value) => value.toLowerCase().includes(search)),
@@ -48,7 +52,9 @@ export default function ProviderPicker({
           >
             <div className="grid gap-3 border-b [border-bottom-style:solid] border-b-border p-4">
               <div className="flex items-center justify-between gap-3">
-                <Dialog.Title className="m-0 text-[18px] font-semibold">Add provider</Dialog.Title>
+                <Dialog.Title className="m-0 text-[18px] font-semibold">
+                  {onSelect ? 'Browse providers' : 'Add provider'}
+                </Dialog.Title>
                 <Dialog.Close
                   aria-label="Close provider picker"
                   className={button({ intent: 'quiet', size: 'icon' })}
@@ -68,18 +74,9 @@ export default function ProviderPicker({
             <div className="catalog-scroll min-h-0 overflow-y-auto p-2.5">
               {options.length ? (
                 <ul className="m-0 grid list-none gap-0.5 p-0">
-                  {options.map(({ id, name, description }) => (
-                    <li key={id}>
-                      <Link
-                        to={`/connections/${id}`}
-                        onClick={() => setOpen(false)}
-                        aria-label={name}
-                        className={button({
-                          intent: 'quiet',
-                          class:
-                            'flex w-full justify-between whitespace-normal px-2 py-1.5 text-left no-underline hover:bg-[#293b40]',
-                        })}
-                      >
+                  {options.map(({ id, name, description }) => {
+                    const content = (
+                      <>
                         <span className="flex min-w-0 items-center gap-3">
                           <ProviderLogo provider={id} />
                           <span className="grid min-w-0 text-[13px]">
@@ -90,9 +87,35 @@ export default function ProviderPicker({
                         <span className="shrink-0 text-muted">
                           <Icon name="arrow" size={16} />
                         </span>
-                      </Link>
-                    </li>
-                  ))}
+                      </>
+                    );
+                    return (
+                      <li key={id}>
+                        {onSelect ? (
+                          <Button
+                            intent="quiet"
+                            className={optionStyle}
+                            aria-label={name}
+                            onClick={() => {
+                              setOpen(false);
+                              onSelect(id);
+                            }}
+                          >
+                            {content}
+                          </Button>
+                        ) : (
+                          <Link
+                            to={`/connections/${id}`}
+                            onClick={() => setOpen(false)}
+                            aria-label={name}
+                            className={button({ intent: 'quiet', class: optionStyle })}
+                          >
+                            {content}
+                          </Link>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
                 <p className="m-0 px-3 py-3 text-[13px] text-muted" role="status">
@@ -112,6 +135,15 @@ export function AddProviderTrigger() {
     <Dialog.Trigger className={button({ intent: 'primary' })}>
       <Icon name="plus" size={17} />
       Add provider
+    </Dialog.Trigger>
+  );
+}
+
+export function BrowseProvidersTrigger() {
+  return (
+    <Dialog.Trigger className={button({ intent: 'quiet', class: 'w-fit px-0 text-accent' })}>
+      Browse providers
+      <Icon name="arrow" size={16} />
     </Dialog.Trigger>
   );
 }

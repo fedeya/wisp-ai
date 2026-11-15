@@ -1,8 +1,7 @@
 import { providerId } from '@wisp/protocol/providers';
 import { useEffect, useRef } from 'react';
 import { Link, Navigate, useParams } from 'react-router';
-import ApiConnections from '../components/connections/ApiConnections';
-import ChatGptConnection from '../components/connections/ChatGptConnection';
+import ProviderConfiguration from '../components/connections/ProviderConfiguration';
 import { ProviderLogo, providerPresentation } from '../components/connections/provider-directory';
 import Icon from '../components/ui/Icon';
 
@@ -34,8 +33,7 @@ export default function ProviderDetails() {
           {name}
         </h1>
       </header>
-      {id === 'openai' && <ChatGptConnection />}
-      <ApiConnections key={id} provider={id} />
+      <ProviderConfiguration provider={id} />
     </div>
   );
 }
