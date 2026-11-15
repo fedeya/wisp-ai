@@ -4,6 +4,7 @@ import { useRef } from 'react';
 import type { Mcp } from '../api';
 import IntegrationCard from '../components/integrations/IntegrationCard';
 import McpDialog, { type McpFormActions } from '../components/integrations/McpDialog';
+import WebSearchSettings from '../components/integrations/WebSearchSettings';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
@@ -93,7 +94,7 @@ function IntegrationList({
         })}
         {entries.length === 0 && (
           <Card kind="empty" className="text-center [&_>_svg]:text-[#577e7c] [&_>_svg]:mb-[16px]">
-            <h2 className="text-[21px]">No integrations available yet</h2>
+            <h2 className="text-[21px]">No game or custom integrations yet</h2>
             <p className="mx-auto text-muted text-[13px] max-w-[400px] mt-[12px] mb-[23px]">
               Connect WoW to discover supported addons, or add an MCP server to give Wisp more
               tools.
@@ -125,6 +126,7 @@ export default function Integrations() {
     >
       {({ payload }) => (
         <>
+          <WebSearchSettings />
           {app.loading || !app.status ? (
             <DataState />
           ) : (

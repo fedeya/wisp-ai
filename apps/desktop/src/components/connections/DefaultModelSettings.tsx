@@ -1,16 +1,28 @@
 import { useForm, useSelector } from '@tanstack/react-form';
+import { parseConnectionModel, type ProviderId } from '@wisp/protocol/providers';
+import { useEffect, useRef } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import Icon from '../ui/Icon';
 import { Button, Card, Select } from '../ui/Controls';
 import { desktopConnected, desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
+import { ProviderLogo, providerPresentation } from './provider-directory';
 
 const defaultValues: { model: string | null } = { model: null };
 
-export default function DefaultModelSettings({ onFinish }: { onFinish?: () => void }) {
+export default function DefaultModelSettings({
+  onFinish,
+  review,
+}: {
+  onFinish?: () => void;
+  review?: { provider: ProviderId; connectionId?: string; onBack: () => void };
+}) {
   const app = useDesktop((state) => ({
     savedModel: state.status?.model,
+    reviewConnection: review?.connectionId
+      ? state.status?.connections.find(({ id }) => id === review.connectionId)
+      : undefined,
     online: !!state.status,
     models: state.models,
     modelsError: state.modelsError,
@@ -20,17 +32,23 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
     connected: desktopConnected(state),
   }));
   const { loadModels, work } = useDesktopActions();
+  const heading = useRef<HTMLHeadingElement>(null);
+  const models = review
+    ? app.models.filter(
+        ({ slug }) => parseConnectionModel(slug)?.connection === review.connectionId,
+      )
+    : app.models;
   const savedModel = app.savedModel ?? '';
-  const defaultModel = app.models.some(({ slug }) => slug === savedModel)
+  const defaultModel = models.some(({ slug }) => slug === savedModel)
     ? savedModel
-    : app.models[0]?.slug || '';
+    : onFinish && models.length === 1
+      ? models[0]?.slug || ''
+      : '';
 
   const modelForm = useForm({
     defaultValues,
     onSubmit: async ({ value, formApi }) => {
-      const model = app.models.some(({ slug }) => slug === value.model)
-        ? value.model
-        : defaultModel;
+      const model = models.some(({ slug }) => slug === value.model) ? value.model : defaultModel;
       if (!model) return;
       if (model === savedModel) {
         if (app.connected) onFinish?.();
@@ -48,22 +66,54 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
       }
     },
   });
+  useEffect(() => {
+    heading.current?.focus();
+  }, [review?.provider]);
   const draft = useSelector(modelForm.store, (state) => state.values.model);
   const submitting = useSelector(modelForm.store, (state) => state.isSubmitting);
-  const model = app.models.some(({ slug }) => slug === draft) ? draft : defaultModel;
+  const model = models.some(({ slug }) => slug === draft) ? draft : defaultModel;
   const locked = app.locked || submitting;
   const canSave = !locked && !!model && (model !== savedModel || (!!onFinish && app.connected));
+  const refreshing = app.busyTarget === 'model';
+  const showPicker = !onFinish || models.length > 0 || (refreshing && !app.modelsError);
+  const singleModel = review && models.length === 1 ? models[0] : undefined;
+  if (!showPicker && !app.modelsError && !review) return null;
+
+  function modelLabel(slug: string, displayName: string) {
+    if (!app.reviewConnection) return displayName;
+    const id = parseConnectionModel(slug)?.model;
+    const saved = app.reviewConnection.models.find((model) => model.id === id);
+    return saved?.name || saved?.id || displayName;
+  }
 
   return (
-    <Card kind="provider" className={onFinish ? 'p-5' : undefined}>
-      {!onFinish && <h2>Default model</h2>}
-      <div
-        className={
-          onFinish
-            ? undefined
-            : 'field-section mt-[26px] border-t border-solid border-border pt-[22px]'
-        }
-      >
+    <Card
+      kind="provider"
+      className={review ? 'bg-[linear-gradient(145deg,#223630_0%,var(--surface)_60%)] p-5' : 'p-5'}
+    >
+      <div>
+        {review && (
+          <div className="mb-4 flex items-center gap-3">
+            <span className="relative">
+              <ProviderLogo provider={review.provider} />
+              <span className="absolute -right-1 -bottom-1 grid size-[17px] place-items-center rounded-full bg-accent text-[#122b25]">
+                <Icon name="check" size={12} />
+              </span>
+            </span>
+            <div>
+              <h2 ref={heading} tabIndex={-1} className="text-[19px] outline-none">
+                {providerPresentation(review.provider).name} added
+              </h2>
+              <p className="m-0 text-[13px] text-muted">
+                {singleModel
+                  ? 'Ready for new chats in Wisp.'
+                  : models.length
+                    ? 'Choose the model for new chats.'
+                    : 'Models will appear here when available.'}
+              </p>
+            </div>
+          </div>
+        )}
         {app.modelsError && (
           <p
             className="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#332522] text-[#f0b4aa] mb-[20px] text-[13px] leading-[1.5] [&_.icon-button]:ml-auto"
@@ -72,68 +122,92 @@ export default function DefaultModelSettings({ onFinish }: { onFinish?: () => vo
             Could not load models: {app.modelsError}
           </p>
         )}
-        <div className="label-row flex items-center justify-between">
-          <label
+        {(!review || !models.length) && (
+          <div className="label-row flex items-center justify-between">
+            <h2>{showPicker ? 'Default model' : 'Models'}</h2>
+            <Button
+              intent="quiet"
+              size="text"
+              onClick={() => work('Loading models', loadModels, 'Models refreshed.', 'model')}
+              disabled={locked || !app.online}
+            >
+              <Icon name="refresh" size={14} />
+              Refresh
+            </Button>
+          </div>
+        )}
+        {showPicker && (
+          <form
             className={
-              onFinish ? 'text-[16px] font-semibold' : 'text-[12px] font-medium text-[#bdcccf]'
+              review
+                ? 'grid gap-3'
+                : 'inline-field gap-[12px] mt-[10px] flex flex-wrap items-center'
             }
-            htmlFor="models"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
+            }}
           >
-            Default model for new chats
-          </label>
-          <Button
-            intent="quiet"
-            size="text"
-            onClick={() => work('Loading models', loadModels, 'Models refreshed.', 'model')}
-            disabled={locked || !app.online}
-          >
-            <Icon name="refresh" size={14} />
-            Refresh
-          </Button>
-        </div>
-        <form
-          className="inline-field gap-[12px] mt-[10px] flex flex-wrap items-center"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (canSave && !modelForm.state.isSubmitting) void modelForm.handleSubmit();
-          }}
-        >
-          <modelForm.Field name="model">
-            {(field) => (
-              <Select
-                className="min-w-[180px] flex-1"
-                id="models"
-                name={field.name}
-                value={model || null}
-                onValueChange={field.handleChange}
-                options={app.models.map(({ slug, displayName }) => ({
-                  value: slug,
-                  label: displayName,
-                }))}
-                placeholder="Connect a provider first"
-                disabled={locked || !app.models.length}
-              />
+            {singleModel ? (
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-y [border-block-style:solid] border-border py-3">
+                <span className="text-[13px] text-muted">Default model</span>
+                <strong>{modelLabel(singleModel.slug, singleModel.displayName)}</strong>
+              </div>
+            ) : (
+              <>
+                <label className={review ? 'text-[13px] font-medium' : 'sr-only'} htmlFor="models">
+                  Default model for new chats
+                </label>
+                <modelForm.Field name="model">
+                  {(field) => (
+                    <Select
+                      className="min-w-[180px] flex-1"
+                      id="models"
+                      name={field.name}
+                      value={model || null}
+                      onValueChange={field.handleChange}
+                      options={models.map(({ slug, displayName }) => ({
+                        value: slug,
+                        label: modelLabel(slug, displayName),
+                      }))}
+                      placeholder={models.length ? 'Choose a model' : 'No models available'}
+                      disabled={locked || !models.length}
+                    />
+                  )}
+                </modelForm.Field>
+              </>
             )}
-          </modelForm.Field>
-          <Button type="submit" intent={onFinish ? 'primary' : 'default'} disabled={!canSave}>
-            {app.busy === 'Updating default model'
-              ? 'Saving…'
-              : onFinish
-                ? 'Finish setup'
-                : 'Set default'}
+            <div
+              className={review ? 'flex flex-wrap items-center justify-between gap-2' : 'contents'}
+            >
+              {review && (
+                <Button intent="quiet" size="text" disabled={locked} onClick={review.onBack}>
+                  Back to providers
+                </Button>
+              )}
+              <Button type="submit" intent={onFinish ? 'primary' : 'default'} disabled={!canSave}>
+                {app.busy === 'Updating default model'
+                  ? 'Saving…'
+                  : onFinish
+                    ? 'Finish setup'
+                    : 'Set default'}
+                {review && <Icon name="arrow" size={16} />}
+              </Button>
+            </div>
+          </form>
+        )}
+        <ActionProgress label={refreshing ? app.busy : ''} />
+        {review && !showPicker && (
+          <Button intent="quiet" size="text" disabled={locked} onClick={review.onBack}>
+            Back to providers
           </Button>
-        </form>
-        <ActionProgress label={app.busyTarget === 'model' ? app.busy : ''} />
-        <p className="field-hint text-[11px]! text-muted mt-[12px]">
-          You can choose a different model and effort inside each chat.
-        </p>
+        )}
+        {showPicker && !review && (
+          <p className="mt-3 text-[13px] text-muted">
+            Used for new chats. You can change the model and effort in each chat.
+          </p>
+        )}
       </div>
-      {!onFinish && (
-        <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
-          <Icon name="check" size={16} />
-          Credentials stay protected by your operating system.
-        </p>
-      )}
     </Card>
   );
 }

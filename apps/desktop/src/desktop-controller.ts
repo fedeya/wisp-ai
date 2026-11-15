@@ -71,6 +71,18 @@ export const desktopConnected = ({ status }: DesktopState) =>
 export const desktopActive = ({ status }: DesktopState) => (status?.activeTurns ?? 0) > 0;
 export const desktopLocked = (state: DesktopState) => !!state.busy || desktopActive(state);
 
+export function desktopReadiness(
+  state: DesktopState,
+): 'loading' | 'update' | 'starting' | 'stopped' | 'account' | 'waiting' | 'ready' {
+  const { loading, info, status, starting, connectionError } = state;
+  if (loading) return 'loading';
+  if (info?.addonOutdated || info?.addonUpdateNotice === 'failed') return 'update';
+  const serviceStarting = starting && !connectionError;
+  if (!status?.ready) return serviceStarting || status ? 'starting' : 'stopped';
+  if (!desktopConnected(state)) return 'account';
+  return status.gameConnected ? 'ready' : 'waiting';
+}
+
 function createDesktopSession() {
   const getState = (): DesktopState => desktopStore.getState();
   let disposed = false;
@@ -131,14 +143,14 @@ function createDesktopSession() {
   async function work(
     label: string,
     action: () => Promise<unknown>,
-    success?: string,
+    success?: string | null,
     target = '',
   ) {
     if (disposed || getState().busy) return false;
     update({ busy: label, busyTarget: target, failed: false, feedback: '' });
     try {
       await action();
-      update({ feedback: success || getState().feedback || 'Done.' });
+      if (success !== null) update({ feedback: success || getState().feedback || 'Done.' });
       return true;
     } catch (error) {
       update({ failed: true, feedback: String(error).replace(/^Error: /, '') });

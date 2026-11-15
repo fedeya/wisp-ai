@@ -9,7 +9,7 @@ import { useDesktop, useDesktopActions } from '../../use-desktop';
 
 const defaultValues: { account: string | null } = { account: null };
 
-export default function ChatGptConnection({ firstRun = false }: { firstRun?: boolean }) {
+export default function ChatGptConnection() {
   const app = useDesktop((state) => ({
     status: state.status,
     busy: state.busy,
@@ -42,37 +42,24 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
   const authorizationPending = auth?.status === 'authorizing';
 
   return (
-    <Card kind="provider" className={firstRun ? 'p-5' : undefined}>
-      <div
-        className={`provider-heading flex ${firstRun ? 'flex-wrap items-start gap-3' : 'items-center gap-[15px] max-xl:flex-wrap'}`}
-      >
-        {!firstRun && (
-          <div className="provider-symbol border border-solid border-[#36534d] [background:#243e3a] text-accent rounded-[11px] w-[47px] h-[47px] flex items-center justify-center shrink-0">
-            <Icon name="spark" size={25} />
-          </div>
-        )}
+    <Card kind="provider">
+      <div className="provider-heading flex items-center gap-[15px] max-xl:flex-wrap">
         <div>
-          <h2>ChatGPT</h2>
+          <h2>ChatGPT subscription</h2>
           <p className="text-muted text-[13px]">
             Connect with your subscription. No API key needed.
           </p>
         </div>
-        {(!firstRun || chatgptConnected || authorizationPending) && (
-          <Badge positive={chatgptConnected} className={firstRun ? undefined : 'ml-auto'}>
-            {chatgptConnected
-              ? 'Connected'
-              : authorizationPending
-                ? 'Waiting for browser'
-                : 'Not connected'}
-          </Badge>
-        )}
+        <Badge positive={chatgptConnected} className="ml-auto">
+          {chatgptConnected
+            ? 'Connected'
+            : authorizationPending
+              ? 'Waiting for browser'
+              : 'Not connected'}
+        </Badge>
       </div>
       {auth?.account && (
-        <p
-          className={`account-name text-[14px]! text-[#d1e3dd]! ${firstRun ? 'mt-2' : 'mt-[24px]'}`}
-        >
-          {auth.account}
-        </p>
+        <p className="account-name mt-[24px] text-[14px]! text-[#d1e3dd]!">{auth.account}</p>
       )}
       {auth?.message && <p className="muted text-muted text-[13px]">{auth.message}</p>}
       {!app.status && (
@@ -83,9 +70,7 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
           </Button>
         </div>
       )}
-      <div
-        className={`actions flex flex-wrap items-center gap-[10px] ${firstRun ? 'mt-4' : 'mt-[22px]'}`}
-      >
+      <div className="actions mt-[22px] flex flex-wrap items-center gap-[10px]">
         <ActionProgress label={app.busyTarget === '' ? app.busy : ''} />
         <Button
           intent={chatgptConnected ? 'default' : 'primary'}
@@ -99,7 +84,7 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
               : 'Continue with ChatGPT'}
           <Icon name="arrow" size={17} />
         </Button>
-        {!firstRun && (
+        {!!auth?.profiles.length && (
           <Button onClick={() => signIn(undefined, true)} disabled={locked || !app.status}>
             Add account
           </Button>
@@ -134,7 +119,7 @@ export default function ChatGptConnection({ firstRun = false }: { firstRun?: boo
           </Button>
         )}
       </div>
-      {auth && auth.profiles.length > (firstRun ? 1 : 0) && (
+      {auth && (auth.profiles.length > 1 || (!activeAccount && auth.profiles.length === 1)) && (
         <div className="field-section border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-[26px] pt-[22px]">
           <label className="text-[12px] font-medium text-[#bdcccf]" htmlFor="accounts">
             Saved accounts

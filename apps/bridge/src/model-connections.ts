@@ -4,13 +4,14 @@ import {
   connectionConfig,
   connectionSetup,
   connectionDiscovery,
+  discoveredConnectionModel,
   connectionModelSlug,
   parseConnectionModel,
   providerDefinitions,
   reasoningEffort,
   type ReasoningEffort,
   type ConnectionConfig,
-  type ConnectionModel,
+  type DiscoveredConnectionModel,
 } from '@wisp/protocol/providers';
 import { createProviderModel } from '@wisp/agent/providers';
 import { modelReasoningEfforts } from '@wisp/agent/reasoning';
@@ -228,7 +229,7 @@ export class ModelConnections implements ModelCatalog {
     }
     throw Error(safeErrorMessage(message));
   }
-  async discover(raw: unknown): Promise<{ models: ConnectionModel[] }> {
+  async discover(raw: unknown): Promise<{ models: DiscoveredConnectionModel[] }> {
     const input = connectionDiscovery.parse(raw);
     const secret = await this.credential(input);
     const baseURL = this.baseURL(input);
@@ -250,9 +251,16 @@ export class ModelConnections implements ModelCatalog {
       data?: Record<string, unknown>[];
       models?: Record<string, unknown>[];
     };
-    const models = (body.data || body.models || []).flatMap((m): ConnectionModel[] => {
+    const models = new Map<string, DiscoveredConnectionModel>();
+    const rows = Array.isArray(body?.data)
+      ? body.data
+      : Array.isArray(body?.models)
+        ? body.models
+        : [];
+    for (const m of rows) {
+      if (!m || typeof m !== 'object') continue;
       if (input.provider === 'gateway' && typeof m.type === 'string' && m.type !== 'language') {
-        return [];
+        continue;
       }
       const id =
         typeof m.id === 'string'
@@ -261,14 +269,14 @@ export class ModelConnections implements ModelCatalog {
             ? m.name.replace(/^models\//, '')
             : undefined;
       if (!id) {
-        return [];
+        continue;
       }
       if (
         input.provider === 'google' &&
         Array.isArray(m.supportedGenerationMethods) &&
         !m.supportedGenerationMethods.includes('generateContent')
       ) {
-        return [];
+        continue;
       }
       const context =
         m.context_window ??
@@ -285,26 +293,30 @@ export class ModelConnections implements ModelCatalog {
               )
               .filter((value): value is ReasoningEffort => reasoningEffort.safeParse(value).success)
           : undefined;
-      return [
-        {
-          id,
-          name:
-            typeof m.display_name === 'string'
-              ? m.display_name
-              : typeof m.displayName === 'string'
-                ? m.displayName
-                : id,
-          contextWindow: typeof context === 'number' && context > 0 ? context : undefined,
-          reasoningEfforts: metadataEfforts?.length
-            ? metadataEfforts
-            : modelReasoningEfforts(input.provider, id),
-        },
-      ];
-    });
-    if (!models.length) {
+      const supportsTools = Array.isArray(m.supported_parameters)
+        ? m.supported_parameters.includes('tools')
+        : input.provider === 'gateway' && Array.isArray(m.tags) && m.tags.includes('tool-use')
+          ? true
+          : undefined;
+      const model = discoveredConnectionModel.safeParse({
+        id,
+        name:
+          [m.display_name, m.displayName, m.name].find(
+            (name): name is string =>
+              typeof name === 'string' && name.trim().length > 0 && name.trim().length <= 200,
+          ) ?? id,
+        contextWindow: discoveredConnectionModel.shape.contextWindow.safeParse(context).data,
+        reasoningEfforts: metadataEfforts?.length
+          ? metadataEfforts
+          : modelReasoningEfforts(input.provider, id),
+        supportsTools,
+      });
+      if (model.success) models.set(model.data.id, model.data);
+    }
+    if (!models.size) {
       throw Error('This provider did not return a model list. Enter model IDs manually.');
     }
-    return { models };
+    return { models: [...models.values()] };
   }
   async test(raw: unknown) {
     const input = connectionSetup.parse(raw);

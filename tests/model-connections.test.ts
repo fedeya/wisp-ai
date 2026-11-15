@@ -5,6 +5,7 @@ import os from 'node:os';
 import { ModelConnections } from '@wisp/bridge/model-connections';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { providerDefinitions, connectionModelSlug } from '@wisp/protocol/providers';
+import { desktopResponses } from '@wisp/protocol/desktop';
 import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
 
 const directories: string[] = [];
@@ -111,6 +112,51 @@ test('gateway discovery preserves exact advertised effort values and filters unk
   await manager.save({ provider: 'gateway', name: 'Gateway', apiKey: 'key', models });
   expect((await manager.models())[0]?.efforts).toEqual(['provider-default', 'none', 'low', 'high']);
 });
+
+test.each(['openrouter', 'gateway', 'compatible'] as const)(
+  '%s discovery preserves catalog capability metadata through the desktop response',
+  async (provider) => {
+    const { manager } = await fixture(async () =>
+      Response.json({
+        data: [
+          {
+            id: 'lab/tools',
+            name: 'Tools',
+            context_length: 32000,
+            supported_parameters: ['tools'],
+          },
+          { id: 'lab/text', supported_parameters: ['temperature'] },
+          { id: 'lab/unknown', context_length: 0 },
+          { id: 'lab/tagged', tags: ['tool-use'] },
+          { id: 'lab/invalid id' },
+        ],
+      }),
+    );
+    const found = await manager.discover({
+      provider,
+      name: 'Models',
+      apiKey: 'key',
+      baseURL: provider === 'compatible' ? 'http://localhost:1234/v1' : undefined,
+    });
+    const { models } = desktopResponses['/connections/discover'].parse(found);
+    expect(models.map(({ id, supportsTools }) => [id, supportsTools])).toEqual([
+      ['lab/tools', true],
+      ['lab/text', false],
+      ['lab/unknown', undefined],
+      ['lab/tagged', provider === 'gateway' ? true : undefined],
+    ]);
+    expect(models[0]).toMatchObject({ name: 'Tools', contextWindow: 32000 });
+    expect(models[2]?.contextWindow).toBeUndefined();
+    const { id } = await manager.save({
+      provider,
+      name: 'Models',
+      apiKey: 'key',
+      models: [models[0]],
+      baseURL: provider === 'compatible' ? 'http://localhost:1234/v1' : undefined,
+    });
+    expect(manager.get(id).models[0]).not.toHaveProperty('supportsTools');
+  },
+);
 
 test('validates endpoints, credentials, unique model IDs and context capacity', async () => {
   const { manager } = await fixture();

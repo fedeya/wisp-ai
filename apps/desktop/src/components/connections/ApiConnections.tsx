@@ -1,4 +1,4 @@
-import { providerDefinitions, type ConnectionView } from '@wisp/protocol/providers';
+import type { ConnectionView, ProviderId } from '@wisp/protocol/providers';
 import { useState } from 'react';
 import { request } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
@@ -7,36 +7,49 @@ import ConnectionEditor from './ConnectionEditor';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 
-export default function ApiConnections({ firstRun = false }: { firstRun?: boolean }) {
+export default function ApiConnections({ provider }: { provider: ProviderId }) {
   const app = useDesktop((state) => ({
     busy: state.busy,
     busyTarget: state.busyTarget,
     locked: desktopLocked(state),
-    online: !!state.status,
+    online: !!state.status?.ready,
     connections: state.status?.connections,
   }));
   const { loadModels, setConfirmation, work } = useDesktopActions();
   const [editing, setEditing] = useState<{ connection?: ConnectionView } | null>(null);
+  const [dismissedInitialEditor, dismissInitialEditor] = useState(false);
+  const connections =
+    app.connections?.filter((connection) => provider === connection.provider) ?? [];
+  const activeEditor: { connection?: ConnectionView } | null =
+    editing ??
+    (provider !== 'openai' && app.online && !connections.length && !dismissedInitialEditor
+      ? {}
+      : null);
+
+  function closeEditor() {
+    dismissInitialEditor(true);
+    setEditing(null);
+  }
 
   return (
-    <Card
-      kind="provider"
-      className={firstRun ? (editing ? 'col-span-full p-5' : 'p-5') : undefined}
-    >
-      <div
-        className={`section-title flex gap-4 ${firstRun ? 'flex-col items-start' : 'items-center justify-between'}`}
-      >
+    <Card kind="provider" className="p-5">
+      <div className="section-title flex items-center justify-between gap-4">
         <div>
-          <h2>{firstRun ? 'API provider' : 'API connections'}</h2>
+          <h2>{provider === 'openai' ? 'OpenAI API' : 'API connections'}</h2>
           <p className="text-muted text-[13px]">
-            Use your own API key. Usage is billed by the selected provider.
+            {provider === 'compatible'
+              ? 'Use a local or custom OpenAI-compatible endpoint.'
+              : 'Use your own API key. Usage is billed by the provider.'}
           </p>
         </div>
-        <Button disabled={app.locked || !app.online || !!editing} onClick={() => setEditing({})}>
-          {firstRun ? 'Add API provider' : 'Add connection'}
-        </Button>
+        {!activeEditor && (
+          <Button disabled={app.locked || !app.online} onClick={() => setEditing({})}>
+            Add API connection
+          </Button>
+        )}
       </div>
-      {app.connections?.map((connection) => (
+      {!app.online && <p className="mt-3 text-muted">Start Wisp to manage API connections.</p>}
+      {connections.map((connection) => (
         <div
           key={connection.id}
           className="api-connection-row gap-[16px] px-0 py-[16px] flex items-center justify-between border-b-[1px] [border-bottom-style:solid] border-b-[var(--border)] max-sm:items-start max-sm:flex-col"
@@ -44,7 +57,6 @@ export default function ApiConnections({ firstRun = false }: { firstRun?: boolea
           <div>
             <strong>{connection.name}</strong>
             <p className="muted text-muted text-[13px]">
-              {providerDefinitions.find((item) => item.id === connection.provider)?.name} ·{' '}
               {connection.models.length} model{connection.models.length === 1 ? '' : 's'} ·{' '}
               {connection.hasKey
                 ? 'Key saved'
@@ -54,13 +66,16 @@ export default function ApiConnections({ firstRun = false }: { firstRun?: boolea
             </p>
           </div>
           <div className="actions gap-[10px] mt-[22px] flex flex-wrap items-center">
-            <Button disabled={app.locked || !!editing} onClick={() => setEditing({ connection })}>
+            <Button
+              disabled={app.locked || !!activeEditor}
+              onClick={() => setEditing({ connection })}
+            >
               Edit
             </Button>
             <Button
               intent="quiet"
               destructive
-              disabled={app.locked || !!editing}
+              disabled={app.locked || !!activeEditor}
               onClick={() =>
                 setConfirmation({
                   label: `Remove “${connection.name}”? Chats and memory stay on this computer. Chats using this connection will need another model.`,
@@ -83,15 +98,12 @@ export default function ApiConnections({ firstRun = false }: { firstRun?: boolea
         </div>
       ))}
       <ActionProgress label={app.busyTarget === 'connections' ? app.busy : ''} />
-      {editing && (
-        <ConnectionEditor connection={editing.connection} close={() => setEditing(null)} />
-      )}
-      {!firstRun && (
-        <p className="privacy-note gap-[7px] text-[11px]! flex items-center mt-[25px] text-[#789c91]!">
-          API keys are protected by your operating system. Configure Exa under Web search to use web
-          search with API models. Game tools and other enabled databases work independently of the
-          search service.
-        </p>
+      {activeEditor && (
+        <ConnectionEditor
+          connection={activeEditor.connection}
+          provider={provider}
+          close={closeEditor}
+        />
       )}
     </Card>
   );

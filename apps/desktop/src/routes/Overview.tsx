@@ -5,7 +5,12 @@ import GameInstallation from '../components/settings/GameInstallation';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import { Button, Card, Input } from '../components/ui/Controls';
 import Icon from '../components/ui/Icon';
-import { desktopActive, desktopConnected, desktopLocked } from '../desktop-controller';
+import {
+  desktopActive,
+  desktopConnected,
+  desktopLocked,
+  desktopReadiness,
+} from '../desktop-controller';
 import { useDesktop, useDesktopActions } from '../use-desktop';
 
 const states = {
@@ -41,9 +46,9 @@ const states = {
 
 function useOverview() {
   return useDesktop((state) => ({
+    readiness: desktopReadiness(state),
     loading: state.loading,
     info: state.info,
-    addonNeedsUpdate: !!state.info?.addonOutdated || state.info?.addonUpdateNotice === 'failed',
     status: state.status,
     starting: state.starting && !state.connectionError,
     connectionError: state.connectionError,
@@ -57,20 +62,12 @@ function useOverview() {
   }));
 }
 
-function overviewState(app: ReturnType<typeof useOverview>): keyof typeof states {
-  if (app.loading) return 'loading';
-  if (app.addonNeedsUpdate) return 'update';
-  if (!app.status?.ready) return app.starting || app.status ? 'starting' : 'stopped';
-  if (!app.connected) return 'account';
-  return app.status.gameConnected ? 'ready' : 'waiting';
-}
-
 export default function Overview() {
   const app = useOverview();
   const { install, start, stop, dismissAddonReload } = useDesktopActions();
   const navigate = useNavigate();
   const [editingInstallation, setEditingInstallation] = useState(false);
-  const state = overviewState(app);
+  const state = app.readiness;
   const { title, description } = states[state];
   const showCommand = state === 'ready' || state === 'waiting';
   const working = app.busy || (state === 'starting' ? 'Starting Wisp' : '');
@@ -157,8 +154,8 @@ export default function Overview() {
             aria-label="Connection status"
             className="grid grid-cols-3 gap-y-3 divide-x divide-border p-4"
           >
-            <ConnectionStatus label="Addon" online={!app.addonNeedsUpdate}>
-              {app.addonNeedsUpdate ? 'Update needed' : 'Installed'}
+            <ConnectionStatus label="Addon" online={state !== 'update'}>
+              {state === 'update' ? 'Update needed' : 'Installed'}
             </ConnectionStatus>
             <ConnectionStatus label="World of Warcraft" online={!!app.status?.gameConnected}>
               {app.status?.gameConnected
