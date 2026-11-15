@@ -31,7 +31,9 @@ function DesktopShell() {
     onboarding: state.onboarding,
   }));
   const navigate = useNavigate();
-  const page = (useMatches().at(-1)?.handle as DesktopPage | undefined) ?? desktopPages[0];
+  const match = useMatches().at(-1);
+  const page = (match?.handle as DesktopPage | undefined) ?? desktopPages[0];
+  const fixedHeight = match?.id === integrationsPage.name;
   const { busy, clearFeedback, failed, feedback, loading } = app;
 
   useEffect(() => {
@@ -58,9 +60,11 @@ function DesktopShell() {
       ) : app.onboarding ? (
         <Onboarding />
       ) : (
-        <div className="flex min-h-screen">
+        <div className={fixedHeight ? 'flex h-screen overflow-hidden' : 'flex min-h-screen'}>
           <DesktopSidebar />
-          <main className="min-w-0 max-w-[1450px] flex-1 px-[32px] pt-[34px] pb-[80px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:pt-[26px]">
+          <main
+            className={`min-w-0 max-w-[1450px] flex-1 px-[32px] pt-[34px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:pt-[26px] ${fixedHeight ? 'flex min-h-0 flex-col' : 'pb-[80px]'}`}
+          >
             {page.name !== 'Overview' &&
               page.name !== 'Connections' &&
               page.name !== 'Integrations' && (

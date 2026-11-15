@@ -143,6 +143,7 @@ export default function Integrations() {
   const [params, setParams] = useSearchParams();
   const { search } = useLocation();
   const title = useRef<HTMLHeadingElement>(null);
+  const results = useRef<HTMLDivElement>(null);
   useEffect(() => {
     title.current?.focus();
   }, []);
@@ -161,6 +162,10 @@ export default function Integrations() {
   );
   const showAdd = !normalizedQuery && (selected === 'all' || selected === 'mcp');
 
+  useEffect(() => {
+    if (results.current) results.current.scrollTop = 0;
+  }, [selected, normalizedQuery]);
+
   function updateFilter(key: 'q' | 'category', value: string) {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -169,8 +174,8 @@ export default function Integrations() {
   }
 
   return (
-    <>
-      <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="mb-5 flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 ref={title} tabIndex={-1} className="m-0 outline-none">
           Integrations
         </h1>
@@ -191,13 +196,15 @@ export default function Integrations() {
         )}
       </header>
       {loading || !status ? (
-        <DataState />
+        <div className="min-h-0 overflow-y-auto">
+          <DataState />
+        </div>
       ) : (
         <>
           <div
             role="group"
             aria-label="Filter by category"
-            className="mb-4 flex flex-wrap items-center gap-1"
+            className="mb-4 flex shrink-0 flex-wrap items-center gap-1"
           >
             {[{ id: 'all', label: 'All' }, ...visibleCategories].map(({ id, label }) => {
               const pressed = selected === id;
@@ -217,55 +224,63 @@ export default function Integrations() {
               );
             })}
           </div>
-          <div className="grid gap-[15px]">
-            {visibleCategories.map(({ id, label }) => {
-              const group = matches.filter((row) => row.category === id);
-              if (!group.length) return null;
-              const heading = 'integration-category-' + id;
-              return (
-                <section key={id} aria-labelledby={heading}>
-                  <h2
-                    id={heading}
-                    className={
-                      selected === 'all'
-                        ? 'mb-2.5 ml-px text-[13px] font-semibold text-muted'
-                        : 'sr-only'
-                    }
-                  >
-                    {label}
-                  </h2>
-                  <Card className="mb-0 rounded-[9px] p-0">
-                    <ul className="m-0 list-none divide-y [--tw-divide-style:solid] divide-border p-0">
-                      {group.map((row) => (
-                        <IntegrationRow key={row.id} row={row} search={search} />
-                      ))}
-                    </ul>
-                  </Card>
-                </section>
-              );
-            })}
-            {matches.length === 0 && !showAdd && (
-              <p role="status" className="text-[13px] text-muted">
-                No integrations match your search.
-              </p>
-            )}
-            {showAdd && (
-              <Card className="mb-0 flex flex-wrap items-center gap-3 rounded-[9px] px-3 py-2.5">
-                <IntegrationIcon icon="server" />
-                <div className="min-w-[120px] flex-1">
-                  <h2 className="m-0 text-[14px]">Add a server</h2>
-                  <p className="m-0 text-[12px] text-muted">
-                    {status.mcps.length
-                      ? 'Connect another MCP server.'
-                      : 'Connect an MCP server to give Wisp more tools.'}
-                  </p>
-                </div>
-                <McpDialogTrigger />
-              </Card>
-            )}
+          <div
+            ref={results}
+            role="region"
+            aria-label="Integration results"
+            tabIndex={0}
+            className="catalog-scroll -mx-1 min-h-0 flex-1 overflow-y-auto overscroll-contain px-1 pb-5 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+          >
+            <div className="grid gap-[15px]">
+              {visibleCategories.map(({ id, label }) => {
+                const group = matches.filter((row) => row.category === id);
+                if (!group.length) return null;
+                const heading = 'integration-category-' + id;
+                return (
+                  <section key={id} aria-labelledby={heading}>
+                    <h2
+                      id={heading}
+                      className={
+                        selected === 'all'
+                          ? 'mb-2.5 ml-px text-[13px] font-semibold text-muted'
+                          : 'sr-only'
+                      }
+                    >
+                      {label}
+                    </h2>
+                    <Card className="mb-0 rounded-[9px] p-0">
+                      <ul className="m-0 list-none divide-y [--tw-divide-style:solid] divide-border p-0">
+                        {group.map((row) => (
+                          <IntegrationRow key={row.id} row={row} search={search} />
+                        ))}
+                      </ul>
+                    </Card>
+                  </section>
+                );
+              })}
+              {matches.length === 0 && !showAdd && (
+                <p role="status" className="text-[13px] text-muted">
+                  No integrations match your search.
+                </p>
+              )}
+              {showAdd && (
+                <Card className="mb-0 flex flex-wrap items-center gap-3 rounded-[9px] px-3 py-2.5">
+                  <IntegrationIcon icon="server" />
+                  <div className="min-w-[120px] flex-1">
+                    <h2 className="m-0 text-[14px]">Add a server</h2>
+                    <p className="m-0 text-[12px] text-muted">
+                      {status.mcps.length
+                        ? 'Connect another MCP server.'
+                        : 'Connect an MCP server to give Wisp more tools.'}
+                    </p>
+                  </div>
+                  <McpDialogTrigger />
+                </Card>
+              )}
+            </div>
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }
