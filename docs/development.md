@@ -185,6 +185,13 @@ directory and creates the installation UUID and default-on preference. It report
 before WoW is configured. Installing or updating the addon from Desktop reports
 `addon_install_finished` with a completion outcome and, on failure, an allowlisted
 `error_code`. Installer output and local paths stay on the device.
+Desktop also reports `onboarding_opened` with the initial `step` and
+`onboarding_step_viewed` the first time each setup step is shown in that
+opening. Step values are `addon` and `ai_provider`, including when the AI
+provider step is waiting for the bridge. `onboarding_finished` reports the step
+and `outcome` (`completed` when the default model is confirmed, or `skipped`
+when setup is deferred). Closing the app leaves onboarding pending and can lead
+to another opening. Count distinct installation IDs to measure reach.
 The native Settings command persists changes atomically.
 The public PostHog ingestion token and US endpoint match the website project.
 
@@ -239,6 +246,7 @@ Suggested PostHog insights for the shared project:
 | Time until the first reply text   | `chat_completed`, percentiles of `first_text_ms` by `mode`                                   |
 | Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version`                      |
 | Desktop addon install results     | `addon_install_finished`, event count by `outcome` and `error_code`                          |
+| Desktop onboarding                | `onboarding_opened`, `onboarding_step_viewed`, `onboarding_finished`, unique installations   |
 | Addon handshake reliability       | `game_connection_finished`, event count by `outcome` / `error_code` and median `duration_ms` |
 | Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`                          |
 

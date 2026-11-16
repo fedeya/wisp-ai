@@ -27,6 +27,7 @@ fn filter_event(file: &Path, mut event: Event) -> Option<Event> {
                 "os",
                 "arch",
                 "section",
+                "step",
                 "outcome",
                 "error_code",
                 "$process_person_profile",
@@ -76,6 +77,39 @@ fn addon_install_properties(error: Option<AddonInstallError>) -> Value {
         AddonInstallError::InstallerFailed => "installer_failed",
     };
     json!({ "outcome": "failed", "error_code": code })
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingStep {
+    Addon,
+    AiProvider,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OnboardingEvent {
+    Opened { step: OnboardingStep },
+    StepViewed { step: OnboardingStep },
+    Completed,
+    Skipped { step: OnboardingStep },
+}
+
+impl OnboardingEvent {
+    fn payload(self) -> (&'static str, Value) {
+        match self {
+            Self::Opened { step } => ("onboarding_opened", json!({ "step": step })),
+            Self::StepViewed { step } => ("onboarding_step_viewed", json!({ "step": step })),
+            Self::Completed => (
+                "onboarding_finished",
+                json!({ "step": OnboardingStep::AiProvider, "outcome": "completed" }),
+            ),
+            Self::Skipped { step } => (
+                "onboarding_finished",
+                json!({ "step": step, "outcome": "skipped" }),
+            ),
+        }
+    }
 }
 
 pub struct Telemetry {
@@ -273,6 +307,16 @@ pub async fn telemetry_screen(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn telemetry_onboarding(
+    telemetry: tauri::State<'_, Telemetry>,
+    event: OnboardingEvent,
+) -> Result<(), String> {
+    let (name, properties) = event.payload();
+    telemetry.send(name, properties).await;
+    Ok(())
+}
+
 pub fn start(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         app.state::<Telemetry>().opened().await;
@@ -353,6 +397,46 @@ mod tests {
         ] {
             let mut event = Event::new("addon_install_finished", "random-installation");
             let properties = addon_install_properties(error);
+            for (key, value) in properties.as_object().unwrap() {
+                event.insert_prop(key, value).unwrap();
+            }
+            let filtered = filter_event(&telemetry.file, event).unwrap();
+            assert_eq!(json!(filtered.properties()), expected);
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn onboarding_payload_keeps_step_and_outcome_through_sdk_filter() {
+        let (directory, telemetry) = fixture();
+        assert!(telemetry.enabled());
+        for (input, name, expected) in [
+            (
+                json!({ "kind": "opened", "step": "addon" }),
+                "onboarding_opened",
+                json!({ "step": "addon" }),
+            ),
+            (
+                json!({ "kind": "step_viewed", "step": "ai_provider" }),
+                "onboarding_step_viewed",
+                json!({ "step": "ai_provider" }),
+            ),
+            (
+                json!({ "kind": "completed" }),
+                "onboarding_finished",
+                json!({ "step": "ai_provider", "outcome": "completed" }),
+            ),
+            (
+                json!({ "kind": "skipped", "step": "addon" }),
+                "onboarding_finished",
+                json!({ "step": "addon", "outcome": "skipped" }),
+            ),
+        ] {
+            let (event_name, properties) = serde_json::from_value::<OnboardingEvent>(input)
+                .unwrap()
+                .payload();
+            assert_eq!(event_name, name);
+            let mut event = Event::new(name, "random-installation");
             for (key, value) in properties.as_object().unwrap() {
                 event.insert_prop(key, value).unwrap();
             }

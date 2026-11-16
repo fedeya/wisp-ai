@@ -1,6 +1,7 @@
 import type { ProviderId } from '@wisp/protocol/providers';
 import { useEffect, useRef, useState } from 'react';
 import logo from '../../../../../assets/wisp.png';
+import { desktop } from '../../api';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import DefaultModelSettings from '../connections/DefaultModelSettings';
 import ProviderPicker, { BrowseProvidersTrigger } from '../connections/ProviderPicker';
@@ -15,6 +16,15 @@ import { Button, Card } from '../ui/Controls';
 import Icon from '../ui/Icon';
 import OnboardingProvider from './OnboardingProvider';
 
+type OnboardingStep = 'addon' | 'ai_provider';
+type OnboardingEvent =
+  | { kind: 'opened' | 'step_viewed' | 'skipped'; step: OnboardingStep }
+  | { kind: 'completed' };
+
+function trackOnboarding(event: OnboardingEvent) {
+  void desktop('telemetry_onboarding', { event }).catch(() => {});
+}
+
 export default function Onboarding() {
   const app = useDesktop((state) => ({
     configured: !!state.info?.configured,
@@ -26,10 +36,29 @@ export default function Onboarding() {
   const { finishOnboarding } = useDesktopActions();
   const [provider, setProvider] = useState<ProviderId>();
   const title = useRef<HTMLHeadingElement>(null);
+  const viewedSteps = useRef(new Set<OnboardingStep>());
+  const step = app.configured ? 'ai_provider' : 'addon';
+
+  useEffect(() => {
+    if (viewedSteps.current.has(step)) return;
+    if (viewedSteps.current.size === 0) trackOnboarding({ kind: 'opened', step });
+    viewedSteps.current.add(step);
+    trackOnboarding({ kind: 'step_viewed', step });
+  }, [step]);
 
   useEffect(() => {
     title.current?.focus();
   }, [app.configured, provider]);
+
+  function complete() {
+    trackOnboarding({ kind: 'completed' });
+    finishOnboarding();
+  }
+
+  function skip() {
+    trackOnboarding({ kind: 'skipped', step });
+    finishOnboarding();
+  }
 
   return (
     <main
@@ -41,7 +70,7 @@ export default function Onboarding() {
             <img className="h-10 w-8 object-contain" src={logo} alt="" />
             <strong className="text-[18px]">Wisp</strong>
           </div>
-          <Button intent="quiet" size="text" onClick={finishOnboarding} disabled={!!app.busy}>
+          <Button intent="quiet" size="text" onClick={skip} disabled={!!app.busy}>
             {app.configured ? 'Connect later' : 'Set up WoW later'}
           </Button>
         </header>
@@ -70,7 +99,7 @@ export default function Onboarding() {
                 key={provider}
                 provider={provider}
                 onBack={() => setProvider(undefined)}
-                onFinish={finishOnboarding}
+                onFinish={complete}
               />
             ) : (
               <ProviderPicker onSelect={setProvider}>
@@ -108,7 +137,7 @@ export default function Onboarding() {
                   </ul>
                   <BrowseProvidersTrigger />
                 </div>
-                <DefaultModelSettings onFinish={finishOnboarding} />
+                <DefaultModelSettings onFinish={complete} />
               </ProviderPicker>
             )}
           </>

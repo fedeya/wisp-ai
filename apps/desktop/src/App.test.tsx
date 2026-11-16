@@ -1246,10 +1246,17 @@ test('starts Wisp automatically and lets you manage providers with WoW setup def
   mockUnconfiguredDetection(Promise.resolve([]));
   status.ready = false;
   status.gameConnected = false;
-  renderApp();
+  renderApp(true);
 
   await fireEvent.click(await screen.findByRole('button', { name: 'Set up WoW later' }));
   await screen.findByRole('heading', { name: 'Set up World of Warcraft' });
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'telemetry_onboarding'),
+  ).toEqual([
+    ['telemetry_onboarding', { event: { kind: 'opened', step: 'addon' } }],
+    ['telemetry_onboarding', { event: { kind: 'step_viewed', step: 'addon' } }],
+    ['telemetry_onboarding', { event: { kind: 'skipped', step: 'addon' } }],
+  ]);
   expect(desktop).toHaveBeenCalledWith('start_bridge');
   await openConnections();
   expect(screen.getByRole('button', { name: 'Add provider' })).toBeTruthy();
@@ -1314,10 +1321,20 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   expect(
     vi.mocked(desktop).mock.calls.filter(([command]) => command === 'start_bridge'),
   ).toHaveLength(1);
+  expect(
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'telemetry_onboarding'),
+  ).toEqual([
+    ['telemetry_onboarding', { event: { kind: 'opened', step: 'addon' } }],
+    ['telemetry_onboarding', { event: { kind: 'step_viewed', step: 'addon' } }],
+    ['telemetry_onboarding', { event: { kind: 'step_viewed', step: 'ai_provider' } }],
+  ]);
 
   cleanup();
   renderApp();
   await fireEvent.click(await screen.findByRole('button', { name: 'ChatGPT' }));
+  expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
+    event: { kind: 'opened', step: 'ai_provider' },
+  });
   await screen.findByRole('heading', { level: 2, name: 'ChatGPT' });
   expect(screen.getByRole('heading', { level: 1, name: 'Connect AI' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'Subscription' })).toBeTruthy();
@@ -1347,6 +1364,9 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   await act(() => desktopStore.getState().actions.refresh());
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   expect(request).toHaveBeenCalledWith('/auth/model', { model: 'sol' });
+  expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
+    event: { kind: 'completed' },
+  });
   expect(screen.getByText('Sol')).toBeTruthy();
   expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeTruthy();
 

@@ -760,6 +760,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             telemetry::telemetry_settings,
             telemetry::telemetry_screen,
+            telemetry::telemetry_onboarding,
             updates::update_channel,
             bridge_request,
             desktop_info,
