@@ -102,11 +102,12 @@ function ns.Chat.DeleteChat(id)
     ns.Transport.Send({ type = "delete", chat = id, nextChat = ns.active })
     ns.UI.Refresh()
 end
-function ns.Chat.Submit()
+-- Passing a prompt sends it without consuming the composer's draft.
+function ns.Chat.Submit(prompt)
     if ns.Transport.needsDesktopSetup or (ns.modelPending and ns.modelPending[ns.active]) then
         return
     end
-    local text = (ns.draft:GetText() or ""):match("^%s*(.-)%s*$")
+    local text = (prompt or ns.draft:GetText() or ""):match("^%s*(.-)%s*$")
     local chat = ns.Chat.Current()
     if text == "" or (chat and chat.status == "working") then
         return
@@ -141,8 +142,10 @@ function ns.Chat.Submit()
         chat.status = "working"
         chat.lastActivityAt = activityTime()
     end
-    ns.draft:SetText("")
-    ns.db.drafts[ns.active] = ""
+    if prompt == nil then
+        ns.draft:SetText("")
+        ns.db.drafts[ns.active] = ""
+    end
     ns.UI.Refresh()
 end
 function ns.Chat.MemoryAction(action, slot, key, text)

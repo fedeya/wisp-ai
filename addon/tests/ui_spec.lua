@@ -111,6 +111,41 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     assert(submitted == 1, "Enter must still submit")
 end)
 
+it("sends the starter prompt from the empty chat while preserving the draft", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    time = os.time
+    ns = helper.namespace({
+        db = { sidebar = true, drafts = {} },
+        connected = true,
+        session = "test",
+        chats = {},
+        pendingChats = {},
+        pendingMessages = {},
+        workStarted = {},
+    })
+    local sent = {}
+    function ns.Transport.Send(packet)
+        sent[#sent + 1] = packet
+    end
+    helper.addon("Chat/State.lua", env)
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
+
+    local starter = UI_TEST.frames.WispAIChatPlaceholder.starter
+    assert(starter:IsShown() and starter:GetText() == "What can you do?")
+    ns.draft:SetText("My next question")
+    starter.scripts.OnClick()
+
+    assert(#sent == 2 and sent[1].type == "new" and sent[2].type == "say")
+    assert(sent[2].chat == ns.active and sent[2].text == "What can you do?")
+    local chat = ns.Chat.Current()
+    assert(chat.status == "working" and chat.messages[1].text == sent[2].text)
+    assert(ns.draft:GetText() == "My next question")
+    assert(not starter:IsShown())
+end)
+
 it(
     "chat placeholder distinguishes connecting, fetching history and an empty conversation",
     function()
@@ -152,9 +187,11 @@ it(
         assert(state.detail:GetText() == "")
         assert(state.mouseEnabled == false)
         assert(not state.setup:IsShown(), "a disconnected bridge should not prompt a download")
+        assert(not state.starter:IsShown())
         ns.Transport.needsDesktopSetup = true
         ns.UI.Refresh()
         assert(state.setup:IsShown() and state.title:GetText() == "Finish Wisp setup")
+        assert(not state.starter:IsShown())
         assert(state.setup:GetText() == "Setup help")
         assert(not state.loading and not state.dots[1]:IsShown())
         state.setup.scripts.OnClick()
@@ -176,13 +213,15 @@ it(
         assert(
             state:IsShown() and state.loading and state.title:GetText() == "Loading conversation"
         )
+        assert(not state.starter:IsShown())
         ns.chats[1].messages = {}
         ns.UI.Refresh()
         assert(state:IsShown() and not state.loading and state.title:GetText() == "Ask Wisp")
+        assert(state.starter:IsShown())
         assert(not state.dots[1]:IsShown())
         ns.chats[1].status = "working"
         ns.UI.Refresh()
-        assert(not state:IsShown(), "thinking has its own transcript row")
+        assert(not state:IsShown() and not state.starter:IsShown(), "thinking has its own row")
         ns.chats[1] = {
             id = "cached",
             title = "Cached",

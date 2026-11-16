@@ -2,6 +2,7 @@ local _, ns = ...
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
+local STARTER_PROMPT = "What can you do?"
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
     "|cffaca189",
@@ -109,6 +110,8 @@ function ns.UI.Activity.Refresh(chat)
     emptyState:SetShown(empty and not working)
     emptyState.loading = not needsSetup and (waiting or loading)
     emptyState.setup:SetShown(needsSetup)
+    emptyState.starter:SetShown(empty and not working and not waiting and not loading)
+    emptyState.starter:SetEnabled(not (ns.modelPending and ns.modelPending[ns.active]))
     if empty and not working then
         local title = "Ask Wisp"
         local detail = "Ask about your character, quests, equipment or where to go next."
@@ -247,6 +250,11 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     end)
     emptyState.setup:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
     emptyState.setup:Hide()
+    emptyState.starter = ns.UI.Widgets.Button(emptyState, STARTER_PROMPT, 148, function()
+        ns.Chat.Submit(STARTER_PROMPT)
+    end)
+    emptyState.starter:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
+    emptyState.starter:Hide()
     emptyState.dots = {}
     for index = 1, 3 do
         local dot = label(emptyState, ".", GOLD)
