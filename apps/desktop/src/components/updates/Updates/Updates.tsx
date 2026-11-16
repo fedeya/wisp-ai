@@ -222,15 +222,36 @@ export default function Updates({
   if (!showSettings) {
     if (!release || dismissed === release.version) return null;
     return (
-      <div
-        className="banner mb-5 flex items-center gap-3 rounded-[9px] border border-solid border-[#355c56] bg-[#1c3330] px-4 py-3 text-xs leading-[1.5] text-[#b7e8db]"
-        role="status"
-      >
-        <span>Wisp {release.version} is available.</span>
-        <Button onClick={openSettings}>View update</Button>
-        <Button intent="quiet" onClick={() => setState({ dismissed: release.version })}>
-          Later
-        </Button>
+      <div className="mb-5 flex max-w-[780px] shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-[10px] border border-solid border-[#36524e] bg-[linear-gradient(105deg,#1e302f,var(--surface)_70%)] px-3.5 py-3">
+        <div className="flex min-w-0 flex-[1_1_230px] items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#294740] text-accent">
+            <Icon name="download" size={18} />
+          </span>
+          <div className="min-w-0" role="status">
+            <p className="m-0 text-[13px] font-semibold leading-snug [overflow-wrap:anywhere]">
+              Wisp {release.version} is available.
+            </p>
+            <p className="m-0 mt-0.5 text-xs leading-snug text-muted">
+              See what’s new before installing.
+            </p>
+          </div>
+        </div>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            intent="quiet"
+            className="min-h-8 px-2.5 py-1 text-xs text-muted"
+            onClick={() => setState({ dismissed: release.version })}
+          >
+            Later
+          </Button>
+          <Button
+            className="min-h-8 gap-1.5 border-[#426960] bg-[#243d38] px-2.5 py-1 text-xs font-semibold text-accent"
+            onClick={openSettings}
+          >
+            View update
+            <Icon name="chevronRight" size={14} />
+          </Button>
+        </div>
       </div>
     );
   }

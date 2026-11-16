@@ -1,10 +1,18 @@
 import { useEffect } from 'react';
-import { createMemoryRouter, Outlet, useMatches, useNavigate } from 'react-router';
+import {
+  createMemoryRouter,
+  Link,
+  Outlet,
+  useLocation,
+  useMatches,
+  useNavigate,
+} from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { desktop, native } from './api';
 import DesktopSidebar from './components/DesktopSidebar';
 import ConfirmationDialog from './components/ui/ConfirmationDialog';
 import FeedbackToast from './components/ui/FeedbackToast';
+import Icon from './components/ui/Icon';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
 import { mountDesktop } from './desktop-controller';
@@ -19,6 +27,8 @@ import ProviderDetails from './routes/ProviderDetails';
 import Onboarding from './components/onboarding/Onboarding';
 import { Spinner } from './components/ui/ActionProgress';
 
+type DesktopRouteHandle = DesktopPage & { detail?: true };
+
 function DesktopShell() {
   const app = useDesktop((state) => ({
     info: state.info,
@@ -31,8 +41,10 @@ function DesktopShell() {
     onboarding: state.onboarding,
   }));
   const navigate = useNavigate();
+  const { search } = useLocation();
   const match = useMatches().at(-1);
-  const page = (match?.handle as DesktopPage | undefined) ?? desktopPages[0];
+  const page: DesktopRouteHandle =
+    (match?.handle as DesktopRouteHandle | undefined) ?? desktopPages[0];
   const fixedHeight = match?.id === integrationsPage.name;
   const { busy, clearFeedback, failed, feedback, loading } = app;
 
@@ -63,8 +75,23 @@ function DesktopShell() {
         <div className={fixedHeight ? 'flex h-screen overflow-hidden' : 'flex min-h-screen'}>
           <DesktopSidebar />
           <main
-            className={`min-w-0 max-w-[1450px] flex-1 px-[32px] pt-[34px] max-lg:px-[24px] max-lg:pt-[27px] max-md:px-[22px] max-md:pt-[26px] ${fixedHeight ? 'flex min-h-0 flex-col' : 'pb-[80px]'}`}
+            className={`min-w-0 flex-1 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:22px] ${page.detail ? '' : 'max-w-[1450px] pt-[34px] max-lg:pt-[27px] max-md:pt-[26px]'} ${fixedHeight ? 'flex min-h-0 flex-col' : 'pb-[80px]'}`}
           >
+            {page.detail && (
+              <nav
+                aria-label="Detail navigation"
+                className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-[#191f24] px-(--page-gutter)"
+              >
+                <Link
+                  to={{ pathname: page.path, search }}
+                  aria-label={`Back to ${page.title}`}
+                  className="-ml-2 inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted no-underline transition-colors hover:bg-surface hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
+                  <Icon name="back" size={16} />
+                  {page.title}
+                </Link>
+              </nav>
+            )}
             {page.name !== 'Overview' &&
               page.name !== 'Connections' &&
               page.name !== 'Integrations' && (
@@ -108,11 +135,15 @@ export function createDesktopRouter() {
           Component: page.Component,
           handle: page,
         })),
-        { path: '/connections/:provider', Component: ProviderDetails, handle: connectionsPage },
+        {
+          path: '/connections/:provider',
+          Component: ProviderDetails,
+          handle: { ...connectionsPage, detail: true } satisfies DesktopRouteHandle,
+        },
         {
           path: '/integrations/:integrationId',
           Component: IntegrationDetails,
-          handle: integrationsPage,
+          handle: { ...integrationsPage, detail: true } satisfies DesktopRouteHandle,
         },
       ],
     },

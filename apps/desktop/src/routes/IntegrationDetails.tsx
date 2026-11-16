@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Link, Navigate, useLocation, useParams } from 'react-router';
+import { Navigate, useLocation, useParams } from 'react-router';
 import {
   capabilityStatus,
   IntegrationIcon,
@@ -14,7 +14,6 @@ import WebSearchSettings from '../components/integrations/WebSearchSettings';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import { Button, Card } from '../components/ui/Controls';
 import DataState from '../components/ui/DataState';
-import Icon from '../components/ui/Icon';
 import { desktopLocked } from '../desktop-controller';
 import { useDesktop, useDesktopActions } from '../use-desktop';
 
@@ -54,13 +53,6 @@ export default function IntegrationDetails() {
 
   return (
     <div className="max-w-[780px]">
-      <Link
-        className="mb-4 inline-flex items-center gap-2 text-[13px] text-accent no-underline hover:underline"
-        to={{ pathname: '/integrations', search }}
-      >
-        <Icon name="back" size={16} />
-        Back to Integrations
-      </Link>
       <header className="mb-5 flex items-center gap-3">
         <IntegrationIcon id={id} icon={webSearch ? 'globe' : server ? 'server' : icon} />
         <div className="min-w-0">
