@@ -3,13 +3,13 @@ local widgets = ns.UI.Widgets
 local COLORS, FONTS = widgets.COLORS, widgets.FONTS
 local label, setText, button = widgets.Label, widgets.SetText, widgets.Button
 local TEXT, MUTED, ACCENT = widgets.TEXT, widgets.MUTED, widgets.ACCENT
-local EXPANDED_WIDTH, COLLAPSED_WIDTH = 170, 30
+local EXPANDED_WIDTH = 190
 local CHAT_ROW, ROW_GAP = 26, 2
 local NAV_ROW, FOOTER_HEIGHT = 30, 46
-local sidebar, fold, nav, listCaption, footer
+local sidebar, nav, listCaption, footer
 local sessionContent, sessionScroll
 local sessionButtons = {}
-local routinesTab
+local newChatTab, routinesTab
 
 function ns.UI.RequestDeleteChat(id)
     for _, chat in ipairs(ns.chats) do
@@ -33,25 +33,19 @@ local function characterLine()
 end
 
 -- Returns the sidebar width so the window can anchor the conversation panel.
+-- Collapsed, the sidebar is hidden entirely; its toggle lives in the title bar.
 function ns.UI.Sidebar.Layout()
     local expanded = ns.db.sidebar == true
-    fold:SetShown(not ns.db.minimized)
-    for _, item in ipairs(nav) do
-        item:SetShown(expanded)
-    end
-    listCaption:SetShown(expanded)
-    sessionScroll:SetShown(expanded)
-    for _, part in ipairs(footer.profile) do
-        part:SetShown(expanded)
-    end
-    local width = expanded and EXPANDED_WIDTH or COLLAPSED_WIDTH
-    sidebar:SetWidth(width)
-    local arrow = expanded and "<" or ">"
-    if fold.lastText ~= arrow then
-        fold.lastText = arrow
-        fold:SetText(arrow)
-    end
+    sidebar:SetShown(expanded)
+    local width = expanded and EXPANDED_WIDTH or 0
+    sidebar:SetWidth(math.max(1, width))
     return width
+end
+
+--- Shows or hides the sidebar; the title bar's sidebar button calls it.
+function ns.UI.Sidebar.Toggle()
+    ns.db.sidebar = not ns.db.sidebar
+    ns.UI.Refresh()
 end
 
 local function makeRow()
@@ -124,6 +118,10 @@ function ns.UI.Sidebar.Refresh()
     local inSettings = ns.UI.SettingsShown and ns.UI.SettingsShown()
     local routines = ns.sidebarTab == "routines"
     widgets.SetSelected(routinesTab, routines and not inSettings)
+    widgets.SetSelected(
+        newChatTab,
+        ns.composingNew == true and not ns.routinesPage and not inSettings
+    )
     refreshFooter()
     local used, y = {}, 0
     for _, session in ipairs(chatEntries()) do
@@ -216,46 +214,25 @@ function ns.UI.Sidebar.Build(body)
         whileDead = true,
         hideOnEscape = true,
     }
-    sidebar = CreateFrame("Frame", nil, body, "BackdropTemplate")
+    sidebar = CreateFrame("Frame", "WispAISidebar", body, "BackdropTemplate")
     sidebar:SetPoint("TOPLEFT")
     sidebar:SetPoint("BOTTOMLEFT")
     sidebar:SetWidth(EXPANDED_WIDTH)
     widgets.Box(sidebar, COLORS.sidebar, COLORS.line)
-    fold = button(sidebar, ">", 22, nil, "ghost", "WispAISidebarToggle")
-    fold:SetSize(22, 22)
-    fold:SetPoint("TOPRIGHT", -4, -9)
-    fold:SetScript("OnClick", function()
-        ns.db.sidebar = not ns.db.sidebar
-        ns.UI.Refresh()
-    end)
-    fold:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText(ns.db.sidebar and "Collapse sidebar" or "Expand sidebar")
-        GameTooltip:Show()
-    end)
-    fold:SetScript("OnLeave", function()
-        GameTooltip:Hide()
-    end)
-    local newChat = navItem("New chat", function()
-        ns.sidebarTab, ns.routinesPage = "chats", false
-        ns.Chat.NewChat()
+    -- New chat opens a blank conversation; it is created when the first message is sent.
+    newChatTab = navItem("New chat", function()
+        ns.Chat.StartNew()
     end, "Plus.tga")
-    newChat.label:SetTextColor(unpack(TEXT))
-    newChat.icon:SetVertexColor(unpack(TEXT))
     routinesTab = navItem("Routines", function()
         ns.UI.Routines.Show()
     end, "Clock.tga")
     -- Memory, integrations and saved panels are settings; they live under Settings > Data.
     -- Recents is the way back to a conversation, as in Claude: no separate Chats entry.
-    nav = { newChat, routinesTab }
+    nav = { newChatTab, routinesTab }
     for index, item in ipairs(nav) do
         local top = -6 - (index - 1) * NAV_ROW
         item:SetPoint("TOPLEFT", 6, top)
-        if index == 1 then
-            item:SetPoint("RIGHT", fold, "LEFT", -4, 0)
-        else
-            item:SetPoint("RIGHT", -6, 0)
-        end
+        item:SetPoint("RIGHT", -6, 0)
     end
     local listTop = -6 - #nav * NAV_ROW
     listCaption = widgets.Caption(sidebar, "Recents")
@@ -270,7 +247,8 @@ function ns.UI.Sidebar.Build(body)
     sessionScroll:SetScrollChild(sessionContent)
     sessionScroll:EnableMouseWheel(true)
     sessionScroll:SetScript("OnMouseWheel", function(self, delta)
-        self:SetVerticalScroll(
+        widgets.SetScroll(
+            self,
             math.max(
                 0,
                 math.min(self:GetVerticalScrollRange(), self:GetVerticalScroll() - delta * 35)

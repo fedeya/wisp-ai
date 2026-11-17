@@ -131,7 +131,8 @@ local function build(panel, index)
         w.host.sourceValues = state.sourceValues
         w.scroll:EnableMouseWheel(true)
         w.scroll:SetScript("OnMouseWheel", function(_, delta)
-            w.scroll:SetVerticalScroll(
+            ns.UI.Widgets.SetScroll(
+                w.scroll,
                 math.max(
                     0,
                     math.min(

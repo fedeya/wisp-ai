@@ -129,7 +129,8 @@ function ns.Chat.ReceiveSnapshot(data)
         ns.db.lastRoutineCommand = data.routineCommand.seq
         ns.Chat.Select(data.routineCommand.id)
     end
-    if not ns.Chat.Current() then
+    -- A blank New chat has no conversation yet; keep it rather than reopening one.
+    if not ns.Chat.Current() and not ns.composingNew then
         ns.active = (
             data.activeChat
             and data.activeChat ~= ""

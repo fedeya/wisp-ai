@@ -11,7 +11,7 @@ local INK = { 0.039, 0.078, 0.071 } -- dark ink on the accent
 -- row below the field.
 local MARGIN, PAD_X, SEND_SIZE = 14, 14, 24
 local MIN_HEIGHT, MAX_HEIGHT = 40, 168
-local BELOW = 24 -- the row under the field
+local BELOW = 30 -- the row under the field, with breathing room above it
 local METER_MIN_WIDTH = 400 -- below this field width the meter yields to the model choices
 local inputBox, frameShape, inputScroll, send, placeholder, meter, onLayout
 local fieldHeight, padY
@@ -232,12 +232,12 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
             return ns.Chat.Current()
         end
     )
-    modelPicker:SetPoint("TOPLEFT", inputBox, "BOTTOMLEFT", 2, -2)
+    modelPicker:SetPoint("TOPLEFT", inputBox, "BOTTOMLEFT", 2, -8)
     meter = ns.UI.ConversationStatus.ContextMeter()
     if meter then
         meter:SetParent(chatPanel)
         meter:ClearAllPoints()
-        meter:SetPoint("TOPRIGHT", inputBox, "BOTTOMRIGHT", -6, -5)
+        meter:SetPoint("TOPRIGHT", inputBox, "BOTTOMRIGHT", -6, -11)
         meter.text:SetJustifyH("RIGHT")
     end
     if ChatFrameUtil and ChatFrameUtil.InsertLink then

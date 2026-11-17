@@ -103,7 +103,7 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
         assert(point == "BOTTOMRIGHT" and bottom == 14, "text is centered on the font size")
         local transcriptBar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, transcriptBottom = transcriptBar:GetPoint()
-        assert(transcriptBottom == 84, "a one-line field keeps the transcript just above it")
+        assert(transcriptBottom == 90, "a one-line field keeps the transcript just above it")
         assert(meter:IsShown() == (width >= 400), "narrow fields leave the row to the model")
         local _, parent = draft:GetPoint()
         assert(parent == viewport, "layout changes must keep the editor inside its scroll area")
@@ -152,6 +152,58 @@ it("sends the starter prompt from the empty chat while preserving the draft", fu
     assert(chat.status == "working" and chat.messages[1].text == sent[2].text)
     assert(ns.draft:GetText() == "My next question")
     assert(not starter:IsShown())
+end)
+
+it("New chat creates its conversation with the first message and keeps its draft", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    time = os.time
+    ns = helper.namespace({
+        db = { sidebar = true, drafts = {} },
+        connected = true,
+        session = "test",
+        active = "old",
+        chats = {
+            {
+                id = "old",
+                title = "Old",
+                status = "done",
+                messages = { { id = "m", role = "user", text = "Hi" } },
+                activity = {},
+            },
+        },
+        pendingChats = {},
+        pendingMessages = {},
+        workStarted = {},
+    })
+    local sent = {}
+    function ns.Transport.Send(packet)
+        sent[#sent + 1] = packet
+    end
+    helper.addon("Chat/State.lua", env)
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
+    for index = #sent, 1, -1 do
+        sent[index] = nil
+    end
+
+    ns.Chat.StartNew()
+    assert(#sent == 0 and ns.active == nil and #ns.chats == 1, "New chat creates nothing yet")
+    ns.draft:SetText("Plan my route")
+    ns.Chat.Select("old")
+    assert(ns.draft:GetText() == "")
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "Plan my route", "returning to New chat restores its draft")
+    for index = #sent, 1, -1 do
+        sent[index] = nil
+    end
+    ns.Chat.Submit()
+    assert(#sent == 2 and sent[1].type == "new" and sent[2].type == "say")
+    assert(sent[2].text == "Plan my route" and sent[2].chat == ns.active)
+    assert(#ns.chats == 2 and ns.draft:GetText() == "")
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "", "a sent draft does not come back")
 end)
 
 it(
@@ -484,41 +536,46 @@ it(
         end
         do
             local fold = UI_TEST.frames.WispAISidebarToggle
+            local sidebar = UI_TEST.frames.WispAISidebar
             local gear = UI_TEST.frames.WispAISettingsButton
             local tabs = {}
             for _, widget in ipairs(UI_TEST.widgets) do
                 if
-                    widget.parent == fold.parent
+                    widget.parent == sidebar
                     and (widget:GetText() == "New chat" or widget:GetText() == "Routines")
                 then
                     tabs[#tabs + 1] = widget
                 end
             end
-            assert(#tabs == 2 and tabs[1]:IsShown() and tabs[2]:IsShown())
+            assert(#tabs == 2 and tabs[1]:IsVisible() and tabs[2]:IsVisible())
             for _, widget in ipairs(UI_TEST.widgets) do
                 assert(
-                    widget.parent ~= fold.parent or widget:GetText() ~= "Chats",
+                    widget.parent ~= sidebar or widget:GetText() ~= "Chats",
                     "Recents is the way back to a chat; there is no separate Chats section"
                 )
             end
             assert(
-                gear.parent.parent == fold.parent,
+                gear.parent.parent == sidebar,
                 "settings must live in the sidebar footer, beside the character"
             )
             assert(gear:GetText() == "", "settings uses an icon instead of a text label")
+            assert(
+                fold.parent == UI_TEST.frames.WispAIHeader,
+                "the sidebar toggle leads the title bar, so it never hangs off the sidebar"
+            )
             fold.scripts.OnClick()
             assert(
-                not ns.db.sidebar and fold:GetText() == ">" and fold.parent:GetWidth() == 30,
-                "collapsed sidebar must retain its own expand control"
+                not ns.db.sidebar and not sidebar:IsShown() and fold:IsVisible(),
+                "collapsing hides the whole sidebar and keeps the toggle in the title bar"
             )
             assert(
-                not tabs[1]:IsShown() and not tabs[2]:IsShown(),
+                not tabs[1]:IsVisible() and not tabs[2]:IsVisible(),
                 "collapsed sidebar must hide both tabs so they cannot overlap the conversation"
             )
             fold.scripts.OnClick()
-            assert(ns.db.sidebar and fold:GetText() == "<")
+            assert(ns.db.sidebar and sidebar:IsShown())
             assert(
-                tabs[1]:IsShown() and tabs[2]:IsShown(),
+                tabs[1]:IsVisible() and tabs[2]:IsVisible(),
                 "expanding the sidebar must restore both tabs"
             )
             ns.UI.SetMinimized(true)
@@ -989,8 +1046,8 @@ it(
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
-        -- The transcript ends 6 above an empty one-line composer: 40 field + 24 row + 14 margin.
-        assert(bottom == 84, "there must be no additional reserved progress gap")
+        -- The transcript ends 6 above an empty one-line composer: 40 field + 30 row + 14 margin.
+        assert(bottom == 90, "there must be no additional reserved progress gap")
         table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()

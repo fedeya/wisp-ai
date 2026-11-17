@@ -87,7 +87,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     scrollBar:SetAlpha(scrollRange > 0 and 1 or 0.35)
     local position = follow and scrollRange or math.min(oldOffset, scrollRange)
     scrollBar:SetValue(position)
-    transcript:SetVerticalScroll(position)
+    ns.UI.Widgets.SetScroll(transcript, position)
     ns.UI.UpdateNewMessages(newMessages, chat, follow, switched)
     renderedChat = id
     rendering = false
@@ -115,7 +115,7 @@ function ns.UI.Transcript.Build(chatPanel, header)
     scrollBar:GetThumbTexture():SetSize(4, 28)
     scrollBar:GetThumbTexture():SetVertexColor(unpack(COLORS.lineStrong))
     scrollBar:SetScript("OnValueChanged", function(_, value)
-        transcript:SetVerticalScroll(value)
+        ns.UI.Widgets.SetScroll(transcript, value)
         if not rendering and newMessages and value >= scrollRange - 30 then
             newMessages.pending = false
             newMessages:Hide()

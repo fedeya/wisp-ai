@@ -28,6 +28,17 @@ local function layout()
     gear:SetShown(expanded)
     resize:SetShown(expanded)
     header.rule:SetShown(expanded)
+    -- The sidebar toggle leads the title bar; minimized, the logo takes its place.
+    header.fold:SetShown(expanded)
+    if header.logoAnchor ~= expanded then
+        header.logoAnchor = expanded
+        header.logo:ClearAllPoints()
+        if expanded then
+            header.logo:SetPoint("LEFT", header.fold, "RIGHT", 6, 0)
+        else
+            header.logo:SetPoint("LEFT", 6, 0)
+        end
+    end
     gear.icon:SetVertexColor(
         unpack(settings and settings:IsShown() and ns.UI.Widgets.ACCENT or ns.UI.Widgets.MUTED)
     )
@@ -75,9 +86,9 @@ function ns.UI.SetMinimized(value)
         mini:SetText("+")
     else
         if frame.SetResizeBounds then
-            frame:SetResizeBounds(500, 360, 1100, 900)
+            frame:SetResizeBounds(520, 360, 1100, 900)
         end
-        frame:SetSize(ns.db.expandedWidth or 680, ns.db.expandedHeight or 520)
+        frame:SetSize(ns.db.expandedWidth or 700, ns.db.expandedHeight or 520)
         mini:SetText("-")
         ns.unread = false
     end
@@ -139,7 +150,7 @@ end
 function ns.UI.BuildUI()
     refreshReferences()
     frame = CreateFrame("Frame", "WispAIWindow", UIParent, "BackdropTemplate")
-    frame:SetSize(ns.db.expandedWidth or 680, ns.db.expandedHeight or 520)
+    frame:SetSize(ns.db.expandedWidth or 700, ns.db.expandedHeight or 520)
     restorePosition(false)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -147,7 +158,7 @@ function ns.UI.BuildUI()
     frame:SetFrameStrata("DIALOG")
     frame:SetResizable(true)
     if frame.SetResizeBounds then
-        frame:SetResizeBounds(500, 360, 1100, 900)
+        frame:SetResizeBounds(520, 360, 1100, 900)
     end
     box(frame, COLORS.window, COLORS.line)
     header = CreateFrame("Frame", "WispAIHeader", frame)
@@ -162,6 +173,30 @@ function ns.UI.BuildUI()
     header:SetScript("OnDragStop", function()
         frame:StopMovingOrSizing()
         ns.UI.SaveWindowPosition(ns.db.minimized)
+    end)
+    -- Sidebar toggle, far left of the title bar, as in Claude and ChatGPT.
+    local fold = CreateFrame("Button", "WispAISidebarToggle", header)
+    header.fold = fold
+    fold:SetSize(24, 24)
+    fold:SetPoint("LEFT", 4, 0)
+    fold.icon = fold:CreateTexture(nil, "ARTWORK")
+    fold.icon:SetTexture(ns.UI.Widgets.TEXTURES .. "Sidebar.tga")
+    fold.icon:SetSize(15, 15)
+    fold.icon:SetPoint("CENTER")
+    fold.icon:SetVertexColor(unpack(ns.UI.Widgets.MUTED))
+    local foldHover = fold:CreateTexture(nil, "HIGHLIGHT")
+    foldHover:SetAllPoints()
+    foldHover:SetColorTexture(1, 1, 1, 0.06)
+    fold:SetScript("OnClick", function()
+        ns.UI.Sidebar.Toggle()
+    end)
+    fold:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText(ns.db.sidebar and "Hide sidebar" or "Show sidebar")
+        GameTooltip:Show()
+    end)
+    fold:SetScript("OnLeave", function()
+        GameTooltip:Hide()
     end)
     local logo = header:CreateTexture(nil, "ARTWORK")
     header.logo = logo

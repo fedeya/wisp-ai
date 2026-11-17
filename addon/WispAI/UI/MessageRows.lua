@@ -144,7 +144,8 @@ local function linked(row)
         while parent do
             local target = parent._wispScroll
             if target then
-                target:SetVerticalScroll(
+                ns.UI.Widgets.SetScroll(
+                    target,
                     math.max(
                         0,
                         math.min(

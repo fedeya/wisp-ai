@@ -310,7 +310,8 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
             end
             y = y + h
             row:SetScript("OnMouseWheel", function(_, delta)
-                scroll:SetVerticalScroll(
+                uiWidgets.SetScroll(
+                    scroll,
                     math.max(
                         0,
                         math.min(
@@ -367,7 +368,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     content:SetHeight(math.max(1, y))
     if follow or preserveScroll then
         local bottom = math.max(0, y - scroll:GetHeight())
-        scroll:SetVerticalScroll(follow and bottom or math.min(offset, bottom))
+        uiWidgets.SetScroll(scroll, follow and bottom or math.min(offset, bottom))
     end
     ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
     renderedChat = chat and chat.id
@@ -503,7 +504,8 @@ function ns.Inline.InitInline()
     scroll:SetPoint("BOTTOMRIGHT", -12, 81)
     scroll:EnableMouseWheel(true)
     scroll:SetScript("OnMouseWheel", function(_, delta)
-        scroll:SetVerticalScroll(
+        uiWidgets.SetScroll(
+            scroll,
             math.max(
                 0,
                 math.min(scroll:GetVerticalScrollRange(), scroll:GetVerticalScroll() - delta * 40)
@@ -519,7 +521,7 @@ function ns.Inline.InitInline()
     newMessages:SetPoint("BOTTOM", scroll, "BOTTOM", 0, 8)
     newMessages:SetFrameLevel(scroll:GetFrameLevel() + 10)
     newMessages:SetScript("OnClick", function()
-        scroll:SetVerticalScroll(scroll:GetVerticalScrollRange())
+        uiWidgets.SetScroll(scroll, scroll:GetVerticalScrollRange())
         newMessages.pending = false
         newMessages:Hide()
     end)

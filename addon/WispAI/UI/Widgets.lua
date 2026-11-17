@@ -212,6 +212,14 @@ local function toggle(parent, name)
     return t
 end
 
+--- Scrolls `scroll` to `value` rounded to the physical pixel grid. A fractional
+--- offset puts one-pixel hairlines between pixels, where the renderer drops
+--- them, so borders would blink in and out as content scrolls.
+local function setScroll(scroll, value)
+    local pixel = onePixel(scroll)
+    scroll:SetVerticalScroll(math.max(0, math.floor(value / pixel + 0.5) * pixel))
+end
+
 --- Plain scroll area without Blizzard's scroll bar art; the mouse wheel scrolls it.
 local function scrollArea(parent)
     local scroll = CreateFrame("ScrollFrame", nil, parent)
@@ -222,7 +230,7 @@ local function scrollArea(parent)
     scroll:EnableMouseWheel(true)
     scroll:SetScript("OnMouseWheel", function(self, delta)
         local range = self:GetVerticalScrollRange()
-        self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * 40)))
+        setScroll(self, math.max(0, math.min(range, self:GetVerticalScroll() - delta * 40)))
     end)
     return scroll, content
 end
@@ -428,6 +436,7 @@ ns.UI.Widgets = {
     InterSupports = interSupports,
     ShowCopyUrl = showCopyUrl,
     OnePixel = onePixel,
+    SetScroll = setScroll,
     FONTS = FONTS,
     COLORS = COLORS,
     ACCENT = ACCENT,

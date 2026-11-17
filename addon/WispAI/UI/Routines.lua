@@ -262,8 +262,7 @@ function ns.UI.Routines.Build(frame, panel)
     subtitle:SetPoint("RIGHT", -150, 0)
     subtitle:SetWordWrap(true)
     local create = button(page, "+ New routine", 112, function()
-        ns.routinesPage = false
-        ns.Chat.NewChat()
+        ns.Chat.StartNew()
         if ns.draft then
             ns.draft:SetText(NEW_ROUTINE_PROMPT)
             ns.draft:SetFocus()

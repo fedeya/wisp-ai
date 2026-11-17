@@ -131,12 +131,22 @@ const cornerEdge: Shape[] = [
   { kind: 'ring', center: [CORNER, CORNER], radius: CORNER_RADIUS - 0.5, width: 1 },
 ];
 
+// Sidebar toggle: a window outline with its left panel marked off.
+const sidebar: Shape[] = [
+  { kind: 'line', from: [10, 14], to: [54, 14], width: 4.5 },
+  { kind: 'line', from: [10, 50], to: [54, 50], width: 4.5 },
+  { kind: 'line', from: [10, 14], to: [10, 50], width: 4.5 },
+  { kind: 'line', from: [54, 14], to: [54, 50], width: 4.5 },
+  { kind: 'line', from: [26, 14], to: [26, 50], width: 4.5 },
+];
+
 mkdirSync('addon/WispAI/Textures', { recursive: true });
 writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
 writeFileSync('addon/WispAI/Textures/Back.tga', render(back));
 writeFileSync('addon/WispAI/Textures/Send.tga', render(send));
 writeFileSync('addon/WispAI/Textures/Stop.tga', render(stop));
 writeFileSync('addon/WispAI/Textures/Plus.tga', render(plus));
+writeFileSync('addon/WispAI/Textures/Sidebar.tga', render(sidebar));
 writeFileSync('addon/WispAI/Textures/Clock.tga', render(clock));
 writeFileSync('addon/WispAI/Textures/ChevronDown.tga', render(chevronDown));
 writeFileSync('addon/WispAI/Textures/Circle.tga', render(circle));
