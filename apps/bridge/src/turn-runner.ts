@@ -8,6 +8,7 @@ import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
 import { chooseChatModel } from './chat-model.ts';
 import { ChatGPTAuthError } from './chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
+import { errorMessage } from './errors.ts';
 import type { Logger } from 'pino';
 import type { CapabilitySettings } from './capabilities.ts';
 import type { ModelCatalog } from './model-connections.ts';
@@ -225,7 +226,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           chat: chat.id,
           messageId,
           outcome,
-          error: safeErrorMessage(error instanceof Error ? error.message : String(error)),
+          error: errorMessage(error),
         },
         'Turn failed',
       );

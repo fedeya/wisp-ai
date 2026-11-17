@@ -43,7 +43,6 @@ import { describeRoutineTrigger, routineEvents } from '@wisp/protocol/routines';
 import { ModelConnections } from './model-connections.ts';
 import { WebSearch } from './web-search.ts';
 import { ChatGPTAuth } from './chatgpt-auth.ts';
-import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import { TheWoWDB } from './thewowdb.ts';
 import { Simulator } from './simulation.ts';
 import { appPaths, prepareEngine } from './app-paths.ts';
@@ -162,9 +161,7 @@ export async function startBridge(options: BridgeOptions = {}) {
           state.modelCatalogError = undefined;
         } catch (error) {
           state.modelCatalog = [];
-          state.modelCatalogError = safeErrorMessage(
-            error instanceof Error ? error.message : String(error),
-          );
+          state.modelCatalogError = errorMessage(error);
         } finally {
           modelCatalogLoad = undefined;
           changed();

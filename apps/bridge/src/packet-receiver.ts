@@ -3,7 +3,6 @@ import type { Client } from 'eve/client';
 import type { Packet } from '@wisp/protocol/protocol';
 import { selectionValues } from '@wisp/protocol/ui-schema';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
-import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { writeFile } from 'node:fs/promises';
@@ -228,9 +227,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           chat.modelError = undefined;
           state.modelCatalog = available;
         } catch (error) {
-          chat.modelError = safeErrorMessage(
-            error instanceof Error ? error.message : String(error),
-          );
+          chat.modelError = errorMessage(error);
         } finally {
           chat.modelRequestId = requestId;
           changed();
