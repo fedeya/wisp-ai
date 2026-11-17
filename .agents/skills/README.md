@@ -2,6 +2,8 @@
 
 Load the skill that matches the area you are changing, along with the references relevant to the task. These skills run in the coding assistant's context. Desktop components, bridge tools, and installer resources are built separately.
 
+`.claude/skills` is a symlink to this directory, so Claude Code discovers the same skills. On Windows, enable Developer Mode and run `git config core.symlinks true` before checkout; otherwise the link becomes a plain text file.
+
 | Skill                                                               | Use in Wisp                                                                                | Source                                                                                                                               |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | [Base UI](base-ui/SKILL.md)                                         | Dialog composition, focus, field errors and keyboard behavior                              | [noklip-io](https://github.com/noklip-io/agent-skills/tree/319a0f1aac3b3580e736d457f217d716b356aa35/skills/base-ui)                  |
