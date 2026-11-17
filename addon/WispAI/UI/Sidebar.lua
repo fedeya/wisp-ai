@@ -30,8 +30,8 @@ local function characterLine()
     local level = UnitLevel and UnitLevel("player") or nil
     local state = ns.Transport.needsDesktopSetup and "Setup required"
         or (ns.connected and "Connected" or "Offline")
-    local detail = className and level and (className .. " " .. level .. " · " .. state) or state
-    return name or "Wisp", detail
+    local classLevel = className and level and (className .. " " .. level) or ""
+    return name or "Wisp", classLevel, state
 end
 
 -- Returns the sidebar width so the window can anchor the conversation panel.
@@ -113,13 +113,14 @@ local function chatEntries()
 end
 
 local function refreshFooter()
-    local name, detail = characterLine()
+    local name, classLevel, state = characterLine()
     setText(footer.name, name)
     -- First UTF-8 character, so accented names keep a whole glyph.
     setText(footer.initial, string.upper(name:match("^[%z\1-\127\194-\244][\128-\191]*") or ""))
-    -- The narrow sidebar shows the name alone; class, level and any connection
-    -- problem are in the avatar's tooltip, and the dot tells the connection.
-    footer.tooltip = detail
+    -- Name and class/level are written out; the connection is the avatar's dot,
+    -- with its state spelled out only in the avatar's tooltip.
+    setText(footer.detail, classLevel)
+    footer.tooltip = classLevel ~= "" and (classLevel .. " · " .. state) or state
     local tint = ns.Transport.needsDesktopSetup and COLORS.warning
         or (ns.connected and COLORS.success or COLORS.muted)
     footer.status:SetColorTexture(unpack(tint))
@@ -210,13 +211,17 @@ local function buildFooter()
         GameTooltip:Hide()
     end)
     footer.name = label(footer, "", TEXT, FONTS.strong)
-    footer.name:SetPoint("LEFT", footer.avatar, "RIGHT", 8, 0)
+    footer.name:SetPoint("TOPLEFT", footer.avatar, "TOPRIGHT", 8, 1)
     footer.name:SetPoint("RIGHT", -32, 0)
     footer.name:SetWordWrap(false)
+    footer.detail = label(footer, "", COLORS.secondary, FONTS.small)
+    footer.detail:SetPoint("TOPLEFT", footer.name, "BOTTOMLEFT", 0, -2)
+    footer.detail:SetPoint("RIGHT", -32, 0)
+    footer.detail:SetWordWrap(false)
     footer.initial = label(footer.avatar, "", TEXT, FONTS.strong)
     footer.initial:SetPoint("CENTER", 0, 0)
     footer.initial:SetJustifyH("CENTER")
-    footer.profile = { rule, footer.avatar, footer.name }
+    footer.profile = { rule, footer.avatar, footer.name, footer.detail }
 end
 
 -- The footer hosts the window's settings button next to the character.
