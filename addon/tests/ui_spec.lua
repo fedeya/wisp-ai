@@ -267,7 +267,7 @@ it("Recents are grouped under day headings that keep rows pooled and in order", 
         return table.concat(texts, ","), shown
     end
     local text, shown = headings()
-    assert.equal("Today,Yesterday,Previous 7 days,Previous 30 days,Older", text)
+    assert(text == "Today,Yesterday,Previous 7 days,Previous 30 days,Older", text)
     local order = { "today", "yesterday", "week", "week-later", "month", "older" }
     for index = 2, #order do
         assert(row(order[index - 1]).y < row(order[index]).y, "rows keep newest-first order")
@@ -279,7 +279,8 @@ it("Recents are grouped under day headings that keep rows pooled and in order", 
 
     ns.chats = { chat("today", now), chat("week", now - 3 * day) }
     ns.UI.Sidebar.Refresh()
-    assert.equal("Today,Previous 7 days", (headings()))
+    text = headings()
+    assert(text == "Today,Previous 7 days", text)
     assert(row("today") == today, "headings do not disturb row reuse")
     assert(not row("older"):IsShown(), "rows of removed chats are hidden")
 end)
