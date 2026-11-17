@@ -46,16 +46,16 @@ RichUI and Inline reuse `ns.UI.Widgets.SetText`.
 `UI/Window.lua` composes the main chat window and owns its position, minimize/resize
 behavior and refresh entry point. Its components keep widget and cache state local:
 
-| Module                      | Responsibility                                                     |
-| --------------------------- | ------------------------------------------------------------------ |
-| `UI/Widgets.lua`            | Palette, fonts, borders, buttons, toggles, rows and hover washes   |
-| `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog   |
-| `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation  |
-| `UI/Composer.lua`           | Multiline input, send/stop, and centered or docked placement       |
-| `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators  |
-| `UI/ConversationStatus.lua` | Conversation title, connection state and context usage             |
-| `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                    |
-| `UI/Routines.lua`           | Routine list, routine pages with their runs, and templates         |
+| Module                      | Responsibility                                                    |
+| --------------------------- | ----------------------------------------------------------------- |
+| `UI/Widgets.lua`            | Palette, fonts, borders, buttons, toggles, rows and hover washes  |
+| `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog  |
+| `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation |
+| `UI/Composer.lua`           | Multiline input, send/stop, and centered or docked placement      |
+| `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators |
+| `UI/ConversationStatus.lua` | Conversation title, connection state and context usage            |
+| `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                   |
+| `UI/Routines.lua`           | Routine list, routine pages with their runs, and templates        |
 
 The composer reports its bottom inset to the transcript through a callback wired
 by the window. `UI/ModelControls.lua` owns model/effort controls without changing
