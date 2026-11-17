@@ -5,26 +5,29 @@ local TEXTURES = widgets.TEXTURES
 local SEND_ICON, STOP_ICON = TEXTURES .. "Send.tga", TEXTURES .. "Stop.tga"
 local CIRCLE = TEXTURES .. "Circle.tga"
 local INK = { 0.039, 0.078, 0.071 } -- dark ink on the accent
--- The composer follows the chat apps' shape: a rounded field with the text on
--- top and a toolbar below, model choices on the left, the context meter and a
--- round send button on the right. Narrow, the meter and send move up a row so
--- the model choices keep their width.
-local MARGIN, PAD, RADIUS, TOOLBAR, SEND_SIZE = 14, 16, 14, 44, 30
-local WIDE_HEIGHT, NARROW_HEIGHT = 104, 136
-local inputBox, frameShape, inputScroll, send, placeholder, onLayout
-local narrow
+-- The composer follows the chat apps: a rounded field that starts one line
+-- tall with a round send button inside, and grows upward with its text up to
+-- MAX_HEIGHT, then scrolls. Model choices and the context meter sit in a quiet
+-- row below the field.
+local MARGIN, PAD_X, PAD_Y, RADIUS, SEND_SIZE = 14, 16, 13, 14, 30
+local MIN_HEIGHT, MAX_HEIGHT = 44, 168
+local BELOW = 24 -- the row under the field
+local METER_MIN_WIDTH = 400 -- below this field width the meter yields to the model choices
+local inputBox, frameShape, inputScroll, send, placeholder, meter, onLayout
+local fieldHeight
 
-local function layout()
-    local nextNarrow = inputBox:GetWidth() < 470
-    if narrow ~= nextNarrow then
-        narrow = nextNarrow
-        local height = narrow and NARROW_HEIGHT or WIDE_HEIGHT
-        local textBottom = narrow and TOOLBAR + 32 or TOOLBAR
+-- Fits the field to its text, from one line up to MAX_HEIGHT, and moves the
+-- transcript's bottom edge with it.
+local function fit()
+    local textHeight = ns.draft:GetHeight() or 0
+    local height = math.max(MIN_HEIGHT, math.min(MAX_HEIGHT, math.ceil(textHeight) + PAD_Y * 2))
+    if fieldHeight ~= height then
+        fieldHeight = height
         inputBox:SetHeight(height)
-        inputScroll:SetPoint("BOTTOMRIGHT", -PAD, textBottom)
-        send:ClearAllPoints()
-        send:SetPoint("BOTTOMRIGHT", -9, narrow and 40 or 8)
-        onLayout(height + MARGIN + 8)
+        onLayout(height + MARGIN + BELOW + 6)
+    end
+    if meter then
+        meter:SetShown(inputBox:GetWidth() >= METER_MIN_WIDTH)
     end
 end
 
@@ -49,11 +52,12 @@ end
 local function refreshDraft()
     placeholder:SetShown(ns.draft:GetText() == "")
     paintSend()
+    fit()
 end
 
 function ns.UI.Composer.Refresh(chat)
     ns.UI.RefreshModelControls()
-    layout()
+    fit()
     send:SetEnabled(not ns.Transport.needsDesktopSetup)
     send.working = chat and chat.status == "working" or false
     paintSend()
@@ -77,7 +81,7 @@ local function makeSend(parent, click)
     b:SetScript("OnClick", click)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(self.working and "Stop" or "Send (Enter)")
+        GameTooltip:SetText(self.working and "Stop" or "Send (Enter). Shift+Enter adds a line.")
         GameTooltip:Show()
     end)
     b:SetScript("OnLeave", function()
@@ -95,13 +99,22 @@ end
 function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     onLayout = onHeightChanged
     inputBox = CreateFrame("Frame", nil, chatPanel)
-    inputBox:SetPoint("BOTTOMLEFT", MARGIN, MARGIN)
-    inputBox:SetPoint("BOTTOMRIGHT", -MARGIN, MARGIN)
-    inputBox:SetHeight(WIDE_HEIGHT)
+    inputBox:SetPoint("BOTTOMLEFT", MARGIN, MARGIN + BELOW)
+    inputBox:SetPoint("BOTTOMRIGHT", -MARGIN, MARGIN + BELOW)
+    inputBox:SetHeight(MIN_HEIGHT)
     frameShape = widgets.RoundedBox(inputBox, RADIUS, COLORS.raised, COLORS.lineStrong)
+    send = makeSend(inputBox, function()
+        local chat = ns.Chat.Current()
+        if chat and chat.status == "working" then
+            ns.Transport.Send({ type = "cancel", chat = ns.active })
+        else
+            ns.Chat.Submit()
+        end
+    end)
+    send:SetPoint("BOTTOMRIGHT", -7, 7)
     inputScroll = CreateFrame("ScrollFrame", "WispAIInputScroll", inputBox)
-    inputScroll:SetPoint("TOPLEFT", PAD, -14)
-    inputScroll:SetPoint("BOTTOMRIGHT", -PAD, TOOLBAR)
+    inputScroll:SetPoint("TOPLEFT", PAD_X, -PAD_Y)
+    inputScroll:SetPoint("BOTTOMRIGHT", -(SEND_SIZE + 16), PAD_Y)
     inputScroll:SetClipsChildren(true)
     placeholder = widgets.Label(inputBox, "Ask Wisp anything", COLORS.muted)
     widgets.ChatFont(placeholder, "Ask Wisp anything")
@@ -109,16 +122,16 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     ns.draft = CreateFrame("EditBox", "WispAIInput", inputScroll)
     ns.draft:SetMultiLine(true)
     ns.draft:SetAutoFocus(false)
-    ns.UI.Widgets.ChatFont(ns.draft, "")
+    widgets.ChatFont(ns.draft, "")
     ns.draft:SetMaxLetters(4000)
     ns.draft:SetPoint("TOPLEFT", inputScroll, "TOPLEFT")
     ns.draft:SetSize(inputScroll:GetWidth(), 1)
     inputScroll:SetScrollChild(ns.draft)
     local inputBar = CreateFrame("Slider", "WispAIInputScrollBar", inputBox, "BackdropTemplate")
     inputBar:SetOrientation("VERTICAL")
-    inputBar:SetPoint("TOPLEFT", inputScroll, "TOPRIGHT", 1, 0)
-    inputBar:SetPoint("BOTTOMLEFT", inputScroll, "BOTTOMRIGHT", 1, 0)
-    inputBar:SetWidth(8)
+    inputBar:SetPoint("TOPLEFT", inputScroll, "TOPRIGHT", 4, 0)
+    inputBar:SetPoint("BOTTOMLEFT", inputScroll, "BOTTOMRIGHT", 4, 0)
+    inputBar:SetWidth(6)
     inputBar:SetFrameLevel(inputScroll:GetFrameLevel() + 1)
     widgets.Box(inputBar, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
     inputBar:SetMinMaxValues(0, 0)
@@ -167,6 +180,7 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     end)
     inputScroll:SetScript("OnScrollRangeChanged", function()
         scrollInput(inputScroll:GetVerticalScroll())
+        fit()
     end)
     inputScroll:EnableMouseWheel(true)
     inputScroll:SetScript("OnMouseWheel", function(_, delta)
@@ -187,30 +201,15 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
         self:ClearFocus()
         ns.UI.SetMinimized(true)
     end)
-    send = makeSend(inputBox, function()
-        local chat = ns.Chat.Current()
-        if chat and chat.status == "working" then
-            ns.Transport.Send({ type = "cancel", chat = ns.active })
-        else
-            ns.Chat.Submit()
-        end
-    end)
     ns.draft:SetScript("OnEditFocusGained", function()
         frameShape.SetColors(COLORS.raised, COLORS.accentLine)
     end)
     ns.draft:SetScript("OnEditFocusLost", function()
         frameShape.SetColors(COLORS.raised, COLORS.lineStrong)
     end)
-    send:SetPoint("BOTTOMRIGHT", -9, 8)
-    local meter = ns.UI.ConversationStatus.ContextMeter()
-    if meter then
-        meter:SetParent(inputBox)
-        meter:ClearAllPoints()
-        meter:SetPoint("RIGHT", send, "LEFT", -10, 0)
-        meter.text:SetJustifyH("RIGHT")
-    end
+    -- The quiet row below the field: model choices left, context right.
     local modelPicker = ns.UI.CreateModelControls(
-        inputBox,
+        chatPanel,
         "WispAIChatModelControls",
         ns.Chat.Current,
         function()
@@ -218,7 +217,14 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
             return ns.Chat.Current()
         end
     )
-    modelPicker:SetPoint("BOTTOMLEFT", 10, 12)
+    modelPicker:SetPoint("TOPLEFT", inputBox, "BOTTOMLEFT", 2, -2)
+    meter = ns.UI.ConversationStatus.ContextMeter()
+    if meter then
+        meter:SetParent(chatPanel)
+        meter:ClearAllPoints()
+        meter:SetPoint("TOPRIGHT", inputBox, "BOTTOMRIGHT", -6, -5)
+        meter.text:SetJustifyH("RIGHT")
+    end
     if ChatFrameUtil and ChatFrameUtil.InsertLink then
         hooksecurefunc(ChatFrameUtil, "InsertLink", function(link)
             if ns.draft:HasFocus() then
@@ -226,5 +232,6 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
             end
         end)
     end
-    inputBox:SetScript("OnSizeChanged", layout)
+    inputBox:SetScript("OnSizeChanged", fit)
+    fit()
 end

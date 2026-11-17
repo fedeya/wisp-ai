@@ -55,6 +55,8 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
         )
     end
     assert(#draft:GetText() == 40 and viewport:GetVerticalScroll() > 0)
+    local field = viewport:GetParent()
+    assert(field:GetHeight() == 168, "the field grows with its text up to its maximum")
     assert(bar:IsShown() and bar:GetValue() == viewport:GetVerticalScroll())
     bar:SetValue(120)
     assert(viewport:GetVerticalScroll() == 120, "dragging the scrollbar must scroll the draft")
@@ -80,6 +82,7 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     draft:SetHeight(16)
     draft.scripts.OnTextChanged(draft, false)
     assert(viewport:GetVerticalScroll() == 0, "shorter restored drafts must clamp the scroll")
+    assert(field:GetHeight() == 44, "a one-line draft shrinks the field back to one line")
     assert(not bar:IsShown() and bar:GetValue() == 0)
     viewport:SetVerticalScroll(100)
     draft:SetText("")
@@ -87,16 +90,18 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     assert(viewport:GetVerticalScroll() == 0, "clearing the draft must reset the scroll")
 
     local controls = UI_TEST.frames.WispAIChatModelControls
+    local meter = UI_TEST.frames.WispAIContextUsage
+    assert(controls:GetParent() ~= field, "model choices sit below the field, not inside it")
     for _, width in ipairs({ 350, 500, 350 }) do
-        local composer = controls:GetParent()
-        composer:SetWidth(width)
-        composer.scripts.OnSizeChanged(composer, width)
+        field:SetWidth(width)
+        field.scripts.OnSizeChanged(field, width)
         ns.UI.Refresh()
         local point, _, _, _, bottom = viewport:GetPoint()
-        assert(point == "BOTTOMRIGHT" and bottom == (width < 380 and 56 or 28))
+        assert(point == "BOTTOMRIGHT" and bottom == 13)
         local transcriptBar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, transcriptBottom = transcriptBar:GetPoint()
-        assert(transcriptBottom == (width < 380 and 132 or 104))
+        assert(transcriptBottom == 88, "a one-line field keeps the transcript just above it")
+        assert(meter:IsShown() == (width >= 400), "narrow fields leave the row to the model")
         local _, parent = draft:GetPoint()
         assert(parent == viewport, "layout changes must keep the editor inside its scroll area")
     end
@@ -981,8 +986,8 @@ it(
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
-        -- The transcript ends 8 above the composer (104 tall, 136 narrow, 14 from the bottom).
-        assert(bottom == 126 or bottom == 158, "there must be no additional reserved progress gap")
+        -- The transcript ends 6 above an empty one-line composer: 44 field + 24 row + 14 margin.
+        assert(bottom == 88, "there must be no additional reserved progress gap")
         table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()
