@@ -131,77 +131,43 @@ function ns.UI.ConversationStatus.Build(chatPanel, header)
     contextMeter.text = label(contextMeter, "Context --", MUTED, ns.UI.Widgets.FONTS.small)
     contextMeter.text:SetAllPoints(contextMeter)
     contextMeter.text:SetJustifyH("RIGHT")
+    -- "24k", "1.2k" or "850".
+    local function tokens(count)
+        if count >= 10000 then
+            return string.format("%dk", math.floor(count / 1000 + 0.5))
+        elseif count >= 1000 then
+            return string.format("%.1fk", count / 1000)
+        end
+        return tostring(count)
+    end
     contextMeter:SetScript("OnEnter", function(self)
         local chat = ns.Chat.Current()
         local usage = chat and chat.usage
         local policy = ns.contextPolicy or {}
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine("Conversation context")
-        if usage and usage.contextTokens then
+        GameTooltip:AddLine("Context")
+        local used = usage and usage.contextTokens
+        if used and policy.windowTokens then
             GameTooltip:AddLine(
-                string.format("Last measured context: %d tokens", usage.contextTokens),
+                tokens(used) .. " of " .. tokens(policy.windowTokens) .. " tokens",
                 1,
                 1,
                 1
             )
+        elseif used then
+            GameTooltip:AddLine(tokens(used) .. " tokens", 1, 1, 1)
         else
-            GameTooltip:AddLine("Context size not measured yet", 1, 1, 1)
-        end
-        if policy.windowTokens then
-            GameTooltip:AddLine(
-                string.format("Model capacity: %d tokens", policy.windowTokens),
-                1,
-                1,
-                1
-            )
+            GameTooltip:AddLine("Not measured yet", 1, 1, 1)
         end
         if policy.compactAt then
             GameTooltip:AddLine(
-                string.format(
-                    "Auto compact: %.0f%% (includes summary overhead)",
-                    policy.compactAt * 100
-                ),
-                1,
-                1,
-                1
+                string.format("Older messages are summarized at %.0f%%", policy.compactAt * 100),
+                0.7,
+                0.7,
+                0.7,
+                true
             )
         end
-        if usage then
-            GameTooltip:AddLine(
-                string.format(
-                    "Observed input / output: %d / %d",
-                    usage.inputTokens or 0,
-                    usage.outputTokens or 0
-                ),
-                1,
-                1,
-                1
-            )
-            GameTooltip:AddLine(
-                string.format(
-                    "Cached input: %d | Compactions: %d",
-                    usage.cacheReadTokens or 0,
-                    usage.compactions or 0
-                ),
-                1,
-                1,
-                1
-            )
-        end
-        GameTooltip:AddLine(
-            "Context is approximate between model calls. Totals count repeated input and exclude separate search requests.",
-            0.7,
-            0.7,
-            0.7,
-            true
-        )
-        GameTooltip:AddLine(
-            "This is conversation space, not your subscription allowance. Older context is summarized; chat messages stay visible.",
-            0.7,
-            0.7,
-            0.7,
-            true
-        )
         GameTooltip:Show()
     end)
     contextMeter:SetScript("OnLeave", function()

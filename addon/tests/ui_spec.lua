@@ -372,8 +372,8 @@ it(
             end,
         }
         meter.scripts.OnEnter(meter)
-        assert(table.concat(lines, "|"):find("not your subscription allowance", 1, true))
-        assert(table.concat(lines, "|"):find("Auto compact: 75%", 1, true))
+        assert(table.concat(lines, "|"):find("24k of 100k tokens", 1, true))
+        assert(table.concat(lines, "|"):find("summarized at 75%", 1, true))
         ns.chats[1].usage.compacting = true
         ns.chats[1].status = "working"
         ns.UI.Refresh()
