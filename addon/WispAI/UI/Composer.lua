@@ -9,8 +9,8 @@ local INK = { 0.039, 0.078, 0.071 } -- dark ink on the accent
 -- tall with a round send button inside, and grows upward with its text up to
 -- MAX_HEIGHT, then scrolls. Model choices and the context meter sit in a quiet
 -- row below the field.
-local MARGIN, PAD_X, PAD_Y, RADIUS, SEND_SIZE = 14, 16, 13, 14, 30
-local MIN_HEIGHT, MAX_HEIGHT = 44, 168
+local MARGIN, PAD_X, PAD_Y, RADIUS, SEND_SIZE = 14, 14, 12, 6, 24
+local MIN_HEIGHT, MAX_HEIGHT = 40, 168
 local BELOW = 24 -- the row under the field
 local METER_MIN_WIDTH = 400 -- below this field width the meter yields to the model choices
 local inputBox, frameShape, inputScroll, send, placeholder, meter, onLayout
@@ -71,7 +71,7 @@ local function makeSend(parent, click)
     b.circle:SetAllPoints()
     b.circle:SetTexture(CIRCLE)
     b.icon = b:CreateTexture(nil, "ARTWORK")
-    b.icon:SetSize(14, 14)
+    b.icon:SetSize(11, 11)
     b.icon:SetPoint("CENTER")
     b.icon:SetTexture(SEND_ICON)
     local hover = b:CreateTexture(nil, "HIGHLIGHT")
@@ -111,10 +111,10 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
             ns.Chat.Submit()
         end
     end)
-    send:SetPoint("BOTTOMRIGHT", -7, 7)
+    send:SetPoint("BOTTOMRIGHT", -8, 8)
     inputScroll = CreateFrame("ScrollFrame", "WispAIInputScroll", inputBox)
     inputScroll:SetPoint("TOPLEFT", PAD_X, -PAD_Y)
-    inputScroll:SetPoint("BOTTOMRIGHT", -(SEND_SIZE + 16), PAD_Y)
+    inputScroll:SetPoint("BOTTOMRIGHT", -(SEND_SIZE + 18), PAD_Y)
     inputScroll:SetClipsChildren(true)
     placeholder = widgets.Label(inputBox, "Ask Wisp anything", COLORS.muted)
     widgets.ChatFont(placeholder, "Ask Wisp anything")

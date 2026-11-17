@@ -82,7 +82,7 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     draft:SetHeight(16)
     draft.scripts.OnTextChanged(draft, false)
     assert(viewport:GetVerticalScroll() == 0, "shorter restored drafts must clamp the scroll")
-    assert(field:GetHeight() == 44, "a one-line draft shrinks the field back to one line")
+    assert(field:GetHeight() == 40, "a one-line draft shrinks the field back to one line")
     assert(not bar:IsShown() and bar:GetValue() == 0)
     viewport:SetVerticalScroll(100)
     draft:SetText("")
@@ -97,10 +97,10 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
         field.scripts.OnSizeChanged(field, width)
         ns.UI.Refresh()
         local point, _, _, _, bottom = viewport:GetPoint()
-        assert(point == "BOTTOMRIGHT" and bottom == 13)
+        assert(point == "BOTTOMRIGHT" and bottom == 12)
         local transcriptBar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, transcriptBottom = transcriptBar:GetPoint()
-        assert(transcriptBottom == 88, "a one-line field keeps the transcript just above it")
+        assert(transcriptBottom == 84, "a one-line field keeps the transcript just above it")
         assert(meter:IsShown() == (width >= 400), "narrow fields leave the row to the model")
         local _, parent = draft:GetPoint()
         assert(parent == viewport, "layout changes must keep the editor inside its scroll area")
@@ -986,8 +986,8 @@ it(
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
-        -- The transcript ends 6 above an empty one-line composer: 44 field + 24 row + 14 margin.
-        assert(bottom == 88, "there must be no additional reserved progress gap")
+        -- The transcript ends 6 above an empty one-line composer: 40 field + 24 row + 14 margin.
+        assert(bottom == 84, "there must be no additional reserved progress gap")
         table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()
