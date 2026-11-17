@@ -1,5 +1,5 @@
 local helper = require("addon.tests.support")
-local LOCALES = { "enUS", "esES", "esMX" }
+local LOCALES = helper.LOCALES
 
 local function buildUI(gameLocale, language)
     local env = helper.env()
@@ -76,7 +76,7 @@ describe("locales", function()
         assert.equal("¿Volviste por más, %s?", env.ns.L["greeting.backForMore"])
         assert.equal("Configuración", env.ns.L["settings.title"])
 
-        env = buildUI("frFR")
+        env = buildUI("plPL")
         assert.equal("New chat", env.ns.L["sidebar.newChat"])
     end)
 
@@ -91,7 +91,12 @@ describe("locales", function()
             CreateContextMenu = function(owner, generate)
                 generate(owner, {
                     CreateRadio = function(_, text, _, select)
-                        radios[#radios + 1] = { text = text, select = select }
+                        local radio = { text = text, select = select }
+                        function radio.AddInitializer(_, initialize)
+                            radio.initialize = initialize
+                        end
+                        radios[#radios + 1] = radio
+                        return radio
                     end,
                 })
             end,
@@ -99,9 +104,10 @@ describe("locales", function()
         local selector = env.UI_TEST.frames.WispAISettingsPage.language
         assert.equal("English", selector:GetText())
         selector.scripts.OnClick(selector)
-        assert.equal(4, #radios)
-        assert.equal("Español (Latinoamérica)", radios[4].text)
-        radios[4].select()
+        assert.equal(#ns.LOCALE_CHOICES, #radios)
+        assert.equal("Español (Latinoamérica)", radios[5].text)
+        assert.equal("한국어", radios[10].text)
+        radios[5].select()
         assert.equal("esMX", ns.db.language)
         assert.equal("Español (Latinoamérica)", selector:GetText())
         assert.equal("WISPAI_RELOAD_LANGUAGE", env.UI_TEST.popup.id)
@@ -115,5 +121,40 @@ describe("locales", function()
         radios[1].select()
         assert.equal("auto", ns.db.language)
         assert.equal("esES", ns.ActiveLocale())
+
+        -- Names in another script get a game font that has it on this client.
+        local item = { fontString = env.CreateFrame("Frame"):CreateFontString() }
+        radios[10].initialize(item)
+        assert.equal("Fonts\\2002.TTF", item.fontString.fontPath)
+        item.fontString:SetFontObject({})
+        radios[2].initialize(item)
+        assert.equal("Fonts\\FRIZQT__.TTF", item.fontString.fontPath)
+    end)
+
+    it("uses a game font with the chosen language's script", function()
+        for language, face in pairs({
+            koKR = "Fonts\\2002.TTF",
+            zhCN = "Fonts\\ARKai_T.ttf",
+            zhTW = "Fonts\\bLEI00D.ttf",
+        }) do
+            local env = buildUI("enUS", language)
+            local widgets = env.ns.UI.Widgets
+            assert.equal(face, widgets.ScriptFace())
+            assert.is_false(widgets.InterSupports("Hello"))
+            local font = env.CreateFrame("Frame"):CreateFontString()
+            widgets.ChatFont(font, env.ns.L["activity.thinking"])
+            assert.equal(face, font.fontPath)
+        end
+        -- The game font already covers the client's own language.
+        local env = buildUI("koKR", "koKR")
+        assert.is_nil(env.ns.UI.Widgets.ScriptFace())
+        -- A Latin or Cyrillic language keeps Inter, except on a CJK/Hangul client,
+        -- whose player and zone names need the game font.
+        env = buildUI("enUS", "ruRU")
+        assert.is_nil(env.ns.UI.Widgets.ScriptFace())
+        assert.is_true(env.ns.UI.Widgets.InterSupports("Привет"))
+        env = buildUI("koKR", "enUS")
+        assert.is_nil(env.ns.UI.Widgets.ScriptFace())
+        assert.is_false(env.ns.UI.Widgets.InterSupports("Hello"))
     end)
 end)

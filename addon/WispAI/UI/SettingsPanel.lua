@@ -31,8 +31,19 @@ local function switchRow(parent, top, text, checked, onChange)
     return row, switch
 end
 
+-- Each language is named in its own language (enUS holds the names), so a
+-- name in another script needs that script's game font on this client.
 local function languageName(choice)
     return choice == "auto" and L["settings.languageAuto"] or L["language." .. choice]
+end
+
+local function showLanguage(selector, choice)
+    selector:SetText(languageName(choice))
+    local text = selector.GetFontString and selector:GetFontString()
+    if text and FONTS.button then
+        text:SetFontObject(FONTS.button)
+    end
+    widgets.UseLanguageFace(text, choice)
 end
 
 -- Saves the UI language. Text is read when the window is built, so a change
@@ -42,7 +53,7 @@ local function chooseLanguage(choice, selector)
         return
     end
     ns.db.language = choice
-    selector:SetText(languageName(choice))
+    showLanguage(selector, choice)
     StaticPopup_Show("WISPAI_RELOAD_LANGUAGE")
 end
 
@@ -68,22 +79,28 @@ local function languageRow(parent, top)
     caption:SetPoint("RIGHT", -190, 0)
     caption:SetWordWrap(false)
     local selector
-    selector = button(row, languageName(ns.db.language or "auto"), 180, function(self)
+    selector = button(row, "", 180, function(self)
         if not (MenuUtil and MenuUtil.CreateContextMenu) then
             return
         end
         MenuUtil.CreateContextMenu(self, function(_, root)
             for _, choice in ipairs(ns.LOCALE_CHOICES) do
                 local option = choice
-                root:CreateRadio(languageName(option), function()
+                local radio = root:CreateRadio(languageName(option), function()
                     return (ns.db.language or "auto") == option
                 end, function()
                     chooseLanguage(option, selector)
                 end)
+                if radio and radio.AddInitializer then
+                    radio:AddInitializer(function(item)
+                        widgets.UseLanguageFace(item.fontString, option)
+                    end)
+                end
             end
         end)
     end)
     selector:SetPoint("RIGHT", 0, 0)
+    showLanguage(selector, ns.db.language or "auto")
     local rule = row:CreateTexture(nil, "ARTWORK")
     rule:SetPoint("BOTTOMLEFT")
     rule:SetPoint("BOTTOMRIGHT")

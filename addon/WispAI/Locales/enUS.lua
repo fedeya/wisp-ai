@@ -1,7 +1,8 @@
 local _, ns = ...
 
 -- English is the source of truth: every key lives here, and other locales
--- fall back to it for anything they leave out.
+-- fall back to it for anything they leave out. Language names (language.*)
+-- live only here, each written in its own language.
 ns.Locales.enUS = {
     -- Shared
     ["common.delete"] = "Delete",
@@ -178,6 +179,14 @@ ns.Locales.enUS = {
     ["language.enUS"] = "English",
     ["language.esES"] = "Español (España)",
     ["language.esMX"] = "Español (Latinoamérica)",
+    ["language.deDE"] = "Deutsch",
+    ["language.frFR"] = "Français",
+    ["language.itIT"] = "Italiano",
+    ["language.ptBR"] = "Português (Brasil)",
+    ["language.ruRU"] = "Русский",
+    ["language.koKR"] = "한국어",
+    ["language.zhCN"] = "简体中文",
+    ["language.zhTW"] = "繁體中文",
     ["chatHistory.title"] = "WoW chat history",
     ["chatHistory.hint"] = "Up to 200 messages / 30 minutes, until logout or reload. Enabled channels are shared with your AI provider when consulted.",
     ["chatHistory.publicChannels"] = "Public / custom channels",

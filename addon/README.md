@@ -20,14 +20,24 @@ revision and connection state). Cross-subsystem calls use an explicit module API
 Helpers and widget state stay local to their owning file.
 
 `Locale.lua` loads right after `Namespace.lua`, followed by one file per locale in
-`Locales/` (`enUS`, `esES`, `esMX`). UI code reads strings through `ns.L` with
+`Locales/`: every WoW client language (`enUS`, `deDE`, `esES`, `esMX`, `frFR`,
+`itIT`, `koKR`, `ptBR`, `ruRU`, `zhCN`, `zhTW`). UI code reads strings through `ns.L` with
 identifier keys grouped by area (`sidebar.newChat`, `routines.newButton`). `enUS` has
 every key and is the fallback for a missing translation; a missing key shows the key
 itself. The Language setting (`ns.db.language`) picks a locale or follows the game
 (`auto`); a change asks to reload the UI. Only addon chrome goes through `ns.L`:
 model output, user text and game names stay as they are. Lookups are live, so tables
 built at load time hold keys, not text. To add a locale, add a file under `Locales/`,
-list it in the manifest and in `ns.LOCALE_CHOICES`, and add its `language.*` name.
+list it in the manifest, `ns.LOCALE_CHOICES` and the test helper's `LOCALES`, and
+add its `language.*` name to `enUS`.
+
+Fonts follow the UI language, not only the client's: `ns.UI.BuildUI` calls
+`ns.UI.Widgets.ApplyFonts(ns.ActiveLocale())`. Inter covers Latin and Cyrillic;
+for Korean or Chinese on a client in another language, text uses the game font
+that has the script (`Fonts\2002.TTF`, `Fonts\ARKai_T.ttf`, `Fonts\bLEI00D.ttf`),
+and the language list draws each name with a font that covers it. A Korean or
+Chinese client keeps the game font for every language, since player and zone
+names come in its script.
 
 | Directory                       | Responsibility                                                     |
 | ------------------------------- | ------------------------------------------------------------------ |

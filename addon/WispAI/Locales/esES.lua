@@ -1,6 +1,6 @@
 local _, ns = ...
 
--- Spanish for Spain (esES clients).
+-- Spanish for Spain.
 ns.Locales.esES = {
     -- Shared
     ["common.delete"] = "Eliminar",
@@ -174,9 +174,6 @@ ns.Locales.esES = {
     ["settings.reloadForLanguage"] = "¿Recargar la interfaz para cambiar el idioma de Wisp?",
     ["settings.reload"] = "Recargar",
     ["settings.later"] = "Más tarde",
-    ["language.enUS"] = "English",
-    ["language.esES"] = "Español (España)",
-    ["language.esMX"] = "Español (Latinoamérica)",
     ["chatHistory.title"] = "Historial del chat de WoW",
     ["chatHistory.hint"] = "Hasta 200 mensajes / 30 minutos, hasta cerrar sesión o recargar. Los canales activados se comparten con tu proveedor de IA cuando se consultan.",
     ["chatHistory.publicChannels"] = "Canales públicos / personalizados",

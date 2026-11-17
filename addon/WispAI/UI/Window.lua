@@ -165,6 +165,7 @@ function ns.UI.Refresh(preserveScrollForChat)
 end
 
 function ns.UI.BuildUI()
+    ns.UI.Widgets.ApplyFonts(ns.ActiveLocale())
     refreshReferences()
     frame = CreateFrame("Frame", "WispAIWindow", UIParent, "BackdropTemplate")
     frame:SetSize(ns.db.expandedWidth or 700, ns.db.expandedHeight or 520)

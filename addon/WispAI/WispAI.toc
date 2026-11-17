@@ -11,8 +11,16 @@
 Namespace.lua
 Locale.lua
 Locales\enUS.lua
+Locales\deDE.lua
 Locales\esES.lua
 Locales\esMX.lua
+Locales\frFR.lua
+Locales\itIT.lua
+Locales\koKR.lua
+Locales\ptBR.lua
+Locales\ruRU.lua
+Locales\zhCN.lua
+Locales\zhTW.lua
 Shared\Numbers.lua
 Shared\Text.lua
 Core.lua

@@ -37,10 +37,24 @@ local FLAT = "Interface\\Buttons\\WHITE8X8"
 local FONT_DIR = "Interface\\AddOns\\WispAI\\Fonts\\"
 local INTER = FONT_DIR .. "Inter-Medium.ttf"
 local INTER_STRONG = FONT_DIR .. "Inter-SemiBold.ttf"
--- Inter covers Latin, Greek and Cyrillic. Clients whose UI uses CJK or Hangul
--- keep the localized game fonts, and a failed load falls back to them as well.
+-- Inter covers Latin, Greek and Cyrillic. When the UI language uses CJK or
+-- Hangul, text keeps the game font, and a failed Inter load falls back to it too.
 local LOCALIZED_ONLY = { zhCN = true, zhTW = true, koKR = true }
-local useInter = not LOCALIZED_ONLY[GetLocale and GetLocale() or "enUS"]
+-- Game fonts for scripts the client's own font may lack. Every client ships
+-- them, so a language chosen in Settings renders even when the game runs in
+-- another one (Korean on an English client would otherwise show boxes).
+local SCRIPT_FONTS = {
+    koKR = "Fonts\\2002.TTF",
+    zhCN = "Fonts\\ARKai_T.ttf",
+    zhTW = "Fonts\\bLEI00D.ttf",
+    ruRU = "Fonts\\FRIZQT___CYR.TTF",
+}
+local function gameLocale()
+    return GetLocale and GetLocale() or "enUS"
+end
+-- Follows the game until ApplyFonts sets the UI language.
+local useInter = not LOCALIZED_ONLY[gameLocale()]
+local scriptFont -- face for CJK/Hangul text when the UI language differs from the game's
 -- Text outside Latin/Greek/Cyrillic (UTF-8 lead bytes 0xD4 and above) keeps the game font.
 local function interSupports(text)
     return useInter and not (text or ""):find("[\212-\255]")
@@ -50,21 +64,31 @@ local function softShadow(font)
     font:SetShadowOffset(1, -1)
     font:SetShadowColor(COLORS.shade[1], COLORS.shade[2], COLORS.shade[3], 0.6)
 end
+local fontRoles = {}
+-- Paints a role's font: Inter when the UI language allows it, otherwise the
+-- game font, swapped for the language's script font when the game lacks it.
+local function paintFont(role)
+    local font, base = role.font, role.base
+    font:SetFontObject(base)
+    if useInter and font:SetFont(role.path, role.size, "") then
+        softShadow(font)
+        return
+    end
+    font:SetFontObject(base)
+    if scriptFont then
+        local _, size, flags = base:GetFont()
+        font:SetFont(scriptFont, size or role.size, flags or "")
+    end
+end
 local function makeFont(name, path, size, fallback)
     local base = _G[fallback]
     if not CreateFont or not base then
         return base
     end
-    local font = CreateFont(name)
-    font:SetFontObject(base)
-    if useInter then
-        if font:SetFont(path, size, "") then
-            softShadow(font)
-        else
-            font:SetFontObject(base)
-        end
-    end
-    return font
+    local role = { font = CreateFont(name), path = path, size = size, base = base }
+    fontRoles[#fontRoles + 1] = role
+    paintFont(role)
+    return role.font
 end
 -- Sizes per role, in UI units. Conversation text follows the player's chat font
 -- size instead (chatFont below), as a chat should.
@@ -84,14 +108,45 @@ local function interSize(size)
     return math.max(8, math.floor(size * INTER_CHAT_SCALE + 0.5))
 end
 --- Applies Inter at the player's chat size, or the chat font itself when Inter
---- cannot render `text` or the client is localized to CJK/Hangul.
+--- cannot render `text` or the UI language is CJK/Hangul.
 local function chatFont(font, text, strong)
     font:SetFontObject(ChatFontNormal)
+    local _, size, flags = ChatFontNormal:GetFont()
     if interSupports(text) then
-        local _, size, flags = ChatFontNormal:GetFont()
         if font:SetFont(strong and INTER_STRONG or INTER, interSize(size), flags) then
             softShadow(font)
         end
+    elseif scriptFont then
+        font:SetFont(scriptFont, size, flags)
+    end
+end
+
+--- Sets fonts for the UI language `locale` (from `ns.ActiveLocale`). The window
+--- calls it before building, once saved variables have loaded; a language change
+--- takes effect on reload.
+local function applyFonts(locale)
+    -- On a CJK/Hangul client, game names (players, zones) are in that script, so
+    -- the game font stays even when the UI language is Latin or Cyrillic.
+    useInter = not LOCALIZED_ONLY[locale] and not LOCALIZED_ONLY[gameLocale()]
+    scriptFont = LOCALIZED_ONLY[locale] and locale ~= gameLocale() and SCRIPT_FONTS[locale] or nil
+    for _, role in ipairs(fontRoles) do
+        paintFont(role)
+    end
+end
+
+--- The face for CJK/Hangul text when the UI language's script is not the
+--- game's, or nil when the game font already covers it.
+local function scriptFace()
+    return scriptFont
+end
+
+--- Gives `font` a game font that covers `locale`'s script when the game runs in
+--- another language, keeping its size, so a language's own name renders in a list.
+local function useLanguageFace(font, locale)
+    local face = locale ~= gameLocale() and SCRIPT_FONTS[locale]
+    if face and font and font.SetFont then
+        local _, size, flags = font:GetFont()
+        font:SetFont(face, size or 12, flags or "")
     end
 end
 
@@ -499,6 +554,9 @@ ns.UI.Widgets = {
     SoftShadow = softShadow,
     InterSize = interSize,
     InterSupports = interSupports,
+    ApplyFonts = applyFonts,
+    ScriptFace = scriptFace,
+    UseLanguageFace = useLanguageFace,
     ShowCopyUrl = showCopyUrl,
     OnePixel = onePixel,
     SetScroll = setScroll,

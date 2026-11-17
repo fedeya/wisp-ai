@@ -29,7 +29,7 @@ local function styleFont(font, span, level)
             return
         end
     end
-    font:SetFont(path, height, flags)
+    font:SetFont(ns.UI.Widgets.ScriptFace() or path, height, flags)
 end
 
 function layout.Hide(pool, start)

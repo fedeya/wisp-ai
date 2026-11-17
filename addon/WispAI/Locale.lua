@@ -5,7 +5,22 @@ local _, ns = ...
 ns.Locales = ns.Locales or {}
 
 --- Locales a player can pick in Settings, in menu order; "auto" follows the game.
-ns.LOCALE_CHOICES = { "auto", "enUS", "esES", "esMX" }
+ns.LOCALE_CHOICES = {
+    "auto",
+    "enUS",
+    "deDE",
+    "esES",
+    "esMX",
+    "frFR",
+    "itIT",
+    "ptBR",
+    "ruRU",
+    "koKR",
+    "zhCN",
+    "zhTW",
+}
+-- Game locales that share another locale's table.
+local ALIASES = { enGB = "enUS", ptPT = "ptBR" }
 
 --- The locale the UI shows: the Settings choice, or the game's language when
 --- that is "auto" or has no table. Returns "enUS" when neither has one.
@@ -15,6 +30,7 @@ function ns.ActiveLocale()
         return chosen
     end
     local game = GetLocale and GetLocale()
+    game = ALIASES[game] or game
     return game and ns.Locales[game] and game or "enUS"
 end
 
