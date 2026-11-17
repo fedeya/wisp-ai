@@ -2,7 +2,7 @@ local _, ns = ...
 local widgets = ns.UI.Widgets
 local COLORS, FONTS = widgets.COLORS, widgets.FONTS
 local label, setText, button = widgets.Label, widgets.SetText, widgets.Button
-local TEXT, MUTED, ACCENT = widgets.TEXT, widgets.MUTED, widgets.ACCENT
+local TEXT, ACCENT = widgets.TEXT, widgets.ACCENT
 local EXPANDED_WIDTH = 190
 local CHAT_ROW, ROW_GAP = 26, 2
 local NAV_ROW, FOOTER_HEIGHT = 30, 46
@@ -20,19 +20,16 @@ function ns.UI.RequestDeleteChat(id)
     end
 end
 
--- The character's class and level. A healthy connection is told by the avatar's
--- green dot alone; only a problem adds words.
+-- The character's name, and for the avatar's tooltip its class, level and the
+-- connection state.
 local function characterLine()
     local name = UnitName and UnitName("player") or nil
     local className = UnitClass and UnitClass("player") or nil
     local level = UnitLevel and UnitLevel("player") or nil
-    local problem = ns.Transport.needsDesktopSetup and "setup required"
-        or (not ns.connected and "offline")
-    local detail = className and level and (className .. " " .. level) or nil
-    if problem then
-        detail = detail and (detail .. " · " .. problem) or problem
-    end
-    return name or "Wisp", detail or ""
+    local state = ns.Transport.needsDesktopSetup and "Setup required"
+        or (ns.connected and "Connected" or "Offline")
+    local detail = className and level and (className .. " " .. level .. " · " .. state) or state
+    return name or "Wisp", detail
 end
 
 -- Returns the sidebar width so the window can anchor the conversation panel.
@@ -110,7 +107,9 @@ local function refreshFooter()
     setText(footer.name, name)
     -- First UTF-8 character, so accented names keep a whole glyph.
     setText(footer.initial, string.upper(name:match("^[%z\1-\127\194-\244][\128-\191]*") or ""))
-    setText(footer.detail, detail)
+    -- The narrow sidebar shows the name alone; class, level and any connection
+    -- problem are in the avatar's tooltip, and the dot tells the connection.
+    footer.tooltip = detail
     local tint = ns.Transport.needsDesktopSetup and COLORS.warning
         or (ns.connected and COLORS.success or COLORS.muted)
     footer.status:SetColorTexture(unpack(tint))
@@ -179,18 +178,26 @@ local function buildFooter()
     widgets.Box(footer.avatar, COLORS.selected, COLORS.lineStrong)
     footer.status = widgets.Dot(footer.avatar, 6, COLORS.muted)
     footer.status:SetPoint("BOTTOMRIGHT", footer.avatar, "BOTTOMRIGHT", 2, -2)
+    footer.avatar:EnableMouse(true)
+    footer.avatar:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(footer.name:GetText() or "")
+        if footer.tooltip and footer.tooltip ~= "" then
+            GameTooltip:AddLine(footer.tooltip, 1, 1, 1)
+        end
+        GameTooltip:Show()
+    end)
+    footer.avatar:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
     footer.name = label(footer, "", TEXT, FONTS.strong)
-    footer.name:SetPoint("TOPLEFT", footer.avatar, "TOPRIGHT", 8, 1)
+    footer.name:SetPoint("LEFT", footer.avatar, "RIGHT", 8, 0)
     footer.name:SetPoint("RIGHT", -32, 0)
     footer.name:SetWordWrap(false)
-    footer.detail = label(footer, "", MUTED, FONTS.small)
-    footer.detail:SetPoint("TOPLEFT", footer.name, "BOTTOMLEFT", 0, -3)
-    footer.detail:SetPoint("RIGHT", -32, 0)
-    footer.detail:SetWordWrap(false)
     footer.initial = label(footer.avatar, "", TEXT, FONTS.strong)
     footer.initial:SetPoint("CENTER", 0, 0)
     footer.initial:SetJustifyH("CENTER")
-    footer.profile = { rule, footer.avatar, footer.name, footer.detail }
+    footer.profile = { rule, footer.avatar, footer.name }
 end
 
 -- The footer hosts the window's settings button next to the character.
