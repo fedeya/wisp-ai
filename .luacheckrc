@@ -95,6 +95,7 @@ read_globals = {
     "QuestMapFrame_OpenToQuestDetails",
     "Questie",
     "QuestieLoader",
+    "ReloadUI",
     "SOUNDKIT",
     "SaveBindings",
     "SetBinding",

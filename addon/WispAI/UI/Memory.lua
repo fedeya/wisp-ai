@@ -13,13 +13,10 @@ function ns.UI.Memory.Refresh()
     local memory = ns.memory or { status = "loading" }
     setText(
         memoryStatus,
-        memory.status == "loading" and L["Loading memory..."]
+        memory.status == "loading" and L["memory.loading"]
             or (
                 memory.error
-                or (
-                    #(memory.entries or {}) == 0 and L["No saved memories yet."]
-                    or L["Preferences and this character's plans"]
-                )
+                or (#(memory.entries or {}) == 0 and L["memory.empty"] or L["memory.subtitle"])
             )
     )
     local y = 0
@@ -34,11 +31,11 @@ function ns.UI.Memory.Refresh()
             row.text = label(row, "")
             row.text:SetWordWrap(true)
             row.text:SetPoint("TOPLEFT", 12, -26)
-            row.edit = button(row, L["Edit"], 45, function()
+            row.edit = button(row, L["common.edit"], 45, function()
                 StaticPopup_Show("WISPAI_EDIT_MEMORY", nil, nil, row.entry)
             end, "ghost")
             row.edit:SetPoint("TOPRIGHT", -62, -6)
-            row.remove = button(row, L["Forget"], 54, function()
+            row.remove = button(row, L["memory.forget"], 54, function()
                 ns.Chat.MemoryAction("remove", row.entry.slot, row.entry.key)
             end, "ghost")
             row.remove:SetPoint("TOPRIGHT", -6, -6)
@@ -48,7 +45,10 @@ function ns.UI.Memory.Refresh()
         row:SetWidth(width)
         row.text:SetWidth(width - 24)
         setText(row.text, entry.text:gsub("|", "||"))
-        setText(row.scope, entry.slot == "preferences" and L["Player"] or L["Character"])
+        setText(
+            row.scope,
+            entry.slot == "preferences" and L["memory.player"] or L["memory.character"]
+        )
         local height = row.text:GetStringHeight() + 38
         row:SetHeight(height)
         row:ClearAllPoints()
@@ -64,9 +64,9 @@ end
 
 function ns.UI.Memory.Build(settings)
     StaticPopupDialogs.WISPAI_EDIT_MEMORY = {
-        text = L["Edit saved memory"],
-        button1 = L["Save"],
-        button2 = L["Cancel"],
+        text = L["memory.editTitle"],
+        button1 = L["common.save"],
+        button2 = L["common.cancel"],
         hasEditBox = true,
         maxLetters = 1000,
         OnShow = function(self, entry)
@@ -87,7 +87,7 @@ function ns.UI.Memory.Build(settings)
     memoryPanel:SetFrameLevel(settings:GetFrameLevel() + 5)
     box(memoryPanel, COLORS.window, COLORS.window)
     memoryPanel:Hide()
-    ns.UI.SettingsPanel.SubpageHeader(memoryPanel, L["Memory"])
+    ns.UI.SettingsPanel.SubpageHeader(memoryPanel, L["memory.title"])
     local top = ns.UI.SettingsPanel.SUBPAGE_TOP
     memoryStatus = label(memoryPanel, "", MUTED)
     memoryStatus:SetPoint("TOPLEFT", 24, top)

@@ -5,37 +5,37 @@ local COLORS, FONTS = widgets.COLORS, widgets.FONTS
 local label, setText, box, button = widgets.Label, widgets.SetText, widgets.Box, widgets.Button
 local TEXT, MUTED, ACCENT = widgets.TEXT, widgets.MUTED, widgets.ACCENT
 local PAGE_INSET, CARD_HEIGHT, CARD_GAP, RUN_ROW, BACK_BAND = 24, 58, 8, 30, 40
-local WRITE_YOUR_OWN = L["Create a routine that "]
+-- These tables hold locale keys; text is looked up when shown.
 -- Ready-made routines offered by New routine; each fills the composer to review and send.
 local TEMPLATES = {
     {
-        title = L["Level-up coach"],
-        prompt = L["When I level up, tell me which new spells to train and where my trainer is."],
+        title = "routineTemplate.levelUpTitle",
+        prompt = "routineTemplate.levelUpPrompt",
     },
     {
-        title = L["Bag check"],
-        prompt = L["When my bags are almost full, tell me what is safe to sell or destroy."],
+        title = "routineTemplate.bagsTitle",
+        prompt = "routineTemplate.bagsPrompt",
     },
     {
-        title = L["Zone briefing"],
-        prompt = L["When I enter a new zone, summarize the quests I can pick up there."],
+        title = "routineTemplate.zoneTitle",
+        prompt = "routineTemplate.zonePrompt",
     },
     {
-        title = L["Gear watch"],
-        prompt = L["When I equip new gear, tell me if it is an upgrade and what to replace next."],
+        title = "routineTemplate.gearTitle",
+        prompt = "routineTemplate.gearPrompt",
     },
 }
 local EVENT_LABELS = {
-    level_up = L["Level up"],
-    equipment_changed = L["Gear changed"],
-    money_changed = L["Money changed"],
-    bags_changed = L["Bags changed"],
-    quests_changed = L["Quests updated"],
-    spells_changed = L["New spells"],
-    talents_changed = L["Talents changed"],
-    zone_changed = L["New zone"],
-    interval = L["Scheduled check"],
-    tick = L["Scheduled check"],
+    level_up = "routineEvent.levelUp",
+    equipment_changed = "routineEvent.gearChanged",
+    money_changed = "routineEvent.moneyChanged",
+    bags_changed = "routineEvent.bagsChanged",
+    quests_changed = "routineEvent.questsUpdated",
+    spells_changed = "routineEvent.newSpells",
+    talents_changed = "routineEvent.talentsChanged",
+    zone_changed = "routineEvent.newZone",
+    interval = "routineEvent.scheduled",
+    tick = "routineEvent.scheduled",
 }
 local RUN_TINTS = {
     running = ACCENT,
@@ -45,10 +45,10 @@ local RUN_TINTS = {
     cancelled = COLORS.muted,
 }
 local RUN_STATUS = {
-    running = L["running"],
-    error = L["failed"],
-    interrupted = L["interrupted"],
-    cancelled = L["cancelled"],
+    running = "routineRun.running",
+    error = "routineRun.failed",
+    interrupted = "routineRun.interrupted",
+    cancelled = "routineRun.cancelled",
 }
 
 -- The page shows one view at a time: the routine list, one routine's detail,
@@ -61,9 +61,10 @@ local pending = {} -- routine id -> enabled, while a pause or resume is on its w
 --- A readable name for a routine event ("level_up" -> "Level up").
 function ns.UI.Routines.EventLabel(event)
     if not event or event == "" then
-        return L["Routine"]
+        return L["routines.routine"]
     end
-    return EVENT_LABELS[event] or (event:gsub("_", " "):gsub("^%l", string.upper))
+    return EVENT_LABELS[event] and L[EVENT_LABELS[event]]
+        or (event:gsub("_", " "):gsub("^%l", string.upper))
 end
 local eventLabel = ns.UI.Routines.EventLabel
 
@@ -87,13 +88,13 @@ local function ago(milliseconds)
     end
     local seconds = math.max(0, time() - math.floor(milliseconds / 1000))
     if seconds < 60 then
-        return L["just now"]
+        return L["time.justNow"]
     elseif seconds < 3600 then
-        return L["%dm ago"]:format(math.floor(seconds / 60))
+        return L["time.minutesAgo"]:format(math.floor(seconds / 60))
     elseif seconds < 86400 then
-        return L["%dh ago"]:format(math.floor(seconds / 3600))
+        return L["time.hoursAgo"]:format(math.floor(seconds / 3600))
     end
-    return L["%dd ago"]:format(math.floor(seconds / 86400))
+    return L["time.daysAgo"]:format(math.floor(seconds / 86400))
 end
 
 local function clock(milliseconds)
@@ -106,14 +107,14 @@ end
 -- "Today", "Yesterday" or a short date, for grouping runs by day.
 local function dayLabel(milliseconds)
     if not milliseconds or not date or not time then
-        return L["Earlier"]
+        return L["time.earlier"]
     end
     local seconds = math.floor(milliseconds / 1000)
     local day = date("%Y%m%d", seconds)
     if day == date("%Y%m%d", time()) then
-        return L["Today"]
+        return L["time.today"]
     elseif day == date("%Y%m%d", time() - 86400) then
-        return L["Yesterday"]
+        return L["time.yesterday"]
     end
     return date("%d %b", seconds)
 end
@@ -142,19 +143,19 @@ end
 -- What a routine card or detail says under its title: the trigger, then the
 -- latest tip, or when it last checked, or that it is paused or saving.
 local function summary(routine)
-    local text = routine.trigger or L["Runs on game events"]
+    local text = routine.trigger or L["routines.runsOnEvents"]
     if pending[routine.id] ~= nil then
-        return L["%s · saving…"]:format(text)
+        return L["routines.summarySaving"]:format(text)
     elseif not isEnabled(routine) then
-        return L["%s · paused"]:format(text)
+        return L["routines.summaryPaused"]:format(text)
     end
     local latest = visibleRuns(routine.id)[1]
     local tipped = latest and ago(latest.startedAt)
     if tipped then
-        return L["%s · last tip %s"]:format(text, tipped)
+        return L["routines.summaryLastTip"]:format(text, tipped)
     end
     local checked = ago(routine.lastStartedAt)
-    return checked and L["%s · checked %s"]:format(text, checked) or text
+    return checked and L["routines.summaryChecked"]:format(text, checked) or text
 end
 
 local function send(operation, id)
@@ -182,7 +183,7 @@ local function startChat(prompt)
 end
 
 local function editRoutine(routine)
-    startChat(L['Change the routine "%s" so that ']:format(routine.title))
+    startChat(L["routines.promptChange"]:format(routine.title))
 end
 
 local function deleteRoutine(routine)
@@ -194,16 +195,19 @@ local function routineMenu(owner, routine)
         return
     end
     MenuUtil.CreateContextMenu(owner, function(_, root)
-        root:CreateButton(L["Open"], function()
+        root:CreateButton(L["common.open"], function()
             ns.UI.Routines.ShowRoutine(routine.id)
         end)
-        root:CreateButton(isEnabled(routine) and L["Pause"] or L["Resume"], function()
-            setRoutineEnabled(routine, not isEnabled(routine))
-        end)
-        root:CreateButton(L["Edit with Wisp"], function()
+        root:CreateButton(
+            isEnabled(routine) and L["routines.pause"] or L["routines.resume"],
+            function()
+                setRoutineEnabled(routine, not isEnabled(routine))
+            end
+        )
+        root:CreateButton(L["routines.editWithWisp"], function()
             editRoutine(routine)
         end)
-        root:CreateButton(L["Delete"], function()
+        root:CreateButton(L["common.delete"], function()
             deleteRoutine(routine)
         end)
     end)
@@ -217,7 +221,7 @@ local function makeView(withBack)
     frame:Hide()
     local top = 0
     if withBack then
-        local back = widgets.BackLink(frame, L["Routines"], function()
+        local back = widgets.BackLink(frame, L["routines.title"], function()
             ns.UI.Routines.Show()
         end)
         back:SetPoint("TOPLEFT", PAGE_INSET, -10)
@@ -324,11 +328,11 @@ local function layoutRuns(parent, pools, runs, y, width, named)
         row.label:SetTextColor(unpack(TEXT))
         local text = eventLabel(run.event)
         if named then
-            text = (ns.UI.Routines.Title(run.routineId) or run.title or L["Routine"])
+            text = (ns.UI.Routines.Title(run.routineId) or run.title or L["routines.routine"])
                 .. " · "
                 .. text
         end
-        local status = RUN_STATUS[run.status]
+        local status = RUN_STATUS[run.status] and L[RUN_STATUS[run.status]]
         setText(row.label, status and (text .. " · " .. status) or text)
         setText(row.time, clock(run.startedAt))
         row.mark:SetColorTexture(unpack(RUN_TINTS[run.status] or COLORS.muted))
@@ -404,12 +408,11 @@ local function refreshDetail()
     setText(detail.title, routine.title)
     setText(detail.summary, summary(routine))
     detail.toggle:SetChecked(isEnabled(routine))
-    setText(detail.state, isEnabled(routine) and L["Active"] or L["Paused"])
+    setText(detail.state, isEnabled(routine) and L["routines.active"] or L["routines.paused"])
     local instruction = routine.instruction
     setText(
         detail.instruction,
-        instruction and instruction ~= "" and instruction
-            or L["Open a conversation with Wisp to see or change what this routine does."]
+        instruction and instruction ~= "" and instruction or L["routines.noInstruction"]
     )
     local y = 130 + detail.instruction:GetStringHeight() + 24
     detail.historyCaption:ClearAllPoints()
@@ -521,48 +524,32 @@ local function buildList()
     views.list = frame
     list.scroll, list.content, list.cards = scroll, content, {}
     list.rows, list.headers = {}, {}
-    local title = label(frame, L["Routines"], TEXT, FONTS.heading)
+    local title = label(frame, L["routines.title"], TEXT, FONTS.heading)
     title:SetPoint("TOPLEFT", PAGE_INSET, -20)
-    local subtitle =
-        label(frame, L["Wisp acts on its own when something happens in game."], MUTED, FONTS.small)
+    local subtitle = label(frame, L["routines.subtitle"], MUTED, FONTS.small)
     subtitle:SetPoint("TOPLEFT", PAGE_INSET, -48)
     subtitle:SetPoint("RIGHT", -150, 0)
     subtitle:SetWordWrap(true)
-    local create = button(frame, L["+ New routine"], 112, function()
+    local create = button(frame, L["routines.newButton"], 112, function()
         ns.UI.Routines.ShowTemplates()
     end, "primary")
     create:SetPoint("TOPRIGHT", -PAGE_INSET, -18)
     scroll:SetPoint("TOPLEFT", PAGE_INSET, -80)
-    list.notice = label(
-        content,
-        L["Routines are paused because routine tools are off in Integrations."],
-        COLORS.warning,
-        FONTS.small
-    )
+    list.notice = label(content, L["routines.pausedNotice"], COLORS.warning, FONTS.small)
     list.notice:SetPoint("TOPLEFT", 0, 0)
     list.notice:SetPoint("RIGHT", 0, 0)
     list.notice:SetWordWrap(true)
     list.empty = CreateFrame("Frame", nil, content, "BackdropTemplate")
     list.empty:SetHeight(CARD_HEIGHT + 8)
     box(list.empty, COLORS.window, COLORS.line)
-    local emptyTitle = label(list.empty, L["No routines yet"], TEXT, FONTS.strong)
+    local emptyTitle = label(list.empty, L["routines.emptyTitle"], TEXT, FONTS.strong)
     emptyTitle:SetPoint("TOPLEFT", 14, -14)
-    local emptyDetail = label(
-        list.empty,
-        L["Start one from a template: Wisp watches for level ups, full bags or new zones and checks in on its own."],
-        MUTED,
-        FONTS.small
-    )
+    local emptyDetail = label(list.empty, L["routines.emptyDetail"], MUTED, FONTS.small)
     emptyDetail:SetPoint("TOPLEFT", 14, -34)
     emptyDetail:SetPoint("RIGHT", -14, 0)
     emptyDetail:SetWordWrap(true)
-    list.runsCaption = widgets.Caption(content, L["Recent runs"])
-    list.runsEmpty = label(
-        content,
-        L["No runs yet. Wisp posts here when a routine has something to say."],
-        MUTED,
-        FONTS.small
-    )
+    list.runsCaption = widgets.Caption(content, L["routines.recentRuns"])
+    list.runsEmpty = label(content, L["routines.noRuns"], MUTED, FONTS.small)
     list.runsEmpty:SetWordWrap(true)
 end
 
@@ -589,7 +576,7 @@ local function buildDetail()
     end)
     detail.state = label(content, "", TEXT)
     detail.state:SetPoint("LEFT", detail.toggle, "RIGHT", 8, 0)
-    local delete = button(content, L["Delete"], 70, function()
+    local delete = button(content, L["common.delete"], 70, function()
         local routine = routineById(detailId)
         if routine then
             deleteRoutine(routine)
@@ -600,27 +587,22 @@ local function buildDetail()
     if deleteText then
         deleteText:SetTextColor(unpack(COLORS.danger))
     end
-    local edit = button(content, L["Edit with Wisp"], 112, function()
+    local edit = button(content, L["routines.editWithWisp"], 112, function()
         local routine = routineById(detailId)
         if routine then
             editRoutine(routine)
         end
     end)
     edit:SetPoint("RIGHT", delete, "LEFT", -8, 0)
-    local about = widgets.Caption(content, L["What it does"])
+    local about = widgets.Caption(content, L["routines.whatItDoes"])
     about:SetPoint("TOPLEFT", 0, -110)
     detail.instruction = label(content, "", widgets.TEXT)
     detail.instruction:SetPoint("TOPLEFT", 0, -130)
     detail.instruction:SetPoint("RIGHT", 0, 0)
     detail.instruction:SetWordWrap(true)
     detail.instruction:SetSpacing(3)
-    detail.historyCaption = widgets.Caption(content, L["History"])
-    detail.runsEmpty = label(
-        content,
-        L["No tips yet. Wisp posts here when this routine has something to say."],
-        MUTED,
-        FONTS.small
-    )
+    detail.historyCaption = widgets.Caption(content, L["routines.history"])
+    detail.runsEmpty = label(content, L["routines.noTips"], MUTED, FONTS.small)
     detail.runsEmpty:SetWordWrap(true)
 end
 
@@ -629,14 +611,9 @@ local function buildTemplates()
     views.new = frame
     templates.scroll, templates.content = scroll, content
     templates.cards = {}
-    local heading = label(content, L["New routine"], TEXT, FONTS.heading)
+    local heading = label(content, L["routines.newTitle"], TEXT, FONTS.heading)
     heading:SetPoint("TOPLEFT", 0, 0)
-    local intro = label(
-        content,
-        L["Pick a starting point; Wisp fills in the details with you before it saves the routine."],
-        MUTED,
-        FONTS.small
-    )
+    local intro = label(content, L["routines.newIntro"], MUTED, FONTS.small)
     intro:SetPoint("TOPLEFT", 0, -28)
     intro:SetPoint("RIGHT", 0, 0)
     intro:SetWordWrap(true)
@@ -644,16 +621,16 @@ local function buildTemplates()
     for index, template in ipairs(TEMPLATES) do
         local card = cardButton(content, 14)
         card:SetPoint("TOPLEFT", 0, -y)
-        setText(card.title, template.title)
-        setText(card.detail, template.prompt)
+        setText(card.title, L[template.title])
+        setText(card.detail, L[template.prompt])
         card:SetScript("OnClick", function()
-            startChat(L["Create a routine: %s"]:format(template.prompt))
+            startChat(L["routines.promptCreate"]:format(L[template.prompt]))
         end)
         templates.cards[index] = card
         y = y + CARD_HEIGHT + CARD_GAP
     end
-    local own = button(content, L["Write your own"], 120, function()
-        startChat(WRITE_YOUR_OWN)
+    local own = button(content, L["routines.writeYourOwn"], 120, function()
+        startChat(L["routines.promptWriteOwn"])
     end)
     own:SetPoint("TOPLEFT", 0, -y - 8)
     content:SetHeight(y + 48)
@@ -661,9 +638,9 @@ end
 
 function ns.UI.Routines.Build(frame, panel)
     StaticPopupDialogs.WISPAI_DELETE_ROUTINE = {
-        text = L['Delete the routine "%s"? Wisp will stop running it.'],
-        button1 = L["Delete"],
-        button2 = L["Cancel"],
+        text = L["routines.deleteConfirm"],
+        button1 = L["common.delete"],
+        button2 = L["common.cancel"],
         OnAccept = function(_, id)
             send("remove", id)
             ns.UI.Routines.Show()

@@ -10,6 +10,9 @@
 
 Namespace.lua
 Locale.lua
+Locales\enUS.lua
+Locales\esES.lua
+Locales\esMX.lua
 Shared\Numbers.lua
 Shared\Text.lua
 Core.lua

@@ -3,8 +3,8 @@ local L = ns.L
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local ACCENT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
-local STARTER_PROMPT = L["What can you do?"]
-local SUGGESTIONS = { STARTER_PROMPT, L["What should I do next?"], L["Review my gear"] }
+-- Suggestion chips and greetings hold locale keys; text is looked up when shown.
+local SUGGESTIONS = { "suggestion.whatCanYouDo", "suggestion.whatNext", "suggestion.reviewGear" }
 local CHIP_GAP, CHIPS_TOP = 8, 62
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
@@ -95,22 +95,22 @@ end
 
 -- New chats open with one of these; %s is the character's name.
 local GREETINGS = {
-    L["Where to next, %s?"],
-    L["Ready for adventure, %s?"],
-    L["What's the plan, %s?"],
-    L["Back for more, %s?"],
-    L["Need a hand, %s?"],
-    L["What are we hunting today, %s?"],
-    L["Let's find you some loot, %s"],
-    L["Any quest giving you trouble, %s?"],
-    L["The road awaits, %s"],
-    L["Hearthstone ready, %s?"],
+    "greeting.whereToNext",
+    "greeting.readyForAdventure",
+    "greeting.whatsThePlan",
+    "greeting.backForMore",
+    "greeting.needAHand",
+    "greeting.whatAreWeHunting",
+    "greeting.findLoot",
+    "greeting.questTrouble",
+    "greeting.roadAwaits",
+    "greeting.hearthstoneReady",
 }
 local GREETINGS_BY_HOUR = {
-    night = { L["Still up, %s? One more dungeon?"], L["Late night grind, %s?"] },
-    morning = { L["Good morning, %s"], L["Early start, %s?"] },
-    afternoon = { L["Good afternoon, %s"] },
-    evening = { L["Good evening, %s"], L["One more quest, %s?"] },
+    night = { "greeting.stillUp", "greeting.lateNightGrind" },
+    morning = { "greeting.goodMorning", "greeting.earlyStart" },
+    afternoon = { "greeting.goodAfternoon" },
+    evening = { "greeting.goodEvening", "greeting.oneMoreQuest" },
 }
 local greetingFor = {} -- conversation -> the line it opened with
 
@@ -129,7 +129,7 @@ local function greeting(name, key)
         end
         greetingFor[key] = pool[math.random(#pool)]
     end
-    return greetingFor[key]:format(name)
+    return L[greetingFor[key]]:format(name)
 end
 
 -- "Mage 20 · Elwynn Forest", or nil outside the game.
@@ -233,17 +233,15 @@ function ns.UI.Activity.Refresh(chat)
     end
     if empty and not working then
         local name = UnitName and UnitName("player") or nil
-        local title = name and greeting(name, chat and chat.id or "new") or L["Ask Wisp"]
-        local detail = centered and whereabouts()
-            or L["Ask about your character, quests, equipment or where to go next."]
+        local title = name and greeting(name, chat and chat.id or "new") or L["empty.askWisp"]
+        local detail = centered and whereabouts() or L["empty.askAbout"]
         if needsSetup then
-            title = L["Finish Wisp setup"]
-            detail =
-                L["Open Wisp Desktop. In Overview, select your WoW folder and choose Install / update addon. Then restart WoW."]
+            title = L["empty.finishSetup"]
+            detail = L["empty.setupSteps"]
         elseif waiting then
-            title, detail = L["Open Wisp Desktop to connect"], ""
+            title, detail = L["empty.openDesktop"], ""
         elseif loading then
-            title, detail = L["Loading conversation"], L["Fetching your messages."]
+            title, detail = L["empty.loading"], L["empty.fetching"]
         end
         setText(emptyState.title, title)
         setText(emptyState.detail, detail)
@@ -260,11 +258,11 @@ function ns.UI.Activity.Refresh(chat)
             or string.format("%dm %02ds", math.floor(seconds / 60), seconds % 60)
         local sending = ns.UI.Activity.IsSending(chat)
         local compacting = chat.usage and chat.usage.compacting
-        local phase = compacting and L["Compacting"] or L["Thinking"]
+        local phase = compacting and L["activity.compacting"] or L["activity.thinking"]
         setText(progress.elapsed, elapsed)
-        local detail = L["Preparing your reply"]
+        local detail = L["activity.preparing"]
         if compacting then
-            detail = L["Summarizing older context to continue this conversation"]
+            detail = L["activity.summarizing"]
         end
         local activity
         if not sending and not compacting then
@@ -285,13 +283,13 @@ function ns.UI.Activity.Refresh(chat)
             progress:IsShown()
         )
         setText(progress.detail, detail)
-        title = "Wisp AI - " .. (sending and L["Sending"] or phase) .. " " .. elapsed
+        title = "Wisp AI - " .. (sending and L["activity.sending"] or phase) .. " " .. elapsed
     elseif chat then
         ns.workStarted[chat.id] = nil
     end
     setText(
         header.title,
-        ns.db.minimized and (ns.unread and L["Wisp AI - New reply"] or title) or "Wisp AI"
+        ns.db.minimized and (ns.unread and L["activity.newReply"] or title) or "Wisp AI"
     )
     replyGlow:SetShown(ns.db.minimized and ns.unread == true)
 end
@@ -356,13 +354,14 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     emptyState.detail:SetPoint("RIGHT", -20, 0)
     emptyState.detail:SetJustifyH("CENTER")
     emptyState.detail:SetWordWrap(true)
-    emptyState.setup = ns.UI.Widgets.Button(emptyState, L["Setup help"], 120, function()
+    emptyState.setup = ns.UI.Widgets.Button(emptyState, L["empty.setupHelp"], 120, function()
         ns.UI.Widgets.ShowCopyUrl(SETUP_URL)
     end)
     emptyState.setup:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
     emptyState.setup:Hide()
     emptyState.suggestions = {}
-    for index, prompt in ipairs(SUGGESTIONS) do
+    for index, key in ipairs(SUGGESTIONS) do
+        local prompt = L[key]
         local suggestion = ns.UI.Widgets.Button(emptyState, prompt, 210, function()
             ns.Chat.Submit(prompt)
         end)
@@ -383,7 +382,7 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     progress:SetHeight(23)
     progress.mark = ns.UI.Widgets.Dot(progress, 6)
     progress.mark:SetPoint("TOPLEFT", 1, -5)
-    progress.titleText = L["Thinking"]
+    progress.titleText = L["activity.thinking"]
     progress.title = label(progress, progress.titleText, MUTED)
     ns.UI.Widgets.ChatFont(progress.title, progress.titleText)
     progress.title:SetPoint("TOPLEFT", 14, 0)

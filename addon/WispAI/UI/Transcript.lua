@@ -123,7 +123,7 @@ function ns.UI.Transcript.Build(chatPanel, header)
             newMessages:Hide()
         end
     end)
-    newMessages = button(chatPanel, L["New messages v"], 140, function()
+    newMessages = button(chatPanel, L["transcript.newMessages"], 140, function()
         scrollBar:SetValue(scrollRange)
         newMessages.pending = false
         newMessages:Hide()

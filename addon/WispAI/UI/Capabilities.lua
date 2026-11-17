@@ -22,11 +22,8 @@ function ns.UI.Capabilities.Refresh()
         capabilityStatus,
         ns.capabilityError
             or (
-                not ns.capabilities and L["Waiting for bridge..."]
-                or (
-                    next(pending) and L["Saving changes..."]
-                    or L["New calls use these settings. Running calls may finish."]
-                )
+                not ns.capabilities and L["integrations.waiting"]
+                or (next(pending) and L["integrations.savingChanges"] or L["integrations.hint"])
             )
     )
     for group, tab in pairs(capabilityTabs) do
@@ -90,12 +87,12 @@ function ns.UI.Capabilities.Refresh()
             setText(row.text, entry.name)
             setText(
                 row.state,
-                pending[entry.id] and L["Saving..."]
+                pending[entry.id] and L["common.saving"]
                     or (
-                        blocked and L["Off"]
+                        blocked and L["common.off"]
                         or (
                             not entry.available and entry.status
-                            or (values[entry.id] and L["On"] or L["Off"])
+                            or (values[entry.id] and L["common.on"] or L["common.off"])
                         )
                     )
             )
@@ -118,11 +115,11 @@ function ns.UI.Capabilities.Build(settings)
     capabilityPanel:SetFrameLevel(settings:GetFrameLevel() + 5)
     box(capabilityPanel, COLORS.window, COLORS.window)
     capabilityPanel:Hide()
-    ns.UI.SettingsPanel.SubpageHeader(capabilityPanel, L["Integrations"])
+    ns.UI.SettingsPanel.SubpageHeader(capabilityPanel, L["integrations.title"])
     local top = ns.UI.SettingsPanel.SUBPAGE_TOP
     for index, group in ipairs({ "integrations", "memory" }) do
         local tabGroup = group
-        local text = group == "memory" and L["Memory"] or L["Integrations"]
+        local text = group == "memory" and L["memory.title"] or L["integrations.title"]
         local tab = ns.UI.Widgets.NavItem(capabilityPanel, text, 26, function()
             capabilityGroup = tabGroup
             capabilityScroll:SetVerticalScroll(0)

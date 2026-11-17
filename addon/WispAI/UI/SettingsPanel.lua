@@ -31,6 +31,68 @@ local function switchRow(parent, top, text, checked, onChange)
     return row, switch
 end
 
+local function languageName(choice)
+    return choice == "auto" and L["settings.languageAuto"] or L["language." .. choice]
+end
+
+-- Saves the UI language. Text is read when the window is built, so a change
+-- asks to reload the interface instead of half-translating the open window.
+local function chooseLanguage(choice, selector)
+    if (ns.db.language or "auto") == choice then
+        return
+    end
+    ns.db.language = choice
+    selector:SetText(languageName(choice))
+    StaticPopup_Show("WISPAI_RELOAD_LANGUAGE")
+end
+
+-- The Language line: a menu of `ns.LOCALE_CHOICES`, saved in `ns.db.language`.
+local function languageRow(parent, top)
+    StaticPopupDialogs.WISPAI_RELOAD_LANGUAGE = {
+        text = L["settings.reloadForLanguage"],
+        button1 = L["settings.reload"],
+        button2 = L["settings.later"],
+        OnAccept = function()
+            ReloadUI()
+        end,
+        timeout = 0,
+        whileDead = true,
+        hideOnEscape = true,
+    }
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetPoint("TOPLEFT", PAGE_INSET, top)
+    row:SetPoint("RIGHT", -PAGE_INSET, 0)
+    row:SetHeight(ROW_HEIGHT)
+    local caption = label(row, L["settings.language"])
+    caption:SetPoint("LEFT", 0, 0)
+    caption:SetPoint("RIGHT", -190, 0)
+    caption:SetWordWrap(false)
+    local selector
+    selector = button(row, languageName(ns.db.language or "auto"), 180, function(self)
+        if not (MenuUtil and MenuUtil.CreateContextMenu) then
+            return
+        end
+        MenuUtil.CreateContextMenu(self, function(_, root)
+            for _, choice in ipairs(ns.LOCALE_CHOICES) do
+                local option = choice
+                root:CreateRadio(languageName(option), function()
+                    return (ns.db.language or "auto") == option
+                end, function()
+                    chooseLanguage(option, selector)
+                end)
+            end
+        end)
+    end)
+    selector:SetPoint("RIGHT", 0, 0)
+    local rule = row:CreateTexture(nil, "ARTWORK")
+    rule:SetPoint("BOTTOMLEFT")
+    rule:SetPoint("BOTTOMRIGHT")
+    rule:SetHeight(widgets.OnePixel(rule))
+    ns.UI.Widgets.Tint(rule, COLORS.line)
+    settings.language = selector
+    return row
+end
+
 -- A full-width row that opens another page.
 local function linkRow(parent, top, text, detail, onClick)
     local row = widgets.NavItem(parent, text, ROW_HEIGHT, onClick)
@@ -50,7 +112,7 @@ end
 local BACK_BAND = 40
 ns.UI.SettingsPanel.SUBPAGE_TOP = -98
 function ns.UI.SettingsPanel.SubpageHeader(page, title)
-    local back = widgets.BackLink(page, L["Settings"], function()
+    local back = widgets.BackLink(page, L["settings.title"], function()
         page:Hide()
     end)
     back:SetPoint("TOPLEFT", PAGE_INSET, -10)
@@ -72,12 +134,8 @@ local function buildChatHistory()
     chatSettings:SetFrameLevel(settings:GetFrameLevel() + 5)
     box(chatSettings, COLORS.window, COLORS.window)
     chatSettings:Hide()
-    subpageHeader(chatSettings, L["WoW chat history"])
-    local chatHint = label(
-        chatSettings,
-        L["Up to 200 messages / 30 minutes, until logout or reload. Enabled channels are shared with your AI provider when consulted."],
-        MUTED
-    )
+    subpageHeader(chatSettings, L["chatHistory.title"])
+    local chatHint = label(chatSettings, L["chatHistory.hint"], MUTED)
     chatHint:SetPoint("TOPLEFT", PAGE_INSET, ns.UI.SettingsPanel.SUBPAGE_TOP)
     chatHint:SetPoint("RIGHT", -PAGE_INSET, 0)
     chatHint:SetWordWrap(true)
@@ -111,19 +169,15 @@ local function buildChatHistory()
         end)
     end
     local publicTop = #(ns.ChatHistory.ChatChannels or {}) * ROW_HEIGHT + 16
-    local publicTitle = widgets.Caption(chatContent, L["Public / custom channels"])
+    local publicTitle = widgets.Caption(chatContent, L["chatHistory.publicChannels"])
     publicTitle:SetPoint("TOPLEFT", 0, -publicTop)
-    local publicHint = label(
-        chatContent,
-        L["Choose individual channels. Selections follow the channel name."],
-        MUTED
-    )
+    local publicHint = label(chatContent, L["chatHistory.publicHint"], MUTED)
     publicHint:SetPoint("TOPLEFT", 0, -publicTop - 18)
     publicHint:SetPoint("RIGHT", 0, 0)
     publicHint:SetWordWrap(true)
     local listTop = publicTop + 48
     local publicRows = {}
-    local publicEmpty = label(chatContent, L["No public channels joined."], MUTED)
+    local publicEmpty = label(chatContent, L["chatHistory.noPublic"], MUTED)
     publicEmpty:SetPoint("TOPLEFT", 0, -listTop - 6)
     function ns.UI.RefreshChatChannelSettings()
         local channels = ns.ChatHistory.PublicChatChannels and ns.ChatHistory.PublicChatChannels()
@@ -161,7 +215,7 @@ local function buildChatHistory()
     end
     chatSettings:SetScript("OnShow", ns.UI.RefreshChatChannelSettings)
     ns.UI.RefreshChatChannelSettings()
-    local clearChat = button(chatSettings, L["Clear history"], 120, function()
+    local clearChat = button(chatSettings, L["chatHistory.clear"], 120, function()
         ns.ChatHistory.ClearChatHistory()
     end)
     clearChat:SetPoint("BOTTOMLEFT", PAGE_INSET, 20)
@@ -194,78 +248,70 @@ function ns.UI.SettingsPanel.Build(frame, panel)
     box(settings, COLORS.window, COLORS.window)
     settings:EnableMouse(true)
     settings:Hide()
-    local title = label(settings, L["Settings"], TEXT, FONTS.heading)
+    local title = label(settings, L["settings.title"], TEXT, FONTS.heading)
     title:SetPoint("TOPLEFT", PAGE_INSET, -20)
     local close = button(settings, "x", 24, function()
         ns.UI.ShowSettings(nil)
     end, "ghost")
     close:SetPoint("TOPRIGHT", -PAGE_INSET + 6, -16)
 
-    local general = widgets.Caption(settings, L["General"])
+    local general = widgets.Caption(settings, L["settings.general"])
     general:SetPoint("TOPLEFT", PAGE_INSET, -62)
-    switchRow(settings, -76, L["Completion sound"], ns.db.sound, function(value)
+    switchRow(settings, -76, L["settings.completionSound"], ns.db.sound, function(value)
         ns.db.sound = value
         if ns.UI.PlayCompletionSound then
             ns.UI.PlayCompletionSound()
         end
     end)
-    switchRow(
-        settings,
-        -76 - ROW_HEIGHT,
-        L["Show tool activity in conversations"],
-        ns.db.showTools,
-        function(value)
-            ns.db.showTools = value
-            ns.UI.Refresh()
-        end
-    )
+    switchRow(settings, -76 - ROW_HEIGHT, L["settings.showTools"], ns.db.showTools, function(value)
+        ns.db.showTools = value
+        ns.UI.Refresh()
+    end)
 
-    local inline = widgets.Caption(settings, L["Inline chat"])
-    inline:SetPoint("TOPLEFT", PAGE_INSET, -164)
-    local bindHint = label(
-        settings,
-        L["Hover a reference and press your inline key. /wisp ask also works."],
-        MUTED
-    )
-    bindHint:SetPoint("TOPLEFT", PAGE_INSET, -182)
+    languageRow(settings, -76 - ROW_HEIGHT * 2)
+
+    local inline = widgets.Caption(settings, L["settings.inlineChat"])
+    inline:SetPoint("TOPLEFT", PAGE_INSET, -196)
+    local bindHint = label(settings, L["settings.inlineHint"], MUTED)
+    bindHint:SetPoint("TOPLEFT", PAGE_INSET, -214)
     bindHint:SetPoint("RIGHT", -150, 0)
     bindHint:SetWordWrap(true)
-    local bind = button(settings, L["Bind inline key"], 120, function()
+    local bind = button(settings, L["settings.bindInline"], 120, function()
         if ns.Inline.BindInline then
             ns.Inline.BindInline()
         end
     end)
-    bind:SetPoint("TOPRIGHT", -PAGE_INSET, -178)
+    bind:SetPoint("TOPRIGHT", -PAGE_INSET, -210)
 
-    local data = widgets.Caption(settings, L["Data"])
-    data:SetPoint("TOPLEFT", PAGE_INSET, -230)
+    local data = widgets.Caption(settings, L["settings.data"])
+    data:SetPoint("TOPLEFT", PAGE_INSET, -262)
     local chatSettings = buildChatHistory()
     chatHistoryPage = chatSettings
     local links = {
         {
-            L["Integrations"],
-            L["Tools Wisp can use"],
+            L["integrations.title"],
+            L["settings.integrationsHint"],
             function()
                 ns.UI.Capabilities.Show()
             end,
         },
         {
-            L["Memory"],
-            L["What Wisp remembers"],
+            L["memory.title"],
+            L["settings.memoryHint"],
             function()
                 ns.UI.Memory.Show()
             end,
         },
         {
-            L["WoW chat history"],
-            L["Channels Wisp can read"],
+            L["chatHistory.title"],
+            L["settings.chatHistoryHint"],
             function()
                 chatSettings:Show()
             end,
         },
         {
-            L["Saved panels"],
-            L["Reopen hidden panels"],
+            L["settings.savedPanels"],
+            L["settings.savedPanelsHint"],
             function()
                 if ns.Panels.ShowPanels then
                     ns.Panels.ShowPanels()
@@ -274,7 +320,7 @@ function ns.UI.SettingsPanel.Build(frame, panel)
         },
     }
     for index, link in ipairs(links) do
-        linkRow(settings, -246 - (index - 1) * ROW_HEIGHT, link[1], link[2], link[3])
+        linkRow(settings, -278 - (index - 1) * ROW_HEIGHT, link[1], link[2], link[3])
     end
     ns.UI.Capabilities.Build(settings)
     ns.UI.Memory.Build(settings)

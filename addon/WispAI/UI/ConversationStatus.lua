@@ -31,9 +31,9 @@ local function layoutCrumbs(inRoutine)
 end
 
 function ns.UI.ConversationStatus.Refresh(chat)
-    local problem = ns.Transport.needsDesktopSetup and L["Setup required"]
-        or ns.exhausted and L["Channels exhausted: /reload"]
-        or (not ns.connected and L["Open Wisp Desktop"])
+    local problem = ns.Transport.needsDesktopSetup and L["status.setupRequired"]
+        or ns.exhausted and L["status.channelsExhausted"]
+        or (not ns.connected and L["status.openDesktop"])
     -- The sidebar footer shows a healthy connection; the header only reports problems.
     setText(status, problem or "")
     status:SetShown(problem ~= nil and not ns.db.minimized)
@@ -41,9 +41,9 @@ function ns.UI.ConversationStatus.Refresh(chat)
     local usage = chat and chat.usage
     local window = ns.contextPolicy and ns.contextPolicy.windowTokens
     local measured = usage and usage.contextTokens
-    local meterText = usage and usage.compacting and L["Compacting..."]
-        or (measured and window and string.format(L["Context ~%.0f%%"], measured / window * 100))
-        or L["Context --"]
+    local meterText = usage and usage.compacting and L["context.compacting"]
+        or (measured and window and string.format(L["context.percent"], measured / window * 100))
+        or L["context.unknown"]
     setText(contextMeter.text, meterText)
     -- The header reads as a breadcrumb: "Wisp AI / <where you are>". A routine's
     -- conversation adds a "Routines" step that leads back to the Routines page.
@@ -51,15 +51,15 @@ function ns.UI.ConversationStatus.Refresh(chat)
     local onRoutinesPage = ns.routinesPage and ns.sidebarTab == "routines"
     local routineId, run = routineOf(chat)
     local inRoutine = not inSettings and not onRoutinesPage and routineId ~= nil
-    local place = inSettings and L["Settings"]
-        or (onRoutinesPage and L["Routines"])
+    local place = inSettings and L["settings.title"]
+        or (onRoutinesPage and L["routines.title"])
         or (chat and chat.title)
-        or L["New conversation"]
+        or L["header.newConversation"]
     if inRoutine then
         -- "<routine> / <event>": the routine step opens that routine's page.
         local routineTitle = ns.UI.Routines.Title and ns.UI.Routines.Title(routineId)
         sectionLink.routineId = routineTitle and routineId or nil
-        setText(sectionLink.label, routineTitle or L["Routines"])
+        setText(sectionLink.label, routineTitle or L["routines.title"])
         sectionLink:SetWidth(math.max(40, (sectionLink.label:GetStringWidth() or 0) + 2))
         if run and run.event and ns.UI.Routines.EventLabel then
             place = ns.UI.Routines.EventLabel(run.event)
@@ -102,7 +102,7 @@ function ns.UI.ConversationStatus.Build(chatPanel, header)
     sectionLink = CreateFrame("Button", "WispAIRoutinesCrumb", header)
     sectionLink:SetHeight(20)
     sectionLink:SetPoint("LEFT", separator, "RIGHT", 10, 0)
-    sectionLink.label = label(sectionLink, L["Routines"], MUTED, widgets.FONTS.body)
+    sectionLink.label = label(sectionLink, L["routines.title"], MUTED, widgets.FONTS.body)
     sectionLink.label:SetPoint("LEFT")
     sectionLink:SetWidth(math.max(40, (sectionLink.label:GetStringWidth() or 0) + 2))
     sectionLink:SetScript("OnEnter", function(self)
@@ -122,14 +122,14 @@ function ns.UI.ConversationStatus.Build(chatPanel, header)
     sectionSeparator = chevron()
     sectionSeparator:SetPoint("LEFT", sectionLink, "RIGHT", 8, 0)
     sectionSeparator:Hide()
-    sessionTitle = label(header, L["New conversation"], MUTED, widgets.FONTS.body)
+    sessionTitle = label(header, L["header.newConversation"], MUTED, widgets.FONTS.body)
     sessionTitle:SetWordWrap(false)
     sectionLink.inRoutine = true
     layoutCrumbs(false)
     contextMeter = CreateFrame("Button", "WispAIContextUsage", chatPanel)
     contextMeter:SetSize(96, 16)
     contextMeter:SetPoint("BOTTOMRIGHT", -22, 3)
-    contextMeter.text = label(contextMeter, L["Context --"], MUTED, ns.UI.Widgets.FONTS.small)
+    contextMeter.text = label(contextMeter, L["context.unknown"], MUTED, ns.UI.Widgets.FONTS.small)
     contextMeter.text:SetAllPoints(contextMeter)
     contextMeter.text:SetJustifyH("RIGHT")
     -- "24k", "1.2k" or "850".
@@ -146,23 +146,23 @@ function ns.UI.ConversationStatus.Build(chatPanel, header)
         local usage = chat and chat.usage
         local policy = ns.contextPolicy or {}
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine(L["Context"])
+        GameTooltip:AddLine(L["context.title"])
         local used = usage and usage.contextTokens
         if used and policy.windowTokens then
             GameTooltip:AddLine(
-                L["%s of %s tokens"]:format(tokens(used), tokens(policy.windowTokens)),
+                L["context.tokensOf"]:format(tokens(used), tokens(policy.windowTokens)),
                 1,
                 1,
                 1
             )
         elseif used then
-            GameTooltip:AddLine(L["%s tokens"]:format(tokens(used)), 1, 1, 1)
+            GameTooltip:AddLine(L["context.tokens"]:format(tokens(used)), 1, 1, 1)
         else
-            GameTooltip:AddLine(L["Not measured yet"], 1, 1, 1)
+            GameTooltip:AddLine(L["context.notMeasured"], 1, 1, 1)
         end
         if policy.compactAt then
             GameTooltip:AddLine(
-                string.format(L["Older messages are summarized at %.0f%%"], policy.compactAt * 100),
+                string.format(L["context.compactAt"], policy.compactAt * 100),
                 0.7,
                 0.7,
                 0.7,
