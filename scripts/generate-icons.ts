@@ -8,7 +8,8 @@ const samples = 4;
 type Point = [number, number];
 type Shape =
   | { kind: 'line'; from: Point; to: Point; width: number }
-  | { kind: 'ring'; center: Point; radius: number; width: number };
+  | { kind: 'ring'; center: Point; radius: number; width: number }
+  | { kind: 'rect'; from: Point; to: Point };
 
 function distanceToSegment([px, py]: Point, [ax, ay]: Point, [bx, by]: Point) {
   const dx = bx - ax;
@@ -17,15 +18,22 @@ function distanceToSegment([px, py]: Point, [ax, ay]: Point, [bx, by]: Point) {
   return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
+function coveredBy([x, y]: Point, shape: Shape) {
+  switch (shape.kind) {
+    case 'line':
+      return distanceToSegment([x, y], shape.from, shape.to) <= shape.width / 2;
+    case 'ring':
+      return (
+        Math.abs(Math.hypot(x - shape.center[0], y - shape.center[1]) - shape.radius) <=
+        shape.width / 2
+      );
+    case 'rect':
+      return x >= shape.from[0] && x <= shape.to[0] && y >= shape.from[1] && y <= shape.to[1];
+  }
+}
+
 function covered(point: Point, shapes: Shape[]) {
-  return shapes.some((shape) =>
-    shape.kind === 'line'
-      ? distanceToSegment(point, shape.from, shape.to) <= shape.width / 2
-      : Math.abs(
-          Math.hypot(point[0] - shape.center[0], point[1] - shape.center[1]) - shape.radius,
-        ) <=
-        shape.width / 2,
-  );
+  return shapes.some((shape) => coveredBy(point, shape));
 }
 
 function render(shapes: Shape[]) {
@@ -75,6 +83,18 @@ const back: Shape[] = [
   { kind: 'line', from: [20, 32], to: [38, 50], width: 5 },
 ];
 
+// Send: an arrow pointing up.
+const send: Shape[] = [
+  { kind: 'line', from: [32, 52], to: [32, 13], width: 6 },
+  { kind: 'line', from: [16, 29], to: [32, 13], width: 6 },
+  { kind: 'line', from: [48, 29], to: [32, 13], width: 6 },
+];
+
+// Stop: a solid square.
+const stop: Shape[] = [{ kind: 'rect', from: [19, 19], to: [45, 45] }];
+
 mkdirSync('addon/WispAI/Textures', { recursive: true });
 writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
 writeFileSync('addon/WispAI/Textures/Back.tga', render(back));
+writeFileSync('addon/WispAI/Textures/Send.tga', render(send));
+writeFileSync('addon/WispAI/Textures/Stop.tga', render(stop));

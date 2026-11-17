@@ -187,7 +187,7 @@ local function makeDelivery(row)
         delivery.dots[index] = dot
     end
     delivery.waiting = label(delivery, "Waiting for bridge", MUTED)
-    delivery.waiting:SetFontObject("GameFontHighlightSmall")
+    delivery.waiting:SetFontObject(ns.UI.Widgets.FONTS.small or "GameFontHighlightSmall")
     delivery.waiting:SetTextColor(unpack(MUTED))
     delivery.waiting:SetPoint("RIGHT", delivery, "RIGHT", -30, 0)
     delivery.waiting:Hide()
@@ -521,6 +521,8 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             row.text:SetPoint("TOPLEFT", textLeft, -top)
             row.text:SetWidth(textWidth)
             row.text:SetTextColor(unpack(loading and MUTED or TEXT))
+            -- Tool lines use the conversation's Inter face, like the replies around them.
+            ns.UI.Widgets.ChatFont(row.text, tool and tool.label or message.text)
             ns.UI.Activity.SetLoadingText(
                 row,
                 row.text,

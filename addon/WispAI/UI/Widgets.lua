@@ -141,10 +141,13 @@ local function box(frame, bg, border)
 end
 local BUTTON_STYLES = {
     secondary = { bg = COLORS.raised, border = COLORS.lineStrong, text = TEXT },
+    -- The one filled control: the accent with dark ink, and no text shadow (a
+    -- dark shadow on a light fill smears the glyphs).
     primary = {
-        bg = { 0.961, 0.973, 0.973, 1 },
-        border = { 0.961, 0.973, 0.973, 1 },
-        text = COLORS.window,
+        bg = { ACCENT[1], ACCENT[2], ACCENT[3], 1 },
+        border = { ACCENT[1], ACCENT[2], ACCENT[3], 1 },
+        text = { 0.039, 0.078, 0.071 }, -- #0A1412
+        flat = true,
     },
     ghost = { bg = { 0, 0, 0, 0 }, border = { 0, 0, 0, 0 }, text = SECONDARY },
 }
@@ -169,6 +172,9 @@ local function button(parent, text, width, click, variant, name)
     font:SetPoint("LEFT", 6, 0)
     font:SetPoint("RIGHT", -6, 0)
     font:SetTextColor(unpack(style.text))
+    if style.flat then
+        font:SetShadowColor(0, 0, 0, 0)
+    end
     font:SetWordWrap(false)
     b:SetFontString(font)
     b:SetText(text)

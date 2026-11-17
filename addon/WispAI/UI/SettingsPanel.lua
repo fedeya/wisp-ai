@@ -44,16 +44,22 @@ local function linkRow(parent, top, text, detail, onClick)
     return row
 end
 
---- Header shared by Settings subpages: a "Settings" back link above the title.
---- Content below it starts at SUBPAGE_TOP.
-ns.UI.SettingsPanel.SUBPAGE_TOP = -72
+--- Header shared by Settings subpages: a band with the "Settings" back link,
+--- closed by a hairline, then the page title. Content starts at SUBPAGE_TOP.
+local BACK_BAND = 40
+ns.UI.SettingsPanel.SUBPAGE_TOP = -98
 function ns.UI.SettingsPanel.SubpageHeader(page, title)
     local back = widgets.BackLink(page, "Settings", function()
         page:Hide()
     end)
-    back:SetPoint("TOPLEFT", PAGE_INSET, -14)
+    back:SetPoint("TOPLEFT", PAGE_INSET, -10)
+    local rule = page:CreateTexture(nil, "ARTWORK")
+    rule:SetPoint("TOPLEFT", 0, -BACK_BAND)
+    rule:SetPoint("TOPRIGHT", 0, -BACK_BAND)
+    rule:SetHeight(widgets.OnePixel(rule))
+    rule:SetColorTexture(unpack(COLORS.line))
     local heading = label(page, title, TEXT, FONTS.heading)
-    heading:SetPoint("TOPLEFT", PAGE_INSET, -38)
+    heading:SetPoint("TOPLEFT", PAGE_INSET, -BACK_BAND - 22)
     return heading, back
 end
 local subpageHeader = ns.UI.SettingsPanel.SubpageHeader

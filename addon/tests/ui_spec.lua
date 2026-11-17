@@ -481,12 +481,18 @@ it(
             for _, widget in ipairs(UI_TEST.widgets) do
                 if
                     widget.parent == fold.parent
-                    and (widget:GetText() == "Chats" or widget:GetText() == "Routines")
+                    and (widget:GetText() == "+  New chat" or widget:GetText() == "Routines")
                 then
                     tabs[#tabs + 1] = widget
                 end
             end
             assert(#tabs == 2 and tabs[1]:IsShown() and tabs[2]:IsShown())
+            for _, widget in ipairs(UI_TEST.widgets) do
+                assert(
+                    widget.parent ~= fold.parent or widget:GetText() ~= "Chats",
+                    "Recents is the way back to a chat; there is no separate Chats section"
+                )
+            end
             assert(
                 gear.parent.parent == fold.parent,
                 "settings must live in the sidebar footer, beside the character"
@@ -521,18 +527,21 @@ it(
             gear.scripts.OnClick(gear)
             ns.UI.ShowSettings("memory")
             assert(settingsPage:IsShown() and memoryPage:IsShown())
-            assert(not tabs[1]._wispSelected, "no section is current while Settings is open")
-            tabs[1].scripts.OnClick(tabs[1])
+            assert(not tabs[2]._wispSelected, "no section is current while Settings is open")
+            tabs[2].scripts.OnClick(tabs[2])
             assert(
                 not settingsPage:IsShown() and not memoryPage:IsShown(),
                 "navigating away closes Settings and its subpages"
             )
+            assert(UI_TEST.frames.WispAIRoutinesPage:IsShown())
             gear.scripts.OnClick(gear)
             assert(
                 settingsPage:IsShown() and not memoryPage:IsShown(),
                 "Settings reopens on General"
             )
             ns.UI.ShowSettings(nil)
+            ns.sidebarTab, ns.routinesPage = "chats", false
+            ns.UI.Refresh()
         end
         do
             local bar = UI_TEST.frames.WispAITranscriptScrollBar
@@ -972,8 +981,8 @@ it(
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
-        -- The transcript ends right above the composer: 96 wide, 124 when it wraps to two rows.
-        assert(bottom == 96 or bottom == 124, "there must be no additional reserved progress gap")
+        -- The transcript ends 8 above the composer (96 tall, 124 narrow, 14 from the bottom).
+        assert(bottom == 118 or bottom == 146, "there must be no additional reserved progress gap")
         table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()

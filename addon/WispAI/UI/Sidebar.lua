@@ -9,7 +9,7 @@ local NAV_ROW, FOOTER_HEIGHT = 30, 46
 local sidebar, fold, nav, listCaption, footer
 local sessionContent, sessionScroll
 local sessionButtons = {}
-local chatsTab, routinesTab
+local routinesTab
 
 function ns.UI.RequestDeleteChat(id)
     for _, chat in ipairs(ns.chats) do
@@ -123,7 +123,6 @@ function ns.UI.Sidebar.Refresh()
     -- While Settings covers the panel, neither section is the current view.
     local inSettings = ns.UI.SettingsShown and ns.UI.SettingsShown()
     local routines = ns.sidebarTab == "routines"
-    widgets.SetSelected(chatsTab, not routines and not inSettings)
     widgets.SetSelected(routinesTab, routines and not inSettings)
     refreshFooter()
     local used, y = {}, 0
@@ -205,12 +204,6 @@ local function navItem(text, click)
     return item
 end
 
-local function showChats()
-    ns.UI.ShowSettings(nil)
-    ns.sidebarTab, ns.routinesPage = "chats", false
-    ns.UI.Refresh()
-end
-
 function ns.UI.Sidebar.Build(body)
     StaticPopupDialogs.WISPAI_DELETE_CHAT = {
         text = 'Delete "%s"? This conversation will be removed.',
@@ -248,12 +241,12 @@ function ns.UI.Sidebar.Build(body)
         ns.Chat.NewChat()
     end)
     newChat.label:SetTextColor(unpack(TEXT))
-    chatsTab = navItem("Chats", showChats)
     routinesTab = navItem("Routines", function()
         ns.UI.Routines.Show()
     end)
     -- Memory, integrations and saved panels are settings; they live under Settings > Data.
-    nav = { newChat, chatsTab, routinesTab }
+    -- Recents is the way back to a conversation, as in Claude: no separate Chats entry.
+    nav = { newChat, routinesTab }
     for index, item in ipairs(nav) do
         local top = -6 - (index - 1) * NAV_ROW
         item:SetPoint("TOPLEFT", 6, top)
