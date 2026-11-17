@@ -2,7 +2,10 @@
 // Icons are white line drawings so the addon can tint them with SetVertexColor.
 import { mkdirSync, writeFileSync } from 'node:fs';
 
-const size = 64;
+// Icons are 64 px; corner pieces are 16 px so the addon draws them at their
+// real pixel size (the client makes no mipmaps, so shrinking a texture a lot
+// leaves jagged edges).
+const ICON_SIZE = 64;
 const samples = 4;
 
 type Point = [number, number];
@@ -39,7 +42,7 @@ function covered(point: Point, shapes: Shape[]) {
   return shapes.some((shape) => coveredBy(point, shape));
 }
 
-function render(shapes: Shape[]) {
+function render(shapes: Shape[], size = ICON_SIZE) {
   const tga = Buffer.alloc(18 + size * size * 4);
   tga[2] = 2;
   tga.writeUInt16LE(size, 12);
@@ -118,10 +121,15 @@ const chevronDown: Shape[] = [
 // Round controls: a filled circle.
 const circle: Shape[] = [{ kind: 'disc', center: [32, 32], radius: 31.5 }];
 
-// Rounded boxes: one top-left corner, filled and as an outline. The addon
-// mirrors them with texture coordinates for the other three corners.
-const cornerFill: Shape[] = [{ kind: 'disc', center: [64, 64], radius: 64 }];
-const cornerEdge: Shape[] = [{ kind: 'ring', center: [64, 64], radius: 62, width: 4 }];
+// Rounded boxes: a top-left corner of radius CORNER_RADIUS, filled and as a
+// one-pixel outline, drawn 1:1 in pixels in the texture's bottom-right. The
+// addon crops the texture to that quarter and mirrors it for the other corners.
+const CORNER = 16;
+const CORNER_RADIUS = 10;
+const cornerFill: Shape[] = [{ kind: 'disc', center: [CORNER, CORNER], radius: CORNER_RADIUS }];
+const cornerEdge: Shape[] = [
+  { kind: 'ring', center: [CORNER, CORNER], radius: CORNER_RADIUS - 0.5, width: 1 },
+];
 
 mkdirSync('addon/WispAI/Textures', { recursive: true });
 writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
@@ -132,5 +140,5 @@ writeFileSync('addon/WispAI/Textures/Plus.tga', render(plus));
 writeFileSync('addon/WispAI/Textures/Clock.tga', render(clock));
 writeFileSync('addon/WispAI/Textures/ChevronDown.tga', render(chevronDown));
 writeFileSync('addon/WispAI/Textures/Circle.tga', render(circle));
-writeFileSync('addon/WispAI/Textures/CornerFill.tga', render(cornerFill));
-writeFileSync('addon/WispAI/Textures/CornerEdge.tga', render(cornerEdge));
+writeFileSync('addon/WispAI/Textures/CornerFill.tga', render(cornerFill, CORNER));
+writeFileSync('addon/WispAI/Textures/CornerEdge.tga', render(cornerEdge, CORNER));

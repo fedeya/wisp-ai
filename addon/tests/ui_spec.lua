@@ -82,12 +82,15 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
     draft:SetHeight(16)
     draft.scripts.OnTextChanged(draft, false)
     assert(viewport:GetVerticalScroll() == 0, "shorter restored drafts must clamp the scroll")
-    assert(field:GetHeight() == 40, "a one-line draft shrinks the field back to one line")
+    -- One 16-unit test line plus the padding that centers a 12-unit font in 40.
+    assert(field:GetHeight() == 44, "a one-line draft shrinks the field back to one line")
     assert(not bar:IsShown() and bar:GetValue() == 0)
     viewport:SetVerticalScroll(100)
     draft:SetText("")
+    draft:SetHeight(12) -- a native empty EditBox is one font line tall
     draft.scripts.OnTextChanged(draft, false)
     assert(viewport:GetVerticalScroll() == 0, "clearing the draft must reset the scroll")
+    assert(field:GetHeight() == 40, "an empty draft is exactly the one-line field")
 
     local controls = UI_TEST.frames.WispAIChatModelControls
     local meter = UI_TEST.frames.WispAIContextUsage
@@ -97,7 +100,7 @@ it("keeps multiline drafts clipped and follows the cursor across composer layout
         field.scripts.OnSizeChanged(field, width)
         ns.UI.Refresh()
         local point, _, _, _, bottom = viewport:GetPoint()
-        assert(point == "BOTTOMRIGHT" and bottom == 12)
+        assert(point == "BOTTOMRIGHT" and bottom == 14, "text is centered on the font size")
         local transcriptBar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, transcriptBottom = transcriptBar:GetPoint()
         assert(transcriptBottom == 84, "a one-line field keeps the transcript just above it")

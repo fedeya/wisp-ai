@@ -9,18 +9,32 @@ local INK = { 0.039, 0.078, 0.071 } -- dark ink on the accent
 -- tall with a round send button inside, and grows upward with its text up to
 -- MAX_HEIGHT, then scrolls. Model choices and the context meter sit in a quiet
 -- row below the field.
-local MARGIN, PAD_X, PAD_Y, RADIUS, SEND_SIZE = 14, 14, 12, 6, 24
+local MARGIN, PAD_X, SEND_SIZE = 14, 14, 24
 local MIN_HEIGHT, MAX_HEIGHT = 40, 168
 local BELOW = 24 -- the row under the field
 local METER_MIN_WIDTH = 400 -- below this field width the meter yields to the model choices
 local inputBox, frameShape, inputScroll, send, placeholder, meter, onLayout
-local fieldHeight
+local fieldHeight, padY
+
+-- The vertical padding that centers one line of the draft's font in the
+-- one-line field, so its text lines up with the send button's center.
+local function placeText()
+    local _, size = ns.draft:GetFont()
+    local nextPad = math.max(6, math.floor((MIN_HEIGHT - (size or 12)) / 2 + 0.5))
+    if padY ~= nextPad then
+        padY = nextPad
+        inputScroll:SetPoint("TOPLEFT", PAD_X, -padY)
+        inputScroll:SetPoint("BOTTOMRIGHT", -(SEND_SIZE + 18), padY)
+        fieldHeight = nil
+    end
+end
 
 -- Fits the field to its text, from one line up to MAX_HEIGHT, and moves the
 -- transcript's bottom edge with it.
 local function fit()
+    placeText()
     local textHeight = ns.draft:GetHeight() or 0
-    local height = math.max(MIN_HEIGHT, math.min(MAX_HEIGHT, math.ceil(textHeight) + PAD_Y * 2))
+    local height = math.max(MIN_HEIGHT, math.min(MAX_HEIGHT, math.ceil(textHeight) + padY * 2))
     if fieldHeight ~= height then
         fieldHeight = height
         inputBox:SetHeight(height)
@@ -102,7 +116,7 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     inputBox:SetPoint("BOTTOMLEFT", MARGIN, MARGIN + BELOW)
     inputBox:SetPoint("BOTTOMRIGHT", -MARGIN, MARGIN + BELOW)
     inputBox:SetHeight(MIN_HEIGHT)
-    frameShape = widgets.RoundedBox(inputBox, RADIUS, COLORS.raised, COLORS.lineStrong)
+    frameShape = widgets.RoundedBox(inputBox, COLORS.raised, COLORS.lineStrong)
     send = makeSend(inputBox, function()
         local chat = ns.Chat.Current()
         if chat and chat.status == "working" then
@@ -113,8 +127,9 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     end)
     send:SetPoint("BOTTOMRIGHT", -8, 8)
     inputScroll = CreateFrame("ScrollFrame", "WispAIInputScroll", inputBox)
-    inputScroll:SetPoint("TOPLEFT", PAD_X, -PAD_Y)
-    inputScroll:SetPoint("BOTTOMRIGHT", -(SEND_SIZE + 18), PAD_Y)
+    -- Placeholder padding; placeText() centers it on the draft font once it exists.
+    inputScroll:SetPoint("TOPLEFT", PAD_X, -14)
+    inputScroll:SetPoint("BOTTOMRIGHT", -(SEND_SIZE + 18), 14)
     inputScroll:SetClipsChildren(true)
     placeholder = widgets.Label(inputBox, "Ask Wisp anything", COLORS.muted)
     widgets.ChatFont(placeholder, "Ask Wisp anything")

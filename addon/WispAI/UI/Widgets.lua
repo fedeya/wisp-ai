@@ -310,14 +310,20 @@ end
 --- A box with rounded corners, built from pieces since frames have no corner
 --- radius: three fill strips and four corner discs, a one-pixel edge between
 --- four corner arcs. Returns a handle whose SetColors(bg, border) repaints it.
+--- The corners are CORNER_RADIUS physical pixels, drawn 1:1 from 16 px
+--- textures (see scripts/generate-icons.ts): the client makes no mipmaps, so a
+--- texture shrunk a lot would leave jagged steps along the curve.
 local TEXTURES = "Interface\\AddOns\\WispAI\\Textures\\"
+local CORNER_TEXTURE, CORNER_RADIUS = 16, 10
+local CROP = 1 - CORNER_RADIUS / CORNER_TEXTURE -- where the quarter circle starts
 local CORNERS = {
-    TOPLEFT = { 0, 1, 0, 1 },
-    TOPRIGHT = { 1, 0, 0, 1 },
-    BOTTOMLEFT = { 0, 1, 1, 0 },
-    BOTTOMRIGHT = { 1, 0, 1, 0 },
+    TOPLEFT = { CROP, 1, CROP, 1 },
+    TOPRIGHT = { 1, CROP, CROP, 1 },
+    BOTTOMLEFT = { CROP, 1, 1, CROP },
+    BOTTOMRIGHT = { 1, CROP, 1, CROP },
 }
-local function roundedBox(frame, radius, bg, border)
+local function roundedBox(frame, bg, border)
+    local radius = CORNER_RADIUS * onePixel(frame)
     local shape = { fills = {}, fillCorners = {}, edges = {}, edgeCorners = {} }
     local function strip(list, layer)
         local t = frame:CreateTexture(nil, layer)
