@@ -8,9 +8,12 @@ local TEXT, ACCENT = widgets.TEXT, widgets.ACCENT
 local DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CHAT_WIDTH = 190, 150, 320, 300
 local CHAT_ROW, ROW_GAP = 26, 2
 local NAV_ROW, FOOTER_HEIGHT = 30, 46
-local sidebar, nav, listCaption, footer
+local sidebar, nav, footer
 local sessionContent, sessionScroll
-local sessionButtons = {}
+local sessionButtons, dayHeaders = {}, {}
+-- Day headings sit in the list, so they scroll with the rows they head. The
+-- first takes the place of a section caption; later ones leave a gap above.
+local HEADER_TOP, HEADER_HEIGHT, HEADER_GAP = 6, 18, 12
 local newChatTab, routinesTab
 
 function ns.UI.RequestDeleteChat(id)
@@ -168,6 +171,26 @@ local function chatEntries()
     return ordered
 end
 
+-- Shows the `index`th pooled day heading at offset `y` of the list.
+local function placeHeader(index, text, y)
+    local header = dayHeaders[index]
+    if not header then
+        header = widgets.Caption(sessionContent, "")
+        header:SetWordWrap(false)
+        dayHeaders[index] = header
+    end
+    if header.y ~= y then
+        header.y = y
+        header:ClearAllPoints()
+        header:SetPoint("TOPLEFT", 10, -y)
+        header:SetPoint("RIGHT", sessionContent, "RIGHT", -10, 0)
+    end
+    setText(header, text)
+    if not header:IsShown() then
+        header:Show()
+    end
+end
+
 local function refreshFooter()
     local name, classLevel, state = characterLine()
     setText(footer.name, name)
@@ -192,8 +215,16 @@ function ns.UI.Sidebar.Refresh()
         ns.composingNew == true and not ns.routinesPage and not inSettings
     )
     refreshFooter()
-    local used, y = {}, 0
+    local used, y, headerCount, lastDay = {}, 0, 0, nil
     for _, session in ipairs(chatEntries()) do
+        local day = widgets.DayBucket(session.lastActivityAt)
+        if day ~= lastDay then
+            lastDay = day
+            headerCount = headerCount + 1
+            y = y + (headerCount > 1 and HEADER_GAP or HEADER_TOP)
+            placeHeader(headerCount, day, y)
+            y = y + HEADER_HEIGHT
+        end
         local b = sessionButtons[session.id]
         if not b then
             b = makeRow()
@@ -227,6 +258,11 @@ function ns.UI.Sidebar.Refresh()
     for id, b in pairs(sessionButtons) do
         if not used[id] and b:IsShown() then
             b:Hide()
+        end
+    end
+    for index = headerCount + 1, #dayHeaders do
+        if dayHeaders[index]:IsShown() then
+            dayHeaders[index]:Hide()
         end
     end
 end
@@ -364,11 +400,11 @@ function ns.UI.Sidebar.Build(body)
         item:SetPoint("RIGHT", -6, 0)
     end
     local listTop = -6 - #nav * NAV_ROW
-    listCaption = widgets.Caption(sidebar, "Recents")
-    listCaption:SetPoint("TOPLEFT", 16, listTop - 12)
     buildFooter()
+    -- Recents are headed by their day headings, the first sitting where a
+    -- "Recents" caption would.
     sessionScroll = CreateFrame("ScrollFrame", nil, sidebar)
-    sessionScroll:SetPoint("TOPLEFT", 6, listTop - 30)
+    sessionScroll:SetPoint("TOPLEFT", 6, listTop - 6)
     sessionScroll:SetPoint("BOTTOMRIGHT", -6, FOOTER_HEIGHT + 4)
     sessionScroll:SetClipsChildren(true)
     sessionContent = CreateFrame("Frame", nil, sessionScroll)

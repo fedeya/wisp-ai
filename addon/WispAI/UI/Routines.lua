@@ -102,21 +102,6 @@ local function clock(milliseconds)
     return date("%H:%M", math.floor(milliseconds / 1000))
 end
 
--- "Today", "Yesterday" or a short date, for grouping runs by day.
-local function dayLabel(milliseconds)
-    if not milliseconds or not date or not time then
-        return "Earlier"
-    end
-    local seconds = math.floor(milliseconds / 1000)
-    local day = date("%Y%m%d", seconds)
-    if day == date("%Y%m%d", time()) then
-        return "Today"
-    elseif day == date("%Y%m%d", time() - 86400) then
-        return "Yesterday"
-    end
-    return date("%d %b", seconds)
-end
-
 -- Runs that left a tip, newest first; silent checks are not listed.
 local function visibleRuns(routineId)
     local runs = {}
@@ -300,7 +285,7 @@ end
 local function layoutRuns(parent, pools, runs, y, width, named)
     local rowCount, headerCount, lastDay = 0, 0, nil
     for _, run in ipairs(runs) do
-        local day = dayLabel(run.startedAt)
+        local day = widgets.DayLabel(run.startedAt)
         if day ~= lastDay then
             lastDay = day
             headerCount = headerCount + 1

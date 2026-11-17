@@ -206,6 +206,84 @@ it("New chat creates its conversation with the first message and keeps its draft
     assert(ns.draft:GetText() == "", "a sent draft does not come back")
 end)
 
+it("Recents are grouped under day headings that keep rows pooled and in order", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    date, time = os.date, os.time
+    local day = 86400 * 1000
+    local now = os.time() * 1000
+    local function chat(id, at)
+        return {
+            id = id,
+            title = id,
+            status = "done",
+            messages = {},
+            activity = {},
+            lastActivityAt = at,
+        }
+    end
+    ns = helper.namespace({
+        db = { sidebar = true, drafts = {} },
+        connected = true,
+        active = "today",
+        chats = {
+            chat("older", now - 90 * day),
+            chat("today", now),
+            chat("yesterday", now - day),
+            chat("week", now - 3 * day),
+            chat("month", now - 12 * day),
+            chat("week-later", now - 4 * day),
+        },
+        pendingChats = {},
+        pendingMessages = {},
+        workStarted = {},
+    })
+    helper.addon("Chat/State.lua", env)
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
+    local function row(id)
+        for _, w in ipairs(UI_TEST.widgets) do
+            if w.chatId == id and w.label then
+                return w
+            end
+        end
+    end
+    local list = row("today").parent
+    local function headings()
+        local shown = {}
+        for _, w in ipairs(UI_TEST.widgets) do
+            if w.parent == list and not w.chatId and w:IsShown() and w:GetText() ~= "" then
+                shown[#shown + 1] = { text = w:GetText(), y = w.y }
+            end
+        end
+        table.sort(shown, function(a, b)
+            return a.y < b.y
+        end)
+        local texts = {}
+        for index, heading in ipairs(shown) do
+            texts[index] = heading.text
+        end
+        return table.concat(texts, ","), shown
+    end
+    local text, shown = headings()
+    assert.equal("Today,Yesterday,Previous 7 days,Previous 30 days,Older", text)
+    local order = { "today", "yesterday", "week", "week-later", "month", "older" }
+    for index = 2, #order do
+        assert(row(order[index - 1]).y < row(order[index]).y, "rows keep newest-first order")
+    end
+    assert(shown[1].y < row("today").y and row("today").y < shown[2].y)
+    assert(shown[3].y < row("week").y and row("week-later").y < shown[4].y)
+    assert(row("today").selected, "the selected row stays selected under its heading")
+    local today = row("today")
+
+    ns.chats = { chat("today", now), chat("week", now - 3 * day) }
+    ns.UI.Sidebar.Refresh()
+    assert.equal("Today,Previous 7 days", (headings()))
+    assert(row("today") == today, "headings do not disturb row reuse")
+    assert(not row("older"):IsShown(), "rows of removed chats are hidden")
+end)
+
 it(
     "chat placeholder distinguishes connecting, fetching history and an empty conversation",
     function()

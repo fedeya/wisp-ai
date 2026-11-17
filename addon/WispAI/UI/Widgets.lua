@@ -109,6 +109,49 @@ end
 local function caption(parent, text)
     return label(parent, text, COLORS.muted, FONTS.caption)
 end
+-- Whole calendar days from `milliseconds` back to today: 0 today, 1 yesterday.
+-- Days are compared at noon so daylight-saving shifts never skip or repeat one.
+local function daysAgo(milliseconds)
+    local function noon(seconds)
+        local day = date("*t", seconds)
+        return time({ year = day.year, month = day.month, day = day.day, hour = 12 })
+    end
+    return math.floor((noon(time()) - noon(math.floor(milliseconds / 1000))) / 86400 + 0.5)
+end
+
+--- Day heading for a time in milliseconds: "Today", "Yesterday" or a short
+--- date such as "05 Nov"; "Earlier" when there is no time to go by.
+local function dayLabel(milliseconds)
+    if not milliseconds or milliseconds <= 0 or not date or not time then
+        return "Earlier"
+    end
+    local ago = daysAgo(milliseconds)
+    if ago <= 0 then
+        return "Today"
+    elseif ago == 1 then
+        return "Yesterday"
+    end
+    return date("%d %b", math.floor(milliseconds / 1000))
+end
+
+--- Coarser day heading for long lists in narrow columns: "Today", "Yesterday",
+--- "Previous 7 days", "Previous 30 days" or "Older".
+local function dayBucket(milliseconds)
+    if not milliseconds or milliseconds <= 0 or not date or not time then
+        return "Older"
+    end
+    local ago = daysAgo(milliseconds)
+    if ago <= 0 then
+        return "Today"
+    elseif ago == 1 then
+        return "Yesterday"
+    elseif ago < 7 then
+        return "Previous 7 days"
+    elseif ago < 30 then
+        return "Previous 30 days"
+    end
+    return "Older"
+end
 local function setText(font, value)
     if font._wispText ~= value then
         font._wispText = value
@@ -487,6 +530,8 @@ ns.UI.Widgets = {
     Button = button,
     Hover = hover,
     Caption = caption,
+    DayLabel = dayLabel,
+    DayBucket = dayBucket,
     BackLink = backLink,
     Toggle = toggle,
     ScrollArea = scrollArea,
