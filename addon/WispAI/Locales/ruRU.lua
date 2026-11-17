@@ -14,12 +14,13 @@ ns.Locales.ruRU = {
 
     -- Sidebar
     ["sidebar.newChat"] = "Новый чат",
-    ["sidebar.recents"] = "Недавние",
     ["sidebar.deleteConversation"] = "Удалить беседу",
     ["sidebar.rightClickOptions"] = "Правый клик — параметры",
     ["sidebar.deleteConfirm"] = "Удалить «%s»? Эта беседа будет стерта.",
     ["sidebar.hide"] = "Скрыть боковую панель",
     ["sidebar.show"] = "Показать боковую панель",
+    ["window.restore"] = "Развернуть",
+    ["window.minimize"] = "Свернуть",
 
     -- Status
     ["status.setupRequired"] = "Нужна настройка",
@@ -83,7 +84,7 @@ ns.Locales.ruRU = {
     ["activity.sending"] = "Отправка",
     ["activity.preparing"] = "Готовлю ответ",
     ["activity.summarizing"] = "Сжимаю старый контекст, чтобы продолжить беседу",
-    ["activity.newReply"] = "Wisp AI - Новый ответ",
+    ["activity.newReply"] = "Новый ответ",
 
     -- Model controls
     ["model.default"] = "По умолчанию",
@@ -154,6 +155,9 @@ ns.Locales.ruRU = {
     ["time.earlier"] = "Ранее",
     ["time.today"] = "Сегодня",
     ["time.yesterday"] = "Вчера",
+    ["time.older"] = "Давно",
+    ["time.previous30Days"] = "Последние 30 дней",
+    ["time.previous7Days"] = "Последние 7 дней",
 
     -- Settings
     ["settings.title"] = "Настройки",
@@ -180,6 +184,12 @@ ns.Locales.ruRU = {
     ["chatHistory.publicHint"] = "Выберите отдельные каналы. Выбор привязан к названию канала.",
     ["chatHistory.noPublic"] = "Вы не состоите в общих каналах.",
     ["chatHistory.clear"] = "Очистить историю",
+
+    -- Advice toast
+    ["advice.dismiss"] = "Скрыть",
+    ["advice.read"] = "Читать",
+    ["advice.allRoutines"] = "Все рутины",
+    ["advice.reference"] = "Ссылка",
 
     -- Memory and integrations
     ["memory.title"] = "Память",

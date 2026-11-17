@@ -14,12 +14,13 @@ ns.Locales.deDE = {
 
     -- Sidebar
     ["sidebar.newChat"] = "Neuer Chat",
-    ["sidebar.recents"] = "Zuletzt",
     ["sidebar.deleteConversation"] = "Unterhaltung löschen",
     ["sidebar.rightClickOptions"] = "Rechtsklick für Optionen",
     ["sidebar.deleteConfirm"] = "„%s“ löschen? Diese Unterhaltung wird entfernt.",
     ["sidebar.hide"] = "Seitenleiste ausblenden",
     ["sidebar.show"] = "Seitenleiste einblenden",
+    ["window.restore"] = "Wiederherstellen",
+    ["window.minimize"] = "Minimieren",
 
     -- Status
     ["status.setupRequired"] = "Einrichtung nötig",
@@ -83,7 +84,7 @@ ns.Locales.deDE = {
     ["activity.sending"] = "Senden",
     ["activity.preparing"] = "Antwort wird vorbereitet",
     ["activity.summarizing"] = "Älterer Kontext wird zusammengefasst, um die Unterhaltung fortzusetzen",
-    ["activity.newReply"] = "Wisp AI - Neue Antwort",
+    ["activity.newReply"] = "Neue Antwort",
 
     -- Model controls
     ["model.default"] = "Standard",
@@ -154,6 +155,9 @@ ns.Locales.deDE = {
     ["time.earlier"] = "Früher",
     ["time.today"] = "Heute",
     ["time.yesterday"] = "Gestern",
+    ["time.older"] = "Älter",
+    ["time.previous30Days"] = "Letzte 30 Tage",
+    ["time.previous7Days"] = "Letzte 7 Tage",
 
     -- Settings
     ["settings.title"] = "Einstellungen",
@@ -180,6 +184,12 @@ ns.Locales.deDE = {
     ["chatHistory.publicHint"] = "Wähl einzelne Kanäle. Die Auswahl folgt dem Kanalnamen.",
     ["chatHistory.noPublic"] = "Keinem öffentlichen Kanal beigetreten.",
     ["chatHistory.clear"] = "Verlauf leeren",
+
+    -- Advice toast
+    ["advice.dismiss"] = "Verwerfen",
+    ["advice.read"] = "Lesen",
+    ["advice.allRoutines"] = "Alle Routinen",
+    ["advice.reference"] = "Verweis",
 
     -- Memory and integrations
     ["memory.title"] = "Gedächtnis",

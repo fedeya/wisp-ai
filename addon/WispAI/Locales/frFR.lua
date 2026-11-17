@@ -14,12 +14,13 @@ ns.Locales.frFR = {
 
     -- Sidebar
     ["sidebar.newChat"] = "Nouvelle discussion",
-    ["sidebar.recents"] = "Récents",
     ["sidebar.deleteConversation"] = "Supprimer la conversation",
     ["sidebar.rightClickOptions"] = "Clic droit pour les options",
     ["sidebar.deleteConfirm"] = "Supprimer « %s » ? Cette conversation sera effacée.",
     ["sidebar.hide"] = "Masquer la barre latérale",
     ["sidebar.show"] = "Afficher la barre latérale",
+    ["window.restore"] = "Restaurer",
+    ["window.minimize"] = "Réduire",
 
     -- Status
     ["status.setupRequired"] = "Configuration requise",
@@ -83,7 +84,7 @@ ns.Locales.frFR = {
     ["activity.sending"] = "Envoi",
     ["activity.preparing"] = "Préparation de la réponse",
     ["activity.summarizing"] = "Résumé du contexte ancien pour poursuivre la conversation",
-    ["activity.newReply"] = "Wisp AI - Nouvelle réponse",
+    ["activity.newReply"] = "Nouvelle réponse",
 
     -- Model controls
     ["model.default"] = "Par défaut",
@@ -154,6 +155,9 @@ ns.Locales.frFR = {
     ["time.earlier"] = "Plus tôt",
     ["time.today"] = "Aujourd'hui",
     ["time.yesterday"] = "Hier",
+    ["time.older"] = "Plus ancien",
+    ["time.previous30Days"] = "30 derniers jours",
+    ["time.previous7Days"] = "7 derniers jours",
 
     -- Settings
     ["settings.title"] = "Paramètres",
@@ -180,6 +184,12 @@ ns.Locales.frFR = {
     ["chatHistory.publicHint"] = "Choisissez des canaux précis. La sélection suit le nom du canal.",
     ["chatHistory.noPublic"] = "Aucun canal public rejoint.",
     ["chatHistory.clear"] = "Effacer l'historique",
+
+    -- Advice toast
+    ["advice.dismiss"] = "Ignorer",
+    ["advice.read"] = "Lire",
+    ["advice.allRoutines"] = "Toutes les routines",
+    ["advice.reference"] = "Référence",
 
     -- Memory and integrations
     ["memory.title"] = "Mémoire",

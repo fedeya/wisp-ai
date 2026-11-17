@@ -14,12 +14,13 @@ ns.Locales.koKR = {
 
     -- Sidebar
     ["sidebar.newChat"] = "새 채팅",
-    ["sidebar.recents"] = "최근 항목",
     ["sidebar.deleteConversation"] = "대화 삭제",
     ["sidebar.rightClickOptions"] = "오른쪽 클릭으로 옵션 보기",
     ["sidebar.deleteConfirm"] = '"%s" 대화를 삭제할까요? 삭제하면 되돌릴 수 없습니다.',
     ["sidebar.hide"] = "사이드바 숨기기",
     ["sidebar.show"] = "사이드바 표시",
+    ["window.restore"] = "복원",
+    ["window.minimize"] = "최소화",
 
     -- Status
     ["status.setupRequired"] = "설정 필요",
@@ -83,7 +84,7 @@ ns.Locales.koKR = {
     ["activity.sending"] = "보내는 중",
     ["activity.preparing"] = "답변 준비 중",
     ["activity.summarizing"] = "대화를 이어가기 위해 이전 컨텍스트를 요약하는 중",
-    ["activity.newReply"] = "Wisp AI - 새 답변",
+    ["activity.newReply"] = "새 답변",
 
     -- Model controls
     ["model.default"] = "기본값",
@@ -154,6 +155,9 @@ ns.Locales.koKR = {
     ["time.earlier"] = "이전",
     ["time.today"] = "오늘",
     ["time.yesterday"] = "어제",
+    ["time.older"] = "오래전",
+    ["time.previous30Days"] = "지난 30일",
+    ["time.previous7Days"] = "지난 7일",
 
     -- Settings
     ["settings.title"] = "설정",
@@ -180,6 +184,12 @@ ns.Locales.koKR = {
     ["chatHistory.publicHint"] = "채널을 하나씩 고르세요. 선택은 채널 이름을 따릅니다.",
     ["chatHistory.noPublic"] = "참여 중인 공개 채널이 없습니다.",
     ["chatHistory.clear"] = "기록 지우기",
+
+    -- Advice toast
+    ["advice.dismiss"] = "닫기",
+    ["advice.read"] = "읽기",
+    ["advice.allRoutines"] = "모든 루틴",
+    ["advice.reference"] = "참조",
 
     -- Memory and integrations
     ["memory.title"] = "기억",

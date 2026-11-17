@@ -14,12 +14,13 @@ ns.Locales.zhCN = {
 
     -- Sidebar
     ["sidebar.newChat"] = "新对话",
-    ["sidebar.recents"] = "最近",
     ["sidebar.deleteConversation"] = "删除对话",
     ["sidebar.rightClickOptions"] = "右键查看选项",
     ["sidebar.deleteConfirm"] = "删除“%s”？此对话将被移除。",
     ["sidebar.hide"] = "隐藏侧边栏",
     ["sidebar.show"] = "显示侧边栏",
+    ["window.restore"] = "还原",
+    ["window.minimize"] = "最小化",
 
     -- Status
     ["status.setupRequired"] = "需要设置",
@@ -83,7 +84,7 @@ ns.Locales.zhCN = {
     ["activity.sending"] = "发送中",
     ["activity.preparing"] = "正在准备回复",
     ["activity.summarizing"] = "正在总结较早的上下文以继续对话",
-    ["activity.newReply"] = "Wisp AI - 新回复",
+    ["activity.newReply"] = "新回复",
 
     -- Model controls
     ["model.default"] = "默认",
@@ -154,6 +155,9 @@ ns.Locales.zhCN = {
     ["time.earlier"] = "更早",
     ["time.today"] = "今天",
     ["time.yesterday"] = "昨天",
+    ["time.older"] = "很久以前",
+    ["time.previous30Days"] = "过去 30 天",
+    ["time.previous7Days"] = "过去 7 天",
 
     -- Settings
     ["settings.title"] = "设置",
@@ -180,6 +184,12 @@ ns.Locales.zhCN = {
     ["chatHistory.publicHint"] = "逐个选择频道。选择按频道名称记录。",
     ["chatHistory.noPublic"] = "未加入任何公共频道。",
     ["chatHistory.clear"] = "清空记录",
+
+    -- Advice toast
+    ["advice.dismiss"] = "关闭",
+    ["advice.read"] = "查看",
+    ["advice.allRoutines"] = "全部例程",
+    ["advice.reference"] = "引用",
 
     -- Memory and integrations
     ["memory.title"] = "记忆",

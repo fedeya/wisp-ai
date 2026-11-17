@@ -16,12 +16,13 @@ ns.Locales.enUS = {
 
     -- Sidebar
     ["sidebar.newChat"] = "New chat",
-    ["sidebar.recents"] = "Recents",
     ["sidebar.deleteConversation"] = "Delete conversation",
     ["sidebar.rightClickOptions"] = "Right-click for options",
     ["sidebar.deleteConfirm"] = 'Delete "%s"? This conversation will be removed.',
     ["sidebar.hide"] = "Hide sidebar",
     ["sidebar.show"] = "Show sidebar",
+    ["window.restore"] = "Restore",
+    ["window.minimize"] = "Minimize",
 
     -- Status
     ["status.setupRequired"] = "Setup required",
@@ -85,7 +86,7 @@ ns.Locales.enUS = {
     ["activity.sending"] = "Sending",
     ["activity.preparing"] = "Preparing your reply",
     ["activity.summarizing"] = "Summarizing older context to continue this conversation",
-    ["activity.newReply"] = "Wisp AI - New reply",
+    ["activity.newReply"] = "New reply",
 
     -- Model controls
     ["model.default"] = "Default",
@@ -156,6 +157,9 @@ ns.Locales.enUS = {
     ["time.earlier"] = "Earlier",
     ["time.today"] = "Today",
     ["time.yesterday"] = "Yesterday",
+    ["time.older"] = "Older",
+    ["time.previous30Days"] = "Previous 30 days",
+    ["time.previous7Days"] = "Previous 7 days",
 
     -- Settings
     ["settings.title"] = "Settings",
@@ -193,6 +197,12 @@ ns.Locales.enUS = {
     ["chatHistory.publicHint"] = "Choose individual channels. Selections follow the channel name.",
     ["chatHistory.noPublic"] = "No public channels joined.",
     ["chatHistory.clear"] = "Clear history",
+
+    -- Advice toast
+    ["advice.dismiss"] = "Dismiss",
+    ["advice.read"] = "Read",
+    ["advice.allRoutines"] = "All routines",
+    ["advice.reference"] = "Reference",
 
     -- Memory and integrations
     ["memory.title"] = "Memory",
