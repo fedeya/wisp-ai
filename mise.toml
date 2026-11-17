@@ -1,0 +1,4 @@
+# Local toolchain matching CI (.github/actions/setup-workspace). Run `mise install`.
+[tools]
+node = "24.22.1"
+pnpm = "12.18.0"

@@ -4,9 +4,12 @@
 
 ## Prerequisites and checks
 
-Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json). From the repository root:
+Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json).
+[mise](https://mise.jdx.dev) installs the same versions CI uses from [mise.toml](../mise.toml).
+Busted and Luacheck need Lua 5.1 (or LuaJIT) with LuaRocks. From the repository root:
 
 ```sh
+mise install
 pnpm install --frozen-lockfile
 luarocks --lua-version=5.1 install luacheck 1.2.0-1
 luarocks --lua-version=5.1 install busted 2.3.0-1
