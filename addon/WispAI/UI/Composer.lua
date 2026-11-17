@@ -244,10 +244,14 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     inputScroll:SetScript("OnMouseWheel", function(_, delta)
         scrollInput(inputScroll:GetVerticalScroll() - delta * 32)
     end)
-    inputScroll:EnableMouse(true)
-    inputScroll:SetScript("OnMouseDown", function()
+    -- A click anywhere in the field, padding included, focuses the draft.
+    local function focusDraft()
         ns.draft:SetFocus()
-    end)
+    end
+    inputScroll:EnableMouse(true)
+    inputScroll:SetScript("OnMouseDown", focusDraft)
+    inputBox:EnableMouse(true)
+    inputBox:SetScript("OnMouseDown", focusDraft)
     ns.draft:SetScript("OnEnterPressed", function(self)
         if IsShiftKeyDown() then
             self:Insert("\n")
