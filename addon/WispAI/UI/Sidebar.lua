@@ -64,8 +64,6 @@ local function makeRow()
     local b = widgets.NavItem(sessionContent, "", CHAT_ROW)
     -- Rows span the list, so the title can run to the sidebar's edge.
     b:SetPoint("RIGHT", sessionContent, "RIGHT")
-    -- Conversation rows mark selection with the fill only; the accent bar is for navigation.
-    b.bar:SetColorTexture(0, 0, 0, 0)
     b.mark = widgets.Dot(b, 5)
     b.mark:SetPoint("RIGHT", -10, 0)
     b:SetScript("OnClick", function(self)

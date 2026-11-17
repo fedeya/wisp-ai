@@ -99,6 +99,11 @@ function ns.UI.Memory.Build(settings)
     memoryContent:SetSize(400, 1)
     memoryPanel:SetScript("OnSizeChanged", ns.UI.Memory.Refresh)
 end
+function ns.UI.Memory.Hide()
+    if memoryPanel then
+        memoryPanel:Hide()
+    end
+end
 function ns.UI.Memory.Show()
     memoryPanel:Show()
     ns.Chat.MemoryAction("list")

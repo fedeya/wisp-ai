@@ -4,7 +4,7 @@ local COLORS, FONTS = widgets.COLORS, widgets.FONTS
 local label, box, button = widgets.Label, widgets.Box, widgets.Button
 local TEXT, MUTED = widgets.TEXT, widgets.MUTED
 local PAGE_INSET, ROW_HEIGHT = 24, 32
-local settings
+local settings, chatHistoryPage
 
 -- A settings line with its label on the left and a switch on the right.
 local function switchRow(parent, top, text, checked, onChange)
@@ -166,16 +166,11 @@ end
 
 -- Returns Settings to its main page by closing any open subpage.
 function ns.UI.SettingsPanel.ResetPages()
-    for _, name in ipairs({
-        "WispAIChatHistorySettings",
-        "WispAIMemoryPanel",
-        "WispAICapabilitiesPanel",
-    }) do
-        local page = _G[name]
-        if page then
-            page:Hide()
-        end
+    if chatHistoryPage then
+        chatHistoryPage:Hide()
     end
+    ns.UI.Memory.Hide()
+    ns.UI.Capabilities.Hide()
 end
 
 -- The window supplies the overlay parent and the conversation panel it covers.
@@ -229,6 +224,7 @@ function ns.UI.SettingsPanel.Build(frame, panel)
     local data = widgets.Caption(settings, "Data")
     data:SetPoint("TOPLEFT", PAGE_INSET, -230)
     local chatSettings = buildChatHistory()
+    chatHistoryPage = chatSettings
     local links = {
         {
             "Integrations",

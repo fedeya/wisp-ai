@@ -95,7 +95,6 @@ end
 
 local function makeRunRow()
     local row = widgets.NavItem(content, "", RUN_ROW)
-    row.bar:SetColorTexture(0, 0, 0, 0)
     row.mark = widgets.Dot(row, 6)
     row.mark:SetPoint("LEFT", 10, 0)
     row.label:ClearAllPoints()

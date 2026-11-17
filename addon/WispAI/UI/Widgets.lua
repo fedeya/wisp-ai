@@ -324,14 +324,13 @@ local function dot(parent, size, color)
 end
 
 --- Full-width sidebar row: left-aligned label, hover wash, and a selected state
---- with an accent bar. Call `SetSelected(row, value)` to change the state.
+--- shown by its fill alone. Call `SetSelected(row, value)` to change the state.
 local function setSelected(row, selected)
     if row._wispSelected == selected then
         return
     end
     row._wispSelected = selected
     row.fill:SetShown(selected)
-    row.bar:SetShown(selected)
     row.label:SetTextColor(unpack(selected and TEXT or SECONDARY))
     if row.icon then
         row.icon:SetVertexColor(unpack(selected and TEXT or SECONDARY))
@@ -344,11 +343,6 @@ local function navItem(parent, text, height, click, icon)
     row.fill = row:CreateTexture(nil, "BACKGROUND")
     row.fill:SetAllPoints()
     row.fill:SetColorTexture(unpack(COLORS.selected))
-    row.bar = row:CreateTexture(nil, "ARTWORK")
-    row.bar:SetPoint("TOPLEFT")
-    row.bar:SetPoint("BOTTOMLEFT")
-    row.bar:SetWidth(2)
-    row.bar:SetColorTexture(unpack(ACCENT))
     local hover = row:CreateTexture(nil, "HIGHLIGHT")
     hover:SetAllPoints()
     hover:SetColorTexture(1, 1, 1, 0.04)

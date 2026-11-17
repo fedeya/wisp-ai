@@ -143,6 +143,11 @@ function ns.UI.Capabilities.Build(settings)
     capabilityContent:SetSize(400, 1)
     capabilityPanel:SetScript("OnSizeChanged", ns.UI.Capabilities.Refresh)
 end
+function ns.UI.Capabilities.Hide()
+    if capabilityPanel then
+        capabilityPanel:Hide()
+    end
+end
 function ns.UI.Capabilities.Show()
     capabilityPanel:Show()
     ns.Transport.Send({ type = "capabilities_list" })
