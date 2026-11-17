@@ -4,6 +4,7 @@ local ACCENT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
 local STARTER_PROMPT = "What can you do?"
 local SUGGESTIONS = { STARTER_PROMPT, "What should I do next?", "Review my gear" }
+local CHIP_GAP = 8
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
     "|cff9aa7ac",
@@ -96,6 +97,70 @@ local function greeting()
     return hour < 12 and "Good morning" or (hour < 19 and "Good afternoon" or "Good evening")
 end
 
+-- "Mage 20 · Elwynn Forest", or nil outside the game.
+local function whereabouts()
+    local class = UnitClass and UnitClass("player")
+    local level = UnitLevel and UnitLevel("player")
+    local zone = GetZoneText and GetZoneText()
+    local parts = {}
+    if class and level then
+        parts[#parts + 1] = class .. " " .. level
+    end
+    if zone and zone ~= "" then
+        parts[#parts + 1] = zone
+    end
+    return #parts > 0 and table.concat(parts, " · ") or nil
+end
+
+-- Lays the empty state out around the field when the composer is centered:
+-- greeting above, suggestion chips in a row below the model choices. Otherwise
+-- it is centered in the transcript with the suggestions stacked.
+local function placeEmptyState(centered)
+    local field = centered and ns.UI.Composer.Field()
+    local width = field and field:GetWidth() or 0
+    local key = centered and ("c" .. math.floor(width)) or "t"
+    if emptyState.placed == key then
+        return
+    end
+    emptyState.placed = key
+    local title, detail = emptyState.title, emptyState.detail
+    title:ClearAllPoints()
+    detail:ClearAllPoints()
+    if centered then
+        title:SetPoint("BOTTOM", field, "TOP", 0, 40)
+        detail:SetPoint("TOP", title, "BOTTOM", 0, -8)
+        detail:SetPoint("LEFT", field, "LEFT", 0, 0)
+        detail:SetPoint("RIGHT", field, "RIGHT", 0, 0)
+        local total = -CHIP_GAP
+        for _, chip in ipairs(emptyState.suggestions) do
+            local text = chip.GetFontString and chip:GetFontString()
+            chip:SetWidth(math.ceil((text and text:GetStringWidth() or 120) + 26))
+            total = total + chip:GetWidth() + CHIP_GAP
+        end
+        -- One centered row when it fits the field, otherwise one chip per line.
+        local x, row = -total / 2, total <= width
+        for index, chip in ipairs(emptyState.suggestions) do
+            chip:ClearAllPoints()
+            if row then
+                chip:SetPoint("TOPLEFT", field, "BOTTOM", x, -40)
+                x = x + chip:GetWidth() + CHIP_GAP
+            else
+                chip:SetPoint("TOP", field, "BOTTOM", 0, -40 - (index - 1) * 34)
+            end
+        end
+    else
+        title:SetPoint("CENTER", 0, 40)
+        detail:SetPoint("TOP", title, "BOTTOM", 0, -10)
+        detail:SetPoint("LEFT", 20, 0)
+        detail:SetPoint("RIGHT", -20, 0)
+        for index, chip in ipairs(emptyState.suggestions) do
+            chip:SetWidth(210)
+            chip:ClearAllPoints()
+            chip:SetPoint("TOP", detail, "BOTTOM", 0, -16 - (index - 1) * 34)
+        end
+    end
+end
+
 function ns.UI.Activity.IsSending(chat)
     if chat and chat.status == "working" then
         for _, pending in pairs(ns.pendingMessages or {}) do
@@ -117,6 +182,11 @@ function ns.UI.Activity.Refresh(chat)
     emptyState.loading = not needsSetup and (waiting or loading)
     emptyState.setup:SetShown(needsSetup)
     local ready = empty and not working and not waiting and not loading
+    local centered = ready and ns.UI.Composer.CanCenter and ns.UI.Composer.CanCenter()
+    if ns.UI.Composer.SetCentered then
+        ns.UI.Composer.SetCentered(centered)
+        placeEmptyState(centered)
+    end
     local modelReady = not (ns.modelPending and ns.modelPending[ns.active])
     for _, suggestion in ipairs(emptyState.suggestions) do
         suggestion:SetShown(ready)
@@ -125,7 +195,8 @@ function ns.UI.Activity.Refresh(chat)
     if empty and not working then
         local name = UnitName and UnitName("player") or nil
         local title = name and (greeting() .. ", " .. name) or "Ask Wisp"
-        local detail = "Ask about your character, quests, equipment or where to go next."
+        local detail = centered and whereabouts()
+            or "Ask about your character, quests, equipment or where to go next."
         if needsSetup then
             title = "Finish Wisp setup"
             detail =
@@ -257,11 +328,11 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
             ns.Chat.Submit(prompt)
         end)
         suggestion:SetHeight(28)
-        suggestion:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -16 - (index - 1) * 34)
         suggestion:Hide()
         emptyState.suggestions[index] = suggestion
     end
     emptyState.starter = emptyState.suggestions[1]
+    placeEmptyState(false)
     emptyState.dots = {}
     for index = 1, 3 do
         local dot = label(emptyState, ".", ACCENT)

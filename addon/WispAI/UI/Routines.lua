@@ -574,7 +574,10 @@ local function buildDetail()
         end
     end, "ghost")
     delete:SetPoint("TOPRIGHT", 0, -58)
-    delete:GetFontString():SetTextColor(unpack(COLORS.danger))
+    local deleteText = delete.GetFontString and delete:GetFontString()
+    if deleteText then
+        deleteText:SetTextColor(unpack(COLORS.danger))
+    end
     local edit = button(content, "Edit with Wisp", 112, function()
         local routine = routineById(detailId)
         if routine then

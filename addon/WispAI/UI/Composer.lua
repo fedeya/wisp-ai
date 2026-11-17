@@ -69,6 +69,49 @@ local function refreshDraft()
     fit()
 end
 
+-- A new conversation puts the field in the middle of the panel, under the
+-- greeting, the way chat apps open; it docks at the bottom once the chat starts.
+local CENTERED_WIDTH, CENTERED_MIN_HEIGHT = 560, 400
+local centered = false
+
+local function placeField()
+    local panel = inputBox:GetParent()
+    inputBox:ClearAllPoints()
+    if centered then
+        local width = math.min(CENTERED_WIDTH, (panel:GetWidth() or 0) - MARGIN * 4)
+        inputBox:SetWidth(math.max(240, width))
+        -- Anchored by its bottom so a longer draft grows upward.
+        inputBox:SetPoint("BOTTOM", panel, "CENTER", 0, -MIN_HEIGHT / 2 + 10)
+    else
+        inputBox:SetPoint("BOTTOMLEFT", MARGIN, MARGIN + BELOW)
+        inputBox:SetPoint("BOTTOMRIGHT", -MARGIN, MARGIN + BELOW)
+    end
+end
+
+--- True when the panel is tall enough to open a new chat with the field centered.
+function ns.UI.Composer.CanCenter()
+    local panel = inputBox and inputBox:GetParent()
+    return panel ~= nil and (panel:GetHeight() or 0) >= CENTERED_MIN_HEIGHT
+end
+
+function ns.UI.Composer.SetCentered(value)
+    value = value == true
+    if centered == value then
+        return
+    end
+    centered = value
+    placeField()
+end
+
+function ns.UI.Composer.IsCentered()
+    return centered
+end
+
+--- The rounded field, for laying out the new-chat greeting around it.
+function ns.UI.Composer.Field()
+    return inputBox
+end
+
 function ns.UI.Composer.Refresh(chat)
     ns.UI.RefreshModelControls()
     fit()
@@ -248,5 +291,10 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
         end)
     end
     inputBox:SetScript("OnSizeChanged", fit)
+    chatPanel:HookScript("OnSizeChanged", function()
+        if centered then
+            placeField()
+        end
+    end)
     fit()
 end
