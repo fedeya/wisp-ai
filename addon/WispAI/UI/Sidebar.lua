@@ -1,7 +1,7 @@
 local _, ns = ...
 local widgets = ns.UI.Widgets
 local COLORS, FONTS = widgets.COLORS, widgets.FONTS
-local label, setText, button = widgets.Label, widgets.SetText, widgets.Button
+local label, setText = widgets.Label, widgets.SetText
 local TEXT, ACCENT = widgets.TEXT, widgets.ACCENT
 -- The sidebar's width is the player's to drag between MIN_WIDTH and MAX_WIDTH,
 -- always leaving the conversation at least MIN_CHAT_WIDTH.
@@ -60,35 +60,93 @@ function ns.UI.Sidebar.Toggle()
     ns.UI.Refresh()
 end
 
+-- A conversation row's right side: the delete X shows on the selected row and
+-- while the row is hovered; otherwise the activity mark, if any. The title
+-- makes room only for what is shown.
+local function paintRowEnd(b)
+    local showDelete = b.selected == true or b.hovered == true
+    b.delete:SetShown(showDelete)
+    b.mark:SetShown(b.marked and not showDelete)
+    local inset = showDelete and -26 or (b.marked and -20 or -10)
+    if b.labelInset ~= inset then
+        b.labelInset = inset
+        b.label:SetPoint("RIGHT", inset, 0)
+    end
+end
+
+local function setHover(b, hovered)
+    b.hovered = hovered
+    paintRowEnd(b)
+end
+
+local function openRowMenu(b)
+    if not (MenuUtil and MenuUtil.CreateContextMenu) then
+        ns.UI.RequestDeleteChat(b.chatId)
+        return
+    end
+    MenuUtil.CreateContextMenu(b, function(_, root)
+        root:CreateButton("Delete conversation", function()
+            ns.UI.RequestDeleteChat(b.chatId)
+        end)
+    end)
+end
+
 local function makeRow()
     local b = widgets.NavItem(sessionContent, "", CHAT_ROW)
+    b.marked = false
     -- Rows span the list, so the title can run to the sidebar's edge.
     b:SetPoint("RIGHT", sessionContent, "RIGHT")
     b.mark = widgets.Dot(b, 5)
     b.mark:SetPoint("RIGHT", -10, 0)
-    b:SetScript("OnClick", function(self)
-        ns.Chat.Select(self.chatId)
+    b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    b:SetScript("OnClick", function(self, mouse)
+        if mouse == "RightButton" then
+            openRowMenu(self)
+        else
+            ns.Chat.Select(self.chatId)
+        end
     end)
     b:SetScript("OnEnter", function(self)
+        setHover(self, true)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(self.fullTitle)
+        GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
-    b:SetScript("OnLeave", function()
+    b:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
+        -- Moving onto the delete button stays inside the row.
+        if not (self.IsMouseOver and self:IsMouseOver()) then
+            setHover(self, false)
+        end
     end)
-    b.delete = button(b, "x", 18, function()
-        ns.UI.RequestDeleteChat(b.chatId)
-    end, "ghost")
+    b.delete = CreateFrame("Button", nil, b)
     b.delete:SetSize(18, 18)
     b.delete:SetPoint("RIGHT", -4, 0)
+    b.delete.icon = b.delete:CreateTexture(nil, "ARTWORK")
+    b.delete.icon:SetTexture(widgets.TEXTURES .. "Close.tga")
+    b.delete.icon:SetSize(10, 10)
+    b.delete.icon:SetPoint("CENTER")
+    b.delete.icon:SetVertexColor(unpack(COLORS.secondary))
+    local deleteHover = b.delete:CreateTexture(nil, "HIGHLIGHT")
+    deleteHover:SetAllPoints()
+    deleteHover:SetColorTexture(1, 1, 1, 0.08)
+    b.delete:SetScript("OnClick", function()
+        ns.UI.RequestDeleteChat(b.chatId)
+    end)
+    b.delete:Hide()
     b.delete:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(unpack(TEXT))
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Delete conversation")
         GameTooltip:Show()
     end)
-    b.delete:SetScript("OnLeave", function()
+    b.delete:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(unpack(COLORS.secondary))
         GameTooltip:Hide()
+        if not (b.IsMouseOver and b:IsMouseOver()) then
+            setHover(b, false)
+        end
     end)
     return b
 end
@@ -150,18 +208,11 @@ function ns.UI.Sidebar.Refresh()
         if FONTS.strong then
             b.label:SetFontObject(selected and FONTS.strong or FONTS.body)
         end
-        b.delete:SetShown(selected)
         local busy = session.status == "working"
-        local marked = not selected and (busy or session.unread == true)
-        b.mark:SetShown(marked)
+        b.selected = selected
+        b.marked = not selected and (busy or session.unread == true)
         b.mark:SetColorTexture(unpack(busy and ACCENT or TEXT))
-        -- The title runs as far as the row's right side allows: it only makes
-        -- room for the delete button or the activity mark when one is shown.
-        local inset = selected and -26 or (marked and -20 or -10)
-        if b.labelInset ~= inset then
-            b.labelInset = inset
-            b.label:SetPoint("RIGHT", inset, 0)
-        end
+        paintRowEnd(b)
         setText(b.label, session.title)
         if b.y ~= y then
             b.y = y
@@ -231,6 +282,7 @@ end
 
 local function navItem(text, click, icon)
     local item = widgets.NavItem(sidebar, text, NAV_ROW - 2, click, widgets.TEXTURES .. icon)
+    item.accentBar = true
     item:SetFontString(item.label)
     item:SetText(text)
     return item

@@ -146,12 +146,19 @@ const sidebar: Shape[] = [
   { kind: 'line', from: [26, 14], to: [26, 50], width: 4.5 },
 ];
 
+// Close / delete: an X.
+const close: Shape[] = [
+  { kind: 'line', from: [18, 18], to: [46, 46], width: 5 },
+  { kind: 'line', from: [46, 18], to: [18, 46], width: 5 },
+];
+
 mkdirSync('addon/WispAI/Textures', { recursive: true });
 writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
 writeFileSync('addon/WispAI/Textures/Back.tga', render(back));
 writeFileSync('addon/WispAI/Textures/Send.tga', render(send));
 writeFileSync('addon/WispAI/Textures/Stop.tga', render(stop));
 writeFileSync('addon/WispAI/Textures/Plus.tga', render(plus));
+writeFileSync('addon/WispAI/Textures/Close.tga', render(close));
 writeFileSync('addon/WispAI/Textures/Sidebar.tga', render(sidebar));
 writeFileSync('addon/WispAI/Textures/Clock.tga', render(clock));
 writeFileSync('addon/WispAI/Textures/ChevronDown.tga', render(chevronDown));

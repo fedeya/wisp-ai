@@ -128,6 +128,7 @@ function ns.UI.Capabilities.Build(settings)
             ns.UI.Capabilities.Refresh()
         end)
         tab:SetFontString(tab.label)
+        tab.accentBar = true
         tab:SetText(text)
         tab:SetWidth(100)
         tab:SetPoint("TOPLEFT", 24 + (index - 1) * 104, top)
