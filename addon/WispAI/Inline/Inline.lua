@@ -341,14 +341,14 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
                 break
             end
         end
-        local showAuthor = previousSpeaker ~= "assistant"
-        local top = showAuthor and 20 or 0
-        if previousSpeaker and showAuthor then
+        -- Like the main window, replies carry no author label; a mark leads the busy line.
+        local top = 0
+        if previousSpeaker and previousSpeaker ~= "assistant" then
             y = y + 12
         end
-        busy.author:SetShown(showAuthor)
+        busy.author:Hide()
         busy.title:ClearAllPoints()
-        busy.title:SetPoint("TOPLEFT", 0, -top)
+        busy.title:SetPoint("TOPLEFT", 14, -top)
         busy.title:SetPoint("RIGHT", 0, 0)
         ns.UI.Activity.SetLoadingText(
             busy,
@@ -453,33 +453,22 @@ function ns.Inline.InitInline()
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)
     panel:EnableMouse(true)
-    panel:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    panel:SetBackdropColor(0.09, 0.075, 0.055, 0.98)
-    panel:SetBackdropBorderColor(0.43, 0.38, 0.28, 1)
+    uiWidgets.Box(panel, uiWidgets.COLORS.window, uiWidgets.COLORS.lineStrong)
     title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetTextColor(unpack(uiWidgets.TEXT))
     title:SetPoint("TOPLEFT", 12, -12)
     title:SetPoint("RIGHT", -110, 0)
     title:SetJustifyH("LEFT")
     title:SetWordWrap(false)
-    local close = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    close:SetSize(24, 22)
-    close:SetPoint("TOPRIGHT", -8, -7)
-    close:SetText("x")
-    close:SetScript("OnClick", function()
+    local close = uiWidgets.Button(panel, "x", 24, function()
         entry:ClearFocus()
         panel:Hide()
-    end)
-    local expand = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    expand:SetSize(70, 22)
+    end, "ghost")
+    close:SetHeight(22)
+    close:SetPoint("TOPRIGHT", -8, -7)
+    local expand = uiWidgets.Button(panel, "Expand", 70, nil, "ghost")
+    expand:SetHeight(22)
     expand:SetPoint("RIGHT", close, "LEFT", -5, 0)
-    expand:SetText("Expand")
     expand:SetScript("OnClick", function()
         local chat = ns.Inline.InlineCurrent()
         if not chat then
@@ -508,9 +497,10 @@ function ns.Inline.InitInline()
         )
         picker:SetPoint("BOTTOMLEFT", 12, 13)
     end
-    scroll = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scroll = CreateFrame("ScrollFrame", nil, panel)
+    scroll:SetClipsChildren(true)
     scroll:SetPoint("TOPLEFT", 12, -42)
-    scroll:SetPoint("BOTTOMRIGHT", -30, 81)
+    scroll:SetPoint("BOTTOMRIGHT", -12, 81)
     scroll:EnableMouseWheel(true)
     scroll:SetScript("OnMouseWheel", function(_, delta)
         scroll:SetVerticalScroll(
@@ -524,9 +514,8 @@ function ns.Inline.InitInline()
     content:SetSize(370, 1)
     content._wispScroll = scroll
     scroll:SetScrollChild(content)
-    newMessages = CreateFrame("Button", "WispAIInlineNewMessages", panel, "UIPanelButtonTemplate")
-    newMessages:SetSize(140, 24)
-    newMessages:SetText("New messages v")
+    newMessages =
+        uiWidgets.Button(panel, "New messages v", 140, nil, nil, "WispAIInlineNewMessages")
     newMessages:SetPoint("BOTTOM", scroll, "BOTTOM", 0, 8)
     newMessages:SetFrameLevel(scroll:GetFrameLevel() + 10)
     newMessages:SetScript("OnClick", function()
@@ -542,27 +531,38 @@ function ns.Inline.InitInline()
     end)
     newMessages:Hide()
     busy = CreateFrame("Frame", "WispAIInlineProgress", content)
-    busy.author = uiWidgets.Label(busy, "Wisp AI", uiWidgets.GOLD)
+    busy.author = uiWidgets.Label(busy, "Wisp AI", uiWidgets.MUTED)
     busy.author:SetPoint("TOPLEFT", 0, 0)
+    busy.mark = uiWidgets.Dot(busy, 6)
+    busy.mark:SetPoint("TOPLEFT", 1, -5)
     busy.title = uiWidgets.Label(busy, "Thinking", uiWidgets.MUTED)
     busy.title:SetFontObject(ChatFontNormal)
     busy.title:SetWordWrap(false)
     busy:Hide()
-    entry = CreateFrame("EditBox", "WispAIInlineInput", panel, "InputBoxTemplate")
+    entry = CreateFrame("EditBox", "WispAIInlineInput", panel, "BackdropTemplate")
+    uiWidgets.Box(entry, uiWidgets.COLORS.raised, uiWidgets.COLORS.lineStrong)
+    uiWidgets.ChatFont(entry, "")
+    entry:SetTextColor(unpack(uiWidgets.TEXT))
+    entry:SetTextInsets(8, 8, 0, 0)
     entry:SetAutoFocus(false)
     entry:SetMaxLetters(2000)
     entry:SetHeight(28)
-    entry:SetPoint("BOTTOMLEFT", 17, 41)
-    entry:SetPoint("BOTTOMRIGHT", -17, 41)
+    entry:SetPoint("BOTTOMLEFT", 12, 41)
+    entry:SetPoint("BOTTOMRIGHT", -12, 41)
+    entry:SetScript("OnEditFocusGained", function(self)
+        self:SetBackdropBorderColor(unpack(uiWidgets.COLORS.accentLine))
+    end)
+    entry:SetScript("OnEditFocusLost", function(self)
+        self:SetBackdropBorderColor(unpack(uiWidgets.COLORS.lineStrong))
+    end)
     entry:SetScript("OnEnterPressed", ns.Inline.SendInline)
     entry:SetScript("OnEscapePressed", function()
         entry:ClearFocus()
         panel:Hide()
     end)
-    send = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    send:SetSize(65, 27)
+    send = uiWidgets.Button(panel, "Ask", 65, nil, "primary")
+    send:SetHeight(27)
     send:SetPoint("BOTTOMRIGHT", -10, 13)
-    send:SetText("Ask")
     send:SetScript("OnClick", function()
         local chat = ns.Inline.InlineCurrent()
         if chat and chat.status == "working" then
@@ -616,12 +616,7 @@ function ns.Inline.BindInline()
         end
         ns.Inline.RefreshInlineBindings()
     end)
-    dialog:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-    })
-    dialog:SetBackdropColor(0.1, 0.08, 0.05, 1)
+    uiWidgets.Box(dialog, uiWidgets.COLORS.window, uiWidgets.COLORS.lineStrong)
     local hint = dialog:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     hint:SetPoint("TOPLEFT", 15, -20)
     hint:SetWidth(350)

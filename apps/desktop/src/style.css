@@ -4,9 +4,16 @@
 
 @theme {
   --color-accent: #77dbc6;
-  --color-muted: #92a3aa;
-  --color-surface: #1c2328;
-  --color-border: #2e393e;
+  --color-muted: #c4ced1;
+  --color-canvas: #161c21;
+  --color-sidebar: #11161a;
+  --color-surface: #1c2329;
+  --color-selected: rgb(255 255 255 / 0.1);
+  --color-border: rgb(255 255 255 / 0.08);
+  --color-border-strong: rgb(255 255 255 / 0.14);
+  --color-foreground: #f5f8f8;
+  --color-accent-dim: #14302d;
+  --color-accent-line: #2a5e57;
   --breakpoint-*: initial;
   --breakpoint-sm: 651px;
   --breakpoint-md: 951px;
@@ -28,8 +35,8 @@
       system-ui,
       -apple-system,
       sans-serif;
-    color: #e4ebe9;
-    background: #14191d;
+    color: var(--color-foreground);
+    background: var(--color-canvas);
     font-size: 14px;
     font-synthesis: none;
     text-rendering: optimizeLegibility;

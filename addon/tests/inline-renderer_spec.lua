@@ -11,7 +11,7 @@ it("returns explicit pending status for plain, synchronous, pending and cached t
     assert.equal("Plain text", text)
     assert.is_false(pending)
     text, pending = ns.UI.FormatText("**Short text**")
-    assert.equal("|cffe3c77eShort text|r", text)
+    assert.equal("|cfff4faf8Short text|r", text)
     assert.is_false(pending)
 
     local body = string.rep("Long text ", 60) .. "end"
@@ -28,7 +28,7 @@ it("returns explicit pending status for plain, synchronous, pending and cached t
         end
     end
     text, pending = ns.UI.FormatText(source)
-    assert.equal("|cffe3c77e" .. body .. "|r", text)
+    assert.equal("|cfff4faf8" .. body .. "|r", text)
     assert.is_false(pending)
     assert.is_nil(ns.Markdown.InlineRenderer.pending)
 end)

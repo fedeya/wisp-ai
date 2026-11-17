@@ -1,4 +1,5 @@
 local _, ns = ...
+local COLORS = ns.UI.Widgets.COLORS
 local box, button = ns.UI.Widgets.Box, ns.UI.Widgets.Button
 local transcript, content, scrollBar, newMessages
 local rows, scrollPositions = {}, {}
@@ -94,24 +95,25 @@ end
 
 function ns.UI.Transcript.Build(chatPanel, header)
     transcript = CreateFrame("ScrollFrame", nil, chatPanel)
-    transcript:SetPoint("TOPLEFT", 13, -34)
+    transcript:SetPoint("TOPLEFT", 16, -14)
     transcript:SetPoint("BOTTOMRIGHT", -31, 104)
     content = CreateFrame("Frame", nil, transcript)
     content:SetSize(360, 1)
     transcript:SetScrollChild(content)
     scrollBar = CreateFrame("Slider", "WispAITranscriptScrollBar", chatPanel, "BackdropTemplate")
     scrollBar:SetOrientation("VERTICAL")
-    scrollBar:SetPoint("TOPRIGHT", -10, -34)
+    scrollBar:SetPoint("TOPRIGHT", -10, -14)
     scrollBar:SetPoint("BOTTOMRIGHT", -10, 104)
     scrollBar:SetWidth(14)
-    box(scrollBar, { 0.08, 0.07, 0.05, 1 }, 8)
+    box(scrollBar, COLORS.window, COLORS.window)
     scrollBar:SetMinMaxValues(0, 1)
     scrollBar:SetValueStep(1)
     if scrollBar.SetObeyStepOnDrag then
         scrollBar:SetObeyStepOnDrag(false)
     end
-    scrollBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    scrollBar:GetThumbTexture():SetSize(14, 28)
+    scrollBar:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
+    scrollBar:GetThumbTexture():SetSize(4, 28)
+    scrollBar:GetThumbTexture():SetVertexColor(unpack(COLORS.lineStrong))
     scrollBar:SetScript("OnValueChanged", function(_, value)
         transcript:SetVerticalScroll(value)
         if not rendering and newMessages and value >= scrollRange - 30 then

@@ -1,17 +1,18 @@
 local _, ns = ...
+local COLORS = ns.UI.Widgets.COLORS
 local box, button = ns.UI.Widgets.Box, ns.UI.Widgets.Button
 local inputBox, inputScroll, send, onLayout
 local narrow
 
 local function layout()
-    local nextNarrow = inputBox:GetWidth() < 380
+    local nextNarrow = inputBox:GetWidth() < 470
     if narrow ~= nextNarrow then
         narrow = nextNarrow
         inputBox:SetHeight(narrow and 106 or 78)
         inputScroll:SetPoint("BOTTOMRIGHT", -10, narrow and 56 or 28)
         send:ClearAllPoints()
         send:SetPoint("BOTTOMRIGHT", -7, narrow and 31 or 5)
-        onLayout(narrow and 132 or 104)
+        onLayout(narrow and 124 or 96)
     end
 end
 
@@ -30,10 +31,10 @@ end
 function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     onLayout = onHeightChanged
     inputBox = CreateFrame("Frame", nil, chatPanel, "BackdropTemplate")
-    inputBox:SetPoint("BOTTOMLEFT", 9, 22)
-    inputBox:SetPoint("BOTTOMRIGHT", -9, 22)
+    inputBox:SetPoint("BOTTOMLEFT", 12, 12)
+    inputBox:SetPoint("BOTTOMRIGHT", -12, 12)
     inputBox:SetHeight(78)
-    box(inputBox, { 0.045, 0.04, 0.03, 1 }, 9)
+    box(inputBox, COLORS.raised, COLORS.lineStrong)
     inputScroll = CreateFrame("ScrollFrame", "WispAIInputScroll", inputBox)
     inputScroll:SetPoint("TOPLEFT", 10, -7)
     inputScroll:SetPoint("BOTTOMRIGHT", -10, 28)
@@ -41,7 +42,7 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     ns.draft = CreateFrame("EditBox", "WispAIInput", inputScroll)
     ns.draft:SetMultiLine(true)
     ns.draft:SetAutoFocus(false)
-    ns.draft:SetFontObject(ChatFontNormal)
+    ns.UI.Widgets.ChatFont(ns.draft, "")
     ns.draft:SetMaxLetters(4000)
     ns.draft:SetPoint("TOPLEFT", inputScroll, "TOPLEFT")
     ns.draft:SetSize(inputScroll:GetWidth(), 1)
@@ -52,14 +53,15 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     inputBar:SetPoint("BOTTOMLEFT", inputScroll, "BOTTOMRIGHT", 1, 0)
     inputBar:SetWidth(8)
     inputBar:SetFrameLevel(inputScroll:GetFrameLevel() + 1)
-    box(inputBar, { 0.08, 0.07, 0.05, 1 }, 2)
+    box(inputBar, COLORS.window, COLORS.line)
     inputBar:SetMinMaxValues(0, 0)
     inputBar:SetValueStep(1)
     if inputBar.SetObeyStepOnDrag then
         inputBar:SetObeyStepOnDrag(false)
     end
-    inputBar:SetThumbTexture("Interface\\Buttons\\UI-ScrollBar-Knob")
-    inputBar:GetThumbTexture():SetSize(8, 16)
+    inputBar:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
+    inputBar:GetThumbTexture():SetSize(3, 16)
+    inputBar:GetThumbTexture():SetVertexColor(unpack(COLORS.lineStrong))
     inputBar:SetScript("OnValueChanged", function(_, value)
         inputScroll:SetVerticalScroll(value)
     end)
@@ -117,15 +119,28 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
         self:ClearFocus()
         ns.UI.SetMinimized(true)
     end)
-    send = button(inputBox, "Send", 75, function()
+    send = button(inputBox, "Send", 64, function()
         local chat = ns.Chat.Current()
         if chat and chat.status == "working" then
             ns.Transport.Send({ type = "cancel", chat = ns.active })
         else
             ns.Chat.Submit()
         end
+    end, "primary")
+    ns.draft:SetScript("OnEditFocusGained", function()
+        inputBox:SetBackdropBorderColor(unpack(COLORS.accentLine))
+    end)
+    ns.draft:SetScript("OnEditFocusLost", function()
+        inputBox:SetBackdropBorderColor(unpack(COLORS.lineStrong))
     end)
     send:SetPoint("BOTTOMRIGHT", -7, 5)
+    local meter = ns.UI.ConversationStatus.ContextMeter()
+    if meter then
+        meter:SetParent(inputBox)
+        meter:ClearAllPoints()
+        meter:SetPoint("RIGHT", send, "LEFT", -8, 0)
+        meter.text:SetJustifyH("RIGHT")
+    end
     local modelPicker = ns.UI.CreateModelControls(
         inputBox,
         "WispAIChatModelControls",

@@ -22,7 +22,7 @@ import { useDesktop } from '../use-desktop';
 const statusColors = {
   connected: 'bg-[#223a34] text-accent',
   attention: 'bg-[#423529] text-[#efc59c]',
-  neutral: 'bg-[#263137] text-[#b1c0c5]',
+  neutral: 'bg-selected text-[#b1c0c5]',
 } as const;
 
 function connectionStatus(

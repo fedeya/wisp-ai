@@ -163,7 +163,7 @@ it(
         end
         helper.addon("UI/Window.lua", env)
         ns.UI.BuildUI()
-        local header = UI_TEST.frames.WispAISettingsButton.parent
+        local header = UI_TEST.frames.WispAIHeader
         local setPoint = header.title.SetPoint
         local titleLeft
         header.title.SetPoint = function(self, point, relative, relativePoint, x, y)
@@ -487,7 +487,10 @@ it(
                 end
             end
             assert(#tabs == 2 and tabs[1]:IsShown() and tabs[2]:IsShown())
-            assert(fold.parent ~= gear.parent, "sidebar toggle must live in the sidebar")
+            assert(
+                gear.parent.parent == fold.parent,
+                "settings must live in the sidebar footer, beside the character"
+            )
             assert(gear:GetText() == "", "settings uses an icon instead of a text label")
             fold.scripts.OnClick()
             assert(
@@ -513,6 +516,23 @@ it(
             )
             ns.UI.SetMinimized(false)
             assert(fold:IsShown() and gear:IsShown(), "expanding must restore controls")
+            local settingsPage = UI_TEST.frames.WispAISettingsPage
+            local memoryPage = UI_TEST.frames.WispAIMemoryPanel
+            gear.scripts.OnClick(gear)
+            ns.UI.ShowSettings("memory")
+            assert(settingsPage:IsShown() and memoryPage:IsShown())
+            assert(not tabs[1]._wispSelected, "no section is current while Settings is open")
+            tabs[1].scripts.OnClick(tabs[1])
+            assert(
+                not settingsPage:IsShown() and not memoryPage:IsShown(),
+                "navigating away closes Settings and its subpages"
+            )
+            gear.scripts.OnClick(gear)
+            assert(
+                settingsPage:IsShown() and not memoryPage:IsShown(),
+                "Settings reopens on General"
+            )
+            ns.UI.ShowSettings(nil)
         end
         do
             local bar = UI_TEST.frames.WispAITranscriptScrollBar
@@ -947,12 +967,13 @@ it(
         assert(
             progress.parent == row.parent
                 and progress.parent ~= ns.draft.parent
-                and progress.author:GetText() == "Wisp AI",
-            "progress belongs in the transcript as an assistant row"
+                and progress.mark ~= nil,
+            "progress belongs in the transcript as an assistant row led by Wisp's mark"
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
-        assert(bottom == 104, "there must be no additional reserved progress gap")
+        -- The transcript ends right above the composer: 96 wide, 124 when it wraps to two rows.
+        assert(bottom == 96 or bottom == 124, "there must be no additional reserved progress gap")
         table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()

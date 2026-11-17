@@ -17,7 +17,7 @@ ns.workStarted = {}
 ns.responseTiming = {}
 ns.connected, ns.rev = false, 0
 function ns.Core.Log(text)
-    DEFAULT_CHAT_FRAME:AddMessage("|cffd5bb75Wisp:|r " .. text)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff77dbc6Wisp:|r " .. text)
 end
 function WispAI_Receive(json)
     local ok, data = pcall(C_EncodingUtil.DeserializeJSON, json)

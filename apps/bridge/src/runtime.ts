@@ -39,7 +39,7 @@ import { NativeVault, type SecretVault } from './secret-vault.ts';
 import { startDesktopServer } from './desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines.ts';
-import { routineEvents } from '@wisp/protocol/routines';
+import { describeRoutineTrigger, routineEvents } from '@wisp/protocol/routines';
 import { ModelConnections } from './model-connections.ts';
 import { WebSearch } from './web-search.ts';
 import { ChatGPTAuth } from './chatgpt-auth.ts';
@@ -730,9 +730,14 @@ export async function startBridge(options: BridgeOptions = {}) {
         panelCommand: state.panelCommand,
         routineCommand: state.routineCommand,
         routines: state.currentCharacterKey
-          ? routineStore
-              .list(state.currentCharacterKey)
-              .map((r) => ({ id: r.id, title: r.title, enabled: r.enabled }))
+          ? routineStore.list(state.currentCharacterKey).map((r) => ({
+              id: r.id,
+              title: r.title,
+              enabled: r.enabled,
+              // Short, human trigger text for the addon's Routines page.
+              trigger: r.triggers.map(describeRoutineTrigger).join(' or ').slice(0, 160),
+              lastStartedAt: r.lastStartedAt,
+            }))
           : [],
         routineRuns: state.currentCharacterKey
           ? routineStore

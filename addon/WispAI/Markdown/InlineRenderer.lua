@@ -23,7 +23,7 @@ local function macroCode(value, info)
             and (command:sub(1, 1) == "/" or command == "#showtooltip" or command == "#show")
         then
             commands = commands + 1
-            local color = command:sub(1, 1) == "/" and "|cff8fb7c6" or "|cffb0aa8e"
+            local color = command:sub(1, 1) == "/" and "|cff8fb7c6" or "|cff92a3aa"
             -- Stop at the next opener so unmatched '[' cannot rescan overlapping suffixes.
             tail = escaped(tail):gsub("(%[[^%[%]\n]*%])", function(condition)
                 -- Each word closes its color so wrapping into another font string is safe.
@@ -62,9 +62,9 @@ local function compile(root, limit, fromUser)
     while #stack > 0 do
         local entry = table.remove(stack)
         local node, kind = entry.node, entry.node.type
-        local color = kind == "strong" and "|cffe3c77e"
-            or (kind == "strikethrough" and "|cff99948a")
-            or (kind == "emph" and "|cffded6be")
+        local color = kind == "strong" and "|cfff4faf8"
+            or (kind == "strikethrough" and "|cff7a8a90")
+            or (kind == "emph" and "|cffc4d1d3")
         if entry.close then
             if entry.link then
                 parts[#parts + 1] = "|h"
@@ -107,7 +107,7 @@ local function compile(root, limit, fromUser)
             local url = kind == "link" and ns.Markdown.Links.Valid(node.destination) or entry.url
             local link = kind == "link" and url ~= nil
             if link then
-                color = "|cff80c8ef"
+                color = "|cff77dbc6"
             end
             if color then
                 colors[#colors + 1] = color
@@ -183,7 +183,7 @@ local function render(node, references, streaming, limit, fromUser, wantRuns)
                 atomic = style.atomic or style.url ~= nil,
             }
             if style.url then
-                run.text = "|cff80c8ef|H"
+                run.text = "|cff77dbc6|H"
                     .. ns.Markdown.Links.Encode(style.url)
                     .. "|h"
                     .. value

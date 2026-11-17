@@ -1,5 +1,6 @@
 local _, ns = ...
 local uiWidgets = ns.UI.Widgets
+local COLORS, TEXT, SECONDARY = uiWidgets.COLORS, uiWidgets.TEXT, uiWidgets.MUTED
 
 local function fadePanel(panel)
     if not panel.entranceFade then
@@ -32,12 +33,27 @@ function ns.UI.RichSignature(value)
     end
     return "{" .. table.concat(parts, "\30") .. "}"
 end
+-- Maps a game font style to Wisp's Inter equivalent, when Inter is available.
+local function uiFont(style)
+    local fonts = uiWidgets.FONTS
+    local mapped = ({
+        GameFontNormal = fonts.body,
+        GameFontNormalLarge = fonts.title,
+        GameFontNormalHuge = fonts.heading,
+        GameFontHighlightSmall = fonts.small,
+    })[style]
+    return mapped or _G[style] or style
+end
 local function font(parent, style)
-    local f = parent:CreateFontString(nil, "OVERLAY", style or "GameFontNormal")
+    style = style or "GameFontNormal"
+    local f = parent:CreateFontString(nil, "OVERLAY", style)
+    if uiFont(style) ~= (_G[style] or style) then
+        f:SetFontObject(uiFont(style))
+    end
     f:SetJustifyH("LEFT")
     f:SetWordWrap(true)
     f:SetSpacing(3)
-    f:SetTextColor(0.89, 0.85, 0.75)
+    f:SetTextColor(unpack(TEXT))
     return f
 end
 local function line(f, value, width, x, y)
@@ -50,23 +66,14 @@ local function line(f, value, width, x, y)
 end
 local function metricFonts(w)
     w.metric = font(w, "GameFontNormalLarge")
-    w.metric:SetTextColor(0.95, 0.83, 0.52)
+    w.metric:SetTextColor(unpack(TEXT))
     w.detail = font(w, "GameFontHighlightSmall")
-    w.detail:SetTextColor(0.65, 0.63, 0.58)
+    w.detail:SetTextColor(unpack(SECONDARY))
 end
 local function frame(parent, kind)
     local w = CreateFrame("Frame", nil, parent, kind == "card" and "BackdropTemplate" or nil)
     if kind == "card" then
-        w:SetBackdrop({
-            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true,
-            tileSize = 16,
-            edgeSize = 10,
-            insets = { left = 3, right = 3, top = 3, bottom = 3 },
-        })
-        w:SetBackdropColor(0.13, 0.11, 0.08, 0.95)
-        w:SetBackdropBorderColor(0.43, 0.38, 0.28, 1)
+        uiWidgets.Box(w, COLORS.raised, COLORS.line)
     end
     return w
 end
@@ -91,34 +98,25 @@ local function comparison(w, node, available, rendered)
             entry.title = font(entry)
             metricFonts(entry)
             entry.badge = font(entry, "GameFontHighlightSmall")
-            entry.badge:SetTextColor(0.62, 0.85, 0.59)
+            entry.badge:SetTextColor(unpack(COLORS.success))
             entry.delta = font(entry, "GameFontHighlightSmall")
-            entry.delta:SetTextColor(0.72, 0.69, 0.61)
+            entry.delta:SetTextColor(unpack(SECONDARY))
             entry.bar = CreateFrame("StatusBar", nil, entry)
             entry.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
             entry.bar:SetMinMaxValues(0, 1)
             entry.bar:SetHeight(4)
             entry.track = entry.bar:CreateTexture(nil, "BACKGROUND")
             entry.track:SetAllPoints()
-            entry.track:SetColorTexture(0.24, 0.22, 0.17, 0.6)
+            entry.track:SetColorTexture(unpack(COLORS.line))
             if ns.UI.LinkWidget then
                 ns.UI.LinkWidget(entry)
             end
             w.entries[index] = entry
         end
         local winner = item.id == node.winner
-        entry:SetBackdropColor(winner and 0.10 or 0.07, winner and 0.15 or 0.065, 0.065, 0.95)
-        entry:SetBackdropBorderColor(
-            winner and 0.52 or 0.25,
-            winner and 0.66 or 0.23,
-            winner and 0.35 or 0.17,
-            1
-        )
-        entry.bar:SetStatusBarColor(
-            winner and 0.54 or 0.64,
-            winner and 0.76 or 0.54,
-            winner and 0.39 or 0.32
-        )
+        entry:SetBackdropColor(unpack(winner and COLORS.accentDim or COLORS.raised))
+        entry:SetBackdropBorderColor(unpack(winner and COLORS.accentLine or COLORS.line))
+        entry.bar:SetStatusBarColor(unpack(winner and COLORS.accent or COLORS.secondary))
         entry:SetWidth(available)
         entry:ClearAllPoints()
         entry:SetPoint("TOPLEFT", 0, -y)
@@ -208,11 +206,12 @@ local function tableUI(w, node, available, rendered)
         if header and not wide and shown > 0 then
             row:Hide()
         else
+            -- Rows are white washes over the ground: a firmer header, faint stripes.
             row.background:SetColorTexture(
-                0.20,
-                0.18,
-                0.13,
-                header and 0.9 or ((offset + index) % 2 == 0 and 0.42 or 0.18)
+                1,
+                1,
+                1,
+                header and 0.10 or ((offset + index) % 2 == 0 and 0.05 or 0.02)
             )
             local height, top = 0, padding
             for column, spec in ipairs(node.columns) do
@@ -222,15 +221,11 @@ local function tableUI(w, node, available, rendered)
                     cell = font(row)
                     row.cells[column] = cell
                     row.labels[column] = font(row, "GameFontHighlightSmall")
-                    row.labels[column]:SetTextColor(0.75, 0.67, 0.48)
+                    row.labels[column]:SetTextColor(unpack(SECONDARY))
                 end
                 local label = row.labels[column]
                 cell:SetJustifyH(wide and string.upper(spec.align or "left") or "LEFT")
-                cell:SetTextColor(
-                    header and 0.95 or 0.89,
-                    header and 0.83 or 0.85,
-                    header and 0.52 or 0.75
-                )
+                cell:SetTextColor(unpack(header and SECONDARY or TEXT))
                 if wide then
                     label:Hide()
                     height = math.max(
@@ -281,8 +276,8 @@ local function tableUI(w, node, available, rendered)
     end
     if pages > 1 then
         if not w.pagerPrev then
-            w.pagerPrev = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
-            w.pagerNext = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
+            w.pagerPrev = uiWidgets.Button(w, "<", 28, nil)
+            w.pagerNext = uiWidgets.Button(w, ">", 28, nil)
             w.pagerLabel = font(w, "GameFontHighlightSmall")
             w.pagerLabel:SetJustifyH("CENTER")
             w.pagerPrev:SetSize(28, 24)
@@ -325,7 +320,7 @@ local function tableUI(w, node, available, rendered)
     end
     if node.notice and node.notice ~= "" then
         w.notice = w.notice or font(w, "GameFontHighlightSmall")
-        w.notice:SetTextColor(0.65, 0.63, 0.58)
+        w.notice:SetTextColor(unpack(SECONDARY))
         y = y + 6 + line(w.notice, rendered(node.notice), available, 0, y + 6)
     elseif w.notice then
         w.notice:Hide()
@@ -397,11 +392,11 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
             if node.kind == "stat" then
                 metricFonts(w)
             elseif node.kind == "button" or node.kind == "select" then
-                w.control = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
+                w.control = uiWidgets.Button(w, "", 100, nil)
                 w.control:SetHeight(25)
             elseif node.kind == "toggle" then
-                w.control = CreateFrame("CheckButton", nil, w, "UICheckButtonTemplate")
-                w.control:SetSize(26, 26)
+                w.control = uiWidgets.Toggle(w)
+                w.control:SetSize(30, 16)
             elseif node.kind == "slider" then
                 w.control = CreateFrame("Slider", nil, w)
                 w.control:SetHeight(14)
@@ -521,11 +516,11 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
             local title = node.label or ""
             if node.kind == "toggle" then
                 w.control:ClearAllPoints()
-                w.control:SetPoint("TOPLEFT", 0, 0)
+                w.control:SetPoint("TOPLEFT", 0, -3)
                 w.control:SetChecked(values[node.id])
                 w.title:ClearAllPoints()
-                w.title:SetPoint("TOPLEFT", 30, -5)
-                w.title:SetWidth(math.max(20, available - 30))
+                w.title:SetPoint("TOPLEFT", 40, -2)
+                w.title:SetWidth(math.max(20, available - 40))
                 uiWidgets.SetText(w.title, rendered(title))
                 height = math.max(28, w.title:GetStringHeight() + 10)
                 w.control:SetScript("OnClick", function(self)
@@ -683,17 +678,19 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
                     if part.style == "heading" then
                         style = (part.level or 1) == 1 and "GameFontNormalHuge"
                             or "GameFontNormalLarge"
-                        f:SetTextColor(0.95, 0.83, 0.52)
+                        f:SetTextColor(unpack(TEXT))
                     elseif part.style == "code" then
                         style = "GameFontHighlightSmall"
                         f:SetTextColor(0.75, 0.79, 0.83)
                     elseif part.style == "quote" then
-                        f:SetTextColor(0.65, 0.63, 0.58)
+                        f:SetTextColor(unpack(SECONDARY))
                     else
-                        f:SetTextColor(0.89, 0.85, 0.75)
+                        f:SetTextColor(unpack(TEXT))
                     end
                     if f.markdownStyle ~= style then
-                        f:SetFontObject(_G[style] or style)
+                        f:SetFontObject(
+                            part.style == "code" and (_G[style] or style) or uiFont(style)
+                        )
                         f.markdownStyle = style
                     end
                     f:SetPoint("TOPLEFT", left, -y)

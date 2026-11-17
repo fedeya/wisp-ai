@@ -1,19 +1,20 @@
 local _, ns = ...
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
-local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
+local ACCENT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
 local STARTER_PROMPT = "What can you do?"
+local SUGGESTIONS = { STARTER_PROMPT, "What should I do next?", "Review my gear" }
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
-    "|cffaca189",
-    "|cffc4b698",
-    "|cffdfcfae",
-    "|cfff4e9cb",
-    "|cfffff8e6",
-    "|cfff4e9cb",
-    "|cffdfcfae",
-    "|cffc4b698",
-    "|cffaca189",
+    "|cff9aa7ac",
+    "|cffafbbbf",
+    "|cffc4ced1",
+    "|cffdde4e5",
+    "|cfff8fafa",
+    "|cffdde4e5",
+    "|cffc4ced1",
+    "|cffafbbbf",
+    "|cff9aa7ac",
 }
 local header, replyGlow, emptyState, progress
 local progressTick = 0
@@ -90,6 +91,11 @@ function ns.UI.Activity.SetLoadingText(row, font, text, active)
     loader:Show()
 end
 
+local function greeting()
+    local hour = tonumber(date and date("%H") or "") or 12
+    return hour < 12 and "Good morning" or (hour < 19 and "Good afternoon" or "Good evening")
+end
+
 function ns.UI.Activity.IsSending(chat)
     if chat and chat.status == "working" then
         for _, pending in pairs(ns.pendingMessages or {}) do
@@ -110,10 +116,15 @@ function ns.UI.Activity.Refresh(chat)
     emptyState:SetShown(empty and not working)
     emptyState.loading = not needsSetup and (waiting or loading)
     emptyState.setup:SetShown(needsSetup)
-    emptyState.starter:SetShown(empty and not working and not waiting and not loading)
-    emptyState.starter:SetEnabled(not (ns.modelPending and ns.modelPending[ns.active]))
+    local ready = empty and not working and not waiting and not loading
+    local modelReady = not (ns.modelPending and ns.modelPending[ns.active])
+    for _, suggestion in ipairs(emptyState.suggestions) do
+        suggestion:SetShown(ready)
+        suggestion:SetEnabled(modelReady)
+    end
     if empty and not working then
-        local title = "Ask Wisp"
+        local name = UnitName and UnitName("player") or nil
+        local title = name and (greeting() .. ", " .. name) or "Ask Wisp"
         local detail = "Ask about your character, quests, equipment or where to go next."
         if needsSetup then
             title = "Finish Wisp setup"
@@ -176,21 +187,12 @@ function ns.UI.Activity.Refresh(chat)
 end
 
 -- Returns the next transcript offset, including the working assistant row.
-function ns.UI.Activity.LayoutProgress(y, width, showAuthor, visible)
+-- The row is a single line led by Wisp's pulsing mark; replies carry no author label.
+function ns.UI.Activity.LayoutProgress(y, width, _, visible)
     progress:SetShown(visible == true)
     ns.UI.Activity.SetLoadingText(progress, progress.title, progress.titleText, visible == true)
     if not visible then
         return y
-    end
-    if progress.showAuthor ~= showAuthor then
-        progress.showAuthor = showAuthor
-        progress.author:SetShown(showAuthor)
-        progress:SetHeight(showAuthor and 43 or 23)
-        progress.title:ClearAllPoints()
-        progress.title:SetPoint("TOPLEFT", 0, showAuthor and -20 or 0)
-        progress.title:SetPoint("RIGHT", -65, 0)
-        progress.elapsed:ClearAllPoints()
-        progress.elapsed:SetPoint("TOPRIGHT", -2, showAuthor and -20 or 0)
     end
     progress:SetWidth(width)
     if progress.y ~= y then
@@ -208,6 +210,9 @@ function ns.UI.Activity.Tick(_, elapsed)
             dot:SetAlpha(0.3 + 0.7 * (0.5 + 0.5 * math.sin(GetTime() * 4 - index * 0.8)))
         end
     end
+    if progress:IsShown() then
+        progress.mark:SetAlpha(0.35 + 0.65 * (0.5 + 0.5 * math.sin(GetTime() * 3)))
+    end
     if replyGlow:IsShown() then
         replyGlow:SetAlpha(0.65 + 0.25 * math.sin(GetTime() * math.pi))
     end
@@ -223,21 +228,21 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     local frame = header:GetParent()
     local chatPanel = transcript:GetParent()
     replyGlow = CreateFrame("Frame", "WispAIReplyGlow", header, "BackdropTemplate")
-    replyGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", -2, 2)
-    replyGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 2, -2)
+    replyGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+    replyGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
     replyGlow:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 20,
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = ns.UI.Widgets.OnePixel(replyGlow),
     })
-    replyGlow:SetBackdropBorderColor(1, 0.78, 0.28, 1)
+    replyGlow:SetBackdropBorderColor(unpack(ACCENT))
     replyGlow:EnableMouse(false)
     replyGlow:Hide()
     emptyState = CreateFrame("Frame", "WispAIChatPlaceholder", chatPanel)
     emptyState:SetAllPoints(transcript)
     emptyState:SetFrameLevel(transcript:GetFrameLevel() + 1)
     emptyState:EnableMouse(false)
-    emptyState.title = label(emptyState, "", GOLD)
-    emptyState.title:SetPoint("CENTER", 0, 20)
+    emptyState.title = label(emptyState, "", ns.UI.Widgets.TEXT, ns.UI.Widgets.FONTS.heading)
+    emptyState.title:SetPoint("CENTER", 0, 40)
     emptyState.title:SetJustifyH("CENTER")
     emptyState.detail = label(emptyState, "", MUTED)
     emptyState.detail:SetPoint("TOP", emptyState.title, "BOTTOM", 0, -10)
@@ -250,30 +255,36 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     end)
     emptyState.setup:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
     emptyState.setup:Hide()
-    emptyState.starter = ns.UI.Widgets.Button(emptyState, STARTER_PROMPT, 148, function()
-        ns.Chat.Submit(STARTER_PROMPT)
-    end)
-    emptyState.starter:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
-    emptyState.starter:Hide()
+    emptyState.suggestions = {}
+    for index, prompt in ipairs(SUGGESTIONS) do
+        local suggestion = ns.UI.Widgets.Button(emptyState, prompt, 210, function()
+            ns.Chat.Submit(prompt)
+        end)
+        suggestion:SetHeight(28)
+        suggestion:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -16 - (index - 1) * 34)
+        suggestion:Hide()
+        emptyState.suggestions[index] = suggestion
+    end
+    emptyState.starter = emptyState.suggestions[1]
     emptyState.dots = {}
     for index = 1, 3 do
-        local dot = label(emptyState, ".", GOLD)
+        local dot = label(emptyState, ".", ACCENT)
         dot:SetFontObject("GameFontNormalLarge")
         dot:SetPoint("BOTTOM", emptyState.title, "TOP", (index - 2) * 12, 12)
         emptyState.dots[index] = dot
     end
     progress = CreateFrame("Frame", "WispAIProgress", content)
-    progress:SetHeight(43)
-    progress.author = label(progress, "Wisp AI", GOLD)
-    progress.author:SetPoint("TOPLEFT", 0, 0)
+    progress:SetHeight(23)
+    progress.mark = ns.UI.Widgets.Dot(progress, 6)
+    progress.mark:SetPoint("TOPLEFT", 1, -5)
     progress.titleText = "Thinking"
     progress.title = label(progress, progress.titleText, MUTED)
-    progress.title:SetFontObject(ChatFontNormal)
-    progress.title:SetPoint("TOPLEFT", 0, -20)
+    ns.UI.Widgets.ChatFont(progress.title, progress.titleText)
+    progress.title:SetPoint("TOPLEFT", 14, 0)
     progress.title:SetPoint("RIGHT", -65, 0)
     progress.title:SetWordWrap(false)
-    progress.elapsed = label(progress, "", MUTED)
-    progress.elapsed:SetPoint("TOPRIGHT", -2, -20)
+    progress.elapsed = label(progress, "", MUTED, ns.UI.Widgets.FONTS.small)
+    progress.elapsed:SetPoint("TOPRIGHT", -2, -2)
     progress.detail = label(progress, "", MUTED)
     progress.detail:Hide()
     progress:EnableMouse(true)

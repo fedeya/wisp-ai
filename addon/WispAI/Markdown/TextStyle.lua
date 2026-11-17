@@ -2,20 +2,30 @@ local _, ns = ...
 local layout = {}
 local MAX_EXTRA_FONTS = 256
 local codeFont = "Interface\\AddOns\\WispAI\\Fonts\\JetBrainsMono-Regular.ttf"
+-- Reply prose is Inter Medium; headings take SemiBold (see UI/Widgets.lua).
+local inter = "Interface\\AddOns\\WispAI\\Fonts\\Inter-Medium.ttf"
+local interStrong = "Interface\\AddOns\\WispAI\\Fonts\\Inter-SemiBold.ttf"
 local headingSizes = { 7, 5, 3, 2, 1, 0 }
-local HEADING = { 0.94, 0.92, 0.86 }
-local CODE = { 0.82, 0.81, 0.77 }
+local HEADING = { 0.980, 0.988, 0.988 }
+local CODE = { 0.769, 0.820, 0.827 }
 local function styleFont(font, span, level)
     font:SetFontObject(ChatFontNormal)
     local path, size, flags = ChatFontNormal:GetFont()
     local height = size + (level and headingSizes[level] or 0)
     if span.code then
-        height = math.max(10, math.floor(height * 0.86 + 0.5))
+        height = math.max(9, math.floor(height * 0.78 + 0.5))
     end
-    -- Emphasis and headings keep the localized game face. Conservatively restrict
-    -- code to Latin/Greek/Cyrillic; unsupported scripts keep the game font too.
+    -- Conservatively restrict code and Inter prose to Latin/Greek/Cyrillic;
+    -- unsupported scripts and CJK/Hangul clients keep the localized game font.
     if span.code and not span.text:find("[\212-\255]") then
         if font:SetFont(codeFont, height, flags) then
+            return
+        end
+    end
+    if not span.code and ns.UI.Widgets.InterSupports(span.text) then
+        local size = ns.UI.Widgets.InterSize(height)
+        if font:SetFont(level and interStrong or inter, size, flags) then
+            ns.UI.Widgets.SoftShadow(font)
             return
         end
     end
@@ -62,7 +72,9 @@ local function renderMarker(host, font, block, inset, top, unit)
     font.marker = marker
     marker:SetFontObject(ChatFontNormal)
     marker:SetText(text)
-    marker:SetTextColor(unpack(block.checked and { 0.5, 0.78, 0.55 } or ns.UI.Widgets.GOLD))
+    marker:SetTextColor(
+        unpack(block.checked and ns.UI.Widgets.COLORS.success or ns.UI.Widgets.MUTED)
+    )
     marker:SetJustifyH("RIGHT")
     marker:SetWidth(math.min(20, math.max(1, inset - 3)))
     marker:ClearAllPoints()
@@ -190,7 +202,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                         y,
                         w + 2,
                         h,
-                        { 0.16, 0.15, 0.12, 0.45 }
+                        { 0.110, 0.137, 0.157, 1 }
                     )
                 end
                 if span.strike then
@@ -203,7 +215,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                         y + h / 2,
                         w,
                         1,
-                        { 0.65, 0.61, 0.53, 1 },
+                        { 0.769, 0.808, 0.820, 1 },
                         "OVERLAY"
                     )
                 end
@@ -214,7 +226,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                 end
             end
             if block.kind == "rule" then
-                texture(host, f, 1, 0, y + 5, width, 1, { 0.5, 0.43, 0.29, 0.6 })
+                texture(host, f, 1, 0, y + 5, width, 1, { 0.122, 0.153, 0.173, 1 })
                 y = y + 12
             else
                 if block.kind == "code" then
@@ -300,7 +312,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                         top,
                         width,
                         math.max(24, y - top),
-                        { 0.035, 0.033, 0.028, 0.55 }
+                        { 0.059, 0.075, 0.086, 1 }
                     )
                 elseif block.kind == "quote" then
                     decoration = decoration + 1
@@ -312,7 +324,7 @@ function layout.Render(host, pool, part, width, y, count, collectWriting)
                         top,
                         2,
                         math.max(16, y - top),
-                        { 0.65, 0.55, 0.34, 0.8 }
+                        { 0.180, 0.224, 0.243, 1 }
                     )
                 elseif block.kind == "list" then
                     renderMarker(host, f, block, inset, top, unit)

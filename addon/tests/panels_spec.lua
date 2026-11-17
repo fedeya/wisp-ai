@@ -105,7 +105,7 @@ it(
         ns.UI.FormatText = function(value)
             if value == source then
                 calls = calls + 1
-                return ready and "|cffe3c77eCompleted label|r" or source, not ready
+                return ready and "|cfff4faf8Completed label|r" or source, not ready
             elseif value == "Settled label" then
                 settledCalls = settledCalls + 1
             end
@@ -155,7 +155,7 @@ it(
         assert.equal(1, settledCalls)
         ready, ns.Markdown.Cache.revision = true, 1
         ns.Panels.RefreshPanels()
-        assert.equal("|cffe3c77eCompleted label|r", window.host.widgets.label.title:GetText())
+        assert.equal("|cfff4faf8Completed label|r", window.host.widgets.label.title:GetText())
         assert.is_false(window.inlineMarkdownPending)
         assert.equal(2, calls)
         assert.equal(1, settledCalls, "pending state does not leak between panels")

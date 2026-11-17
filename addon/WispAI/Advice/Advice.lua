@@ -53,6 +53,17 @@ function ns.Advice.RefreshAdvice()
         return
     end
     toast.chatId = tip.id
+    local routineName
+    for _, run in ipairs(ns.routineRuns or {}) do
+        if run.id == tip.id then
+            for _, routine in ipairs(ns.routines or {}) do
+                if routine.id == run.routineId then
+                    routineName = routine.title
+                end
+            end
+        end
+    end
+    toast.heading:SetText("Routine" .. (routineName and (" · " .. routineName) or ""))
     local preview = tip.title
     for _, chat in ipairs(ns.chats or {}) do
         if chat.id == tip.id then
@@ -118,39 +129,33 @@ function ns.Advice.InitAdvice()
     toast:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -40, 190)
     toast:SetFrameStrata("DIALOG")
     toast:SetClampedToScreen(true)
-    toast:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    toast:SetBackdropColor(0.09, 0.075, 0.055, 0.97)
-    toast:SetBackdropBorderColor(0.43, 0.38, 0.28, 1)
-    local title = toast:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOPLEFT", 12, -12)
-    title:SetTextColor(0.84, 0.72, 0.43)
-    title:SetText("Wisp routine")
-    body = toast:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    body:SetPoint("TOPLEFT", 12, -36)
-    body:SetWidth(325)
-    body:SetJustifyH("LEFT")
+    local widgets = ns.UI.Widgets
+    widgets.Box(toast, widgets.COLORS.window, widgets.COLORS.lineStrong)
+    local mark = widgets.Dot(toast, 6)
+    mark:SetPoint("TOPLEFT", 14, -16)
+    toast.heading = widgets.Label(toast, "Routine", widgets.MUTED, widgets.FONTS.caption)
+    toast.heading:SetPoint("TOPLEFT", 26, -14)
+    toast.heading:SetPoint("RIGHT", -12, 0)
+    toast.heading:SetWordWrap(false)
+    body = widgets.Label(toast, "")
+    body:SetPoint("TOPLEFT", 14, -36)
+    body:SetWidth(322)
     body:SetWordWrap(true)
-    local read = CreateFrame("Button", nil, toast, "UIPanelButtonTemplate")
-    read:SetSize(95, 24)
-    read:SetPoint("BOTTOMLEFT", 12, 12)
-    read:SetText("Read")
-    read:SetScript("OnClick", function()
+    local all = widgets.Button(toast, "All routines", 90, function()
+        toast:Hide()
+        ns.UI.SetMinimized(false)
+        ns.UI.Routines.Show()
+    end, "ghost")
+    all:SetPoint("BOTTOMRIGHT", -12, 12)
+    local read = widgets.Button(toast, "Read", 95, function()
         local id = toast.chatId
         toast:Hide()
         ns.Chat.Select(id)
         ns.UI.SetMinimized(false)
-    end)
-    local dismiss = CreateFrame("Button", nil, toast, "UIPanelButtonTemplate")
-    dismiss:SetSize(95, 24)
+    end, "primary")
+    read:SetPoint("BOTTOMLEFT", 12, 12)
+    local dismiss = widgets.Button(toast, "Dismiss", 95, nil)
     dismiss:SetPoint("LEFT", read, "RIGHT", 8, 0)
-    dismiss:SetText("Dismiss")
     dismiss:SetScript("OnClick", function()
         ns.Transport.Send({ type = "dismiss_tip", chat = toast.chatId })
         for i = #(ns.notifications or {}), 1, -1 do

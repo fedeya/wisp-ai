@@ -271,7 +271,7 @@ export default function Updates({
           <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
             <div className="flex min-w-0 items-center gap-3">
               <span
-                className={`grid size-10 shrink-0 place-items-center rounded-[9px] ${upToDate || canInstall ? 'bg-[#223a34] text-accent' : 'bg-[#263137] text-muted'}`}
+                className={`grid size-10 shrink-0 place-items-center rounded-[9px] ${upToDate || canInstall ? 'bg-[#223a34] text-accent' : 'bg-selected text-muted'}`}
               >
                 {checking || (installing && !downloading) ? (
                   <Spinner className="size-[18px]" />
@@ -331,7 +331,7 @@ export default function Updates({
               {downloading && (
                 <progress
                   aria-label="Update download"
-                  className="mt-2 block h-[6px] w-full overflow-hidden rounded-full accent-accent [&::-webkit-progress-bar]:bg-[#34474b] [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-accent"
+                  className="mt-2 block h-[6px] w-full overflow-hidden rounded-full accent-accent [&::-webkit-progress-bar]:bg-selected [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-accent"
                   max={100}
                   value={percent}
                 />

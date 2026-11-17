@@ -52,7 +52,7 @@ export default function Diagnostics() {
         role="region"
         aria-label="Local logs"
         tabIndex={0}
-        className="logs catalog-scroll mt-3 mb-0 min-h-[min(240px,40vh)] max-h-[55vh] overflow-auto rounded-[8px] border border-solid border-border bg-[#10171b] p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#a5b7be] [overflow-wrap:anywhere]"
+        className="logs catalog-scroll mt-3 mb-0 min-h-[min(240px,40vh)] max-h-[55vh] overflow-auto rounded-[8px] border border-solid border-border bg-sidebar p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-[#a5b7be] [overflow-wrap:anywhere]"
       >
         {app.logs || 'No activity loaded yet. Refresh to read the local bridge logs.'}
       </pre>

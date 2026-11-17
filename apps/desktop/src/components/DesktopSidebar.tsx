@@ -52,7 +52,7 @@ export default function DesktopSidebar() {
         : 'bg-muted';
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[210px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-r-[#1b2529] bg-[#0f1316] px-[14px] pt-5 pb-[14px] [border-right-style:solid] max-md:w-[190px] max-md:px-3">
+    <aside className="sticky top-0 flex h-screen w-[210px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-r-border bg-sidebar px-[14px] pt-5 pb-[14px] [border-right-style:solid] max-md:w-[190px] max-md:px-3">
       <div className="flex items-center gap-[10px] px-2">
         <img className="h-[38px] w-[30px] object-contain" src={logo} alt="" />
         <strong className="text-[27px] tracking-[-1px]">Wisp</strong>

@@ -24,7 +24,7 @@ type Label = { label: string; tone: 'ready' | 'attention' | 'neutral' };
 const statusColors = {
   ready: 'bg-[#223a34] text-accent',
   attention: 'bg-[#423529] text-[#efc59c]',
-  neutral: 'bg-[#263137] text-[#b1c0c5]',
+  neutral: 'bg-selected text-[#b1c0c5]',
 };
 
 export const mcpTransport: Record<Mcp['transport'], string> = {
@@ -79,7 +79,7 @@ export function IntegrationIcon({ id, icon }: { id?: string; icon: IconName }) {
     return <img alt="" src={logo} className="size-9 shrink-0 rounded-[8px] object-contain" />;
   }
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-[8px] border border-solid border-[#394b50] bg-[#202d32] text-[#bbe2d9]">
+    <span className="grid size-9 shrink-0 place-items-center rounded-[8px] border border-solid border-border-strong bg-selected text-[#bbe2d9]">
       <Icon name={icon} size={19} />
     </span>
   );

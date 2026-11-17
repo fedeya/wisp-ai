@@ -1,11 +1,113 @@
 local _, ns = ...
-local GOLD, TEXT, MUTED = { 0.84, 0.72, 0.43 }, { 0.89, 0.85, 0.75 }, { 0.64, 0.60, 0.51 }
-local function label(parent, text, tint)
+
+-- Palette. Neutrals carry a faint blue-green tint; the wisp accent is reserved
+-- for live state, selection and Wisp's own links. As in the Polestar addon
+-- (fitzforge/polestar), the grounds are a mid-dark rather than near-black, so
+-- light text reads soft instead of glaring, and borders, hover and selection
+-- are white washes that sit right on any ground.
+local COLORS = {
+    window = { 0.086, 0.110, 0.129, 0.97 }, -- #161C21
+    sidebar = { 0.067, 0.086, 0.102, 1 }, -- #11161A, also the header bar and code blocks
+    raised = { 0.110, 0.137, 0.161, 1 }, -- #1C2329, user bubbles and cards
+    selected = { 1, 1, 1, 0.10 }, -- white wash
+    line = { 1, 1, 1, 0.08 }, -- hairlines
+    lineStrong = { 1, 1, 1, 0.14 }, -- control borders
+    -- Text ladder.
+    text = { 0.961, 0.973, 0.973 }, -- #F5F8F8
+    secondary = { 0.769, 0.808, 0.820 }, -- #C4CED1
+    muted = { 0.604, 0.655, 0.675 }, -- #9AA7AC, labels and timestamps
+    shade = { 0, 0, 0.02 }, -- text shadows
+    accent = { 0.467, 0.859, 0.776 }, -- #77DBC6
+    accentDim = { 0.078, 0.188, 0.176, 1 }, -- #14302D
+    accentLine = { 0.165, 0.369, 0.341, 1 }, -- #2A5E57
+    success = { 0.498, 0.718, 0.494 }, -- #7FB77E
+    warning = { 0.890, 0.725, 0.373 }, -- #E3B95F
+    danger = { 0.941, 0.706, 0.667 }, -- #F0B4AA
+    dangerBg = { 0.200, 0.145, 0.133, 1 }, -- #332522
+}
+local TEXT, SECONDARY, ACCENT = COLORS.text, COLORS.secondary, COLORS.accent
+local FLAT = "Interface\\Buttons\\WHITE8X8"
+
+-- Inter covers Latin, Greek and Cyrillic. Clients whose UI uses CJK or Hangul
+-- keep the localized game fonts, and a failed load falls back to them as well.
+-- Type follows the approach of the Polestar addon (fitzforge/polestar) for this
+-- client: Inter Medium for running text and SemiBold for titles and labels, at
+-- sizes set per role, with a soft dark shadow. On a near-black ground, Regular
+-- strokes read thin in the game's renderer; Medium keeps long replies legible.
+local FONT_DIR = "Interface\\AddOns\\WispAI\\Fonts\\"
+local INTER = FONT_DIR .. "Inter-Medium.ttf"
+local INTER_STRONG = FONT_DIR .. "Inter-SemiBold.ttf"
+-- Inter covers Latin, Greek and Cyrillic. Clients whose UI uses CJK or Hangul
+-- keep the localized game fonts, and a failed load falls back to them as well.
+local LOCALIZED_ONLY = { zhCN = true, zhTW = true, koKR = true }
+local useInter = not LOCALIZED_ONLY[GetLocale and GetLocale() or "enUS"]
+-- Text outside Latin/Greek/Cyrillic (UTF-8 lead bytes 0xD4 and above) keeps the game font.
+local function interSupports(text)
+    return useInter and not (text or ""):find("[\212-\255]")
+end
+--- Soft shadow under Inter text: one pixel down-right in the palette's shade.
+local function softShadow(font)
+    font:SetShadowOffset(1, -1)
+    font:SetShadowColor(COLORS.shade[1], COLORS.shade[2], COLORS.shade[3], 0.6)
+end
+local function makeFont(name, path, size, fallback)
+    local base = _G[fallback]
+    if not CreateFont or not base then
+        return base
+    end
+    local font = CreateFont(name)
+    font:SetFontObject(base)
+    if useInter then
+        if font:SetFont(path, size, "") then
+            softShadow(font)
+        else
+            font:SetFontObject(base)
+        end
+    end
+    return font
+end
+-- Sizes per role, in UI units. Conversation text follows the player's chat font
+-- size instead (chatFont below), as a chat should.
+local FONTS = {
+    heading = makeFont("WispAIFontHeading", INTER_STRONG, 18, "GameFontNormalHuge"), -- page titles
+    title = makeFont("WispAIFontTitle", INTER_STRONG, 14, "GameFontNormalLarge"), -- window title
+    body = makeFont("WispAIFontBody", INTER, 12, "GameFontHighlight"), -- rows and labels
+    strong = makeFont("WispAIFontStrong", INTER_STRONG, 12, "GameFontHighlight"), -- emphasis
+    small = makeFont("WispAIFontSmall", INTER, 11, "GameFontHighlightSmall"), -- secondary lines
+    button = makeFont("WispAIFontButton", INTER, 12, "GameFontHighlightSmall"), -- controls
+    caption = makeFont("WispAIFontCaption", INTER_STRONG, 11, "GameFontHighlightSmall"), -- section labels
+}
+-- Inter runs larger than the game fonts at the same pixel size, so chat-sized
+-- Inter text is scaled down to keep the player's chat font size visually equal.
+local INTER_CHAT_SCALE = 0.85
+local function interSize(size)
+    return math.max(8, math.floor(size * INTER_CHAT_SCALE + 0.5))
+end
+--- Applies Inter at the player's chat size, or the chat font itself when Inter
+--- cannot render `text` or the client is localized to CJK/Hangul.
+local function chatFont(font, text, strong)
+    font:SetFontObject(ChatFontNormal)
+    if interSupports(text) then
+        local _, size, flags = ChatFontNormal:GetFont()
+        if font:SetFont(strong and INTER_STRONG or INTER, interSize(size), flags) then
+            softShadow(font)
+        end
+    end
+end
+
+local function label(parent, text, tint, fontObject)
     local font = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    if fontObject or FONTS.body then
+        font:SetFontObject(fontObject or FONTS.body)
+    end
     font:SetText(text)
     font:SetTextColor(unpack(tint or TEXT))
     font:SetJustifyH("LEFT")
     return font
+end
+--- Small, muted, sentence-case section label, e.g. "Recents".
+local function caption(parent, text)
+    return label(parent, text, COLORS.muted, FONTS.caption)
 end
 local function setText(font, value)
     if font._wispText ~= value then
@@ -13,24 +115,180 @@ local function setText(font, value)
         font:SetText(value)
     end
 end
-local function box(frame, bg, edge)
-    frame:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        tile = true,
-        tileSize = 16,
-        edgeSize = edge or 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    frame:SetBackdropColor(unpack(bg))
-    frame:SetBackdropBorderColor(0.43, 0.38, 0.28, 1)
+--- One physical pixel in `region`'s units (UIParent's when omitted), so hairlines
+--- stay one crisp pixel at any UI scale. Uses the client's PixelUtil when present.
+local function onePixel(region)
+    local scale = region and region.GetEffectiveScale and region:GetEffectiveScale()
+        or (UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale())
+    if PixelUtil and PixelUtil.GetNearestPixelSize and scale and scale > 0 then
+        local ok, size = pcall(PixelUtil.GetNearestPixelSize, 1, scale, 1)
+        if ok and size and size > 0 then
+            return size
+        end
+    end
+    local height = GetPhysicalScreenSize and select(2, GetPhysicalScreenSize())
+    local units = UIParent and UIParent.GetHeight and UIParent:GetHeight()
+    if not height or height <= 0 or not units or units <= 0 then
+        return 1
+    end
+    return units / height
 end
-local function button(parent, text, width, click)
-    local b = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
+--- Paints a flat surface with a one-pixel hairline. `frame` must support backdrops.
+local function box(frame, bg, border)
+    frame:SetBackdrop({ bgFile = FLAT, edgeFile = FLAT, edgeSize = onePixel(frame) })
+    frame:SetBackdropColor(unpack(bg))
+    frame:SetBackdropBorderColor(unpack(border or COLORS.line))
+end
+local BUTTON_STYLES = {
+    secondary = { bg = COLORS.raised, border = COLORS.lineStrong, text = TEXT },
+    primary = {
+        bg = { 0.961, 0.973, 0.973, 1 },
+        border = { 0.961, 0.973, 0.973, 1 },
+        text = COLORS.window,
+    },
+    ghost = { bg = { 0, 0, 0, 0 }, border = { 0, 0, 0, 0 }, text = SECONDARY },
+}
+local function dimWhenDisabled(b)
+    b:SetAlpha((not b.IsEnabled or b:IsEnabled()) and 1 or 0.45)
+end
+--- Flat button. `variant` is "secondary" (default), "primary" or "ghost"; `name` is optional.
+--- Hover uses the HIGHLIGHT layer, so callers may still set their own OnEnter/OnLeave.
+local function button(parent, text, width, click, variant, name)
+    local b = CreateFrame("Button", name, parent, "BackdropTemplate")
+    local style = BUTTON_STYLES[variant] or BUTTON_STYLES.secondary
     b:SetSize(width, 24)
+    box(b, style.bg, style.border)
+    local hover = b:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetPoint("TOPLEFT", 1, -1)
+    hover:SetPoint("BOTTOMRIGHT", -1, 1)
+    hover:SetColorTexture(1, 1, 1, variant == "primary" and 0.12 or 0.06)
+    local font = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    if FONTS.button then
+        font:SetFontObject(FONTS.button)
+    end
+    font:SetPoint("LEFT", 6, 0)
+    font:SetPoint("RIGHT", -6, 0)
+    font:SetTextColor(unpack(style.text))
+    font:SetWordWrap(false)
+    b:SetFontString(font)
     b:SetText(text)
     b:SetScript("OnClick", click)
+    b:HookScript("OnEnable", dimWhenDisabled)
+    b:HookScript("OnDisable", dimWhenDisabled)
     return b
+end
+
+--- Flat on/off switch. It is a CheckButton, so callers keep using
+--- SetChecked/GetChecked and OnClick; the switch repaints after each change.
+local function paintToggle(t)
+    local on = t:GetChecked() and true or false
+    t.track:SetColorTexture(unpack(on and COLORS.accentLine or COLORS.selected))
+    t.knob:ClearAllPoints()
+    t.knob:SetPoint(on and "RIGHT" or "LEFT", on and -2 or 2, 0)
+    t.knob:SetColorTexture(unpack(on and ACCENT or SECONDARY))
+end
+local function toggle(parent, name)
+    local t = CreateFrame("CheckButton", name, parent)
+    t:SetSize(30, 16)
+    t.track = t:CreateTexture(nil, "BACKGROUND")
+    t.track:SetAllPoints()
+    t.knob = t:CreateTexture(nil, "ARTWORK")
+    t.knob:SetSize(12, 12)
+    local setChecked = t.SetChecked
+    function t.SetChecked(self, value)
+        setChecked(self, value)
+        paintToggle(self)
+    end
+    t:SetScript("PostClick", paintToggle)
+    t:HookScript("OnEnable", dimWhenDisabled)
+    t:HookScript("OnDisable", dimWhenDisabled)
+    paintToggle(t)
+    return t
+end
+
+--- Plain scroll area without Blizzard's scroll bar art; the mouse wheel scrolls it.
+local function scrollArea(parent)
+    local scroll = CreateFrame("ScrollFrame", nil, parent)
+    scroll:SetClipsChildren(true)
+    local content = CreateFrame("Frame", nil, scroll)
+    content:SetSize(1, 1)
+    scroll:SetScrollChild(content)
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local range = self:GetVerticalScrollRange()
+        self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * 40)))
+    end)
+    return scroll, content
+end
+
+--- Quiet "back" link: a chevron and a muted label that brighten on hover.
+local BACK_ICON = "Interface\\AddOns\\WispAI\\Textures\\Back.tga"
+local function backLink(parent, text, click)
+    local link = CreateFrame("Button", nil, parent)
+    link:SetHeight(20)
+    link.icon = link:CreateTexture(nil, "ARTWORK")
+    link.icon:SetTexture(BACK_ICON)
+    link.icon:SetSize(10, 10)
+    link.icon:SetPoint("LEFT", 0, 0)
+    link.icon:SetVertexColor(unpack(SECONDARY))
+    link.label = label(link, text, SECONDARY)
+    link.label:SetPoint("LEFT", link.icon, "RIGHT", 6, 0)
+    link:SetWidth(math.max(40, (link.label:GetStringWidth() or 0) + 20))
+    local function paint(color)
+        link.icon:SetVertexColor(unpack(color))
+        link.label:SetTextColor(unpack(color))
+    end
+    link:SetScript("OnEnter", function()
+        paint(TEXT)
+    end)
+    link:SetScript("OnLeave", function()
+        paint(SECONDARY)
+    end)
+    link:SetScript("OnClick", click)
+    return link
+end
+
+--- Small square status mark, used for Wisp's live state and unread chats.
+local function dot(parent, size, color)
+    local mark = parent:CreateTexture(nil, "OVERLAY")
+    mark:SetSize(size or 6, size or 6)
+    mark:SetColorTexture(unpack(color or ACCENT))
+    return mark
+end
+
+--- Full-width sidebar row: left-aligned label, hover wash, and a selected state
+--- with an accent bar. Call `SetSelected(row, value)` to change the state.
+local function setSelected(row, selected)
+    if row._wispSelected == selected then
+        return
+    end
+    row._wispSelected = selected
+    row.fill:SetShown(selected)
+    row.bar:SetShown(selected)
+    row.label:SetTextColor(unpack(selected and TEXT or SECONDARY))
+end
+local function navItem(parent, text, height, click)
+    local row = CreateFrame("Button", nil, parent)
+    row:SetHeight(height or 26)
+    row.fill = row:CreateTexture(nil, "BACKGROUND")
+    row.fill:SetAllPoints()
+    row.fill:SetColorTexture(unpack(COLORS.selected))
+    row.bar = row:CreateTexture(nil, "ARTWORK")
+    row.bar:SetPoint("TOPLEFT")
+    row.bar:SetPoint("BOTTOMLEFT")
+    row.bar:SetWidth(2)
+    row.bar:SetColorTexture(unpack(ACCENT))
+    local hover = row:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetAllPoints()
+    hover:SetColorTexture(1, 1, 1, 0.04)
+    row.label = label(row, text, SECONDARY)
+    row.label:SetPoint("LEFT", 10, 0)
+    row.label:SetPoint("RIGHT", -10, 0)
+    row.label:SetWordWrap(false)
+    row:SetScript("OnClick", click)
+    row._wispSelected = true
+    setSelected(row, false)
+    return row
 end
 
 local function showCopyUrl(url)
@@ -58,8 +316,22 @@ ns.UI.Widgets = {
     SetText = setText,
     Box = box,
     Button = button,
+    Caption = caption,
+    BackLink = backLink,
+    Toggle = toggle,
+    ScrollArea = scrollArea,
+    Dot = dot,
+    NavItem = navItem,
+    SetSelected = setSelected,
+    ChatFont = chatFont,
+    SoftShadow = softShadow,
+    InterSize = interSize,
+    InterSupports = interSupports,
     ShowCopyUrl = showCopyUrl,
-    GOLD = GOLD,
+    OnePixel = onePixel,
+    FONTS = FONTS,
+    COLORS = COLORS,
+    ACCENT = ACCENT,
     TEXT = TEXT,
-    MUTED = MUTED,
+    MUTED = SECONDARY,
 }

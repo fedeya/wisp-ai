@@ -1,7 +1,7 @@
 local _, ns = ...
-local label, setText, box, button =
-    ns.UI.Widgets.Label, ns.UI.Widgets.SetText, ns.UI.Widgets.Box, ns.UI.Widgets.Button
-local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
+local COLORS = ns.UI.Widgets.COLORS
+local label, setText, box = ns.UI.Widgets.Label, ns.UI.Widgets.SetText, ns.UI.Widgets.Box
+local MUTED = ns.UI.Widgets.MUTED
 local capabilityPanel, capabilityContent, capabilityStatus, capabilityScroll
 local capabilityRows, capabilityTabs = {}, {}
 local capabilityGroup = "integrations"
@@ -29,7 +29,7 @@ function ns.UI.Capabilities.Refresh()
             )
     )
     for group, tab in pairs(capabilityTabs) do
-        tab:SetAlpha(group == capabilityGroup and 1 or 0.6)
+        ns.UI.Widgets.SetSelected(tab, group == capabilityGroup)
     end
     local y, used = 0, {}
     for _, entry in ipairs(ns.capabilities or {}) do
@@ -39,15 +39,19 @@ function ns.UI.Capabilities.Refresh()
                 row = CreateFrame("Frame", nil, capabilityContent)
                 capabilityRows[entry.id] = row
                 row:SetHeight(32)
-                row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
-                row.check:SetSize(26, 26)
-                row.check:SetPoint("LEFT", 0, 0)
+                row.check = ns.UI.Widgets.Toggle(row)
+                row.check:SetPoint("RIGHT", -2, 0)
                 row.text = label(row, "")
-                row.text:SetPoint("LEFT", row.check, "RIGHT", 3, 0)
-                row.text:SetPoint("RIGHT", -70, 0)
+                row.text:SetPoint("LEFT", 0, 0)
+                row.text:SetPoint("RIGHT", -110, 0)
                 row.text:SetWordWrap(false)
-                row.state = label(row, "", MUTED)
-                row.state:SetPoint("RIGHT", -2, 0)
+                row.state = label(row, "", MUTED, ns.UI.Widgets.FONTS.small)
+                row.state:SetPoint("RIGHT", row.check, "LEFT", -10, 0)
+                local rule = row:CreateTexture(nil, "ARTWORK")
+                rule:SetPoint("BOTTOMLEFT")
+                rule:SetPoint("BOTTOMRIGHT")
+                rule:SetHeight(ns.UI.Widgets.OnePixel(rule))
+                rule:SetColorTexture(unpack(COLORS.line))
                 row.check:SetScript("OnClick", function(self)
                     ns.Chat.SetCapability(row.entry.id, self:GetChecked())
                 end)
@@ -77,7 +81,7 @@ function ns.UI.Capabilities.Refresh()
             row.entry = entry
             local blocked = entry.parent and values[entry.parent] == false
             local indent = entry.parent and 17 or 0
-            row:SetWidth(math.max(210, capabilityPanel:GetWidth() - 65 - indent))
+            row:SetWidth(math.max(210, capabilityPanel:GetWidth() - 48 - indent))
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", indent, -y)
             row.check:SetChecked(values[entry.id])
@@ -111,40 +115,32 @@ function ns.UI.Capabilities.Build(settings)
     capabilityPanel = CreateFrame("Frame", "WispAICapabilitiesPanel", settings, "BackdropTemplate")
     capabilityPanel:SetAllPoints(settings)
     capabilityPanel:SetFrameLevel(settings:GetFrameLevel() + 5)
-    box(capabilityPanel, { 0.10, 0.085, 0.065, 1 }, 12)
+    box(capabilityPanel, COLORS.window, COLORS.window)
     capabilityPanel:Hide()
-    local capabilityTitle = label(capabilityPanel, "Integrations", GOLD)
-    capabilityTitle:SetPoint("TOPLEFT", 20, -15)
+    ns.UI.SettingsPanel.SubpageHeader(capabilityPanel, "Integrations")
+    local top = ns.UI.SettingsPanel.SUBPAGE_TOP
     for index, group in ipairs({ "integrations", "memory" }) do
         local tabGroup = group
-        local tab = button(
-            capabilityPanel,
-            group == "memory" and "Memory" or "Integrations",
-            85,
-            function()
-                capabilityGroup = tabGroup
-                capabilityScroll:SetVerticalScroll(0)
-                ns.UI.Capabilities.Refresh()
-            end
-        )
-        tab:SetPoint("TOPLEFT", 20 + (index - 1) * 92, -40)
+        local text = group == "memory" and "Memory" or "Integrations"
+        local tab = ns.UI.Widgets.NavItem(capabilityPanel, text, 26, function()
+            capabilityGroup = tabGroup
+            capabilityScroll:SetVerticalScroll(0)
+            ns.UI.Capabilities.Refresh()
+        end)
+        tab:SetFontString(tab.label)
+        tab:SetText(text)
+        tab:SetWidth(100)
+        tab:SetPoint("TOPLEFT", 24 + (index - 1) * 104, top)
         capabilityTabs[group] = tab
     end
-    capabilityStatus = label(capabilityPanel, "", MUTED)
-    capabilityStatus:SetPoint("TOPLEFT", 20, -73)
-    capabilityStatus:SetPoint("RIGHT", -20, 0)
+    capabilityStatus = label(capabilityPanel, "", MUTED, ns.UI.Widgets.FONTS.small)
+    capabilityStatus:SetPoint("TOPLEFT", 24, top - 36)
+    capabilityStatus:SetPoint("RIGHT", -24, 0)
     capabilityStatus:SetWordWrap(true)
-    capabilityScroll =
-        CreateFrame("ScrollFrame", nil, capabilityPanel, "UIPanelScrollFrameTemplate")
-    capabilityScroll:SetPoint("TOPLEFT", 20, -105)
-    capabilityScroll:SetPoint("BOTTOMRIGHT", -35, 45)
-    capabilityContent = CreateFrame("Frame", nil, capabilityScroll)
+    capabilityScroll, capabilityContent = ns.UI.Widgets.ScrollArea(capabilityPanel)
+    capabilityScroll:SetPoint("TOPLEFT", 24, top - 58)
+    capabilityScroll:SetPoint("BOTTOMRIGHT", -24, 16)
     capabilityContent:SetSize(400, 1)
-    capabilityScroll:SetScrollChild(capabilityContent)
-    local capabilityBack = button(capabilityPanel, "Back", 90, function()
-        capabilityPanel:Hide()
-    end)
-    capabilityBack:SetPoint("BOTTOMLEFT", 20, 12)
     capabilityPanel:SetScript("OnSizeChanged", ns.UI.Capabilities.Refresh)
 end
 function ns.UI.Capabilities.Show()

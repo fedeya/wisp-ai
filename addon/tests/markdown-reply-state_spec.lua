@@ -254,7 +254,7 @@ it("invalidates native inline waits independently without recompiling the docume
     assert.equal(display.parts, completed.parts)
     local _, completePending = ns.UI.RenderRichUI(host, {}, completed, 210)
     assert.is_false(completePending)
-    assert.is_truthy(host.widgets.label.title:GetText():find("|cffe3c77enative|r", 1, true))
+    assert.is_truthy(host.widgets.label.title:GetText():find("|cfff4faf8native|r", 1, true))
     ns.Markdown.ReplyView.Rendered(state, completePending)
     ns.Markdown.Cache.Get("another unrelated" .. longSuffix)
     drain(ns)

@@ -1,138 +1,139 @@
 local _, ns = ...
-local label, box, button = ns.UI.Widgets.Label, ns.UI.Widgets.Box, ns.UI.Widgets.Button
-local GOLD, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.MUTED
+local widgets = ns.UI.Widgets
+local COLORS, FONTS = widgets.COLORS, widgets.FONTS
+local label, box, button = widgets.Label, widgets.Box, widgets.Button
+local TEXT, MUTED = widgets.TEXT, widgets.MUTED
+local PAGE_INSET, ROW_HEIGHT = 24, 32
 local settings
 
--- The window supplies the overlay parent and the body it should cover.
-function ns.UI.SettingsPanel.Build(frame, body)
-    settings = CreateFrame("Frame", nil, frame, "BackdropTemplate")
-    settings:SetAllPoints(body)
-    settings:SetFrameLevel(frame:GetFrameLevel() + 15)
-    box(settings, { 0.10, 0.085, 0.065, 1 }, 12)
-    settings:Hide()
-    local title = label(settings, "Settings", GOLD)
-    title:SetPoint("TOPLEFT", 20, -20)
-    local sound = CreateFrame("CheckButton", nil, settings, "UICheckButtonTemplate")
-    sound:SetPoint("TOPLEFT", 17, -50)
-    sound:SetChecked(ns.db.sound)
-    sound:SetScript("OnClick", function(self)
-        ns.db.sound = self:GetChecked()
-        if ns.UI.PlayCompletionSound then
-            ns.UI.PlayCompletionSound()
-        end
+-- A settings line with its label on the left and a switch on the right.
+local function switchRow(parent, top, text, checked, onChange)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetPoint("TOPLEFT", PAGE_INSET, top)
+    row:SetPoint("RIGHT", -PAGE_INSET, 0)
+    row:SetHeight(ROW_HEIGHT)
+    local caption = label(row, text)
+    caption:SetPoint("LEFT", 0, 0)
+    caption:SetPoint("RIGHT", -44, 0)
+    caption:SetWordWrap(false)
+    local switch = widgets.Toggle(row)
+    switch:SetPoint("RIGHT", 0, 0)
+    switch:SetChecked(checked)
+    switch:SetScript("OnClick", function(self)
+        onChange(self:GetChecked())
     end)
-    local st = label(settings, "Completion sound")
-    st:SetPoint("LEFT", sound, "RIGHT", 4, 0)
-    local tools = CreateFrame("CheckButton", nil, settings, "UICheckButtonTemplate")
-    tools:SetPoint("TOPLEFT", 17, -85)
-    tools:SetChecked(ns.db.showTools)
-    tools:SetScript("OnClick", function(self)
-        ns.db.showTools = self:GetChecked()
-        ns.UI.Refresh()
+    local rule = row:CreateTexture(nil, "ARTWORK")
+    rule:SetPoint("BOTTOMLEFT")
+    rule:SetPoint("BOTTOMRIGHT")
+    rule:SetHeight(widgets.OnePixel(rule))
+    rule:SetColorTexture(unpack(COLORS.line))
+    return row, switch
+end
+
+-- A full-width row that opens another page.
+local function linkRow(parent, top, text, detail, onClick)
+    local row = widgets.NavItem(parent, text, ROW_HEIGHT, onClick)
+    row:SetPoint("TOPLEFT", PAGE_INSET - 10, top)
+    row:SetPoint("RIGHT", -PAGE_INSET + 10, 0)
+    row.label:SetTextColor(unpack(TEXT))
+    row.label:SetPoint("RIGHT", -150, 0)
+    local hint = label(row, detail, MUTED, FONTS.small)
+    hint:SetPoint("RIGHT", -24, 0)
+    local chevron = label(row, ">", MUTED)
+    chevron:SetPoint("RIGHT", -10, 0)
+    return row
+end
+
+--- Header shared by Settings subpages: a "Settings" back link above the title.
+--- Content below it starts at SUBPAGE_TOP.
+ns.UI.SettingsPanel.SUBPAGE_TOP = -72
+function ns.UI.SettingsPanel.SubpageHeader(page, title)
+    local back = widgets.BackLink(page, "Settings", function()
+        page:Hide()
     end)
-    local tt = label(settings, "Show tool activity in conversations")
-    tt:SetPoint("LEFT", tools, "RIGHT", 4, 0)
-    local capabilitiesButton = button(settings, "Integrations", 125, function()
-        ns.UI.Capabilities.Show()
-    end)
-    capabilitiesButton:SetPoint("TOPLEFT", 20, -120)
-    local memoryButton = button(settings, "Memory", 90, function()
-        ns.UI.Memory.Show()
-    end)
-    memoryButton:SetPoint("LEFT", capabilitiesButton, "RIGHT", 10, 0)
-    local bind = button(settings, "Bind inline chat", 140, function()
-        if ns.Inline.BindInline then
-            ns.Inline.BindInline()
-        end
-    end)
-    bind:SetPoint("TOPLEFT", 20, -155)
-    local panelButton = button(settings, "Show saved panels", 155, function()
-        if ns.Panels.ShowPanels then
-            ns.Panels.ShowPanels()
-        end
-    end)
-    panelButton:SetPoint("LEFT", bind, "RIGHT", 10, 0)
-    local bindHint =
-        label(settings, "Hover a reference and use your inline key. /wisp ask also works.", MUTED)
-    bindHint:SetPoint("TOPLEFT", 20, -190)
-    bindHint:SetPoint("RIGHT", -20, 0)
-    bindHint:SetWordWrap(true)
+    back:SetPoint("TOPLEFT", PAGE_INSET, -14)
+    local heading = label(page, title, TEXT, FONTS.heading)
+    heading:SetPoint("TOPLEFT", PAGE_INSET, -38)
+    return heading, back
+end
+local subpageHeader = ns.UI.SettingsPanel.SubpageHeader
+
+local function buildChatHistory()
     local chatSettings =
         CreateFrame("Frame", "WispAIChatHistorySettings", settings, "BackdropTemplate")
     chatSettings:SetAllPoints(settings)
     chatSettings:SetFrameLevel(settings:GetFrameLevel() + 5)
-    box(chatSettings, { 0.10, 0.085, 0.065, 1 }, 12)
+    box(chatSettings, COLORS.window, COLORS.window)
     chatSettings:Hide()
-    local chatTitle = label(chatSettings, "WoW chat history", GOLD)
-    chatTitle:SetPoint("TOPLEFT", 20, -20)
+    subpageHeader(chatSettings, "WoW chat history")
     local chatHint = label(
         chatSettings,
-        "Up to 200 messages / 30 minutes, until logout or reload.\nEnabled channels are shared with your AI provider when consulted.",
+        "Up to 200 messages / 30 minutes, until logout or reload. Enabled channels are shared with your AI provider when consulted.",
         MUTED
     )
-    chatHint:SetPoint("TOPLEFT", 20, -50)
-    chatHint:SetPoint("RIGHT", -20, 0)
+    chatHint:SetPoint("TOPLEFT", PAGE_INSET, ns.UI.SettingsPanel.SUBPAGE_TOP)
+    chatHint:SetPoint("RIGHT", -PAGE_INSET, 0)
     chatHint:SetWordWrap(true)
-    local chatScroll = CreateFrame("ScrollFrame", nil, chatSettings, "UIPanelScrollFrameTemplate")
-    chatScroll:SetPoint("TOPLEFT", 17, -100)
-    chatScroll:SetPoint("BOTTOMRIGHT", -35, 60)
-    local chatContent = CreateFrame("Frame", nil, chatScroll)
+    local chatScroll, chatContent = widgets.ScrollArea(chatSettings)
+    chatScroll:SetPoint("TOPLEFT", PAGE_INSET, ns.UI.SettingsPanel.SUBPAGE_TOP - 44)
+    chatScroll:SetPoint("BOTTOMRIGHT", -PAGE_INSET, 56)
     chatContent:SetSize(340, 325)
-    chatScroll:SetScrollChild(chatContent)
+    chatScroll:SetScript("OnSizeChanged", function(_, width)
+        chatContent:SetWidth(width)
+    end)
+    local function channelRow(top, name)
+        local row = CreateFrame("Frame", nil, chatContent)
+        row:SetPoint("TOPLEFT", 0, top)
+        row:SetPoint("RIGHT", 0, 0)
+        row:SetHeight(ROW_HEIGHT)
+        row.text = label(row, "")
+        row.text:SetPoint("LEFT", 0, 0)
+        row.text:SetPoint("RIGHT", -44, 0)
+        row.text:SetWordWrap(false)
+        row.check = widgets.Toggle(row, name)
+        row.check:SetPoint("RIGHT", -2, 0)
+        return row
+    end
     for index, channel in ipairs(ns.ChatHistory.ChatChannels or {}) do
         local id = channel.id
-        local check = CreateFrame(
-            "CheckButton",
-            "WispAIChatChannel_" .. id,
-            chatContent,
-            "UICheckButtonTemplate"
-        )
-        check:SetPoint("TOPLEFT", 0, -(index - 1) * 35)
-        check:SetChecked(ns.ChatHistory.ChatChannelEnabled(id))
-        check:SetScript("OnClick", function(self)
+        local row = channelRow(-(index - 1) * ROW_HEIGHT, "WispAIChatChannel_" .. id)
+        row.text:SetText(channel.label)
+        row.check:SetChecked(ns.ChatHistory.ChatChannelEnabled(id))
+        row.check:SetScript("OnClick", function(self)
             ns.ChatHistory.SetChatChannel(id, self:GetChecked())
         end)
-        local text = label(chatContent, channel.label)
-        text:SetPoint("LEFT", check, "RIGHT", 4, 0)
     end
-    local publicTitle = label(chatContent, "Public / custom channels", GOLD)
-    local publicTop = #(ns.ChatHistory.ChatChannels or {}) * 35 + 10
-    publicTitle:SetPoint("TOPLEFT", 3, -publicTop)
+    local publicTop = #(ns.ChatHistory.ChatChannels or {}) * ROW_HEIGHT + 16
+    local publicTitle = widgets.Caption(chatContent, "Public / custom channels")
+    publicTitle:SetPoint("TOPLEFT", 0, -publicTop)
     local publicHint =
         label(chatContent, "Choose individual channels. Selections follow the channel name.", MUTED)
-    publicHint:SetPoint("TOPLEFT", 3, -publicTop - 25)
-    publicHint:SetWidth(310)
+    publicHint:SetPoint("TOPLEFT", 0, -publicTop - 18)
+    publicHint:SetPoint("RIGHT", 0, 0)
     publicHint:SetWordWrap(true)
+    local listTop = publicTop + 48
     local publicRows = {}
     local publicEmpty = label(chatContent, "No public channels joined.", MUTED)
-    publicEmpty:SetPoint("TOPLEFT", 3, -publicTop - 70)
+    publicEmpty:SetPoint("TOPLEFT", 0, -listTop - 6)
     function ns.UI.RefreshChatChannelSettings()
         local channels = ns.ChatHistory.PublicChatChannels and ns.ChatHistory.PublicChatChannels()
             or {}
         for _, row in ipairs(publicRows) do
-            row.check:Hide()
-            row.text:Hide()
+            row:Hide()
         end
         for index, channel in ipairs(channels) do
             local row = publicRows[index]
             if not row then
-                local check = CreateFrame(
-                    "CheckButton",
-                    "WispAIPublicChatChannel_" .. index,
-                    chatContent,
-                    "UICheckButtonTemplate"
-                )
-                local text = label(chatContent, "")
-                text:SetPoint("LEFT", check, "RIGHT", 4, 0)
-                text:SetWidth(285)
-                row = { check = check, text = text }
+                row = channelRow(0, "WispAIPublicChatChannel_" .. index)
                 publicRows[index] = row
-                check:SetScript("OnClick", function(self)
+                row.check:SetScript("OnClick", function(self)
                     ns.ChatHistory.SetPublicChatChannel(self.channelName, self:GetChecked())
                 end)
             end
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", 0, -listTop - (index - 1) * ROW_HEIGHT)
+            row:SetPoint("RIGHT", 0, 0)
             row.check.channelName = channel.name
-            row.check:SetPoint("TOPLEFT", 0, -publicTop - 65 - (index - 1) * 35)
             row.check:SetChecked(ns.ChatHistory.PublicChatChannelEnabled(channel.name))
             row.text:SetText(
                 "/"
@@ -141,30 +142,120 @@ function ns.UI.SettingsPanel.Build(frame, body)
                     .. channel.name
                     .. (channel.disabled and " (unavailable here)" or "")
             )
-            row.check:Show()
-            row.text:Show()
+            row:Show()
         end
         publicEmpty:SetShown(#channels == 0)
-        chatContent:SetHeight(publicTop + 75 + math.max(1, #channels) * 35)
+        chatContent:SetHeight(listTop + math.max(1, #channels) * ROW_HEIGHT + 8)
     end
     chatSettings:SetScript("OnShow", ns.UI.RefreshChatChannelSettings)
     ns.UI.RefreshChatChannelSettings()
-    local clearChat = button(chatSettings, "Clear history", 125, function()
+    local clearChat = button(chatSettings, "Clear history", 120, function()
         ns.ChatHistory.ClearChatHistory()
     end)
-    clearChat:SetPoint("BOTTOMLEFT", 20, 20)
-    local chatBack = button(chatSettings, "Back", 90, function()
-        chatSettings:Hide()
+    clearChat:SetPoint("BOTTOMLEFT", PAGE_INSET, 20)
+    return chatSettings
+end
+
+-- Returns Settings to its main page by closing any open subpage.
+function ns.UI.SettingsPanel.ResetPages()
+    for _, name in ipairs({
+        "WispAIChatHistorySettings",
+        "WispAIMemoryPanel",
+        "WispAICapabilitiesPanel",
+    }) do
+        local page = _G[name]
+        if page then
+            page:Hide()
+        end
+    end
+end
+
+-- The window supplies the overlay parent and the conversation panel it covers.
+function ns.UI.SettingsPanel.Build(frame, panel)
+    settings = CreateFrame("Frame", "WispAISettingsPage", frame, "BackdropTemplate")
+    settings:SetAllPoints(panel)
+    settings:SetFrameLevel(frame:GetFrameLevel() + 15)
+    box(settings, COLORS.window, COLORS.window)
+    settings:EnableMouse(true)
+    settings:Hide()
+    local title = label(settings, "Settings", TEXT, FONTS.heading)
+    title:SetPoint("TOPLEFT", PAGE_INSET, -20)
+    local close = button(settings, "x", 24, function()
+        ns.UI.ShowSettings(nil)
+    end, "ghost")
+    close:SetPoint("TOPRIGHT", -PAGE_INSET + 6, -16)
+
+    local general = widgets.Caption(settings, "General")
+    general:SetPoint("TOPLEFT", PAGE_INSET, -62)
+    switchRow(settings, -76, "Completion sound", ns.db.sound, function(value)
+        ns.db.sound = value
+        if ns.UI.PlayCompletionSound then
+            ns.UI.PlayCompletionSound()
+        end
     end)
-    chatBack:SetPoint("LEFT", clearChat, "RIGHT", 10, 0)
-    local chatButton = button(settings, "WoW chat history", 155, function()
-        chatSettings:Show()
+    switchRow(
+        settings,
+        -76 - ROW_HEIGHT,
+        "Show tool activity in conversations",
+        ns.db.showTools,
+        function(value)
+            ns.db.showTools = value
+            ns.UI.Refresh()
+        end
+    )
+
+    local inline = widgets.Caption(settings, "Inline chat")
+    inline:SetPoint("TOPLEFT", PAGE_INSET, -164)
+    local bindHint =
+        label(settings, "Hover a reference and press your inline key. /wisp ask also works.", MUTED)
+    bindHint:SetPoint("TOPLEFT", PAGE_INSET, -182)
+    bindHint:SetPoint("RIGHT", -150, 0)
+    bindHint:SetWordWrap(true)
+    local bind = button(settings, "Bind inline key", 120, function()
+        if ns.Inline.BindInline then
+            ns.Inline.BindInline()
+        end
     end)
-    chatButton:SetPoint("TOPLEFT", 20, -230)
-    local back = button(settings, "Back", 90, function()
-        settings:Hide()
-    end)
-    back:SetPoint("LEFT", chatButton, "RIGHT", 10, 0)
+    bind:SetPoint("TOPRIGHT", -PAGE_INSET, -178)
+
+    local data = widgets.Caption(settings, "Data")
+    data:SetPoint("TOPLEFT", PAGE_INSET, -230)
+    local chatSettings = buildChatHistory()
+    local links = {
+        {
+            "Integrations",
+            "Tools Wisp can use",
+            function()
+                ns.UI.Capabilities.Show()
+            end,
+        },
+        {
+            "Memory",
+            "What Wisp remembers",
+            function()
+                ns.UI.Memory.Show()
+            end,
+        },
+        {
+            "WoW chat history",
+            "Channels Wisp can read",
+            function()
+                chatSettings:Show()
+            end,
+        },
+        {
+            "Saved panels",
+            "Reopen hidden panels",
+            function()
+                if ns.Panels.ShowPanels then
+                    ns.Panels.ShowPanels()
+                end
+            end,
+        },
+    }
+    for index, link in ipairs(links) do
+        linkRow(settings, -246 - (index - 1) * ROW_HEIGHT, link[1], link[2], link[3])
+    end
     ns.UI.Capabilities.Build(settings)
     ns.UI.Memory.Build(settings)
     return settings

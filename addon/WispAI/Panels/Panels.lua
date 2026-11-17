@@ -97,40 +97,30 @@ local function build(panel, index)
         w:SetClampedToScreen(true)
         w:SetMovable(true)
         w:EnableMouse(true)
-        w:SetBackdrop({
-            bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            tile = true,
-            tileSize = 16,
-            edgeSize = 12,
-            insets = { left = 3, right = 3, top = 3, bottom = 3 },
-        })
-        w:SetBackdropColor(0.09, 0.075, 0.055, 0.96)
-        w:SetBackdropBorderColor(0.43, 0.38, 0.28, 1)
+        local widgets = ns.UI.Widgets
+        widgets.Box(w, widgets.COLORS.window, widgets.COLORS.lineStrong)
         w.title = w:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         w.title:SetPoint("TOPLEFT", 12, -11)
         w.title:SetPoint("RIGHT", -65, 0)
         w.title:SetJustifyH("LEFT")
         w.title:SetWordWrap(false)
-        w.title:SetTextColor(0.84, 0.72, 0.43)
-        w.mini = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
-        w.mini:SetSize(23, 21)
-        w.mini:SetPoint("TOPRIGHT", -34, -7)
-        w.mini:SetScript("OnClick", function()
+        w.title:SetTextColor(unpack(widgets.TEXT))
+        w.mini = widgets.Button(w, "", 23, function()
             state.minimized = not state.minimized
             ns.Panels.RefreshPanels()
-        end)
-        w.close = CreateFrame("Button", nil, w, "UIPanelButtonTemplate")
-        w.close:SetSize(23, 21)
-        w.close:SetPoint("TOPRIGHT", -8, -7)
-        w.close:SetText("x")
-        w.close:SetScript("OnClick", function()
+        end, "ghost")
+        w.mini:SetHeight(21)
+        w.mini:SetPoint("TOPRIGHT", -34, -7)
+        w.close = widgets.Button(w, "x", 23, function()
             state.hidden = true
             w:Hide()
-        end)
-        w.scroll = CreateFrame("ScrollFrame", nil, w, "UIPanelScrollFrameTemplate")
+        end, "ghost")
+        w.close:SetHeight(21)
+        w.close:SetPoint("TOPRIGHT", -8, -7)
+        w.scroll = CreateFrame("ScrollFrame", nil, w)
+        w.scroll:SetClipsChildren(true)
         w.scroll:SetPoint("TOPLEFT", 12, -40)
-        w.scroll:SetPoint("BOTTOMRIGHT", -29, 10)
+        w.scroll:SetPoint("BOTTOMRIGHT", -12, 10)
         w.host = CreateFrame("Frame", nil, w.scroll)
         w.host:SetSize(265, 1)
         w.host._wispScroll = w.scroll

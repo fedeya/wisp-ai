@@ -26,7 +26,10 @@ function ns.Chat.NewChat()
     ns.chatCounter = (ns.chatCounter or 0) + 1
     ns.active = ns.session .. "-chat-" .. ns.chatCounter
     ns.db.activeChat = ns.active
-    ns.sidebarTab = "chats"
+    ns.sidebarTab, ns.routinesPage = "chats", false
+    if ns.UI.ShowSettings then
+        ns.UI.ShowSettings(nil)
+    end
     ns.chats[#ns.chats + 1] = {
         id = ns.active,
         title = "New conversation",
@@ -56,6 +59,10 @@ function ns.Chat.Select(id)
         discardEmptyDraft()
     end
     ns.active = id
+    ns.routinesPage = false
+    if ns.UI.ShowSettings then
+        ns.UI.ShowSettings(nil)
+    end
     for _, chat in ipairs(ns.chats) do
         if chat.id == id then
             ns.sidebarTab = chat.routineId and "routines" or "chats"

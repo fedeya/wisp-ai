@@ -1,6 +1,7 @@
 local _, ns = ...
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
-local GOLD, TEXT, MUTED = ns.UI.Widgets.GOLD, ns.UI.Widgets.TEXT, ns.UI.Widgets.MUTED
+local ACCENT, TEXT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.TEXT, ns.UI.Widgets.MUTED
+local COLORS = ns.UI.Widgets.COLORS
 local mapLocation, macroNameFromLink =
     ns.UI.MessageFormat.MapLocation, ns.UI.MessageFormat.MacroNameFromLink
 local formatted = ns.UI.FormatText
@@ -10,8 +11,8 @@ local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
 local TOOL_STATES = {
     completed = { cell = 0, tint = MUTED },
-    running = { cell = 1, tint = GOLD },
-    failed = { cell = 2, tint = { 0.85, 0.52, 0.46 } },
+    running = { cell = 1, tint = ACCENT },
+    failed = { cell = 2, tint = COLORS.danger },
 }
 local toolGroupsExpanded = {}
 
@@ -180,7 +181,7 @@ local function makeDelivery(row)
     delivery:SetPoint("TOPRIGHT", row.bubble, "BOTTOMRIGHT", -8, 0)
     delivery.dots = {}
     for index = 1, 3 do
-        local dot = label(delivery, ".", GOLD)
+        local dot = label(delivery, ".", ACCENT)
         dot:SetFontObject("GameFontNormalLarge")
         dot:SetPoint("RIGHT", delivery, "RIGHT", (index - 3) * 8, 4)
         delivery.dots[index] = dot
@@ -198,8 +199,10 @@ local function makeRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     linked(row)
     row:SetScript("OnHide", writer.Finish)
-    row.author = label(row, "", GOLD)
+    row.author = label(row, "", MUTED, ns.UI.Widgets.FONTS.caption)
     row.author:SetPoint("TOPLEFT", 0, 0)
+    row.authorMark = ns.UI.Widgets.Dot(row, 6)
+    row.authorMark:Hide()
     row.text = label(row, "")
     row.text:SetFontObject(ChatFontNormal)
     row.text:SetWordWrap(true)
@@ -212,14 +215,7 @@ local function makeRow(parent)
     row.chevron:Hide()
     row.bubble = CreateFrame("Frame", nil, row, "BackdropTemplate")
     row.bubble:SetFrameLevel(row:GetFrameLevel())
-    row.bubble:SetBackdrop({
-        bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    row.bubble:SetBackdropColor(0.25, 0.19, 0.115, 0.96)
-    row.bubble:SetBackdropBorderColor(0.45, 0.35, 0.20, 0.5)
+    ns.UI.Widgets.Box(row.bubble, COLORS.raised, COLORS.line)
     row.bubble:EnableMouse(false)
     row.bubble:Hide()
     row.disclosure = CreateFrame("Button", nil, row)
@@ -414,6 +410,8 @@ function ns.UI.MessageSpeaker(message)
     return (message.role == "tool" or message.role == "assistant") and "assistant" or message.role
 end
 function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
+    -- Replies are recognized by their layout; only system notices carry a label.
+    showAuthor = showAuthor == true and message.role == "system"
     row.replyView = row.replyView or ns.Markdown.ReplyView.New()
     local sameReply = row.replyView.chatId == chat.id and row.replyView.messageId == message.id
     local display, viewKey = ns.Markdown.ReplyView.Update(row.replyView, chat.id, message)
@@ -490,10 +488,14 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
         row.author:ClearAllPoints()
         row.author:SetPoint(
             message.role == "user" and "TOPRIGHT" or "TOPLEFT",
-            message.role == "user" and -10 or 0,
-            -padding
+            message.role == "user" and -10 or 12,
+            -padding - 2
         )
         row.author:SetShown(showAuthor and message.role ~= "user")
+        row.authorMark:ClearAllPoints()
+        row.authorMark:SetPoint("TOPLEFT", 1, -padding - 4)
+        row.authorMark:SetShown(showAuthor and message.role ~= "user")
+        row.authorMark:SetColorTexture(unpack(message.role == "system" and COLORS.muted or ACCENT))
         setText(
             row.author,
             message.role == "user" and "You" or (message.role == "system" and "Notice" or "Wisp AI")
@@ -543,7 +545,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             if message.toolDetail then
                 if not row.toolDetail then
                     row.toolDetailBackground = row:CreateTexture(nil, "BACKGROUND")
-                    row.toolDetailBackground:SetColorTexture(0.84, 0.72, 0.43, 0.08)
+                    row.toolDetailBackground:SetColorTexture(unpack(COLORS.sidebar))
                     row.toolDetail = label(row, "", MUTED)
                     row.toolDetail:SetWordWrap(true)
                     row.toolDetail:SetNonSpaceWrap(true)
@@ -584,6 +586,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             else
                 text, pending = formatted(message.text, message.references, message.role == "user")
             end
+            ns.UI.Widgets.ChatFont(row.text, message.text)
             setText(row.text, text)
             if message.role == "user" and not (message.ui and #message.ui > 0) then
                 local natural = row.text.GetUnboundedStringWidth

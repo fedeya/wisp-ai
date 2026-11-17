@@ -28,7 +28,7 @@ it("uses the same AST text formatting in prose, headings and table cells", funct
     local source =
         "**Use `a**b` now**\n\n# **Use `a**b` now**\n\nA|B\n---|---\n**Use `a**b` now**|\\*literal* &amp; &#124;"
     local view = settled(ns, message(source))
-    local expected = "|cffe3c77eUse a**b now|r"
+    local expected = "|cfff4faf8Use a**b now|r"
     assert.equal(expected, view.parts[1].text)
     assert.equal(expected, view.parts[2].text)
     assert.equal("heading", view.parts[2].style)
@@ -40,11 +40,11 @@ it("renders reviewed inline expressions and linked image labels consistently", f
     local _, ns = setup()
     local source = "**2*3=6**\n\n[![**alt**](image.png)](https://outer)\n\n[a\\*b]\n\n[a\\*b]: /url"
     local view = settled(ns, message(source))
-    assert.equal("|cffe3c77e2*3=6|r", view.parts[1].text)
-    local link = "|cff80c8ef|H" .. ns.Markdown.Links.Encode("https://outer") .. "|h"
-    assert.equal(link .. "|cffe3c77ealt|r|cff80c8ef|h|r", view.parts[2].text)
+    assert.equal("|cfff4faf82*3=6|r", view.parts[1].text)
+    local link = "|cff77dbc6|H" .. ns.Markdown.Links.Encode("https://outer") .. "|h"
+    assert.equal(link .. "|cfff4faf8alt|r|cff77dbc6|h|r", view.parts[2].text)
     assert.equal("a*b", view.parts[3].text)
-    assert.equal("|cffe3c77e2*3=6|r", ns.UI.FormatText("**2*3=6**"))
+    assert.equal("|cfff4faf82*3=6|r", ns.UI.FormatText("**2*3=6**"))
     assert.equal(link .. "alt|h|r", ns.UI.FormatText("[![alt](image.png)](https://outer)"))
 end)
 
@@ -163,7 +163,7 @@ it("renders lists, tasks, quotes and code through the shared document view", fun
     end
     assert.is_truthy(table.concat(seen, "\n"):find("- first", 1, true))
     assert.is_truthy(table.concat(seen, "\n"):find("[x] ready", 1, true))
-    assert.is_truthy(table.concat(seen, "\n"):find("> quoted |cffe3c77eword|r", 1, true))
+    assert.is_truthy(table.concat(seen, "\n"):find("> quoted |cfff4faf8word|r", 1, true))
     assert.equal("heading", view.parts[1].style)
     assert.equal(2, view.parts[1].level)
 end)
@@ -372,12 +372,12 @@ it("preserves native markup and finishes the reveal when the row is hidden", fun
     local chat = { id = "chat", status = "working", messages = { original } }
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
-    assert.equal("|cffe3c77eA|r", row.text:GetText())
+    assert.equal("|cfff4faf8A|r", row.text:GetText())
     row.scripts.OnUpdate(row, 0.1)
-    assert.is_truthy(row.text:GetText():match("^|cffe3c77eA bold .+|r$"))
-    assert.is_true(#row.text:GetText() < #"|cffe3c77eA bold start|r")
+    assert.is_truthy(row.text:GetText():match("^|cfff4faf8A bold .+|r$"))
+    assert.is_true(#row.text:GetText() < #"|cfff4faf8A bold start|r")
     row.scripts.OnUpdate(row, 1)
-    assert.equal("|cffe3c77eA bold start|r", row.text:GetText())
+    assert.equal("|cfff4faf8A bold start|r", row.text:GetText())
 
     original.text = original.text .. "\n\nAnother paragraph."
     ns.UI.RenderMessageRow(row, chat, original, 210, true)
@@ -498,14 +498,14 @@ it("clips inline colors around whole native links and textures", function()
     local renderer = ns.Markdown.InlineRenderer
     local link = "|Hquest:166|h[Quest ||h label]|h"
     local icon = "|TIcon:12:12|t"
-    local text = "|cffe3c77eÉ" .. link .. icon .. "|| fin|r"
+    local text = "|cfff4faf8É" .. link .. icon .. "|| fin|r"
     local visible, ranges = renderer.WritingText(text)
     assert.equal("É\1\1| fin", visible)
     assert.equal("", (renderer.WritingPrefix(text, visible, ranges, 1)))
-    assert.equal("|cffe3c77eÉ|r", (renderer.WritingPrefix(text, visible, ranges, 2)))
-    assert.equal("|cffe3c77eÉ" .. link .. "|r", (renderer.WritingPrefix(text, visible, ranges, 3)))
+    assert.equal("|cfff4faf8É|r", (renderer.WritingPrefix(text, visible, ranges, 2)))
+    assert.equal("|cfff4faf8É" .. link .. "|r", (renderer.WritingPrefix(text, visible, ranges, 3)))
     assert.equal(
-        "|cffe3c77eÉ" .. link .. icon .. "|||r",
+        "|cfff4faf8É" .. link .. icon .. "|||r",
         (renderer.WritingPrefix(text, visible, ranges, 5))
     )
 end)

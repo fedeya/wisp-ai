@@ -57,14 +57,17 @@ it("styles the shared parser tree without reparsing on resize or reference updat
     paint(ns, row, message)
     local syntaxCalls = calls
     assert.equal(1, syntaxCalls)
-    local sawMono, sawGold, sawCode, sawTask, sawRule = false, false, false, false, false
+    local sawMono, sawStrong, sawCode, sawTask, sawRule = false, false, false, false, false
+    local sawInter = false
     for _, font in ipairs(visibleFonts(row)) do
         if font.fontPath:find("JetBrainsMono-Regular.ttf", 1, true) then
             sawMono = true
+        elseif font.fontPath:find("Fonts\\Inter-", 1, true) then
+            sawInter = true
         else
             assert.equal("Fonts\\FRIZQT__.TTF", font.fontPath)
         end
-        sawGold = sawGold or (font:GetText() == "Fuego" and font.tint[1] == 227 / 255)
+        sawStrong = sawStrong or (font:GetText() == "Fuego" and font.tint[1] == 244 / 255)
     end
     for _, block in ipairs(row.rich.prose) do
         if block.block and block.block.kind == "code" then
@@ -79,7 +82,7 @@ it("styles the shared parser tree without reparsing on resize or reference updat
             sawRule = block.decorations[1]:IsShown()
         end
     end
-    assert.is_true(sawMono and sawGold and sawCode and sawTask and sawRule)
+    assert.is_true(sawMono and sawInter and sawStrong and sawCode and sawTask and sawRule)
     local height = row:GetHeight()
     paint(ns, row, message, 150)
     assert.is_true(row:GetHeight() > height)
@@ -92,6 +95,15 @@ it("styles the shared parser tree without reparsing on resize or reference updat
     assert.is_truthy(helper.rowText(row):find("[Nueva llama]", 1, true))
     assert.equal(syntaxCalls, calls)
     assert.equal(source, message.text)
+end)
+
+it("keeps the game font for prose outside Inter's scripts", function()
+    local _, ns, row = setup()
+    local message = { id = "prose", role = "assistant", text = "# 你好\n\nこんにちは" }
+    paint(ns, row, message)
+    for _, font in ipairs(visibleFonts(row)) do
+        assert.equal("Fonts\\FRIZQT__.TTF", font.fontPath)
+    end
 end)
 
 it("renders all unordered markers with compact hanging indents", function()
@@ -275,7 +287,7 @@ it("separates headings from body emphasis and gives sections more breathing room
     })
     local title, before, section, after, code = unpack(row.rich.prose)
     assert.same(title.tint, section.tint)
-    assert.is_true(title.tint[3] > ns.UI.Widgets.GOLD[3])
+    assert.is_true(title.tint[3] > ns.UI.Widgets.TEXT[3])
     assert.equal(0, title.point[5])
     local sectionGap = -section.point[5] + before.point[5] - before:GetStringHeight()
     local bodyGap = -after.point[5] + section.point[5] - section:GetStringHeight()
@@ -296,7 +308,7 @@ it("colors macro commands and conditions while keeping code literal across reflo
         paint(ns, row, message, width)
         local text = helper.rowText(row)
         assert.is_truthy(text:find("|cff8fb7c6/cast|r", 1, true))
-        assert.is_truthy(text:find("|cffb0aa8e#showtooltip|r", 1, true))
+        assert.is_truthy(text:find("|cff92a3aa#showtooltip|r", 1, true))
         assert.is_truthy(text:find("|cffaca0c2[mod:shift,|r", 1, true))
         local literal = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
         assert.equal(source:gsub("|", "||"):gsub("\n", ""), literal)

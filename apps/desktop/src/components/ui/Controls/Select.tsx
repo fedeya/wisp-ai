@@ -51,8 +51,8 @@ export function Select<Value extends string>({
         className={field({
           class: [
             'group flex cursor-pointer items-center justify-between gap-3 rounded-[9px] text-left',
-            'transition-colors enabled:hover:border-[#568780] enabled:hover:bg-[#1b272d]',
-            'data-popup-open:border-[#568780] data-popup-open:bg-[#1b272d] disabled:cursor-default',
+            'transition-colors enabled:hover:border-accent-line enabled:hover:bg-selected',
+            'data-popup-open:border-accent-line data-popup-open:bg-selected disabled:cursor-default',
             className,
           ],
         })}
@@ -72,7 +72,7 @@ export function Select<Value extends string>({
           sideOffset={6}
           className="z-[25]"
         >
-          <BaseSelect.Popup className="w-[min(max(var(--anchor-width),10rem),var(--available-width))] origin-(--transform-origin) rounded-[12px] border border-solid border-[#3c535b] bg-[#1c252b] p-1 outline-none shadow-[0_12px_32px_#0008] transition-[opacity,scale] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
+          <BaseSelect.Popup className="w-[min(max(var(--anchor-width),10rem),var(--available-width))] origin-(--transform-origin) rounded-[12px] border border-solid border-border-strong bg-surface p-1 outline-none shadow-[0_12px_32px_#0008] transition-[opacity,scale] duration-150 data-ending-style:scale-[0.98] data-ending-style:opacity-0 data-starting-style:scale-[0.98] data-starting-style:opacity-0">
             <BaseSelect.List className="max-h-[min(18rem,calc(var(--available-height)-10px))] overflow-y-auto overscroll-contain">
               {options.map(({ value, label, description }) => (
                 <BaseSelect.Item

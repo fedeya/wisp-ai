@@ -12,7 +12,7 @@ const providerOrder = new Set<ProviderId>([
   ...providerDefinitions.map(({ id }) => id),
 ]);
 const optionStyle =
-  'flex w-full justify-between whitespace-normal px-2 py-1.5 text-left no-underline hover:bg-[#293b40]';
+  'flex w-full justify-between whitespace-normal px-2 py-1.5 text-left no-underline hover:bg-selected';
 
 export default function ProviderPicker({
   configured,
@@ -44,10 +44,10 @@ export default function ProviderPicker({
     >
       {children}
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-20 bg-[#050c10b8]" />
+        <Dialog.Backdrop className="fixed inset-0 z-20 bg-black/70" />
         <Dialog.Viewport className="fixed inset-0 z-20 grid place-items-center px-4 py-6">
           <Dialog.Popup
-            className="grid h-[min(460px,calc(100dvh-48px))] w-full max-w-[540px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[13px] border border-solid border-[#40555a] bg-surface shadow-[0_25px_100px_#0009]"
+            className="grid h-[min(460px,calc(100dvh-48px))] w-full max-w-[540px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-[13px] border border-solid border-border-strong bg-surface shadow-[0_25px_100px_#0009]"
             initialFocus={searchField}
           >
             <div className="grid gap-3 border-b [border-bottom-style:solid] border-b-border p-4">

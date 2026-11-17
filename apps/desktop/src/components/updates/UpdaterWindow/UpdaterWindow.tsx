@@ -60,7 +60,7 @@ export default function UpdaterWindow() {
   }, [failed]);
 
   return (
-    <main className="min-h-dvh border border-solid border-border bg-[#14191d] px-[25px] pt-[15px] pb-[24px] [background-image:radial-gradient(ellipse_at_15%_0%,#243a38_0%,transparent_58%)]">
+    <main className="min-h-dvh border border-solid border-border bg-canvas px-[25px] pt-[15px] pb-[24px] [background-image:radial-gradient(ellipse_at_15%_0%,#243a38_0%,transparent_58%)]">
       <header
         className="h-[30px] text-[12px] font-semibold text-muted select-none"
         data-tauri-drag-region=""
@@ -87,8 +87,8 @@ export default function UpdaterWindow() {
       </section>
       {failed ? (
         <>
-          <section className="overflow-hidden rounded-[12px] border border-solid border-border bg-[#11171a]">
-            <h2 className="border-0 border-b border-solid border-[#2a3438] px-[12px] py-[10px] text-[12px] text-[#c5d3d1]">
+          <section className="overflow-hidden rounded-[12px] border border-solid border-border bg-sidebar">
+            <h2 className="border-0 border-b border-solid border-border px-[12px] py-[10px] text-[12px] text-[#c5d3d1]">
               Installation log
             </h2>
             <pre
@@ -119,7 +119,7 @@ export default function UpdaterWindow() {
             )}
           </div>
           <progress
-            className="block h-[6px] w-full appearance-none rounded-[10px] accent-accent [&::-webkit-progress-bar]:rounded-[10px] [&::-webkit-progress-bar]:bg-[#344146] [&::-webkit-progress-value]:rounded-[10px] [&::-webkit-progress-value]:bg-accent"
+            className="block h-[6px] w-full appearance-none rounded-[10px] accent-accent [&::-webkit-progress-bar]:rounded-[10px] [&::-webkit-progress-bar]:bg-selected [&::-webkit-progress-value]:rounded-[10px] [&::-webkit-progress-value]:bg-accent"
             max={100}
             value={update.percent ?? undefined}
             aria-label={status}

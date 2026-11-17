@@ -104,23 +104,20 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
                 not first.disclosure:IsShown(),
                 "a single tool without extra details must not have an expander"
             )
-            assert(first.author:IsShown() and first.author:GetText() == "Wisp AI")
             local _, _, _, _, textTop = first.text:GetPoint()
-            assert(textTop == -20, "the first tool must be below the assistant name")
+            assert(textTop == 0, "replies start at the top, without an author label")
             for _, text in ipairs({
+                "Reading spells",
                 "Checking gear",
                 "Final answer",
+                "Reading quests",
                 "Second answer",
             }) do
                 assert(
                     not findRow(text).author:IsShown(),
-                    "continuations must share the assistant header"
+                    "Wisp's replies are recognized by layout, not by a name label"
                 )
             end
-            assert(
-                findRow("Reading quests").author:IsShown(),
-                "a new user turn needs a new assistant header"
-            )
             local previous = 1
             for _, text in ipairs({
                 "First question",
@@ -147,14 +144,12 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             ns.db.showTools = false
             refresh()
             assert(
-                findRow("Checking gear").author:IsShown(),
-                "hiding tools must move the header onto visible text"
+                not findRow("Checking gear").author:IsShown(),
+                "hiding tools must not bring back an author label"
             )
-            assert(findRow("Second answer").author:IsShown())
             ns.db.showTools = true
             refresh()
-            assert(findRow("Reading spells").author:IsShown())
-            assert(not findRow("Checking gear").author:IsShown())
+            assert(not findRow("Reading spells").author:IsShown())
             local writes = UI_TEST.textWrites
             refresh()
             assert(UI_TEST.textWrites == writes, "unchanged groups must not rewrite rows")
@@ -172,7 +167,11 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local completedCall = table.remove(ns.chats[1].messages)
             refresh()
             assert(progress:IsShown(), "past replies do not suppress thinking in a new turn")
-            assert(progress.author:IsShown() and progress:GetHeight() == 43)
+            assert(
+                (not progress.author or not progress.author:IsShown())
+                    and progress:GetHeight() == 23,
+                "thinking is a single line led by Wisp's mark"
+            )
             assert(isLoading(progress))
             local loading = progress.loadingText
             loading.scripts.OnUpdate(loading, 0.2)

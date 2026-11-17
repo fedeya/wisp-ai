@@ -246,7 +246,7 @@ it(
             parts = {
                 {
                     type = "text",
-                    text = "|cffe3c77eGuide|r",
+                    text = "|cfff4faf8Guide|r",
                     _markdown = true,
                     style = "heading",
                     level = 1,
@@ -270,7 +270,7 @@ it(
         }
         ns.UI.RenderRichUI(host, {}, message, 200)
         local heading, code, quote, body = unpack(host.prose)
-        assert.equal("|cffe3c77eGuide|r", heading:GetText())
+        assert.equal("|cfff4faf8Guide|r", heading:GetText())
         assert.equal(env.GameFontNormalHuge or "GameFontNormalHuge", heading.actualFont)
         assert.equal("**literal**", code:GetText())
         assert.equal(env.GameFontHighlightSmall or "GameFontHighlightSmall", code.actualFont)
@@ -278,7 +278,7 @@ it(
         assert.equal(188, code:GetWidth())
         assert.equal(160, quote.point[4])
         assert.equal(40, quote:GetWidth())
-        assert.same({ 0.65, 0.63, 0.58 }, quote.actualColor)
+        assert.same({ 0.769, 0.808, 0.820 }, quote.actualColor)
         assert.equal(env.GameFontNormal or "GameFontNormal", body.actualFont)
         assert.equal(host, quote:GetParent())
         assert.is_true(host.hyperlinksEnabled)
@@ -288,7 +288,7 @@ it(
         ns.UI.RenderRichUI(host, {}, message, 300)
         assert.equal(heading, host.prose[1])
         assert.equal(env.GameFontNormal or "GameFontNormal", heading.actualFont)
-        assert.same({ 0.89, 0.85, 0.75 }, heading.actualColor)
+        assert.same({ 0.961, 0.973, 0.973 }, heading.actualColor)
         assert.equal(count, #env.UI_TEST.widgets)
         assert.is_false(code:IsShown())
         message._markdownSimple = true
@@ -361,7 +361,7 @@ it("reports pending formatting for native cells and prose separately for each ho
     end
     _, pending = ns.UI.RenderRichUI(host, {}, message, 400)
     assert.is_false(pending)
-    assert.equal("|cffe3c77e" .. body .. "|r", host.prose[1]:GetText())
+    assert.equal("|cfff4faf8" .. body .. "|r", host.prose[1]:GetText())
 end)
 
 it("keeps pending results local when formatting triggers a nested render", function()

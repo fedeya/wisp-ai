@@ -66,7 +66,7 @@ const lightLogos = new Set<ProviderId>([
 export function ProviderLogo({ provider }: { provider: ProviderId }) {
   const src = logos[`../../assets/providers/${provider}.svg`];
   return (
-    <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[#263137] text-muted">
+    <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-selected text-muted">
       {src ? (
         <img
           className={`size-[22px] object-contain ${lightLogos.has(provider) ? 'invert' : ''}`}

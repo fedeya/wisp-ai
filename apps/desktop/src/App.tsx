@@ -80,7 +80,7 @@ function DesktopShell() {
             {page.detail && (
               <nav
                 aria-label="Detail navigation"
-                className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-[#191f24] px-(--page-gutter)"
+                className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-sidebar px-(--page-gutter)"
               >
                 <Link
                   to={{ pathname: page.path, search }}

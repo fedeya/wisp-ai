@@ -1,6 +1,7 @@
 local _, ns = ...
+local COLORS = ns.UI.Widgets.COLORS
 local label, box, button = ns.UI.Widgets.Label, ns.UI.Widgets.Box, ns.UI.Widgets.Button
-local GOLD = ns.UI.Widgets.GOLD
+local TEXT = ns.UI.Widgets.TEXT
 local refreshReferences = ns.UI.MessageFormat.RefreshReferences
 local frame, header, body, chatPanel, mini, gear, resize, settings
 local rendering = false
@@ -26,13 +27,21 @@ local function layout()
     local expanded = not ns.db.minimized
     gear:SetShown(expanded)
     resize:SetShown(expanded)
+    header.rule:SetShown(expanded)
+    gear.icon:SetVertexColor(
+        unpack(settings and settings:IsShown() and ns.UI.Widgets.ACCENT or ns.UI.Widgets.MUTED)
+    )
     local width = ns.UI.Sidebar.Layout()
-    local titleAnchor = expanded and gear or mini
+    -- Expanded, the title keeps its natural width so the breadcrumb can follow it;
+    -- minimized, it stretches to the button to show "Wisp AI - Thinking 4s".
+    local titleAnchor = expanded and "breadcrumb" or mini
     if header.titleAnchor ~= titleAnchor then
         header.titleAnchor = titleAnchor
         header.title:ClearAllPoints()
         header.title:SetPoint("LEFT", header.logo, "RIGHT", 6, 0)
-        header.title:SetPoint("RIGHT", titleAnchor, "LEFT", -8, 0)
+        if not expanded then
+            header.title:SetPoint("RIGHT", mini, "LEFT", -8, 0)
+        end
     end
     if chatPanel._sidebarWidth ~= width then
         chatPanel._sidebarWidth = width
@@ -66,14 +75,46 @@ function ns.UI.SetMinimized(value)
         mini:SetText("+")
     else
         if frame.SetResizeBounds then
-            frame:SetResizeBounds(430, 320, 1000, 900)
+            frame:SetResizeBounds(500, 360, 1100, 900)
         end
-        frame:SetSize(ns.db.expandedWidth or 610, ns.db.expandedHeight or 490)
+        frame:SetSize(ns.db.expandedWidth or 680, ns.db.expandedHeight or 520)
         mini:SetText("-")
         ns.unread = false
     end
     restorePosition(value)
     ns.UI.Refresh()
+end
+
+--- Opens Settings as a page over the conversation panel. `page` is "general",
+--- "memory" or "integrations"; nil closes it. Settings always reopens on its
+--- main page, so navigating away never leaves a subpage stuck on screen.
+function ns.UI.ShowSettings(page)
+    if not frame then
+        return
+    end
+    ns.UI.SettingsPanel.ResetPages()
+    if not page then
+        if settings:IsShown() then
+            settings:Hide()
+            ns.UI.Refresh()
+        end
+        return
+    end
+    if ns.db.minimized then
+        ns.UI.SetMinimized(false)
+    end
+    settings:Show()
+    if page == "memory" then
+        ns.UI.Memory.Show()
+    elseif page == "integrations" then
+        ns.UI.Capabilities.Show()
+    end
+    ns.UI.Refresh()
+end
+
+--- True while Settings covers the conversation panel.
+function ns.UI.SettingsShown()
+    return settings ~= nil and settings:IsShown()
 end
 
 function ns.UI.Refresh(preserveScrollForChat)
@@ -87,6 +128,7 @@ function ns.UI.Refresh(preserveScrollForChat)
     ns.UI.Composer.Refresh(chat)
     layout()
     ns.UI.Sidebar.Refresh()
+    ns.UI.Routines.Layout()
     ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     rendering = false
     if ns.Inline.RefreshInline then
@@ -97,7 +139,7 @@ end
 function ns.UI.BuildUI()
     refreshReferences()
     frame = CreateFrame("Frame", "WispAIWindow", UIParent, "BackdropTemplate")
-    frame:SetSize(ns.db.expandedWidth or 610, ns.db.expandedHeight or 490)
+    frame:SetSize(ns.db.expandedWidth or 680, ns.db.expandedHeight or 520)
     restorePosition(false)
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
@@ -105,10 +147,10 @@ function ns.UI.BuildUI()
     frame:SetFrameStrata("DIALOG")
     frame:SetResizable(true)
     if frame.SetResizeBounds then
-        frame:SetResizeBounds(430, 320, 1000, 900)
+        frame:SetResizeBounds(500, 360, 1100, 900)
     end
-    box(frame, { 0.075, 0.065, 0.05, 0.97 }, 16)
-    header = CreateFrame("Frame", nil, frame)
+    box(frame, COLORS.window, COLORS.line)
+    header = CreateFrame("Frame", "WispAIHeader", frame)
     header:SetPoint("TOPLEFT", 5, -4)
     header:SetPoint("TOPRIGHT", -5, -4)
     header:SetHeight(30)
@@ -123,38 +165,57 @@ function ns.UI.BuildUI()
     end)
     local logo = header:CreateTexture(nil, "ARTWORK")
     header.logo = logo
-    logo:SetSize(24, 24)
-    logo:SetPoint("LEFT", 4, 0)
+    logo:SetSize(20, 20)
+    logo:SetPoint("LEFT", 6, 0)
     logo:SetTexture("Interface\\AddOns\\WispAI\\Textures\\Wisp.tga")
-    header.title = label(header, "Wisp AI", GOLD)
-    header.title:SetPoint("LEFT", logo, "RIGHT", 6, 0)
-    mini = button(header, "-", 25, function()
+    header.title = label(header, "Wisp AI", TEXT, ns.UI.Widgets.FONTS.title)
+    header.title:SetPoint("LEFT", logo, "RIGHT", 8, 0)
+    -- The header is a bar of its own: the sidebar's surface with a firm bottom edge.
+    local bar = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
+    bar:SetPoint("TOPLEFT", 1, -1)
+    bar:SetPoint("TOPRIGHT", -1, -1)
+    bar:SetHeight(36)
+    bar:SetColorTexture(unpack(COLORS.sidebar))
+    local rule = header:CreateTexture(nil, "ARTWORK")
+    rule:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
+    rule:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+    rule:SetHeight(ns.UI.Widgets.OnePixel(rule))
+    rule:SetColorTexture(unpack(COLORS.lineStrong))
+    header.rule = rule
+    mini = button(header, "-", 24, function()
         ns.UI.SetMinimized(not ns.db.minimized)
-    end)
+    end, "ghost")
     mini:SetPoint("RIGHT", -3, 0)
-    gear = CreateFrame("Button", "WispAISettingsButton", header)
-    gear:SetSize(24, 24)
-    gear:SetPoint("RIGHT", mini, "LEFT", -4, 0)
-    gear:SetNormalTexture("Interface\\AddOns\\WispAI\\Textures\\Gear.tga")
-    gear:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    header.mini = mini
+    header.title:SetWordWrap(false)
+    body = CreateFrame("Frame", nil, frame)
+    body:SetPoint("TOPLEFT", 1, -38)
+    body:SetPoint("BOTTOMRIGHT", -1, 1)
+    ns.UI.Sidebar.Build(body)
+    gear = CreateFrame("Button", "WispAISettingsButton", ns.UI.Sidebar.Footer())
+    gear:SetSize(22, 22)
+    gear:SetPoint("RIGHT", -5, 0)
+    gear.icon = gear:CreateTexture(nil, "ARTWORK")
+    gear.icon:SetTexture("Interface\\AddOns\\WispAI\\Textures\\Settings.tga")
+    gear.icon:SetSize(14, 14)
+    gear.icon:SetPoint("CENTER")
+    gear.icon:SetVertexColor(unpack(ns.UI.Widgets.MUTED))
+    local gearHover = gear:CreateTexture(nil, "HIGHLIGHT")
+    gearHover:SetAllPoints()
+    gearHover:SetColorTexture(1, 1, 1, 0.06)
     gear:SetScript("OnClick", function()
-        settings:SetShown(not settings:IsShown())
+        ns.UI.ShowSettings(not settings:IsShown() and "general" or nil)
     end)
     gear:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Settings")
         GameTooltip:Show()
     end)
     gear:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    header.title:SetWordWrap(false)
-    body = CreateFrame("Frame", nil, frame)
-    body:SetPoint("TOPLEFT", 6, -37)
-    body:SetPoint("BOTTOMRIGHT", -6, 5)
-    ns.UI.Sidebar.Build(body)
     chatPanel = CreateFrame("Frame", nil, body)
-    ns.UI.ConversationStatus.Build(chatPanel)
+    ns.UI.ConversationStatus.Build(chatPanel, header)
     ns.UI.Transcript.Build(chatPanel, header)
     ns.UI.Composer.Build(chatPanel, ns.UI.Transcript.SetBottomInset)
     frame:SetScript("OnUpdate", ns.UI.Activity.Tick)
@@ -175,7 +236,8 @@ function ns.UI.BuildUI()
         end
         ns.UI.Refresh()
     end)
-    settings = ns.UI.SettingsPanel.Build(frame, body)
+    ns.UI.Routines.Build(frame, chatPanel)
+    settings = ns.UI.SettingsPanel.Build(frame, chatPanel)
     local itemEvents = CreateFrame("Frame")
     itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
     itemEvents:RegisterEvent("QUEST_LOG_UPDATE")
