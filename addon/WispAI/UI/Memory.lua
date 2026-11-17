@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local COLORS = ns.UI.Widgets.COLORS
 local label, setText, box, button =
     ns.UI.Widgets.Label, ns.UI.Widgets.SetText, ns.UI.Widgets.Box, ns.UI.Widgets.Button
@@ -12,12 +13,12 @@ function ns.UI.Memory.Refresh()
     local memory = ns.memory or { status = "loading" }
     setText(
         memoryStatus,
-        memory.status == "loading" and "Loading memory..."
+        memory.status == "loading" and L["Loading memory..."]
             or (
                 memory.error
                 or (
-                    #(memory.entries or {}) == 0 and "No saved memories yet."
-                    or "Preferences and this character's plans"
+                    #(memory.entries or {}) == 0 and L["No saved memories yet."]
+                    or L["Preferences and this character's plans"]
                 )
             )
     )
@@ -33,11 +34,11 @@ function ns.UI.Memory.Refresh()
             row.text = label(row, "")
             row.text:SetWordWrap(true)
             row.text:SetPoint("TOPLEFT", 12, -26)
-            row.edit = button(row, "Edit", 45, function()
+            row.edit = button(row, L["Edit"], 45, function()
                 StaticPopup_Show("WISPAI_EDIT_MEMORY", nil, nil, row.entry)
             end, "ghost")
             row.edit:SetPoint("TOPRIGHT", -62, -6)
-            row.remove = button(row, "Forget", 54, function()
+            row.remove = button(row, L["Forget"], 54, function()
                 ns.Chat.MemoryAction("remove", row.entry.slot, row.entry.key)
             end, "ghost")
             row.remove:SetPoint("TOPRIGHT", -6, -6)
@@ -47,7 +48,7 @@ function ns.UI.Memory.Refresh()
         row:SetWidth(width)
         row.text:SetWidth(width - 24)
         setText(row.text, entry.text:gsub("|", "||"))
-        setText(row.scope, entry.slot == "preferences" and "Player" or "Character")
+        setText(row.scope, entry.slot == "preferences" and L["Player"] or L["Character"])
         local height = row.text:GetStringHeight() + 38
         row:SetHeight(height)
         row:ClearAllPoints()
@@ -63,9 +64,9 @@ end
 
 function ns.UI.Memory.Build(settings)
     StaticPopupDialogs.WISPAI_EDIT_MEMORY = {
-        text = "Edit saved memory",
-        button1 = "Save",
-        button2 = "Cancel",
+        text = L["Edit saved memory"],
+        button1 = L["Save"],
+        button2 = L["Cancel"],
         hasEditBox = true,
         maxLetters = 1000,
         OnShow = function(self, entry)
@@ -86,7 +87,7 @@ function ns.UI.Memory.Build(settings)
     memoryPanel:SetFrameLevel(settings:GetFrameLevel() + 5)
     box(memoryPanel, COLORS.window, COLORS.window)
     memoryPanel:Hide()
-    ns.UI.SettingsPanel.SubpageHeader(memoryPanel, "Memory")
+    ns.UI.SettingsPanel.SubpageHeader(memoryPanel, L["Memory"])
     local top = ns.UI.SettingsPanel.SUBPAGE_TOP
     memoryStatus = label(memoryPanel, "", MUTED)
     memoryStatus:SetPoint("TOPLEFT", 24, top)

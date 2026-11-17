@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local label, setText, MUTED = ns.UI.Widgets.Label, ns.UI.Widgets.SetText, ns.UI.Widgets.MUTED
 ns.workStarted = ns.workStarted or {}
 local modelControls = {}
@@ -16,11 +17,11 @@ local function defaultEffort(model)
 end
 local function effortLabel(effort)
     if effort == "provider-default" then
-        return "Default"
+        return L["Default"]
     elseif effort == "none" then
-        return "Off"
+        return L["Off"]
     elseif effort == "enabled" then
-        return "On"
+        return L["On"]
     end
     return effort
 end
@@ -59,15 +60,15 @@ function ns.UI.RefreshModelControls()
         local working = chat and chat.status == "working"
         setText(
             controls.model,
-            pending and "Saving..."
+            pending and L["Saving..."]
                 or (
-                    chat and chat.modelError and "Model error"
-                    or (selected and selected.displayName or "Model...")
+                    chat and chat.modelError and L["Model error"]
+                    or (selected and selected.displayName or L["Model..."])
                 )
         )
         setText(
             controls.effort,
-            "Effort: "
+            L["Effort: "]
                 .. effortLabel(selection.effort or (selected and defaultEffort(selected)) or "--")
         )
         controls.model:SetEnabled(ns.connected and not pending and not working)
@@ -107,7 +108,7 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
         control:SetScript("OnClick", click)
         return control
     end
-    controls.model = selector("Model...", 165, function(self)
+    controls.model = selector(L["Model..."], 165, function(self)
         local models = ns.modelCatalog and ns.modelCatalog.models or {}
         if #models == 0 then
             ns.Transport.Send({ type = "model_catalog" })
@@ -115,7 +116,7 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
         end
         if MenuUtil and MenuUtil.CreateContextMenu then
             MenuUtil.CreateContextMenu(self, function(_, root)
-                root:CreateTitle("Model")
+                root:CreateTitle(L["Model"])
                 for _, candidate in ipairs(models) do
                     local option = candidate
                     root:CreateRadio(option.displayName, function()
@@ -133,14 +134,14 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
         end
     end)
     controls.model:SetPoint("LEFT")
-    controls.effort = selector("Effort: --", 110, function(self)
+    controls.effort = selector(L["Effort: --"], 110, function(self)
         local chat = current()
         local model = chat and chat.modelSettings and chat.modelSettings.model
             or ns.modelCatalog.defaultModel
         for _, candidate in ipairs(ns.modelCatalog.models or {}) do
             if candidate.slug == model and MenuUtil and MenuUtil.CreateContextMenu then
                 MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle("Reasoning effort")
+                    root:CreateTitle(L["Reasoning effort"])
                     for _, effort in ipairs(candidate.efforts) do
                         local option = effort
                         root:CreateRadio(effortLabel(option), function()
@@ -165,7 +166,7 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
             GameTooltip:SetText(
                 chat and chat.modelError
                     or (ns.modelCatalog and ns.modelCatalog.error)
-                    or "Applies to the next message in this conversation."
+                    or L["Applies to the next message in this conversation."]
             )
             GameTooltip:Show()
         end)

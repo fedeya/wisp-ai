@@ -9,6 +9,7 @@
 ## OptionalDeps: QuestieDB, Questie, Syndicator, Auctionator
 
 Namespace.lua
+Locale.lua
 Shared\Numbers.lua
 Shared\Text.lua
 Core.lua

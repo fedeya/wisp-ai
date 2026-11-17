@@ -28,6 +28,9 @@ end
 
 function M.addon(name, env)
     setfenv(assert(loadfile("addon/WispAI/Namespace.lua")), env)("WispAI", env.ns)
+    if not env.ns.L then
+        setfenv(assert(loadfile("addon/WispAI/Locale.lua")), env)("WispAI", env.ns)
+    end
     if not env.ns.Shared.Numbers.IsFinite then
         setfenv(assert(loadfile("addon/WispAI/Shared/Numbers.lua")), env)("WispAI", env.ns)
     end

@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local COLORS = ns.UI.Widgets.COLORS
 local label, box, button = ns.UI.Widgets.Label, ns.UI.Widgets.Box, ns.UI.Widgets.Button
 local TEXT = ns.UI.Widgets.TEXT
@@ -206,7 +207,7 @@ function ns.UI.BuildUI()
     end)
     fold:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:SetText(ns.db.sidebar and "Hide sidebar" or "Show sidebar")
+        GameTooltip:SetText(ns.db.sidebar and L["Hide sidebar"] or L["Show sidebar"])
         GameTooltip:Show()
     end)
     fold:SetScript("OnLeave", function()
@@ -255,7 +256,7 @@ function ns.UI.BuildUI()
     end)
     gear:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Settings")
+        GameTooltip:SetText(L["Settings"])
         GameTooltip:Show()
     end)
     gear:SetScript("OnLeave", function()

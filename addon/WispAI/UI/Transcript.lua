@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local COLORS = ns.UI.Widgets.COLORS
 local box, button = ns.UI.Widgets.Box, ns.UI.Widgets.Button
 local transcript, content, scrollBar, newMessages
@@ -122,7 +123,7 @@ function ns.UI.Transcript.Build(chatPanel, header)
             newMessages:Hide()
         end
     end)
-    newMessages = button(chatPanel, "New messages v", 140, function()
+    newMessages = button(chatPanel, L["New messages v"], 140, function()
         scrollBar:SetValue(scrollRange)
         newMessages.pending = false
         newMessages:Hide()

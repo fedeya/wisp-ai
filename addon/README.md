@@ -19,6 +19,12 @@ initialization and shared session state (`ns.db`, `ns.chats`, `ns.active`, trans
 revision and connection state). Cross-subsystem calls use an explicit module API.
 Helpers and widget state stay local to their owning file.
 
+`Locale.lua` loads right after `Namespace.lua` and exposes `ns.L`, the UI string
+table for the client's `GetLocale()`. Keys are the English text, so English needs
+no table and a missing translation shows English; `esES` and `esMX` share the
+Spanish table. Only addon chrome goes through `ns.L`: model output, user text and
+game names stay as they are. Add a locale by adding a table to `Locale.lua`.
+
 | Directory                       | Responsibility                                                     |
 | ------------------------------- | ------------------------------------------------------------------ |
 | `Shared/`                       | Pure cross-subsystem number validation and UTF-8 byte truncation   |

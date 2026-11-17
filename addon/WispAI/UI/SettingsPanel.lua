@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local widgets = ns.UI.Widgets
 local COLORS, FONTS = widgets.COLORS, widgets.FONTS
 local label, box, button = widgets.Label, widgets.Box, widgets.Button
@@ -49,7 +50,7 @@ end
 local BACK_BAND = 40
 ns.UI.SettingsPanel.SUBPAGE_TOP = -98
 function ns.UI.SettingsPanel.SubpageHeader(page, title)
-    local back = widgets.BackLink(page, "Settings", function()
+    local back = widgets.BackLink(page, L["Settings"], function()
         page:Hide()
     end)
     back:SetPoint("TOPLEFT", PAGE_INSET, -10)
@@ -71,10 +72,10 @@ local function buildChatHistory()
     chatSettings:SetFrameLevel(settings:GetFrameLevel() + 5)
     box(chatSettings, COLORS.window, COLORS.window)
     chatSettings:Hide()
-    subpageHeader(chatSettings, "WoW chat history")
+    subpageHeader(chatSettings, L["WoW chat history"])
     local chatHint = label(
         chatSettings,
-        "Up to 200 messages / 30 minutes, until logout or reload. Enabled channels are shared with your AI provider when consulted.",
+        L["Up to 200 messages / 30 minutes, until logout or reload. Enabled channels are shared with your AI provider when consulted."],
         MUTED
     )
     chatHint:SetPoint("TOPLEFT", PAGE_INSET, ns.UI.SettingsPanel.SUBPAGE_TOP)
@@ -110,16 +111,19 @@ local function buildChatHistory()
         end)
     end
     local publicTop = #(ns.ChatHistory.ChatChannels or {}) * ROW_HEIGHT + 16
-    local publicTitle = widgets.Caption(chatContent, "Public / custom channels")
+    local publicTitle = widgets.Caption(chatContent, L["Public / custom channels"])
     publicTitle:SetPoint("TOPLEFT", 0, -publicTop)
-    local publicHint =
-        label(chatContent, "Choose individual channels. Selections follow the channel name.", MUTED)
+    local publicHint = label(
+        chatContent,
+        L["Choose individual channels. Selections follow the channel name."],
+        MUTED
+    )
     publicHint:SetPoint("TOPLEFT", 0, -publicTop - 18)
     publicHint:SetPoint("RIGHT", 0, 0)
     publicHint:SetWordWrap(true)
     local listTop = publicTop + 48
     local publicRows = {}
-    local publicEmpty = label(chatContent, "No public channels joined.", MUTED)
+    local publicEmpty = label(chatContent, L["No public channels joined."], MUTED)
     publicEmpty:SetPoint("TOPLEFT", 0, -listTop - 6)
     function ns.UI.RefreshChatChannelSettings()
         local channels = ns.ChatHistory.PublicChatChannels and ns.ChatHistory.PublicChatChannels()
@@ -157,7 +161,7 @@ local function buildChatHistory()
     end
     chatSettings:SetScript("OnShow", ns.UI.RefreshChatChannelSettings)
     ns.UI.RefreshChatChannelSettings()
-    local clearChat = button(chatSettings, "Clear history", 120, function()
+    local clearChat = button(chatSettings, L["Clear history"], 120, function()
         ns.ChatHistory.ClearChatHistory()
     end)
     clearChat:SetPoint("BOTTOMLEFT", PAGE_INSET, 20)
@@ -190,16 +194,16 @@ function ns.UI.SettingsPanel.Build(frame, panel)
     box(settings, COLORS.window, COLORS.window)
     settings:EnableMouse(true)
     settings:Hide()
-    local title = label(settings, "Settings", TEXT, FONTS.heading)
+    local title = label(settings, L["Settings"], TEXT, FONTS.heading)
     title:SetPoint("TOPLEFT", PAGE_INSET, -20)
     local close = button(settings, "x", 24, function()
         ns.UI.ShowSettings(nil)
     end, "ghost")
     close:SetPoint("TOPRIGHT", -PAGE_INSET + 6, -16)
 
-    local general = widgets.Caption(settings, "General")
+    local general = widgets.Caption(settings, L["General"])
     general:SetPoint("TOPLEFT", PAGE_INSET, -62)
-    switchRow(settings, -76, "Completion sound", ns.db.sound, function(value)
+    switchRow(settings, -76, L["Completion sound"], ns.db.sound, function(value)
         ns.db.sound = value
         if ns.UI.PlayCompletionSound then
             ns.UI.PlayCompletionSound()
@@ -208,7 +212,7 @@ function ns.UI.SettingsPanel.Build(frame, panel)
     switchRow(
         settings,
         -76 - ROW_HEIGHT,
-        "Show tool activity in conversations",
+        L["Show tool activity in conversations"],
         ns.db.showTools,
         function(value)
             ns.db.showTools = value
@@ -216,49 +220,52 @@ function ns.UI.SettingsPanel.Build(frame, panel)
         end
     )
 
-    local inline = widgets.Caption(settings, "Inline chat")
+    local inline = widgets.Caption(settings, L["Inline chat"])
     inline:SetPoint("TOPLEFT", PAGE_INSET, -164)
-    local bindHint =
-        label(settings, "Hover a reference and press your inline key. /wisp ask also works.", MUTED)
+    local bindHint = label(
+        settings,
+        L["Hover a reference and press your inline key. /wisp ask also works."],
+        MUTED
+    )
     bindHint:SetPoint("TOPLEFT", PAGE_INSET, -182)
     bindHint:SetPoint("RIGHT", -150, 0)
     bindHint:SetWordWrap(true)
-    local bind = button(settings, "Bind inline key", 120, function()
+    local bind = button(settings, L["Bind inline key"], 120, function()
         if ns.Inline.BindInline then
             ns.Inline.BindInline()
         end
     end)
     bind:SetPoint("TOPRIGHT", -PAGE_INSET, -178)
 
-    local data = widgets.Caption(settings, "Data")
+    local data = widgets.Caption(settings, L["Data"])
     data:SetPoint("TOPLEFT", PAGE_INSET, -230)
     local chatSettings = buildChatHistory()
     chatHistoryPage = chatSettings
     local links = {
         {
-            "Integrations",
-            "Tools Wisp can use",
+            L["Integrations"],
+            L["Tools Wisp can use"],
             function()
                 ns.UI.Capabilities.Show()
             end,
         },
         {
-            "Memory",
-            "What Wisp remembers",
+            L["Memory"],
+            L["What Wisp remembers"],
             function()
                 ns.UI.Memory.Show()
             end,
         },
         {
-            "WoW chat history",
-            "Channels Wisp can read",
+            L["WoW chat history"],
+            L["Channels Wisp can read"],
             function()
                 chatSettings:Show()
             end,
         },
         {
-            "Saved panels",
-            "Reopen hidden panels",
+            L["Saved panels"],
+            L["Reopen hidden panels"],
             function()
                 if ns.Panels.ShowPanels then
                     ns.Panels.ShowPanels()
