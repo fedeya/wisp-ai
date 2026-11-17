@@ -4,7 +4,7 @@ local ACCENT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
 local STARTER_PROMPT = "What can you do?"
 local SUGGESTIONS = { STARTER_PROMPT, "What should I do next?", "Review my gear" }
-local CHIP_GAP = 8
+local CHIP_GAP, CHIPS_TOP = 8, 62
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 local WAVE = {
     "|cff9aa7ac",
@@ -92,9 +92,43 @@ function ns.UI.Activity.SetLoadingText(row, font, text, active)
     loader:Show()
 end
 
-local function greeting()
-    local hour = tonumber(date and date("%H") or "") or 12
-    return hour < 12 and "Good morning" or (hour < 19 and "Good afternoon" or "Good evening")
+-- New chats open with one of these; %s is the character's name.
+local GREETINGS = {
+    "Where to next, %s?",
+    "Ready for adventure, %s?",
+    "What's the plan, %s?",
+    "Back for more, %s?",
+    "Need a hand, %s?",
+    "What are we hunting today, %s?",
+    "Let's find you some loot, %s",
+    "Any quest giving you trouble, %s?",
+    "The road awaits, %s",
+    "Hearthstone ready, %s?",
+}
+local GREETINGS_BY_HOUR = {
+    night = { "Still up, %s? One more dungeon?", "Late night grind, %s?" },
+    morning = { "Good morning, %s", "Early start, %s?" },
+    afternoon = { "Good afternoon, %s" },
+    evening = { "Good evening, %s", "One more quest, %s?" },
+}
+local greetingFor = {} -- conversation -> the line it opened with
+
+-- Picks a line once per conversation so it does not change on every refresh.
+local function greeting(name, key)
+    if not greetingFor[key] then
+        local hour = tonumber(date and date("%H") or "") or 12
+        local period = hour < 5 and "night"
+            or (hour < 12 and "morning" or (hour < 19 and "afternoon" or "evening"))
+        local pool = {}
+        for _, line in ipairs(GREETINGS) do
+            pool[#pool + 1] = line
+        end
+        for _, line in ipairs(GREETINGS_BY_HOUR[period]) do
+            pool[#pool + 1] = line
+        end
+        greetingFor[key] = pool[math.random(#pool)]
+    end
+    return greetingFor[key]:format(name)
 end
 
 -- "Mage 20 · Elwynn Forest", or nil outside the game.
@@ -142,10 +176,10 @@ local function placeEmptyState(centered)
         for index, chip in ipairs(emptyState.suggestions) do
             chip:ClearAllPoints()
             if row then
-                chip:SetPoint("TOPLEFT", field, "BOTTOM", x, -40)
+                chip:SetPoint("TOPLEFT", field, "BOTTOM", x, -CHIPS_TOP)
                 x = x + chip:GetWidth() + CHIP_GAP
             else
-                chip:SetPoint("TOP", field, "BOTTOM", 0, -40 - (index - 1) * 34)
+                chip:SetPoint("TOP", field, "BOTTOM", 0, -CHIPS_TOP - (index - 1) * 34)
             end
         end
     else
@@ -179,6 +213,10 @@ function ns.UI.Activity.Refresh(chat)
     local needsSetup = waiting and ns.Transport.needsDesktopSetup == true
     local loading = chat and chat.messages == nil
     emptyState:SetShown(empty and not working)
+    if not emptyState:IsShown() and next(greetingFor) then
+        -- The next new chat opens with a fresh line.
+        greetingFor = {}
+    end
     emptyState.loading = not needsSetup and (waiting or loading)
     emptyState.setup:SetShown(needsSetup)
     local ready = empty and not working and not waiting and not loading
@@ -194,7 +232,7 @@ function ns.UI.Activity.Refresh(chat)
     end
     if empty and not working then
         local name = UnitName and UnitName("player") or nil
-        local title = name and (greeting() .. ", " .. name) or "Ask Wisp"
+        local title = name and greeting(name, chat and chat.id or "new") or "Ask Wisp"
         local detail = centered and whereabouts()
             or "Ask about your character, quests, equipment or where to go next."
         if needsSetup then
