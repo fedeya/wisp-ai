@@ -475,8 +475,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
     local sameReply = row.replyView.chatId == chat.id and row.replyView.messageId == message.id
     local display, viewKey = ns.Markdown.ReplyView.Update(row.replyView, chat.id, message)
     -- A finished reply can be copied; the one still being written cannot.
+    local messages = chat.messages or {}
     local copyable = isTextReply(message)
-        and not (chat.status == "working" and message == chat.messages[#chat.messages])
+        and not (chat.status == "working" and message == messages[#messages])
     row.copySource = copyable and message or nil
     if not copyable and row.copy:IsShown() then
         row.copy:Hide()
