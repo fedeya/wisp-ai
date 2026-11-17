@@ -128,6 +128,22 @@ function ns.UI.SettingsShown()
     return settings ~= nil and settings:IsShown()
 end
 
+--- Escape steps back one level: a subpage to its page, a page to the chat.
+--- Returns false when already on the chat, where Escape minimizes instead.
+function ns.UI.GoBack()
+    if ns.UI.SettingsShown() then
+        if not ns.UI.SettingsPanel.CloseSubpage() then
+            ns.UI.ShowSettings(nil)
+        end
+        return true
+    end
+    if ns.UI.Routines.IsShown() then
+        ns.UI.Routines.Back()
+        return true
+    end
+    return false
+end
+
 function ns.UI.Refresh(preserveScrollForChat)
     if not frame or rendering then
         return
@@ -184,9 +200,7 @@ function ns.UI.BuildUI()
     fold.icon:SetSize(15, 15)
     fold.icon:SetPoint("CENTER")
     fold.icon:SetVertexColor(unpack(ns.UI.Widgets.MUTED))
-    local foldHover = fold:CreateTexture(nil, "HIGHLIGHT")
-    foldHover:SetAllPoints()
-    foldHover:SetColorTexture(1, 1, 1, 0.06)
+    ns.UI.Widgets.Hover(fold)
     fold:SetScript("OnClick", function()
         ns.UI.Sidebar.Toggle()
     end)
@@ -235,9 +249,7 @@ function ns.UI.BuildUI()
     gear.icon:SetSize(14, 14)
     gear.icon:SetPoint("CENTER")
     gear.icon:SetVertexColor(unpack(ns.UI.Widgets.MUTED))
-    local gearHover = gear:CreateTexture(nil, "HIGHLIGHT")
-    gearHover:SetAllPoints()
-    gearHover:SetColorTexture(1, 1, 1, 0.06)
+    ns.UI.Widgets.Hover(gear)
     gear:SetScript("OnClick", function()
         ns.UI.ShowSettings(not settings:IsShown() and "general" or nil)
     end)
@@ -291,7 +303,9 @@ function ns.UI.BuildUI()
             self:SetPropagateKeyboardInput(false)
         elseif key == "ESCAPE" and not ns.db.minimized then
             ns.draft:ClearFocus()
-            ns.UI.SetMinimized(true)
+            if not ns.UI.GoBack() then
+                ns.UI.SetMinimized(true)
+            end
             self:SetPropagateKeyboardInput(false)
         else
             self:SetPropagateKeyboardInput(true)

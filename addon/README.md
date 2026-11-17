@@ -48,18 +48,22 @@ behavior and refresh entry point. Its components keep widget and cache state loc
 
 | Module                      | Responsibility                                                     |
 | --------------------------- | ------------------------------------------------------------------ |
+| `UI/Widgets.lua`            | Palette, fonts, borders, buttons, toggles, rows and hover washes   |
 | `UI/Sidebar.lua`            | Chat/routine navigation, ordering, row reuse and deletion dialog   |
 | `UI/Transcript.lua`         | Message rows, per-chat scroll position and new-message navigation  |
-| `UI/Composer.lua`           | Multiline input, cursor scrolling, send/stop and responsive layout |
+| `UI/Composer.lua`           | Multiline input, send/stop, and centered or docked placement       |
 | `UI/Activity.lua`           | Empty/loading states, progress row and header activity indicators  |
 | `UI/ConversationStatus.lua` | Conversation title, connection state and context usage             |
 | `UI/SettingsPanel.lua`      | Addon preferences and WoW chat-channel settings                    |
+| `UI/Routines.lua`           | Routine list, routine pages with their runs, and templates         |
 
 The composer reports its bottom inset to the transcript through a callback wired
 by the window. `UI/ModelControls.lua` owns model/effort controls without changing
 composer or transcript geometry. Activity ticks update indicators without
-rerendering messages. The manifest loads these components before the window;
-the offline UI fixtures follow the same dependency order.
+rerendering messages. Escape goes through `ns.UI.GoBack`, which closes a
+subpage or page before the window minimizes. The manifest loads these
+components before the window; the offline UI fixtures follow the same
+dependency order.
 
 `Integrations/Integrations.lua` owns provider metadata, readiness aggregation and
 protected inspection dispatch. Each provider owns its readiness checks and reads

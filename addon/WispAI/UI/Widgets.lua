@@ -202,15 +202,23 @@ local function dimWhenDisabled(b)
 end
 --- Flat button. `variant` is "secondary" (default), "primary" or "ghost"; `name` is optional.
 --- Hover uses the HIGHLIGHT layer, so callers may still set their own OnEnter/OnLeave.
+--- The white wash a control shows under the pointer. `alpha` defaults to the
+--- control strength (0.06); rows and cards use 0.04. `inset` keeps a border clear.
+local function hover(frame, alpha, inset)
+    inset = inset or 0
+    local wash = frame:CreateTexture(nil, "HIGHLIGHT")
+    wash:SetPoint("TOPLEFT", inset, -inset)
+    wash:SetPoint("BOTTOMRIGHT", -inset, inset)
+    wash:SetColorTexture(1, 1, 1, alpha or 0.06)
+    return wash
+end
+
 local function button(parent, text, width, click, variant, name)
     local b = CreateFrame("Button", name, parent, "BackdropTemplate")
     local style = BUTTON_STYLES[variant] or BUTTON_STYLES.secondary
     b:SetSize(width, 24)
     box(b, style.bg, style.border)
-    local hover = b:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetPoint("TOPLEFT", 1, -1)
-    hover:SetPoint("BOTTOMRIGHT", -1, 1)
-    hover:SetColorTexture(1, 1, 1, variant == "primary" and 0.12 or 0.06)
+    hover(b, variant == "primary" and 0.12 or 0.06, 1)
     local font = b:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     if FONTS.button then
         font:SetFontObject(FONTS.button)
@@ -352,9 +360,7 @@ local function navItem(parent, text, height, click, icon)
     row.bar:SetPoint("BOTTOMLEFT")
     row.bar:SetWidth(2)
     row.bar:SetColorTexture(unpack(ACCENT))
-    local hover = row:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetAllPoints()
-    hover:SetColorTexture(1, 1, 1, 0.04)
+    hover(row, 0.04)
     row.label = label(row, text, SECONDARY)
     if icon then
         row.icon = row:CreateTexture(nil, "ARTWORK")
@@ -479,6 +485,7 @@ ns.UI.Widgets = {
     SetText = setText,
     Box = box,
     Button = button,
+    Hover = hover,
     Caption = caption,
     BackLink = backLink,
     Toggle = toggle,

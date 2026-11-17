@@ -103,10 +103,6 @@ function ns.UI.Composer.SetCentered(value)
     placeField()
 end
 
-function ns.UI.Composer.IsCentered()
-    return centered
-end
-
 --- The rounded field, for laying out the new-chat greeting around it.
 function ns.UI.Composer.Field()
     return inputBox
@@ -261,7 +257,9 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     end)
     ns.draft:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
-        ns.UI.SetMinimized(true)
+        if not ns.UI.GoBack() then
+            ns.UI.SetMinimized(true)
+        end
     end)
     ns.draft:SetScript("OnEditFocusGained", function()
         frameShape.SetColors(COLORS.raised, COLORS.accentLine)

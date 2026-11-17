@@ -170,12 +170,18 @@ local function setRoutineEnabled(routine, enabled)
     ns.UI.Routines.Refresh()
 end
 
-local function editRoutine(routine)
+-- Routines are created and changed by talking to Wisp: open a new chat with
+-- the request started for the player to finish.
+local function startChat(prompt)
     ns.Chat.StartNew()
     if ns.draft then
-        ns.draft:SetText('Change the routine "' .. routine.title .. '" so that ')
+        ns.draft:SetText(prompt)
         ns.draft:SetFocus()
     end
+end
+
+local function editRoutine(routine)
+    startChat('Change the routine "' .. routine.title .. '" so that ')
 end
 
 local function deleteRoutine(routine)
@@ -230,22 +236,26 @@ local function makeView(withBack)
     return frame, scroll, content
 end
 
-local function makeCard(parent)
+-- A clickable card with a title over a one-line detail; `right` is the space
+-- kept clear for controls on its right edge.
+local function cardButton(parent, right)
     local card = CreateFrame("Button", nil, parent, "BackdropTemplate")
     card:SetHeight(CARD_HEIGHT)
     box(card, COLORS.raised, COLORS.line)
-    local hover = card:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetPoint("TOPLEFT", 1, -1)
-    hover:SetPoint("BOTTOMRIGHT", -1, 1)
-    hover:SetColorTexture(1, 1, 1, 0.04)
+    widgets.Hover(card, 0.04, 1)
     card.title = label(card, "", TEXT, FONTS.strong)
     card.title:SetPoint("TOPLEFT", 14, -12)
-    card.title:SetPoint("RIGHT", -76, 0)
+    card.title:SetPoint("RIGHT", -right, 0)
     card.title:SetWordWrap(false)
     card.detail = label(card, "", MUTED, FONTS.small)
     card.detail:SetPoint("TOPLEFT", 14, -33)
-    card.detail:SetPoint("RIGHT", -76, 0)
+    card.detail:SetPoint("RIGHT", -right, 0)
     card.detail:SetWordWrap(false)
+    return card
+end
+
+local function makeCard(parent)
+    local card = cardButton(parent, 76)
     card.chevron = card:CreateTexture(nil, "ARTWORK")
     card.chevron:SetTexture(widgets.TEXTURES .. "Back.tga")
     card.chevron:SetTexCoord(1, 0, 0, 1)
@@ -474,6 +484,15 @@ function ns.UI.Routines.ShowTemplates()
     open("new")
 end
 
+--- Steps back: a routine or the templates to the list, the list to the chat.
+function ns.UI.Routines.Back()
+    if view ~= "list" then
+        ns.UI.Routines.Show()
+    else
+        ns.UI.Routines.Hide()
+    end
+end
+
 function ns.UI.Routines.Hide()
     ns.routinesPage = false
     if ns.sidebarTab == "routines" then
@@ -618,37 +637,20 @@ local function buildTemplates()
     intro:SetPoint("TOPLEFT", 0, -28)
     intro:SetPoint("RIGHT", 0, 0)
     intro:SetWordWrap(true)
-    local function startWith(prompt)
-        ns.Chat.StartNew()
-        if ns.draft then
-            ns.draft:SetText(prompt)
-            ns.draft:SetFocus()
-        end
-    end
     local y = 64
     for index, template in ipairs(TEMPLATES) do
-        local card = CreateFrame("Button", nil, content, "BackdropTemplate")
-        card:SetHeight(CARD_HEIGHT)
+        local card = cardButton(content, 14)
         card:SetPoint("TOPLEFT", 0, -y)
-        box(card, COLORS.raised, COLORS.line)
-        local hover = card:CreateTexture(nil, "HIGHLIGHT")
-        hover:SetPoint("TOPLEFT", 1, -1)
-        hover:SetPoint("BOTTOMRIGHT", -1, 1)
-        hover:SetColorTexture(1, 1, 1, 0.04)
-        local title = label(card, template.title, TEXT, FONTS.strong)
-        title:SetPoint("TOPLEFT", 14, -12)
-        local prompt = label(card, template.prompt, MUTED, FONTS.small)
-        prompt:SetPoint("TOPLEFT", 14, -33)
-        prompt:SetPoint("RIGHT", -14, 0)
-        prompt:SetWordWrap(false)
+        setText(card.title, template.title)
+        setText(card.detail, template.prompt)
         card:SetScript("OnClick", function()
-            startWith("Create a routine: " .. template.prompt)
+            startChat("Create a routine: " .. template.prompt)
         end)
         templates.cards[index] = card
         y = y + CARD_HEIGHT + CARD_GAP
     end
     local own = button(content, "Write your own", 120, function()
-        startWith(WRITE_YOUR_OWN)
+        startChat(WRITE_YOUR_OWN)
     end)
     own:SetPoint("TOPLEFT", 0, -y - 8)
     content:SetHeight(y + 48)

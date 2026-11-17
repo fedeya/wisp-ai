@@ -99,6 +99,9 @@ function ns.UI.Memory.Build(settings)
     memoryContent:SetSize(400, 1)
     memoryPanel:SetScript("OnSizeChanged", ns.UI.Memory.Refresh)
 end
+function ns.UI.Memory.IsShown()
+    return memoryPanel ~= nil and memoryPanel:IsShown()
+end
 function ns.UI.Memory.Hide()
     if memoryPanel then
         memoryPanel:Hide()

@@ -164,6 +164,15 @@ local function buildChatHistory()
     return chatSettings
 end
 
+--- Closes the open subpage, if any; returns whether one was open.
+function ns.UI.SettingsPanel.CloseSubpage()
+    local open = (chatHistoryPage and chatHistoryPage:IsShown())
+        or ns.UI.Memory.IsShown()
+        or ns.UI.Capabilities.IsShown()
+    ns.UI.SettingsPanel.ResetPages()
+    return open == true
+end
+
 -- Returns Settings to its main page by closing any open subpage.
 function ns.UI.SettingsPanel.ResetPages()
     if chatHistoryPage then

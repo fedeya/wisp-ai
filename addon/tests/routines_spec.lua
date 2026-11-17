@@ -193,4 +193,8 @@ it("the Routines page lists routines and their runs, apart from ordinary chats",
     StaticPopupDialogs.WISPAI_DELETE_ROUTINE.OnAccept(nil, "bags")
     assert(UI_TEST.sent.data.operation == "remove" and UI_TEST.sent.data.id == "bags")
     assert(bags:IsVisible(), "deleting returns to the routine list")
+    ns.UI.Routines.ShowRoutine("mage")
+    assert(ns.UI.GoBack() and bags:IsVisible(), "Escape steps back from a routine to the list")
+    assert(ns.UI.GoBack() and not page:IsShown(), "and from the list to the chat")
+    assert(not ns.UI.GoBack(), "on the chat Escape minimizes instead")
 end)
