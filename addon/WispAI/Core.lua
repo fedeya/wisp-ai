@@ -19,6 +19,48 @@ ns.connected, ns.rev = false, 0
 function ns.Core.Log(text)
     DEFAULT_CHAT_FRAME:AddMessage("|cff77dbc6Wisp:|r " .. text)
 end
+local reloadNoticeShown = false
+local function versionParts(version)
+    local major, minor, patch = tostring(version or ""):match("^(%d+)%.(%d+)%.(%d+)$")
+    if major then
+        return { tonumber(major), tonumber(minor), tonumber(patch) }
+    end
+end
+-- True when Desktop installed a newer addon than the one this UI session loaded.
+local function reloadNeeded()
+    local expected = ns.expectedAddonVersion
+    if
+        type(expected) ~= "string"
+        or type(ns.addonVersion) ~= "string"
+        or ns.addonVersion == "unknown"
+    then
+        return false
+    end
+    local loaded, installed = versionParts(ns.addonVersion), versionParts(expected)
+    if not loaded or not installed then
+        return expected ~= ns.addonVersion
+    end
+    for index = 1, 3 do
+        if installed[index] ~= loaded[index] then
+            return installed[index] > loaded[index]
+        end
+    end
+    return false
+end
+-- Prints the /reload hint at most once per UI session; /reload resets it.
+function ns.Core.NotifyAddonUpdate()
+    if reloadNoticeShown or not reloadNeeded() then
+        return
+    end
+    reloadNoticeShown = true
+    ns.Core.Log(
+        "Wisp "
+            .. ns.expectedAddonVersion
+            .. " is installed (loaded "
+            .. ns.addonVersion
+            .. "). Type /reload to load the new version."
+    )
+end
 function WispAI_Receive(json)
     local ok, data = pcall(C_EncodingUtil.DeserializeJSON, json)
     if ok then
