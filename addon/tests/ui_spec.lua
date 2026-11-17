@@ -481,7 +481,7 @@ it(
             for _, widget in ipairs(UI_TEST.widgets) do
                 if
                     widget.parent == fold.parent
-                    and (widget:GetText() == "+  New chat" or widget:GetText() == "Routines")
+                    and (widget:GetText() == "New chat" or widget:GetText() == "Routines")
                 then
                     tabs[#tabs + 1] = widget
                 end
@@ -981,8 +981,8 @@ it(
         )
         local bar = UI_TEST.frames.WispAITranscriptScrollBar
         local _, _, _, _, bottom = bar:GetPoint()
-        -- The transcript ends 8 above the composer (96 tall, 124 narrow, 14 from the bottom).
-        assert(bottom == 118 or bottom == 146, "there must be no additional reserved progress gap")
+        -- The transcript ends 8 above the composer (104 tall, 136 narrow, 14 from the bottom).
+        assert(bottom == 126 or bottom == 158, "there must be no additional reserved progress gap")
         table.insert(ns.chats[1].messages, { id = "next", role = "user", text = "What next?" })
         ns.chats[1].status = "working"
         ns.UI.Refresh()

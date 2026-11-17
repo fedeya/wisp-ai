@@ -272,8 +272,12 @@ local function setSelected(row, selected)
     row.fill:SetShown(selected)
     row.bar:SetShown(selected)
     row.label:SetTextColor(unpack(selected and TEXT or SECONDARY))
+    if row.icon then
+        row.icon:SetVertexColor(unpack(selected and TEXT or SECONDARY))
+    end
 end
-local function navItem(parent, text, height, click)
+--- `icon`, when given, is a texture path drawn before the label.
+local function navItem(parent, text, height, click, icon)
     local row = CreateFrame("Button", nil, parent)
     row:SetHeight(height or 26)
     row.fill = row:CreateTexture(nil, "BACKGROUND")
@@ -288,13 +292,94 @@ local function navItem(parent, text, height, click)
     hover:SetAllPoints()
     hover:SetColorTexture(1, 1, 1, 0.04)
     row.label = label(row, text, SECONDARY)
-    row.label:SetPoint("LEFT", 10, 0)
+    if icon then
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetTexture(icon)
+        row.icon:SetSize(14, 14)
+        row.icon:SetPoint("LEFT", 10, 0)
+    end
+    row.label:SetPoint("LEFT", icon and 32 or 10, 0)
     row.label:SetPoint("RIGHT", -10, 0)
     row.label:SetWordWrap(false)
     row:SetScript("OnClick", click)
     row._wispSelected = true
     setSelected(row, false)
     return row
+end
+
+--- A box with rounded corners, built from pieces since frames have no corner
+--- radius: three fill strips and four corner discs, a one-pixel edge between
+--- four corner arcs. Returns a handle whose SetColors(bg, border) repaints it.
+local TEXTURES = "Interface\\AddOns\\WispAI\\Textures\\"
+local CORNERS = {
+    TOPLEFT = { 0, 1, 0, 1 },
+    TOPRIGHT = { 1, 0, 0, 1 },
+    BOTTOMLEFT = { 0, 1, 1, 0 },
+    BOTTOMRIGHT = { 1, 0, 1, 0 },
+}
+local function roundedBox(frame, radius, bg, border)
+    local shape = { fills = {}, fillCorners = {}, edges = {}, edgeCorners = {} }
+    local function strip(list, layer)
+        local t = frame:CreateTexture(nil, layer)
+        list[#list + 1] = t
+        return t
+    end
+    local center = strip(shape.fills, "BACKGROUND")
+    center:SetPoint("TOPLEFT", radius, 0)
+    center:SetPoint("BOTTOMRIGHT", -radius, 0)
+    local left = strip(shape.fills, "BACKGROUND")
+    left:SetPoint("TOPLEFT", 0, -radius)
+    left:SetPoint("BOTTOMLEFT", 0, radius)
+    left:SetWidth(radius)
+    local right = strip(shape.fills, "BACKGROUND")
+    right:SetPoint("TOPRIGHT", 0, -radius)
+    right:SetPoint("BOTTOMRIGHT", 0, radius)
+    right:SetWidth(radius)
+    for corner, coords in pairs(CORNERS) do
+        local fill = strip(shape.fillCorners, "BACKGROUND")
+        fill:SetTexture(TEXTURES .. "CornerFill.tga")
+        fill:SetTexCoord(unpack(coords))
+        fill:SetSize(radius, radius)
+        fill:SetPoint(corner)
+        local arc = strip(shape.edgeCorners, "BORDER")
+        arc:SetTexture(TEXTURES .. "CornerEdge.tga")
+        arc:SetTexCoord(unpack(coords))
+        arc:SetSize(radius, radius)
+        arc:SetPoint(corner)
+    end
+    local pixel = onePixel(frame)
+    local top = strip(shape.edges, "BORDER")
+    top:SetPoint("TOPLEFT", radius, 0)
+    top:SetPoint("TOPRIGHT", -radius, 0)
+    top:SetHeight(pixel)
+    local bottom = strip(shape.edges, "BORDER")
+    bottom:SetPoint("BOTTOMLEFT", radius, 0)
+    bottom:SetPoint("BOTTOMRIGHT", -radius, 0)
+    bottom:SetHeight(pixel)
+    local leftEdge = strip(shape.edges, "BORDER")
+    leftEdge:SetPoint("TOPLEFT", 0, -radius)
+    leftEdge:SetPoint("BOTTOMLEFT", 0, radius)
+    leftEdge:SetWidth(pixel)
+    local rightEdge = strip(shape.edges, "BORDER")
+    rightEdge:SetPoint("TOPRIGHT", 0, -radius)
+    rightEdge:SetPoint("BOTTOMRIGHT", 0, radius)
+    rightEdge:SetWidth(pixel)
+    function shape.SetColors(fill, edge)
+        for _, t in ipairs(shape.fills) do
+            t:SetColorTexture(unpack(fill))
+        end
+        for _, t in ipairs(shape.fillCorners) do
+            t:SetVertexColor(unpack(fill))
+        end
+        for _, t in ipairs(shape.edges) do
+            t:SetColorTexture(unpack(edge))
+        end
+        for _, t in ipairs(shape.edgeCorners) do
+            t:SetVertexColor(unpack(edge))
+        end
+    end
+    shape.SetColors(bg, border or COLORS.line)
+    return shape
 end
 
 local function showCopyUrl(url)
@@ -328,6 +413,8 @@ ns.UI.Widgets = {
     ScrollArea = scrollArea,
     Dot = dot,
     NavItem = navItem,
+    RoundedBox = roundedBox,
+    TEXTURES = TEXTURES,
     SetSelected = setSelected,
     ChatFont = chatFont,
     SoftShadow = softShadow,

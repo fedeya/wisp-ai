@@ -1,15 +1,17 @@
 local _, ns = ...
 local widgets = ns.UI.Widgets
 local COLORS = widgets.COLORS
-local box = widgets.Box
-local TEXTURES = "Interface\\AddOns\\WispAI\\Textures\\"
+local TEXTURES = widgets.TEXTURES
 local SEND_ICON, STOP_ICON = TEXTURES .. "Send.tga", TEXTURES .. "Stop.tga"
--- The composer is a text area over a toolbar: model choices on the left, the
--- context meter and a square send button on the right. Narrow, the meter and
--- send move up a row so the model choices keep their width.
-local MARGIN, PAD, TOOLBAR, SEND_SIZE = 14, 14, 40, 28
-local WIDE_HEIGHT, NARROW_HEIGHT = 96, 124
-local inputBox, inputScroll, send, placeholder, onLayout
+local CIRCLE = TEXTURES .. "Circle.tga"
+local INK = { 0.039, 0.078, 0.071 } -- dark ink on the accent
+-- The composer follows the chat apps' shape: a rounded field with the text on
+-- top and a toolbar below, model choices on the left, the context meter and a
+-- round send button on the right. Narrow, the meter and send move up a row so
+-- the model choices keep their width.
+local MARGIN, PAD, RADIUS, TOOLBAR, SEND_SIZE = 14, 16, 14, 44, 30
+local WIDE_HEIGHT, NARROW_HEIGHT = 104, 136
+local inputBox, frameShape, inputScroll, send, placeholder, onLayout
 local narrow
 
 local function layout()
@@ -17,48 +19,61 @@ local function layout()
     if narrow ~= nextNarrow then
         narrow = nextNarrow
         local height = narrow and NARROW_HEIGHT or WIDE_HEIGHT
-        local textBottom = narrow and TOOLBAR + 28 or TOOLBAR
+        local textBottom = narrow and TOOLBAR + 32 or TOOLBAR
         inputBox:SetHeight(height)
         inputScroll:SetPoint("BOTTOMRIGHT", -PAD, textBottom)
         send:ClearAllPoints()
-        send:SetPoint("BOTTOMRIGHT", -8, narrow and 36 or 6)
+        send:SetPoint("BOTTOMRIGHT", -9, narrow and 40 or 8)
         onLayout(height + MARGIN + 8)
     end
 end
 
-local function refreshPlaceholder()
+-- Send reads as ready only with something to send; while Wisp replies it is Stop.
+local function paintSend()
+    local working = send.working
+    local ready = working or ns.draft:GetText():find("%S") ~= nil
+    if send.ready == ready and send.paintedWorking == working then
+        return
+    end
+    send.ready, send.paintedWorking = ready, working
+    send.icon:SetTexture(working and STOP_ICON or SEND_ICON)
+    if ready then
+        send.circle:SetVertexColor(COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1)
+        send.icon:SetVertexColor(unpack(INK))
+    else
+        send.circle:SetVertexColor(1, 1, 1, 0.10)
+        send.icon:SetVertexColor(unpack(COLORS.muted))
+    end
+end
+
+local function refreshDraft()
     placeholder:SetShown(ns.draft:GetText() == "")
+    paintSend()
 end
 
 function ns.UI.Composer.Refresh(chat)
     ns.UI.RefreshModelControls()
     layout()
     send:SetEnabled(not ns.Transport.needsDesktopSetup)
-    local working = chat and chat.status == "working"
-    if send.working ~= working then
-        send.working = working
-        send.icon:SetTexture(working and STOP_ICON or SEND_ICON)
-    end
+    send.working = chat and chat.status == "working" or false
+    paintSend()
 end
 
---- Square accent button with an icon: send, or stop while Wisp is replying.
+--- Round button with an icon: send, or stop while Wisp is replying.
 local function makeSend(parent, click)
-    local b = CreateFrame("Button", "WispAISendButton", parent, "BackdropTemplate")
+    local b = CreateFrame("Button", "WispAISendButton", parent)
     b:SetSize(SEND_SIZE, SEND_SIZE)
-    box(b, { COLORS.accent[1], COLORS.accent[2], COLORS.accent[3], 1 }, {
-        COLORS.accent[1],
-        COLORS.accent[2],
-        COLORS.accent[3],
-        1,
-    })
+    b.circle = b:CreateTexture(nil, "BACKGROUND")
+    b.circle:SetAllPoints()
+    b.circle:SetTexture(CIRCLE)
     b.icon = b:CreateTexture(nil, "ARTWORK")
     b.icon:SetSize(14, 14)
     b.icon:SetPoint("CENTER")
     b.icon:SetTexture(SEND_ICON)
-    b.icon:SetVertexColor(0.039, 0.078, 0.071)
     local hover = b:CreateTexture(nil, "HIGHLIGHT")
     hover:SetAllPoints()
-    hover:SetColorTexture(1, 1, 1, 0.15)
+    hover:SetTexture(CIRCLE)
+    hover:SetVertexColor(1, 1, 1, 0.15)
     b:SetScript("OnClick", click)
     b:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
@@ -79,13 +94,13 @@ end
 -- onHeightChanged receives the transcript's bottom inset in pixels.
 function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     onLayout = onHeightChanged
-    inputBox = CreateFrame("Frame", nil, chatPanel, "BackdropTemplate")
+    inputBox = CreateFrame("Frame", nil, chatPanel)
     inputBox:SetPoint("BOTTOMLEFT", MARGIN, MARGIN)
     inputBox:SetPoint("BOTTOMRIGHT", -MARGIN, MARGIN)
     inputBox:SetHeight(WIDE_HEIGHT)
-    box(inputBox, COLORS.raised, COLORS.lineStrong)
+    frameShape = widgets.RoundedBox(inputBox, RADIUS, COLORS.raised, COLORS.lineStrong)
     inputScroll = CreateFrame("ScrollFrame", "WispAIInputScroll", inputBox)
-    inputScroll:SetPoint("TOPLEFT", PAD, -12)
+    inputScroll:SetPoint("TOPLEFT", PAD, -14)
     inputScroll:SetPoint("BOTTOMRIGHT", -PAD, TOOLBAR)
     inputScroll:SetClipsChildren(true)
     placeholder = widgets.Label(inputBox, "Ask Wisp anything", COLORS.muted)
@@ -105,7 +120,7 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     inputBar:SetPoint("BOTTOMLEFT", inputScroll, "BOTTOMRIGHT", 1, 0)
     inputBar:SetWidth(8)
     inputBar:SetFrameLevel(inputScroll:GetFrameLevel() + 1)
-    box(inputBar, COLORS.window, COLORS.line)
+    widgets.Box(inputBar, { 0, 0, 0, 0 }, { 0, 0, 0, 0 })
     inputBar:SetMinMaxValues(0, 0)
     inputBar:SetValueStep(1)
     if inputBar.SetObeyStepOnDrag then
@@ -143,7 +158,7 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
     ns.draft:SetScript("OnTextChanged", function(self)
         inputScroll:UpdateScrollChildRect()
         scrollInput(self:GetText() == "" and 0 or inputScroll:GetVerticalScroll())
-        refreshPlaceholder()
+        refreshDraft()
     end)
     inputScroll:SetScript("OnSizeChanged", function(_, width)
         ns.draft:SetWidth(width)
@@ -181,12 +196,12 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
         end
     end)
     ns.draft:SetScript("OnEditFocusGained", function()
-        inputBox:SetBackdropBorderColor(unpack(COLORS.accentLine))
+        frameShape.SetColors(COLORS.raised, COLORS.accentLine)
     end)
     ns.draft:SetScript("OnEditFocusLost", function()
-        inputBox:SetBackdropBorderColor(unpack(COLORS.lineStrong))
+        frameShape.SetColors(COLORS.raised, COLORS.lineStrong)
     end)
-    send:SetPoint("BOTTOMRIGHT", -8, 6)
+    send:SetPoint("BOTTOMRIGHT", -9, 8)
     local meter = ns.UI.ConversationStatus.ContextMeter()
     if meter then
         meter:SetParent(inputBox)
@@ -203,7 +218,7 @@ function ns.UI.Composer.Build(chatPanel, onHeightChanged)
             return ns.Chat.Current()
         end
     )
-    modelPicker:SetPoint("BOTTOMLEFT", 8, 9)
+    modelPicker:SetPoint("BOTTOMLEFT", 10, 12)
     if ChatFrameUtil and ChatFrameUtil.InsertLink then
         hooksecurefunc(ChatFrameUtil, "InsertLink", function(link)
             if ns.draft:HasFocus() then

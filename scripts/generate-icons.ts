@@ -9,7 +9,8 @@ type Point = [number, number];
 type Shape =
   | { kind: 'line'; from: Point; to: Point; width: number }
   | { kind: 'ring'; center: Point; radius: number; width: number }
-  | { kind: 'rect'; from: Point; to: Point };
+  | { kind: 'rect'; from: Point; to: Point }
+  | { kind: 'disc'; center: Point; radius: number };
 
 function distanceToSegment([px, py]: Point, [ax, ay]: Point, [bx, by]: Point) {
   const dx = bx - ax;
@@ -27,6 +28,8 @@ function coveredBy([x, y]: Point, shape: Shape) {
         Math.abs(Math.hypot(x - shape.center[0], y - shape.center[1]) - shape.radius) <=
         shape.width / 2
       );
+    case 'disc':
+      return Math.hypot(x - shape.center[0], y - shape.center[1]) <= shape.radius;
     case 'rect':
       return x >= shape.from[0] && x <= shape.to[0] && y >= shape.from[1] && y <= shape.to[1];
   }
@@ -93,8 +96,41 @@ const send: Shape[] = [
 // Stop: a solid square.
 const stop: Shape[] = [{ kind: 'rect', from: [19, 19], to: [45, 45] }];
 
+// New chat: a plus.
+const plus: Shape[] = [
+  { kind: 'line', from: [32, 14], to: [32, 50], width: 5 },
+  { kind: 'line', from: [14, 32], to: [50, 32], width: 5 },
+];
+
+// Routines: a clock.
+const clock: Shape[] = [
+  { kind: 'ring', center: [32, 32], radius: 21, width: 4.5 },
+  { kind: 'line', from: [32, 32], to: [32, 19], width: 4.5 },
+  { kind: 'line', from: [32, 32], to: [41, 38], width: 4.5 },
+];
+
+// Menus: a downward chevron.
+const chevronDown: Shape[] = [
+  { kind: 'line', from: [20, 26], to: [32, 38], width: 5 },
+  { kind: 'line', from: [32, 38], to: [44, 26], width: 5 },
+];
+
+// Round controls: a filled circle.
+const circle: Shape[] = [{ kind: 'disc', center: [32, 32], radius: 31.5 }];
+
+// Rounded boxes: one top-left corner, filled and as an outline. The addon
+// mirrors them with texture coordinates for the other three corners.
+const cornerFill: Shape[] = [{ kind: 'disc', center: [64, 64], radius: 64 }];
+const cornerEdge: Shape[] = [{ kind: 'ring', center: [64, 64], radius: 62, width: 4 }];
+
 mkdirSync('addon/WispAI/Textures', { recursive: true });
 writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
 writeFileSync('addon/WispAI/Textures/Back.tga', render(back));
 writeFileSync('addon/WispAI/Textures/Send.tga', render(send));
 writeFileSync('addon/WispAI/Textures/Stop.tga', render(stop));
+writeFileSync('addon/WispAI/Textures/Plus.tga', render(plus));
+writeFileSync('addon/WispAI/Textures/Clock.tga', render(clock));
+writeFileSync('addon/WispAI/Textures/ChevronDown.tga', render(chevronDown));
+writeFileSync('addon/WispAI/Textures/Circle.tga', render(circle));
+writeFileSync('addon/WispAI/Textures/CornerFill.tga', render(cornerFill));
+writeFileSync('addon/WispAI/Textures/CornerEdge.tga', render(cornerEdge));

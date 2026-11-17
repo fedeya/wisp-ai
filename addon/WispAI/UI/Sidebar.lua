@@ -197,8 +197,8 @@ function ns.UI.Sidebar.Footer()
     return footer
 end
 
-local function navItem(text, click)
-    local item = widgets.NavItem(sidebar, text, NAV_ROW - 2, click)
+local function navItem(text, click, icon)
+    local item = widgets.NavItem(sidebar, text, NAV_ROW - 2, click, widgets.TEXTURES .. icon)
     item:SetFontString(item.label)
     item:SetText(text)
     return item
@@ -236,14 +236,15 @@ function ns.UI.Sidebar.Build(body)
     fold:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
-    local newChat = navItem("+  New chat", function()
+    local newChat = navItem("New chat", function()
         ns.sidebarTab, ns.routinesPage = "chats", false
         ns.Chat.NewChat()
-    end)
+    end, "Plus.tga")
     newChat.label:SetTextColor(unpack(TEXT))
+    newChat.icon:SetVertexColor(unpack(TEXT))
     routinesTab = navItem("Routines", function()
         ns.UI.Routines.Show()
-    end)
+    end, "Clock.tga")
     -- Memory, integrations and saved panels are settings; they live under Settings > Data.
     -- Recents is the way back to a conversation, as in Claude: no separate Chats entry.
     nav = { newChat, routinesTab }
