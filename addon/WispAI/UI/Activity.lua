@@ -230,11 +230,7 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     replyGlow = CreateFrame("Frame", "WispAIReplyGlow", header, "BackdropTemplate")
     replyGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
     replyGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    replyGlow:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = ns.UI.Widgets.OnePixel(replyGlow),
-    })
-    replyGlow:SetBackdropBorderColor(unpack(ACCENT))
+    ns.UI.Widgets.Box(replyGlow, { 0, 0, 0, 0 }, ACCENT)
     replyGlow:EnableMouse(false)
     replyGlow:Hide()
     emptyState = CreateFrame("Frame", "WispAIChatPlaceholder", chatPanel)

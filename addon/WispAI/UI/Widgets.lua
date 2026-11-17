@@ -133,9 +133,55 @@ local function onePixel(region)
     end
     return units / height
 end
---- Paints a flat surface with a one-pixel hairline. `frame` must support backdrops.
+--- Paints a flat surface with a one-pixel hairline, as the Polestar addon draws
+--- its borders: a fill and four edge textures, each edge exactly one physical
+--- pixel and laid inside the frame. Backdrops build edges from tiled slices
+--- that can collapse to nothing at a fractional position, so borders blinked
+--- in and out. The frame gets its own SetBackdropColor/SetBackdropBorderColor
+--- that repaint these textures, so callers can recolor it as before.
 local function box(frame, bg, border)
-    frame:SetBackdrop({ bgFile = FLAT, edgeFile = FLAT, edgeSize = onePixel(frame) })
+    local parts = frame._wispBox
+    if not parts then
+        parts = { edges = {} }
+        parts.fill = frame:CreateTexture(nil, "BACKGROUND", nil, -8)
+        parts.fill:SetTexture(FLAT)
+        parts.fill:SetAllPoints()
+        for index = 1, 4 do
+            local edge = frame:CreateTexture(nil, "BORDER", nil, 7)
+            edge:SetTexture(FLAT)
+            parts.edges[index] = edge
+        end
+        frame._wispBox = parts
+        function frame.SetBackdropColor(_, r, g, b, a)
+            parts.fill:SetVertexColor(r, g, b, a or 1)
+        end
+        function frame.SetBackdropBorderColor(_, r, g, b, a)
+            for _, edge in ipairs(parts.edges) do
+                edge:SetVertexColor(r, g, b, a or 1)
+            end
+        end
+    end
+    local pixel = onePixel(frame)
+    if parts.pixel ~= pixel then
+        parts.pixel = pixel
+        local top, bottom, left, right = unpack(parts.edges)
+        top:ClearAllPoints()
+        top:SetPoint("TOPLEFT")
+        top:SetPoint("TOPRIGHT")
+        top:SetHeight(pixel)
+        bottom:ClearAllPoints()
+        bottom:SetPoint("BOTTOMLEFT")
+        bottom:SetPoint("BOTTOMRIGHT")
+        bottom:SetHeight(pixel)
+        left:ClearAllPoints()
+        left:SetPoint("TOPLEFT", top, "BOTTOMLEFT")
+        left:SetPoint("BOTTOMLEFT", bottom, "TOPLEFT")
+        left:SetWidth(pixel)
+        right:ClearAllPoints()
+        right:SetPoint("TOPRIGHT", top, "BOTTOMRIGHT")
+        right:SetPoint("BOTTOMRIGHT", bottom, "TOPRIGHT")
+        right:SetWidth(pixel)
+    end
     frame:SetBackdropColor(unpack(bg))
     frame:SetBackdropBorderColor(unpack(border or COLORS.line))
 end
@@ -210,6 +256,13 @@ local function toggle(parent, name)
     t:HookScript("OnDisable", dimWhenDisabled)
     paintToggle(t)
     return t
+end
+
+--- Paints a texture (a hairline, a fill) as a white texture tinted by vertex
+--- color, the way Box draws its edges.
+local function tint(texture, color)
+    texture:SetTexture(FLAT)
+    texture:SetVertexColor(unpack(color))
 end
 
 --- Scrolls `scroll` to `value` rounded to the physical pixel grid. A fractional
@@ -333,8 +386,10 @@ local CORNERS = {
 local function roundedBox(frame, bg, border)
     local radius = CORNER_RADIUS * onePixel(frame)
     local shape = { fills = {}, fillCorners = {}, edges = {}, edgeCorners = {} }
+    -- Every piece is a white texture tinted by vertex color, like Box above.
     local function strip(list, layer)
         local t = frame:CreateTexture(nil, layer)
+        t:SetTexture(FLAT)
         list[#list + 1] = t
         return t
     end
@@ -380,13 +435,13 @@ local function roundedBox(frame, bg, border)
     rightEdge:SetWidth(pixel)
     function shape.SetColors(fill, edge)
         for _, t in ipairs(shape.fills) do
-            t:SetColorTexture(unpack(fill))
+            t:SetVertexColor(unpack(fill))
         end
         for _, t in ipairs(shape.fillCorners) do
             t:SetVertexColor(unpack(fill))
         end
         for _, t in ipairs(shape.edges) do
-            t:SetColorTexture(unpack(edge))
+            t:SetVertexColor(unpack(edge))
         end
         for _, t in ipairs(shape.edgeCorners) do
             t:SetVertexColor(unpack(edge))
@@ -437,6 +492,7 @@ ns.UI.Widgets = {
     ShowCopyUrl = showCopyUrl,
     OnePixel = onePixel,
     SetScroll = setScroll,
+    Tint = tint,
     FONTS = FONTS,
     COLORS = COLORS,
     ACCENT = ACCENT,

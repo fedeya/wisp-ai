@@ -26,7 +26,7 @@ local function switchRow(parent, top, text, checked, onChange)
     rule:SetPoint("BOTTOMLEFT")
     rule:SetPoint("BOTTOMRIGHT")
     rule:SetHeight(widgets.OnePixel(rule))
-    rule:SetColorTexture(unpack(COLORS.line))
+    ns.UI.Widgets.Tint(rule, COLORS.line)
     return row, switch
 end
 
@@ -57,7 +57,7 @@ function ns.UI.SettingsPanel.SubpageHeader(page, title)
     rule:SetPoint("TOPLEFT", 0, -BACK_BAND)
     rule:SetPoint("TOPRIGHT", 0, -BACK_BAND)
     rule:SetHeight(widgets.OnePixel(rule))
-    rule:SetColorTexture(unpack(COLORS.line))
+    ns.UI.Widgets.Tint(rule, COLORS.line)
     local heading = label(page, title, TEXT, FONTS.heading)
     heading:SetPoint("TOPLEFT", PAGE_INSET, -BACK_BAND - 22)
     return heading, back

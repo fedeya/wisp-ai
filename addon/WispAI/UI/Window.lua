@@ -215,7 +215,7 @@ function ns.UI.BuildUI()
     rule:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, 0)
     rule:SetPoint("TOPRIGHT", bar, "BOTTOMRIGHT", 0, 0)
     rule:SetHeight(ns.UI.Widgets.OnePixel(rule))
-    rule:SetColorTexture(unpack(COLORS.lineStrong))
+    ns.UI.Widgets.Tint(rule, COLORS.lineStrong)
     header.rule = rule
     mini = button(header, "-", 24, function()
         ns.UI.SetMinimized(not ns.db.minimized)
