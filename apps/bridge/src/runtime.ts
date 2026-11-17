@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'eve/client';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
+import { DEFAULT_MODEL } from '@wisp/protocol/providers';
 import { DiskTransport } from './transport.ts';
 import { ChatStore } from './chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
@@ -111,6 +112,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       configSchema,
       () => ({}),
     );
+    const defaultModel = () => config.model || DEFAULT_MODEL;
     let configWrite = Promise.resolve();
     function updateConfig(patch: Partial<typeof config>) {
       const write = configWrite
@@ -301,7 +303,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       logger,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
-      defaultModel: () => config.model || 'gpt-6.1-sol',
+      defaultModel,
       isReady: () => eveReady,
       isStopping: () => shutdownRequested,
       accountBusy: () => accountBusy,
@@ -434,7 +436,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         simulator,
         getChats: () => state.chats,
         currentTransport: () => state.activeTransport,
-        defaultModel: () => config.model || 'gpt-6.1-sol',
+        defaultModel,
         readSimulationCharacter,
         memorySnapshot,
         presentReply: run.present,
@@ -585,7 +587,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         connections: connections.list(),
         modelConnected: connections.connected(config.model || ''),
         search: webSearch.state(),
-        model: config.model || 'gpt-6.1-sol',
+        model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
         integrations: capabilitySettings.snapshot(),
         mcps: mcpManager.list().map((s) => ({
@@ -718,7 +720,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         },
         modelCatalog: {
           models: state.modelCatalog,
-          defaultModel: config.model || 'gpt-6.1-sol',
+          defaultModel: defaultModel(),
           error: state.modelCatalogError,
         },
         acks: state.acknowledgments,
