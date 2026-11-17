@@ -159,19 +159,38 @@ it("the Routines page lists routines and their runs, apart from ordinary chats",
             and UI_TEST.sent.data.operation == "pause"
             and UI_TEST.sent.data.id == "mage"
     )
-    local result = row("run-one")
-    assert(result and result:IsShown())
+    assert(mage.detail:GetText():find("saving", 1, true), "a pause shows until the bridge confirms")
+    local function visibleRows(id)
+        local found = {}
+        for _, w in ipairs(UI_TEST.widgets) do
+            if w.chatId == id and w:IsVisible() then
+                found[#found + 1] = w
+            end
+        end
+        return found
+    end
+    assert(#visibleRows("run-one") == 1, "the list shows recent runs")
     assert(not row("quiet"), "silent runs must not appear in routine history")
-    bags.scripts.OnClick(bags)
-    assert(not result:IsShown(), "selecting a routine filters its runs")
-    mage.scripts.OnClick(mage)
-    assert(result:IsShown())
+    bags.scripts.OnClick(bags, "LeftButton")
+    assert(not mage:IsVisible(), "clicking a routine opens its own page")
+    assert(#visibleRows("run-one") == 0, "another routine's page leaves out mage runs")
+    ns.UI.Routines.Show()
+    assert(mage:IsVisible(), "the back link returns to the routine list")
+    mage.scripts.OnClick(mage, "LeftButton")
+    local result = visibleRows("run-one")[1]
+    assert(result, "a routine's page lists its runs")
     result.scripts.OnClick(result)
     assert(ns.active == "run-one" and UI_TEST.sent.type == "select")
     assert(not page:IsShown(), "opening a run shows its conversation")
     assert(ns.sidebarTab == "routines", "a run conversation keeps Routines selected")
     local crumb = UI_TEST.frames.WispAIRoutinesCrumb
-    assert(crumb:IsShown(), "the header shows Routines in a run's breadcrumb")
+    assert(crumb:IsShown(), "the header shows the routine in a run's breadcrumb")
+    assert(crumb.label:GetText() == "Mage review")
     crumb.scripts.OnClick(crumb)
-    assert(page:IsShown() and not crumb:IsShown(), "the breadcrumb leads back to Routines")
+    assert(page:IsShown() and not crumb:IsShown(), "the breadcrumb leads back to the routine")
+    assert(#visibleRows("run-one") == 1 and not mage:IsVisible(), "it opens that routine's page")
+    ns.UI.Routines.ShowRoutine("bags")
+    StaticPopupDialogs.WISPAI_DELETE_ROUTINE.OnAccept(nil, "bags")
+    assert(UI_TEST.sent.data.operation == "remove" and UI_TEST.sent.data.id == "bags")
+    assert(bags:IsVisible(), "deleting returns to the routine list")
 end)

@@ -4,17 +4,18 @@ local sessionTitle, separator, status, statusMark, contextMeter
 local sectionLink, sectionSeparator
 
 -- A routine's conversation is either tagged by the bridge or listed as a run.
+-- Returns the routine id and, when listed, the run.
 local function routineOf(chat)
     if not chat then
         return nil
     end
-    local id = chat.routineId
+    local id, found = chat.routineId, nil
     for _, run in ipairs(ns.routineRuns or {}) do
         if run.id == chat.id then
-            id = id or run.routineId
+            id, found = id or run.routineId, run
         end
     end
-    return id
+    return id, found
 end
 
 -- Re-anchors the breadcrumb so the chat title follows "Routines /" only when shown.
@@ -47,11 +48,22 @@ function ns.UI.ConversationStatus.Refresh(chat)
     -- conversation adds a "Routines" step that leads back to the Routines page.
     local inSettings = ns.UI.SettingsShown and ns.UI.SettingsShown()
     local onRoutinesPage = ns.routinesPage and ns.sidebarTab == "routines"
-    local inRoutine = not inSettings and not onRoutinesPage and routineOf(chat) ~= nil
+    local routineId, run = routineOf(chat)
+    local inRoutine = not inSettings and not onRoutinesPage and routineId ~= nil
     local place = inSettings and "Settings"
         or (onRoutinesPage and "Routines")
         or (chat and chat.title)
         or "New conversation"
+    if inRoutine then
+        -- "<routine> / <event>": the routine step opens that routine's page.
+        local routineTitle = ns.UI.Routines.Title and ns.UI.Routines.Title(routineId)
+        sectionLink.routineId = routineTitle and routineId or nil
+        setText(sectionLink.label, routineTitle or "Routines")
+        sectionLink:SetWidth(math.max(40, (sectionLink.label:GetStringWidth() or 0) + 2))
+        if run and run.event and ns.UI.Routines.EventLabel then
+            place = ns.UI.Routines.EventLabel(run.event)
+        end
+    end
     local visible = not ns.db.minimized
     layoutCrumbs(inRoutine)
     setText(sessionTitle, place)
@@ -98,8 +110,12 @@ function ns.UI.ConversationStatus.Build(chatPanel, header)
     sectionLink:SetScript("OnLeave", function(self)
         self.label:SetTextColor(unpack(MUTED))
     end)
-    sectionLink:SetScript("OnClick", function()
-        ns.UI.Routines.Show()
+    sectionLink:SetScript("OnClick", function(self)
+        if self.routineId then
+            ns.UI.Routines.ShowRoutine(self.routineId)
+        else
+            ns.UI.Routines.Show()
+        end
     end)
     sectionLink:Hide()
     sectionSeparator = chevron()

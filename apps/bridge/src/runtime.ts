@@ -736,6 +736,8 @@ export async function startBridge(options: BridgeOptions = {}) {
               enabled: r.enabled,
               // Short, human trigger text for the addon's Routines page.
               trigger: r.triggers.map(describeRoutineTrigger).join(' or ').slice(0, 160),
+              // What the routine asks Wisp to do, shortened for the routine's detail page.
+              instruction: r.instruction.slice(0, 280),
               lastStartedAt: r.lastStartedAt,
             }))
           : [],
