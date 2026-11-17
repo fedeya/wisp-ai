@@ -126,20 +126,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const mcpFile = config.mcpConfig
       ? path.resolve(paths.dataRoot, config.mcpConfig)
       : path.join(runtime, 'mcp.json');
-    const vault =
-      options.vault ||
-      new NativeVault(
-        process.env.WISP_DESKTOP_EXE ||
-          path.join(
-            ROOT,
-            'apps',
-            'desktop',
-            'src-tauri',
-            'target',
-            'release',
-            process.platform === 'win32' ? 'wisp.exe' : 'wisp',
-          ),
-      );
+    const vault = options.vault || new NativeVault(paths.desktopExecutable);
     const mcpManager = new McpManager(mcpFile, ROOT, vault);
     await mcpManager.load();
     resources.defer(() => mcpManager.close());
@@ -180,9 +167,10 @@ export async function startBridge(options: BridgeOptions = {}) {
     await capabilitySettings.load();
     capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
     const integrationState = new IntegrationState(capabilitySettings);
+    const simulatorAvailable = existsSync(paths.simulatorExecutable);
     capabilitySettings.availability.set('integration:wowsims', {
-      available: existsSync(path.join(ROOT, 'simulator', 'wowsimcli.exe')),
-      status: existsSync(path.join(ROOT, 'simulator', 'wowsimcli.exe')) ? 'ready' : 'missing',
+      available: simulatorAvailable,
+      status: simulatorAvailable ? 'ready' : 'missing',
       reason: 'Experimental local mage engine, levels 1–60.',
     });
     function refreshMcpCatalog() {

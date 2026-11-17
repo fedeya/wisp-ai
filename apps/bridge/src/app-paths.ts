@@ -15,6 +15,18 @@ export function appPaths(root: string, data = process.env.WISP_DATA_DIR) {
     runtime: path.join(dataRoot, 'runtime'),
     config: path.join(dataRoot, 'config.local.json'),
     engine: data ? path.join(dataRoot, 'engine') : agent,
+    simulatorExecutable: path.join(root, 'simulator', 'wowsimcli.exe'),
+    desktopExecutable:
+      process.env.WISP_DESKTOP_EXE ||
+      path.join(
+        root,
+        'apps',
+        'desktop',
+        'src-tauri',
+        'target',
+        'release',
+        process.platform === 'win32' ? 'wisp.exe' : 'wisp',
+      ),
   };
 }
 
