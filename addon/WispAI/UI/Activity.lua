@@ -17,7 +17,7 @@ local WAVE = {
     "|cffafbbbf",
     "|cff9aa7ac",
 }
-local header, replyGlow, emptyState, progress
+local header, miniStatus, emptyState, progress
 local progressTick = 0
 
 function ns.UI.Activity.SetIcon(texture, cell, tint)
@@ -250,7 +250,7 @@ function ns.UI.Activity.Refresh(chat)
             dot:SetShown(emptyState.loading)
         end
     end
-    local title = "Wisp AI"
+    local state -- what the minimized bar says beside "Wisp AI"
     if working then
         local now = GetTime()
         ns.workStarted[chat.id] = ns.workStarted[chat.id] or now
@@ -284,15 +284,27 @@ function ns.UI.Activity.Refresh(chat)
             progress:IsShown()
         )
         setText(progress.detail, detail)
-        title = "Wisp AI - " .. (sending and "Sending" or phase) .. " " .. elapsed
+        state = (sending and "Sending" or phase) .. " " .. elapsed
     elseif chat then
         ns.workStarted[chat.id] = nil
     end
-    setText(
-        header.title,
-        ns.db.minimized and (ns.unread and "Wisp AI - New reply" or title) or "Wisp AI"
-    )
-    replyGlow:SetShown(ns.db.minimized and ns.unread == true)
+    -- Minimized, an unread reply shows a steady accent mark and "New reply";
+    -- work in progress shows the pulsing mark and its phase and time.
+    local unread = ns.db.minimized and ns.unread == true
+    if unread then
+        state = "New reply"
+    elseif not ns.db.minimized then
+        state = nil
+    end
+    miniStatus:SetShown(state ~= nil)
+    if state then
+        setText(miniStatus.text, state)
+        if miniStatus.unread ~= unread then
+            miniStatus.unread = unread
+            miniStatus.text:SetTextColor(unpack(unread and ns.UI.Widgets.TEXT or MUTED))
+            miniStatus.mark:SetAlpha(1)
+        end
+    end
 end
 
 -- Returns the next transcript offset, including the working assistant row.
@@ -322,8 +334,8 @@ function ns.UI.Activity.Tick(_, elapsed)
     if progress:IsShown() then
         progress.mark:SetAlpha(0.35 + 0.65 * (0.5 + 0.5 * math.sin(GetTime() * 3)))
     end
-    if replyGlow:IsShown() then
-        replyGlow:SetAlpha(0.65 + 0.25 * math.sin(GetTime() * math.pi))
+    if miniStatus:IsShown() and not miniStatus.unread then
+        miniStatus.mark:SetAlpha(0.35 + 0.65 * (0.5 + 0.5 * math.sin(GetTime() * 3)))
     end
     progressTick = progressTick + elapsed
     if progressTick >= 0.25 then
@@ -334,14 +346,22 @@ end
 
 function ns.UI.Activity.Build(windowHeader, transcript, content)
     header = windowHeader
-    local frame = header:GetParent()
     local chatPanel = transcript:GetParent()
-    replyGlow = CreateFrame("Frame", "WispAIReplyGlow", header, "BackdropTemplate")
-    replyGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    replyGlow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    ns.UI.Widgets.Box(replyGlow, { 0, 0, 0, 0 }, ACCENT)
-    replyGlow:EnableMouse(false)
-    replyGlow:Hide()
+    -- The minimized bar's state line, after the title and clear of the window
+    -- button. It takes no mouse input, so the whole bar still drags.
+    miniStatus = CreateFrame("Frame", "WispAIMinimizedStatus", header)
+    miniStatus:SetHeight(20)
+    miniStatus:SetPoint("LEFT", header.title, "RIGHT", 10, 0)
+    miniStatus:SetPoint("RIGHT", header.mini, "LEFT", -4, 0)
+    miniStatus:EnableMouse(false)
+    miniStatus.mark = ns.UI.Widgets.Dot(miniStatus, 6, ACCENT)
+    miniStatus.mark:SetPoint("LEFT", 0, 0)
+    miniStatus.text = label(miniStatus, "", MUTED, ns.UI.Widgets.FONTS.small)
+    miniStatus.text:SetPoint("LEFT", miniStatus.mark, "RIGHT", 6, 0)
+    miniStatus.text:SetPoint("RIGHT", 0, 0)
+    miniStatus.text:SetWordWrap(false)
+    miniStatus.unread = false
+    miniStatus:Hide()
     emptyState = CreateFrame("Frame", "WispAIChatPlaceholder", chatPanel)
     emptyState:SetAllPoints(transcript)
     emptyState:SetFrameLevel(transcript:GetFrameLevel() + 1)

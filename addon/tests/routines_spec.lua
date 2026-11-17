@@ -198,3 +198,42 @@ it("the Routines page lists routines and their runs, apart from ordinary chats",
     assert(ns.UI.GoBack() and not page:IsShown(), "and from the list to the chat")
     assert(not ns.UI.GoBack(), "on the chat Escape minimizes instead")
 end)
+
+it("the routine toast names its routine, grows with the tip and dismisses from its X", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    do
+        ns = helper.namespace({ connected = true })
+        sent = {}
+        ns.Transport.Send = function(p)
+            sent[#sent + 1] = p
+        end
+        C_Timer.NewTicker = function() end
+    end
+    helper.addon("Advice/Advice.lua", env)
+    ns.Advice.InitAdvice()
+    local toast = UI_TEST.frames.WispAISuggestion
+    assert(toast and not toast:IsShown())
+    ns.routines = { { id = "mage", title = "Mage review" } }
+    ns.routineRuns = { { id = "run-one", routineId = "mage" } }
+    ns.chats = {
+        {
+            id = "run-one",
+            title = "Level 24 review",
+            messages = { { role = "assistant", text = "Train **Frost Nova** at the trainer." } },
+        },
+    }
+    ns.notifications = { { id = "run-one", title = "Level 24 review" } }
+    ns.Advice.RefreshAdvice()
+    assert(toast:IsShown() and toast.chatId == "run-one")
+    assert(toast.heading:GetText() == "Routine · Mage review")
+    assert(toast.body:GetText() == "Train Frost Nova at the trainer.")
+    local short = toast:GetHeight()
+    ns.chats[1].messages[1].text = string.rep("A longer tip. ", 14)
+    ns.Advice.RefreshAdvice()
+    assert(toast:GetHeight() > short, "the card grows with a longer tip")
+    toast.close.scripts.OnClick(toast.close)
+    assert(sent[#sent].type == "dismiss_tip" and sent[#sent].chat == "run-one")
+    assert(#ns.notifications == 0 and not toast:IsShown())
+end)

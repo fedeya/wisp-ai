@@ -237,12 +237,15 @@ it("inline item questions preserve named quality colors and full item payloads",
     )
 end)
 
-it("a completed reply lights the minimized window until it is opened", function()
+it("a completed reply marks the minimized bar until it is opened", function()
     local env = helper.env()
     setfenv(1, env)
     setup(env)
 
-    local glow = UI_TEST.frames.WispAIReplyGlow
+    local status = UI_TEST.frames.WispAIMinimizedStatus
+    local function unread()
+        return status:IsShown() and status.text:GetText() == "New reply"
+    end
     local sounds = 0
     ns.db.sound = true
     SOUNDKIT = { TELL_MESSAGE = 3081 }
@@ -250,10 +253,11 @@ it("a completed reply lights the minimized window until it is opened", function(
         assert(id == SOUNDKIT.TELL_MESSAGE and channel == "Master")
         sounds = sounds + 1
     end
-    assert(not glow:IsShown())
+    assert(not status:IsShown(), "an idle minimized bar shows no state")
     ns.chats[1].status = "working"
     ns.UI.Refresh()
-    assert(not glow:IsShown(), "working is not a completed reply")
+    assert(status:IsShown() and status.text:GetText():find("^Thinking %d+s$"))
+    assert(not unread(), "working is not a completed reply")
     local function completed(rev)
         WispAI_Receive({
             v = ns.VERSION,
@@ -266,20 +270,20 @@ it("a completed reply lights the minimized window until it is opened", function(
         })
     end
     completed(1)
-    assert(ns.unread and glow:IsShown())
+    assert(ns.unread and unread())
     assert(sounds == 1)
-    assert(glow.mouseEnabled == false, "the glow must not block dragging or expanding")
+    assert(status.mouseEnabled == false, "the state line must not block dragging the bar")
     completed(2)
-    assert(glow:IsShown(), "later snapshots must preserve the unread notification")
+    assert(unread(), "later snapshots must preserve the unread notification")
     assert(sounds == 1, "snapshots must not replay the sound")
     ns.UI.SetMinimized(false)
-    assert(not ns.unread and not glow:IsShown())
+    assert(not ns.unread and not status:IsShown())
     ns.UI.SetMinimized(true)
-    assert(not glow:IsShown(), "minimizing again must not relight a read reply")
+    assert(not status:IsShown(), "minimizing again must not relight a read reply")
     ns.UI.SetMinimized(false)
     ns.chats[1].status = "working"
     completed(3)
-    assert(not ns.unread and not glow:IsShown(), "visible replies do not notify")
+    assert(not ns.unread and not unread(), "visible replies do not notify")
     assert(sounds == 2)
     ns.db.sound = false
     ns.chats[1].status = "working"

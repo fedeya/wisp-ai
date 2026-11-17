@@ -601,7 +601,7 @@ it(
             )
             ns.UI.SetMinimized(true)
             assert(
-                UI_TEST.frames.WispAIWindow:GetWidth() == 220
+                UI_TEST.frames.WispAIWindow:GetWidth() == 240
                     and not fold:IsShown()
                     and not gear:IsShown(),
                 "minimized bar must be compact and hide secondary controls"

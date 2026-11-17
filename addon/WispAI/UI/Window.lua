@@ -1,10 +1,61 @@
 local _, ns = ...
 local COLORS = ns.UI.Widgets.COLORS
-local label, box, button = ns.UI.Widgets.Label, ns.UI.Widgets.Box, ns.UI.Widgets.Button
+local label, box = ns.UI.Widgets.Label, ns.UI.Widgets.Box
 local TEXT = ns.UI.Widgets.TEXT
 local refreshReferences = ns.UI.MessageFormat.RefreshReferences
 local frame, header, body, chatPanel, mini, gear, resize, settings
 local rendering = false
+-- Minimized, the window is its title bar alone: the bar's 36 units and the
+-- frame's top and bottom hairlines, so restoring keeps the bar where it was.
+local MINI_WIDTH, MINI_HEIGHT = 240, 38
+
+--- Window control drawn from flat strokes, crisp at any UI scale: a dash to
+--- minimize, a square to restore. Strokes are about one UI unit, rounded to
+--- whole physical pixels.
+local function windowButton(parent)
+    local b = CreateFrame("Button", "WispAIMinimizeButton", parent)
+    b:SetSize(24, 24)
+    ns.UI.Widgets.Hover(b)
+    local pixel = ns.UI.Widgets.OnePixel(b)
+    local stroke = pixel * math.max(1, math.floor(1 / pixel + 0.5))
+    local strokes = {}
+    local function line(owner, point, x, y, width, height)
+        local t = owner:CreateTexture(nil, "ARTWORK")
+        t:SetPoint(point, x, y)
+        t:SetSize(width, height)
+        ns.UI.Widgets.Tint(t, ns.UI.Widgets.MUTED)
+        strokes[#strokes + 1] = t
+        return t
+    end
+    b.minimize = CreateFrame("Frame", nil, b)
+    b.minimize:SetSize(10, 10)
+    b.minimize:SetPoint("CENTER")
+    line(b.minimize, "CENTER", 0, 0, 10, stroke)
+    b.restore = CreateFrame("Frame", nil, b)
+    b.restore:SetSize(9, 9)
+    b.restore:SetPoint("CENTER")
+    line(b.restore, "TOPLEFT", 0, 0, 9, stroke)
+    line(b.restore, "BOTTOMLEFT", 0, 0, 9, stroke)
+    line(b.restore, "TOPLEFT", 0, 0, stroke, 9)
+    line(b.restore, "TOPRIGHT", 0, 0, stroke, 9)
+    b.restore:Hide()
+    local function paint(color)
+        for _, t in ipairs(strokes) do
+            t:SetVertexColor(unpack(color))
+        end
+    end
+    b:SetScript("OnEnter", function(self)
+        paint(TEXT)
+        GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+        GameTooltip:SetText(ns.db.minimized and "Restore" or "Minimize")
+        GameTooltip:Show()
+    end)
+    b:SetScript("OnLeave", function()
+        paint(ns.UI.Widgets.MUTED)
+        GameTooltip:Hide()
+    end)
+    return b
+end
 
 function ns.UI.SaveWindowPosition(minimized)
     local point, _, relativePoint, x, y = frame:GetPoint()
@@ -43,17 +94,6 @@ local function layout()
         unpack(settings and settings:IsShown() and ns.UI.Widgets.ACCENT or ns.UI.Widgets.MUTED)
     )
     local width = ns.UI.Sidebar.Layout()
-    -- Expanded, the title keeps its natural width so the breadcrumb can follow it;
-    -- minimized, it stretches to the button to show "Wisp AI - Thinking 4s".
-    local titleAnchor = expanded and "breadcrumb" or mini
-    if header.titleAnchor ~= titleAnchor then
-        header.titleAnchor = titleAnchor
-        header.title:ClearAllPoints()
-        header.title:SetPoint("LEFT", header.logo, "RIGHT", 6, 0)
-        if not expanded then
-            header.title:SetPoint("RIGHT", mini, "LEFT", -8, 0)
-        end
-    end
     if chatPanel._sidebarWidth ~= width then
         chatPanel._sidebarWidth = width
         chatPanel:ClearAllPoints()
@@ -80,18 +120,18 @@ function ns.UI.SetMinimized(value)
     if value then
         ns.db.expandedWidth, ns.db.expandedHeight = frame:GetWidth(), frame:GetHeight()
         if frame.SetResizeBounds then
-            frame:SetResizeBounds(220, 36, 1000, 900)
+            frame:SetResizeBounds(MINI_WIDTH, MINI_HEIGHT, 1000, 900)
         end
-        frame:SetSize(220, 36)
-        mini:SetText("+")
+        frame:SetSize(MINI_WIDTH, MINI_HEIGHT)
     else
         if frame.SetResizeBounds then
             frame:SetResizeBounds(520, 360, 1100, 900)
         end
         frame:SetSize(ns.db.expandedWidth or 700, ns.db.expandedHeight or 520)
-        mini:SetText("-")
         ns.unread = false
     end
+    mini.minimize:SetShown(not value)
+    mini.restore:SetShown(value)
     restorePosition(value)
     ns.UI.Refresh()
 end
@@ -218,7 +258,8 @@ function ns.UI.BuildUI()
     logo:SetPoint("LEFT", 6, 0)
     logo:SetTexture("Interface\\AddOns\\WispAI\\Textures\\Wisp.tga")
     header.title = label(header, "Wisp AI", TEXT, ns.UI.Widgets.FONTS.title)
-    header.title:SetPoint("LEFT", logo, "RIGHT", 8, 0)
+    -- "Wisp AI" in both states; minimized, the reply's state follows it.
+    header.title:SetPoint("LEFT", logo, "RIGHT", 6, 0)
     -- The header is a bar of its own: the sidebar's surface with a firm bottom edge.
     local bar = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
     bar:SetPoint("TOPLEFT", 1, -1)
@@ -231,9 +272,10 @@ function ns.UI.BuildUI()
     rule:SetHeight(ns.UI.Widgets.OnePixel(rule))
     ns.UI.Widgets.Tint(rule, COLORS.lineStrong)
     header.rule = rule
-    mini = button(header, "-", 24, function()
+    mini = windowButton(header)
+    mini:SetScript("OnClick", function()
         ns.UI.SetMinimized(not ns.db.minimized)
-    end, "ghost")
+    end)
     mini:SetPoint("RIGHT", -3, 0)
     header.mini = mini
     header.title:SetWordWrap(false)
