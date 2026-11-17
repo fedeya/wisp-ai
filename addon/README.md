@@ -27,7 +27,8 @@ every key and is the fallback for a missing translation; a missing key shows the
 itself. The Language setting (`ns.db.language`) picks a locale or follows the game
 (`auto`); a change asks to reload the UI. Only addon chrome goes through `ns.L`:
 model output, user text and game names stay as they are. Lookups are live, so tables
-built at load time hold keys, not text. To add a locale, add a file under `Locales/`,
+built at load time hold keys, not text. Strings with several values use `{name}`
+placeholders filled by `ns.LocaleText(key, values)`, so a translation can reorder them. To add a locale, add a file under `Locales/`,
 list it in the manifest, `ns.LOCALE_CHOICES` and the test helper's `LOCALES`, and
 add its `language.*` name to `enUS`.
 

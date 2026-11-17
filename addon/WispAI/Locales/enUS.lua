@@ -217,4 +217,58 @@ ns.Locales.enUS = {
     ["integrations.waiting"] = "Waiting for bridge...",
     ["integrations.savingChanges"] = "Saving changes...",
     ["integrations.hint"] = "New calls use these settings. Running calls may finish.",
+
+    -- Copy
+    ["common.close"] = "Close",
+    ["copy.action"] = "Copy",
+    ["copy.replyTitle"] = "Copy reply",
+    ["copy.hint"] = "Press Ctrl+C to copy",
+    ["copy.urlTitle"] = "Copy web address (Ctrl+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "Wisp {installed} is installed (loaded {loaded}). Type /reload to load the new version.",
+    ["notice.mapUnavailable"] = "The map UI is unavailable.",
+    ["notice.leaveCombatMacro"] = "Leave combat before picking up a macro.",
+
+    -- Links
+    ["link.macroGone"] = "This macro is no longer available.",
+    ["link.copyUrl"] = "Click to copy this web address.",
+    ["link.map"] = "Map",
+    ["link.openMap"] = "Click to open this map.",
+    ["link.mapLocation"] = "Map location",
+    ["link.viewLocation"] = "Click to view this location on the map.",
+    ["link.pickUpMacro"] = "Click to pick up this macro, then place it on your action bar.",
+    ["link.questLevel"] = "Level %s",
+    ["link.viewQuest"] = "Click to view quest. Shift-click to link.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "Waiting for bridge",
+    ["message.retry"] = "Retry",
+    ["message.toolInput"] = "Input",
+    ["message.toolResult"] = "Result",
+    ["message.you"] = "You",
+    ["message.notice"] = "Notice",
+
+    -- Inline chat
+    ["inline.bindingName"] = "Ask about hovered reference",
+    ["inline.couldNotOpen"] = "Inline chat could not open: %s",
+    ["inline.waitCurrent"] = "Wait for the current inline question.",
+    ["inline.panelTitle"] = "Ask Wisp · Panel",
+    ["inline.titleFor"] = "Ask Wisp · %s",
+    ["inline.ask"] = "Ask",
+    ["inline.hoverHint"] = "Hover an item, spell, quest, unit or Wisp reference, then use Ask inline.",
+    ["inline.expand"] = "Expand",
+    ["inline.leaveCombat"] = "Leave combat before changing keybindings.",
+    ["inline.bindPrompt"] = "Press a key, mouse button or mouse wheel for inline chat.\nCtrl, Alt and Shift are supported. Escape cancels. Existing bindings will be preserved.",
+    ["inline.bindNotChanged"] = "Binding was not changed in combat.",
+    ["inline.boundTo"] = "Inline chat: %s",
+    ["inline.keyNotAssigned"] = "This key could not be assigned. Choose another combination.",
+
+    -- Panels
+    ["panel.unavailable"] = "Unavailable",
+    ["panel.completed"] = "Completed",
+    ["panel.notCompleted"] = "Not completed",
+    ["panel.remainingBagsOnly"] = "%d remaining; bags only",
+    ["panel.bagsOnly"] = "Bags only",
+    ["panel.bagCountUnavailable"] = "Bag count unavailable",
 }

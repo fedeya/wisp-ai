@@ -42,6 +42,9 @@ layout and decoration do not parse Markdown again or change cached syntax.
 Headings and emphasis retain the game typeface, while code uses JetBrains Mono
 with a localized game-font fallback. Web links expose their URL on hover and
 open a selectable copy dialog on click.
+Hovering a finished reply shows a quiet Copy action; it opens the reply as plain
+text (Markdown, references and escape codes reduced to readable text) selected in
+a copy dialog. Generated UI is left out.
 Code uses a smaller face and a subtle neutral background. Headings use light ivory
 with extra space above and below; bold body text retains its gold accent.
 Macro blocks highlight slash commands, `#showtooltip`/`#show`, and bracketed

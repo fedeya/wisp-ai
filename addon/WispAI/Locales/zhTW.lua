@@ -204,4 +204,58 @@ ns.Locales.zhTW = {
     ["integrations.waiting"] = "正在等待橋接...",
     ["integrations.savingChanges"] = "正在儲存變更...",
     ["integrations.hint"] = "新的呼叫會使用這些設定。進行中的呼叫可以繼續完成。",
+
+    -- Copy
+    ["common.close"] = "關閉",
+    ["copy.action"] = "複製",
+    ["copy.replyTitle"] = "複製回覆",
+    ["copy.hint"] = "按 Ctrl+C 複製",
+    ["copy.urlTitle"] = "複製網址（Ctrl+C）",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "已安裝 Wisp {installed}（目前載入 {loaded}）。輸入 /reload 以載入新版本。",
+    ["notice.mapUnavailable"] = "地圖介面無法使用。",
+    ["notice.leaveCombatMacro"] = "請先脫離戰鬥再拿起巨集。",
+
+    -- Links
+    ["link.macroGone"] = "此巨集已無法使用。",
+    ["link.copyUrl"] = "點擊複製此網址。",
+    ["link.map"] = "地圖",
+    ["link.openMap"] = "點擊開啟此地圖。",
+    ["link.mapLocation"] = "地圖位置",
+    ["link.viewLocation"] = "點擊在地圖上查看此位置。",
+    ["link.pickUpMacro"] = "點擊拿起此巨集，然後放到快捷列上。",
+    ["link.questLevel"] = "等級 %s",
+    ["link.viewQuest"] = "點擊查看任務。Shift-點擊發送連結。",
+
+    -- Message rows
+    ["message.waitingBridge"] = "正在等待橋接",
+    ["message.retry"] = "重試",
+    ["message.toolInput"] = "輸入",
+    ["message.toolResult"] = "結果",
+    ["message.you"] = "你",
+    ["message.notice"] = "通知",
+
+    -- Inline chat
+    ["inline.bindingName"] = "詢問滑鼠指向的內容",
+    ["inline.couldNotOpen"] = "無法開啟快速提問：%s",
+    ["inline.waitCurrent"] = "請等待目前的快速提問完成。",
+    ["inline.panelTitle"] = "問 Wisp · 面板",
+    ["inline.titleFor"] = "問 Wisp · %s",
+    ["inline.ask"] = "提問",
+    ["inline.hoverHint"] = "將滑鼠停在物品、法術、任務、單位或 Wisp 連結上，然後使用快速提問。",
+    ["inline.expand"] = "展開",
+    ["inline.leaveCombat"] = "請先脫離戰鬥再變更按鍵設定。",
+    ["inline.bindPrompt"] = "按下用於快速提問的按鍵、滑鼠按鍵或滾輪。\n支援 Ctrl、Alt 和 Shift。按 Esc 取消。現有的按鍵設定會保留。",
+    ["inline.bindNotChanged"] = "戰鬥中未變更按鍵設定。",
+    ["inline.boundTo"] = "快速提問：%s",
+    ["inline.keyNotAssigned"] = "無法設定此按鍵。請換一個組合。",
+
+    -- Panels
+    ["panel.unavailable"] = "無法使用",
+    ["panel.completed"] = "已完成",
+    ["panel.notCompleted"] = "未完成",
+    ["panel.remainingBagsOnly"] = "還差 %d；僅背包",
+    ["panel.bagsOnly"] = "僅背包",
+    ["panel.bagCountUnavailable"] = "無法統計背包數量",
 }

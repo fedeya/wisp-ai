@@ -204,4 +204,58 @@ ns.Locales.ruRU = {
     ["integrations.waiting"] = "Ожидание моста...",
     ["integrations.savingChanges"] = "Сохранение изменений...",
     ["integrations.hint"] = "Новые вызовы используют эти настройки. Текущие могут завершиться.",
+
+    -- Copy
+    ["common.close"] = "Закрыть",
+    ["copy.action"] = "Копировать",
+    ["copy.replyTitle"] = "Копировать ответ",
+    ["copy.hint"] = "Нажмите Ctrl+C, чтобы скопировать",
+    ["copy.urlTitle"] = "Скопировать веб-адрес (Ctrl+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "Установлен Wisp {installed} (загружен {loaded}). Введите /reload, чтобы загрузить новую версию.",
+    ["notice.mapUnavailable"] = "Интерфейс карты недоступен.",
+    ["notice.leaveCombatMacro"] = "Выйдите из боя, прежде чем брать макрос.",
+
+    -- Links
+    ["link.macroGone"] = "Этот макрос больше недоступен.",
+    ["link.copyUrl"] = "Нажмите, чтобы скопировать этот веб-адрес.",
+    ["link.map"] = "Карта",
+    ["link.openMap"] = "Нажмите, чтобы открыть эту карту.",
+    ["link.mapLocation"] = "Точка на карте",
+    ["link.viewLocation"] = "Нажмите, чтобы показать это место на карте.",
+    ["link.pickUpMacro"] = "Нажмите, чтобы взять этот макрос, и поместите его на панель команд.",
+    ["link.questLevel"] = "Уровень %s",
+    ["link.viewQuest"] = "Нажмите, чтобы открыть задание. Shift+клик — ссылка.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "Ожидание моста",
+    ["message.retry"] = "Повторить",
+    ["message.toolInput"] = "Ввод",
+    ["message.toolResult"] = "Результат",
+    ["message.you"] = "Вы",
+    ["message.notice"] = "Уведомление",
+
+    -- Inline chat
+    ["inline.bindingName"] = "Спросить о ссылке под курсором",
+    ["inline.couldNotOpen"] = "Не удалось открыть встроенный чат: %s",
+    ["inline.waitCurrent"] = "Дождитесь ответа на текущий вопрос.",
+    ["inline.panelTitle"] = "Спросить Wisp · Панель",
+    ["inline.titleFor"] = "Спросить Wisp · %s",
+    ["inline.ask"] = "Спросить",
+    ["inline.hoverHint"] = "Наведите курсор на предмет, заклинание, задание, существо или ссылку Wisp и задайте вопрос.",
+    ["inline.expand"] = "Развернуть",
+    ["inline.leaveCombat"] = "Выйдите из боя, прежде чем менять назначения клавиш.",
+    ["inline.bindPrompt"] = "Нажмите клавишу, кнопку мыши или прокрутите колесо для встроенного чата.\nПоддерживаются Ctrl, Alt и Shift. Escape — отмена. Текущие назначения сохранятся.",
+    ["inline.bindNotChanged"] = "Назначение не изменено: вы в бою.",
+    ["inline.boundTo"] = "Встроенный чат: %s",
+    ["inline.keyNotAssigned"] = "Не удалось назначить эту клавишу. Выберите другое сочетание.",
+
+    -- Panels
+    ["panel.unavailable"] = "Недоступно",
+    ["panel.completed"] = "Выполнено",
+    ["panel.notCompleted"] = "Не выполнено",
+    ["panel.remainingBagsOnly"] = "Осталось %d; только сумки",
+    ["panel.bagsOnly"] = "Только сумки",
+    ["panel.bagCountUnavailable"] = "Подсчет в сумках недоступен",
 }

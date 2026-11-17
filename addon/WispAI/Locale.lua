@@ -45,3 +45,15 @@ ns.L = setmetatable({}, {
         return active and active[key] or english and english[key] or key
     end,
 })
+
+--- `ns.LocaleText(key, values)` fills `{name}` placeholders in a UI string from
+--- `values`, so a translation can put them in any order (string.format's `%s`
+--- are positional). Unknown names stay as written.
+function ns.LocaleText(key, values)
+    return (
+        ns.L[key]:gsub("{(%w+)}", function(name)
+            local value = values[name]
+            return value ~= nil and tostring(value) or nil
+        end)
+    )
+end

@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local ACCENT, TEXT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.TEXT, ns.UI.Widgets.MUTED
 local COLORS = ns.UI.Widgets.COLORS
@@ -9,6 +10,8 @@ local writer = ns.UI.Writing
 local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
+-- How often a shown Copy action checks whether the pointer has left its reply.
+local COPY_CHECK_INTERVAL = 0.1
 local TOOL_STATES = {
     completed = { cell = 0, tint = MUTED },
     running = { cell = 1, tint = ACCENT },
@@ -26,24 +29,24 @@ local function linked(row)
         local url = ns.Markdown.Links.Decode(link)
         if url then
             GameTooltip:SetText(url, 0.5, 0.78, 0.94)
-            GameTooltip:AddLine("Click to copy this web address.", 0.65, 0.65, 0.65, true)
+            GameTooltip:AddLine(L["link.copyUrl"], 0.65, 0.65, 0.65, true)
             GameTooltip:Show()
             return
         end
         local zone = tonumber(link:match("^wispzone:(%d+)$"))
         if zone then
             local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(zone)
-            GameTooltip:SetText(info and info.name or "Map", 1, 0.82, 0)
-            GameTooltip:AddLine("Click to open this map.", 0.65, 0.65, 0.65, true)
+            GameTooltip:SetText(info and info.name or L["link.map"], 1, 0.82, 0)
+            GameTooltip:AddLine(L["link.openMap"], 0.65, 0.65, 0.65, true)
             GameTooltip:Show()
             return
         end
         local mapId, x, y = mapLocation(link)
         if mapId then
             local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(mapId)
-            GameTooltip:SetText(info and info.name or "Map location", 1, 0.82, 0)
+            GameTooltip:SetText(info and info.name or L["link.mapLocation"], 1, 0.82, 0)
             GameTooltip:AddLine(string.format("%.2f, %.2f", x, y), 0.9, 0.87, 0.8)
-            GameTooltip:AddLine("Click to view this location on the map.", 0.65, 0.65, 0.65, true)
+            GameTooltip:AddLine(L["link.viewLocation"], 0.65, 0.65, 0.65, true)
             GameTooltip:Show()
             return
         end
@@ -54,15 +57,9 @@ local function linked(row)
             if index and index > 0 and GetMacroInfo then
                 local _, _, code = GetMacroInfo(index)
                 GameTooltip:AddLine((code or ""):gsub("|", "||"), 0.9, 0.87, 0.8, true)
-                GameTooltip:AddLine(
-                    "Click to pick up this macro, then place it on your action bar.",
-                    0.65,
-                    0.65,
-                    0.65,
-                    true
-                )
+                GameTooltip:AddLine(L["link.pickUpMacro"], 0.65, 0.65, 0.65, true)
             else
-                GameTooltip:AddLine("This macro is no longer available.", 0.8, 0.5, 0.4, true)
+                GameTooltip:AddLine(L["link.macroGone"], 0.8, 0.5, 0.4, true)
             end
             GameTooltip:Show()
             return
@@ -72,7 +69,12 @@ local function linked(row)
         if quest then
             GameTooltip:SetText(quest.title, 1, 0.82, 0)
             if quest.level then
-                GameTooltip:AddLine("Level " .. quest.level, 0.7, 0.7, 0.7)
+                GameTooltip:AddLine(
+                    L["link.questLevel"]:format(tostring(quest.level)),
+                    0.7,
+                    0.7,
+                    0.7
+                )
             end
             local objectives = C_QuestLog.GetQuestObjectives and C_QuestLog.GetQuestObjectives(id)
                 or {}
@@ -85,7 +87,7 @@ local function linked(row)
                     true
                 )
             end
-            GameTooltip:AddLine("Click to view quest. Shift-click to link.", 0.65, 0.65, 0.65, true)
+            GameTooltip:AddLine(L["link.viewQuest"], 0.65, 0.65, 0.65, true)
             GameTooltip:Show()
             return
         end
@@ -113,21 +115,21 @@ local function linked(row)
             if C_Map and C_Map.OpenWorldMap then
                 C_Map.OpenWorldMap(zone)
             else
-                ns.Core.Log("The map UI is unavailable.")
+                ns.Core.Log(L["notice.mapUnavailable"])
             end
             return
         end
         local macroName = macroNameFromLink(link)
         if macroName then
             if InCombatLockdown and InCombatLockdown() then
-                ns.Core.Log("Leave combat before picking up a macro.")
+                ns.Core.Log(L["notice.leaveCombatMacro"])
                 return
             end
             local index = GetMacroIndexByName and GetMacroIndexByName(macroName)
             if index and index > 0 and PickupMacro then
                 PickupMacro(index)
             else
-                ns.Core.Log("This macro is no longer available.")
+                ns.Core.Log(L["link.macroGone"])
             end
             return
         end
@@ -187,7 +189,7 @@ local function makeDelivery(row)
         dot:SetPoint("RIGHT", delivery, "RIGHT", (index - 3) * 8, 4)
         delivery.dots[index] = dot
     end
-    delivery.waiting = label(delivery, "Waiting for bridge", MUTED)
+    delivery.waiting = label(delivery, L["message.waitingBridge"], MUTED)
     delivery.waiting:SetFontObject(ns.UI.Widgets.FONTS.small or "GameFontHighlightSmall")
     delivery.waiting:SetTextColor(unpack(MUTED))
     delivery.waiting:SetPoint("RIGHT", delivery, "RIGHT", -30, 0)
@@ -196,10 +198,65 @@ local function makeDelivery(row)
     return delivery
 end
 
+-- Replies offer Copy only under the pointer. Entering the reply shows it; while
+-- shown, a throttled check hides it once the pointer leaves the row, so idle rows
+-- run no per-frame work. It sits in the reply's bottom padding: no layout shift.
+local function showCopy(row)
+    local copy = row.copy
+    if row.copySource and not copy:IsShown() then
+        copy.elapsed = 0
+        copy:Show()
+    end
+end
+
+local function checkCopyHover(copy, elapsed)
+    copy.elapsed = (copy.elapsed or 0) + elapsed
+    if copy.elapsed < COPY_CHECK_INTERVAL then
+        return
+    end
+    copy.elapsed = 0
+    local row = copy:GetParent()
+    if not row.copySource or not (row:IsMouseOver() or copy:IsMouseOver()) then
+        copy:Hide()
+    end
+end
+
+local function makeCopy(row)
+    local copy = CreateFrame("Button", nil, row)
+    copy:SetFrameLevel(row:GetFrameLevel() + 5)
+    copy.label = label(copy, L["copy.action"], COLORS.muted, ns.UI.Widgets.FONTS.small)
+    copy.label:SetPoint("CENTER")
+    copy:SetSize(math.ceil(copy.label:GetStringWidth()) + 12, 16)
+    -- The label lines up with the reply's left edge; the hover wash extends past it.
+    copy:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", -6, 1)
+    ns.UI.Widgets.Hover(copy, 0.06)
+    copy:SetScript("OnEnter", function(self)
+        self.label:SetTextColor(unpack(TEXT))
+    end)
+    copy:SetScript("OnLeave", function(self)
+        self.label:SetTextColor(unpack(COLORS.muted))
+    end)
+    copy:SetScript("OnClick", function()
+        if row.copySource then
+            ns.UI.Widgets.ShowCopyText(
+                L["copy.replyTitle"],
+                ns.Markdown.PlainText.FromMessage(row.copySource)
+            )
+        end
+    end)
+    copy:SetScript("OnUpdate", checkCopyHover)
+    copy:Hide()
+    return copy
+end
+
 local function makeRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     linked(row)
-    row:SetScript("OnHide", writer.Finish)
+    row:SetScript("OnHide", function(self)
+        self.copy:Hide()
+        writer.Finish(self)
+    end)
+    row:SetScript("OnEnter", showCopy)
     row.author = label(row, "", MUTED, ns.UI.Widgets.FONTS.caption)
     row.author:SetPoint("TOPLEFT", 0, 0)
     row.authorMark = ns.UI.Widgets.Dot(row, 6)
@@ -225,7 +282,7 @@ local function makeRow(parent)
         ns.UI.Refresh(row.chatId)
     end)
     row.disclosure:Hide()
-    row.retry = ns.UI.Widgets.Button(row, "Retry", 80, function(self)
+    row.retry = ns.UI.Widgets.Button(row, L["message.retry"], 80, function(self)
         self:Disable()
         ns.Transport.Send({
             type = "retry",
@@ -235,6 +292,7 @@ local function makeRow(parent)
         })
     end)
     row.retry:Hide()
+    row.copy = makeCopy(row)
     return row
 end
 ns.UI.MakeMessageRow = makeRow
@@ -242,10 +300,10 @@ ns.UI.MakeMessageRow = makeRow
 local function toolDetails(tool, name)
     local lines = {}
     if type(tool.inputPreview) == "string" and tool.inputPreview ~= "" then
-        lines[#lines + 1] = "Input  " .. tool.inputPreview
+        lines[#lines + 1] = L["message.toolInput"] .. "  " .. tool.inputPreview
     end
     if type(tool.resultPreview) == "string" and tool.resultPreview ~= "" then
-        lines[#lines + 1] = "Result  " .. tool.resultPreview
+        lines[#lines + 1] = L["message.toolResult"] .. "  " .. tool.resultPreview
     elseif type(tool.detail) == "string" and tool.detail ~= "" and tool.detail ~= name then
         lines[#lines + 1] = tool.detail
     end
@@ -416,6 +474,14 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
     row.replyView = row.replyView or ns.Markdown.ReplyView.New()
     local sameReply = row.replyView.chatId == chat.id and row.replyView.messageId == message.id
     local display, viewKey = ns.Markdown.ReplyView.Update(row.replyView, chat.id, message)
+    -- A finished reply can be copied; the one still being written cannot.
+    local messages = chat.messages or {}
+    local copyable = isTextReply(message)
+        and not (chat.status == "working" and message == messages[#messages])
+    row.copySource = copyable and message or nil
+    if not copyable and row.copy:IsShown() then
+        row.copy:Hide()
+    end
     message = display
     local tool = message.tool
     local pendingMessage = message.role == "user"
@@ -499,7 +565,8 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
         row.authorMark:SetColorTexture(unpack(message.role == "system" and COLORS.muted or ACCENT))
         setText(
             row.author,
-            message.role == "user" and "You" or (message.role == "system" and "Notice" or "Wisp AI")
+            message.role == "user" and L["message.you"]
+                or (message.role == "system" and L["message.notice"] or "Wisp AI")
         )
         if message.role == "tool" then
             if row.rich then
@@ -615,6 +682,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 if not row.rich then
                     row.rich = CreateFrame("Frame", nil, row)
                     linked(row.rich)
+                    row.rich:SetScript("OnEnter", function()
+                        showCopy(row)
+                    end)
                 end
                 if not sameReply or not row.rich.presentedRoots then
                     row.rich.presentedRoots = {}

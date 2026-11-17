@@ -204,4 +204,58 @@ ns.Locales.frFR = {
     ["integrations.waiting"] = "En attente du bridge...",
     ["integrations.savingChanges"] = "Enregistrement des modifications...",
     ["integrations.hint"] = "Les nouveaux appels utilisent ces réglages. Les appels en cours peuvent se terminer.",
+
+    -- Copy
+    ["common.close"] = "Fermer",
+    ["copy.action"] = "Copier",
+    ["copy.replyTitle"] = "Copier la réponse",
+    ["copy.hint"] = "Appuyez sur Ctrl+C pour copier",
+    ["copy.urlTitle"] = "Copier l'adresse web (Ctrl+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "Wisp {installed} est installé ({loaded} chargé). Tapez /reload pour charger la nouvelle version.",
+    ["notice.mapUnavailable"] = "L'interface de la carte n'est pas disponible.",
+    ["notice.leaveCombatMacro"] = "Quittez le combat avant de prendre une macro.",
+
+    -- Links
+    ["link.macroGone"] = "Cette macro n'est plus disponible.",
+    ["link.copyUrl"] = "Cliquez pour copier cette adresse web.",
+    ["link.map"] = "Carte",
+    ["link.openMap"] = "Cliquez pour ouvrir cette carte.",
+    ["link.mapLocation"] = "Position sur la carte",
+    ["link.viewLocation"] = "Cliquez pour voir cet endroit sur la carte.",
+    ["link.pickUpMacro"] = "Cliquez pour prendre cette macro, puis placez-la dans votre barre d'action.",
+    ["link.questLevel"] = "Niveau %s",
+    ["link.viewQuest"] = "Cliquez pour voir la quête. Maj-clic pour la lier.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "En attente du bridge",
+    ["message.retry"] = "Réessayer",
+    ["message.toolInput"] = "Entrée",
+    ["message.toolResult"] = "Résultat",
+    ["message.you"] = "Vous",
+    ["message.notice"] = "Avis",
+
+    -- Inline chat
+    ["inline.bindingName"] = "Poser une question sur la référence survolée",
+    ["inline.couldNotOpen"] = "Impossible d'ouvrir la discussion contextuelle : %s",
+    ["inline.waitCurrent"] = "Attendez la fin de la question en cours.",
+    ["inline.panelTitle"] = "Demander à Wisp · Panneau",
+    ["inline.titleFor"] = "Demander à Wisp · %s",
+    ["inline.ask"] = "Demander",
+    ["inline.hoverHint"] = "Survolez un objet, un sort, une quête, une unité ou une référence Wisp, puis posez votre question.",
+    ["inline.expand"] = "Agrandir",
+    ["inline.leaveCombat"] = "Quittez le combat avant de modifier les raccourcis.",
+    ["inline.bindPrompt"] = "Appuyez sur une touche, un bouton de souris ou la molette pour la discussion contextuelle.\nCtrl, Alt et Maj sont pris en charge. Échap annule. Les raccourcis existants sont conservés.",
+    ["inline.bindNotChanged"] = "Le raccourci n'a pas été modifié en combat.",
+    ["inline.boundTo"] = "Discussion contextuelle : %s",
+    ["inline.keyNotAssigned"] = "Impossible d'assigner cette touche. Choisissez une autre combinaison.",
+
+    -- Panels
+    ["panel.unavailable"] = "Indisponible",
+    ["panel.completed"] = "Terminée",
+    ["panel.notCompleted"] = "Non terminée",
+    ["panel.remainingBagsOnly"] = "Encore %d ; sacs uniquement",
+    ["panel.bagsOnly"] = "Sacs uniquement",
+    ["panel.bagCountUnavailable"] = "Décompte des sacs indisponible",
 }

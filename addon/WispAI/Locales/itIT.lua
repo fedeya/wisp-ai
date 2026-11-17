@@ -204,4 +204,58 @@ ns.Locales.itIT = {
     ["integrations.waiting"] = "In attesa del bridge...",
     ["integrations.savingChanges"] = "Salvataggio modifiche...",
     ["integrations.hint"] = "Le nuove chiamate usano queste impostazioni. Quelle in corso possono terminare.",
+
+    -- Copy
+    ["common.close"] = "Chiudi",
+    ["copy.action"] = "Copia",
+    ["copy.replyTitle"] = "Copia risposta",
+    ["copy.hint"] = "Premi Ctrl+C per copiare",
+    ["copy.urlTitle"] = "Copia indirizzo web (Ctrl+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "Wisp {installed} è installato (caricato {loaded}). Digita /reload per caricare la nuova versione.",
+    ["notice.mapUnavailable"] = "L'interfaccia della mappa non è disponibile.",
+    ["notice.leaveCombatMacro"] = "Esci dal combattimento prima di prendere una macro.",
+
+    -- Links
+    ["link.macroGone"] = "Questa macro non è più disponibile.",
+    ["link.copyUrl"] = "Clicca per copiare questo indirizzo web.",
+    ["link.map"] = "Mappa",
+    ["link.openMap"] = "Clicca per aprire questa mappa.",
+    ["link.mapLocation"] = "Posizione sulla mappa",
+    ["link.viewLocation"] = "Clicca per vedere questo luogo sulla mappa.",
+    ["link.pickUpMacro"] = "Clicca per prendere questa macro, poi mettila nella barra delle azioni.",
+    ["link.questLevel"] = "Livello %s",
+    ["link.viewQuest"] = "Clicca per vedere la missione. Maiusc-clic per collegarla.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "In attesa del bridge",
+    ["message.retry"] = "Riprova",
+    ["message.toolInput"] = "Input",
+    ["message.toolResult"] = "Risultato",
+    ["message.you"] = "Tu",
+    ["message.notice"] = "Avviso",
+
+    -- Inline chat
+    ["inline.bindingName"] = "Chiedi del riferimento sotto il cursore",
+    ["inline.couldNotOpen"] = "Impossibile aprire la chat in linea: %s",
+    ["inline.waitCurrent"] = "Attendi la domanda in corso.",
+    ["inline.panelTitle"] = "Chiedi a Wisp · Pannello",
+    ["inline.titleFor"] = "Chiedi a Wisp · %s",
+    ["inline.ask"] = "Chiedi",
+    ["inline.hoverHint"] = "Passa il mouse su un oggetto, incantesimo, missione, unità o riferimento di Wisp, poi usa la domanda in linea.",
+    ["inline.expand"] = "Espandi",
+    ["inline.leaveCombat"] = "Esci dal combattimento prima di cambiare i tasti.",
+    ["inline.bindPrompt"] = "Premi un tasto, un pulsante del mouse o la rotellina per la chat in linea.\nCtrl, Alt e Maiusc sono supportati. Esc annulla. Le associazioni esistenti vengono mantenute.",
+    ["inline.bindNotChanged"] = "Il tasto non è stato cambiato in combattimento.",
+    ["inline.boundTo"] = "Chat in linea: %s",
+    ["inline.keyNotAssigned"] = "Impossibile assegnare questo tasto. Scegli un'altra combinazione.",
+
+    -- Panels
+    ["panel.unavailable"] = "Non disponibile",
+    ["panel.completed"] = "Completata",
+    ["panel.notCompleted"] = "Non completata",
+    ["panel.remainingBagsOnly"] = "Ne mancano %d; solo borse",
+    ["panel.bagsOnly"] = "Solo borse",
+    ["panel.bagCountUnavailable"] = "Conteggio borse non disponibile",
 }

@@ -204,4 +204,58 @@ ns.Locales.koKR = {
     ["integrations.waiting"] = "브리지 대기 중...",
     ["integrations.savingChanges"] = "변경 사항 저장 중...",
     ["integrations.hint"] = "새 호출부터 이 설정을 사용합니다. 진행 중인 호출은 그대로 끝날 수 있습니다.",
+
+    -- Copy
+    ["common.close"] = "닫기",
+    ["copy.action"] = "복사",
+    ["copy.replyTitle"] = "답변 복사",
+    ["copy.hint"] = "Ctrl+C를 눌러 복사하세요",
+    ["copy.urlTitle"] = "웹 주소 복사 (Ctrl+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "Wisp {installed} 버전이 설치되었습니다(현재 {loaded} 로드됨). 새 버전을 불러오려면 /reload를 입력하세요.",
+    ["notice.mapUnavailable"] = "지도 UI를 사용할 수 없습니다.",
+    ["notice.leaveCombatMacro"] = "매크로를 집기 전에 전투에서 벗어나세요.",
+
+    -- Links
+    ["link.macroGone"] = "이 매크로는 더 이상 사용할 수 없습니다.",
+    ["link.copyUrl"] = "클릭하여 이 웹 주소를 복사합니다.",
+    ["link.map"] = "지도",
+    ["link.openMap"] = "클릭하여 이 지도를 엽니다.",
+    ["link.mapLocation"] = "지도 위치",
+    ["link.viewLocation"] = "클릭하여 지도에서 이 위치를 봅니다.",
+    ["link.pickUpMacro"] = "클릭하여 이 매크로를 집은 뒤 행동 단축바에 놓으세요.",
+    ["link.questLevel"] = "레벨 %s",
+    ["link.viewQuest"] = "클릭하여 퀘스트를 봅니다. Shift-클릭으로 링크합니다.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "브리지 대기 중",
+    ["message.retry"] = "다시 시도",
+    ["message.toolInput"] = "입력",
+    ["message.toolResult"] = "결과",
+    ["message.you"] = "나",
+    ["message.notice"] = "알림",
+
+    -- Inline chat
+    ["inline.bindingName"] = "마우스를 올린 항목에 대해 질문",
+    ["inline.couldNotOpen"] = "인라인 채팅을 열 수 없습니다: %s",
+    ["inline.waitCurrent"] = "진행 중인 인라인 질문을 기다리세요.",
+    ["inline.panelTitle"] = "Wisp에게 묻기 · 패널",
+    ["inline.titleFor"] = "Wisp에게 묻기 · %s",
+    ["inline.ask"] = "질문",
+    ["inline.hoverHint"] = "아이템, 주문, 퀘스트, 대상 또는 Wisp 링크에 마우스를 올린 뒤 인라인 질문을 사용하세요.",
+    ["inline.expand"] = "펼치기",
+    ["inline.leaveCombat"] = "단축키를 바꾸기 전에 전투에서 벗어나세요.",
+    ["inline.bindPrompt"] = "인라인 채팅에 쓸 키, 마우스 버튼 또는 휠을 누르세요.\nCtrl, Alt, Shift 조합을 쓸 수 있습니다. Esc를 누르면 취소됩니다. 기존 단축키는 유지됩니다.",
+    ["inline.bindNotChanged"] = "전투 중이라 단축키를 바꾸지 않았습니다.",
+    ["inline.boundTo"] = "인라인 채팅: %s",
+    ["inline.keyNotAssigned"] = "이 키는 지정할 수 없습니다. 다른 조합을 고르세요.",
+
+    -- Panels
+    ["panel.unavailable"] = "사용 불가",
+    ["panel.completed"] = "완료",
+    ["panel.notCompleted"] = "미완료",
+    ["panel.remainingBagsOnly"] = "%d개 남음, 가방만",
+    ["panel.bagsOnly"] = "가방만",
+    ["panel.bagCountUnavailable"] = "가방 개수를 알 수 없음",
 }

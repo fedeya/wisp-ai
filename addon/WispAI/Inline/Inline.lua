@@ -1,7 +1,8 @@
 local _, ns = ...
+local L = ns.L
 local uiWidgets = ns.UI.Widgets
 BINDING_HEADER_WISPAI = "Wisp"
-BINDING_NAME_WISPAI_INLINE = "Ask about hovered reference"
+BINDING_NAME_WISPAI_INLINE = L["inline.bindingName"]
 local panel, entry, title, scroll, content, busy, send
 local rows = {}
 local newMessages, renderedChat
@@ -44,7 +45,7 @@ function ns.Inline.ActivateInline(key)
     lastActivation = now
     local ok, error = pcall(ns.Inline.OpenInline)
     if not ok then
-        ns.Core.Log("Inline chat could not open: " .. tostring(error))
+        ns.Core.Log(L["inline.couldNotOpen"]:format(tostring(error)))
     end
     bindingStatus("activated", key, not ok and error or nil)
 end
@@ -116,7 +117,7 @@ function ns.Inline.AskPanel(panelId, node, values)
     end
     local current = ns.Inline.InlineCurrent()
     if current and current.status == "working" then
-        ns.Core.Log("Wait for the current inline question.")
+        ns.Core.Log(L["inline.waitCurrent"])
         return
     end
     ns.inlineCounter = (ns.inlineCounter or 0) + 1
@@ -139,7 +140,7 @@ function ns.Inline.AskPanel(panelId, node, values)
     ns.workStarted[chat.id] = GetTime()
     panel.reference = nil
     entry:SetText("")
-    title:SetText("Ask Wisp · Panel")
+    title:SetText(L["inline.panelTitle"])
     panel:Show()
     scroll:SetVerticalScroll(0)
     ns.Transport.Send({
@@ -335,7 +336,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         and not ns.UI.Activity.IsSending(chat)
     busy:SetShown(showBusy)
     if showBusy then
-        local active = "Thinking"
+        local active = L["activity.thinking"]
         for _, call in ipairs(chat.activity or {}) do
             if call.status == "running" then
                 active = call.label or call.name or active
@@ -372,7 +373,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
     end
     ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
     renderedChat = chat and chat.id
-    uiWidgets.SetText(send, working and "Stop" or "Ask")
+    uiWidgets.SetText(send, working and L["composer.stop"] or L["inline.ask"])
 end
 function ns.Inline.OpenInline()
     if bindingCapture and bindingCapture:IsShown() then
@@ -388,7 +389,7 @@ function ns.Inline.OpenInline()
             entry:SetFocus()
             return
         end
-        ns.Core.Log("Hover an item, spell, quest, unit or Wisp reference, then use Ask inline.")
+        ns.Core.Log(L["inline.hoverHint"])
         return
     end
     if panel.reference ~= reference then
@@ -406,7 +407,7 @@ function ns.Inline.OpenInline()
         scroll:SetVerticalScroll(0)
     end
     local name = reference:match("|h(.-)|h") or reference:match("%[([^%]]+)%]") or "Reference"
-    uiWidgets.SetText(title, "Ask Wisp · " .. name:gsub("[|%c]", ""))
+    uiWidgets.SetText(title, L["inline.titleFor"]:format((name:gsub("[|%c]", ""))))
     if GetCursorPosition then
         local x, y = GetCursorPosition()
         local scale = UIParent:GetEffectiveScale()
@@ -467,7 +468,7 @@ function ns.Inline.InitInline()
     end, "ghost")
     close:SetHeight(22)
     close:SetPoint("TOPRIGHT", -8, -7)
-    local expand = uiWidgets.Button(panel, "Expand", 70, nil, "ghost")
+    local expand = uiWidgets.Button(panel, L["inline.expand"], 70, nil, "ghost")
     expand:SetHeight(22)
     expand:SetPoint("RIGHT", close, "LEFT", -5, 0)
     expand:SetScript("OnClick", function()
@@ -516,8 +517,14 @@ function ns.Inline.InitInline()
     content:SetSize(370, 1)
     content._wispScroll = scroll
     scroll:SetScrollChild(content)
-    newMessages =
-        uiWidgets.Button(panel, "New messages v", 140, nil, nil, "WispAIInlineNewMessages")
+    newMessages = uiWidgets.Button(
+        panel,
+        L["transcript.newMessages"],
+        140,
+        nil,
+        nil,
+        "WispAIInlineNewMessages"
+    )
     newMessages:SetPoint("BOTTOM", scroll, "BOTTOM", 0, 8)
     newMessages:SetFrameLevel(scroll:GetFrameLevel() + 10)
     newMessages:SetScript("OnClick", function()
@@ -537,8 +544,8 @@ function ns.Inline.InitInline()
     busy.author:SetPoint("TOPLEFT", 0, 0)
     busy.mark = uiWidgets.Dot(busy, 6)
     busy.mark:SetPoint("TOPLEFT", 1, -5)
-    busy.title = uiWidgets.Label(busy, "Thinking", uiWidgets.MUTED)
-    uiWidgets.ChatFont(busy.title, "Thinking")
+    busy.title = uiWidgets.Label(busy, L["activity.thinking"], uiWidgets.MUTED)
+    uiWidgets.ChatFont(busy.title, L["activity.thinking"])
     busy.title:SetWordWrap(false)
     busy:Hide()
     entry = CreateFrame("EditBox", "WispAIInlineInput", panel, "BackdropTemplate")
@@ -562,7 +569,7 @@ function ns.Inline.InitInline()
         entry:ClearFocus()
         panel:Hide()
     end)
-    send = uiWidgets.Button(panel, "Ask", 65, nil, "primary")
+    send = uiWidgets.Button(panel, L["inline.ask"], 65, nil, "primary")
     send:SetHeight(27)
     send:SetPoint("BOTTOMRIGHT", -10, 13)
     send:SetScript("OnClick", function()
@@ -592,7 +599,7 @@ function ns.Inline.InitInline()
 end
 function ns.Inline.BindInline()
     if InCombatLockdown and InCombatLockdown() then
-        ns.Core.Log("Leave combat before changing keybindings.")
+        ns.Core.Log(L["inline.leaveCombat"])
         return
     end
     if bindingCapture then
@@ -623,13 +630,11 @@ function ns.Inline.BindInline()
     hint:SetPoint("TOPLEFT", 15, -20)
     hint:SetWidth(350)
     hint:SetWordWrap(true)
-    hint:SetText(
-        "Press a key, mouse button or mouse wheel for inline chat.\nCtrl, Alt and Shift are supported. Escape cancels. Existing bindings will be preserved."
-    )
+    hint:SetText(L["inline.bindPrompt"])
     local function assign(key)
         if InCombatLockdown and InCombatLockdown() then
             dialog:Hide()
-            ns.Core.Log("Binding was not changed in combat.")
+            ns.Core.Log(L["inline.bindNotChanged"])
             return
         end
         local selectedKey = combination(key)
@@ -653,10 +658,10 @@ function ns.Inline.BindInline()
             end
             SaveBindings(GetCurrentBindingSet())
             ns.db.inlineBinding = selectedKey
-            ns.Core.Log("Inline chat: " .. selectedKey)
+            ns.Core.Log(L["inline.boundTo"]:format(selectedKey))
             dialog:Hide()
         else
-            hint:SetText("This key could not be assigned. Choose another combination.")
+            hint:SetText(L["inline.keyNotAssigned"])
         end
     end
     dialog:SetScript("OnKeyDown", function(self, key)

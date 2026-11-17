@@ -204,4 +204,58 @@ ns.Locales.ptBR = {
     ["integrations.waiting"] = "Aguardando o bridge...",
     ["integrations.savingChanges"] = "Salvando alterações...",
     ["integrations.hint"] = "Novas chamadas usam estas configurações. As que estão em andamento podem terminar.",
+
+    -- Copy
+    ["common.close"] = "Fechar",
+    ["copy.action"] = "Copiar",
+    ["copy.replyTitle"] = "Copiar resposta",
+    ["copy.hint"] = "Pressione Ctrl+C para copiar",
+    ["copy.urlTitle"] = "Copiar endereço web (Ctrl+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "O Wisp {installed} está instalado (carregado {loaded}). Digite /reload para carregar a nova versão.",
+    ["notice.mapUnavailable"] = "A interface do mapa não está disponível.",
+    ["notice.leaveCombatMacro"] = "Saia do combate antes de pegar uma macro.",
+
+    -- Links
+    ["link.macroGone"] = "Esta macro não está mais disponível.",
+    ["link.copyUrl"] = "Clique para copiar este endereço web.",
+    ["link.map"] = "Mapa",
+    ["link.openMap"] = "Clique para abrir este mapa.",
+    ["link.mapLocation"] = "Local no mapa",
+    ["link.viewLocation"] = "Clique para ver este local no mapa.",
+    ["link.pickUpMacro"] = "Clique para pegar esta macro e coloque-a na sua barra de ações.",
+    ["link.questLevel"] = "Nível %s",
+    ["link.viewQuest"] = "Clique para ver a missão. Shift+clique para vincular.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "Aguardando o bridge",
+    ["message.retry"] = "Tentar de novo",
+    ["message.toolInput"] = "Entrada",
+    ["message.toolResult"] = "Resultado",
+    ["message.you"] = "Você",
+    ["message.notice"] = "Aviso",
+
+    -- Inline chat
+    ["inline.bindingName"] = "Perguntar sobre a referência sob o cursor",
+    ["inline.couldNotOpen"] = "Não foi possível abrir o chat embutido: %s",
+    ["inline.waitCurrent"] = "Aguarde a pergunta atual terminar.",
+    ["inline.panelTitle"] = "Pergunte ao Wisp · Painel",
+    ["inline.titleFor"] = "Pergunte ao Wisp · %s",
+    ["inline.ask"] = "Perguntar",
+    ["inline.hoverHint"] = "Passe o mouse sobre um item, feitiço, missão, unidade ou referência do Wisp e use a pergunta embutida.",
+    ["inline.expand"] = "Expandir",
+    ["inline.leaveCombat"] = "Saia do combate antes de mudar os atalhos.",
+    ["inline.bindPrompt"] = "Pressione uma tecla, botão do mouse ou a roda do mouse para o chat embutido.\nCtrl, Alt e Shift são aceitos. Esc cancela. Os atalhos existentes serão mantidos.",
+    ["inline.bindNotChanged"] = "O atalho não foi alterado em combate.",
+    ["inline.boundTo"] = "Chat embutido: %s",
+    ["inline.keyNotAssigned"] = "Não foi possível definir esta tecla. Escolha outra combinação.",
+
+    -- Panels
+    ["panel.unavailable"] = "Indisponível",
+    ["panel.completed"] = "Concluída",
+    ["panel.notCompleted"] = "Não concluída",
+    ["panel.remainingBagsOnly"] = "Faltam %d; só bolsas",
+    ["panel.bagsOnly"] = "Só bolsas",
+    ["panel.bagCountUnavailable"] = "Contagem das bolsas indisponível",
 }

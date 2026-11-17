@@ -108,6 +108,7 @@ read_globals = {
     "TaxiNodeGetType",
     "TaxiNodeName",
     "UIParent",
+    "UISpecialFrames",
     "UiMapPoint",
     "UnitAffectingCombat",
     "UnitCanAttack",

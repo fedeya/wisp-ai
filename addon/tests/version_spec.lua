@@ -65,3 +65,58 @@ it("diag compares the loaded addon with the bundled addon version", function()
     SlashCmdList.WISPAI("diag")
     assert(logs[1]:find("desktop/bridge unknown", 1, true))
 end)
+
+it("prints the /reload hint once when Desktop installed a newer addon", function()
+    local env = helper.env()
+    setfenv(1, env)
+    do
+        logs = {}
+        SlashCmdList = {}
+        ns = helper.namespace({ slot = 1 })
+        function time()
+            return 1
+        end
+        function CreateFrame()
+            return { RegisterEvent = function() end, SetScript = function() end }
+        end
+        DEFAULT_CHAT_FRAME = {
+            AddMessage = function(_, text)
+                logs[#logs + 1] = text
+            end,
+        }
+        C_AddOns = {
+            GetAddOnMetadata = function()
+                return "1.2.9"
+            end,
+        }
+    end
+    helper.addon("Core.lua", env)
+    ns.db = { drafts = {} }
+    ns.Transport.Acknowledge = function() end
+    GetTime = function()
+        return 1
+    end
+    local rev = 0
+    local function receive(expected)
+        rev = rev + 1
+        ns.Chat.ReceiveSnapshot({
+            v = 1,
+            session = ns.session,
+            rev = rev,
+            connected = true,
+            expectedAddonVersion = expected,
+        })
+    end
+
+    receive(nil)
+    receive("1.2.9")
+    receive("1.1.40")
+    assert(#logs == 0)
+    receive("1.2.10")
+    assert(#logs == 1)
+    assert(logs[1]:find("Wisp 1.2.10 is installed (loaded 1.2.9)", 1, true))
+    assert(logs[1]:find("/reload", 1, true))
+    receive("1.2.10")
+    receive("1.3.0")
+    assert(#logs == 1)
+end)

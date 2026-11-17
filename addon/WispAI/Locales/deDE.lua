@@ -204,4 +204,58 @@ ns.Locales.deDE = {
     ["integrations.waiting"] = "Warte auf die Bridge...",
     ["integrations.savingChanges"] = "Änderungen werden gespeichert...",
     ["integrations.hint"] = "Neue Aufrufe nutzen diese Einstellungen. Laufende Aufrufe dürfen fertig werden.",
+
+    -- Copy
+    ["common.close"] = "Schließen",
+    ["copy.action"] = "Kopieren",
+    ["copy.replyTitle"] = "Antwort kopieren",
+    ["copy.hint"] = "Strg+C zum Kopieren drücken",
+    ["copy.urlTitle"] = "Webadresse kopieren (Strg+C)",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "Wisp {installed} ist installiert (geladen: {loaded}). Gib /reload ein, um die neue Version zu laden.",
+    ["notice.mapUnavailable"] = "Die Kartenoberfläche ist nicht verfügbar.",
+    ["notice.leaveCombatMacro"] = "Verlasse den Kampf, bevor du ein Makro aufnimmst.",
+
+    -- Links
+    ["link.macroGone"] = "Dieses Makro ist nicht mehr verfügbar.",
+    ["link.copyUrl"] = "Klicken, um diese Webadresse zu kopieren.",
+    ["link.map"] = "Karte",
+    ["link.openMap"] = "Klicken, um diese Karte zu öffnen.",
+    ["link.mapLocation"] = "Kartenposition",
+    ["link.viewLocation"] = "Klicken, um diesen Ort auf der Karte zu sehen.",
+    ["link.pickUpMacro"] = "Klicken, um dieses Makro aufzunehmen, und dann auf deine Aktionsleiste ziehen.",
+    ["link.questLevel"] = "Stufe %s",
+    ["link.viewQuest"] = "Klicken, um die Quest anzuzeigen. Umschalt-Klick zum Verlinken.",
+
+    -- Message rows
+    ["message.waitingBridge"] = "Warte auf die Bridge",
+    ["message.retry"] = "Erneut versuchen",
+    ["message.toolInput"] = "Eingabe",
+    ["message.toolResult"] = "Ergebnis",
+    ["message.you"] = "Du",
+    ["message.notice"] = "Hinweis",
+
+    -- Inline chat
+    ["inline.bindingName"] = "Nach dem Verweis unter dem Mauszeiger fragen",
+    ["inline.couldNotOpen"] = "Inline-Chat konnte nicht geöffnet werden: %s",
+    ["inline.waitCurrent"] = "Warte auf die laufende Inline-Frage.",
+    ["inline.panelTitle"] = "Wisp fragen · Fenster",
+    ["inline.titleFor"] = "Wisp fragen · %s",
+    ["inline.ask"] = "Fragen",
+    ["inline.hoverHint"] = "Fahre über einen Gegenstand, Zauber, eine Quest, Einheit oder einen Wisp-Verweis und frag dann inline.",
+    ["inline.expand"] = "Erweitern",
+    ["inline.leaveCombat"] = "Verlasse den Kampf, bevor du Tastenbelegungen änderst.",
+    ["inline.bindPrompt"] = "Drücke eine Taste, Maustaste oder das Mausrad für den Inline-Chat.\nStrg, Alt und Umschalt werden unterstützt. Escape bricht ab. Bestehende Belegungen bleiben erhalten.",
+    ["inline.bindNotChanged"] = "Die Belegung wurde im Kampf nicht geändert.",
+    ["inline.boundTo"] = "Inline-Chat: %s",
+    ["inline.keyNotAssigned"] = "Diese Taste konnte nicht belegt werden. Wähl eine andere Kombination.",
+
+    -- Panels
+    ["panel.unavailable"] = "Nicht verfügbar",
+    ["panel.completed"] = "Abgeschlossen",
+    ["panel.notCompleted"] = "Nicht abgeschlossen",
+    ["panel.remainingBagsOnly"] = "Noch %d; nur Taschen",
+    ["panel.bagsOnly"] = "Nur Taschen",
+    ["panel.bagCountUnavailable"] = "Taschenzählung nicht verfügbar",
 }

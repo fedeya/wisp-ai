@@ -204,4 +204,58 @@ ns.Locales.zhCN = {
     ["integrations.waiting"] = "正在等待桥接...",
     ["integrations.savingChanges"] = "正在保存更改...",
     ["integrations.hint"] = "新的调用会使用这些设置。进行中的调用可以继续完成。",
+
+    -- Copy
+    ["common.close"] = "关闭",
+    ["copy.action"] = "复制",
+    ["copy.replyTitle"] = "复制回复",
+    ["copy.hint"] = "按 Ctrl+C 复制",
+    ["copy.urlTitle"] = "复制网址（Ctrl+C）",
+
+    -- Chat notices
+    ["notice.addonUpdated"] = "已安装 Wisp {installed}（当前加载 {loaded}）。输入 /reload 以载入新版本。",
+    ["notice.mapUnavailable"] = "地图界面不可用。",
+    ["notice.leaveCombatMacro"] = "请先脱离战斗再拾取宏。",
+
+    -- Links
+    ["link.macroGone"] = "此宏已不可用。",
+    ["link.copyUrl"] = "点击复制此网址。",
+    ["link.map"] = "地图",
+    ["link.openMap"] = "点击打开此地图。",
+    ["link.mapLocation"] = "地图位置",
+    ["link.viewLocation"] = "点击在地图上查看此位置。",
+    ["link.pickUpMacro"] = "点击拾取此宏，然后放到动作条上。",
+    ["link.questLevel"] = "等级 %s",
+    ["link.viewQuest"] = "点击查看任务。Shift-点击发送链接。",
+
+    -- Message rows
+    ["message.waitingBridge"] = "正在等待桥接",
+    ["message.retry"] = "重试",
+    ["message.toolInput"] = "输入",
+    ["message.toolResult"] = "结果",
+    ["message.you"] = "你",
+    ["message.notice"] = "通知",
+
+    -- Inline chat
+    ["inline.bindingName"] = "询问鼠标指向的内容",
+    ["inline.couldNotOpen"] = "无法打开快捷提问：%s",
+    ["inline.waitCurrent"] = "请等待当前的快捷提问完成。",
+    ["inline.panelTitle"] = "问 Wisp · 面板",
+    ["inline.titleFor"] = "问 Wisp · %s",
+    ["inline.ask"] = "提问",
+    ["inline.hoverHint"] = "将鼠标悬停在物品、法术、任务、单位或 Wisp 链接上，然后使用快捷提问。",
+    ["inline.expand"] = "展开",
+    ["inline.leaveCombat"] = "请先脱离战斗再更改按键绑定。",
+    ["inline.bindPrompt"] = "按下用于快捷提问的按键、鼠标按键或滚轮。\n支持 Ctrl、Alt 和 Shift。按 Esc 取消。现有的按键绑定会保留。",
+    ["inline.bindNotChanged"] = "战斗中未更改按键绑定。",
+    ["inline.boundTo"] = "快捷提问：%s",
+    ["inline.keyNotAssigned"] = "无法绑定此按键。请换一个组合。",
+
+    -- Panels
+    ["panel.unavailable"] = "不可用",
+    ["panel.completed"] = "已完成",
+    ["panel.notCompleted"] = "未完成",
+    ["panel.remainingBagsOnly"] = "还差 %d；仅背包",
+    ["panel.bagsOnly"] = "仅背包",
+    ["panel.bagCountUnavailable"] = "无法统计背包数量",
 }

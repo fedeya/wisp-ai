@@ -1,4 +1,5 @@
 local _, ns = ...
+local L = ns.L
 local frames, panels = {}, {}
 local function clone(value)
     if type(value) ~= "table" then
@@ -61,9 +62,9 @@ function ns.Panels.BoundPanel(panel)
                 node.unavailable = not known
             else
                 if not known then
-                    node.value = "Unavailable"
+                    node.value = L["panel.unavailable"]
                 elseif binding.source == "quest_completed" then
-                    node.value = value == 1 and "Completed" or "Not completed"
+                    node.value = value == 1 and L["panel.completed"] or L["panel.notCompleted"]
                 elseif binding.source == "money" then
                     node.value = string.format(
                         "%dg %ds %dc",
@@ -77,8 +78,10 @@ function ns.Panels.BoundPanel(panel)
                 end
                 if binding.source == "item_count" then
                     node.detail = known
-                            and (binding.target and (math.max(0, binding.target - value) .. " remaining; bags only") or "Bags only")
-                        or "Bag count unavailable"
+                            and (binding.target and L["panel.remainingBagsOnly"]:format(
+                                math.max(0, binding.target - value)
+                            ) or L["panel.bagsOnly"])
+                        or L["panel.bagCountUnavailable"]
                 end
             end
         end

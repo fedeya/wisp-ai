@@ -8,6 +8,7 @@ The parser API is `ns.Markdown.Parse` and `ns.Markdown.ParseInline`; its tree us
 `children` arrays. The other modules live under the same `ns.Markdown` namespace.
 `TextStyle.lua` lays out the view's preformatted inline runs and decorations;
 `Links.lua` validates and encodes copyable web links. Neither module parses source.
+`PlainText.lua` walks the parsed tree into readable plain text for copying a reply.
 `MessageRows` and `RichUI` own the native widgets.
 
 See [the contract](../../../docs/markdown.md) for syntax, API, limits and checks.

@@ -54,6 +54,16 @@ describe("locales", function()
                 local _, placeholders = english[key]:gsub("%%[%a%%]", "")
                 local _, translated = text:gsub("%%[%a%%]", "")
                 assert.equal(placeholders, translated, locale .. "." .. key .. " placeholders")
+                local names, wanted = {}, {}
+                for name in text:gmatch("{(%w+)}") do
+                    names[#names + 1] = name
+                end
+                for name in english[key]:gmatch("{(%w+)}") do
+                    wanted[#wanted + 1] = name
+                end
+                table.sort(names)
+                table.sort(wanted)
+                assert.same(wanted, names, locale .. "." .. key .. " named placeholders")
             end
         end
     end)
@@ -156,5 +166,22 @@ describe("locales", function()
         env = buildUI("koKR", "enUS")
         assert.is_nil(env.ns.UI.Widgets.ScriptFace())
         assert.is_false(env.ns.UI.Widgets.InterSupports("Hello"))
+    end)
+end)
+
+describe("LocaleText", function()
+    it("fills named placeholders in each language's order", function()
+        local env = buildUI("enUS")
+        local values = { installed = "1.2.10", loaded = "1.2.9" }
+        assert.equal(
+            "Wisp 1.2.10 is installed (loaded 1.2.9). Type /reload to load the new version.",
+            env.ns.LocaleText("notice.addonUpdated", values)
+        )
+        env.ns.db.language = "ruRU"
+        local russian = env.ns.LocaleText("notice.addonUpdated", values)
+        assert.is_truthy(russian:find("1.2.10", 1, true))
+        assert.is_truthy(russian:find("1.2.9", 1, true))
+        assert.is_truthy(russian:find("/reload", 1, true))
+        assert.is_falsy(russian:find("{", 1, true))
     end)
 end)
