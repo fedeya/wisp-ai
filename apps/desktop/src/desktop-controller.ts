@@ -3,7 +3,8 @@ import { createStore } from 'zustand/vanilla';
 import {
   desktop,
   native,
-  request,
+  bridge,
+  call,
   type DesktopInfo,
   type Mcp,
   type Model,
@@ -123,7 +124,7 @@ function createDesktopSession() {
 
   async function readStatus() {
     try {
-      const status = await request<Status>('/status');
+      const status = await call(bridge.status.$get());
       if (disposed) return;
       update({ status, connectionError: '', starting: false });
       const catalogRevision = JSON.stringify([
@@ -177,7 +178,7 @@ function createDesktopSession() {
 
   async function loadModels() {
     update({ models: [] });
-    const { models } = await request<{ models: Model[] }>('/auth/models');
+    const { models } = await call(bridge.auth.models.$get());
     update({ models, modelsError: '' });
   }
 
@@ -185,10 +186,9 @@ function createDesktopSession() {
     await work(
       'Opening sign-in',
       async () => {
-        const { authorizationUrl } = await request<{ authorizationUrl: string }>('/auth/start', {
-          profileId: profileId || undefined,
-          newAccount: add,
-        });
+        const { authorizationUrl } = await call(
+          bridge.auth.start.$post({ json: { profileId: profileId || undefined, newAccount: add } }),
+        );
         await desktop('open_sign_in', { url: authorizationUrl });
       },
       'Continue in your browser. Wisp will update when sign-in completes.',
@@ -257,7 +257,7 @@ function createDesktopSession() {
   async function setIntegration(id: string, enabled: boolean) {
     await work(
       'Updating integration',
-      () => request('/integrations/set', { id, enabled }),
+      () => call(bridge.integrations.set.$post({ json: { id, enabled } })),
       'Integration updated.',
       id,
     );
@@ -266,7 +266,12 @@ function createDesktopSession() {
   async function panelAction(panel: Panel, action: 'show' | 'hide' | 'remove') {
     await work(
       'Updating panel',
-      () => request('/panels/action', { action, id: panel.id, characterKey: panel.characterKey }),
+      () =>
+        call(
+          bridge.panels.action.$post({
+            json: { action, id: panel.id, characterKey: panel.characterKey },
+          }),
+        ),
       'Panel updated.',
       panel.id,
     );
@@ -279,7 +284,7 @@ function createDesktopSession() {
         run: () =>
           work(
             'Removing connection',
-            () => request('/mcps/remove', { name: server.name }),
+            () => call(bridge.mcps.remove.$post({ json: { name: server.name } })),
             'Connection removed.',
             'mcp:' + server.name,
           ),
@@ -291,7 +296,7 @@ function createDesktopSession() {
     await work(
       'Testing ' + server.name,
       async () => {
-        const result = await request<{ count: number }>('/mcps/test', { server });
+        const result = await call(bridge.mcps.test.$post({ json: { server } }));
         update({ feedback: `Connected. ${result.count} tools available.` });
       },
       undefined,

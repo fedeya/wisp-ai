@@ -3,11 +3,13 @@ import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testi
 
 import App, { createDesktopRouter } from './App';
 import { desktopStore } from './desktop-controller';
-import { desktop, request, type Status } from './api';
+import { desktop, type Status } from './api';
+import { bridgeRequest as request } from './api/bridge-request';
 import { listen } from '@tauri-apps/api/event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 import { chooseOption, openSelect } from './select-test-helpers';
-vi.mock('./api', () => ({ native: true, desktop: vi.fn(), request: vi.fn() }));
+vi.mock('./api/desktop', () => ({ native: true, desktop: vi.fn() }));
+vi.mock('./api/bridge-request', () => ({ bridgeRequest: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
 }));
@@ -604,9 +606,11 @@ test.each([
     await fireEvent.click(screen.getByRole('button', { name: 'Add anthropic/claude-sonnet' }));
     await screen.findByText('1 model selected for Wisp');
     await fireEvent.click(screen.getByRole('button', { name: 'Test anthropic/claude-sonnet' }));
-    expect(request).toHaveBeenCalledWith(
-      '/connections/test',
-      expect.objectContaining({ models: [model] }),
+    await waitFor(() =>
+      expect(request).toHaveBeenCalledWith(
+        '/connections/test',
+        expect.objectContaining({ models: [model] }),
+      ),
     );
     await waitFor(() => expect(discover.disabled).toBe(false));
     await fireEvent.click(discover);

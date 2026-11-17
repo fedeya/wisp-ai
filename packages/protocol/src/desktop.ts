@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { capabilityViewSchema } from './capabilities.js';
 import { savedRoutine, routineRun } from './routines.js';
-import { connectionView, discoveredConnectionModel } from './providers.js';
+import { connectionView } from './providers.js';
 import { searchState } from './search.js';
 export const desktopInfoSchema = z.object({
   wow: z.string().nullable().optional(),
@@ -66,11 +66,3 @@ export type Model = z.infer<typeof modelSchema>;
 export type Mcp = z.infer<typeof mcpSchema>;
 export type Panel = z.infer<typeof panelSchema>;
 export type Status = z.infer<typeof statusSchema>;
-export const desktopResponses = {
-  '/status': statusSchema,
-  '/auth/models': z.object({ models: z.array(modelSchema) }),
-  '/auth/start': z.object({ authorizationUrl: z.string().url() }).passthrough(),
-  '/auth/cancel': authStateSchema,
-  '/auth/disconnect': authStateSchema,
-  '/connections/discover': z.object({ models: z.array(discoveredConnectionModel) }),
-};

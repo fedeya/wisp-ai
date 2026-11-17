@@ -1,49 +1,37 @@
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { getRequestListener } from '@hono/node-server';
 import { writeJson } from './json-file.ts';
-import { errorMessage } from './errors.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import path from 'node:path';
 export async function startDesktopServer(
   runtime: string,
-  handle: (method: string, url: string, data: unknown) => Promise<unknown>,
+  app: { fetch: (request: Request) => Response | Promise<Response> },
   port = 43190,
 ) {
   const token = randomBytes(32).toString('hex');
-  const server = createServer(async (req, res) => {
-    const expected = Buffer.from('Bearer ' + token),
-      supplied = Buffer.from(req.headers.authorization || '');
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      res.writeHead(403).end('Forbidden');
-      return;
-    }
-    if (req.headers.origin) {
-      res.writeHead(403).end('Browser origins are not allowed');
-      return;
-    }
-    try {
-      req.setEncoding('utf8');
-      let body = '';
-      for await (const chunk of req) {
-        body += chunk;
-        if (body.length > 100000) {
-          throw Error('Request is too large');
-        }
+  const expected = Buffer.from('Bearer ' + token);
+  const guarded = new Hono()
+    .use(async (c, next) => {
+      const supplied = Buffer.from(c.req.header('authorization') || '');
+      if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+        return c.text('Forbidden', 403);
       }
-      const result = await handle(
-        req.method || 'GET',
-        req.url || '/',
-        body ? JSON.parse(body) : {},
-      );
-      res
-        .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-        .end(JSON.stringify(result ?? { ok: true }));
-    } catch (error) {
-      res
-        .writeHead(400, { 'content-type': 'application/json' })
-        .end(JSON.stringify({ error: errorMessage(error) }));
-    }
-  });
+      if (c.req.header('origin')) {
+        return c.text('Browser origins are not allowed', 403);
+      }
+      await next();
+    })
+    .use(
+      bodyLimit({
+        maxSize: 100000,
+        onError: (c) => c.json({ error: 'Request is too large' }, 400),
+      }),
+    )
+    .all('*', (c) => app.fetch(c.req.raw));
+  const server = createServer(getRequestListener(guarded.fetch));
   try {
     const boundPort = await listenOnLoopback(server, port);
     await writeJson(path.join(runtime, 'desktop.json'), {

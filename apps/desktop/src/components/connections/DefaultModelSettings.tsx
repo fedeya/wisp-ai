@@ -1,7 +1,7 @@
 import { useForm, useSelector } from '@tanstack/react-form';
 import { parseConnectionModel, type ProviderId } from '@wisp/protocol/providers';
 import { useEffect, useRef } from 'react';
-import { request } from '../../api';
+import { bridge, call } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import Icon from '../ui/Icon';
 import { Button, Card, Select } from '../ui/Controls';
@@ -56,7 +56,7 @@ export default function DefaultModelSettings({
       }
       const saved = await work(
         'Updating default model',
-        () => request('/auth/model', { model }),
+        () => call(bridge.auth.model.$post({ json: { model } })),
         'Default model updated.',
         'model',
       );

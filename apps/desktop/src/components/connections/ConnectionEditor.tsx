@@ -9,7 +9,7 @@ import {
   type ProviderId,
 } from '@wisp/protocol/providers';
 import { useEffect, useRef, useState } from 'react';
-import { request } from '../../api';
+import { bridge, call } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Button, Input, NumberInput } from '../ui/Controls';
 import Icon from '../ui/Icon';
@@ -91,10 +91,11 @@ export default function ConnectionEditor({
       await work(
         'Saving AI connection',
         async () => {
-          const saved = await request<{ id: string }>('/connections/save', {
-            ...connectionDetails(provider, connection?.id, value),
-            models: value.models,
-          });
+          const saved = await call(
+            bridge.connections.save.$post({
+              json: { ...connectionDetails(provider, connection?.id, value), models: value.models },
+            }),
+          );
           if (onConnected) onConnected(saved.id);
           else close();
         },
@@ -130,9 +131,10 @@ export default function ConnectionEditor({
     return work(
       'Loading provider models',
       async () => {
-        const result = await request<{ models: DiscoveredConnectionModel[] }>(
-          '/connections/discover',
-          connectionDetails(provider, connection?.id, form.state.values),
+        const result = await call(
+          bridge.connections.discover.$post({
+            json: connectionDetails(provider, connection?.id, form.state.values),
+          }),
         );
         setDiscovered(result.models);
         setShowModelSettings(true);
@@ -163,10 +165,14 @@ export default function ConnectionEditor({
     return work(
       'Testing AI model',
       () =>
-        request('/connections/test', {
-          ...connectionDetails(provider, connection?.id, form.state.values),
-          models: [model],
-        }),
+        call(
+          bridge.connections.test.$post({
+            json: {
+              ...connectionDetails(provider, connection?.id, form.state.values),
+              models: [model],
+            },
+          }),
+        ),
       `Tool calling verified for ${model.name || model.id}.`,
       'connection-editor',
     );

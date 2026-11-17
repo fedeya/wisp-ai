@@ -1,6 +1,6 @@
 import { characterLabel } from '@wisp/protocol/character-key';
 import { describeRoutineTrigger } from '@wisp/protocol/routines';
-import { request } from '../api';
+import { bridge, call } from '../api';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import DataState from '../components/ui/DataState';
 import { Button, Card } from '../components/ui/Controls';
@@ -51,11 +51,15 @@ export default function Routines() {
                     app.work(
                       'Updating routine',
                       () =>
-                        request('/routines/action', {
-                          characterKey,
-                          id,
-                          operation: routine.enabled ? 'pause' : 'resume',
-                        }),
+                        call(
+                          bridge.routines.action.$post({
+                            json: {
+                              characterKey,
+                              id,
+                              operation: routine.enabled ? 'pause' : 'resume',
+                            },
+                          }),
+                        ),
                       'Routine updated.',
                       target,
                     )
@@ -74,7 +78,11 @@ export default function Routines() {
                         app.work(
                           'Deleting routine',
                           () =>
-                            request('/routines/action', { characterKey, id, operation: 'remove' }),
+                            call(
+                              bridge.routines.action.$post({
+                                json: { characterKey, id, operation: 'remove' },
+                              }),
+                            ),
                           'Routine deleted.',
                           target,
                         ),
@@ -113,7 +121,7 @@ export default function Routines() {
                       onClick={() =>
                         app.work(
                           'Opening run',
-                          () => request('/routines/open', { id: run.id }),
+                          () => call(bridge.routines.open.$post({ json: { id: run.id } })),
                           'Conversation selected in WoW. Open /wisp to continue.',
                           target,
                         )

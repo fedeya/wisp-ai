@@ -1,7 +1,7 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { useForm, useSelector } from '@tanstack/react-form';
 import { useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
-import { request, type Mcp } from '../../../api';
+import { bridge, call, type Mcp } from '../../../api';
 import Icon from '../../ui/Icon';
 import { button } from '../../ui/Controls/styles';
 import { Button, Checkbox, Input, Select, Textarea } from '../../ui/Controls';
@@ -54,13 +54,13 @@ function parseArgs(input: string) {
   return Array.isArray(args) && args.every((item) => typeof item === 'string') ? args : undefined;
 }
 
-function parseEnv(input: string) {
+function parseEnv(input: string): Record<string, string> | undefined {
   const env = parseJson(input);
   return env &&
     typeof env === 'object' &&
     !Array.isArray(env) &&
     Object.values(env).every((value) => typeof value === 'string')
-    ? env
+    ? (env as Record<string, string>)
     : undefined;
 }
 
@@ -131,9 +131,8 @@ export default function McpForm({
       const save = meta === 'save';
       setNotice({ kind: 'pending', text: save ? 'Saving connection…' : 'Testing connection…' });
       try {
-        const result = await request<{ count: number }>(
-          save ? '/mcps/save' : '/mcps/test',
-          payloadFor(value),
+        const result = await call(
+          (save ? bridge.mcps.save : bridge.mcps.test).$post({ json: payloadFor(value) }),
         );
         if (save) {
           await saved();

@@ -5,7 +5,7 @@ import os from 'node:os';
 import { ModelConnections } from '@wisp/bridge/model-connections';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { providerDefinitions, connectionModelSlug } from '@wisp/protocol/providers';
-import { desktopResponses } from '@wisp/protocol/desktop';
+import { desktopRoutes } from '@wisp/protocol/desktop-routes';
 import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
 
 const directories: string[] = [];
@@ -138,7 +138,7 @@ test.each(['openrouter', 'gateway', 'compatible'] as const)(
       apiKey: 'key',
       baseURL: provider === 'compatible' ? 'http://localhost:1234/v1' : undefined,
     });
-    const { models } = desktopResponses['/connections/discover'].parse(found);
+    const { models } = desktopRoutes['/connections/discover'].output.parse(found);
     expect(models.map(({ id, supportsTools }) => [id, supportsTools])).toEqual([
       ['lab/tools', true],
       ['lab/text', false],

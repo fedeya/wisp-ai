@@ -1,6 +1,6 @@
 import type { ConnectionView, ProviderId } from '@wisp/protocol/providers';
 import { useState } from 'react';
-import { request } from '../../api';
+import { bridge, call } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Button, Card } from '../ui/Controls';
 import ConnectionEditor from './ConnectionEditor';
@@ -87,7 +87,9 @@ export default function ApiConnections({ provider }: { provider: ProviderId }) {
                     work(
                       'Removing AI connection',
                       async () => {
-                        await request('/connections/remove', { id: connection.id });
+                        await call(
+                          bridge.connections.remove.$post({ json: { id: connection.id } }),
+                        );
                         await loadModels();
                       },
                       'Connection removed.',

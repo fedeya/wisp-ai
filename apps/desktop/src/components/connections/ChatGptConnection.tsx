@@ -1,6 +1,6 @@
 import { useForm, useSelector } from '@tanstack/react-form';
 import { useNavigate } from 'react-router';
-import { request } from '../../api';
+import { bridge, call } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import Icon from '../ui/Icon';
 import { Badge, Button, Card, Select } from '../ui/Controls';
@@ -23,10 +23,11 @@ export default function ChatGptConnection() {
   const accountForm = useForm({
     defaultValues,
     onSubmit: async ({ value, formApi }) => {
-      if (!value.account || !auth?.profiles.some(({ id }) => id === value.account)) return;
+      const profileId = value.account;
+      if (!profileId || !auth?.profiles.some(({ id }) => id === profileId)) return;
       const saved = await work(
         'Switching account',
-        () => request('/auth/select', { profileId: value.account }),
+        () => call(bridge.auth.select.$post({ json: { profileId } })),
         undefined,
         'accounts',
       );
@@ -91,7 +92,7 @@ export default function ChatGptConnection() {
         )}
         {authorizationPending && (
           <Button
-            onClick={() => work('Cancelling sign-in', () => request('/auth/cancel', {}))}
+            onClick={() => work('Cancelling sign-in', () => call(bridge.auth.cancel.$post()))}
             disabled={!!app.busy}
           >
             Cancel sign-in
@@ -109,7 +110,7 @@ export default function ChatGptConnection() {
                 run: () =>
                   work(
                     'Disconnecting',
-                    () => request('/auth/disconnect', {}),
+                    () => call(bridge.auth.disconnect.$post()),
                     'Connection disconnected.',
                   ),
               })

@@ -8,7 +8,7 @@ import { NativeVault } from '@wisp/bridge/secret-vault';
 import { startDesktopServer } from '@wisp/bridge/desktop-server';
 test('desktop controls require the session token and reject browser origins', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-desktop-'));
-  const server = await startDesktopServer(root, async () => ({ ok: true }), 0);
+  const server = await startDesktopServer(root, { fetch: () => Response.json({ ok: true }) }, 0);
   try {
     const identity = JSON.parse(await readFile(path.join(root, 'desktop.json'), 'utf8'));
     const url = 'http://127.0.0.1:' + identity.port + '/status';
@@ -25,6 +25,13 @@ test('desktop controls require the session token and reject browser origins', as
       (await fetch(url, { headers: { authorization: 'Bearer ' + identity.token } })).status,
       200,
     );
+    const oversized = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + identity.token, 'content-type': 'application/json' },
+      body: JSON.stringify({ padding: 'x'.repeat(100001) }),
+    });
+    assert.equal(oversized.status, 400);
+    assert.deepEqual(await oversized.json(), { error: 'Request is too large' });
   } finally {
     await new Promise<void>((r) => server.close(() => r()));
     await rm(root, { recursive: true, force: true });

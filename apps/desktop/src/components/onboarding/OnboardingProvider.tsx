@@ -1,6 +1,6 @@
 import type { ProviderId } from '@wisp/protocol/providers';
 import { useEffect, useRef, useState } from 'react';
-import { request } from '../../api';
+import { bridge, call } from '../../api';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ConnectionEditor from '../connections/ConnectionEditor';
@@ -102,7 +102,7 @@ export default function OnboardingProvider({
                 <Button
                   disabled={!!busy}
                   onClick={() =>
-                    void work('Cancelling sign-in', () => request('/auth/cancel', {}), null)
+                    void work('Cancelling sign-in', () => call(bridge.auth.cancel.$post()), null)
                   }
                 >
                   Cancel sign-in

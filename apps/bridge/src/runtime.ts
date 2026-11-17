@@ -5,7 +5,7 @@ import { projectChats } from './chat-projection.ts';
 import { startRoutineScheduler } from './routine-scheduler.ts';
 import { createPacketReceiver } from './packet-receiver.ts';
 import { createSessionState } from './session-state.ts';
-import { createDesktopHandler } from './desktop-handler.ts';
+import { createDesktopApp } from './desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 import { writeJson, readJson } from './json-file.ts';
 import { z } from 'zod';
@@ -600,7 +600,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         routineRuns: routineStore.history({ includeSilent: false, limit: 200 }),
       };
     }
-    const handleDesktopRequest = createDesktopHandler({
+    const desktopApp = createDesktopApp({
       auth,
       connections,
       webSearch,
@@ -613,6 +613,18 @@ export async function startBridge(options: BridgeOptions = {}) {
       setCapability,
       refreshMcpCatalog,
       changed,
+      setWowTransport: (input) =>
+        withTransport(async () => {
+          if (shutdownRequested) throw Error('Wisp is stopping.');
+          if (input.action === 'pause') {
+            if (state.chats.some((chat) => chat.status === 'working')) {
+              throw Error('Wait for the active turn before installing the addon.');
+            }
+            await disconnectTransport();
+          } else {
+            await connectTransport(input.wow ?? config.wow, input.wow !== undefined);
+          }
+        }),
       getStatus: desktopStatus,
       getChats: () => state.chats,
       currentCharacterKey: () => state.currentCharacterKey,
@@ -650,33 +662,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         );
       },
     });
-    const desktopServer = await startDesktopServer(
-      runtime,
-      async (method, route, body) => {
-        if (method === 'POST' && route === '/addon/transport') {
-          const input = z
-            .discriminatedUnion('action', [
-              z.object({ action: z.literal('pause') }),
-              z.object({ action: z.literal('resume'), wow: z.string().min(1).optional() }),
-            ])
-            .parse(body);
-          await withTransport(async () => {
-            if (shutdownRequested) throw Error('Wisp is stopping.');
-            if (input.action === 'pause') {
-              if (state.chats.some((chat) => chat.status === 'working')) {
-                throw Error('Wait for the active turn before installing the addon.');
-              }
-              await disconnectTransport();
-            } else {
-              await connectTransport(input.wow ?? config.wow, input.wow !== undefined);
-            }
-          });
-          return { ok: true };
-        }
-        return handleDesktopRequest(method, route, body);
-      },
-      options.desktopPort,
-    );
+    const desktopServer = await startDesktopServer(runtime, desktopApp, options.desktopPort);
     resources.defer(() => closeServer(desktopServer));
     const transportStartup =
       options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'

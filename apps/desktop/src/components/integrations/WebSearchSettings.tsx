@@ -1,5 +1,5 @@
 import { useForm, useSelector } from '@tanstack/react-form';
-import { desktop, request, type Status } from '../../api';
+import { bridge, call, desktop, type Status } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import { Button, Card, Input, Select } from '../ui/Controls';
 import { desktopLocked } from '../../desktop-controller';
@@ -43,7 +43,7 @@ export default function WebSearchSettings() {
     onSubmit: async ({ value, formApi }) => {
       const saved = await work(
         'Saving search settings',
-        () => request('/search/save', searchInput(value, savedProvider)),
+        () => call(bridge.search.save.$post({ json: searchInput(value, savedProvider) })),
         'Search settings saved.',
         'search',
       );
@@ -125,7 +125,12 @@ export default function WebSearchSettings() {
             onClick={() =>
               work(
                 'Testing Exa',
-                () => request('/search/test', searchInput(form.state.values, savedProvider)),
+                () =>
+                  call(
+                    bridge.search.test.$post({
+                      json: searchInput(form.state.values, savedProvider),
+                    }),
+                  ),
                 'Exa accepted the test search. Results depend on source coverage.',
                 'search',
               )
@@ -148,7 +153,7 @@ export default function WebSearchSettings() {
                   run: () =>
                     work(
                       'Removing Exa key',
-                      () => request('/search/remove-exa', {}),
+                      () => call(bridge.search['remove-exa'].$post({ json: {} })),
                       'Exa key removed.',
                       'search',
                     ),

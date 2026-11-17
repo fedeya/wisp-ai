@@ -1,6 +1,14 @@
-import { desktopInputs } from '@wisp/protocol/desktop-inputs';
+import { Hono } from 'hono';
+import { zValidator } from '@hono/zod-validator';
+import { z } from 'zod';
+import {
+  desktopRoutes as routes,
+  type DesktopRoute,
+  type DesktopRoutes,
+  type DesktopRouteReply,
+} from '@wisp/protocol/desktop-routes';
 import type { Status } from '@wisp/protocol/desktop';
-import { mcpSetup, type McpManager } from './mcp-manager.ts';
+import type { McpManager } from './mcp-manager.ts';
 import type { ModelConnections } from './model-connections.ts';
 import type { WebSearch } from './web-search.ts';
 import type { ChatGPTAuth } from './chatgpt-auth.ts';
@@ -9,12 +17,18 @@ import type { PanelStore } from './panels.ts';
 import type { RoutineStore } from './routines.ts';
 import type { Chat } from './events.ts';
 import { openChat, isWorking } from './chat-lifecycle.ts';
+import { errorMessage } from './errors.ts';
 export interface PanelCommand {
   seq: number;
   id: string;
   characterKey: string;
   action: 'show' | 'hide';
 }
+// Called by the Rust host around addon installs; not part of the webview contract.
+export const wowTransportInput = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('pause') }),
+  z.object({ action: z.literal('resume'), wow: z.string().min(1).optional() }),
+]);
 interface DesktopDependencies {
   auth: ChatGPTAuth;
   connections: ModelConnections;
@@ -32,11 +46,20 @@ interface DesktopDependencies {
   openRoutine: (id: string) => void;
   readSimulationCharacter: () => Promise<unknown>;
   setCapability: (id: string, enabled: boolean) => Promise<void>;
+  setWowTransport: (input: z.infer<typeof wowTransportInput>) => Promise<void>;
   refreshMcpCatalog: () => void;
   requestStop: () => void;
   changed: () => void;
 }
-export function createDesktopHandler(deps: DesktopDependencies) {
+// Validation failures throw so onError reports them like any other failure.
+const json = <T extends z.ZodType>(schema: T) =>
+  zValidator('json', schema, (result) => {
+    if (!result.success) {
+      throw result.error;
+    }
+  });
+const ok = { ok: true } as const;
+export function createDesktopApp(deps: DesktopDependencies) {
   const {
     auth,
     connections,
@@ -46,163 +69,149 @@ export function createDesktopHandler(deps: DesktopDependencies) {
     panelStore,
     routineStore,
     accountOperation,
-    updateModel,
-    getStatus,
-    getChats,
-    currentCharacterKey,
-    sendPanelCommand,
-    openRoutine,
-    readSimulationCharacter,
-    setCapability,
-    refreshMcpCatalog,
-    requestStop,
-    changed,
   } = deps;
-  const chatFor = (id: string) => getChats().find((chat) => chat.id === id);
-  return async (method: string, url: string, raw: unknown) => {
-    if (method === 'POST' && ['/search/save', '/search/test', '/search/remove-exa'].includes(url)) {
-      return accountOperation(async () => {
-        if (url === '/search/save') {
-          return webSearch.save(raw);
-        }
-        if (url === '/search/test') {
-          return webSearch.test(raw);
-        }
-        desktopInputs['/search/remove-exa'].parse(raw);
-        return webSearch.removeExa();
-      });
-    }
-    if (method === 'POST' && url.startsWith('/connections/')) {
-      return accountOperation(async () => {
-        if (url === '/connections/save') {
-          return connections.save(raw);
-        }
-        if (url === '/connections/test') {
-          return connections.test(raw);
-        }
-        if (url === '/connections/discover') {
-          return connections.discover(raw);
-        }
-        if (url === '/connections/remove') {
-          const { id } = desktopInputs['/connections/remove'].parse(raw);
-          await connections.remove(id);
-          return { ok: true };
-        }
-        throw Error('Unknown connection operation.');
-      });
-    }
-    if (method === 'POST' && url === '/simulator/character') {
-      return readSimulationCharacter();
-    }
-    if (method === 'POST' && url === '/auth/start') {
-      const data = desktopInputs['/auth/start'].parse(raw);
-      return accountOperation(() =>
-        auth.beginSignIn(
-          typeof data.profileId === 'string' ? data.profileId : undefined,
-          data.newAccount === true,
-        ),
-      );
-    }
-    if (method === 'POST' && url === '/auth/cancel') {
+  const chatFor = (id: string) => deps.getChats().find((chat) => chat.id === id);
+  return new Hono()
+    .onError((error, c) => c.json({ error: errorMessage(error) }, 400))
+    .notFound((c) => c.json({ error: 'Unknown desktop request' }, 404))
+    .use(async (c, next) => {
+      await next();
+      c.header('cache-control', 'no-store');
+    })
+    .get('/status', (c) => c.json(deps.getStatus()))
+    .get('/auth/models', async (c) =>
+      c.json(await accountOperation(async () => ({ models: await connections.models() }))),
+    )
+    .post('/auth/start', json(routes['/auth/start'].input), async (c) => {
+      const { profileId, newAccount } = c.req.valid('json');
+      return c.json(await accountOperation(() => auth.beginSignIn(profileId, newAccount)));
+    })
+    .post('/auth/cancel', async (c) => {
       await auth.cancel();
-      return auth.state();
-    }
-    if (method === 'POST' && url === '/auth/disconnect') {
-      return accountOperation(() => auth.disconnect());
-    }
-    if (method === 'POST' && url === '/auth/select') {
-      const data = desktopInputs['/auth/select'].parse(raw);
-      return accountOperation(() => auth.select(data.profileId));
-    }
-    if (method === 'GET' && url === '/auth/models') {
-      return accountOperation(async () => ({ models: await connections.models() }));
-    }
-    if (method === 'POST' && url === '/auth/model') {
-      const data = desktopInputs['/auth/model'].parse(raw);
-      return accountOperation(async () => {
-        const model = data.model;
+      return c.json(auth.state());
+    })
+    .post('/auth/disconnect', async (c) => c.json(await accountOperation(() => auth.disconnect())))
+    .post('/auth/select', json(routes['/auth/select'].input), async (c) =>
+      c.json(await accountOperation(() => auth.select(c.req.valid('json').profileId))),
+    )
+    .post('/auth/model', json(routes['/auth/model'].input), async (c) => {
+      const { model } = c.req.valid('json');
+      await accountOperation(async () => {
         if (!(await connections.models()).some((m) => m.slug === model)) {
           throw Error('Choose an available model.');
         }
-        await updateModel(model);
-        return { ok: true, model };
+        await deps.updateModel(model);
       });
-    }
-    if (method === 'GET' && url === '/status') {
-      return getStatus();
-    }
-    if (method === 'POST' && url === '/integrations/set') {
-      const data = desktopInputs['/integrations/set'].parse(raw);
-      await setCapability(data.id, data.enabled);
-      changed();
-      return { ok: true };
-    }
-    if (method === 'POST' && url === '/mcps/test') {
-      return await mcpManager.test(mcpSetup.parse(raw));
-    }
-    if (method === 'POST' && url === '/mcps/save') {
-      const input = mcpSetup.parse(raw);
-      const result = await mcpManager.save(input);
-      refreshMcpCatalog();
-      await capabilitySettings.set('mcp:' + input.server.name, input.server.enabled);
-      changed();
-      return result;
-    }
-    if (method === 'POST' && url === '/mcps/remove') {
-      const data = desktopInputs['/mcps/remove'].parse(raw);
-      await mcpManager.remove(data.name);
-      refreshMcpCatalog();
+      return c.json({ ok: true as const, model });
+    })
+    .post('/connections/save', json(routes['/connections/save'].input), async (c) =>
+      c.json(await accountOperation(() => connections.save(c.req.valid('json')))),
+    )
+    .post('/connections/test', json(routes['/connections/test'].input), async (c) => {
+      await accountOperation(() => connections.test(c.req.valid('json')));
+      return c.json(ok);
+    })
+    .post('/connections/discover', json(routes['/connections/discover'].input), async (c) =>
+      c.json(await accountOperation(() => connections.discover(c.req.valid('json')))),
+    )
+    .post('/connections/remove', json(routes['/connections/remove'].input), async (c) => {
+      await accountOperation(() => connections.remove(c.req.valid('json').id));
+      return c.json(ok);
+    })
+    .post('/search/save', json(routes['/search/save'].input), async (c) =>
+      c.json(await accountOperation(() => webSearch.save(c.req.valid('json')))),
+    )
+    .post('/search/test', json(routes['/search/test'].input), async (c) => {
+      await accountOperation(() => webSearch.test(c.req.valid('json')));
+      return c.json(ok);
+    })
+    .post('/search/remove-exa', json(routes['/search/remove-exa'].input), async (c) =>
+      c.json(await accountOperation(() => webSearch.removeExa())),
+    )
+    .post('/integrations/set', json(routes['/integrations/set'].input), async (c) => {
+      const { id, enabled } = c.req.valid('json');
+      await deps.setCapability(id, enabled);
+      deps.changed();
+      return c.json(ok);
+    })
+    .post('/mcps/test', json(routes['/mcps/test'].input), async (c) =>
+      c.json(await mcpManager.test(c.req.valid('json'))),
+    )
+    .post('/mcps/save', json(routes['/mcps/save'].input), async (c) => {
+      const setup = c.req.valid('json');
+      const result = await mcpManager.save(setup);
+      deps.refreshMcpCatalog();
+      await capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled);
+      deps.changed();
+      return c.json(result);
+    })
+    .post('/mcps/remove', json(routes['/mcps/remove'].input), async (c) => {
+      await mcpManager.remove(c.req.valid('json').name);
+      deps.refreshMcpCatalog();
       await capabilitySettings.publish();
-      changed();
-      return { ok: true };
-    }
-    if (method === 'POST' && url === '/panels/action') {
-      const data = desktopInputs['/panels/action'].parse(raw);
-      const key = data.characterKey,
-        id = data.id;
-      if (!panelStore.list(key).some((p) => p.id === id)) {
+      deps.changed();
+      return c.json(ok);
+    })
+    .post('/panels/action', json(routes['/panels/action'].input), async (c) => {
+      const { characterKey, id, action } = c.req.valid('json');
+      if (!panelStore.list(characterKey).some((p) => p.id === id)) {
         throw Error('Panel not found');
       }
-      if (data.action === 'remove') {
-        await panelStore.mutate(key, { operation: 'remove', id });
+      if (action === 'remove') {
+        await panelStore.mutate(characterKey, { operation: 'remove', id });
       } else {
-        if (key !== currentCharacterKey()) {
+        if (characterKey !== deps.currentCharacterKey()) {
           throw Error('Log into this character first');
         }
-        sendPanelCommand({ seq: Date.now(), id, characterKey: key, action: data.action });
+        deps.sendPanelCommand({ seq: Date.now(), id, characterKey, action });
       }
-      changed();
-      return { ok: true };
-    }
-    if (method === 'POST' && url === '/routines/action') {
-      const data = desktopInputs['/routines/action'].parse(raw);
-      await routineStore.mutate(data.characterKey, { operation: data.operation, id: data.id });
-      changed();
-      return { ok: true };
-    }
-    if (method === 'POST' && url === '/routines/open') {
-      const data = desktopInputs['/routines/open'].parse(raw);
-      const key = currentCharacterKey();
-      const run = key ? routineStore.getRun(data.id, key) : undefined;
-      if (!run || !chatFor(run.id)) {
+      deps.changed();
+      return c.json(ok);
+    })
+    .post('/routines/action', json(routes['/routines/action'].input), async (c) => {
+      const { characterKey, operation, id } = c.req.valid('json');
+      await routineStore.mutate(characterKey, { operation, id });
+      deps.changed();
+      return c.json(ok);
+    })
+    .post('/routines/open', json(routes['/routines/open'].input), async (c) => {
+      const key = deps.currentCharacterKey();
+      const run = key ? routineStore.getRun(c.req.valid('json').id, key) : undefined;
+      const chat = run && chatFor(run.id);
+      if (!run || !chat) {
         throw Error('Log into the character first; the conversation must still exist');
       }
-      const chat = chatFor(run.id)!;
       if (isWorking(chat)) {
         throw Error('Wait for the routine to finish');
       }
       openChat(chat);
-      openRoutine(run.id);
-      changed();
-      return { ok: true };
-    }
-    if (method === 'POST' && url === '/stop') {
-      if (getChats().some(isWorking)) {
+      deps.openRoutine(run.id);
+      deps.changed();
+      return c.json(ok);
+    })
+    .post('/simulator/character', async (c) => c.json(await deps.readSimulationCharacter()))
+    .post('/addon/transport', json(wowTransportInput), async (c) => {
+      await deps.setWowTransport(c.req.valid('json'));
+      return c.json(ok);
+    })
+    .post('/stop', (c) => {
+      if (deps.getChats().some(isWorking)) {
         throw Error('Wait for the active turn before stopping Wisp');
       }
-      requestStop();
-      return { ok: true };
-    }
-    throw Error('Unknown desktop request');
-  };
+      deps.requestStop();
+      return c.json(ok);
+    });
 }
+export type DesktopApp = ReturnType<typeof createDesktopApp>;
+// Compile-time proof that every contract route is served with a reply its
+// output schema accepts. A drifting route surfaces here by name.
+type Served = DesktopApp extends Hono<infer _E, infer S> ? S : never;
+type ServedReply<P extends DesktopRoute> =
+  Served extends Record<P, Record<`$${DesktopRoutes[P]['method']}`, { output: infer O }>>
+    ? O
+    : { missing: P };
+type Drift = {
+  [P in DesktopRoute]: ServedReply<P> extends DesktopRouteReply<P> ? never : P;
+}[DesktopRoute];
+const contractHolds: [Drift] extends [never] ? true : Drift = true;
+void contractHolds;
