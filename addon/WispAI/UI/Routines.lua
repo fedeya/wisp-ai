@@ -242,7 +242,8 @@ function ns.UI.Routines.Layout()
     if not page then
         return
     end
-    page:SetShown(ns.routinesPage == true and ns.sidebarTab == "routines")
+    -- The page hangs off the window, not the body, so it hides itself while minimized.
+    page:SetShown(ns.routinesPage == true and ns.sidebarTab == "routines" and not ns.db.minimized)
     ns.UI.Routines.Refresh()
 end
 

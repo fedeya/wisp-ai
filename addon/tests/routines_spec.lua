@@ -136,6 +136,10 @@ it("the Routines page lists routines and their runs, apart from ordinary chats",
     assert(not page:IsShown())
     ns.UI.Routines.Show()
     assert(page:IsShown() and ns.sidebarTab == "routines")
+    ns.UI.SetMinimized(true)
+    assert(not page:IsShown(), "minimizing must not leave the Routines page floating")
+    ns.UI.SetMinimized(false)
+    assert(page:IsShown(), "restoring the window brings the Routines page back")
     assert(row("chat"):IsShown(), "Recents stay in the sidebar while Routines is open")
     local function card(id)
         for _, w in ipairs(UI_TEST.widgets) do
