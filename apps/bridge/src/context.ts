@@ -283,7 +283,9 @@ export function visibleUserText(input: string) {
       if (typeof value === 'string') {
         return value;
       }
-    } catch {}
+    } catch {
+      // Not valid JSON: fall through and return the raw text.
+    }
   }
   return input;
 }

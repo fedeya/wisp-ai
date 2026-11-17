@@ -1,4 +1,4 @@
-import { test, type TestContext } from 'vitest';
+import { test, vi, type TestContext } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -6,6 +6,7 @@ import path from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { createHash } from 'node:crypto';
 import { ChatGPTAuth } from '../src/chatgpt-auth.ts';
+import { bridgeLogger } from '../src/logger.ts';
 
 async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-auth-')),
@@ -28,7 +29,8 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
     refreshCount = 0,
     tokenCount = 0,
     rejected = 0,
-    revocationOK = true;
+    revocationOK = true,
+    revocationThrows = false;
   const calls: { url: string; body: URLSearchParams }[] = [];
   const sign = () =>
     new SignJWT({ nonce, email: 'player@example.test' })
@@ -83,6 +85,9 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
       });
     }
     if (url.endsWith('/revoke')) {
+      if (revocationThrows) {
+        throw new Error('network down');
+      }
       return new Response('', { status: revocationOK ? 200 : 503 });
     }
     if (url.endsWith('/models')) {
@@ -156,6 +161,9 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
     },
     setRevocationError: () => {
       revocationOK = false;
+    },
+    setRevocationThrows: () => {
+      revocationThrows = true;
     },
     advance: () => {
       now += 3600000;
@@ -306,6 +314,17 @@ test('unconfirmed revocation still clears local credentials and explains the out
   assert.equal(f.auth.state().status, 'signed_out');
   assert.match(f.auth.state().message, /could not be confirmed/);
   assert.doesNotMatch(f.values.get('chatgpt:accounts')!, /refresh-private/);
+});
+test('a failed revocation request is logged without the token', async (t) => {
+  const warn = vi.spyOn(bridgeLogger, 'warn').mockImplementation(() => {});
+  t.onTestFinished(() => warn.mockRestore());
+  const f = await fixture(t);
+  await f.callback(await f.start());
+  f.setRevocationThrows();
+  await f.auth.disconnect();
+  assert.match(f.auth.state().message, /could not be confirmed/);
+  assert.deepEqual(warn.mock.calls[0], [{ event: 'auth.revoke_failed', error: 'network down' }]);
+  assert.doesNotMatch(JSON.stringify(warn.mock.calls), /refresh-private/);
 });
 test('cancelling during a credential write waits for rollback before another sign-in', async (t) => {
   const f = await fixture(t),

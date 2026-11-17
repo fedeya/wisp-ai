@@ -5,6 +5,8 @@ import path from 'node:path';
 import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 import { z } from 'zod';
 import type { SecretVault } from './secret-vault.ts';
+import { errorMessage } from './errors.ts';
+import { bridgeLogger as logger } from './logger.ts';
 import { accountModel, type AccountModel, type AccountModelInput } from './chat-model.ts';
 import { sendChatGPTCallbackPage } from './chatgpt-callback-page.ts';
 
@@ -564,7 +566,10 @@ export class ChatGPTAuth {
                 await new Promise((r) => setTimeout(r, 500));
               }
             }
-          } catch {}
+          } catch (error) {
+            // The user-facing message below already says revocation was unconfirmed.
+            logger.warn({ event: 'auth.revoke_failed', error: errorMessage(error) });
+          }
         }
         profile.tokens = undefined;
         profile.frozen = false;
