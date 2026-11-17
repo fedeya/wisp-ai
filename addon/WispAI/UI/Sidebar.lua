@@ -20,16 +20,19 @@ function ns.UI.RequestDeleteChat(id)
     end
 end
 
+-- The character's class and level. A healthy connection is told by the avatar's
+-- green dot alone; only a problem adds words.
 local function characterLine()
     local name = UnitName and UnitName("player") or nil
     local className = UnitClass and UnitClass("player") or nil
     local level = UnitLevel and UnitLevel("player") or nil
-    local connection = ns.Transport.needsDesktopSetup and "setup required"
-        or (ns.connected and "connected" or "offline")
-    if className and level then
-        connection = className .. " " .. level .. " · " .. connection
+    local problem = ns.Transport.needsDesktopSetup and "setup required"
+        or (not ns.connected and "offline")
+    local detail = className and level and (className .. " " .. level) or nil
+    if problem then
+        detail = detail and (detail .. " · " .. problem) or problem
     end
-    return name or "Wisp", connection
+    return name or "Wisp", detail or ""
 end
 
 -- Returns the sidebar width so the window can anchor the conversation panel.
