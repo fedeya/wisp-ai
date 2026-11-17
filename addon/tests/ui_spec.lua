@@ -574,6 +574,27 @@ it(
             )
             fold.scripts.OnClick()
             assert(ns.db.sidebar and sidebar:IsShown())
+            local grip = UI_TEST.frames.WispAISidebarResize
+            local cursor = 100
+            function GetCursorPosition()
+                return cursor, 0
+            end
+            sidebar:GetParent():SetWidth(700)
+            ns.UI.Refresh()
+            grip.scripts.OnMouseDown(grip)
+            cursor = 160
+            grip.scripts.OnUpdate(grip)
+            assert(sidebar:GetWidth() == 250, "dragging the edge widens the sidebar")
+            cursor = -1000
+            grip.scripts.OnUpdate(grip)
+            assert(sidebar:GetWidth() == 150, "the sidebar keeps a minimum width")
+            sidebar:GetParent():SetWidth(500)
+            cursor = 1000
+            grip.scripts.OnUpdate(grip)
+            assert(sidebar:GetWidth() == 200, "the conversation always keeps its own width")
+            grip.scripts.OnMouseUp(grip)
+            ns.db.sidebarWidth = nil
+            ns.UI.Refresh()
             assert(
                 tabs[1]:IsVisible() and tabs[2]:IsVisible(),
                 "expanding the sidebar must restore both tabs"

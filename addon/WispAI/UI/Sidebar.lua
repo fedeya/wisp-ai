@@ -3,7 +3,9 @@ local widgets = ns.UI.Widgets
 local COLORS, FONTS = widgets.COLORS, widgets.FONTS
 local label, setText, button = widgets.Label, widgets.SetText, widgets.Button
 local TEXT, ACCENT = widgets.TEXT, widgets.ACCENT
-local EXPANDED_WIDTH = 190
+-- The sidebar's width is the player's to drag between MIN_WIDTH and MAX_WIDTH,
+-- always leaving the conversation at least MIN_CHAT_WIDTH.
+local DEFAULT_WIDTH, MIN_WIDTH, MAX_WIDTH, MIN_CHAT_WIDTH = 190, 150, 320, 300
 local CHAT_ROW, ROW_GAP = 26, 2
 local NAV_ROW, FOOTER_HEIGHT = 30, 46
 local sidebar, nav, listCaption, footer
@@ -34,11 +36,21 @@ end
 
 -- Returns the sidebar width so the window can anchor the conversation panel.
 -- Collapsed, the sidebar is hidden entirely; its toggle lives in the title bar.
+local function expandedWidth()
+    local available = sidebar:GetParent():GetWidth() or 0
+    local most = MAX_WIDTH
+    if available > 0 then
+        most = math.max(MIN_WIDTH, math.min(MAX_WIDTH, available - MIN_CHAT_WIDTH))
+    end
+    return math.floor(math.max(MIN_WIDTH, math.min(most, ns.db.sidebarWidth or DEFAULT_WIDTH)))
+end
+
 function ns.UI.Sidebar.Layout()
     local expanded = ns.db.sidebar == true
     sidebar:SetShown(expanded)
-    local width = expanded and EXPANDED_WIDTH or 0
+    local width = expanded and expandedWidth() or 0
     sidebar:SetWidth(math.max(1, width))
+    sessionContent:SetWidth(math.max(1, width - 12))
     return width
 end
 
@@ -50,10 +62,10 @@ end
 
 local function makeRow()
     local b = widgets.NavItem(sessionContent, "", CHAT_ROW)
-    b:SetWidth(EXPANDED_WIDTH - 12)
+    -- Rows span the list, so the title can run to the sidebar's edge.
+    b:SetPoint("RIGHT", sessionContent, "RIGHT")
     -- Conversation rows mark selection with the fill only; the accent bar is for navigation.
     b.bar:SetColorTexture(0, 0, 0, 0)
-    b.label:SetPoint("RIGHT", -28, 0)
     b.mark = widgets.Dot(b, 5)
     b.mark:SetPoint("RIGHT", -10, 0)
     b:SetScript("OnClick", function(self)
@@ -141,13 +153,22 @@ function ns.UI.Sidebar.Refresh()
         end
         b.delete:SetShown(selected)
         local busy = session.status == "working"
-        b.mark:SetShown(not selected and (busy or session.unread == true))
+        local marked = not selected and (busy or session.unread == true)
+        b.mark:SetShown(marked)
         b.mark:SetColorTexture(unpack(busy and ACCENT or TEXT))
+        -- The title runs as far as the row's right side allows: it only makes
+        -- room for the delete button or the activity mark when one is shown.
+        local inset = selected and -26 or (marked and -20 or -10)
+        if b.labelInset ~= inset then
+            b.labelInset = inset
+            b.label:SetPoint("RIGHT", inset, 0)
+        end
         setText(b.label, session.title)
         if b.y ~= y then
             b.y = y
             b:ClearAllPoints()
             b:SetPoint("TOPLEFT", 0, -y)
+            b:SetPoint("RIGHT", sessionContent, "RIGHT")
         end
         if not b:IsShown() then
             b:Show()
@@ -227,8 +248,53 @@ function ns.UI.Sidebar.Build(body)
     sidebar = CreateFrame("Frame", "WispAISidebar", body, "BackdropTemplate")
     sidebar:SetPoint("TOPLEFT")
     sidebar:SetPoint("BOTTOMLEFT")
-    sidebar:SetWidth(EXPANDED_WIDTH)
+    sidebar:SetWidth(DEFAULT_WIDTH)
     widgets.Box(sidebar, COLORS.sidebar, COLORS.line)
+    -- A grip on the right edge resizes the sidebar; its edge lights while hovered
+    -- or dragged, and the width is kept in the saved variables.
+    local grip = CreateFrame("Button", "WispAISidebarResize", sidebar)
+    grip:SetPoint("TOPRIGHT", 3, 0)
+    grip:SetPoint("BOTTOMRIGHT", 3, 0)
+    grip:SetWidth(6)
+    grip:SetFrameLevel(sidebar:GetFrameLevel() + 20)
+    grip.edge = grip:CreateTexture(nil, "OVERLAY")
+    grip.edge:SetPoint("TOP")
+    grip.edge:SetPoint("BOTTOM")
+    grip.edge:SetWidth(2)
+    widgets.Tint(grip.edge, COLORS.accentLine)
+    grip.edge:Hide()
+    local function cursorX()
+        local x = GetCursorPosition()
+        return x / (sidebar:GetEffectiveScale() or 1)
+    end
+    grip:SetScript("OnEnter", function(self)
+        self.edge:Show()
+    end)
+    grip:SetScript("OnLeave", function(self)
+        if not self.dragging then
+            self.edge:Hide()
+        end
+    end)
+    grip:SetScript("OnMouseDown", function(self)
+        self.dragging, self.startX, self.startWidth = true, cursorX(), expandedWidth()
+    end)
+    grip:SetScript("OnMouseUp", function(self)
+        self.dragging = false
+        if not self:IsMouseOver() then
+            self.edge:Hide()
+        end
+    end)
+    grip:SetScript("OnUpdate", function(self)
+        if not self.dragging then
+            return
+        end
+        local width = math.floor(self.startWidth + cursorX() - self.startX + 0.5)
+        width = math.max(MIN_WIDTH, math.min(MAX_WIDTH, width))
+        if width ~= ns.db.sidebarWidth then
+            ns.db.sidebarWidth = width
+            ns.UI.Refresh()
+        end
+    end)
     -- New chat opens a blank conversation; it is created when the first message is sent.
     newChatTab = navItem("New chat", function()
         ns.Chat.StartNew()
@@ -253,7 +319,7 @@ function ns.UI.Sidebar.Build(body)
     sessionScroll:SetPoint("BOTTOMRIGHT", -6, FOOTER_HEIGHT + 4)
     sessionScroll:SetClipsChildren(true)
     sessionContent = CreateFrame("Frame", nil, sessionScroll)
-    sessionContent:SetSize(EXPANDED_WIDTH - 12, 1)
+    sessionContent:SetSize(DEFAULT_WIDTH - 12, 1)
     sessionScroll:SetScrollChild(sessionContent)
     sessionScroll:EnableMouseWheel(true)
     sessionScroll:SetScript("OnMouseWheel", function(self, delta)
