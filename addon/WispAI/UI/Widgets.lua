@@ -480,6 +480,76 @@ local function showCopyUrl(url)
     StaticPopup_Show("WISPAI_COPY_URL", nil, nil, url)
 end
 
+-- The client has no clipboard API: longer text opens in a read-only, multi-line
+-- box with everything selected, ready for Ctrl+C. Built on first use.
+local copyDialog
+local function buildCopyDialog()
+    local frame = CreateFrame("Frame", "WispAICopyText", UIParent, "BackdropTemplate")
+    frame:SetSize(480, 320)
+    frame:SetPoint("CENTER")
+    frame:SetFrameStrata("DIALOG")
+    frame:SetToplevel(true)
+    frame:EnableMouse(true)
+    box(frame, COLORS.window, COLORS.lineStrong)
+    if UISpecialFrames then
+        table.insert(UISpecialFrames, "WispAICopyText")
+    end
+    frame.title = label(frame, "", TEXT, FONTS.title)
+    frame.title:SetPoint("TOPLEFT", 16, -14)
+    frame.hint = label(frame, "Press Ctrl+C to copy", COLORS.muted, FONTS.small)
+    frame.hint:SetPoint("TOPRIGHT", -16, -16)
+    local scroll = CreateFrame("ScrollFrame", nil, frame)
+    scroll:SetPoint("TOPLEFT", 16, -42)
+    scroll:SetPoint("BOTTOMRIGHT", -16, 48)
+    scroll:SetClipsChildren(true)
+    local edit = CreateFrame("EditBox", nil, scroll)
+    edit:SetMultiLine(true)
+    edit:SetAutoFocus(false)
+    edit:SetMaxLetters(0)
+    edit:SetFontObject(FONTS.body or "GameFontHighlight")
+    edit:SetTextColor(unpack(SECONDARY))
+    edit:SetWidth(448)
+    edit:SetPoint("TOPLEFT")
+    scroll:SetScrollChild(edit)
+    scroll:EnableMouseWheel(true)
+    scroll:SetScript("OnMouseWheel", function(self, delta)
+        local range = self:GetVerticalScrollRange()
+        setScroll(self, math.max(0, math.min(range, self:GetVerticalScroll() - delta * 40)))
+    end)
+    -- Read-only: typing restores the text and the selection.
+    edit:SetScript("OnTextChanged", function(self, userInput)
+        if userInput then
+            self:SetText(self.source or "")
+            self:HighlightText()
+        end
+    end)
+    edit:SetScript("OnEscapePressed", function()
+        frame:Hide()
+    end)
+    frame.edit, frame.scroll = edit, scroll
+    local close = button(frame, "Close", 80, function()
+        frame:Hide()
+    end)
+    close:SetPoint("BOTTOMRIGHT", -16, 14)
+    frame:Hide()
+    return frame
+end
+
+--- Shows `text` selected in a copy dialog titled `title`. Escape codes in `text`
+--- display literally; callers pass plain text.
+local function showCopyText(title, text)
+    copyDialog = copyDialog or buildCopyDialog()
+    local source = tostring(text or ""):gsub("|", "||")
+    copyDialog.title:SetText(title or "Copy")
+    copyDialog.edit.source = source
+    copyDialog.edit:SetText(source)
+    copyDialog:Show()
+    copyDialog.scroll:SetVerticalScroll(0)
+    copyDialog.edit:SetFocus()
+    copyDialog.edit:HighlightText()
+    return copyDialog
+end
+
 ns.UI.Widgets = {
     Label = label,
     SetText = setText,
@@ -500,6 +570,7 @@ ns.UI.Widgets = {
     InterSize = interSize,
     InterSupports = interSupports,
     ShowCopyUrl = showCopyUrl,
+    ShowCopyText = showCopyText,
     OnePixel = onePixel,
     SetScroll = setScroll,
     Tint = tint,

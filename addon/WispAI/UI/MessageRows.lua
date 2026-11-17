@@ -9,6 +9,8 @@ local writer = ns.UI.Writing
 local CHEVRON_GAP = 4
 local DELIVERY_HEIGHT = 20
 local DELIVERY_DELAY = 15
+-- How often a shown Copy action checks whether the pointer has left its reply.
+local COPY_CHECK_INTERVAL = 0.1
 local TOOL_STATES = {
     completed = { cell = 0, tint = MUTED },
     running = { cell = 1, tint = ACCENT },
@@ -196,10 +198,65 @@ local function makeDelivery(row)
     return delivery
 end
 
+-- Replies offer Copy only under the pointer. Entering the reply shows it; while
+-- shown, a throttled check hides it once the pointer leaves the row, so idle rows
+-- run no per-frame work. It sits in the reply's bottom padding: no layout shift.
+local function showCopy(row)
+    local copy = row.copy
+    if row.copySource and not copy:IsShown() then
+        copy.elapsed = 0
+        copy:Show()
+    end
+end
+
+local function checkCopyHover(copy, elapsed)
+    copy.elapsed = (copy.elapsed or 0) + elapsed
+    if copy.elapsed < COPY_CHECK_INTERVAL then
+        return
+    end
+    copy.elapsed = 0
+    local row = copy:GetParent()
+    if not row.copySource or not (row:IsMouseOver() or copy:IsMouseOver()) then
+        copy:Hide()
+    end
+end
+
+local function makeCopy(row)
+    local copy = CreateFrame("Button", nil, row)
+    copy:SetFrameLevel(row:GetFrameLevel() + 5)
+    copy.label = label(copy, "Copy", COLORS.muted, ns.UI.Widgets.FONTS.small)
+    copy.label:SetPoint("CENTER")
+    copy:SetSize(math.ceil(copy.label:GetStringWidth()) + 12, 16)
+    -- The label lines up with the reply's left edge; the hover wash extends past it.
+    copy:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", -6, 1)
+    ns.UI.Widgets.Hover(copy, 0.06)
+    copy:SetScript("OnEnter", function(self)
+        self.label:SetTextColor(unpack(TEXT))
+    end)
+    copy:SetScript("OnLeave", function(self)
+        self.label:SetTextColor(unpack(COLORS.muted))
+    end)
+    copy:SetScript("OnClick", function()
+        if row.copySource then
+            ns.UI.Widgets.ShowCopyText(
+                "Copy reply",
+                ns.Markdown.PlainText.FromMessage(row.copySource)
+            )
+        end
+    end)
+    copy:SetScript("OnUpdate", checkCopyHover)
+    copy:Hide()
+    return copy
+end
+
 local function makeRow(parent)
     local row = CreateFrame("Frame", nil, parent)
     linked(row)
-    row:SetScript("OnHide", writer.Finish)
+    row:SetScript("OnHide", function(self)
+        self.copy:Hide()
+        writer.Finish(self)
+    end)
+    row:SetScript("OnEnter", showCopy)
     row.author = label(row, "", MUTED, ns.UI.Widgets.FONTS.caption)
     row.author:SetPoint("TOPLEFT", 0, 0)
     row.authorMark = ns.UI.Widgets.Dot(row, 6)
@@ -235,6 +292,7 @@ local function makeRow(parent)
         })
     end)
     row.retry:Hide()
+    row.copy = makeCopy(row)
     return row
 end
 ns.UI.MakeMessageRow = makeRow
@@ -416,6 +474,13 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
     row.replyView = row.replyView or ns.Markdown.ReplyView.New()
     local sameReply = row.replyView.chatId == chat.id and row.replyView.messageId == message.id
     local display, viewKey = ns.Markdown.ReplyView.Update(row.replyView, chat.id, message)
+    -- A finished reply can be copied; the one still being written cannot.
+    local copyable = isTextReply(message)
+        and not (chat.status == "working" and message == chat.messages[#chat.messages])
+    row.copySource = copyable and message or nil
+    if not copyable and row.copy:IsShown() then
+        row.copy:Hide()
+    end
     message = display
     local tool = message.tool
     local pendingMessage = message.role == "user"
@@ -615,6 +680,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 if not row.rich then
                     row.rich = CreateFrame("Frame", nil, row)
                     linked(row.rich)
+                    row.rich:SetScript("OnEnter", function()
+                        showCopy(row)
+                    end)
                 end
                 if not sameReply or not row.rich.presentedRoots then
                     row.rich.presentedRoots = {}

@@ -41,6 +41,7 @@ UI\EmojiData.lua
 UI\Emoji.lua
 UI\MessageFormat.lua
 Markdown\Links.lua
+Markdown\PlainText.lua
 Markdown\InlineRenderer.lua
 Markdown\ReplyView.lua
 Markdown\TextStyle.lua

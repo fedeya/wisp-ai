@@ -71,6 +71,7 @@ function M.addon(name, env)
     local result = setfenv(assert(loadfile("addon/WispAI/" .. name)), env)("WispAI", env.ns)
     if name == "UI/MessageFormat.lua" then
         M.addon("Markdown/Links.lua", env)
+        M.addon("Markdown/PlainText.lua", env)
         M.addon("Markdown/InlineRenderer.lua", env)
     elseif name == "Core.lua" then
         for _, dependency in ipairs({
