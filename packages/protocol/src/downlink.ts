@@ -1,5 +1,6 @@
 // Reusable downlink state messages. Paths use JSON/JavaScript's zero-based indexes.
 import { deflateSync } from 'node:zlib';
+import { z } from 'zod';
 import { MAX_DECODED_BYTES, MAX_ENCODED_BYTES } from './mailbox.ts';
 
 export const MAX_PATCH_OPERATIONS = 4096;
@@ -14,11 +15,12 @@ export type StateOperation =
 export type DownlinkEnvelope =
   | { r: number; s: { [key: string]: Json } }
   | { r: number; b: number; p: StateOperation[] };
-export interface DownlinkAck {
-  a: [number, number, number];
-  b: boolean;
-  n?: boolean;
-}
+const downlinkAckSchema = z.strictObject({
+  a: z.tuple([z.int().min(1).max(0xffffffff), z.int().min(0).max(0xffff), z.int().min(0)]),
+  b: z.boolean(),
+  n: z.boolean().optional(),
+});
+export type DownlinkAck = z.infer<typeof downlinkAckSchema>;
 const unsafe = new Set(['__proto__', 'constructor', 'prototype']);
 const own = (value: object, key: string | number) => Object.hasOwn(value, key);
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -277,19 +279,6 @@ export function applyDownlink(envelope: unknown, base?: unknown): { [key: string
 }
 
 export function parseDownlinkAck(value: unknown): DownlinkAck | null {
-  if (
-    !record(value) ||
-    Object.keys(value).some((key) => !['a', 'b', 'n'].includes(key)) ||
-    !Array.isArray(value.a) ||
-    value.a.length !== 3 ||
-    !unsigned(value.a[0], 0xffffffff) ||
-    value.a[0] === 0 ||
-    !unsigned(value.a[1], 0xffff) ||
-    !unsigned(value.a[2], Number.MAX_SAFE_INTEGER) ||
-    typeof value.b !== 'boolean' ||
-    (value.n !== undefined && typeof value.n !== 'boolean')
-  ) {
-    return null;
-  }
-  return value as unknown as DownlinkAck;
+  const result = downlinkAckSchema.safeParse(value);
+  return result.success ? result.data : null;
 }
