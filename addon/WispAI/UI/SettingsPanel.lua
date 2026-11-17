@@ -126,6 +126,7 @@ local function buildChatHistory()
             or {}
         for _, row in ipairs(publicRows) do
             row:Hide()
+            row.check:Hide()
         end
         for index, channel in ipairs(channels) do
             local row = publicRows[index]
@@ -149,6 +150,7 @@ local function buildChatHistory()
                     .. (channel.disabled and " (unavailable here)" or "")
             )
             row:Show()
+            row.check:Show()
         end
         publicEmpty:SetShown(#channels == 0)
         chatContent:SetHeight(listTop + math.max(1, #channels) * ROW_HEIGHT + 8)

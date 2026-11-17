@@ -216,7 +216,8 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
             local waitingGroup = findRow("Reading quests")
             assert(isLoading(waitingGroup) and not waitingGroup.icon:IsShown())
             local _, _, _, toolX, toolY = waitingGroup.text:GetPoint()
-            check.same({ 0, -20 }, { toolX, toolY })
+            -- Replies carry no author label, so a turn's first tool line starts at the top.
+            check.same({ 0, 0 }, { toolX, toolY })
 
             local call = {
                 id = "t3b",

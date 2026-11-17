@@ -23,8 +23,8 @@ local function styleFont(font, span, level)
         end
     end
     if not span.code and ns.UI.Widgets.InterSupports(span.text) then
-        local size = ns.UI.Widgets.InterSize(height)
-        if font:SetFont(level and interStrong or inter, size, flags) then
+        local interHeight = ns.UI.Widgets.InterSize(height)
+        if font:SetFont(level and interStrong or inter, interHeight, flags) then
             ns.UI.Widgets.SoftShadow(font)
             return
         end

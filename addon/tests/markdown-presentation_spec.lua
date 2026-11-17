@@ -84,14 +84,14 @@ it("styles the shared parser tree without reparsing on resize or reference updat
     end
     assert.is_true(sawMono and sawInter and sawStrong and sawCode and sawTask and sawRule)
     local height = row:GetHeight()
-    paint(ns, row, message, 150)
+    paint(ns, row, message, 110) -- narrow enough that the code block wraps
     assert.is_true(row:GetHeight() > height)
     local count = #env.UI_TEST.widgets
     paint(ns, row, message, 400)
-    paint(ns, row, message, 150)
+    paint(ns, row, message, 110)
     assert.equal(count, #env.UI_TEST.widgets)
     message.references.s.label = "Nueva llama"
-    paint(ns, row, message, 150)
+    paint(ns, row, message, 110)
     assert.is_truthy(helper.rowText(row):find("[Nueva llama]", 1, true))
     assert.equal(syntaxCalls, calls)
     assert.equal(source, message.text)

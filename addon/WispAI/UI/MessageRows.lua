@@ -506,8 +506,6 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 row.rich:Hide()
             end
             local indent = message.toolIndent or 0
-            row.icon:ClearAllPoints()
-            row.icon:SetPoint("TOPLEFT", indent, -top - 1)
             local state = tool and tool.status or "completed"
             local loading = message.turnLoading
                 or (indent > 0 and state == "running" and chat.status == "working")
@@ -524,6 +522,11 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             row.text:SetTextColor(unpack(loading and MUTED or TEXT))
             -- Tool lines use the conversation's Inter face, like the replies around them.
             ns.UI.Widgets.ChatFont(row.text, tool and tool.label or message.text)
+            -- Center the 14-unit status icon and chevron on the first text line.
+            local _, lineSize = row.text:GetFont()
+            local iconTop = -top - math.floor(((lineSize or 14) - 14) / 2 + 0.5)
+            row.icon:ClearAllPoints()
+            row.icon:SetPoint("TOPLEFT", indent, iconTop)
             ns.UI.Activity.SetLoadingText(
                 row,
                 row.text,
@@ -538,7 +541,7 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             if row.groupKey then
                 local chevronLeft = labelRight + CHEVRON_GAP
                 row.chevron:ClearAllPoints()
-                row.chevron:SetPoint("TOPLEFT", row, "TOPLEFT", chevronLeft, -top - 1)
+                row.chevron:SetPoint("TOPLEFT", row, "TOPLEFT", chevronLeft, iconTop)
                 ns.UI.Activity.SetIcon(row.chevron, message.groupExpanded and 4 or 3, MUTED)
                 row.disclosure:ClearAllPoints()
                 row.disclosure:SetPoint("TOPLEFT", row, "TOPLEFT", indent, -top)

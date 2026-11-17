@@ -34,7 +34,7 @@ function M.addon(name, env)
     if not env.ns.Shared.Text.TruncateUtf8Bytes then
         setfenv(assert(loadfile("addon/WispAI/Shared/Text.lua")), env)("WispAI", env.ns)
     end
-    if name == "UI/RichUI.lua" and not env.ns.UI.Widgets then
+    if (name == "UI/RichUI.lua" or name == "Advice/Advice.lua") and not env.ns.UI.Widgets then
         M.addon("UI/Widgets.lua", env)
     end
     if name == "UI/MessageFormat.lua" and not env.ns.Markdown then

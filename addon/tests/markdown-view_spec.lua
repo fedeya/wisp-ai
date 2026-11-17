@@ -73,7 +73,8 @@ it("wraps the first words after a styled span together", function()
     local env, ns = setup()
     local host = env.CreateFrame("Frame")
     local view = settled(ns, message("**1234567890** para cuando vas\n\n- Another block"))
-    ns.UI.RenderRichUI(host, {}, view, 98)
+    -- Fourteen characters per line of reply prose (Inter at 12 in the stub).
+    ns.UI.RenderRichUI(host, {}, view, 84)
     local block = host.prose[1]
     local first, last = block.runs[1], block.runs[2]
     assert.equal("para cuando ", first:GetText())

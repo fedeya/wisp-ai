@@ -2,10 +2,11 @@
 // Icons are white line drawings so the addon can tint them with SetVertexColor.
 import { mkdirSync, writeFileSync } from 'node:fs';
 
-// Icons are 64 px; corner pieces are 16 px so the addon draws them at their
-// real pixel size (the client makes no mipmaps, so shrinking a texture a lot
-// leaves jagged edges).
-const ICON_SIZE = 64;
+// Icons are drawn on a 64-unit design grid and written at 32 px, close to the
+// 15-30 px they appear at in game; corner pieces are 16 px and drawn 1:1. The
+// client makes no mipmaps, so shrinking a texture a lot leaves jagged edges.
+const DESIGN_SIZE = 64;
+const ICON_SIZE = 32;
 const samples = 4;
 
 type Point = [number, number];
@@ -42,7 +43,8 @@ function covered(point: Point, shapes: Shape[]) {
   return shapes.some((shape) => coveredBy(point, shape));
 }
 
-function render(shapes: Shape[], size = ICON_SIZE) {
+function render(shapes: Shape[], size = ICON_SIZE, design = DESIGN_SIZE) {
+  const scale = design / size;
   const tga = Buffer.alloc(18 + size * size * 4);
   tga[2] = 2;
   tga.writeUInt16LE(size, 12);
@@ -54,7 +56,11 @@ function render(shapes: Shape[], size = ICON_SIZE) {
       let coverage = 0;
       for (let sy = 0; sy < samples; sy++) {
         for (let sx = 0; sx < samples; sx++) {
-          if (covered([x + (sx + 0.5) / samples, y + (sy + 0.5) / samples], shapes)) {
+          const point: Point = [
+            (x + (sx + 0.5) / samples) * scale,
+            (y + (sy + 0.5) / samples) * scale,
+          ];
+          if (covered(point, shapes)) {
             coverage++;
           }
         }
@@ -150,5 +156,5 @@ writeFileSync('addon/WispAI/Textures/Sidebar.tga', render(sidebar));
 writeFileSync('addon/WispAI/Textures/Clock.tga', render(clock));
 writeFileSync('addon/WispAI/Textures/ChevronDown.tga', render(chevronDown));
 writeFileSync('addon/WispAI/Textures/Circle.tga', render(circle));
-writeFileSync('addon/WispAI/Textures/CornerFill.tga', render(cornerFill, CORNER));
-writeFileSync('addon/WispAI/Textures/CornerEdge.tga', render(cornerEdge, CORNER));
+writeFileSync('addon/WispAI/Textures/CornerFill.tga', render(cornerFill, CORNER, CORNER));
+writeFileSync('addon/WispAI/Textures/CornerEdge.tga', render(cornerEdge, CORNER, CORNER));
