@@ -103,7 +103,7 @@ export default function Overview() {
         );
       case 'view-diagnostics':
         return (
-          <Button intent="quiet" onClick={() => void navigate('/diagnostics')}>
+          <Button intent="quiet" onClick={() => void navigate('/settings/diagnostics')}>
             View diagnostics
           </Button>
         );

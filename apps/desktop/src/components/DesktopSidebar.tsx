@@ -37,7 +37,7 @@ function renderNavigation(page: DesktopPage) {
       to={page.path}
       title={shortcut ? `${page.title} (${shortcut})` : undefined}
       aria-keyshortcuts={shortcut?.replace(',', 'Comma')}
-      end={page.name !== 'Connections' && page.name !== 'Integrations'}
+      end={page.path === '/'}
       className={({ isActive }) => navigationLink({ selected: isActive })}
     >
       <Icon name={page.icon} size={16} />

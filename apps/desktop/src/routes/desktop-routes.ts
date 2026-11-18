@@ -73,15 +73,17 @@ export const desktopPages = [
     title: 'Settings',
     caption: 'Updates and preferences for the desktop app.',
   },
-  {
-    name: 'Diagnostics',
-    Component: Diagnostics,
-    path: '/diagnostics',
-    group: 'application',
-    icon: 'scrollText',
-    title: 'Diagnostics',
-    caption: 'View connection details and logs.',
-  },
 ] as const;
 
-export type DesktopPage = (typeof desktopPages)[number];
+/** Troubleshooting page, reached from Settings and from failing checks, not the sidebar. */
+export const diagnosticsPage = {
+  name: 'Diagnostics',
+  Component: Diagnostics,
+  path: '/settings/diagnostics',
+  group: 'application',
+  icon: 'scrollText',
+  title: 'Diagnostics',
+  caption: 'Logs and connection details for troubleshooting.',
+} as const;
+
+export type DesktopPage = (typeof desktopPages)[number] | typeof diagnosticsPage;

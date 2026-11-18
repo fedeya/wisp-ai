@@ -39,7 +39,7 @@ export default function DataState() {
             <Icon name="arrow" size={16} />
           </Button>
           {connectionError && (
-            <Button intent="quiet" onClick={() => void navigate('/diagnostics')}>
+            <Button intent="quiet" onClick={() => void navigate('/settings/diagnostics')}>
               View diagnostics
             </Button>
           )}

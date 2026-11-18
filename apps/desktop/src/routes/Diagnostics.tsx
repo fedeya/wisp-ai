@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { desktop } from '../api';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import Icon from '../components/ui/Icon';
 import { Button, Card } from '../components/ui/Controls';
+import { desktopReadiness } from '../desktop-controller';
 import { useDesktop } from '../use-desktop';
+import { diagnosticsReport } from './diagnostics-report';
 
 export default function Diagnostics() {
   const app = useDesktop((state) => ({
@@ -13,12 +15,38 @@ export default function Diagnostics() {
     connectionError: state.connectionError,
     logs: state.logs,
     info: state.info,
+    status: state.status,
+    readiness: desktopReadiness(state),
     showLogs: state.actions.showLogs,
   }));
   const { showLogs } = app;
+  const [copied, setCopied] = useState('');
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
     void showLogs();
   }, [showLogs]);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  async function copyReport() {
+    const report = diagnosticsReport({
+      version: app.info?.version,
+      platform: app.info?.platform,
+      readiness: app.readiness,
+      serviceReady: app.status?.ready,
+      gameConnected: app.status?.gameConnected,
+      addonOutdated: app.info?.addonOutdated,
+      connectionError: app.connectionError,
+      logs: app.logs,
+    });
+    try {
+      await navigator.clipboard.writeText(report);
+      setCopied('Copied. Review it before sharing.');
+    } catch {
+      setCopied('Couldn’t copy. Use Open folder instead.');
+    }
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setCopied(''), 4000);
+  }
 
   return (
     <Card density="compact">
@@ -31,6 +59,13 @@ export default function Diagnostics() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ActionProgress label={app.busyTarget === '' ? app.busy : ''} />
+          <span role="status" className="text-sm text-muted">
+            {copied}
+          </span>
+          <Button intent="primary" onClick={copyReport}>
+            <Icon name="copy" size={16} />
+            Copy diagnostics
+          </Button>
           <Button onClick={showLogs} disabled={!!app.busy}>
             <Icon name="refresh" size={16} />
             Refresh

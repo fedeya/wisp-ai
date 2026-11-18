@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import GameInstallation from '../components/settings/GameInstallation';
 import StartupSettings from '../components/settings/StartupSettings';
 import TelemetrySettings from '../components/settings/TelemetrySettings';
@@ -7,6 +8,7 @@ import Icon from '../components/ui/Icon';
 import { Row, RowGroup } from '../components/ui/Rows';
 import { desktopActive } from '../desktop-controller';
 import { useDesktop } from '../use-desktop';
+import { diagnosticsPage } from './desktop-routes';
 
 function GameFolder() {
   const app = useDesktop((state) => ({ info: state.info, active: desktopActive(state) }));
@@ -44,6 +46,20 @@ export default function Settings() {
       <RowGroup label="App">
         <StartupSettings />
         <TelemetrySettings />
+      </RowGroup>
+      <RowGroup label="Troubleshooting">
+        <Link
+          to={diagnosticsPage.path}
+          aria-label="Open diagnostics"
+          className="block text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent hover:[&>div]:bg-raised"
+        >
+          <Row
+            icon={<Icon name={diagnosticsPage.icon} size={18} />}
+            title={diagnosticsPage.title}
+            detail="Logs and connection details to check or share when something isn’t working."
+            trailing={<Icon name="chevronRight" size={16} />}
+          />
+        </Link>
       </RowGroup>
     </>
   );
