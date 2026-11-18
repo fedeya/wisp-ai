@@ -12,7 +12,7 @@ const glyphs = {
 };
 
 const captionButton =
-  'inline-grid h-full w-[46px] place-items-center border-0 bg-transparent p-0 [font-family:"Segoe_Fluent_Icons","Segoe_MDL2_Assets"] text-[10px] text-[#c4ced1] outline-none focus-visible:bg-white/10';
+  'inline-grid h-full w-[46px] place-items-center border-0 bg-transparent p-0 [font-family:"Segoe_Fluent_Icons","Segoe_MDL2_Assets"] text-[10px] text-muted outline-none focus-visible:bg-hover';
 
 function useMaximized() {
   const [maximized, setMaximized] = useState(false);
@@ -59,7 +59,7 @@ export function WindowControls() {
         type="button"
         tabIndex={-1}
         aria-label="Minimize"
-        className={`${captionButton} hover:bg-white/[0.08] active:bg-white/[0.05]`}
+        className={`${captionButton} hover:bg-hover active:bg-pressed`}
         onClick={() => run((window) => window.minimize())}
       >
         {glyphs.minimize}
@@ -68,7 +68,7 @@ export function WindowControls() {
         type="button"
         tabIndex={-1}
         aria-label={maximized ? 'Restore' : 'Maximize'}
-        className={`${captionButton} hover:bg-white/[0.08] active:bg-white/[0.05]`}
+        className={`${captionButton} hover:bg-hover active:bg-pressed`}
         onClick={() => run((window) => window.toggleMaximize())}
       >
         {maximized ? glyphs.restore : glyphs.maximize}
@@ -105,7 +105,7 @@ export default function WindowTitleBar({
     >
       <div
         data-tauri-drag-region
-        className="flex min-w-0 flex-1 items-center gap-2 pl-[14px] text-[13px] text-[#9aadb4]"
+        className="flex min-w-0 flex-1 items-center gap-2 pl-[14px] text-sm text-subtle"
       >
         <img className="pointer-events-none h-4 w-[13px] object-contain" src={logo} alt="" />
         <span data-tauri-drag-region>Wisp AI</span>

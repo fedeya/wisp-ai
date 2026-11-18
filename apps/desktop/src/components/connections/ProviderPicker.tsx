@@ -50,9 +50,9 @@ export default function ProviderPicker({
             className={`grid h-[min(460px,calc(100dvh-48px))] w-full max-w-[520px] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${floatingSurface}`}
             initialFocus={searchField}
           >
-            <div className="grid gap-3 border-0 border-b border-solid border-white/[0.06] px-4 pt-3 pb-3">
+            <div className="grid gap-3 border-0 border-b border-solid border-divider px-4 pt-3 pb-3">
               <div className="flex items-center justify-between gap-3">
-                <Dialog.Title className="m-0 text-[16px] font-semibold">
+                <Dialog.Title className="m-0 text-lg font-semibold">
                   {onSelect ? 'Browse providers' : 'Add provider'}
                 </Dialog.Title>
                 <Dialog.Close
@@ -80,8 +80,8 @@ export default function ProviderPicker({
                         <span className="flex min-w-0 items-center gap-3">
                           <ProviderLogo provider={id} />
                           <span className="grid min-w-0">
-                            <span className="text-[14px] font-medium">{name}</span>
-                            <span className="text-[13px] text-muted">{description}</span>
+                            <span className="text-base font-medium">{name}</span>
+                            <span className="text-sm text-muted">{description}</span>
                           </span>
                         </span>
                         <span className="shrink-0 text-muted opacity-0 transition-opacity duration-75 group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -118,7 +118,7 @@ export default function ProviderPicker({
                   })}
                 </ul>
               ) : (
-                <p className="m-0 px-3 py-3 text-[13px] text-muted" role="status">
+                <p className="m-0 px-3 py-3 text-sm text-muted" role="status">
                   No providers found.
                 </p>
               )}

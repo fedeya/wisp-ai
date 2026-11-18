@@ -98,10 +98,10 @@ export default function DefaultModelSettings({
               </span>
             </span>
             <div>
-              <h2 ref={heading} tabIndex={-1} className="text-[16px] outline-none">
+              <h2 ref={heading} tabIndex={-1} className="text-lg outline-none">
                 {providerPresentation(review.provider).name} added
               </h2>
-              <p className="m-0 text-[13px] text-muted">
+              <p className="m-0 text-sm text-muted">
                 {singleModel
                   ? 'Ready for new chats in Wisp.'
                   : models.length
@@ -113,7 +113,7 @@ export default function DefaultModelSettings({
         )}
         {app.modelsError && (
           <p
-            className="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#332522] text-[#f0b4aa] mb-[20px] text-[13px] leading-[1.5] [&_.icon-button]:ml-auto"
+            className="banner error gap-[12px] border border-solid border-[#70473f] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#332522] text-danger mb-[20px] text-sm leading-[1.5] [&_.icon-button]:ml-auto"
             role="status"
           >
             Could not load models: {app.modelsError}
@@ -121,7 +121,7 @@ export default function DefaultModelSettings({
         )}
         {(!review || !models.length) && (
           <div className="label-row flex items-center justify-between">
-            <h2 className="text-[14px] font-medium">{showPicker ? 'Default model' : 'Models'}</h2>
+            <h2 className="text-base font-medium">{showPicker ? 'Default model' : 'Models'}</h2>
             <Button
               intent="quiet"
               size="text"
@@ -145,12 +145,12 @@ export default function DefaultModelSettings({
           >
             {singleModel ? (
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-y [border-block-style:solid] border-border py-3">
-                <span className="text-[13px] text-muted">Default model</span>
+                <span className="text-sm text-muted">Default model</span>
                 <strong>{modelLabel(singleModel.slug, singleModel.displayName)}</strong>
               </div>
             ) : (
               <>
-                <label className={review ? 'text-[13px] font-medium' : 'sr-only'} htmlFor="models">
+                <label className={review ? 'text-sm font-medium' : 'sr-only'} htmlFor="models">
                   Default model for new chats
                 </label>
                 <modelForm.Field name="model">
@@ -198,7 +198,7 @@ export default function DefaultModelSettings({
           </Button>
         )}
         {showPicker && !review && (
-          <p className="mt-3 text-[13px] text-muted">
+          <p className="mt-3 text-sm text-muted">
             Used for new chats. You can change the model and effort in each chat.
           </p>
         )}

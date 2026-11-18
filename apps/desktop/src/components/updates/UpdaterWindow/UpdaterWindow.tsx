@@ -62,7 +62,7 @@ export default function UpdaterWindow() {
   return (
     <main className="min-h-dvh border border-solid border-border bg-canvas px-[25px] pt-[15px] pb-[24px] [background-image:radial-gradient(ellipse_at_15%_0%,#243a38_0%,transparent_58%)]">
       <header
-        className="h-[30px] text-[12px] font-semibold text-muted select-none"
+        className="h-[30px] text-xs font-semibold text-muted select-none"
         data-tauri-drag-region=""
       >
         Wisp AI
@@ -79,7 +79,7 @@ export default function UpdaterWindow() {
             {failed ? "Couldn't update Wisp" : 'Updating Wisp'}
           </h1>
           <p
-            className={`mt-[5px] text-[13px] [overflow-wrap:anywhere] ${failed ? 'text-[#e8aca5]' : 'text-muted'}`}
+            className={`mt-[5px] text-sm [overflow-wrap:anywhere] ${failed ? 'text-[#e8aca5]' : 'text-muted'}`}
           >
             {failed ? (update.error ?? status) : 'Wisp will reopen automatically.'}
           </p>
@@ -88,7 +88,7 @@ export default function UpdaterWindow() {
       {failed ? (
         <>
           <section className="overflow-hidden rounded-[12px] border border-solid border-border bg-sidebar">
-            <h2 className="border-0 border-b border-solid border-border px-[12px] py-[10px] text-[12px] text-[#c5d3d1]">
+            <h2 className="border-0 border-b border-solid border-border px-[12px] py-[10px] text-xs text-[#c5d3d1]">
               Installation log
             </h2>
             <pre
@@ -112,7 +112,7 @@ export default function UpdaterWindow() {
         </>
       ) : (
         <section className="rounded-[12px] border border-solid border-border bg-surface px-[16px] py-[15px]">
-          <div className="mb-[10px] flex justify-between gap-[12px] text-[13px] text-[#c5d3d1]">
+          <div className="mb-[10px] flex justify-between gap-[12px] text-sm text-[#c5d3d1]">
             <span>{status}</span>
             {update.percent !== null && (
               <strong className="text-accent tabular-nums">{update.percent}%</strong>

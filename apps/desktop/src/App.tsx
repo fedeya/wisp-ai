@@ -90,7 +90,7 @@ function DesktopShell() {
           <div className="flex min-h-0 flex-1">
             <DesktopSidebar />
             <main
-              className={`app-scroll flex min-h-0 min-w-0 flex-1 flex-col rounded-tl-[8px] border-0 border-t border-l border-solid border-white/[0.06] bg-canvas ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
+              className={`app-scroll flex min-h-0 min-w-0 flex-1 flex-col rounded-tl-[8px] border-0 border-t border-l border-solid border-divider bg-canvas ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
             >
               <div
                 className={`w-full min-w-0 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:20px] ${page.detail ? '' : 'max-w-[1450px] pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
@@ -103,7 +103,7 @@ function DesktopShell() {
                     <Link
                       to={{ pathname: page.path, search }}
                       aria-label={`Back to ${page.title}`}
-                      className="-ml-2 inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted no-underline transition-colors hover:bg-surface hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                      className="-ml-2 inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-sm font-medium text-muted no-underline transition-colors hover:bg-surface hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                     >
                       <Icon name="back" size={16} />
                       {page.title}
@@ -116,12 +116,12 @@ function DesktopShell() {
                     <header className="page-header gap-[18px] mb-[20px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
                       <div>
                         <h1>{page.title}</h1>
-                        <p className="text-muted text-[14px]">{page.caption}</p>
+                        <p className="text-muted text-base">{page.caption}</p>
                       </div>
                     </header>
                   )}
                 {!native && (
-                  <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-[12px] leading-[1.5] [&_.icon-button]:ml-auto">
+                  <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-xs leading-[1.5] [&_.icon-button]:ml-auto">
                     Design preview. Desktop actions are available in the installed Wisp app.
                   </div>
                 )}

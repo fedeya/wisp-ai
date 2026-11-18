@@ -1,5 +1,8 @@
 import type { ReactNode } from 'react';
 
+/** Small section label above a group of rows. */
+export const groupLabel = 'mb-1.5 ml-0.5 text-sm font-normal tracking-normal text-muted';
+
 /** A labelled stack of rows, the desktop replacement for loose cards. */
 export function RowGroup({
   label,
@@ -12,9 +15,7 @@ export function RowGroup({
 }) {
   return (
     <section aria-label={label} className={`mb-5 ${className}`}>
-      <h2 className="mb-1.5 ml-0.5 text-[13px] font-normal tracking-normal text-[#c4ced1]">
-        {label}
-      </h2>
+      <h2 className={groupLabel}>{label}</h2>
       <div className="flex flex-col gap-0.5 overflow-hidden rounded-[6px]">{children}</div>
     </section>
   );
@@ -37,15 +38,13 @@ export function Row({
   children?: ReactNode;
 }) {
   return (
-    <div className={highlight ? 'bg-[#232b2f]' : 'bg-surface'}>
+    <div className={highlight ? 'bg-raised' : 'bg-surface'}>
       <div className="flex min-h-[56px] items-center gap-3 px-4 py-2.5">
         {icon && <span className="flex shrink-0 text-muted">{icon}</span>}
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] text-foreground">{title}</div>
+          <div className="text-base text-foreground">{title}</div>
           {detail && (
-            <div className="mt-0.5 text-[13px] text-[#93a3a9] [overflow-wrap:anywhere]">
-              {detail}
-            </div>
+            <div className="mt-0.5 text-sm text-subtle [overflow-wrap:anywhere]">{detail}</div>
           )}
         </div>
         {trailing && <div className="flex shrink-0 items-center gap-2">{trailing}</div>}

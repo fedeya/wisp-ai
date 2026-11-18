@@ -52,7 +52,7 @@ export default function DesktopSidebar() {
     readiness === 'ready'
       ? 'bg-accent'
       : readiness === 'update' || readiness === 'account' || readiness === 'setup'
-        ? 'bg-[#e8ba78]'
+        ? 'bg-warning'
         : 'bg-muted';
 
   return (
@@ -61,7 +61,7 @@ export default function DesktopSidebar() {
         {renderNavigation(overview)}
         {mainGroups.map(({ label, pages }) => (
           <Fragment key={label}>
-            <div aria-hidden="true" className="mx-2.5 h-px bg-white/[0.08]" />
+            <div aria-hidden="true" className="mx-2.5 h-px bg-divider" />
             <div role="group" aria-label={label} className="flex flex-col gap-0.5">
               {pages.map(renderNavigation)}
             </div>
@@ -71,10 +71,10 @@ export default function DesktopSidebar() {
       <nav className="mt-auto flex flex-col gap-0.5" aria-label="App settings">
         {applicationPages.map(renderNavigation)}
       </nav>
-      <div className="border-0 border-t border-solid border-white/[0.06] pt-1.5">
+      <div className="border-0 border-t border-solid border-divider pt-1.5">
         <Link
           to={overview.path}
-          className="flex min-h-[34px] items-center gap-2 rounded-[4px] px-2.5 text-[13px] leading-tight text-[#9aadb4] no-underline transition-colors duration-75 hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent"
+          className="flex min-h-[34px] items-center gap-2 rounded-[4px] px-2.5 text-sm leading-tight text-subtle no-underline transition-colors duration-75 hover:bg-hover hover:text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent"
         >
           <span aria-hidden="true" className={`size-[7px] shrink-0 rounded-full ${dotColor}`} />
           <span

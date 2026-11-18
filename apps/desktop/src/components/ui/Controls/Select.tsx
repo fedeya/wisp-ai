@@ -51,7 +51,7 @@ export function Select<Value extends string>({
         className={field({
           class: [
             'group flex items-center justify-between gap-3 text-left',
-            'transition-colors duration-75 data-popup-open:bg-white/[0.06] disabled:cursor-default',
+            'transition-colors duration-75 data-popup-open:bg-hover disabled:cursor-default',
             className,
           ],
         })}
@@ -80,13 +80,11 @@ export function Select<Value extends string>({
                   key={value}
                   value={value}
                   label={label}
-                  className="grid min-h-8 grid-cols-[minmax(0,1fr)_16px] items-center gap-x-2 rounded-[4px] px-2.5 py-1.5 text-[14px] leading-snug outline-none select-none data-highlighted:bg-white/[0.06]"
+                  className="grid min-h-8 grid-cols-[minmax(0,1fr)_16px] items-center gap-x-2 rounded-[4px] px-2.5 py-1.5 text-base leading-snug outline-none select-none data-highlighted:bg-hover"
                 >
                   <div className="min-w-0 wrap-anywhere">
                     <BaseSelect.ItemText>{label}</BaseSelect.ItemText>
-                    {description && (
-                      <div className="mt-0.5 text-[12px] text-muted">{description}</div>
-                    )}
+                    {description && <div className="mt-0.5 text-xs text-muted">{description}</div>}
                   </div>
                   <BaseSelect.ItemIndicator className="col-start-2 flex text-accent">
                     <Icon name="check" size={16} />

@@ -7,6 +7,7 @@ import { desktop, native } from '../../../api';
 import { Spinner } from '../../ui/ActionProgress';
 import { Button, Card, Select } from '../../ui/Controls';
 import Icon from '../../ui/Icon';
+import { groupLabel } from '../../ui/Rows';
 
 type Release = { version: string; notes: string | null };
 const updateChannels = [
@@ -228,7 +229,7 @@ export default function Updates({
             <Icon name="download" size={18} />
           </span>
           <div className="min-w-0" role="status">
-            <p className="m-0 text-[13px] font-semibold leading-snug [overflow-wrap:anywhere]">
+            <p className="m-0 text-sm font-semibold leading-snug [overflow-wrap:anywhere]">
               Wisp {release.version} is available.
             </p>
             <p className="m-0 mt-0.5 text-xs leading-snug text-muted">
@@ -263,10 +264,7 @@ export default function Updates({
 
   return (
     <section aria-labelledby="app-updates-title" className="mb-5">
-      <h2
-        id="app-updates-title"
-        className="mb-1.5 ml-0.5 text-[12px] font-normal tracking-normal text-[#c4ced1]"
-      >
+      <h2 id="app-updates-title" className={groupLabel}>
         App updates
       </h2>
       <Card className="mb-0.5 overflow-hidden rounded-b-none border-0 p-0">
@@ -287,12 +285,12 @@ export default function Updates({
                   <h3
                     ref={statusHeading}
                     tabIndex={-1}
-                    className="m-0 text-[16px] font-semibold outline-none [overflow-wrap:anywhere]"
+                    className="m-0 text-lg font-semibold outline-none [overflow-wrap:anywhere]"
                   >
                     {statusTitle}
                   </h3>
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-[12px] text-muted">
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted">
                   <span>Installed version {version}</span>
                   {lastChecked && !installing && <span>Last checked {lastChecked}</span>}
                 </div>
@@ -312,14 +310,14 @@ export default function Updates({
             )}
           </div>
           {!supported && (
-            <p className="mt-2 text-[13px] text-muted">
+            <p className="mt-2 text-sm text-muted">
               Updates are available in the installed Windows x64 release.
             </p>
           )}
           {progress && (
             <div className="mt-4">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <p className="m-0 text-[13px]" role="status">
+                <p className="m-0 text-sm" role="status">
                   {progressMessage(progress)}
                 </p>
                 {percent !== undefined && (
@@ -339,12 +337,12 @@ export default function Updates({
                   value={percent}
                 />
               )}
-              {size && <p className="mb-0 mt-1.5 text-[12px] text-muted tabular-nums">{size}</p>}
+              {size && <p className="mb-0 mt-1.5 text-xs text-muted tabular-nums">{size}</p>}
             </div>
           )}
           {error && (
             <p
-              className="mb-0 mt-3 rounded-[8px] border border-solid border-[#70473f] bg-[#332522] px-3 py-2 text-[13px] text-[#f0b4aa]"
+              className="mb-0 mt-3 rounded-[8px] border border-solid border-[#70473f] bg-[#332522] px-3 py-2 text-sm text-danger"
               role="alert"
             >
               {error}
@@ -356,16 +354,16 @@ export default function Updates({
             className="border-t border-border px-4 py-3 [border-top-style:solid] max-sm:px-3"
             aria-labelledby="release-notes-title"
           >
-            <h3 id="release-notes-title" className="mb-2 text-[13px] font-semibold">
+            <h3 id="release-notes-title" className="mb-2 text-sm font-semibold">
               What’s new
             </h3>
             <div
-              className="release-notes max-h-[235px] overflow-y-auto text-[13px] text-muted [overflow-wrap:anywhere] [&_img]:max-w-full [&_img]:rounded-lg [&_h1]:text-[1.35rem] [&_h2]:mt-4 [&_h2]:text-[1.1rem] [&_a]:text-accent [&>:first-child]:mt-0 [&>:last-child]:mb-0"
+              className="release-notes max-h-[235px] overflow-y-auto text-sm text-muted [overflow-wrap:anywhere] [&_img]:max-w-full [&_img]:rounded-lg [&_h1]:text-[1.35rem] [&_h2]:mt-4 [&_h2]:text-[1.1rem] [&_a]:text-accent [&>:first-child]:mt-0 [&>:last-child]:mb-0"
               dangerouslySetInnerHTML={{
                 __html: renderReleaseNotes(release.notes || 'This release has no notes.'),
               }}
             />
-            <p className="mb-0 mt-3 text-[12px] text-muted">
+            <p className="mb-0 mt-3 text-xs text-muted">
               Wisp restarts after installing and keeps your chats and settings. It updates your
               installed WoW addon when needed and reminds you to type /reload if WoW is open.
             </p>
@@ -375,10 +373,10 @@ export default function Updates({
       <Card density="compact" className="mb-0 rounded-t-none border-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="m-0 text-[14px] font-semibold">
+            <h3 className="m-0 text-base font-semibold">
               <label htmlFor="wisp-update-channel">Update channel</label>
             </h3>
-            <p id="wisp-update-channel-description" className="mb-0 mt-1 text-[13px] text-muted">
+            <p id="wisp-update-channel-description" className="mb-0 mt-1 text-sm text-muted">
               {channel === 'nightly'
                 ? 'Experimental builds from main. Features may change or break.'
                 : version.includes('-nightly.')
@@ -397,12 +395,12 @@ export default function Updates({
           />
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 [border-top-style:solid]">
-          <p className="m-0 text-[12px] text-muted">Wisp checks at startup and every six hours.</p>
+          <p className="m-0 text-xs text-muted">Wisp checks at startup and every six hours.</p>
           <a
             href={changelog}
             target="_blank"
             rel="noreferrer"
-            className="text-[13px] text-accent no-underline hover:underline"
+            className="text-sm text-accent no-underline hover:underline"
           >
             View release history <span aria-hidden="true">↗</span>
           </a>

@@ -8,6 +8,7 @@ import simLogo from '../../assets/integrations/sim.png';
 import syndicatorLogo from '../../assets/integrations/syndicator.png';
 import theWowDbLogo from '../../assets/integrations/thewowdb.svg';
 import Icon from '../ui/Icon';
+import StatusBadge, { type StatusTone } from '../ui/StatusBadge';
 
 const integrationLogos: Readonly<Partial<Record<string, string>>> = {
   'integration:questie': questieLogo,
@@ -21,10 +22,10 @@ const integrationLogos: Readonly<Partial<Record<string, string>>> = {
 type IconName = ComponentProps<typeof Icon>['name'];
 type Label = { label: string; tone: 'ready' | 'attention' | 'neutral' };
 
-const statusColors = {
-  ready: 'bg-[#223a34] text-accent',
-  attention: 'bg-[#423529] text-[#efc59c]',
-  neutral: 'bg-selected text-[#b1c0c5]',
+const statusTone: Record<Label['tone'], StatusTone> = {
+  ready: 'positive',
+  attention: 'attention',
+  neutral: 'neutral',
 };
 
 export const mcpTransport: Record<Mcp['transport'], string> = {
@@ -86,12 +87,5 @@ export function IntegrationIcon({ id, icon }: { id?: string; icon: IconName }) {
 }
 
 export function IntegrationStatus({ label, tone }: Label) {
-  return (
-    <span
-      className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-1 text-[12px] leading-4 ${statusColors[tone]}`}
-    >
-      <span className="size-1.5 shrink-0 rounded-full bg-current" aria-hidden="true" />
-      {label}
-    </span>
-  );
+  return <StatusBadge tone={statusTone[tone]}>{label}</StatusBadge>;
 }

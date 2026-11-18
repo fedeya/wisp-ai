@@ -54,7 +54,7 @@ export default function TelemetrySettings() {
       }
     >
       {error && (
-        <p role="alert" className="m-0 px-4 pb-3 text-[13px] text-[#f0b4aa]">
+        <p role="alert" className="m-0 px-4 pb-3 text-sm text-danger">
           {error}
         </p>
       )}

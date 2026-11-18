@@ -51,7 +51,7 @@ export default function GameInstallation({ firstRun = false }: { firstRun?: bool
       ) : (
         <>
           {firstRun && (
-            <p className={`mt-3 text-[13px] ${detected ? 'text-accent' : 'text-muted'}`}>
+            <p className={`mt-3 text-sm ${detected ? 'text-accent' : 'text-muted'}`}>
               {multipleFolders
                 ? `Found ${app.detectedFolders.length} WoW Forever installations.`
                 : detected

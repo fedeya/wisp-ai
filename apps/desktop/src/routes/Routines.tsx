@@ -22,7 +22,7 @@ export default function Routines() {
     <>
       <Card density="compact">
         <h2>{routines.length ? 'Create another routine in game' : 'No routines yet'}</h2>
-        <p className="text-muted text-[13px]">
+        <p className="text-muted text-sm">
           Try “Every two levels, review my spells and rotation” or “When I change weapons, review my
           equipment.” Routines run while the character is connected, outside combat. Each run has
           its own conversation.
@@ -39,7 +39,7 @@ export default function Routines() {
             <div className="section-title gap-[18px] flex items-center justify-between [&_>_svg]:text-muted">
               <div>
                 <h2>{routine.title}</h2>
-                <p className="text-muted text-[13px]">
+                <p className="text-muted text-sm">
                   {routine.enabled ? 'Active' : 'Paused'} · {characterLabel(characterKey)}
                 </p>
               </div>
@@ -93,24 +93,24 @@ export default function Routines() {
                 </Button>
               </div>
             </div>
-            <p className="text-muted text-[13px]">{routine.instruction}</p>
-            <p className="muted text-muted text-[13px]">
+            <p className="text-muted text-sm">{routine.instruction}</p>
+            <p className="muted text-muted text-sm">
               {routine.triggers.map(describeRoutineTrigger).join(' or ')}
             </p>
             <details className="routine-history border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-3 pt-3">
-              <summary className="text-muted text-[13px]">Run history ({runs.length})</summary>
+              <summary className="text-muted text-sm">Run history ({runs.length})</summary>
               {runs.map((run) => (
                 <div
                   key={run.id}
                   className="section-title gap-[18px] px-0 py-[12px] flex items-center justify-between border-b-[1px] [border-bottom-style:solid] border-b-[var(--border)] [&_>_svg]:text-muted"
                 >
                   <div>
-                    <p className="text-muted text-[13px]">
+                    <p className="text-muted text-sm">
                       {new Date(run.startedAt).toLocaleString()} ·{' '}
                       {run.status === 'no_tip' ? 'No updates' : run.status}
                     </p>
                     {(run.status === 'error' || run.status === 'interrupted') && (
-                      <p className="muted text-muted text-[13px]">{run.summary}</p>
+                      <p className="muted text-muted text-sm">{run.summary}</p>
                     )}
                   </div>
                   {run.status !== 'no_tip' && (
@@ -130,7 +130,7 @@ export default function Routines() {
                   )}
                 </div>
               ))}
-              {!runs.length && <p className="muted text-muted text-[13px]">No runs yet.</p>}
+              {!runs.length && <p className="muted text-muted text-sm">No runs yet.</p>}
             </details>
           </Card>
         );

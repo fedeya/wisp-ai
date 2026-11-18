@@ -18,7 +18,7 @@ import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ModelCatalog from './ModelCatalog';
 import { modelProvider, ProviderLogo } from './provider-directory';
 
-const labelClass = 'text-[12px] font-medium text-[#bdcccf]';
+const labelClass = 'text-xs font-medium text-[#bdcccf]';
 const modelFieldsClass =
   'api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]';
 const keyPages: Partial<Record<ProviderId, string>> = {
@@ -246,7 +246,7 @@ export default function ConnectionEditor({
                 : ''}
           </label>
           {setup && keyPage && !baseURL.trim() && (
-            <a href={keyPage} target="_blank" rel="noreferrer" className="text-[13px] text-accent">
+            <a href={keyPage} target="_blank" rel="noreferrer" className="text-sm text-accent">
               Get API key ↗
             </a>
           )}
@@ -269,7 +269,7 @@ export default function ConnectionEditor({
           endpointField
         ) : (
           <details>
-            <summary className="text-muted text-[13px]">
+            <summary className="text-muted text-sm">
               {setup ? 'Advanced options' : 'Custom endpoint'}
             </summary>
             <div className="mt-2 grid gap-3">
@@ -285,7 +285,7 @@ export default function ConnectionEditor({
             <h3
               ref={modelsHeading}
               tabIndex={setup ? -1 : undefined}
-              className="m-0 text-[14px] font-semibold outline-none"
+              className="m-0 text-base font-semibold outline-none"
             >
               {setup ? 'Choose models' : 'Models'}
             </h3>
@@ -293,7 +293,7 @@ export default function ConnectionEditor({
               {setup && discovered.length ? 'Refresh models' : 'Discover models'}
             </Button>
           </div>
-          <p className="m-0 text-[13px] text-muted">
+          <p className="m-0 text-sm text-muted">
             {models.length
               ? `${models.length} ${models.length === 1 ? 'model' : 'models'} selected for Wisp`
               : 'Discover models and add the ones you want to use.'}
@@ -344,7 +344,7 @@ export default function ConnectionEditor({
           hidden={!selectedSettingsVisible}
           className={selectedSettingsVisible ? 'grid gap-3' : 'hidden'}
         >
-          {models.length > 0 && <h4 className="m-0 text-[13px] font-semibold">Selected models</h4>}
+          {models.length > 0 && <h4 className="m-0 text-sm font-semibold">Selected models</h4>}
           <form.Field name="models" mode="array">
             {(field) =>
               field.state.value.map((model, index) => (
@@ -352,9 +352,9 @@ export default function ConnectionEditor({
                   <div className="flex min-w-0 items-center gap-2.5">
                     <ProviderLogo provider={modelProvider(provider, model.id)} />
                     <div className="min-w-0 [overflow-wrap:anywhere]">
-                      <strong className="block text-[13px]">{model.name || model.id}</strong>
+                      <strong className="block text-sm">{model.name || model.id}</strong>
                       {model.name && model.name !== model.id && (
-                        <span className="block text-[12px] text-muted">{model.id}</span>
+                        <span className="block text-xs text-muted">{model.id}</span>
                       )}
                     </div>
                   </div>
@@ -371,7 +371,7 @@ export default function ConnectionEditor({
                       const errorId = `model-context-error-${index}`;
                       return (
                         <div>
-                          <label htmlFor={fieldId} className="mb-1 block text-[12px] text-muted">
+                          <label htmlFor={fieldId} className="mb-1 block text-xs text-muted">
                             Context window (tokens)
                           </label>
                           <NumberInput
@@ -390,7 +390,7 @@ export default function ConnectionEditor({
                             disabled={app.locked}
                           />
                           {error && (
-                            <p id={errorId} role="alert" className="mt-1 text-xs text-[#f0b4aa]">
+                            <p id={errorId} role="alert" className="mt-1 text-xs text-danger">
                               {error}
                             </p>
                           )}
@@ -421,7 +421,7 @@ export default function ConnectionEditor({
             }
           </form.Field>
           {models.length > 0 && (
-            <p className="m-0 text-[12px] text-muted">
+            <p className="m-0 text-xs text-muted">
               Each model needs a context window. Testing a model may incur provider charges.
             </p>
           )}
@@ -429,7 +429,7 @@ export default function ConnectionEditor({
         <details
           open={discovered.some(({ supportsTools }) => supportsTools === true) ? undefined : true}
         >
-          <summary className="text-[13px] text-muted">Add a model manually</summary>
+          <summary className="text-sm text-muted">Add a model manually</summary>
           <div className={`${modelFieldsClass} mt-2`}>
             <form.Field name="modelId">
               {(field) => (

@@ -25,7 +25,7 @@ export default function IntegrationCard({
       <div className="integration-top gap-[18px] flex items-center justify-between">
         <div>
           <h2>{title}</h2>
-          <p className="text-muted text-[13px]">{entry.description}</p>
+          <p className="text-muted text-sm">{entry.description}</p>
         </div>
         <div className="row-controls gap-[14px] flex items-center shrink-0">
           {busy && <ActionProgress label={busy} />}
@@ -38,7 +38,7 @@ export default function IntegrationCard({
         </div>
       </div>
       {(entry.version || tools.length > 0) && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-[12px] text-muted">
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted">
           {entry.version && <span>v{entry.version}</span>}
           {tools.length > 0 && (
             <span>
@@ -48,13 +48,13 @@ export default function IntegrationCard({
         </div>
       )}
       {entry.reason && (
-        <p className="muted integration-reason mx-0 text-muted text-[13px] mt-[12px] mb-0">
+        <p className="muted integration-reason mx-0 text-muted text-sm mt-[12px] mb-0">
           {entry.reason}
         </p>
       )}
       {tools.length > 0 && (
         <details className="integration-tools mt-[16px] border-t-[1px] [border-top-style:solid] border-t-[#ffffff12] pt-[12px]">
-          <summary className="text-muted text-[13px]">
+          <summary className="text-muted text-sm">
             Tools &amp; capabilities ({tools.length})
           </summary>
           {tools.map((tool) => (
@@ -70,20 +70,18 @@ export default function IntegrationCard({
                 onChange={(event) => set(tool.id, event.currentTarget.checked)}
               />
               <span className="gap-[5px] grid min-w-[0]">
-                <strong className="text-[13px] font-medium">{tool.name}</strong>
+                <strong className="text-sm font-medium">{tool.name}</strong>
                 {tool.toolName && (
                   <code className="text-[11px] text-muted [overflow-wrap:anywhere]">
                     {tool.toolName}
                   </code>
                 )}
                 {!tool.available && (
-                  <small className="tool-unavailable text-[12px] leading-[1.5] text-[#929b9a]">
+                  <small className="tool-unavailable text-xs leading-[1.5] text-[#929b9a]">
                     {tool.status}: {tool.reason || 'Required API unavailable'}
                   </small>
                 )}
-                <small className="text-[12px] leading-[1.5] text-[#929b9a]">
-                  {tool.description}
-                </small>
+                <small className="text-xs leading-[1.5] text-[#929b9a]">{tool.description}</small>
               </span>
             </label>
           ))}

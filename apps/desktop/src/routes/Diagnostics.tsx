@@ -24,8 +24,8 @@ export default function Diagnostics() {
     <Card density="compact">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="m-0 text-[14px] font-semibold">Local activity</h2>
-          <p className="mb-0 mt-1 text-[13px] text-muted">
+          <h2 className="m-0 text-base font-semibold">Local activity</h2>
+          <p className="mb-0 mt-1 text-sm text-muted">
             Logs stay on your computer. Review them before sharing.
           </p>
         </div>
@@ -42,7 +42,7 @@ export default function Diagnostics() {
       </div>
       {app.connectionError && (
         <p
-          className="mt-3 mb-0 rounded-[8px] border border-solid border-[#70473f] bg-[#332522] px-3 py-2 text-[13px] text-[#f0b4aa] [overflow-wrap:anywhere]"
+          className="mt-3 mb-0 rounded-[8px] border border-solid border-[#70473f] bg-[#332522] px-3 py-2 text-sm text-danger [overflow-wrap:anywhere]"
           role="status"
         >
           Last connection error: {app.connectionError}
@@ -56,7 +56,7 @@ export default function Diagnostics() {
       >
         {app.logs || 'No activity loaded yet. Refresh to read the local bridge logs.'}
       </pre>
-      <p className="selectable mt-2 mb-0 text-[12px] text-muted [overflow-wrap:anywhere]">
+      <p className="selectable mt-2 mb-0 text-xs text-muted [overflow-wrap:anywhere]">
         Data location: {app.info?.dataDirectory || 'Available in the installed app'}
       </p>
     </Card>

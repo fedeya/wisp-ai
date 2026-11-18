@@ -21,7 +21,7 @@ function Toast({ message, failed, onDismiss }: FeedbackToastProps) {
 
   return (
     <m.div
-      className={`notification${failed ? ' error' : ''} fixed right-4 bottom-4 z-[30] flex w-[360px] max-w-[calc(100vw_-_32px)] items-start gap-3 rounded-[6px] border border-solid border-white/[0.08] bg-[#232b31] py-2.5 pr-2 pl-3.5 text-[14px] leading-[1.45] text-foreground shadow-[0_8px_24px_rgb(0_0_0/0.35),0_2px_6px_rgb(0_0_0/0.25)]`}
+      className={`notification${failed ? ' error' : ''} fixed right-4 bottom-4 z-[30] flex w-[360px] max-w-[calc(100vw_-_32px)] items-start gap-3 rounded-[6px] border border-solid border-border bg-raised py-2.5 pr-2 pl-3.5 text-base leading-[1.45] text-foreground shadow-floating`}
       role="status"
       aria-live="polite"
       aria-hidden={!isPresent}
@@ -34,7 +34,7 @@ function Toast({ message, failed, onDismiss }: FeedbackToastProps) {
         transition: { duration: 0.12, ease: 'easeIn' },
       }}
     >
-      <span className={`mt-[3px] flex shrink-0 ${failed ? 'text-[#f0a598]' : 'text-accent'}`}>
+      <span className={`mt-[3px] flex shrink-0 ${failed ? 'text-danger' : 'text-accent'}`}>
         <Icon name={failed ? 'circleAlert' : 'circleCheck'} size={16} />
       </span>
       <span className="min-w-0 flex-1 py-px [overflow-wrap:anywhere]">{message}</span>

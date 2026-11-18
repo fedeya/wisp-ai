@@ -18,19 +18,20 @@ import { button } from '../components/ui/Controls/styles';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
 import { Row } from '../components/ui/Rows';
+import StatusBadge, { type StatusTone } from '../components/ui/StatusBadge';
 import { useDesktop } from '../use-desktop';
 
-const statusColors = {
-  connected: 'bg-[#223a34] text-accent',
-  attention: 'bg-[#423529] text-[#efc59c]',
-  neutral: 'bg-selected text-[#b1c0c5]',
-} as const;
+const statusTones = {
+  connected: 'positive',
+  attention: 'attention',
+  neutral: 'neutral',
+} as const satisfies Record<string, StatusTone>;
 
 function connectionStatus(
   provider: ProviderId,
   connections: ConnectionView[],
   subscription?: Status['auth'],
-): { label: string; tone: keyof typeof statusColors; action?: string } {
+): { label: string; tone: keyof typeof statusTones; action?: string } {
   if (subscription?.status === 'connected') return { label: 'Connected', tone: 'connected' };
   if (subscription?.status === 'authorizing') {
     return { label: 'Waiting for browser', tone: 'attention' };
@@ -91,11 +92,11 @@ export default function Connections() {
             <h2 id="connections-empty-title" className="text-[21px]">
               Connect your first provider
             </h2>
-            <p className="mx-auto max-w-[44ch] text-[13px] text-muted">
+            <p className="mx-auto max-w-[44ch] text-sm text-muted">
               Use a ChatGPT subscription or add an API key to make models available in Wisp.
             </p>
           </div>
-          <div className="flex flex-wrap justify-center gap-3 text-[13px]">
+          <div className="flex flex-wrap justify-center gap-3 text-sm">
             {featuredProviders.slice(0, 3).map((provider) => (
               <span
                 key={provider}
@@ -141,21 +142,13 @@ export default function Connections() {
                       <div className="flex min-w-0 items-center gap-3 max-sm:row-span-2">
                         <ProviderLogo provider={provider} />
                         <div className="min-w-0">
-                          <h3 id={titleId} className="m-0 break-words text-[14px] font-semibold">
+                          <h3 id={titleId} className="m-0 break-words text-base font-semibold">
                             {name}
                           </h3>
-                          <p className="m-0 text-[13px] text-muted">{method}</p>
+                          <p className="m-0 text-sm text-muted">{method}</p>
                         </div>
                       </div>
-                      <span
-                        className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-1 text-[12px] leading-4 ${statusColors[tone]}`}
-                      >
-                        <span
-                          className="size-[6px] shrink-0 rounded-full bg-current"
-                          aria-hidden="true"
-                        />
-                        {label}
-                      </span>
+                      <StatusBadge tone={statusTones[tone]}>{label}</StatusBadge>
                       <Link
                         to={`/connections/${provider}`}
                         aria-label={`${action} ${name}`}
@@ -175,7 +168,7 @@ export default function Connections() {
           <Link
             to="/integrations/web-search"
             aria-label="Configure web search in Integrations"
-            className="block overflow-hidden rounded-[6px] text-inherit no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent hover:[&>div]:bg-[#222a30]"
+            className="block overflow-hidden rounded-[6px] text-inherit no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent hover:[&>div]:bg-raised"
           >
             <Row
               icon={<Icon name="globe" size={18} />}

@@ -14,6 +14,40 @@
   --color-foreground: #f5f8f8;
   --color-accent-dim: #14302d;
   --color-accent-line: #2a5e57;
+  --color-accent-hover: #8be3d0;
+  --color-accent-pressed: #6cc9b5;
+  --color-on-accent: #102322;
+
+  /* Secondary text (descriptions, idle navigation) and status colors. */
+  --color-subtle: #9aadb4;
+  --color-warning: #e8ba78;
+  --color-warning-dim: #3a2f1e;
+  --color-danger: #f0b4aa;
+
+  /* Interaction fills, layered over any surface. */
+  --color-hover: rgb(255 255 255 / 0.06);
+  --color-pressed: rgb(255 255 255 / 0.03);
+  --color-active: rgb(255 255 255 / 0.07);
+  --color-control: rgb(255 255 255 / 0.06);
+  --color-control-hover: rgb(255 255 255 / 0.09);
+  --color-field: rgb(255 255 255 / 0.04);
+  --color-field-line: rgb(255 255 255 / 0.16);
+  --color-field-focus: #11161a;
+  --color-divider: rgb(255 255 255 / 0.07);
+
+  /* Menus, dialogs, toasts and highlighted rows. */
+  --color-raised: #232b31;
+  --shadow-floating: 0 8px 24px rgb(0 0 0 / 0.35), 0 2px 6px rgb(0 0 0 / 0.25);
+
+  /* Type scale in px so it does not follow the 15px root. */
+  --text-xs: 12px;
+  --text-xs--line-height: inherit;
+  --text-sm: 13px;
+  --text-sm--line-height: inherit;
+  --text-base: 14px;
+  --text-base--line-height: inherit;
+  --text-lg: 16px;
+  --text-lg--line-height: inherit;
   --breakpoint-*: initial;
   --breakpoint-sm: 651px;
   --breakpoint-md: 951px;
