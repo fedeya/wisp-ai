@@ -182,6 +182,11 @@ test.each([
   }
 });
 
+/** First run opens on the welcome screen; continue to the addon step. */
+async function startSetup() {
+  await fireEvent.click(await screen.findByRole('button', { name: 'Get started' }));
+}
+
 function mockUnconfiguredDetection(result: Promise<string[]>) {
   const fallback = vi.mocked(desktop).getMockImplementation()!;
   vi.mocked(desktop).mockImplementation(async (command, args) => {
@@ -201,6 +206,7 @@ function mockUnconfiguredDetection(result: Promise<string[]>) {
 test('detects a single Forever installation without installing or saving it', async () => {
   mockUnconfiguredDetection(Promise.resolve(['E:\\Blizzard\\World of Warcraft\\_forever_']));
   renderApp();
+  await startSetup();
   const input = (await screen.findByLabelText('WoW client folder')) as HTMLInputElement;
   await waitFor(() => expect(input.value).toBe('E:\\Blizzard\\World of Warcraft\\_forever_'));
   expect(desktop).not.toHaveBeenCalledWith('install_addon', expect.anything());
@@ -215,6 +221,7 @@ test('detects a single Forever installation without installing or saving it', as
 test('additional installations keep the first selection and offer alternatives', async () => {
   mockUnconfiguredDetection(Promise.resolve(['D:\\Forever', 'E:\\Forever']));
   renderApp();
+  await startSetup();
   const choices = await screen.findByLabelText('Detected Forever installations');
   expect(screen.getByText('Found 2 WoW Forever installations.')).toBeTruthy();
   expect(choices.textContent).toBe('D:\\Forever');
@@ -230,6 +237,7 @@ test('search hides selection until all results are ready', async () => {
     }),
   );
   renderApp();
+  await startSetup();
   await screen.findByText('Finding WoW Forever…');
   await waitFor(() =>
     expect(desktop).toHaveBeenCalledWith('detect_game_folders', expect.anything()),
@@ -263,6 +271,7 @@ test('unsuccessful search enables manual selection and can be retried', async ()
     }),
   );
   renderApp();
+  await startSetup();
   await screen.findByText('Finding WoW Forever…');
   finish([]);
   await fireEvent.click(await screen.findByRole('button', { name: 'Choose folder' }));
@@ -289,6 +298,7 @@ test('configured installations skip detection', async () => {
 test('search again waits for fresh results and ignores updates from the previous search', async () => {
   mockUnconfiguredDetection(Promise.resolve([]));
   renderApp();
+  await startSetup();
   await screen.findByText(/No WoW Forever installation found/);
   const previous = vi
     .mocked(desktop)
@@ -1255,6 +1265,7 @@ test('starts Wisp automatically and lets you manage providers with WoW setup def
   status.gameConnected = false;
   renderApp(true);
 
+  await startSetup();
   await fireEvent.click(await screen.findByRole('button', { name: 'Set up WoW later' }));
   await screen.findByRole('heading', { name: 'Set up World of Warcraft' });
   expect(
@@ -1312,7 +1323,8 @@ test('first-time setup resumes at the provider step and opens Overview after sav
     return originalRequest(route, body);
   });
   renderApp();
-  await screen.findByRole('heading', { name: 'Set up Wisp' });
+  await screen.findByRole('heading', { name: 'Welcome to Wisp' });
+  await startSetup();
   expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
   await fireEvent.click(await screen.findByRole('button', { name: 'Choose folder' }));
   const install = (await screen.findByRole('button', {
@@ -1365,6 +1377,8 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   );
   await chooseOption(screen.getByRole('combobox', { name: 'Default model for new chats' }), 'Sol');
   await fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+  await screen.findByRole('heading', { name: 'You’re ready' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Open Wisp' }));
   await screen.findByRole('heading', { name: 'Waiting for the agent' });
   status.ready = true;
   status.gameConnected = true;
@@ -1453,6 +1467,7 @@ test('onboarding searches the provider catalog and suggests a single saved model
   expect(screen.queryByRole('combobox', { name: 'Default model for new chats' })).toBeNull();
   expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
   await fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Open Wisp' }));
   await screen.findByRole('heading', { name: 'Wisp is ready' });
   expect(request).toHaveBeenCalledWith('/auth/model', { model: slug });
   await openConnections();

@@ -83,11 +83,9 @@ function DesktopShell() {
           </main>
         </div>
       ) : app.onboarding ? (
-        <div className="flex h-screen flex-col overflow-hidden">
+        <div className="flex h-screen flex-col overflow-hidden bg-sidebar">
           <WindowTitleBar controls />
-          <div className="app-scroll min-h-0 flex-1 overflow-y-auto">
-            <Onboarding />
-          </div>
+          <Onboarding />
         </div>
       ) : (
         <div className="flex h-screen flex-col overflow-hidden bg-sidebar">

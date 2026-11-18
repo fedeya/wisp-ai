@@ -1,7 +1,9 @@
 import type { ProviderId } from '@wisp/protocol/providers';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import logo from '../../../../../assets/wisp.png';
-import { desktop } from '../../api';
+import { desktop, native } from '../../api';
+import { desktopConnected, desktopLocked, desktopReadiness } from '../../desktop-controller';
+import { overviewChecks } from '../../routes/overview-checks';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import DefaultModelSettings from '../connections/DefaultModelSettings';
 import ProviderPicker, { BrowseProvidersTrigger } from '../connections/ProviderPicker';
@@ -10,11 +12,19 @@ import {
   ProviderLogo,
   providerPresentation,
 } from '../connections/provider-directory';
-import GameInstallation from '../settings/GameInstallation';
-import { ActionProgress } from '../ui/ActionProgress';
-import { Button, Card } from '../ui/Controls';
+import { ActionProgress, Spinner } from '../ui/ActionProgress';
+import { Button } from '../ui/Controls';
 import Icon from '../ui/Icon';
+import { groupLabel, Row } from '../ui/Rows';
+import AddonStep from './AddonStep';
 import OnboardingProvider from './OnboardingProvider';
+import {
+  firstScreen,
+  railSteps,
+  stepLabel,
+  type RailStepState,
+  type WizardScreen,
+} from './setup-steps';
 
 type OnboardingStep = 'addon' | 'ai_provider';
 type OnboardingEvent =
@@ -25,6 +35,14 @@ function trackOnboarding(event: OnboardingEvent) {
   void desktop('telemetry_onboarding', { event }).catch(() => {});
 }
 
+/** Welcome and ready are not tracked: telemetry only knows the two setup steps. */
+const trackedStep: Partial<Record<WizardScreen, OnboardingStep>> = {
+  addon: 'addon',
+  provider: 'ai_provider',
+};
+
+type HeadingRef = RefObject<HTMLHeadingElement | null>;
+
 export default function Onboarding() {
   const app = useDesktop((state) => ({
     configured: !!state.info?.configured,
@@ -32,15 +50,24 @@ export default function Onboarding() {
     starting: state.starting && !state.connectionError,
     loading: state.loading,
     busy: state.busy,
+    locked: desktopLocked(state),
+    wow: state.wow,
+    detecting: state.detectingGame,
   }));
-  const { finishOnboarding } = useDesktopActions();
+  const { finishOnboarding, markOnboardingComplete, install } = useDesktopActions();
+  const [screen, setScreen] = useState<WizardScreen>(() => firstScreen(app.configured));
   const [provider, setProvider] = useState<ProviderId>();
   const title = useRef<HTMLHeadingElement>(null);
   const viewedSteps = useRef(new Set<OnboardingStep>());
-  const step = app.configured ? 'ai_provider' : 'addon';
+  const step = trackedStep[screen];
+
+  // Installing the addon moves the wizard on to the AI step.
+  useEffect(() => {
+    if (app.configured && screen === 'addon') setScreen('provider');
+  }, [app.configured, screen]);
 
   useEffect(() => {
-    if (viewedSteps.current.has(step)) return;
+    if (!step || viewedSteps.current.has(step)) return;
     if (viewedSteps.current.size === 0) trackOnboarding({ kind: 'opened', step });
     viewedSteps.current.add(step);
     trackOnboarding({ kind: 'step_viewed', step });
@@ -48,139 +75,319 @@ export default function Onboarding() {
 
   useEffect(() => {
     title.current?.focus();
-  }, [app.configured, provider]);
+  }, [screen, provider]);
 
   function complete() {
     trackOnboarding({ kind: 'completed' });
-    finishOnboarding();
+    markOnboardingComplete();
+    setScreen('ready');
   }
 
   function skip() {
-    trackOnboarding({ kind: 'skipped', step });
+    if (step) trackOnboarding({ kind: 'skipped', step });
     finishOnboarding();
   }
 
+  const installing = app.busy === 'Installing addon';
+  const label = stepLabel(screen);
+
   return (
-    <main
-      className={`grid min-h-full bg-[radial-gradient(ellipse_at_50%_16%,#22332f_0%,transparent_55%)] px-6 pb-8 ${app.configured ? 'items-start pt-[clamp(2rem,12vh,7rem)]' : 'items-center pt-8'}`}
-    >
-      <div className="mx-auto w-full max-w-[720px]">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <img className="h-10 w-8 object-contain" src={logo} alt="" />
-            <strong className="text-[18px]">Wisp</strong>
-          </div>
-          <Button intent="quiet" size="text" onClick={skip} disabled={!!app.busy}>
-            {app.configured ? 'Connect later' : 'Set up WoW later'}
-          </Button>
-        </header>
-        <ol className="mb-5 grid list-none grid-cols-2 gap-3 p-0" aria-label="Setup progress">
-          <SetupStep number={1} current={!app.configured} done={app.configured}>
-            {app.configured ? 'Addon installed' : 'Install addon'}
-          </SetupStep>
-          <SetupStep number={2} current={app.configured}>
-            AI provider
-          </SetupStep>
+    <div className="flex min-h-0 flex-1">
+      <nav aria-label="Setup steps" className="w-[200px] shrink-0 px-2 pt-3 max-md:w-[180px]">
+        <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
+          {railSteps(screen).map((item) => (
+            <RailItem key={item.screen} state={item.state} complete={item.complete}>
+              {item.title}
+            </RailItem>
+          ))}
         </ol>
-        <div className="mb-4">
-          <h1 ref={title} tabIndex={-1} className="m-0 outline-none">
-            {app.configured ? 'Connect AI' : 'Set up Wisp'}
-          </h1>
-          {!app.configured && (
-            <p className="text-muted">Get Wisp ready for your first chat in World of Warcraft.</p>
-          )}
-        </div>
-        {!app.configured ? (
-          <GameInstallation firstRun />
-        ) : app.online ? (
-          <>
-            {provider ? (
-              <OnboardingProvider
-                key={provider}
-                provider={provider}
-                onBack={() => setProvider(undefined)}
-                onFinish={complete}
-              />
-            ) : (
-              <ProviderPicker onSelect={setProvider}>
-                <div className="mb-5 grid gap-3">
-                  <h2>Choose your provider</h2>
-                  <ul className="m-0 grid list-none grid-cols-3 gap-3 p-0 max-sm:grid-cols-1">
-                    {featuredProviders.slice(0, 3).map((id) => {
-                      const { name, description } = providerPresentation(id);
-                      return (
-                        <li key={id}>
-                          <Button
-                            className="grid h-full w-full grid-cols-[1fr_auto] justify-items-start gap-2 border-border bg-surface p-3 text-left whitespace-normal enabled:hover:border-accent"
-                            aria-label={name}
-                            aria-describedby={`setup-provider-${id}`}
-                            onClick={() => setProvider(id)}
-                            disabled={!!app.busy}
-                          >
-                            <ProviderLogo provider={id} />
-                            <span className="self-start text-accent">
-                              <Icon name="chevronRight" size={16} />
-                            </span>
-                            <span className="col-span-2 min-w-0">
-                              <strong className="block text-base">{name}</strong>
-                              <span
-                                id={`setup-provider-${id}`}
-                                className="block text-xs text-muted"
-                              >
-                                {description}
-                              </span>
-                            </span>
-                          </Button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <BrowseProvidersTrigger />
-                </div>
-                <DefaultModelSettings onFinish={complete} />
-              </ProviderPicker>
-            )}
-          </>
-        ) : (
-          <Card>
-            {app.loading || app.starting || app.busy ? (
-              <ActionProgress label={app.busy || 'Preparing AI providers'} />
-            ) : (
+      </nav>
+      <div className="flex min-w-0 flex-1 flex-col rounded-tl-[8px] border-0 border-t border-l border-solid border-divider bg-canvas">
+        <main className="app-scroll min-h-0 flex-1 overflow-y-auto px-8 pt-8 pb-6">
+          <div
+            className={
+              screen === 'welcome'
+                ? 'flex h-full flex-col items-center justify-center pb-10 text-center'
+                : 'max-w-[560px]'
+            }
+          >
+            {screen === 'welcome' && (
               <>
-                <h2>The Wisp service is unavailable</h2>
-                <p className="text-muted">Open Diagnostics after setup to check the service.</p>
+                <span className="mb-5 grid size-16 place-items-center rounded-[14px] bg-accent-dim">
+                  <img className="h-10 w-8 object-contain" src={logo} alt="" />
+                </span>
+                <Heading title={title}>Welcome to Wisp</Heading>
+                <p className="max-w-[480px] text-base text-muted">
+                  Your AI companion inside World of Warcraft. Setup takes about two minutes.
+                </p>
+                <p className="mt-4 max-w-[420px] text-sm text-subtle">
+                  You’ll need WoW Forever installed, and a ChatGPT plan or an API key from an AI
+                  provider.
+                </p>
               </>
             )}
-          </Card>
-        )}
+
+            {screen === 'addon' && (
+              <>
+                <Heading title={title}>Install the addon</Heading>
+                <p className="mb-5 text-base text-muted">
+                  Wisp adds its addon to your WoW Forever folder. Nothing else in your game changes.
+                </p>
+                <AddonStep />
+              </>
+            )}
+
+            {screen === 'provider' && (
+              <>
+                <Heading title={title}>Connect AI</Heading>
+                <p className="mb-5 text-base text-muted">Choose the AI that answers you in game.</p>
+                {app.online ? (
+                  provider ? (
+                    <OnboardingProvider
+                      key={provider}
+                      provider={provider}
+                      onBack={() => setProvider(undefined)}
+                      onFinish={complete}
+                    />
+                  ) : (
+                    <ProviderPicker onSelect={setProvider}>
+                      <section aria-labelledby="choose-provider" className="mb-5">
+                        <h2 id="choose-provider" className={groupLabel}>
+                          Choose your provider
+                        </h2>
+                        <ul className="m-0 flex list-none flex-col gap-0.5 overflow-hidden rounded-[6px] p-0">
+                          {featuredProviders.slice(0, 3).map((id) => (
+                            <ProviderChoice
+                              key={id}
+                              id={id}
+                              disabled={!!app.busy}
+                              onSelect={setProvider}
+                            />
+                          ))}
+                        </ul>
+                        <div className="mt-2">
+                          <BrowseProvidersTrigger />
+                        </div>
+                      </section>
+                      <DefaultModelSettings onFinish={complete} />
+                    </ProviderPicker>
+                  )
+                ) : app.loading || app.starting || app.busy ? (
+                  <ActionProgress label={app.busy || 'Preparing AI providers'} />
+                ) : (
+                  <Row
+                    icon={
+                      <span className="flex text-warning">
+                        <Icon name="circleAlert" size={18} />
+                      </span>
+                    }
+                    title="The Wisp service is unavailable"
+                    detail="Choose Connect later to continue. Settings → Troubleshooting shows what went wrong."
+                  />
+                )}
+              </>
+            )}
+
+            {screen === 'ready' && <ReadyScreen title={title} />}
+          </div>
+        </main>
+
+        <footer className="flex min-h-[56px] shrink-0 items-center gap-2 border-0 border-t border-solid border-divider px-4">
+          {screen === 'addon' && (
+            <Button intent="quiet" onClick={() => setScreen('welcome')} disabled={!!app.busy}>
+              <Icon name="back" size={16} />
+              Back
+            </Button>
+          )}
+          {label && <span className="px-2 text-sm text-subtle">{label}</span>}
+          <span className="flex-1" />
+          {screen === 'welcome' && (
+            <Button intent="primary" onClick={() => setScreen('addon')}>
+              Get started
+              <Icon name="arrow" size={16} />
+            </Button>
+          )}
+          {screen === 'addon' && (
+            <>
+              <Button intent="quiet" onClick={skip} disabled={!!app.busy}>
+                Set up WoW later
+              </Button>
+              {!app.detecting && (
+                <Button
+                  intent="primary"
+                  onClick={install}
+                  disabled={!native || app.locked || !app.wow}
+                  aria-busy={installing}
+                >
+                  {installing ? 'Installing…' : 'Install addon'}
+                </Button>
+              )}
+            </>
+          )}
+          {screen === 'provider' && (
+            <Button intent="quiet" onClick={skip} disabled={!!app.busy}>
+              Connect later
+            </Button>
+          )}
+          {screen === 'ready' && (
+            <Button intent="primary" onClick={finishOnboarding}>
+              Open Wisp
+            </Button>
+          )}
+        </footer>
       </div>
-    </main>
+    </div>
   );
 }
 
-function SetupStep({
-  number,
-  current,
-  done = false,
+function Heading({ title, children }: { title: HeadingRef; children: string }) {
+  return (
+    <h1 ref={title} tabIndex={-1} className="mb-1 outline-none">
+      {children}
+    </h1>
+  );
+}
+
+function ProviderChoice({
+  id,
+  disabled,
+  onSelect,
+}: {
+  id: ProviderId;
+  disabled: boolean;
+  onSelect: (id: ProviderId) => void;
+}) {
+  const { name, description } = providerPresentation(id);
+  return (
+    <li>
+      <button
+        type="button"
+        className="flex min-h-[56px] w-full items-center gap-3 border-0 bg-surface px-4 py-2.5 text-left text-inherit transition-colors duration-75 hover:bg-raised focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+        aria-label={name}
+        aria-describedby={`setup-provider-${id}`}
+        onClick={() => onSelect(id)}
+        disabled={disabled}
+      >
+        <ProviderLogo provider={id} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-base">{name}</span>
+          <span id={`setup-provider-${id}`} className="block text-sm text-subtle">
+            {description}
+          </span>
+        </span>
+        <span className="text-subtle">
+          <Icon name="chevronRight" size={16} />
+        </span>
+      </button>
+    </li>
+  );
+}
+
+const railIcon: Record<RailStepState, ReactNode> = {
+  done: <Icon name="circleCheck" size={16} />,
+  current: <Icon name="circleDashed" size={16} />,
+  upcoming: <Icon name="circleDashed" size={16} />,
+};
+
+function RailItem({
+  state,
+  complete,
   children,
 }: {
-  number: number;
-  current: boolean;
-  done?: boolean;
+  state: RailStepState;
+  complete: boolean;
   children: string;
 }) {
   return (
     <li
-      aria-current={current ? 'step' : undefined}
-      className={`flex items-center gap-2 border-b-2 pb-3 text-sm ${current ? 'border-accent' : 'border-border text-muted'}`}
+      aria-current={state === 'current' ? 'step' : undefined}
+      className={`flex min-h-[34px] items-center gap-[10px] rounded-[4px] px-[10px] text-base ${
+        state === 'current'
+          ? 'bg-active text-foreground'
+          : state === 'done'
+            ? 'text-muted'
+            : 'text-subtle'
+      }`}
     >
       <span
         aria-hidden="true"
-        className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${current ? 'bg-accent font-semibold text-on-accent' : 'bg-surface text-accent'}`}
+        className={`flex ${state === 'upcoming' ? 'text-subtle' : 'text-accent'}`}
       >
-        {done ? <Icon name="check" size={15} /> : number}
+        {complete ? railIcon.done : railIcon[state]}
       </span>
       {children}
+      {state === 'done' && <span className="sr-only">(done)</span>}
     </li>
+  );
+}
+
+/** Last screen: the command to try and the same checks Overview shows. */
+function ReadyScreen({ title }: { title: HeadingRef }) {
+  const state = useDesktop((store) => ({
+    readiness: desktopReadiness(store),
+    notice: store.info?.addonUpdateNotice,
+    status: store.status,
+    starting: store.starting,
+    providerConnected: desktopConnected(store),
+    modelName: store.models.find((model) => model.slug === store.status?.model)?.displayName,
+  }));
+  const [copied, setCopied] = useState('');
+  const checks = overviewChecks({
+    readiness: state.readiness,
+    addonUpdateNotice: state.notice,
+    status: state.status,
+    starting: state.starting,
+    providerConnected: state.providerConnected,
+    modelName: state.modelName,
+  });
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText('/wisp');
+      setCopied('Copied');
+    } catch {
+      setCopied('Type /wisp in WoW chat');
+    }
+  }
+
+  return (
+    <>
+      <Heading title={title}>You’re ready</Heading>
+      <p className="mb-4 text-base text-muted">
+        Open World of Warcraft and type this in chat to open your companion.
+      </p>
+      <div className="mb-6 flex items-center gap-2">
+        <code className="selectable rounded-[4px] border border-solid border-border bg-sidebar px-3.5 py-1.5 font-mono text-lg text-accent">
+          /wisp
+        </code>
+        <Button onClick={copy} aria-label="Copy /wisp command">
+          <Icon name="copy" size={14} />
+          Copy
+        </Button>
+        <span role="status" className="text-sm text-muted">
+          {copied}
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5 overflow-hidden rounded-[6px]">
+        {checks.map((check) => (
+          <Row
+            key={check.id}
+            icon={
+              <span className={`flex ${check.tone === 'ok' ? 'text-accent' : 'text-muted'}`}>
+                {check.tone === 'ok' ? (
+                  <Icon name="circleCheck" size={18} />
+                ) : check.tone === 'pending' ? (
+                  <Spinner />
+                ) : (
+                  <Icon name={check.tone === 'problem' ? 'circleAlert' : 'clock'} size={18} />
+                )}
+              </span>
+            }
+            title={check.title}
+            detail={check.detail}
+          />
+        ))}
+      </div>
+    </>
   );
 }

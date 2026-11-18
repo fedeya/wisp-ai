@@ -371,6 +371,14 @@ function createDesktopSession() {
       searchInstallations,
       install,
       importPrevious,
+      /** Remember setup as done while the wizard still shows its last screen. */
+      markOnboardingComplete() {
+        try {
+          localStorage.setItem(onboardingKey, 'complete');
+        } catch {
+          // Setup can still finish when webview storage is unavailable.
+        }
+      },
       finishOnboarding() {
         try {
           localStorage.setItem(onboardingKey, 'complete');
