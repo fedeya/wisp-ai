@@ -1,6 +1,6 @@
 import { Select as BaseSelect } from '@base-ui/react/select';
 import Icon from '../Icon';
-import { field, floatingSurface } from './styles';
+import { floatingSurface, selectTrigger } from './styles';
 
 type SelectOption<Value extends string> = {
   value: Value;
@@ -48,7 +48,7 @@ export function Select<Value extends string>({
         id={id}
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
-        className={field({
+        className={selectTrigger({
           class: [
             'group flex items-center justify-between gap-3 text-left',
             'transition-colors duration-75 data-popup-open:bg-hover disabled:cursor-default',

@@ -63,6 +63,10 @@ export const card = tv({
 });
 
 export const field = tv({ base: [fieldBase, fieldFocus, 'disabled:opacity-50'] });
+/** Select trigger: a button, not a text field, so no underline focus; a ring only for keyboard focus. */
+export const selectTrigger = tv({
+  base: [fieldBase, 'outline-none', focus, 'disabled:opacity-50'],
+});
 export const checkbox = tv({
   base: [
     fieldBase,

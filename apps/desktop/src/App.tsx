@@ -21,6 +21,7 @@ import { installNativeShell, useAppShortcuts, useNativeNotifications } from './n
 import {
   connectionsPage,
   desktopPages,
+  diagnosticsPage,
   integrationsPage,
   type DesktopPage,
 } from './routes/desktop-routes';
@@ -29,7 +30,11 @@ import ProviderDetails from './routes/ProviderDetails';
 import Onboarding from './components/onboarding/Onboarding';
 import { Spinner } from './components/ui/ActionProgress';
 
-type DesktopRouteHandle = DesktopPage & { detail?: true };
+/** Detail pages show a back link to their parent: `back`, or the page itself. */
+type DesktopRouteHandle = DesktopPage & {
+  detail?: true;
+  back?: { path: string; title: string };
+};
 
 function DesktopShell() {
   const app = useDesktop((state) => ({
@@ -93,7 +98,7 @@ function DesktopShell() {
               className={`app-scroll flex min-h-0 min-w-0 flex-1 flex-col rounded-tl-[8px] border-0 border-t border-l border-solid border-divider bg-canvas ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
             >
               <div
-                className={`w-full min-w-0 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:20px] ${page.detail ? '' : 'max-w-[1450px] pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
+                className={`w-full min-w-0 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:20px] ${page.detail ? '' : 'mx-auto max-w-[1450px] pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
               >
                 {page.detail && (
                   <nav
@@ -101,12 +106,12 @@ function DesktopShell() {
                     className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-sidebar px-(--page-gutter)"
                   >
                     <Link
-                      to={{ pathname: page.path, search }}
-                      aria-label={`Back to ${page.title}`}
+                      to={{ pathname: (page.back ?? page).path, search }}
+                      aria-label={`Back to ${(page.back ?? page).title}`}
                       className="-ml-2 inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-sm font-medium text-muted no-underline transition-colors hover:bg-surface hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                     >
                       <Icon name="back" size={16} />
-                      {page.title}
+                      {(page.back ?? page).title}
                     </Link>
                   </nav>
                 )}
@@ -164,6 +169,16 @@ export function createDesktopRouter() {
           path: '/integrations/:integrationId',
           Component: IntegrationDetails,
           handle: { ...integrationsPage, detail: true } satisfies DesktopRouteHandle,
+        },
+        {
+          id: diagnosticsPage.name,
+          path: diagnosticsPage.path,
+          Component: diagnosticsPage.Component,
+          handle: {
+            ...diagnosticsPage,
+            detail: true,
+            back: { path: '/settings', title: 'Settings' },
+          } satisfies DesktopRouteHandle,
         },
       ],
     },
