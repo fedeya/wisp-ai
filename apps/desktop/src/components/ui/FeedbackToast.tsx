@@ -21,29 +21,31 @@ function Toast({ message, failed, onDismiss }: FeedbackToastProps) {
 
   return (
     <m.div
-      className={`notification gap-[12px] border border-solid border-[#40695e] px-[15px] py-[13px] fixed right-[24px] bottom-[22px] z-[30] flex items-center w-[max-content] max-w-[min(580px,_calc(100vw_-_48px))] rounded-[12px] [background:#20352f] text-[#d5eee4] [box-shadow:0_8px_32px_#0005] text-[13px] leading-[1.5] [&_>_svg]:shrink-0 [&.error]:border-[#89564c] [&.error]:[background:#382824] [&.error]:text-[#ffd2c8]${failed ? ' error' : ''}`}
+      className={`notification${failed ? ' error' : ''} fixed right-4 bottom-4 z-[30] flex w-[360px] max-w-[calc(100vw_-_32px)] items-start gap-3 rounded-[6px] border border-solid border-white/[0.08] bg-[#232b31] py-2.5 pr-2 pl-3.5 text-[14px] leading-[1.45] text-foreground shadow-[0_8px_24px_rgb(0_0_0/0.35),0_2px_6px_rgb(0_0_0/0.25)]`}
       role="status"
       aria-live="polite"
       aria-hidden={!isPresent}
       inert={!isPresent}
-      initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
-      animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: 'easeOut' } }}
+      initial={{ opacity: 0, x: reduceMotion ? 0 : 16 }}
+      animate={{ opacity: 1, x: 0, transition: { duration: 0.15, ease: 'easeOut' } }}
       exit={{
         opacity: 0,
-        y: reduceMotion ? 0 : 6,
-        transition: { duration: 0.16, ease: 'easeIn' },
+        x: reduceMotion ? 0 : 16,
+        transition: { duration: 0.12, ease: 'easeIn' },
       }}
     >
-      <Icon name={failed ? 'logs' : 'check'} size={18} />
-      <span className="[overflow-wrap:anywhere]">{message}</span>
+      <span className={`mt-[3px] flex shrink-0 ${failed ? 'text-[#f0a598]' : 'text-accent'}`}>
+        <Icon name={failed ? 'circleAlert' : 'circleCheck'} size={16} />
+      </span>
+      <span className="min-w-0 flex-1 py-px [overflow-wrap:anywhere]">{message}</span>
       <Button
         intent="quiet"
         size="icon"
-        className="shrink-0"
+        className="-my-1 shrink-0 text-muted enabled:hover:text-foreground"
         aria-label="Dismiss notification"
         onClick={onDismiss}
       >
-        <Icon name="close" size={16} />
+        <Icon name="close" size={14} />
       </Button>
     </m.div>
   );

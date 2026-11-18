@@ -79,7 +79,7 @@ export default function GameInstallation({ firstRun = false }: { firstRun?: bool
               />
             ) : (
               <Input
-                className="min-w-[220px] flex-1 cursor-pointer"
+                className="min-w-[220px] flex-1"
                 aria-label="WoW client folder"
                 value={app.wow}
                 placeholder="World of Warcraft folder"

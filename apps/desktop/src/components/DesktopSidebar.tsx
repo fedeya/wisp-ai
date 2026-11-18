@@ -1,8 +1,9 @@
+import { Fragment } from 'react';
 import { Link, NavLink } from 'react-router';
-import logo from '../../../../assets/wisp.png';
 import { desktopReadiness } from '../desktop-controller';
 import { desktopPages, type DesktopPage } from '../routes/desktop-routes';
 import { useDesktop } from '../use-desktop';
+import { shortcutFor } from '../native-shell';
 import { navigationLink } from './ui/Controls/styles';
 import Icon from './ui/Icon';
 
@@ -24,19 +25,22 @@ const readinessLabels = {
   setup: 'Set up WoW',
   agent: 'Waiting for the agent',
   account: 'Connect an AI provider',
-  waiting: 'Waiting for WoW',
+  waiting: 'Ready · waiting for WoW',
   ready: 'Wisp is ready',
 };
 
 function renderNavigation(page: DesktopPage) {
+  const shortcut = shortcutFor(page.path);
   return (
     <NavLink
       key={page.path}
       to={page.path}
+      title={shortcut ? `${page.title} (${shortcut})` : undefined}
+      aria-keyshortcuts={shortcut?.replace(',', 'Comma')}
       end={page.name !== 'Connections' && page.name !== 'Integrations'}
       className={({ isActive }) => navigationLink({ selected: isActive })}
     >
-      <Icon name={page.icon} size={18} />
+      <Icon name={page.icon} size={16} />
       {page.title}
     </NavLink>
   );
@@ -52,29 +56,32 @@ export default function DesktopSidebar() {
         : 'bg-muted';
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[210px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-r-border bg-sidebar px-[14px] pt-5 pb-[14px] [border-right-style:solid] max-md:w-[190px] max-md:px-3">
-      <div className="flex items-center gap-[10px] px-2">
-        <img className="h-[38px] w-[30px] object-contain" src={logo} alt="" />
-        <strong className="text-[27px] tracking-[-1px]">Wisp</strong>
-      </div>
-      <nav className="flex flex-col gap-3" aria-label="Main navigation">
+    <aside className="app-scroll flex h-full w-[224px] shrink-0 flex-col gap-2 overflow-y-auto bg-sidebar px-2 pt-3 pb-2 max-md:w-[200px]">
+      <nav className="flex flex-col gap-2" aria-label="Main navigation">
         {renderNavigation(overview)}
         {mainGroups.map(({ label, pages }) => (
-          <div key={label} role="group" aria-label={label} className="flex flex-col gap-0.5">
-            {pages.map(renderNavigation)}
-          </div>
+          <Fragment key={label}>
+            <div aria-hidden="true" className="mx-2.5 h-px bg-white/[0.08]" />
+            <div role="group" aria-label={label} className="flex flex-col gap-0.5">
+              {pages.map(renderNavigation)}
+            </div>
+          </Fragment>
         ))}
       </nav>
       <nav className="mt-auto flex flex-col gap-0.5" aria-label="App settings">
         {applicationPages.map(renderNavigation)}
       </nav>
-      <div className="border-t border-t-[#1b2529] pt-1.5 [border-top-style:solid]">
+      <div className="border-0 border-t border-solid border-white/[0.06] pt-1.5">
         <Link
           to={overview.path}
-          className="flex min-h-[40px] items-center gap-2 rounded-[7px] px-2.5 text-[12px] leading-tight text-inherit no-underline hover:bg-[#1e3333] hover:text-accent focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent"
+          className="flex min-h-[34px] items-center gap-2 rounded-[4px] px-2.5 text-[13px] leading-tight text-[#9aadb4] no-underline transition-colors duration-75 hover:bg-white/[0.05] hover:text-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent"
         >
           <span aria-hidden="true" className={`size-[7px] shrink-0 rounded-full ${dotColor}`} />
-          <span className="flex-1" aria-live="polite">
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={readinessLabels[readiness]}
+            aria-live="polite"
+          >
             {readinessLabels[readiness]}
           </span>
           <Icon name="chevronRight" size={14} />

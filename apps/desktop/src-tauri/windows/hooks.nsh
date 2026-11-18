@@ -127,3 +127,13 @@ FunctionEnd
     !insertmacro MUI_HEADER_TEXT "Opening Wisp AI" "The update is installed. Wisp is reopening automatically."
   ${EndIf}
 !macroend
+
+; "Start Wisp with Windows" writes this Run value (see native_shell.rs). Remove
+; it on a real uninstall so Windows does not try to launch a missing program.
+; Updates keep it.
+!macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $UpdateMode <> 1
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Wisp AI"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Wisp AI"
+  ${EndIf}
+!macroend

@@ -269,7 +269,7 @@ export default function ConnectionEditor({
           endpointField
         ) : (
           <details>
-            <summary className="cursor-pointer text-muted text-[13px]">
+            <summary className="text-muted text-[13px]">
               {setup ? 'Advanced options' : 'Custom endpoint'}
             </summary>
             <div className="mt-2 grid gap-3">
@@ -429,7 +429,7 @@ export default function ConnectionEditor({
         <details
           open={discovered.some(({ supportsTools }) => supportsTools === true) ? undefined : true}
         >
-          <summary className="cursor-pointer text-[13px] text-muted">Add a model manually</summary>
+          <summary className="text-[13px] text-muted">Add a model manually</summary>
           <div className={`${modelFieldsClass} mt-2`}>
             <form.Field name="modelId">
               {(field) => (

@@ -3,6 +3,7 @@ mod addon_update;
 mod game_detection;
 #[cfg(windows)]
 mod installer_window;
+mod native_shell;
 mod telemetry;
 mod update_trace;
 mod updates;
@@ -756,6 +757,22 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .with_denylist(&["updater"])
+                .build(),
+        )
+        .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .app_name(native_shell::AUTOSTART_NAME)
+                .args([native_shell::MINIMIZED_ARG])
+                .build(),
+        )
         .manage(updates::Updates::default())
         .invoke_handler(tauri::generate_handler![
             telemetry::telemetry_settings,
@@ -775,7 +792,10 @@ fn main() {
             read_logs,
             import_legacy,
             updates::check_update,
-            updates::install_update
+            updates::install_update,
+            native_shell::notify,
+            native_shell::autostart_enabled,
+            native_shell::set_autostart
         ])
         .setup(|app| {
             let data = app.path().app_data_dir()?;
@@ -839,6 +859,13 @@ fn main() {
                     }
                 })
                 .build(app)?;
+            if let Some(window) = app.get_webview_window("main") {
+                native_shell::disable_browser_shortcuts(&window);
+                if !native_shell::started_minimized() {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
             tracing::info!(
                 component = "desktop",
                 event = "desktop.started",

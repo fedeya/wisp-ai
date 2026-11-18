@@ -4,6 +4,10 @@ import Brain from 'lucide-react/icons/brain';
 import Check from 'lucide-react/icons/check';
 import ChevronDown from 'lucide-react/icons/chevron-down';
 import ChevronRight from 'lucide-react/icons/chevron-right';
+import CircleAlert from 'lucide-react/icons/circle-alert';
+import CircleCheck from 'lucide-react/icons/circle-check';
+import CircleDashed from 'lucide-react/icons/circle-dashed';
+import Clock from 'lucide-react/icons/clock';
 import Copy from 'lucide-react/icons/copy';
 import Database from 'lucide-react/icons/database';
 import Download from 'lucide-react/icons/download';
@@ -21,6 +25,7 @@ import Search from 'lucide-react/icons/search';
 import Server from 'lucide-react/icons/server';
 import Settings from 'lucide-react/icons/settings';
 import Sparkles from 'lucide-react/icons/sparkles';
+import TriangleAlert from 'lucide-react/icons/triangle-alert';
 import SquareTerminal from 'lucide-react/icons/square-terminal';
 import Workflow from 'lucide-react/icons/workflow';
 import X from 'lucide-react/icons/x';
@@ -32,6 +37,10 @@ const icons = {
   check: Check,
   chevronDown: ChevronDown,
   chevronRight: ChevronRight,
+  circleAlert: CircleAlert,
+  circleCheck: CircleCheck,
+  circleDashed: CircleDashed,
+  clock: Clock,
   close: X,
   copy: Copy,
   database: Database,
@@ -51,6 +60,7 @@ const icons = {
   server: Server,
   settings: Settings,
   spark: Sparkles,
+  warning: TriangleAlert,
   workflow: Workflow,
 };
 

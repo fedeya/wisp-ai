@@ -30,14 +30,15 @@
 @layer base {
   :root {
     font-family:
-      Inter,
+      "Segoe UI Variable Text",
       "Segoe UI",
+      Inter,
       system-ui,
       -apple-system,
       sans-serif;
     color: var(--color-foreground);
     background: var(--color-canvas);
-    font-size: 14px;
+    font-size: 15px;
     font-synthesis: none;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -50,8 +51,43 @@
   * {
     box-sizing: border-box;
   }
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
   body {
     margin: 0;
+    /* Desktop apps do not let the whole window be selected; text that is
+       worth copying opts back in with .selectable or is an input. */
+    user-select: none;
+    cursor: default;
+  }
+  input,
+  textarea,
+  [contenteditable="true"],
+  pre,
+  code,
+  [role="alert"],
+  .selectable {
+    user-select: text;
+  }
+  input,
+  textarea {
+    cursor: text;
+  }
+  a,
+  button,
+  summary,
+  label,
+  [role="button"],
+  [role="switch"],
+  [role="option"],
+  [role="tab"] {
+    cursor: default;
+  }
+  img {
+    -webkit-user-drag: none;
   }
   button,
   input,
@@ -60,21 +96,23 @@
     font: inherit;
   }
   h1 {
-    font-size: 28px;
-    letter-spacing: -0.9px;
-    line-height: 1.25;
-    margin: 0 0 10px;
-    font-weight: 650;
+    font-family:
+      "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, sans-serif;
+    font-size: 24px;
+    letter-spacing: -0.3px;
+    line-height: 1.3;
+    margin: 0 0 4px;
+    font-weight: 600;
   }
   h2 {
     font-size: 16px;
     font-weight: 600;
-    letter-spacing: -0.2px;
+    letter-spacing: -0.1px;
     margin: 0;
   }
   p {
-    line-height: 1.65;
-    margin: 8px 0 0;
+    line-height: 1.5;
+    margin: 6px 0 0;
   }
   @media (prefers-reduced-motion: reduce) {
     * {
@@ -86,10 +124,12 @@
 
 @layer components {
   :root,
+  .app-scroll,
   .catalog-scroll {
     scrollbar-color: #526c73 #192226;
     scrollbar-width: thin;
   }
+  .app-scroll,
   .catalog-scroll {
     scrollbar-gutter: stable;
   }

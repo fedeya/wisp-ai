@@ -1,4 +1,4 @@
-import TelemetrySettings from '../components/settings/TelemetrySettings';
+import Settings from './Settings';
 import Diagnostics from './Diagnostics';
 import Memory from './Memory';
 import Panels from './Panels';
@@ -66,7 +66,7 @@ export const desktopPages = [
   },
   {
     name: 'Settings',
-    Component: TelemetrySettings,
+    Component: Settings,
     path: '/settings',
     group: 'application',
     icon: 'settings',

@@ -54,7 +54,7 @@ export default function IntegrationCard({
       )}
       {tools.length > 0 && (
         <details className="integration-tools mt-[16px] border-t-[1px] [border-top-style:solid] border-t-[#ffffff12] pt-[12px]">
-          <summary className="cursor-pointer text-muted text-[13px]">
+          <summary className="text-muted text-[13px]">
             Tools &amp; capabilities ({tools.length})
           </summary>
           {tools.map((tool) => (

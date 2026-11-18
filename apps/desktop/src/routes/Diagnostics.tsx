@@ -56,7 +56,7 @@ export default function Diagnostics() {
       >
         {app.logs || 'No activity loaded yet. Refresh to read the local bridge logs.'}
       </pre>
-      <p className="mt-2 mb-0 text-[12px] text-muted [overflow-wrap:anywhere]">
+      <p className="selectable mt-2 mb-0 text-[12px] text-muted [overflow-wrap:anywhere]">
         Data location: {app.info?.dataDirectory || 'Available in the installed app'}
       </p>
     </Card>

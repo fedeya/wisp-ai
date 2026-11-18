@@ -825,6 +825,7 @@ test('the app preserves router history through StrictMode effect cleanup', async
 test('an active reply disables operations that would interrupt the bridge', async () => {
   status.activeTurns = 1;
   renderApp();
+  await fireEvent.click(await screen.findByRole('link', { name: 'Settings' }));
   await screen.findByText('Working…');
   expect(screen.queryByRole('button', { name: 'Stop Wisp' })).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Manage installation' }));
@@ -1167,6 +1168,7 @@ test('integration categories preserve a search when returning from addon setup',
 test('a configured installation stays compact until explicitly opened', async () => {
   renderApp();
   await screen.findByRole('heading', { name: 'Wisp is ready' });
+  await fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
   expect(screen.queryByLabelText('WoW client folder')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Manage installation' }));
   expect((screen.getByLabelText('WoW client folder') as HTMLInputElement).value).toBe('E:\\WoW');
@@ -1186,8 +1188,9 @@ test('the next action follows the missing connection', async () => {
   status.auth.status = 'connected';
   status.gameConnected = false;
   renderApp();
-  await screen.findByRole('heading', { name: 'Waiting for WoW' });
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   expect(screen.queryByRole('button', { name: 'Connect AI' })).toBeNull();
+  await fireEvent.click(screen.getByRole('link', { name: 'Settings' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Manage installation' }));
   expect(screen.getByLabelText('WoW client folder')).toBeTruthy();
 });
@@ -1195,9 +1198,9 @@ test('the next action follows the missing connection', async () => {
 test('sidebar status follows the game connection across pages and links back to Overview', async () => {
   status.gameConnected = false;
   renderApp();
-  await screen.findByRole('heading', { name: 'Waiting for WoW' });
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
   await openConnections();
-  expect(screen.getByRole('link', { name: 'Waiting for WoW' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Ready · waiting for WoW' })).toBeTruthy();
 
   status = { ...status, gameConnected: true };
   await act(() => desktopStore.getState().actions.refresh());

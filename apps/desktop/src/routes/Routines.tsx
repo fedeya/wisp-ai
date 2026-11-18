@@ -98,9 +98,7 @@ export default function Routines() {
               {routine.triggers.map(describeRoutineTrigger).join(' or ')}
             </p>
             <details className="routine-history border-t-[1px] [border-top-style:solid] border-t-[var(--border)] mt-3 pt-3">
-              <summary className="cursor-pointer text-muted text-[13px]">
-                Run history ({runs.length})
-              </summary>
+              <summary className="text-muted text-[13px]">Run history ({runs.length})</summary>
               {runs.map((run) => (
                 <div
                   key={run.id}

@@ -17,6 +17,7 @@ import { Card } from '../components/ui/Controls';
 import { button } from '../components/ui/Controls/styles';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
+import { Row } from '../components/ui/Rows';
 import { useDesktop } from '../use-desktop';
 
 const statusColors = {
@@ -171,8 +172,17 @@ export default function Connections() {
             </Card>
           </section>
           {showModelSettings && <DefaultModelSettings />}
-          <Link to="/integrations/web-search" className="text-[13px] text-accent">
-            Configure web search in Integrations
+          <Link
+            to="/integrations/web-search"
+            aria-label="Configure web search in Integrations"
+            className="block overflow-hidden rounded-[6px] text-inherit no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent hover:[&>div]:bg-[#222a30]"
+          >
+            <Row
+              icon={<Icon name="globe" size={18} />}
+              title="Web search"
+              detail="Let Wisp look things up online. Set it up in Integrations."
+              trailing={<Icon name="chevronRight" size={16} />}
+            />
           </Link>
         </>
       )}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { desktop, native } from '../../../api';
 import Toggle from '../../ui/Toggle';
-import { Card } from '../../ui/Controls';
+import { Row } from '../../ui/Rows';
 
 export default function TelemetrySettings() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -41,26 +41,23 @@ export default function TelemetrySettings() {
   }
 
   return (
-    <Card density="compact">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="m-0 text-[14px] font-semibold">Usage analytics</h2>
-          <p className="mb-0 mt-1 text-[13px] text-muted">
-            Help improve Wisp by sharing usage data.
-          </p>
-        </div>
+    <Row
+      title="Usage analytics"
+      detail="Help improve Wisp by sharing usage data."
+      trailing={
         <Toggle
           label="Share usage analytics"
           checked={pending ?? enabled ?? true}
           disabled={enabled === null || pending !== null}
           onChange={change}
         />
-      </div>
+      }
+    >
       {error && (
-        <p role="alert" className="mt-3 text-[13px] text-[#f0b4aa]">
+        <p role="alert" className="m-0 px-4 pb-3 text-[13px] text-[#f0b4aa]">
           {error}
         </p>
       )}
-    </Card>
+    </Row>
   );
 }

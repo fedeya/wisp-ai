@@ -102,7 +102,7 @@ export default function UpdaterWindow() {
           </section>
           <footer className="mt-[17px] flex justify-end">
             <Button
-              className="min-w-[92px] cursor-pointer rounded-[8px] border border-solid border-[#518178] bg-[#29443f] px-[17px] py-[8px] font-semibold text-[#dcf3ed] hover:bg-[#355951] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent"
+              className="min-w-[92px] rounded-[8px] border border-solid border-[#518178] bg-[#29443f] px-[17px] py-[8px] font-semibold text-[#dcf3ed] hover:bg-[#355951] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent"
               ref={closeButton}
               onClick={() => void invoke('updater_close')}
             >

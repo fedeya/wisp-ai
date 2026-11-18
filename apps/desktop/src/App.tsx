@@ -10,12 +10,14 @@ import {
 import { RouterProvider } from 'react-router/dom';
 import { desktop, native } from './api';
 import DesktopSidebar from './components/DesktopSidebar';
+import WindowTitleBar from './components/WindowTitleBar';
 import ConfirmationDialog from './components/ui/ConfirmationDialog';
 import FeedbackToast from './components/ui/FeedbackToast';
 import Icon from './components/ui/Icon';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
-import { mountDesktop } from './desktop-controller';
+import { desktopReadiness, mountDesktop } from './desktop-controller';
+import { installNativeShell, useAppShortcuts, useNativeNotifications } from './native-shell';
 import {
   connectionsPage,
   desktopPages,
@@ -47,6 +49,9 @@ function DesktopShell() {
     (match?.handle as DesktopRouteHandle | undefined) ?? desktopPages[0];
   const fixedHeight = match?.id === integrationsPage.name;
   const { busy, clearFeedback, failed, feedback, loading } = app;
+  const readiness = useDesktop(desktopReadiness);
+  useAppShortcuts(!loading && !app.onboarding);
+  useNativeNotifications(busy ? '' : feedback, failed, readiness);
 
   useEffect(() => {
     if (native && !loading && !app.onboarding) {
@@ -63,59 +68,74 @@ function DesktopShell() {
   return (
     <>
       {native && loading && !app.info ? (
-        <main className="grid min-h-screen place-items-center">
-          <p className="flex items-center gap-3 text-muted" role="status">
-            <Spinner />
-            Checking Wisp…
-          </p>
-        </main>
-      ) : app.onboarding ? (
-        <Onboarding />
-      ) : (
-        <div className={fixedHeight ? 'flex h-screen overflow-hidden' : 'flex min-h-screen'}>
-          <DesktopSidebar />
-          <main
-            className={`min-w-0 flex-1 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:22px] ${page.detail ? '' : 'max-w-[1450px] pt-[34px] max-lg:pt-[27px] max-md:pt-[26px]'} ${fixedHeight ? 'flex min-h-0 flex-col' : 'pb-[80px]'}`}
-          >
-            {page.detail && (
-              <nav
-                aria-label="Detail navigation"
-                className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-sidebar px-(--page-gutter)"
-              >
-                <Link
-                  to={{ pathname: page.path, search }}
-                  aria-label={`Back to ${page.title}`}
-                  className="-ml-2 inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted no-underline transition-colors hover:bg-surface hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                >
-                  <Icon name="back" size={16} />
-                  {page.title}
-                </Link>
-              </nav>
-            )}
-            {page.name !== 'Overview' &&
-              page.name !== 'Connections' &&
-              page.name !== 'Integrations' && (
-                <header className="page-header gap-[18px] mb-[28px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
-                  <div>
-                    <h1>{page.title}</h1>
-                    <p className="text-muted text-[13px]">{page.caption}</p>
-                  </div>
-                </header>
-              )}
-            {!native && (
-              <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[9px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-[12px] leading-[1.5] [&_.icon-button]:ml-auto">
-                Design preview. Desktop actions are available in the installed Wisp app.
-              </div>
-            )}
-            <Updates
-              showSettings={page.name === 'Settings'}
-              version={app.info?.version || '0.0.7'}
-              locked={!!busy}
-              openSettings={() => void navigate('/settings')}
-              onBusy={app.setBusy}
-            />
-            <Outlet />
+        <div className="flex h-screen flex-col overflow-hidden">
+          <WindowTitleBar controls />
+          <main className="grid flex-1 place-items-center">
+            <p className="flex items-center gap-3 text-muted" role="status">
+              <Spinner />
+              Checking Wisp…
+            </p>
           </main>
+        </div>
+      ) : app.onboarding ? (
+        <div className="flex h-screen flex-col overflow-hidden">
+          <WindowTitleBar controls />
+          <div className="app-scroll min-h-0 flex-1 overflow-y-auto">
+            <Onboarding />
+          </div>
+        </div>
+      ) : (
+        <div className="flex h-screen flex-col overflow-hidden bg-sidebar">
+          <WindowTitleBar controls />
+          <div className="flex min-h-0 flex-1">
+            <DesktopSidebar />
+            <main
+              className={`app-scroll flex min-h-0 min-w-0 flex-1 flex-col rounded-tl-[8px] border-0 border-t border-l border-solid border-white/[0.06] bg-canvas ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
+            >
+              <div
+                className={`w-full min-w-0 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:20px] ${page.detail ? '' : 'max-w-[1450px] pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
+              >
+                {page.detail && (
+                  <nav
+                    aria-label="Detail navigation"
+                    className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-sidebar px-(--page-gutter)"
+                  >
+                    <Link
+                      to={{ pathname: page.path, search }}
+                      aria-label={`Back to ${page.title}`}
+                      className="-ml-2 inline-flex min-h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium text-muted no-underline transition-colors hover:bg-surface hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      <Icon name="back" size={16} />
+                      {page.title}
+                    </Link>
+                  </nav>
+                )}
+                {page.name !== 'Overview' &&
+                  page.name !== 'Connections' &&
+                  page.name !== 'Integrations' && (
+                    <header className="page-header gap-[18px] mb-[20px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
+                      <div>
+                        <h1>{page.title}</h1>
+                        <p className="text-muted text-[14px]">{page.caption}</p>
+                      </div>
+                    </header>
+                  )}
+                {!native && (
+                  <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-[12px] leading-[1.5] [&_.icon-button]:ml-auto">
+                    Design preview. Desktop actions are available in the installed Wisp app.
+                  </div>
+                )}
+                <Updates
+                  showSettings={page.name === 'Settings'}
+                  version={app.info?.version || '0.0.7'}
+                  locked={!!busy}
+                  openSettings={() => void navigate('/settings')}
+                  onBusy={app.setBusy}
+                />
+                <Outlet />
+              </div>
+            </main>
+          </div>
         </div>
       )}
       <FeedbackToast message={busy ? '' : feedback} failed={failed} onDismiss={clearFeedback} />
@@ -152,6 +172,7 @@ export function createDesktopRouter() {
 
 export default function App({ router }: { router: ReturnType<typeof createDesktopRouter> }) {
   useEffect(mountDesktop, []);
+  useEffect(installNativeShell, []);
 
   return <RouterProvider router={router} />;
 }

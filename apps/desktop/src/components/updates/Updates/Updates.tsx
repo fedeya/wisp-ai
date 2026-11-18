@@ -222,7 +222,7 @@ export default function Updates({
   if (!showSettings) {
     if (!release || dismissed === release.version) return null;
     return (
-      <div className="mb-5 flex max-w-[780px] shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-[10px] border border-solid border-[#36524e] bg-[linear-gradient(105deg,#1e302f,var(--surface)_70%)] px-3.5 py-3">
+      <div className="mb-5 flex max-w-[780px] shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-[6px] border border-solid border-accent-line bg-accent-dim px-3.5 py-2.5">
         <div className="flex min-w-0 flex-[1_1_230px] items-center gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#294740] text-accent">
             <Icon name="download" size={18} />
@@ -262,11 +262,14 @@ export default function Updates({
   const changelog = `https://wisp.fedeya.sh/changelog${channel === 'nightly' ? '?channel=nightly' : ''}`;
 
   return (
-    <section aria-labelledby="app-updates-title">
-      <h2 id="app-updates-title" className="mb-3 ml-px">
+    <section aria-labelledby="app-updates-title" className="mb-5">
+      <h2
+        id="app-updates-title"
+        className="mb-1.5 ml-0.5 text-[12px] font-normal tracking-normal text-[#c4ced1]"
+      >
         App updates
       </h2>
-      <Card className="mb-3 overflow-hidden p-0">
+      <Card className="mb-0.5 overflow-hidden rounded-b-none border-0 p-0">
         <div className="p-4 max-sm:p-3">
           <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -369,7 +372,7 @@ export default function Updates({
           </section>
         )}
       </Card>
-      <Card density="compact">
+      <Card density="compact" className="mb-0 rounded-t-none border-0">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <h3 className="m-0 text-[14px] font-semibold">
