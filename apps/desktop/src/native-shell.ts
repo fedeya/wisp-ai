@@ -40,20 +40,29 @@ export function shortcutFor(path: string): string | undefined {
   return index === -1 ? undefined : `Ctrl+${index + 1}`;
 }
 
+/** The page a key press navigates to, if it is one of the app shortcuts. */
+export function shortcutTarget(
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey' | 'target'>,
+): string | undefined {
+  if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return undefined;
+  // Modal dialogs trap focus, so a key pressed inside one belongs to the dialog.
+  if (
+    event.target instanceof Element &&
+    event.target.closest('[role="dialog"], [role="alertdialog"]')
+  ) {
+    return undefined;
+  }
+  if (event.key === ',') return settingsPath;
+  return /^[1-9]$/.test(event.key) ? shortcutPages[Number(event.key) - 1]?.path : undefined;
+}
+
 /** Ctrl+1…9 jumps between sections, Ctrl+, opens Settings. */
 export function useAppShortcuts(enabled: boolean) {
   const navigate = useNavigate();
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) return;
-      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
-      const path =
-        event.key === ','
-          ? settingsPath
-          : /^[1-9]$/.test(event.key)
-            ? shortcutPages[Number(event.key) - 1]?.path
-            : undefined;
+      const path = shortcutTarget(event);
       if (!path) return;
       event.preventDefault();
       void navigate(path);
