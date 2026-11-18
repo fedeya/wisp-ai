@@ -62,7 +62,10 @@ export const card = tv({
   defaultVariants: { kind: 'default' },
 });
 
-export const field = tv({ base: [fieldBase, fieldFocus, 'disabled:opacity-50'] });
+/** Text fields drop Chromium's search-field styling (inner padding, clear button). */
+const textField =
+  'appearance-none [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none';
+export const field = tv({ base: [fieldBase, textField, fieldFocus, 'disabled:opacity-50'] });
 /** Select trigger: a button, not a text field, so no underline focus; a ring only for keyboard focus. */
 export const selectTrigger = tv({
   base: [fieldBase, 'outline-none', focus, 'disabled:opacity-50'],

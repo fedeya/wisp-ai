@@ -32,7 +32,8 @@
   --color-control-hover: rgb(255 255 255 / 0.09);
   --color-field: rgb(255 255 255 / 0.04);
   --color-field-line: rgb(255 255 255 / 0.16);
-  --color-field-focus: #11161a;
+  /* Relative, so a focused field darkens whatever surface it sits on (page, card, dialog). */
+  --color-field-focus: rgb(0 0 0 / 0.22);
   --color-divider: rgb(255 255 255 / 0.07);
 
   /* Menus, dialogs, toasts and highlighted rows. */
