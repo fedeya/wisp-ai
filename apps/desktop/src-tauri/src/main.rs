@@ -766,6 +766,12 @@ fn main() {
                 .with_denylist(&["updater"])
                 .build(),
         )
+        // Windows 11 snap layouts on our own maximize button (see WindowTitleBar.tsx).
+        .plugin(
+            tauri_plugin_snap_layout::init()
+                .button_id("window-maximize")
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_autostart::Builder::new()

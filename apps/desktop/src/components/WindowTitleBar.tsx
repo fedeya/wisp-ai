@@ -64,11 +64,15 @@ export function WindowControls() {
       >
         {glyphs.minimize}
       </button>
+      {/* On Windows 11, tauri-plugin-snap-layout lays a native hit-test zone over
+          this id: hovering opens snap layouts and clicks maximize natively, and
+          it adds .is-hovered because CSS :hover no longer reaches the button. */}
       <button
+        id="window-maximize"
         type="button"
         tabIndex={-1}
         aria-label={maximized ? 'Restore' : 'Maximize'}
-        className={`${captionButton} hover:bg-hover active:bg-pressed`}
+        className={`${captionButton} hover:bg-hover active:bg-pressed [&.is-hovered]:bg-hover`}
         onClick={() => run((window) => window.toggleMaximize())}
       >
         {maximized ? glyphs.restore : glyphs.maximize}
