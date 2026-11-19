@@ -15,6 +15,10 @@ export function SiteFooter({ locale }: { locale: Locale }) {
           {t('Source code ')}
           <Icon name="external" size={12} />
         </a>
+        <a href={site.curseForge} className="gap-[5px] inline-flex items-center">
+          CurseForge
+          <Icon name="external" size={12} />
+        </a>
         <a href={`${site.repository}/issues`} className="gap-[5px] inline-flex items-center">
           {t('Feedback ')}
           <Icon name="external" size={12} />

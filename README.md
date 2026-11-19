@@ -30,6 +30,8 @@ To use Wisp in WoW:
 3. Fully exit and restart WoW, then enable **Wisp AI** and its helper addons in the AddOns list.
 4. Type `/wisp` and ask a question. Keep the desktop app running; closing its window leaves it in the system tray.
 
+The addon is also published on [CurseForge](https://www.curseforge.com/wow/addons/wisp-ai). It still needs the desktop app running to answer.
+
 For hover questions, choose **Bind inline chat** in Wisp’s in-game settings and press an unused key combination. Controls are in English; replies follow your language.
 
 ## Before you use it

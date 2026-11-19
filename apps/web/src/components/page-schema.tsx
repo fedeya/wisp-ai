@@ -48,6 +48,7 @@ export function PageSchema({
       softwareVersion,
       downloadUrl: new URL(site.download, site.url).href,
       license: `${site.repository}/blob/main/LICENSE`,
+      sameAs: [site.repository, site.curseForge],
       image: `${site.url}${localizedPath(locale, '/opengraph-image')}`,
     });
   }
