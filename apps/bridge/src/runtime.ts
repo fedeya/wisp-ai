@@ -7,7 +7,8 @@ import { createPacketReceiver } from './packet-receiver.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
-import { writeJson, readJson } from './json-file.ts';
+import { readJson } from './json-file.ts';
+import { loadBridgeConfig } from './bridge-config.ts';
 import { z } from 'zod';
 import { createAgentHandler } from './agent-server.ts';
 import { GameRequests } from './game-requests.ts';
@@ -19,7 +20,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'eve/client';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
-import { DEFAULT_MODEL } from '@wisp/protocol/providers';
 import { DiskTransport } from './transport.ts';
 import { ChatStore } from './chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
@@ -98,35 +98,11 @@ export async function startBridge(options: BridgeOptions = {}) {
         : [];
       return { status: 'available', entries: [...preferences, ...character] };
     }
-    const configSchema = z.object({
-      wow: z.string().min(1).optional(),
-      // Earlier installers saved an empty string before model selection.
-      model: z.preprocess(
-        (value) => (value === '' ? undefined : value),
-        z.string().min(1).optional(),
-      ),
-      mcpConfig: z.string().min(1).optional(),
-    });
-    let config = await readJson<z.infer<typeof configSchema>>(
-      paths.config,
-      configSchema,
-      () => ({}),
-    );
-    const defaultModel = () => config.model || DEFAULT_MODEL;
-    let configWrite = Promise.resolve();
-    function updateConfig(patch: Partial<typeof config>) {
-      const write = configWrite
-        .catch(() => {})
-        .then(async () => {
-          const next = { ...config, ...patch };
-          await writeJson(paths.config, next);
-          config = next;
-        });
-      configWrite = write;
-      return write;
-    }
-    const mcpFile = config.mcpConfig
-      ? path.resolve(paths.dataRoot, config.mcpConfig)
+    const config = await loadBridgeConfig(paths.config);
+    const defaultModel = config.defaultModel;
+    const mcpConfig = config.get().mcpConfig;
+    const mcpFile = mcpConfig
+      ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
     const vault = options.vault || new NativeVault(paths.desktopExecutable);
     const mcpManager = new McpManager(mcpFile, ROOT, vault);
@@ -401,7 +377,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       transport = next;
       try {
         await next.start();
-        if (save) await updateConfig({ wow });
+        if (save) await config.update({ wow });
       } catch (error) {
         await disconnectTransport();
         throw error;
@@ -453,7 +429,7 @@ export async function startBridge(options: BridgeOptions = {}) {
           WOW_BRIDGE_URL: agentOrigin,
           WOW_CAPABILITIES_FILE: capabilitySettings.agentFile,
           WOW_MCP_CONFIG: mcpFile,
-          ...(config.model ? { WOW_MODEL: config.model } : {}),
+          ...(config.get().model ? { WOW_MODEL: config.get().model } : {}),
           DO_NOT_TRACK: '1',
         },
         onError: (error) =>
@@ -574,7 +550,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         gameConnected: gameConnected(),
         auth: auth.state(),
         connections: connections.list(),
-        modelConnected: connections.connected(config.model || ''),
+        modelConnected: connections.connected(config.get().model || ''),
         search: webSearch.state(),
         model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
@@ -613,7 +589,7 @@ export async function startBridge(options: BridgeOptions = {}) {
             }
             await disconnectTransport();
           } else {
-            await connectTransport(input.wow ?? config.wow, input.wow !== undefined);
+            await connectTransport(input.wow ?? config.get().wow, input.wow !== undefined);
           }
         }),
       getStatus: desktopStatus,
@@ -630,7 +606,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         if (shutdownRequested) {
           throw Error('Wisp is stopping.');
         }
-        await updateConfig({ model });
+        await config.update({ model });
         if (!enginePrepared) return;
         await killEve();
         if (shutdownRequested) {
@@ -658,7 +634,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const transportStartup =
       options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
         ? Promise.resolve()
-        : withTransport(() => connectTransport(config.wow)).catch(logTransportError);
+        : withTransport(() => connectTransport(config.get().wow)).catch(logTransportError);
     const integrationHealth = setInterval(() => {
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
