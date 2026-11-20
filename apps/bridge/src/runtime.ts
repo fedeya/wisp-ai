@@ -43,6 +43,7 @@ import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines.ts';
 import { ModelConnections } from './model-connections.ts';
 import { createModelCatalogRefresh } from './model-catalog.ts';
+import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './web-search.ts';
 import { ChatGPTAuth } from './chatgpt-auth.ts';
 import { TheWoWDB } from './thewowdb.ts';
@@ -208,6 +209,11 @@ export async function startBridge(options: BridgeOptions = {}) {
       }
     });
     const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
+    const accounts = createAccountOperations({
+      isStopping: () => shutdownRequested,
+      hasActiveTurn: () => state.chats.some((c) => c.status === 'working'),
+      afterOperation: () => void refreshModelCatalog(),
+    });
     const snapshots = new SnapshotGate();
     let dirty = true;
     const publisher = createPublishScheduler(() => publishSnapshot());
@@ -271,7 +277,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       defaultModel,
       isReady: () => eve.isReady(),
       isStopping: () => shutdownRequested,
-      accountBusy: () => accountBusy,
+      accountBusy: accounts.busy,
       isCurrent: (chat) => state.chats.includes(chat),
       flushSnapshot: () =>
         queueMicrotask(() => {
@@ -380,28 +386,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       await engineStartup;
       await eve.stop();
     });
-    let accountBusy = false;
-    let accountWork: Promise<unknown> | undefined;
-    resources.defer(async () => {
-      await accountWork;
-    });
-    async function accountOperation<T>(operation: () => Promise<T>) {
-      if (shutdownRequested || accountBusy || state.chats.some((c) => c.status === 'working')) {
-        throw Error('Wait for the active operation to finish.');
-      }
-      accountBusy = true;
-      try {
-        const work = operation();
-        accountWork = work;
-        return await work;
-      } finally {
-        accountBusy = false;
-        accountWork = undefined;
-        if (!shutdownRequested) {
-          void refreshModelCatalog();
-        }
-      }
-    }
+    resources.defer(() => accounts.drain());
     resources.defer(eve.startHealthChecks());
     function observeGameConnection() {
       telemetry.gameConnectionProgress(
@@ -440,7 +425,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       mcpManager,
       panelStore,
       routineStore,
-      accountOperation,
+      accountOperation: accounts.run,
       readSimulationCharacter,
       setCapability,
       refreshMcpCatalog,
