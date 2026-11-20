@@ -42,6 +42,7 @@ import { startDesktopServer } from './desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines.ts';
 import { ModelConnections } from './model-connections.ts';
+import { createModelCatalogRefresh } from './model-catalog.ts';
 import { WebSearch } from './web-search.ts';
 import { ChatGPTAuth } from './chatgpt-auth.ts';
 import { TheWoWDB } from './thewowdb.ts';
@@ -118,21 +119,6 @@ export async function startBridge(options: BridgeOptions = {}) {
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     await webSearch.load();
     resources.defer(() => auth.cancel());
-    let modelCatalogLoad: Promise<void> | undefined;
-    function refreshModelCatalog() {
-      return (modelCatalogLoad ??= (async () => {
-        try {
-          state.modelCatalog = await connections.models();
-          state.modelCatalogError = undefined;
-        } catch (error) {
-          state.modelCatalog = [];
-          state.modelCatalogError = errorMessage(error);
-        } finally {
-          modelCatalogLoad = undefined;
-          changed();
-        }
-      })());
-    }
     const database = new TheWoWDB();
     const panelStore = new PanelStore(applicationDatabase);
     await panelStore.load();
@@ -221,6 +207,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         await chatStore.close();
       }
     });
+    const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
     const snapshots = new SnapshotGate();
     let dirty = true;
     const publisher = createPublishScheduler(() => publishSnapshot());
