@@ -19,7 +19,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'eve/client';
-import { DiskTransport } from './transport.ts';
+import { createTransportConnection } from './transport-connection.ts';
 import { ChatStore } from './chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
@@ -300,7 +300,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       routineStore,
       panelStore,
       memoryStore,
-      transport: () => transport,
+      transport: () => transport.current(),
       refreshModelCatalog,
       setCapability,
       memorySnapshot,
@@ -323,62 +323,19 @@ export async function startBridge(options: BridgeOptions = {}) {
         telemetry.gameConnectionStarted();
       }
     };
-    let transport: DiskTransport | undefined;
-    let transportWork = Promise.resolve();
-
-    function logTransportError(error: unknown) {
-      logger.error(
-        { event: 'transport.failed', error: errorMessage(error) },
-        'Game transport failed',
-      );
-    }
-
-    function withTransport(work: () => Promise<void>) {
-      const operation = transportWork.catch(() => {}).then(work);
-      transportWork = operation;
-      return operation;
-    }
-
-    async function disconnectTransport() {
-      const previous = transport;
-      transport = undefined;
-      state.activeTransport = '';
-      state.firstReadyRevision = 0;
-      state.currentCharacterKey = undefined;
-      state.routinePresence = undefined;
-      state.memoryViewRequest = undefined;
-      pending.cancelAll('The connection to WoW changed. Try again after reconnecting.');
-      integrationState.reset();
-      snapshots.invalidate();
-      changed();
-      await previous?.stop();
-      await capabilitySettings.publish().catch(logTransportError);
-    }
-
-    async function connectTransport(wow: string | undefined, save = false) {
-      if (shutdownRequested || transport?.wow === wow) return;
-      await disconnectTransport();
-      if (!wow || !existsSync(path.join(wow, 'Interface/AddOns/WispAI/WispAI.toc'))) {
-        if (save) throw Error('The Wisp addon is missing from the selected WoW folder.');
-        return;
-      }
-      const next = new DiskTransport(
-        wow,
-        (packet) => {
-          if (transport === next) receive(packet);
-        },
-        logTransportError,
-      );
-      transport = next;
-      try {
-        await next.start();
-        if (save) await config.update({ wow });
-      } catch (error) {
-        await disconnectTransport();
-        throw error;
-      }
-    }
-    resources.defer(() => withTransport(disconnectTransport));
+    const transport = createTransportConnection({
+      state,
+      pending,
+      integrationState,
+      snapshots,
+      capabilitySettings,
+      receive,
+      saveWow: (wow) => config.update({ wow }),
+      changed,
+      isStopping: () => shutdownRequested,
+      logger,
+    });
+    resources.defer(() => transport.serialize(transport.disconnect));
     const server = createServer(
       createAgentHandler({
         logger,
@@ -528,21 +485,16 @@ export async function startBridge(options: BridgeOptions = {}) {
         });
     }, 3000);
     resources.defer(() => clearInterval(health));
-    function gameConnected() {
-      return Boolean(
-        state.activeTransport &&
-        state.firstReadyRevision &&
-        transport &&
-        transport.peerRevision >= state.firstReadyRevision,
-      );
-    }
     function observeGameConnection() {
-      telemetry.gameConnectionProgress(gameConnected(), Boolean(state.firstReadyRevision));
+      telemetry.gameConnectionProgress(
+        transport.gameConnected(),
+        Boolean(state.firstReadyRevision),
+      );
     }
     function desktopStatus(): Status {
       return {
         ready: eveReady,
-        gameConnected: gameConnected(),
+        gameConnected: transport.gameConnected(),
         auth: auth.state(),
         connections: connections.list(),
         modelConnected: connections.connected(config.get().model || ''),
@@ -576,15 +528,15 @@ export async function startBridge(options: BridgeOptions = {}) {
       refreshMcpCatalog,
       changed,
       setWowTransport: (input) =>
-        withTransport(async () => {
+        transport.serialize(async () => {
           if (shutdownRequested) throw Error('Wisp is stopping.');
           if (input.action === 'pause') {
             if (state.chats.some((chat) => chat.status === 'working')) {
               throw Error('Wait for the active turn before installing the addon.');
             }
-            await disconnectTransport();
+            await transport.disconnect();
           } else {
-            await connectTransport(input.wow ?? config.get().wow, input.wow !== undefined);
+            await transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
           }
         }),
       getStatus: desktopStatus,
@@ -629,7 +581,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const transportStartup =
       options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
         ? Promise.resolve()
-        : withTransport(() => connectTransport(config.get().wow)).catch(logTransportError);
+        : transport.serialize(() => transport.connect(config.get().wow)).catch(transport.logError);
     const integrationHealth = setInterval(() => {
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
@@ -647,7 +599,8 @@ export async function startBridge(options: BridgeOptions = {}) {
     }, 30000);
     resources.defer(() => clearInterval(integrationHealth));
     function publishSnapshot() {
-      if (!transport || !dirty || !state.activeTransport) {
+      const current = transport.current();
+      if (!current || !dirty || !state.activeTransport) {
         return;
       }
       dirty = false;
@@ -674,7 +627,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         state.firstReadyRevision = snapshot.rev;
       }
       if (snapshot) {
-        void transport.publish(snapshot).catch((error) => {
+        void current.publish(snapshot).catch((error) => {
           snapshots.invalidate();
           dirty = true;
           logger.warn(
