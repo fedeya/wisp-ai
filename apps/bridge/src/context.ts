@@ -235,7 +235,6 @@ export function turnInput(
   context: unknown,
   chat: Pick<Chat, 'id' | 'title' | 'titleGenerated' | 'lastUIResult' | 'proactive' | 'routineId'>,
   capabilities?: CapabilityView[],
-  needsTitle = false,
 ) {
   const references = linkedReferences(text);
   return [
@@ -244,7 +243,6 @@ export function turnInput(
     tagged('conversation_context', {
       id: chat.id,
       title: chat.title,
-      ...(needsTitle ? { needsTitle: true } : {}),
       automatic: chat.proactive === true,
       routineId: chat.routineId,
     }),

@@ -29,6 +29,10 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
   } as unknown as Pick<Client, 'sessions'>;
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
   const prepare = vi.fn(async (_model: string) => {});
+  const complete = vi.fn(
+    async (_model: string, _instructions: string, _text: string, _signal: AbortSignal) =>
+      'Generated title',
+  );
   const isReady = vi.fn(() => true);
   const accountBusy = vi.fn(() => false);
   const logger = { info: vi.fn(), error: vi.fn() };
@@ -37,7 +41,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
   const run = createTurnRunner({
     telemetry,
     client,
-    models: { models, prepare },
+    models: { models, prepare, complete },
     capabilitySettings: {
       publish: async () => {},
       enabled: () => titlesEnabled,
@@ -61,6 +65,7 @@ function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' |
     client,
     models,
     prepare,
+    complete,
     isReady,
     accountBusy,
     logger,
@@ -540,19 +545,62 @@ test('a follow-up after failure includes the failed question in restored history
   expect(f.send.mock.calls.at(-1)![0]).toContain('Explain that quest');
 });
 
-test('requests an AI title without copying the first message and keeps explicit names', async () => {
+function deferred<T>() {
+  let resolve!: (value: T) => void, reject!: (error: unknown) => void;
+  const promise = new Promise<T>((ok, fail) => {
+    resolve = ok;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+test('names a new conversation beside the reply without delaying it', async () => {
   const f = fixture();
-  const pending = f.run(f.chat, '  Ruta\n por Durotar  ');
+  const title = deferred<string>();
+  f.complete.mockReturnValueOnce(title.promise);
+  await f.run(f.chat, '  Ruta\n por Durotar  ');
+  // The reply finished while the title was still pending.
+  expect(f.chat.status).toBe('done');
   expect(f.chat.title).toBe('New conversation');
-  expect(f.chat.titleGenerated).not.toBe(true);
-  expect(f.send).not.toHaveBeenCalled();
-  await pending;
-  expect(f.send.mock.calls[0][0]).toContain('"needsTitle":true');
+  expect(f.send.mock.calls[0][0]).not.toContain('needsTitle');
+  expect(f.complete).toHaveBeenCalledTimes(1);
+  expect(f.complete.mock.calls[0][0]).toBe('model');
+  expect(f.complete.mock.calls[0][2]).toContain('Ruta\n por Durotar');
+  title.resolve('"Ruta por Durotar."\nExtra line');
+  await f.run.drain();
+  expect(f.chat.title).toBe('Ruta por Durotar');
+  expect(f.chat.titleGenerated).toBe(true);
+  await f.run(f.chat, 'Otra pregunta');
+  expect(f.complete).toHaveBeenCalledTimes(1);
+});
+
+test('a generated title never replaces a name chosen meanwhile', async () => {
+  const f = fixture();
+  const title = deferred<string>();
+  f.complete.mockReturnValueOnce(title.promise);
+  await f.run(f.chat, 'Ruta por Durotar');
   f.chat.title = 'Mi ruta';
   f.chat.titleGenerated = true;
-  await f.run(f.chat, 'Otra pregunta');
+  title.resolve('Ruta por Durotar');
+  await f.run.drain();
   expect(f.chat.title).toBe('Mi ruta');
-  expect(f.send.mock.calls.at(-1)![0]).not.toContain('needsTitle');
+});
+
+test('a failed title keeps the reply and is retried on a later turn', async () => {
+  const f = fixture();
+  f.complete.mockRejectedValueOnce(Error('Private provider error'));
+  await f.run(f.chat, 'Hola');
+  await f.run.drain();
+  expect(f.chat.status).toBe('done');
+  expect(f.chat.titleGenerated).not.toBe(true);
+  expect(f.logger.info).toHaveBeenCalledWith(
+    expect.objectContaining({ event: 'chat.title_failed' }),
+    expect.any(String),
+  );
+  await f.run(f.chat, 'Quiero una build de mago');
+  await f.run.drain();
+  expect(f.complete).toHaveBeenCalledTimes(2);
+  expect(f.chat.title).toBe('Generated title');
 });
 
 test('does not automatically name inline or proactive conversations', async () => {
@@ -560,21 +608,16 @@ test('does not automatically name inline or proactive conversations', async () =
     const f = fixture();
     f.chat[kind] = true;
     await f.run(f.chat, 'A different title');
+    await f.run.drain();
     expect(f.chat.title).toBe('New conversation');
-    expect(f.send.mock.calls[0][0]).not.toContain('needsTitle');
+    expect(f.complete).not.toHaveBeenCalled();
   }
 });
 
 test('disabled titles do not request automatic naming', async () => {
   const f = fixture(false);
   await f.run(f.chat, 'Help me choose talents');
+  await f.run.drain();
   expect(f.chat.titleGenerated).not.toBe(true);
-  expect(f.send.mock.calls[0][0]).not.toContain('needsTitle');
-});
-
-test('an unnamed greeting can receive a title on a later turn', async () => {
-  const f = fixture();
-  await f.run(f.chat, 'Hola');
-  await f.run(f.chat, 'Quiero una build de mago');
-  expect(f.send.mock.calls.at(-1)![0]).toContain('"needsTitle":true');
+  expect(f.complete).not.toHaveBeenCalled();
 });

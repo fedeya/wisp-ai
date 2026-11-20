@@ -15,8 +15,9 @@ import {
 } from '@wisp/protocol/providers';
 import { createProviderModel } from '@wisp/agent/providers';
 import { modelReasoningEfforts } from '@wisp/agent/reasoning';
-import { safeErrorMessage } from '@wisp/protocol/model-errors';
+import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { ChatGPTAuth } from './chatgpt-auth.ts';
+import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from './chat-model.ts';
 import type { SecretVault } from './secret-vault.ts';
 import { readJson, writeJson } from './json-file.ts';
@@ -24,6 +25,7 @@ import { readJson, writeJson } from './json-file.ts';
 export interface ModelCatalog {
   models(): Promise<AccountModel[]>;
   prepare(model: string): Promise<void>;
+  complete(model: string, instructions: string, text: string, signal: AbortSignal): Promise<string>;
 }
 
 export class ModelConnections implements ModelCatalog {
@@ -318,22 +320,31 @@ export class ModelConnections implements ModelCatalog {
     }
     return { models: [...models.values()] };
   }
-  async test(raw: unknown) {
-    const input = connectionSetup.parse(raw);
-    const secret = await this.credential(input);
-    const model = createProviderModel(input.provider, input.models[0]!.id, {
+  private providerModel(
+    connection: Pick<ConnectionConfig, 'provider' | 'baseURL'>,
+    modelId: string,
+    secret: string,
+  ) {
+    return createProviderModel(connection.provider, modelId, {
       apiKey: secret || 'local',
-      baseURL: this.baseURL(input),
+      baseURL: this.baseURL(connection),
       fetch: async (url, init) => {
         const headers = new Headers(init?.headers);
         headers.delete('authorization');
         headers.delete('x-api-key');
         headers.delete('x-goog-api-key');
-        for (const [key, value] of Object.entries(this.headers(input.provider, secret))) {
+        for (const [key, value] of Object.entries(this.headers(connection.provider, secret))) {
           headers.set(key, value);
+        }
+        let body = init?.body;
+        // Never persist Responses history server-side, as in forward().
+        const target = url instanceof Request ? url.url : String(url);
+        if (typeof body === 'string' && new URL(target).pathname.endsWith('/responses')) {
+          body = JSON.stringify({ ...JSON.parse(body), store: false });
         }
         const response = await this.fetcher(url, {
           ...init,
+          body,
           headers,
           redirect: 'error',
           signal: init?.signal
@@ -346,6 +357,72 @@ export class ModelConnections implements ModelCatalog {
         return response;
       },
     });
+  }
+  // A single short completion outside the agent, e.g. a conversation title. It uses
+  // the user's selected model and connection, with the cheapest supported effort.
+  async complete(model: string, instructions: string, text: string, signal: AbortSignal) {
+    const parsed = parseConnectionModel(model);
+    if (!parsed) {
+      return this.chatgptComplete(model, instructions, text, signal);
+    }
+    const connection = this.get(parsed.connection);
+    if (!connection.models.some((m) => m.id === parsed.model)) {
+      throw Error('Model is no longer configured.');
+    }
+    const secret = await this.credential(connection);
+    const result = await this.providerModel(connection, parsed.model, secret).doGenerate({
+      prompt: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: [{ type: 'text', text }] },
+      ],
+      abortSignal: signal,
+    });
+    return result.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join('');
+  }
+  private async chatgptComplete(
+    model: string,
+    instructions: string,
+    text: string,
+    signal: AbortSignal,
+  ) {
+    const entry = (await this.chatgpt.models()).find((m) => m.slug === model);
+    if (!entry) {
+      throw Error('This model is not available.');
+    }
+    const effort = ['none', 'minimal', 'low'].find((e) => entry.efforts.includes(e));
+    const response = await this.chatgpt.authorized('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        ...(effort ? { reasoning: { effort } } : {}),
+        store: false,
+        stream: true,
+        instructions,
+        input: [{ role: 'user', content: [{ type: 'input_text', text }] }],
+      }),
+      signal,
+    });
+    if (!response.ok) {
+      const error = await normalizeModelError(response);
+      const body = (await error.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      throw Error(safeErrorMessage(body?.error?.message ?? 'The model is unavailable.'));
+    }
+    const completed = (await readCompletedResponse(response)) as {
+      output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+    };
+    return (completed.output ?? [])
+      .filter((item) => item.type === 'message')
+      .flatMap((item) => item.content ?? [])
+      .map((part) => (part.type === 'output_text' ? (part.text ?? '') : ''))
+      .join('');
+  }
+  async test(raw: unknown) {
+    const input = connectionSetup.parse(raw);
+    const secret = await this.credential(input);
+    const model = this.providerModel(input, input.models[0]!.id, secret);
     const result = await model.doGenerate({
       prompt: [
         { role: 'user', content: [{ type: 'text', text: 'Call connection_check with ok=true.' }] },

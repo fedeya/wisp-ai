@@ -6,6 +6,7 @@ import { sendChatTurn } from './agent-session.ts';
 import { beginTurn, settleTurn } from './chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from './context.ts';
 import { chooseChatModel } from './chat-model.ts';
+import { generateConversationTitle } from './conversation-title.ts';
 import { ChatGPTAuthError } from './chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import { errorMessage } from './errors.ts';
@@ -64,6 +65,40 @@ export function createTurnRunner(deps: TurnDependencies) {
     Chat,
     { parts: ReplyProjection; assertCurrent: () => void; signal: AbortSignal }
   >();
+  const naming = new WeakSet<Chat>();
+  // Runs beside the turn: a slow or failed title never delays or fails the reply.
+  function nameConversation(chat: Chat, text: string, model: string) {
+    if (naming.has(chat)) {
+      return;
+    }
+    naming.add(chat);
+    const untitled = chat.title;
+    const work = generateConversationTitle(
+      (instructions, input, signal) => models.complete(model, instructions, input, signal),
+      text,
+      AbortSignal.timeout(20000),
+    )
+      .then(
+        (title) => {
+          // Keep a name the user or agent chose meanwhile, and skip deleted chats.
+          if (!title || chat.titleGenerated || chat.title !== untitled || !isCurrent(chat)) {
+            return;
+          }
+          chat.title = title;
+          chat.titleGenerated = true;
+          changed();
+        },
+        (error) => {
+          logger.info(
+            { event: 'chat.title_failed', chat: chat.id, error: errorMessage(error) },
+            'Conversation title failed',
+          );
+        },
+      )
+      .finally(() => naming.delete(chat));
+    running.add(work);
+    void work.finally(() => running.delete(work));
+  }
   async function execute(chat: Chat, text: string, messageId?: string, context?: unknown) {
     if (isStopping() || chat.status === 'working') {
       return;
@@ -127,20 +162,19 @@ export function createTurnRunner(deps: TurnDependencies) {
       );
       assertCurrent();
       preparedMs = Math.round(performance.now() - started);
+      if (
+        !chat.titleGenerated &&
+        !chat.proactive &&
+        !chat.inline &&
+        capabilitySettings.enabled('tool:set_conversation_title')
+      ) {
+        nameConversation(chat, text, chat.modelSettings.model);
+      }
       failureCode = 'turn_start_failed';
       const response = await sendChatTurn(
         client,
         chat,
-        turnInput(
-          text,
-          context,
-          chat,
-          capabilitySettings.snapshot(),
-          !chat.titleGenerated &&
-            !chat.proactive &&
-            !chat.inline &&
-            capabilitySettings.enabled('tool:set_conversation_title'),
-        ),
+        turnInput(text, context, chat, capabilitySettings.snapshot()),
         controller.signal,
       );
       assertCurrent();

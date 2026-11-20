@@ -206,6 +206,100 @@ test('the connection check verifies a native tool request without executing tool
   expect(manager.list()).toEqual([]);
 });
 
+test('a short completion uses the configured connection and returns only text', async () => {
+  const requests: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
+  const { manager } = await fixture(async (url, init) => {
+    requests.push({
+      url: String(url),
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)),
+    });
+    return String(url).endsWith('/responses')
+      ? Response.json({
+          id: 'resp_title',
+          created_at: 1,
+          model: 'gpt-test',
+          output: [
+            {
+              type: 'message',
+              id: 'msg_title',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: 'OpenAI title', annotations: [] }],
+            },
+          ],
+          usage: { input_tokens: 2, output_tokens: 2 },
+        })
+      : Response.json({
+          id: 'msg_title',
+          type: 'message',
+          role: 'assistant',
+          model: 'claude-test',
+          content: [{ type: 'text', text: 'Ruta por Durotar' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 2, output_tokens: 4 },
+        });
+  });
+  const { id } = await manager.save(setup);
+  const signal = new AbortController().signal;
+  expect(
+    await manager.complete(connectionModelSlug(id, 'claude-test'), 'Name it', 'Hola', signal),
+  ).toBe('Ruta por Durotar');
+  expect(requests[0]!.headers.get('x-api-key')).toBe(setup.apiKey);
+  expect(JSON.stringify(requests[0]!.body)).toContain('Name it');
+  expect(JSON.stringify(requests[0]!.body)).not.toContain('"tools"');
+
+  const openai = await manager.save({
+    provider: 'openai',
+    name: 'OpenAI',
+    apiKey: 'openai-key',
+    models: [{ id: 'gpt-test', contextWindow: 128000 }],
+  });
+  expect(
+    await manager.complete(connectionModelSlug(openai.id, 'gpt-test'), 'Name it', 'Hola', signal),
+  ).toBe('OpenAI title');
+  // Titles must not be stored server-side, like every other Responses request.
+  expect(requests.at(-1)!.body.store).toBe(false);
+});
+
+test('a short ChatGPT completion uses the lowest supported effort and is never stored', async () => {
+  const { manager, chatgpt } = await fixture();
+  const sent: Record<string, unknown>[] = [];
+  chatgpt.models.mockResolvedValue([
+    { slug: 'gpt-test', displayName: 'GPT', efforts: ['low', 'medium', 'high'] },
+  ] as never);
+  const authorized = vi.fn(async (_url: string, init: RequestInit) => {
+    sent.push(JSON.parse(String(init.body)));
+    const completed = {
+      type: 'response.completed',
+      response: {
+        output: [
+          { type: 'reasoning', summary: [] },
+          { type: 'message', content: [{ type: 'output_text', text: 'Talentos de mago' }] },
+        ],
+      },
+    };
+    return new Response('data: ' + JSON.stringify(completed) + '\n\n', {
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  });
+  Object.assign(chatgpt, { authorized });
+  const signal = new AbortController().signal;
+  expect(await manager.complete('gpt-test', 'Name it', 'Talentos', signal)).toBe(
+    'Talentos de mago',
+  );
+  expect(sent[0]).toMatchObject({
+    model: 'gpt-test',
+    reasoning: { effort: 'low' },
+    store: false,
+    instructions: 'Name it',
+  });
+  expect(sent[0]).not.toHaveProperty('tools');
+  await expect(manager.complete('unknown-model', 'Name it', 'Hola', signal)).rejects.toThrow(
+    'not available',
+  );
+});
+
 test.each(providerDefinitions)(
   '$name native adapter reaches its permitted route with bridge-owned credentials',
   async (definition) => {
