@@ -64,13 +64,14 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 
 - `apps/<app>/tests/`, `packages/<pkg>/tests/`: unit tests per package, each with
   its own `vitest.config.ts`; desktop UI tests sit next to components in `apps/desktop/src/`.
-- `tests/`: cross-component integrations and repository checks.
-- `tests/addon/`: Lua↔TypeScript transport tests (Vitest + Fengari).
+- `tests/`: only tests that span packages (they import two or more workspaces,
+  run the packaged engine, or check repository-wide rules and config such as
+  release-it). A test that exercises a single package belongs in that
+  package's `tests/`.
+- `tests/addon/`: Lua↔TypeScript transport tests (Vitest + Fengari) that run the
+  addon's Lua against `@wisp/protocol` and the bridge.
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
-
-This layout is not fully uniform today; follow the existing location for the
-area you change.
 
 ## Conventions observed in the code
 
