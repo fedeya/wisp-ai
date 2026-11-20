@@ -60,6 +60,7 @@ const chatErrorCodeSchema = z.enum([
   'turn_start_failed',
   'turn_stream_failed',
   'turn_result_failed',
+  'usage_limit',
   'timeout',
   'unknown',
 ]);

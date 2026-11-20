@@ -27,6 +27,17 @@ function isTimeout(error: unknown): boolean {
   );
 }
 
+// Plan quotas and provider rate limits are expected account states, not Wisp failures.
+function isUsageLimit(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
+  const message = 'message' in error && typeof error.message === 'string' ? error.message : '';
+  return (
+    /usage_limit|insufficient_quota|rate_limit/i.test(code) ||
+    /usage limit|rate limit|quota/i.test(message)
+  );
+}
+
 interface TurnDependencies {
   telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver'>;
   client: Pick<Client, 'sessions'>;
@@ -109,6 +120,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     let outcome: ChatOutcome = 'cancelled';
     let failureCode: ChatErrorCode = 'capability_sync_failed';
     let timedOut = false;
+    let usageLimited = false;
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
@@ -217,6 +229,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       }
       if (result.status === 'failed') {
         timedOut = isTimeout(result.error);
+        usageLimited = isUsageLimit(result.error);
         throw new Error(
           safeErrorMessage(result.error.message || 'The response failed. Please try again.'),
         );
@@ -246,6 +259,13 @@ export function createTurnRunner(deps: TurnDependencies) {
             : 'failed';
         if (error instanceof ChatGPTAuthError && failureCode === 'model_preparation_failed') {
           failureCode = 'model_auth_failed';
+        }
+        if (
+          usageLimited ||
+          isUsageLimit(error) ||
+          (error instanceof Error && isUsageLimit(error.cause))
+        ) {
+          failureCode = 'usage_limit';
         }
       }
       parts.flush(chat, Date.now(), true);

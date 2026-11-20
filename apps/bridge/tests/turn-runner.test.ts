@@ -260,6 +260,42 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
   );
 });
 
+test('chat telemetry separates plan usage limits from other failures', async () => {
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const f = fixture(true, telemetry);
+  f.send.mockImplementationOnce(async () => ({
+    stream: async function* () {},
+    result: async () => ({
+      status: 'failed',
+      sessionEnded: false,
+      error: {
+        name: 'Error',
+        code: 'subscription_sharing_usage_limit_exceeded',
+        message: 'Private plan details',
+      },
+    }),
+  }));
+  await f.run(f.chat, 'Private question');
+  expect(f.chat.status).toBe('error');
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'failed',
+    expect.any(Number),
+    'usage_limit',
+    undefined,
+  );
+
+  f.send.mockRejectedValueOnce(Error('You exceeded your current quota, please check your plan.'));
+  await f.run(f.chat, 'Private question');
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'failed',
+    expect.any(Number),
+    'usage_limit',
+    undefined,
+  );
+});
+
 test('plain source schedules persistence before a reply can be rendered', async () => {
   const f = fixture();
   f.send.mockImplementationOnce(async () => ({

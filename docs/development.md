@@ -209,7 +209,8 @@ reports `chat_completed`, `tool_executed`, `game_connected`,
 Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
 `timeout` when the underlying error identifies a timeout.
 Failed and timed-out chats include an allowlisted `error_code`. Codes identify
-a known condition or the stage that failed. Error messages stay in local logs.
+a known condition or the stage that failed; `usage_limit` marks a plan quota or
+provider rate limit rather than a Wisp failure. Error messages stay in local logs.
 When the turn produces visible streamed text, `first_text_ms` measures the
 elapsed time from turn start to the first text that the bridge projects.
 A connection attempt starts when the bridge accepts a new addon session and
