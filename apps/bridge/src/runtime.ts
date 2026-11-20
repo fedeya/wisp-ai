@@ -60,8 +60,27 @@ export interface BridgeOptions {
   startAgent?: typeof startEveProcess;
   deferWowTransport?: boolean;
 }
+/**
+ * Composition root of the bridge: loads stores and settings, wires the Eve
+ * process, the addon transport, the agent and desktop servers, and returns
+ * `{ state, receive, stop }`.
+ *
+ * Cleanup is registered with `resources.defer` and runs in reverse (LIFO), so
+ * the registration order below is the shutdown order read bottom-up. Orderings
+ * that matter:
+ * - The publish and integration timers and the desktop server stop first,
+ *   then Eve's health checks, so nothing new starts.
+ * - Pending account work settles before Eve stops; Eve is stopped (after its
+ *   engine preparation settles) before its log file closes.
+ * - The agent server closes and the transport disconnects before turns
+ *   drain, and turns drain before the publisher stops, chats are flushed and
+ *   the database closes (last).
+ */
 export async function startBridge(options: BridgeOptions = {}) {
   const resources = new RuntimeResources();
+  // Set by stop() or a desktop stop request; checked by everything that
+  // starts work, so nothing new begins while resources close.
+  let shutdownRequested = false;
   try {
     const ROOT =
       options.resourceRoot ||
@@ -237,7 +256,6 @@ export async function startBridge(options: BridgeOptions = {}) {
         chatStore.schedule(() => state.chats);
       }
     }
-    let shutdownRequested = false;
     const run = createTurnRunner({
       telemetry,
       client,
