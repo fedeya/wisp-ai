@@ -14,7 +14,8 @@ import { createAgentHandler } from './agent-server.ts';
 import { GameRequests } from './game-requests.ts';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { startEveProcess, stopEveProcess } from './agent-process.ts';
+import type { startEveProcess } from './agent-process.ts';
+import { createEveLifecycle } from './eve-lifecycle.ts';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +29,7 @@ import { errorMessage } from './errors.ts';
 import { bridgeLogger as logger } from './logger.ts';
 import { MemoryStore } from './memory-store.ts';
 import { IntegrationState } from './integration-state.ts';
-import { existsSync, closeSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './capabilities.ts';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { SnapshotGate } from './snapshots.ts';
@@ -45,7 +46,7 @@ import { WebSearch } from './web-search.ts';
 import { ChatGPTAuth } from './chatgpt-auth.ts';
 import { TheWoWDB } from './thewowdb.ts';
 import { Simulator } from './simulation.ts';
-import { appPaths, prepareEngine } from './app-paths.ts';
+import { appPaths } from './app-paths.ts';
 import { addonVersionFromToc } from './addon-version.ts';
 export interface BridgeOptions {
   resourceRoot?: string;
@@ -221,8 +222,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       }
     });
     const snapshots = new SnapshotGate();
-    let eveReady = false;
-    let contextWindowTokens: number | undefined;
     let dirty = true;
     const publisher = createPublishScheduler(() => publishSnapshot());
     resources.defer(() => publisher.stop());
@@ -235,6 +234,25 @@ export async function startBridge(options: BridgeOptions = {}) {
         baseUrl: 'http://127.0.0.1:43186',
         auth: { bearer: () => token },
       });
+    const eve = createEveLifecycle({
+      agentRoot: paths.agent,
+      engineRoot: paths.engine,
+      logPath: path.join(runtime, 'eve.log'),
+      environment: () => ({
+        ...process.env,
+        WOW_BRIDGE_TOKEN: token,
+        WOW_BRIDGE_URL: agentOrigin,
+        WOW_CAPABILITIES_FILE: capabilitySettings.agentFile,
+        WOW_MCP_CONFIG: mcpFile,
+        ...(config.get().model ? { WOW_MODEL: config.get().model } : {}),
+        DO_NOT_TRACK: '1',
+      }),
+      client,
+      startAgent: options.startAgent,
+      changed,
+      isStopping: () => shutdownRequested,
+      logger,
+    });
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
       if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
         throw Error('Connect WoW and enable Character readings first.');
@@ -264,7 +282,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
       defaultModel,
-      isReady: () => eveReady,
+      isReady: () => eve.isReady(),
       isStopping: () => shutdownRequested,
       accountBusy: () => accountBusy,
       isCurrent: (chat) => state.chats.includes(chat),
@@ -286,7 +304,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       changed,
       logger,
       isStopping: () => shutdownRequested,
-      isReady: () => eveReady,
+      isReady: () => eve.isReady(),
     });
     resources.defer(stopRoutineScheduler);
     const receivePacket = createPacketReceiver({
@@ -367,69 +385,13 @@ export async function startBridge(options: BridgeOptions = {}) {
     const agentPort = await listenOnLoopback(server, options.agentPort ?? 43187);
     const agentOrigin = 'http://127.0.0.1:' + agentPort;
     await writeFile(path.join(runtime, 'bridge.pid'), String(process.pid));
-    const eveLog = await import('node:fs').then((fs) =>
-      fs.openSync(path.join(runtime, 'eve.log'), 'a'),
-    );
-    resources.defer(() => closeSync(eveLog));
-    function spawnEve() {
-      return (options.startAgent || startEveProcess)({
-        root: paths.engine,
-        logFile: eveLog,
-        environment: {
-          ...process.env,
-          WOW_BRIDGE_TOKEN: token,
-          WOW_BRIDGE_URL: agentOrigin,
-          WOW_CAPABILITIES_FILE: capabilitySettings.agentFile,
-          WOW_MCP_CONFIG: mcpFile,
-          ...(config.get().model ? { WOW_MODEL: config.get().model } : {}),
-          DO_NOT_TRACK: '1',
-        },
-        onError: (error) =>
-          logger.error(
-            { event: 'eve.spawn_failed', error: errorMessage(error) },
-            'Could not start Eve',
-          ),
-        onExit: (code) => {
-          eveReady = false;
-          changed();
-          logger.info({ event: 'eve.exited', code }, 'Eve exited');
-        },
-      });
-    }
-    let eve: ReturnType<typeof spawnEve> | undefined;
-    let enginePrepared = false;
-    function startEve() {
-      if (!enginePrepared) return;
-      try {
-        eve = spawnEve();
-      } catch (error) {
-        logger.error(
-          { event: 'eve.spawn_failed', error: errorMessage(error) },
-          'Could not start Eve',
-        );
-      }
-    }
-    async function killEve() {
-      if (eve) {
-        await stopEveProcess(eve);
-        eve = undefined;
-      }
-      eveReady = false;
-    }
-    const engineStartup = prepareEngine(paths.agent, paths.engine)
-      .then(() => {
-        enginePrepared = true;
-        if (!shutdownRequested) startEve();
-      })
-      .catch((error) => {
-        logger.error(
-          { event: 'eve.prepare_failed', error: errorMessage(error) },
-          'Could not prepare Eve',
-        );
-      });
+    eve.openLog();
+    resources.defer(() => eve.closeLog());
+    const engineStartup = eve.prepare();
+    // Registered after closeLog, so it runs first: Eve is stopped before its log closes.
     resources.defer(async () => {
       await engineStartup;
-      await killEve();
+      await eve.stop();
     });
     let accountBusy = false;
     let accountWork: Promise<unknown> | undefined;
@@ -453,38 +415,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         }
       }
     }
-    const health = setInterval(() => {
-      if (!eve) return;
-      const current = eve;
-      void client
-        .health()
-        .then(async () => {
-          if (eve === current && !eveReady) {
-            let windowTokens: number | undefined;
-            try {
-              const info = await client.info();
-              const window = info.agent.model?.contextWindowTokens;
-              if (typeof window === 'number' && Number.isSafeInteger(window) && window > 0) {
-                windowTokens = window;
-              }
-            } catch {
-              // Unknown capacity is displayed as unknown, never a made-up limit.
-            }
-            if (eve !== current || current.exitCode !== null || current.signalCode !== null) return;
-            contextWindowTokens = windowTokens;
-            eveReady = true;
-            changed();
-            logger.info({ event: 'eve.ready' }, 'Eve ready');
-          }
-        })
-        .catch(() => {
-          if (eve === current && eveReady) {
-            eveReady = false;
-            changed();
-          }
-        });
-    }, 3000);
-    resources.defer(() => clearInterval(health));
+    resources.defer(eve.startHealthChecks());
     function observeGameConnection() {
       telemetry.gameConnectionProgress(
         transport.gameConnected(),
@@ -493,7 +424,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     }
     function desktopStatus(): Status {
       return {
-        ready: eveReady,
+        ready: eve.isReady(),
         gameConnected: transport.gameConnected(),
         auth: auth.state(),
         connections: connections.list(),
@@ -554,13 +485,7 @@ export async function startBridge(options: BridgeOptions = {}) {
           throw Error('Wisp is stopping.');
         }
         await config.update({ model });
-        if (!enginePrepared) return;
-        await killEve();
-        if (shutdownRequested) {
-          return;
-        }
-        startEve();
-        changed();
+        await eve.restart();
       },
       requestStop: () => {
         shutdownRequested = true;
@@ -608,10 +533,10 @@ export async function startBridge(options: BridgeOptions = {}) {
       const snapshot = snapshots.next(
         buildAddonSnapshot({
           state,
-          connected: eveReady,
+          connected: eve.isReady(),
           bridgeVersion,
           expectedAddonVersion,
-          contextWindowTokens,
+          contextWindowTokens: eve.contextWindowTokens(),
           defaultModel: defaultModel(),
           panels: character ? panelStore.list(character) : [],
           routines: character ? routineStore.list(character) : [],
@@ -623,7 +548,7 @@ export async function startBridge(options: BridgeOptions = {}) {
           requests: pending.snapshot(),
         }),
       );
-      if (snapshot && eveReady && !state.firstReadyRevision) {
+      if (snapshot && eve.isReady() && !state.firstReadyRevision) {
         state.firstReadyRevision = snapshot.rev;
       }
       if (snapshot) {
