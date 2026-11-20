@@ -1,7 +1,7 @@
 import { characterLabel } from '@wisp/protocol/character-key';
 import { RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
-import { projectChats } from './chat-projection.ts';
+import { buildAddonSnapshot } from './addon-snapshot.ts';
 import { startRoutineScheduler } from './routine-scheduler.ts';
 import { createPacketReceiver } from './packet-receiver.ts';
 import { createSessionState } from './session-state.ts';
@@ -19,7 +19,6 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client } from 'eve/client';
-import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { DiskTransport } from './transport.ts';
 import { ChatStore } from './chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
@@ -41,7 +40,6 @@ import { NativeVault, type SecretVault } from './secret-vault.ts';
 import { startDesktopServer } from './desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines.ts';
-import { describeRoutineTrigger, routineEvents } from '@wisp/protocol/routines';
 import { ModelConnections } from './model-connections.ts';
 import { WebSearch } from './web-search.ts';
 import { ChatGPTAuth } from './chatgpt-auth.ts';
@@ -254,9 +252,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       if (!shutdownRequested) {
         chatStore.schedule(() => state.chats);
       }
-    }
-    function chatFor(id: string | undefined) {
-      return state.chats.find((c) => c.id === id);
     }
     let shutdownRequested = false;
     const run = createTurnRunner({
@@ -656,74 +651,25 @@ export async function startBridge(options: BridgeOptions = {}) {
         return;
       }
       dirty = false;
-      const snapshot = snapshots.next({
-        v: 1,
-        session: state.activeTransport,
-        connected: eveReady,
-        bridgeVersion,
-        expectedAddonVersion,
-        contextPolicy: {
-          windowTokens:
-            state.modelCatalog.find(
-              (m) => m.slug === chatFor(state.activeChat)?.modelSettings?.model,
-            )?.contextWindow || contextWindowTokens,
-          compactAt: COMPACTION_THRESHOLD,
-        },
-        modelCatalog: {
-          models: state.modelCatalog,
+      const character = state.currentCharacterKey;
+      const snapshot = snapshots.next(
+        buildAddonSnapshot({
+          state,
+          connected: eveReady,
+          bridgeVersion,
+          expectedAddonVersion,
+          contextWindowTokens,
           defaultModel: defaultModel(),
-          error: state.modelCatalogError,
-        },
-        acks: state.acknowledgments,
-        questRevision: state.questRevision || 0,
-        characterRevision: state.characterRevision || 0,
-        activeChat: state.activeChat,
-        ...projectChats(state),
-        panels: state.currentCharacterKey ? panelStore.list(state.currentCharacterKey) : [],
-        panelCommand: state.panelCommand,
-        routineCommand: state.routineCommand,
-        routines: state.currentCharacterKey
-          ? routineStore.list(state.currentCharacterKey).map((r) => ({
-              id: r.id,
-              title: r.title,
-              enabled: r.enabled,
-              // Short, human trigger text for the addon's Routines page.
-              trigger: r.triggers.map(describeRoutineTrigger).join(' or ').slice(0, 160),
-              // What the routine asks Wisp to do, shortened for the routine's detail page.
-              instruction: r.instruction.slice(0, 280),
-              lastStartedAt: r.lastStartedAt,
-            }))
-          : [],
-        routineRuns: state.currentCharacterKey
-          ? routineStore
-              .history({ characterKey: state.currentCharacterKey, includeSilent: false, limit: 50 })
-              .map(({ summary: _summary, ...r }) => r)
-          : [],
-        routineSubscriptions:
-          state.currentCharacterKey && capabilitySettings.enabled('tool:manage_routine')
-            ? [
-                ...new Set(
-                  routineStore
-                    .list(state.currentCharacterKey)
-                    .filter((r) => r.enabled)
-                    .flatMap((r) =>
-                      r.triggers.filter((t) => t.kind === 'event').map((t) => t.event),
-                    ),
-                ),
-              ].map((event) => ({ event, native: routineEvents[event].native }))
+          panels: character ? panelStore.list(character) : [],
+          routines: character ? routineStore.list(character) : [],
+          routineRuns: character
+            ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
             : [],
-        routinesEnabled:
-          !!state.currentCharacterKey &&
-          capabilitySettings.enabled('tool:manage_routine') &&
-          routineStore.list(state.currentCharacterKey).some((r) => r.enabled),
-        memory: state.memoryView,
-        capabilities: {
-          entries: capabilitySettings.snapshot(),
-          acks: state.capabilityAcks,
-          error: state.capabilityError,
-        },
-        requests: pending.snapshot(),
-      });
+          routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
+          capabilities: capabilitySettings.snapshot(),
+          requests: pending.snapshot(),
+        }),
+      );
       if (snapshot && eveReady && !state.firstReadyRevision) {
         state.firstReadyRevision = snapshot.rev;
       }
