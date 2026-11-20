@@ -674,7 +674,15 @@ it(
                     and not gear:IsShown(),
                 "minimized bar must be compact and hide secondary controls"
             )
-            ns.UI.SetMinimized(false)
+            local bar = UI_TEST.frames.WispAIHeader
+            bar.scripts.OnMouseDown(bar, "LeftButton")
+            bar.scripts.OnDragStart(bar)
+            bar.scripts.OnDragStop(bar)
+            bar.scripts.OnMouseUp(bar, "LeftButton")
+            assert(ns.db.minimized, "dragging the minimized bar only moves it")
+            bar.scripts.OnMouseDown(bar, "LeftButton")
+            bar.scripts.OnMouseUp(bar, "LeftButton")
+            assert(not ns.db.minimized, "a click on the minimized bar restores the window")
             assert(fold:IsShown() and gear:IsShown(), "expanding must restore controls")
             local settingsPage = UI_TEST.frames.WispAISettingsPage
             local memoryPage = UI_TEST.frames.WispAIMemoryPanel

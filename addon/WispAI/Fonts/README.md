@@ -8,7 +8,8 @@ Medium is the lightest weight in use. This follows the Polestar addon
 a soft one-pixel shadow in the palette's shade. JetBrains Mono Regular 2.305
 provides inline and fenced code text.
 
-Inter covers Latin, Greek and Cyrillic. Clients localized to Simplified or
+Inter covers Latin, Greek and Cyrillic, plus General Punctuation (quotes,
+ellipsis, dashes, middle dot) used in tool labels. Clients localized to Simplified or
 Traditional Chinese or Korean keep the game fonts, and text containing other
 scripts, as well as a failed font load, falls back to the localized game font.
 Code conservatively uses JetBrains Mono under the same script rule.

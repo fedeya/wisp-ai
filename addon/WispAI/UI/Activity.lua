@@ -7,17 +7,22 @@ local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
 local SUGGESTIONS = { "suggestion.whatCanYouDo", "suggestion.whatNext", "suggestion.reviewGear" }
 local CHIP_GAP, CHIPS_TOP = 8, 62
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
-local WAVE = {
-    "|cff9aa7ac",
-    "|cffafbbbf",
-    "|cffc4ced1",
-    "|cffdde4e5",
-    "|cfff8fafa",
-    "|cffdde4e5",
-    "|cffc4ced1",
-    "|cffafbbbf",
-    "|cff9aa7ac",
-}
+-- Loading text shimmer: a soft band of light glides over muted text. The band
+-- moves continuously (not a character at a time) and fades with a cosine, and
+-- its brightness is quantized so most frames reuse the previous string.
+local SHIMMER_HALF = 2.5 -- band half-width, in characters
+local SHIMMER_LEVELS = 10
+local SHIMMER_PAUSE = 6 -- characters of travel off the end before it returns
+local SHIMMER = {}
+for level = 1, SHIMMER_LEVELS do
+    local t = level / SHIMMER_LEVELS
+    local channels = {}
+    for index = 1, 3 do
+        local from, to = MUTED[index], ns.UI.Widgets.TEXT[index]
+        channels[index] = math.floor((from + (to - from) * t) * 255 + 0.5)
+    end
+    SHIMMER[level] = string.format("|cff%02x%02x%02x", unpack(channels))
+end
 local header, miniStatus, emptyState, progress
 local progressTick = 0
 
@@ -34,27 +39,30 @@ local function animateText(loader, elapsed)
     end
     local text, starts = loader.text, loader.starts
     local count = #starts - 1
-    loader.cursor = (loader.cursor + loader.elapsed * math.max(19, count / 1.8))
-        % (count + #WAVE + 8)
+    -- About one pass a second for short labels; long ones keep a similar pace.
+    loader.cursor = (loader.cursor + loader.elapsed * math.max(12, count / 2.5))
+        % (count + SHIMMER_HALF * 2 + SHIMMER_PAUSE)
     loader.elapsed = 0
-    local first = math.floor(loader.cursor) - #WAVE + 2
-    if first == loader.first then
-        return
+    local center = loader.cursor - SHIMMER_HALF + 0.5
+    local pieces, plainFrom = {}, 1
+    for index = math.max(1, math.ceil(center - SHIMMER_HALF)), math.min(count, math.floor(center + SHIMMER_HALF)) do
+        local distance = math.abs(index - center)
+        local glow = 0.5 + 0.5 * math.cos(math.pi * math.min(1, distance / SHIMMER_HALF))
+        local level = math.floor(glow * SHIMMER_LEVELS + 0.5)
+        if level > 0 then
+            pieces[#pieces + 1] = text:sub(plainFrom, starts[index] - 1)
+            pieces[#pieces + 1] = SHIMMER[level]
+                .. text:sub(starts[index], starts[index + 1] - 1)
+                .. "|r"
+            plainFrom = starts[index + 1]
+        end
     end
-    loader.first = first
-    local left, right = math.max(1, first), math.min(count, first + #WAVE - 1)
-    if left > right then
-        setText(loader.font, text)
-        return
+    pieces[#pieces + 1] = text:sub(plainFrom)
+    local shown = table.concat(pieces)
+    if shown ~= loader.shown then
+        loader.shown = shown
+        setText(loader.font, shown)
     end
-    local pieces = { text:sub(1, starts[left] - 1) }
-    for index = left, right do
-        pieces[#pieces + 1] = WAVE[index - first + 1]
-            .. text:sub(starts[index], starts[index + 1] - 1)
-            .. "|r"
-    end
-    pieces[#pieces + 1] = text:sub(starts[right + 1])
-    setText(loader.font, table.concat(pieces))
 end
 
 -- Labels contain literal text with any pipe characters escaped for WoW.
@@ -87,7 +95,7 @@ function ns.UI.Activity.SetLoadingText(row, font, text, active)
         end
         starts[#starts + 1] = index
         loader.font, loader.text, loader.starts = font, text, starts
-        loader.cursor, loader.elapsed, loader.first = 0, 0, nil
+        loader.cursor, loader.elapsed, loader.shown = 0, 0, nil
         setText(font, text)
     end
     loader:Show()
@@ -249,7 +257,7 @@ function ns.UI.Activity.Refresh(chat)
             dot:SetShown(emptyState.loading)
         end
     end
-    local state -- what the minimized bar says beside "Wisp AI"
+    local state, stateElapsed -- what the minimized bar says beside "Wisp AI", and for how long
     if working then
         local now = GetTime()
         ns.workStarted[chat.id] = ns.workStarted[chat.id] or now
@@ -275,7 +283,11 @@ function ns.UI.Activity.Refresh(chat)
                 end
             end
         end
-        progress.titleText = ns.Markdown.InlineRenderer.Literal(activity or phase)
+        local titleText = ns.Markdown.InlineRenderer.Literal(activity or phase)
+        if titleText ~= progress.titleText then
+            ns.UI.Widgets.ChatFont(progress.title, titleText)
+        end
+        progress.titleText = titleText
         ns.UI.Activity.SetLoadingText(
             progress,
             progress.title,
@@ -283,7 +295,8 @@ function ns.UI.Activity.Refresh(chat)
             progress:IsShown()
         )
         setText(progress.detail, detail)
-        state = (sending and L["activity.sending"] or phase) .. " " .. elapsed
+        state = sending and L["activity.sending"] or phase
+        stateElapsed = elapsed
     elseif chat then
         ns.workStarted[chat.id] = nil
     end
@@ -291,13 +304,14 @@ function ns.UI.Activity.Refresh(chat)
     -- work in progress shows the pulsing mark and its phase and time.
     local unread = ns.db.minimized and ns.unread == true
     if unread then
-        state = L["activity.newReply"]
+        state, stateElapsed = L["activity.newReply"], ""
     elseif not ns.db.minimized then
         state = nil
     end
     miniStatus:SetShown(state ~= nil)
     if state then
         setText(miniStatus.text, state)
+        setText(miniStatus.elapsed, stateElapsed or "")
         if miniStatus.unread ~= unread then
             miniStatus.unread = unread
             miniStatus.text:SetTextColor(unpack(unread and ns.UI.Widgets.TEXT or MUTED))
@@ -355,9 +369,13 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     miniStatus:EnableMouse(false)
     miniStatus.mark = ns.UI.Widgets.Dot(miniStatus, 6, ACCENT)
     miniStatus.mark:SetPoint("LEFT", 0, 0)
+    -- The elapsed time sits at the right edge, so the phase does not shift as it counts.
+    miniStatus.elapsed = label(miniStatus, "", MUTED, ns.UI.Widgets.FONTS.small)
+    miniStatus.elapsed:SetPoint("RIGHT", -2, 0)
+    miniStatus.elapsed:SetJustifyH("RIGHT")
     miniStatus.text = label(miniStatus, "", MUTED, ns.UI.Widgets.FONTS.small)
     miniStatus.text:SetPoint("LEFT", miniStatus.mark, "RIGHT", 6, 0)
-    miniStatus.text:SetPoint("RIGHT", 0, 0)
+    miniStatus.text:SetPoint("RIGHT", miniStatus.elapsed, "LEFT", -6, 0)
     miniStatus.text:SetWordWrap(false)
     miniStatus.unread = false
     miniStatus:Hide()
@@ -400,14 +418,15 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     end
     progress = CreateFrame("Frame", "WispAIProgress", content)
     progress:SetHeight(23)
-    progress.mark = ns.UI.Widgets.Dot(progress, 6)
-    progress.mark:SetPoint("TOPLEFT", 1, -5)
     progress.titleText = L["activity.thinking"]
     progress.title = label(progress, progress.titleText, MUTED)
     ns.UI.Widgets.ChatFont(progress.title, progress.titleText)
     progress.title:SetPoint("TOPLEFT", 14, 0)
     progress.title:SetPoint("RIGHT", -65, 0)
     progress.title:SetWordWrap(false)
+    -- The mark sits on the title's vertical center whatever the chat font size.
+    progress.mark = ns.UI.Widgets.Dot(progress, 6)
+    progress.mark:SetPoint("LEFT", progress.title, "LEFT", -13, 0)
     progress.elapsed = label(progress, "", MUTED, ns.UI.Widgets.FONTS.small)
     progress.elapsed:SetPoint("TOPRIGHT", -2, -2)
     progress.detail = label(progress, "", MUTED)

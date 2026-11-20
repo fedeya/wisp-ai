@@ -256,7 +256,8 @@ it("a completed reply marks the minimized bar until it is opened", function()
     assert(not status:IsShown(), "an idle minimized bar shows no state")
     ns.chats[1].status = "working"
     ns.UI.Refresh()
-    assert(status:IsShown() and status.text:GetText():find("^Thinking %d+s$"))
+    assert(status:IsShown() and status.text:GetText() == "Thinking")
+    assert(status.elapsed:GetText():find("^%d+s$"), "the elapsed time sits apart from the phase")
     assert(not unread(), "working is not a completed reply")
     local function completed(rev)
         WispAI_Receive({

@@ -17,7 +17,7 @@ local function styleFont(font, span, level)
     end
     -- Conservatively restrict code and Inter prose to Latin/Greek/Cyrillic;
     -- unsupported scripts and CJK/Hangul clients keep the localized game font.
-    if span.code and not span.text:find("[\212-\255]") then
+    if span.code and ns.UI.Widgets.LatinScript(span.text) then
         if font:SetFont(codeFont, height, flags) then
             return
         end
@@ -70,7 +70,13 @@ local function renderMarker(host, font, block, inset, top, unit)
         or (block.marker:match("^%d") and block.marker or "•")
     local marker = font.marker or host:CreateFontString(nil, "OVERLAY", "ChatFontNormal")
     font.marker = marker
-    marker:SetFontObject(ChatFontNormal)
+    if block.marker:match("^%d") and not block.task then
+        -- Numbers take the prose face so "1." matches the item text beside it.
+        ns.UI.Widgets.ChatFont(marker, text)
+    else
+        -- Bullets and checkboxes keep the game font's disc and textures.
+        marker:SetFontObject(ChatFontNormal)
+    end
     marker:SetText(text)
     marker:SetTextColor(
         unpack(block.checked and ns.UI.Widgets.COLORS.success or ns.UI.Widgets.MUTED)

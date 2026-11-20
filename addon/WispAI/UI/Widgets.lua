@@ -28,6 +28,7 @@ local COLORS = {
 }
 local TEXT, SECONDARY, ACCENT = COLORS.text, COLORS.secondary, COLORS.accent
 local FLAT = "Interface\\Buttons\\WHITE8X8"
+local TEXTURES = "Interface\\AddOns\\WispAI\\Textures\\"
 
 -- Inter covers Latin, Greek and Cyrillic. Clients whose UI uses CJK or Hangul
 -- keep the localized game fonts, and a failed load falls back to them as well.
@@ -56,9 +57,15 @@ end
 -- Follows the game until ApplyFonts sets the UI language.
 local useInter = not LOCALIZED_ONLY[gameLocale()]
 local scriptFont -- face for CJK/Hangul text when the UI language differs from the game's
--- Text outside Latin/Greek/Cyrillic (UTF-8 lead bytes 0xD4 and above) keeps the game font.
+--- True when `text` stays within Latin, Greek and Cyrillic (UTF-8 lead bytes
+--- below 0xD4) plus General Punctuation (U+2000–U+206F: “ ” ’ … · – —), which
+--- Inter and JetBrains Mono both draw. Tool labels quote their queries, so
+--- without the punctuation range they would drop to the game font.
+local function latinScript(text)
+    return not (text or ""):gsub("\226[\128\129][\128-\191]", ""):find("[\212-\255]")
+end
 local function interSupports(text)
-    return useInter and not (text or ""):find("[\212-\255]")
+    return useInter and latinScript(text)
 end
 --- Soft shadow under Inter text: one pixel down-right in the palette's shade.
 local function softShadow(font)
@@ -426,7 +433,9 @@ end
 local function dot(parent, size, color)
     local mark = parent:CreateTexture(nil, "OVERLAY")
     mark:SetSize(size or 6, size or 6)
-    mark:SetColorTexture(unpack(color or ACCENT))
+    -- A white disc tinted by vertex color, so live-state marks read round.
+    mark:SetTexture(TEXTURES .. "Dot.tga")
+    mark:SetVertexColor(unpack(color or ACCENT))
     return mark
 end
 
@@ -482,7 +491,6 @@ end
 --- The corners are CORNER_RADIUS physical pixels, drawn 1:1 from 16 px
 --- textures (see scripts/generate-icons.ts): the client makes no mipmaps, so a
 --- texture shrunk a lot would leave jagged steps along the curve.
-local TEXTURES = "Interface\\AddOns\\WispAI\\Textures\\"
 local CORNER_TEXTURE, CORNER_RADIUS = 16, 10
 local CROP = 1 - CORNER_RADIUS / CORNER_TEXTURE -- where the quarter circle starts
 local CORNERS = {
@@ -670,6 +678,7 @@ ns.UI.Widgets = {
     SoftShadow = softShadow,
     InterSize = interSize,
     InterSupports = interSupports,
+    LatinScript = latinScript,
     ApplyFonts = applyFonts,
     ScriptFace = scriptFace,
     UseLanguageFace = useLanguageFace,

@@ -167,6 +167,14 @@ describe("locales", function()
         assert.is_nil(env.ns.UI.Widgets.ScriptFace())
         assert.is_false(env.ns.UI.Widgets.InterSupports("Hello"))
     end)
+
+    it("keeps Inter for quoted tool labels and other general punctuation", function()
+        local widgets = buildUI("enUS", "enUS").ns.UI.Widgets
+        assert.is_true(widgets.InterSupports("Searching the web for “mount guide…”"))
+        assert.is_true(widgets.InterSupports("Mage 20 · Elwynn Forest – it’s here"))
+        assert.is_false(widgets.InterSupports("Searching for “炉石”"))
+        assert.is_false(widgets.InterSupports("Arrow → right"))
+    end)
 end)
 
 describe("LocaleText", function()

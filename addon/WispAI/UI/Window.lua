@@ -10,38 +10,27 @@ local rendering = false
 -- frame's top and bottom hairlines, so restoring keeps the bar where it was.
 local MINI_WIDTH, MINI_HEIGHT = 240, 38
 
---- Window control drawn from flat strokes, crisp at any UI scale: a dash to
---- minimize, a square to restore. Strokes are about one UI unit, rounded to
---- whole physical pixels.
+--- Window control: diagonal arrows pointing in to minimize the window to its
+--- bar, and out to restore it, as floating chat panels do.
 local function windowButton(parent)
     local b = CreateFrame("Button", "WispAIMinimizeButton", parent)
     b:SetSize(24, 24)
     ns.UI.Widgets.Hover(b)
-    local pixel = ns.UI.Widgets.OnePixel(b)
-    local stroke = pixel * math.max(1, math.floor(1 / pixel + 0.5))
-    local strokes = {}
-    local function line(owner, point, x, y, width, height)
-        local t = owner:CreateTexture(nil, "ARTWORK")
-        t:SetPoint(point, x, y)
-        t:SetSize(width, height)
-        ns.UI.Widgets.Tint(t, ns.UI.Widgets.MUTED)
-        strokes[#strokes + 1] = t
+    local icons = {}
+    local function icon(file)
+        local t = b:CreateTexture(nil, "ARTWORK")
+        t:SetTexture(ns.UI.Widgets.TEXTURES .. file)
+        t:SetSize(14, 14)
+        t:SetPoint("CENTER")
+        t:SetVertexColor(unpack(ns.UI.Widgets.MUTED))
+        icons[#icons + 1] = t
         return t
     end
-    b.minimize = CreateFrame("Frame", nil, b)
-    b.minimize:SetSize(10, 10)
-    b.minimize:SetPoint("CENTER")
-    line(b.minimize, "CENTER", 0, 0, 10, stroke)
-    b.restore = CreateFrame("Frame", nil, b)
-    b.restore:SetSize(9, 9)
-    b.restore:SetPoint("CENTER")
-    line(b.restore, "TOPLEFT", 0, 0, 9, stroke)
-    line(b.restore, "BOTTOMLEFT", 0, 0, 9, stroke)
-    line(b.restore, "TOPLEFT", 0, 0, stroke, 9)
-    line(b.restore, "TOPRIGHT", 0, 0, stroke, 9)
+    b.minimize = icon("Collapse.tga")
+    b.restore = icon("Expand.tga")
     b.restore:Hide()
     local function paint(color)
-        for _, t in ipairs(strokes) do
+        for _, t in ipairs(icons) do
             t:SetVertexColor(unpack(color))
         end
     end
@@ -226,11 +215,22 @@ function ns.UI.BuildUI()
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
     header:SetScript("OnDragStart", function()
+        header.dragged = true
         frame:StartMoving()
     end)
     header:SetScript("OnDragStop", function()
         frame:StopMovingOrSizing()
         ns.UI.SaveWindowPosition(ns.db.minimized)
+    end)
+    -- Minimized, a click anywhere on the bar restores the window; a drag still
+    -- only moves it.
+    header:SetScript("OnMouseDown", function()
+        header.dragged = false
+    end)
+    header:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" and not header.dragged and ns.db.minimized then
+            ns.UI.SetMinimized(false)
+        end
     end)
     -- Sidebar toggle, far left of the title bar, as in Claude and ChatGPT.
     local fold = CreateFrame("Button", "WispAISidebarToggle", header)

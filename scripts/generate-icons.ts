@@ -152,7 +152,34 @@ const close: Shape[] = [
   { kind: 'line', from: [46, 18], to: [18, 46], width: 5 },
 ];
 
+// Restore: two arrows pointing out to opposite corners.
+const expand: Shape[] = [
+  { kind: 'line', from: [36, 28], to: [50, 14], width: 4.5 },
+  { kind: 'line', from: [37, 14], to: [50, 14], width: 4.5 },
+  { kind: 'line', from: [50, 14], to: [50, 27], width: 4.5 },
+  { kind: 'line', from: [28, 36], to: [14, 50], width: 4.5 },
+  { kind: 'line', from: [14, 37], to: [14, 50], width: 4.5 },
+  { kind: 'line', from: [14, 50], to: [27, 50], width: 4.5 },
+];
+
+// Minimize: two arrows pointing in from opposite corners.
+const collapse: Shape[] = [
+  { kind: 'line', from: [50, 14], to: [37, 27], width: 4.5 },
+  { kind: 'line', from: [37, 16], to: [37, 27], width: 4.5 },
+  { kind: 'line', from: [37, 27], to: [48, 27], width: 4.5 },
+  { kind: 'line', from: [14, 50], to: [27, 37], width: 4.5 },
+  { kind: 'line', from: [16, 37], to: [27, 37], width: 4.5 },
+  { kind: 'line', from: [27, 37], to: [27, 48], width: 4.5 },
+];
+
+// Status marks: a small disc drawn near its in-game size so it stays round.
+const DOT = 16;
+const dot: Shape[] = [{ kind: 'disc', center: [DOT / 2, DOT / 2], radius: DOT / 2 - 0.5 }];
+
 mkdirSync('addon/WispAI/Textures', { recursive: true });
+writeFileSync('addon/WispAI/Textures/Expand.tga', render(expand));
+writeFileSync('addon/WispAI/Textures/Collapse.tga', render(collapse));
+writeFileSync('addon/WispAI/Textures/Dot.tga', render(dot, DOT, DOT));
 writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
 writeFileSync('addon/WispAI/Textures/Back.tga', render(back));
 writeFileSync('addon/WispAI/Textures/Send.tga', render(send));

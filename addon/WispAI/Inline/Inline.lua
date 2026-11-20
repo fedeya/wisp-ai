@@ -352,12 +352,12 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         busy.title:ClearAllPoints()
         busy.title:SetPoint("TOPLEFT", 14, -top)
         busy.title:SetPoint("RIGHT", 0, 0)
-        ns.UI.Activity.SetLoadingText(
-            busy,
-            busy.title,
-            ns.Markdown.InlineRenderer.Literal(active),
-            true
-        )
+        local label = ns.Markdown.InlineRenderer.Literal(active)
+        if label ~= busy.fontText then
+            busy.fontText = label
+            uiWidgets.ChatFont(busy.title, label)
+        end
+        ns.UI.Activity.SetLoadingText(busy, busy.title, label, true)
         busy:ClearAllPoints()
         busy:SetPoint("TOPLEFT", 0, -y)
         busy:SetSize(width, top + 23)
@@ -542,11 +542,12 @@ function ns.Inline.InitInline()
     busy = CreateFrame("Frame", "WispAIInlineProgress", content)
     busy.author = uiWidgets.Label(busy, "Wisp AI", uiWidgets.MUTED)
     busy.author:SetPoint("TOPLEFT", 0, 0)
-    busy.mark = uiWidgets.Dot(busy, 6)
-    busy.mark:SetPoint("TOPLEFT", 1, -5)
     busy.title = uiWidgets.Label(busy, L["activity.thinking"], uiWidgets.MUTED)
     uiWidgets.ChatFont(busy.title, L["activity.thinking"])
     busy.title:SetWordWrap(false)
+    -- Centered on the title line; the title is re-anchored on refresh.
+    busy.mark = uiWidgets.Dot(busy, 6)
+    busy.mark:SetPoint("LEFT", busy.title, "LEFT", -13, 0)
     busy:Hide()
     entry = CreateFrame("EditBox", "WispAIInlineInput", panel, "BackdropTemplate")
     uiWidgets.Box(entry, uiWidgets.COLORS.raised, uiWidgets.COLORS.lineStrong)
