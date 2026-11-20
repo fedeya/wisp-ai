@@ -1,9 +1,9 @@
 import { tv } from 'tailwind-variants';
 const fieldBase =
-  'min-h-[32px] min-w-0 w-full rounded-[4px] border border-solid border-border border-b-field-line bg-field px-[10px] py-[6px] hover:bg-hover text-[#e4ebe9] placeholder:text-[#91a1a8]';
-/** Native-style focus: a darker field with an accent line along the bottom, no ring. */
+  'min-h-[32px] min-w-0 w-full rounded-[4px] border border-solid border-field-line bg-field px-[10px] py-[6px] hover:bg-hover text-[#e4ebe9] placeholder:text-[#91a1a8]';
+/** Focus: an even accent border with a soft accent halo; the fill stays as it is. */
 const fieldFocus =
-  'outline-none focus:bg-field-focus focus:border-b-accent focus:shadow-[inset_0_-1px_0_var(--color-accent)]';
+  'outline-none transition-[border-color,box-shadow] duration-100 focus:border-accent focus:bg-field focus:shadow-[0_0_0_3px_var(--color-field-focus-ring)]';
 
 /** Shared look for everything that floats: menus, dialogs, toasts. */
 export const floatingSurface =
