@@ -223,7 +223,7 @@ export default function Updates({
   if (!showSettings) {
     if (!release || dismissed === release.version) return null;
     return (
-      <div className="mb-5 flex max-w-[780px] shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-[6px] border border-solid border-accent-line bg-accent-dim px-3.5 py-2.5">
+      <div className="mb-5 flex w-full shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-3 rounded-[6px] border border-solid border-accent-line bg-accent-dim px-3.5 py-2.5">
         <div className="flex min-w-0 flex-[1_1_230px] items-center gap-3">
           <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#294740] text-accent">
             <Icon name="download" size={18} />
