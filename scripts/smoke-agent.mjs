@@ -16,17 +16,17 @@ const dir =
   process.env.WISP_SMOKE_DIR || path.resolve(repository, '../../work', 'agent-smoke-' + Date.now());
 await mkdir(dir, { recursive: true });
 const load = (p) => import(pathToFileURL(path.join(bridge, p)).href);
-const { ChatGPTAuth } = await load('src/chatgpt-auth.ts'),
-  { NativeVault } = await load('src/secret-vault.ts'),
-  { proxyModel } = await load('src/model-proxy.ts'),
-  { TheWoWDB } = await load('src/thewowdb.ts'),
-  { searchPublicWeb } = await load('src/public-web-search.ts'),
-  { applyEvent } = await load('src/events.ts'),
-  { ReplyProjection } = await load('src/reply-stream.ts'),
-  { turnInput } = await load('src/context.ts');
+const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
+  { NativeVault } = await load('src/auth/secret-vault.ts'),
+  { proxyModel } = await load('src/models/model-proxy.ts'),
+  { TheWoWDB } = await load('src/integrations/thewowdb.ts'),
+  { searchPublicWeb } = await load('src/integrations/search/public-web-search.ts'),
+  { applyEvent } = await load('src/chat/events.ts'),
+  { ReplyProjection } = await load('src/reply/reply-stream.ts'),
+  { turnInput } = await load('src/chat/context.ts');
 const { Client } = await import(pathToFileURL(require.resolve('eve/client')).href);
-const { Simulator } = await load('src/simulation.ts');
-const { CapabilitySettings } = await load('src/capabilities.ts');
+const { Simulator } = await load('src/integrations/simulation/simulator.ts');
+const { CapabilitySettings } = await load('src/integrations/capabilities.ts');
 const addonFixtures =
   process.env.WISP_SMOKE_ADDONS === '1'
     ? (await import('./addon-smoke-fixtures.ts')).addonSmokeFixtures(repository)
@@ -85,7 +85,7 @@ if (researchMode) {
   }
 }
 if (addonFixtures) {
-  const { IntegrationState } = await load('src/integration-state.ts');
+  const { IntegrationState } = await load('src/integrations/integration-state.ts');
   const state = new IntegrationState(capabilities);
   assert.ok(state.receive(addonFixtures.report));
   await capabilities.set('integration:questie', true);
