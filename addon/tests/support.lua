@@ -82,6 +82,7 @@ function M.addon(name, env)
             "UI/Sidebar.lua",
             "UI/SettingsPanel.lua",
             "UI/Routines.lua",
+            "UI/Suggestions.lua",
             "UI/Activity.lua",
             "UI/Transcript.lua",
             "UI/Composer.lua",

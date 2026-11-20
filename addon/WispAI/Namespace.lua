@@ -22,6 +22,7 @@ ns.UI.Capabilities = ns.UI.Capabilities or {}
 ns.UI.Sidebar = ns.UI.Sidebar or {}
 ns.UI.SettingsPanel = ns.UI.SettingsPanel or {}
 ns.UI.Routines = ns.UI.Routines or {}
+ns.UI.Suggestions = ns.UI.Suggestions or {}
 ns.UI.Activity = ns.UI.Activity or {}
 ns.UI.Transcript = ns.UI.Transcript or {}
 ns.UI.Composer = ns.UI.Composer or {}

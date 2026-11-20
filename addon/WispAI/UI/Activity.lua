@@ -4,7 +4,7 @@ local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local ACCENT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
 -- Suggestion chips and greetings hold locale keys; text is looked up when shown.
-local SUGGESTIONS = { "suggestion.whatCanYouDo", "suggestion.whatNext", "suggestion.reviewGear" }
+local SUGGESTION_COUNT = 3
 local CHIP_GAP, CHIPS_TOP = 8, 62
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
 -- Loading text shimmer: a soft band of light glides over muted text. The band
@@ -121,6 +121,7 @@ local GREETINGS_BY_HOUR = {
     evening = { "greeting.goodEvening", "greeting.oneMoreQuest" },
 }
 local greetingFor = {} -- conversation -> the line it opened with
+local suggestionsFor -- conversation the chips were picked for
 
 -- Picks a line once per conversation so it does not change on every refresh.
 local function greeting(name, key)
@@ -153,6 +154,21 @@ local function whereabouts()
         parts[#parts + 1] = zone
     end
     return #parts > 0 and table.concat(parts, " · ") or nil
+end
+
+-- Picks the chips once per conversation, like the greeting, from the player's
+-- situation when the chat opens.
+local function pickSuggestions(key)
+    if suggestionsFor == key then
+        return
+    end
+    suggestionsFor = key
+    local keys = ns.UI.Suggestions.Pick(SUGGESTION_COUNT)
+    for index, chip in ipairs(emptyState.suggestions) do
+        chip.prompt = keys[index]
+        chip:SetText(keys[index] and L[keys[index]] or "")
+    end
+    emptyState.placed = nil -- chip widths changed
 end
 
 -- Lays the empty state out around the field when the composer is centered:
@@ -222,13 +238,17 @@ function ns.UI.Activity.Refresh(chat)
     local needsSetup = waiting and ns.Transport.needsDesktopSetup == true
     local loading = chat and chat.messages == nil
     emptyState:SetShown(empty and not working)
-    if not emptyState:IsShown() and next(greetingFor) then
-        -- The next new chat opens with a fresh line.
-        greetingFor = {}
+    if not emptyState:IsShown() and (next(greetingFor) or suggestionsFor) then
+        -- The next new chat opens with a fresh line and fresh chips.
+        greetingFor, suggestionsFor = {}, nil
     end
     emptyState.loading = not needsSetup and (waiting or loading)
     emptyState.setup:SetShown(needsSetup)
     local ready = empty and not working and not waiting and not loading
+    if ready then
+        -- Picked once connected, so the conversation count is known.
+        pickSuggestions(chat and chat.id or "new")
+    end
     local centered = ready and ns.UI.Composer.CanCenter and ns.UI.Composer.CanCenter()
     if ns.UI.Composer.SetCentered then
         ns.UI.Composer.SetCentered(centered)
@@ -236,7 +256,7 @@ function ns.UI.Activity.Refresh(chat)
     end
     local modelReady = not (ns.modelPending and ns.modelPending[ns.active])
     for _, suggestion in ipairs(emptyState.suggestions) do
-        suggestion:SetShown(ready)
+        suggestion:SetShown(ready and suggestion.prompt ~= nil)
         suggestion:SetEnabled(modelReady)
     end
     if empty and not working then
@@ -398,10 +418,12 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
     emptyState.setup:SetPoint("TOP", emptyState.detail, "BOTTOM", 0, -12)
     emptyState.setup:Hide()
     emptyState.suggestions = {}
-    for index, key in ipairs(SUGGESTIONS) do
-        local prompt = L[key]
-        local suggestion = ns.UI.Widgets.Button(emptyState, prompt, 210, function()
-            ns.Chat.Submit(prompt)
+    for index = 1, SUGGESTION_COUNT do
+        local suggestion
+        suggestion = ns.UI.Widgets.Button(emptyState, "", 210, function()
+            if suggestion.prompt then
+                ns.Chat.Submit(L[suggestion.prompt])
+            end
         end)
         suggestion:SetHeight(28)
         suggestion:Hide()
