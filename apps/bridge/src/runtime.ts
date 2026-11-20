@@ -30,7 +30,7 @@ import { MemoryStore } from './memory-store.ts';
 import { IntegrationState } from './integration-state.ts';
 import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './capabilities.ts';
-import { defaultCapabilities } from '@wisp/protocol/capabilities';
+import { createMcpCapabilities } from './mcp-capabilities.ts';
 import { SnapshotGate } from './snapshots.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './publish-scheduler.ts';
 import { createSnapshotPublisher } from './snapshot-publisher.ts';
@@ -135,57 +135,9 @@ export async function startBridge(options: BridgeOptions = {}) {
       status: simulatorAvailable ? 'ready' : 'missing',
       reason: 'Experimental local mage engine, levels 1–60.',
     });
-    function refreshMcpCatalog() {
-      const catalog = defaultCapabilities();
-      for (const server of mcpManager.list()) {
-        const url = server.url ? new URL(server.url) : undefined;
-        if (url) {
-          url.username = '';
-          url.password = '';
-          url.search = '';
-          url.hash = '';
-        }
-        catalog.push({
-          id: 'mcp:' + server.name,
-          kind: 'mcp',
-          name: server.name,
-          group: 'integrations',
-          defaultEnabled: server.enabled,
-          description:
-            (server.description || server.name) + ' - ' + (url?.toString() || 'Local stdio server'),
-        });
-        for (const tool of server.tools || []) {
-          catalog.push({
-            id: 'mcp_tool:' + server.name + ':' + tool.name,
-            name: tool.name,
-            group: 'integrations',
-            parent: 'mcp:' + server.name,
-            description: (tool.description || tool.name).slice(0, 500),
-          });
-        }
-      }
-      capabilitySettings.catalog = catalog;
-    }
-    refreshMcpCatalog();
-    for (const server of mcpManager.list()) {
-      await mcpManager.setEnabled(server.name, capabilitySettings.configured('mcp:' + server.name));
-    }
-    async function setCapability(id: string, enabled: boolean) {
-      const server = id.startsWith('mcp:')
-        ? mcpManager.list().find((server) => id === 'mcp:' + server.name)
-        : undefined;
-      if (server) {
-        await mcpManager.setEnabled(server.name, enabled);
-      }
-      try {
-        await capabilitySettings.set(id, enabled);
-      } catch (error) {
-        if (server) {
-          await mcpManager.setEnabled(server.name, server.enabled);
-        }
-        throw error;
-      }
-    }
+    const mcpCapabilities = createMcpCapabilities(mcpManager, capabilitySettings);
+    mcpCapabilities.refreshCatalog();
+    await mcpCapabilities.applySavedSettings();
     await capabilitySettings.publish();
     const mcpRelay = new McpRelay(
       mcpManager,
@@ -330,7 +282,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       memoryStore,
       transport: () => transport.current(),
       refreshModelCatalog,
-      setCapability,
+      setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
       run,
       flushAcknowledgment: publisher.flush,
@@ -440,8 +392,8 @@ export async function startBridge(options: BridgeOptions = {}) {
       routineStore,
       accountOperation: accounts.run,
       readSimulationCharacter,
-      setCapability,
-      refreshMcpCatalog,
+      setCapability: mcpCapabilities.setCapability,
+      refreshMcpCatalog: mcpCapabilities.refreshCatalog,
       changed,
       setWowTransport: (input) =>
         transport.serialize(async () => {
