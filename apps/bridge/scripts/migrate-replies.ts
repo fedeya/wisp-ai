@@ -1,13 +1,13 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
-import { ChatStore } from '@wisp/bridge/chat-store';
-import { preparePrivateDatabase } from '@wisp/bridge/db/private-file';
-import { applicationDatabaseFile } from '@wisp/bridge/db/application-file';
-import { migrateReplies } from '@wisp/bridge/migrate-replies';
+import { ChatStore } from '../src/chat-store.ts';
+import { preparePrivateDatabase } from '../src/db/private-file.ts';
+import { applicationDatabaseFile } from '../src/db/application-file.ts';
+import { migrateReplies } from '../src/migrations/replies.ts';
 
 // Run with Wisp stopped. The legacy JSON is imported by ChatStore if needed.
-const root = process.env.WISP_DATA_DIR || fileURLToPath(new URL('..', import.meta.url));
+const root = process.env.WISP_DATA_DIR || fileURLToPath(new URL('../../..', import.meta.url));
 const file = applicationDatabaseFile(path.join(root, 'runtime'));
 const store = new ChatStore(file, (error) => {
   throw error;

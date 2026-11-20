@@ -1,4 +1,4 @@
-import { migrateDesktop } from '../src/desktop-migration.ts';
+import { migrateDesktop } from '../src/migrations/desktop.ts';
 if (!process.argv[2] || !process.env.WISP_DATA_DIR) {
   throw Error('A previous installation folder and WISP_DATA_DIR are required.');
 }

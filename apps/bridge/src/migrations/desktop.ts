@@ -2,13 +2,13 @@ import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/pro
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore, conversationInstanceId } from './chat-store.ts';
-import { ApplicationDatabase } from './db/application-database.ts';
+import { ChatStore, conversationInstanceId } from '../chat-store.ts';
+import { ApplicationDatabase } from '../db/application-database.ts';
 import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
   DATABASE_NAME,
-} from './db/application-file.ts';
+} from '../db/application-file.ts';
 
 async function stopPreviousBridge(source: string) {
   let identity: { port?: number; token?: string };

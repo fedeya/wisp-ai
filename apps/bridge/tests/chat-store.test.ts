@@ -5,7 +5,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ChatStore } from '../src/chat-store.ts';
 import { newChat } from '../src/chat-lifecycle.ts';
-import { migrateDesktop } from '../src/desktop-migration.ts';
+import { migrateDesktop } from '../src/migrations/desktop.ts';
 
 function chat(id = 'chat') {
   return { ...newChat(id, 'game'), messages: [{ role: 'user' as const, text: 'Hello' }] };

@@ -9,7 +9,7 @@ import {
   addonHelperTocs,
   initialAddonPayload,
 } from '@wisp/protocol/addon-helpers';
-import { migrateGameSaves, retireLegacyAddons } from '../src/rename-migration.ts';
+import { migrateGameSaves, retireLegacyAddons } from '../src/migrations/addon-rename.ts';
 import { appPaths } from '../src/app-paths.ts';
 import { addonVersionFromToc } from '../src/addon-version.ts';
 const root = process.env.WISP_RESOURCE_ROOT || fileURLToPath(new URL('../../../', import.meta.url));
