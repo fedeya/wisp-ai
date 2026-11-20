@@ -3,11 +3,11 @@ import { renderReleaseNotes } from '@wisp/releases';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
-import { desktop, native } from '../../../api';
-import { Spinner } from '../../ui/ActionProgress';
-import { Button, Card, Select } from '../../ui/Controls';
-import Icon from '../../ui/Icon';
-import { groupLabel } from '../../ui/Rows';
+import { desktop, native } from '../../api';
+import { Spinner } from '../ui/ActionProgress';
+import { Button, Card, Select } from '../ui/Controls';
+import Icon from '../ui/Icon';
+import { groupLabel } from '../ui/Rows';
 
 type Release = { version: string; notes: string | null };
 const updateChannels = [

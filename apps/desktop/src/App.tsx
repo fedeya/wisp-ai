@@ -9,8 +9,8 @@ import {
 } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
 import { desktop, native } from './api';
-import DesktopSidebar from './components/DesktopSidebar';
-import WindowTitleBar from './components/WindowTitleBar';
+import DesktopSidebar from './components/shell/DesktopSidebar';
+import WindowTitleBar from './components/shell/WindowTitleBar';
 import ConfirmationDialog from './components/ui/ConfirmationDialog';
 import FeedbackToast from './components/ui/FeedbackToast';
 import Icon from './components/ui/Icon';

@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
-import { chooseOption } from '../../../select-test-helpers';
-import { Button, Checkbox, Input, NumberInput, Select, Textarea } from './index';
+import { chooseOption } from '../../select-test-helpers';
+import { Button, Checkbox, Input, NumberInput, Select, Textarea } from './Controls';
 
 function ControlsFixture() {
   const [name, setName] = useState('Wisp');

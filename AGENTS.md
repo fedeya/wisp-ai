@@ -86,6 +86,12 @@ area you change.
   `{ event: 'bridge.startup_failed', error: errorMessage(error) }`.
 - **Errors:** convert unknown errors with `errorMessage` from
   `apps/bridge/src/errors.ts`, which sanitizes via `safeErrorMessage`.
+- **Desktop components:** `apps/desktop/src/components/<domain>/ComponentName.tsx`
+  with a co-located `ComponentName.test.tsx`. Use a folder (with an `index.ts`
+  public entry) only when a component has private sub-files, like
+  `integrations/McpDialog/`; no single-file folders or barrels. Modules that are
+  not one named component (helpers, presentation maps, step logic) are kebab-case,
+  e.g. `connections/provider-directory.tsx`. `routes/` follows the same rule.
 - **Addon Lua:** follow [docs/lua-guidelines.md](docs/lua-guidelines.md) and
   [addon/AGENTS.md](addon/AGENTS.md).
 - **Commits:** history uses Conventional Commits with scopes, e.g.

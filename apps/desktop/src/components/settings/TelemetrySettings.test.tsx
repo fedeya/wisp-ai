@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { desktop } from '../../../api';
+import { desktop } from '../../api';
 import TelemetrySettings from './TelemetrySettings';
 
-vi.mock('../../../api', () => ({ native: true, desktop: vi.fn() }));
+vi.mock('../../api', () => ({ native: true, desktop: vi.fn() }));
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 

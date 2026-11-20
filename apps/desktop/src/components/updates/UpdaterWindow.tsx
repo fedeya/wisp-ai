@@ -1,7 +1,7 @@
 import { Button } from '@base-ui/react/button';
 import { invoke } from '@tauri-apps/api/core';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import logo from '../../../../src-tauri/icons/128x128@2x.png';
+import logo from '../../../src-tauri/icons/128x128@2x.png';
 
 type UpdateState = {
   phase: 'preparing' | 'installing' | 'reopening' | 'failed';

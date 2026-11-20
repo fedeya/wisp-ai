@@ -1,11 +1,11 @@
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
-import { desktop } from '../../../api';
-import { chooseOption } from '../../../select-test-helpers';
+import { desktop } from '../../api';
+import { chooseOption } from '../../select-test-helpers';
 import Updates from './Updates';
 
-vi.mock('../../../api', () => ({ native: true, desktop: vi.fn() }));
+vi.mock('../../api', () => ({ native: true, desktop: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 const release = { version: '0.3.0', notes: 'Improved game connection.' };
 const props = () => ({

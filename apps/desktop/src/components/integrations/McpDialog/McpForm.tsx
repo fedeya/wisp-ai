@@ -3,7 +3,7 @@ import { useForm, useSelector } from '@tanstack/react-form';
 import { useId, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { bridge, call, type Mcp } from '../../../api';
 import Icon from '../../ui/Icon';
-import { button } from '../../ui/Controls/styles';
+import { button } from '../../ui/styles';
 import { Button, Checkbox, Input, Select, Textarea } from '../../ui/Controls';
 
 type SubmitMode = 'save' | 'test';

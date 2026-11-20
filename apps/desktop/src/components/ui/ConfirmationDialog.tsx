@@ -1,6 +1,6 @@
 import { AlertDialog } from '@base-ui/react/alert-dialog';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
-import { button, dialogBackdrop, floatingSurface } from './Controls/styles';
+import { button, dialogBackdrop, floatingSurface } from './styles';
 import { Button } from './Controls';
 
 export default function ConfirmationDialog() {

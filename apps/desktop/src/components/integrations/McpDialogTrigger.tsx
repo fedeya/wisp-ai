@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import type { Mcp } from '../../api';
 import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
-import { button } from '../ui/Controls/styles';
+import { button } from '../ui/styles';
 import Icon from '../ui/Icon';
 import McpDialog, { type McpFormActions } from './McpDialog';
 

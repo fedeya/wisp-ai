@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { desktop, native } from '../../../api';
-import Toggle from '../../ui/Toggle';
-import { Row } from '../../ui/Rows';
+import { desktop, native } from '../../api';
+import Toggle from '../ui/Toggle';
+import { Row } from '../ui/Rows';
 
 export default function TelemetrySettings() {
   const [enabled, setEnabled] = useState<boolean | null>(null);

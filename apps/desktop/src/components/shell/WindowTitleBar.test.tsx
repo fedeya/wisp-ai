@@ -10,7 +10,7 @@ const appWindow = vi.hoisted(() => ({
   onResized: vi.fn(async (_handler: () => void) => () => {}),
 }));
 
-vi.mock('../api', () => ({ native: true }));
+vi.mock('../../api', () => ({ native: true }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => appWindow }));
 beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);

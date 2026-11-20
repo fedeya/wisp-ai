@@ -3,7 +3,7 @@ import { providerDefinitions, type ProviderId } from '@wisp/protocol/providers';
 import { type ReactNode, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { Button, Input } from '../ui/Controls';
-import { button, dialogBackdrop, floatingSurface } from '../ui/Controls/styles';
+import { button, dialogBackdrop, floatingSurface } from '../ui/styles';
 import Icon from '../ui/Icon';
 import { featuredProviders, ProviderLogo, providerPresentation } from './provider-directory';
 

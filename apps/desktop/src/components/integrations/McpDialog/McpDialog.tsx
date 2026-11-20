@@ -1,6 +1,6 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { useRef } from 'react';
-import { dialogBackdrop, floatingSurface } from '../../ui/Controls/styles';
+import { dialogBackdrop, floatingSurface } from '../../ui/styles';
 import McpForm, { type McpDialogProps } from './McpForm';
 
 export default function McpDialog(props: McpDialogProps) {

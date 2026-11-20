@@ -1,11 +1,11 @@
 import { Fragment } from 'react';
 import { Link, NavLink } from 'react-router';
-import { desktopReadiness } from '../desktop-controller';
-import { desktopPages, type DesktopPage } from '../routes/desktop-routes';
-import { useDesktop } from '../use-desktop';
-import { shortcutFor } from '../native-shell';
-import { navigationLink } from './ui/Controls/styles';
-import Icon from './ui/Icon';
+import { desktopReadiness } from '../../desktop-controller';
+import { desktopPages, type DesktopPage } from '../../routes/desktop-routes';
+import { useDesktop } from '../../use-desktop';
+import { shortcutFor } from '../../native-shell';
+import { navigationLink } from '../ui/styles';
+import Icon from '../ui/Icon';
 
 const overview = desktopPages[0];
 const mainGroups = [

@@ -14,7 +14,7 @@ import {
   providerPresentation,
 } from '../components/connections/provider-directory';
 import { Card } from '../components/ui/Controls';
-import { button } from '../components/ui/Controls/styles';
+import { button } from '../components/ui/styles';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
 import { Row } from '../components/ui/Rows';

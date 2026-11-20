@@ -1,7 +1,7 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useEffect, useState } from 'react';
-import logo from '../../../../assets/wisp.png';
-import { native } from '../api';
+import logo from '../../../../../assets/wisp.png';
+import { native } from '../../api';
 
 /** Windows caption glyphs, from the system icon font (Windows 11, then 10). */
 const glyphs = {

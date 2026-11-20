@@ -1,5 +1,5 @@
 import { Select as BaseSelect } from '@base-ui/react/select';
-import Icon from '../Icon';
+import Icon from './Icon';
 import { floatingSurface, selectTrigger } from './styles';
 
 type SelectOption<Value extends string> = {

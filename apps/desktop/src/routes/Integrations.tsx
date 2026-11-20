@@ -12,7 +12,7 @@ import {
 import { McpDialogTrigger } from '../components/integrations/McpDialogTrigger';
 import { searchProviderLabel } from '../components/integrations/WebSearchSettings';
 import { Card, Input } from '../components/ui/Controls';
-import { button } from '../components/ui/Controls/styles';
+import { button } from '../components/ui/styles';
 import DataState from '../components/ui/DataState';
 import Icon from '../components/ui/Icon';
 import { useDesktop } from '../use-desktop';
