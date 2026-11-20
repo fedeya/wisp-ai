@@ -1,7 +1,6 @@
 import { characterLabel } from '@wisp/protocol/character-key';
 import { RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
-import { buildAddonSnapshot } from './addon-snapshot.ts';
 import { startRoutineScheduler } from './routine-scheduler.ts';
 import { createPacketReceiver } from './packet-receiver.ts';
 import { createSessionState } from './session-state.ts';
@@ -33,7 +32,8 @@ import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './capabilities.ts';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { SnapshotGate } from './snapshots.ts';
-import { createPublishScheduler, PUBLISH_MIN_INTERVAL_MS } from './publish-scheduler.ts';
+import { PUBLISH_MIN_INTERVAL_MS } from './publish-scheduler.ts';
+import { createSnapshotPublisher } from './snapshot-publisher.ts';
 import { PanelStore } from './panels.ts';
 import { McpManager } from './mcp-manager.ts';
 import { McpRelay } from './mcp-relay.ts';
@@ -215,8 +215,30 @@ export async function startBridge(options: BridgeOptions = {}) {
       afterOperation: () => void refreshModelCatalog(),
     });
     const snapshots = new SnapshotGate();
-    let dirty = true;
-    const publisher = createPublishScheduler(() => publishSnapshot());
+    const publisher = createSnapshotPublisher({
+      state,
+      snapshots,
+      transport: () => transport.current(),
+      inputs: () => {
+        const character = state.currentCharacterKey;
+        return {
+          connected: eve.isReady(),
+          bridgeVersion,
+          expectedAddonVersion,
+          contextWindowTokens: eve.contextWindowTokens(),
+          defaultModel: defaultModel(),
+          panels: character ? panelStore.list(character) : [],
+          routines: character ? routineStore.list(character) : [],
+          routineRuns: character
+            ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
+            : [],
+          routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
+          capabilities: capabilitySettings.snapshot(),
+          requests: pending.snapshot(),
+        };
+      },
+      logger,
+    });
     resources.defer(() => publisher.stop());
     const pending = new GameRequests(changed);
     resources.defer(() => pending.cancelAll('Bridge stopped'));
@@ -258,8 +280,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     }
     mcpRelay.readOnlyMode = () => state.chats.some((c) => c.proactive && c.status === 'working');
     function changed() {
-      dirty = true;
-      publisher.schedule();
+      publisher.changed();
       if (!shutdownRequested) {
         chatStore.schedule(() => state.chats);
       }
@@ -279,11 +300,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isStopping: () => shutdownRequested,
       accountBusy: accounts.busy,
       isCurrent: (chat) => state.chats.includes(chat),
-      flushSnapshot: () =>
-        queueMicrotask(() => {
-          dirty = true;
-          publishSnapshot();
-        }),
+      flushSnapshot: publisher.flush,
     });
     resources.defer(async () => {
       state.chats.forEach(run.interrupt);
@@ -316,11 +333,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       setCapability,
       memorySnapshot,
       run,
-      flushAcknowledgment: () =>
-        queueMicrotask(() => {
-          dirty = true;
-          publishSnapshot();
-        }),
+      flushAcknowledgment: publisher.flush,
       interrupt: run.interrupt,
       runtime,
       changed,
@@ -495,51 +508,12 @@ export async function startBridge(options: BridgeOptions = {}) {
       }
     }, 30000);
     resources.defer(() => clearInterval(integrationHealth));
-    function publishSnapshot() {
-      const current = transport.current();
-      if (!current || !dirty || !state.activeTransport) {
-        return;
-      }
-      dirty = false;
-      const character = state.currentCharacterKey;
-      const snapshot = snapshots.next(
-        buildAddonSnapshot({
-          state,
-          connected: eve.isReady(),
-          bridgeVersion,
-          expectedAddonVersion,
-          contextWindowTokens: eve.contextWindowTokens(),
-          defaultModel: defaultModel(),
-          panels: character ? panelStore.list(character) : [],
-          routines: character ? routineStore.list(character) : [],
-          routineRuns: character
-            ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
-            : [],
-          routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
-          capabilities: capabilitySettings.snapshot(),
-          requests: pending.snapshot(),
-        }),
-      );
-      if (snapshot && eve.isReady() && !state.firstReadyRevision) {
-        state.firstReadyRevision = snapshot.rev;
-      }
-      if (snapshot) {
-        void current.publish(snapshot).catch((error) => {
-          snapshots.invalidate();
-          dirty = true;
-          logger.warn(
-            { event: 'transport.publish_failed', error: errorMessage(error) },
-            'Failed to publish reply',
-          );
-        });
-      }
-    }
     // Snapshots publish from changed(); this tick only polls what has no event:
     // the addon's acknowledged revision, and a publish that is still dirty
     // because the transport was missing or its last write failed.
     const publish = setInterval(() => {
       observeGameConnection();
-      if (dirty) publisher.schedule();
+      publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
     logger.info({ event: 'bridge.started', version: bridgeVersion }, 'Wisp started');
     resources.defer(() => clearInterval(publish));
