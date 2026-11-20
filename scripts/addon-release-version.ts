@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
-import { addonVersionFromToc } from '../apps/bridge/src/addon-version.ts';
+import { addonVersionFromToc } from '../apps/bridge/src/addon/addon-version.ts';
 
 const versioningStart = 'scripts/addon-release-version.ts';
 const addonToc = 'addon/WispAI/WispAI.toc';

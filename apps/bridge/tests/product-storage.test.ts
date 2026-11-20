@@ -9,11 +9,11 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import type { ApplicationDatabase } from '../src/db/application-database.ts';
 import { databaseScope } from './database-fixture.ts';
-import { RoutineStore } from '../src/routines.ts';
-import { PanelStore } from '../src/panels.ts';
-import { MemoryStore } from '../src/memory-store.ts';
-import { ChatStore } from '../src/chat-store.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
+import { RoutineStore } from '../src/routines/routine-store.ts';
+import { PanelStore } from '../src/addon/panels.ts';
+import { MemoryStore } from '../src/agent/memory-store.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { savedRoutine } from '@wisp/protocol/routines';
 
 const routine = savedRoutine.parse({

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { readCompletedResponse } from '../src/response-stream.ts';
+import { readCompletedResponse } from '../src/models/response-stream.ts';
 
 function eventResponse(events: unknown[]): Response {
   const bytes = new TextEncoder().encode(

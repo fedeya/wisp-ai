@@ -1,4 +1,4 @@
-import { ReplyProjection } from '../src/reply-stream.ts';
+import { ReplyProjection } from '../src/reply/reply-stream.ts';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
@@ -10,9 +10,9 @@ import {
   rememberTurnQuests,
   queryCharacterSections,
   characterIdentity,
-} from '../src/context.ts';
-import { rebuildHistory } from '../src/history.ts';
-import { applyEvent, type Chat } from '../src/events.ts';
+} from '../src/chat/context.ts';
+import { rebuildHistory } from '../src/chat/history.ts';
+import { applyEvent, type Chat } from '../src/chat/events.ts';
 
 test('automatic context contains only fundamental character and location data from this message', () => {
   const input = {

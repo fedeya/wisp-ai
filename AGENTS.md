@@ -74,6 +74,13 @@ area you change.
 
 ## Conventions observed in the code
 
+- **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
+  (transport, snapshots, panels), `agent/` (Eve process, agent server, turns),
+  `auth/`, `chat/`, `reply/`, `models/`, `integrations/` (search, MCP,
+  simulation, TheWoWDB), `desktop/`, `routines/`, `db/` and `migrations/`.
+  Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,
+  `logger.ts`, `app-paths.ts`) stay at the root. Package export names do not
+  follow file moves.
 - **Shared schemas:** wire, desktop and settings shapes are zod schemas in
   `packages/protocol/src/`, imported via subpaths like `@wisp/protocol/model-errors`.
   Add or change a shape there rather than redefining it in an app.

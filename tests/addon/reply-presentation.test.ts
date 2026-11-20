@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { applyEvent } from '@wisp/bridge/events';
 import { ReplyProjection } from '@wisp/bridge/reply-stream';
-import { replyContent } from '../../apps/bridge/src/reply-content.ts';
+import { replyContent } from '../../apps/bridge/src/reply/reply-content.ts';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');

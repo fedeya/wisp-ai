@@ -4,12 +4,12 @@ import {
   PRESENT_UI_TOOL,
   SKIP_TIP_TOOL,
 } from '@wisp/protocol/reply-presentation';
-import { applyEvent } from '../src/events.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
-import { ReplyProjection } from '../src/reply-stream.ts';
-import { rebuildHistory } from '../src/history.ts';
-import { replyContent } from '../src/reply-content.ts';
-import { projectChats } from '../src/chat-projection.ts';
+import { applyEvent } from '../src/chat/events.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { ReplyProjection } from '../src/reply/reply-stream.ts';
+import { rebuildHistory } from '../src/chat/history.ts';
+import { replyContent } from '../src/reply/reply-content.ts';
+import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 
 const panel = {

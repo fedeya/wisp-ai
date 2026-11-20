@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { applyEvent, type Chat } from '../src/events.ts';
+import { applyEvent, type Chat } from '../src/chat/events.ts';
 import { resetContextUsage } from '@wisp/protocol/context-usage';
-import { ReplyProjection } from '../src/reply-stream.ts';
+import { ReplyProjection } from '../src/reply/reply-stream.ts';
 
 test('context size follows the last model call, totals include cache only once', () => {
   const chat: Chat = {

@@ -11,8 +11,8 @@ import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { applyEvent } from '@wisp/bridge/events';
 import { ReplyProjection } from '@wisp/bridge/reply-stream';
 import { turnInput } from '@wisp/bridge/context';
-import { rebuildHistory } from '../apps/bridge/src/history.ts';
-import { replyContent } from '../apps/bridge/src/reply-content.ts';
+import { rebuildHistory } from '../apps/bridge/src/chat/history.ts';
+import { replyContent } from '../apps/bridge/src/reply/reply-content.ts';
 
 test(
   'the real Eve agent and AI SDK middleware complete an offline streamed turn',

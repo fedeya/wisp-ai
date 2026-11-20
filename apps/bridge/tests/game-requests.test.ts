@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { GameRequests } from '../src/game-requests.ts';
+import { GameRequests } from '../src/addon/game-requests.ts';
 
 test('responses are scoped to both transport session and conversation', async () => {
   const requests = new GameRequests(() => {});

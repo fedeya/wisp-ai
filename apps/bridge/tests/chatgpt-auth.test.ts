@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { createHash } from 'node:crypto';
-import { ChatGPTAuth } from '../src/chatgpt-auth.ts';
+import { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
 import { bridgeLogger } from '../src/logger.ts';
 
 async function fixture(t: Pick<TestContext, 'onTestFinished'>) {

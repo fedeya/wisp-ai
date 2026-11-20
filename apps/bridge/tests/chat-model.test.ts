@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { accountModel, chooseChatModel } from '../src/chat-model.ts';
+import { accountModel, chooseChatModel } from '../src/chat/chat-model.ts';
 
 test('account metadata controls models and supported efforts without inventing levels', () => {
   const model = accountModel({

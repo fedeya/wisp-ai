@@ -1,12 +1,12 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
-import { createTurnRunner } from '../src/turn-runner.ts';
-import { ChatGPTAuthError } from '../src/chatgpt-auth.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
-import { queryCharacterSections } from '../src/context.ts';
-import { projectChats } from '../src/chat-projection.ts';
+import { createTurnRunner } from '../src/agent/turn-runner.ts';
+import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { queryCharacterSections } from '../src/chat/context.ts';
+import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { SnapshotGate } from '../src/snapshots.ts';
+import { SnapshotGate } from '../src/addon/snapshots.ts';
 import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
 import type { UsageTelemetry } from '../src/telemetry.ts';
 

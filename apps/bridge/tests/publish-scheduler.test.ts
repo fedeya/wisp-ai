@@ -3,7 +3,7 @@ import {
   createPublishScheduler,
   PUBLISH_COALESCE_MS,
   PUBLISH_MIN_INTERVAL_MS,
-} from '../src/publish-scheduler.ts';
+} from '../src/addon/publish-scheduler.ts';
 
 beforeEach(() => {
   vi.useFakeTimers({ now: 0 });

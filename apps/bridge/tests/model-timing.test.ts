@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { modelTiming } from '../src/model-timing.ts';
+import { modelTiming } from '../src/models/model-timing.ts';
 
 test('model observation forwards bytes immediately and logs only timings and cache metadata', async () => {
   const logger = { info: vi.fn() };

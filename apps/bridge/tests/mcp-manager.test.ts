@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { McpManager, mcpSetup } from '../src/mcp-manager.ts';
+import { McpManager, mcpSetup } from '../src/integrations/mcp/mcp-manager.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createServer } from 'node:http';
-import { McpRelay } from '../src/mcp-relay.ts';
+import { McpRelay } from '../src/integrations/mcp/mcp-relay.ts';
 test(
   'stdio MCP setup tests real tools, encrypts through the vault interface and gates relay calls',
   { timeout: 30000 },

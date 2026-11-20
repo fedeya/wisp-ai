@@ -11,8 +11,8 @@ import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
 import { ApplicationDatabase } from '../src/db/application-database.ts';
 import { migrateDatabase, migrationsFolder } from '../src/db/migrate.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
-import { ChatStore } from '../src/chat-store.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
 
 test('the official Drizzle migrator creates the complete schema and shares its journal with Wisp', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-migrations-'));

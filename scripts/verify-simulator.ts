@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { adapters } from '../apps/bridge/src/simulation/adapters/index.ts';
+import { adapters } from '../apps/bridge/src/integrations/simulation/adapters/index.ts';
 
 export async function verifySimulator(root: string) {
   const directory = path.join(root, 'simulator');

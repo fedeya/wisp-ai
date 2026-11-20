@@ -2,7 +2,7 @@ import { readFile, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { adapters } from '../apps/bridge/src/simulation/adapters/index.ts';
+import { adapters } from '../apps/bridge/src/integrations/simulation/adapters/index.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = path.resolve(process.argv[2]);
 const output = path.join(root, 'simulator');

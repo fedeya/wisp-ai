@@ -8,7 +8,7 @@ import { startBridge, type BridgeOptions } from '../src/runtime.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
 import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/protocol/mailbox';
 import { statusSchema } from '@wisp/protocol/desktop';
-import { newChat } from '../src/chat-lifecycle.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 async function fixture(configured = true) {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
@@ -311,7 +311,7 @@ test('the assembled runtime serves validated status, receives packets, persists 
       packetSchema.parse({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }),
     );
     await bridge.stop();
-    const { ChatStore } = await import('../src/chat-store.ts');
+    const { ChatStore } = await import('../src/chat/chat-store.ts');
     const store = new ChatStore(path.join(f.dataDirectory, 'runtime/wisp.sqlite'), () => {});
     const saved = await store.load();
     await store.close();

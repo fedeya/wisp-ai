@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
-import { MemoryStore } from '../src/memory-store.ts';
-import { characterIdentity } from '../src/context.ts';
+import { MemoryStore } from '../src/agent/memory-store.ts';
+import { characterIdentity } from '../src/chat/context.ts';
 
 test(
   'memory survives new store instances, isolates characters, and serializes concurrent updates',

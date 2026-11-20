@@ -2,8 +2,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createOpenAI } from '@ai-sdk/openai';
-import { proxyModel } from '../src/model-proxy.ts';
-import type { ChatGPTAuth } from '../src/chatgpt-auth.ts';
+import { proxyModel } from '../src/models/model-proxy.ts';
+import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
 import { subscriptionCallOptions } from '@wisp/agent/model-tools';
 
 test('SDK streams via bridge, forces private responses, and preserves terminal failures', async () => {

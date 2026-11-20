@@ -2,16 +2,16 @@ import { test, expect } from 'vitest';
 import { mkdtemp, readFile, writeFile, readdir, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ChatStore } from '../src/chat-store.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
 import {
   applicationDatabaseFile,
   copyDatabaseSnapshot,
   findApplicationDatabase,
 } from '../src/db/application-file.ts';
-import { MemoryStore } from '../src/memory-store.ts';
-import { PanelStore } from '../src/panels.ts';
-import { RoutineStore } from '../src/routines.ts';
+import { MemoryStore } from '../src/agent/memory-store.ts';
+import { PanelStore } from '../src/addon/panels.ts';
+import { RoutineStore } from '../src/routines/routine-store.ts';
 import { databaseScope } from './database-fixture.ts';
 
 const chat = () => ({

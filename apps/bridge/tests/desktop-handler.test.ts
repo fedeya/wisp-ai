@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { createDesktopApp } from '../src/desktop-handler.ts';
+import { createDesktopApp } from '../src/desktop/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 const authState = { status: 'signed_out', revision: 1, profiles: [] };
 const status: Status = {

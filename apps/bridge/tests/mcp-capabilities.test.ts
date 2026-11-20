@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
-import { mcpCapabilityCatalog } from '../src/mcp-capabilities.ts';
+import { mcpCapabilityCatalog } from '../src/integrations/mcp/mcp-capabilities.ts';
 
 type Server = Parameters<typeof mcpCapabilityCatalog>[0][number];
 

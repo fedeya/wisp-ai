@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { RoutineStore } from '../src/routines.ts';
+import { RoutineStore } from '../src/routines/routine-store.ts';
 import { databaseScope } from './database-fixture.ts';
 import {
   routineDefinition,

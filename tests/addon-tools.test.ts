@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
-import { IntegrationState } from '../apps/bridge/src/integration-state.ts';
+import { IntegrationState } from '../apps/bridge/src/integrations/integration-state.ts';
 import { dynamicEvaluate } from './node_modules/eve/dist/src/dynamic/definition.js';
 import flightPaths from '../apps/agent/agent/tools/wow__inspect_flight_paths.ts';
 import quest from '../apps/agent/agent/tools/questie__get_quest.ts';

@@ -280,13 +280,13 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 
 ## Source map
 
-| Area                          | Entry points                                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)          |
-| Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent-process.ts) |
-| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)        |
-| Shared contracts              | [protocol](../packages/protocol/src)                                                           |
-| Game UI, readings and actions | [addon](../addon/WispAI)                                                                       |
+| Area                          | Entry points                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)                |
+| Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent/agent-process.ts) |
+| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)              |
+| Shared contracts              | [protocol](../packages/protocol/src)                                                                 |
+| Game UI, readings and actions | [addon](../addon/WispAI)                                                                             |
 
 The bridge owns accounts, persistence and tool execution. Eve runs on loopback **43186**. The bridge prefers **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If either port is occupied, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
@@ -402,6 +402,6 @@ Vitest projects and native tests must pass before packaging and signing.
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
 implement its adapter and readiness checks together in a provider file under
 `addon/WispAI/Integrations/`, register it in `WispAI.toc` and the shared
-`Integrations.lua` coordinator / `apps/bridge/src/integration-state.ts`, and test
+`Integrations.lua` coordinator / `apps/bridge/src/integrations/integration-state.ts`, and test
 missing/incompatible providers and disabled-tool admission. Integrations supply
 tools; reply panels and automatic suggestions remain separate features.

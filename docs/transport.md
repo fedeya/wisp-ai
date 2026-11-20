@@ -10,7 +10,7 @@ directions; a finite bank of load-on-demand helpers can accelerate large replies
 
 | Owner                                                  | Source                                                       |
 | ------------------------------------------------------ | ------------------------------------------------------------ |
-| Host scheduling, helper publication and bulk selection | [bridge transport](../apps/bridge/src/transport.ts)          |
+| Host scheduling, helper publication and bulk selection | [bridge transport](../apps/bridge/src/addon/transport.ts)    |
 | Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/protocol/src/mailbox.ts)         |
 | Full snapshots, patches and transport acknowledgements | [downlink contract](../packages/protocol/src/downlink.ts)    |
 | Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)     |

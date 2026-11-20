@@ -1,8 +1,8 @@
 import { test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent-server.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
-import { ReplyProjection } from '../src/reply-stream.ts';
+import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { ReplyProjection } from '../src/reply/reply-stream.ts';
 
 test('presentation RPC authenticates, scopes the active character and reports bridge acceptance errors', async () => {
   const chat = newChat('presentation', 'addon');

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Chat, Message } from '../chat.ts';
+import type { Chat, Message } from '../chat/chat.ts';
 import type { chats, messages, chatInstanceState } from './schema.ts';
 
 export type ChatRow = typeof chats.$inferSelect;

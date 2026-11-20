@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { LegacyReplyStream as ReplyStream } from '../src/legacy-reply.ts';
-import { ReplyProjection } from '../src/reply-stream.ts';
-import { applyEvent, type Chat } from '../src/events.ts';
+import { LegacyReplyStream as ReplyStream } from '../src/reply/legacy-reply.ts';
+import { ReplyProjection } from '../src/reply/reply-stream.ts';
+import { applyEvent, type Chat } from '../src/chat/events.ts';
 import { migrateReplies } from '../src/migrations/replies.ts';
-import { projectChats } from '../src/chat-projection.ts';
+import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 const record = (value: unknown) => JSON.stringify(value) + '\n';
 const text = (value: string) => record({ type: 'text_delta', text: value });

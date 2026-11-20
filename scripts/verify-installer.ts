@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client } from 'eve/client';
 import { installerBuildVersion } from './installer-version.ts';
-import { addonVersionFromToc } from '../apps/bridge/src/addon-version.ts';
+import { addonVersionFromToc } from '../apps/bridge/src/addon/addon-version.ts';
 import { addonReleaseVersion } from './addon-release-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {

@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest';
-import { projectChats } from '../src/chat-projection.ts';
-import { newChat, openChat } from '../src/chat-lifecycle.ts';
+import { projectChats } from '../src/chat/chat-projection.ts';
+import { newChat, openChat } from '../src/chat/chat-lifecycle.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { chatSchema } from '../src/chat.ts';
+import { chatSchema } from '../src/chat/chat.ts';
 
 test('routine conversations hide generated input while preserving answers and follow-up messages', () => {
   const state = createSessionState();

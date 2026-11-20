@@ -1,6 +1,10 @@
 import { test, expect } from 'vitest';
-import { isPublicSourceUrl, searchPublicWeb, verifiedWebResult } from '../src/public-web-search.ts';
-import type { ChatGPTAuth } from '../src/chatgpt-auth.ts';
+import {
+  isPublicSourceUrl,
+  searchPublicWeb,
+  verifiedWebResult,
+} from '../src/integrations/search/public-web-search.ts';
+import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
 const url = 'https://github.com/fusionpit/WhatsTraining';
 const response = {
   output: [

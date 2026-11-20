@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deflateSync } from 'node:zlib';
-import { DiskTransport, preferBulkDelivery } from '../src/transport.ts';
+import { DiskTransport, preferBulkDelivery } from '../src/addon/transport.ts';
 import type { Packet } from '@wisp/protocol/protocol';
 import {
   DOWNLINK_HELPERS,

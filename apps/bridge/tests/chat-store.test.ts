@@ -3,8 +3,8 @@ import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/chat-store.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { migrateDesktop } from '../src/migrations/desktop.ts';
 
 function chat(id = 'chat') {

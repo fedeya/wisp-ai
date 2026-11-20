@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync, backup } from 'node:sqlite';
-import { ChatStore } from '../src/chat-store.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
 import { preparePrivateDatabase } from '../src/db/private-file.ts';
 import { applicationDatabaseFile } from '../src/db/application-file.ts';
 import { migrateReplies } from '../src/migrations/replies.ts';

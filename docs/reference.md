@@ -13,7 +13,7 @@ Wisp reads character state on demand and can inspect references, compare item st
 | [Everloot](https://everloot.app/docs/mcp/clients) | Read-only Forever references, recipes, locations, talent plans and market estimates/history. No API key, uploader or extra addon required.                    |
 | Wowhead search                                    | Forever-only fallback via ChatGPT or Exa, independently of the model. Public Exa needs no key and has free rate limits; an optional key uses account credits. |
 
-Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/bridge/src/thewowdb.ts), [Everloot’s allowlist](../apps/agent/agent/connections/everloot.ts), [Wowhead search](../apps/bridge/src/wowhead-search.ts) and the agent instructions.
+Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/bridge/src/integrations/thewowdb.ts), [Everloot’s allowlist](../apps/agent/agent/connections/everloot.ts), [Wowhead search](../apps/bridge/src/integrations/search/wowhead-search.ts) and the agent instructions.
 
 ## Custom MCP connections
 
@@ -27,7 +27,7 @@ In desktop **Tools & MCPs**, choose **Add MCP**:
 
 Stdio receives a limited OS environment plus configured values, not inherited bridge tokens. On Windows, configured secrets use DPAPI; metadata stores only secret-presence flags/key names. Generic MCP OAuth sign-in is not provided: OAuth-only services need a supported token flow or a separately configured adapter. Review the [custom-server trust boundary](usage.md#actions-you-control) before connecting.
 
-For manual source configuration, copy [mcp.example.json](../mcp.example.json) to a local file, replace the example endpoint and enable the entry. Set `mcpConfig` in `config.local.json` to its path relative to the data root; the default is `runtime/mcp.json`. `transport` accepts `http` (default), `sse` or `stdio`; stdio uses `command` and `args`, while `tokenEnv` names an HTTP bearer-token environment variable. Prefer desktop secret fields, keep secrets out of source, and restart after manual edits. Exact fields are in [mcp-manager.ts](../apps/bridge/src/mcp-manager.ts).
+For manual source configuration, copy [mcp.example.json](../mcp.example.json) to a local file, replace the example endpoint and enable the entry. Set `mcpConfig` in `config.local.json` to its path relative to the data root; the default is `runtime/mcp.json`. `transport` accepts `http` (default), `sse` or `stdio`; stdio uses `command` and `args`, while `tokenEnv` names an HTTP bearer-token environment variable. Prefer desktop secret fields, keep secrets out of source, and restart after manual edits. Exact fields are in [mcp-manager.ts](../apps/bridge/src/integrations/mcp/mcp-manager.ts).
 
 ## Experimental local DPS simulations
 
@@ -67,4 +67,4 @@ Example equipment comparison (the agent resolves learned spell and candidate ite
 }
 ```
 
-Build prerequisites are in [development](development.md#build-and-run-on-windows); packaged Windows apps include the binary, so players do not need Go/protoc. See the [pinned manifest](../simulator/manifest.json), [adapter](../apps/bridge/src/simulation.ts), [attribution](../NOTICE) and [MIT license](../simulator/LICENSE-WoWSims.txt).
+Build prerequisites are in [development](development.md#build-and-run-on-windows); packaged Windows apps include the binary, so players do not need Go/protoc. See the [pinned manifest](../simulator/manifest.json), [adapter](../apps/bridge/src/integrations/simulation/simulator.ts), [attribution](../NOTICE) and [MIT license](../simulator/LICENSE-WoWSims.txt).

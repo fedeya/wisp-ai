@@ -7,10 +7,10 @@ import {
   ROUTINE_INSTRUCTION_MAX_LENGTH,
   ROUTINE_TRIGGER_MAX_LENGTH,
   type AddonSnapshotInputs,
-} from '../src/addon-snapshot.ts';
+} from '../src/addon/addon-snapshot.ts';
 import { createSessionState } from '../src/session-state.ts';
-import type { Chat } from '../src/events.ts';
-import type { AccountModel } from '../src/chat-model.ts';
+import type { Chat } from '../src/chat/events.ts';
+import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function routine(overrides: Partial<Routine> = {}): Routine {
   return {

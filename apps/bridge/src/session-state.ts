@@ -1,7 +1,7 @@
-import type { Chat } from './events.ts';
-import type { AccountModel } from './chat-model.ts';
-import type { MemoryView } from './agent-server.ts';
-import type { PanelCommand } from './desktop-handler.ts';
+import type { Chat } from './chat/events.ts';
+import type { AccountModel } from './chat/chat-model.ts';
+import type { MemoryView } from './agent/agent-server.ts';
+import type { PanelCommand } from './desktop/desktop-handler.ts';
 
 export interface RoutinePresence {
   identity: string;

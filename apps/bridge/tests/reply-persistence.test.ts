@@ -3,12 +3,12 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/chat-store.ts';
-import { newChat } from '../src/chat-lifecycle.ts';
-import { projectChats } from '../src/chat-projection.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { ReplyProjection } from '../src/reply-stream.ts';
-import { applyEvent } from '../src/events.ts';
+import { ReplyProjection } from '../src/reply/reply-stream.ts';
+import { applyEvent } from '../src/chat/events.ts';
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-reply-source-'));

@@ -13,7 +13,7 @@ runs:
           simulator/items.json
           simulator/classes.json
           simulator/LICENSE-WoWSims.txt
-        key: wisp-simulator-v2-${{ runner.os }}-${{ runner.arch }}-go1.25.14-${{ hashFiles('scripts/build-simulator.ps1', 'scripts/simulator-downranking.patch', 'scripts/simulator-metadata.ts', 'scripts/verify-simulator.ts', 'apps/bridge/src/simulation/adapters/*.ts', 'simulator/*.json') }}
+        key: wisp-simulator-v2-${{ runner.os }}-${{ runner.arch }}-go1.25.14-${{ hashFiles('scripts/build-simulator.ps1', 'scripts/simulator-downranking.patch', 'scripts/simulator-metadata.ts', 'scripts/verify-simulator.ts', 'apps/bridge/src/integrations/simulation/adapters/*.ts', 'simulator/*.json') }}
     - uses: actions/setup-go@v6
       if: steps.simulator-binary.outputs.cache-hit != 'true'
       with:

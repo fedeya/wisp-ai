@@ -11,7 +11,7 @@ import {
 } from '@wisp/protocol/addon-helpers';
 import { migrateGameSaves, retireLegacyAddons } from '../src/migrations/addon-rename.ts';
 import { appPaths } from '../src/app-paths.ts';
-import { addonVersionFromToc } from '../src/addon-version.ts';
+import { addonVersionFromToc } from '../src/addon/addon-version.ts';
 const root = process.env.WISP_RESOURCE_ROOT || fileURLToPath(new URL('../../../', import.meta.url));
 const paths = appPaths(root);
 await mkdir(paths.runtime, { recursive: true });

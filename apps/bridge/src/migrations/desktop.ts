@@ -2,7 +2,7 @@ import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/pro
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore, conversationInstanceId } from '../chat-store.ts';
+import { ChatStore, conversationInstanceId } from '../chat/chat-store.ts';
 import { ApplicationDatabase } from '../db/application-database.ts';
 import {
   copyDatabaseSnapshot,
