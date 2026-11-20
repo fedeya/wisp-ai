@@ -333,6 +333,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const server = createServer(
       createAgentHandler({
         logger,
+        telemetry,
         token,
         auth,
         connections,

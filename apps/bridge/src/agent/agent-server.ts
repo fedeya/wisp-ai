@@ -28,6 +28,7 @@ import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { proxyModel } from '../models/model-proxy.ts';
 import type { Logger } from 'pino';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
+import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
 import { characterIdentity, conversationTitle, queryCharacterSections } from '../chat/context.ts';
 export interface MemoryView {
@@ -38,6 +39,7 @@ export interface MemoryView {
 }
 interface AgentDependencies {
   logger?: Pick<Logger, 'info'>;
+  telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
   auth: ChatGPTAuth;
   connections: ModelConnections;
@@ -300,12 +302,40 @@ export function createAgentApp(deps: AgentDependencies) {
       const { eveSession: _session, ...args } = data;
       return route === '/database'
         ? database.query(databaseRequest.parse(args), abort)
-        : webSearch.search(
+        : measuredWebSearch(
             wowheadQuery.parse(args),
             chat.modelSettings?.model || defaultModel(),
             abort,
           );
     });
+  // Web search is the slowest tool, so record its budget and outcome to tune depth defaults.
+  async function measuredWebSearch(
+    query: z.output<typeof wowheadQuery>,
+    model: string,
+    abort: AbortSignal,
+  ) {
+    const started = performance.now();
+    try {
+      const result = await webSearch.search(query, model, abort);
+      deps.telemetry?.webSearch({
+        depth: query.depth,
+        provider: result.provider,
+        outcome: result.status,
+        duration: performance.now() - started,
+        resultCount: result.sources.length,
+      });
+      return result;
+    } catch (error) {
+      deps.telemetry?.webSearch({
+        depth: query.depth,
+        provider: undefined,
+        outcome: 'failed',
+        duration: performance.now() - started,
+        resultCount: 0,
+      });
+      throw error;
+    }
+  }
   knowledge('/database');
   knowledge('/wowhead');
 

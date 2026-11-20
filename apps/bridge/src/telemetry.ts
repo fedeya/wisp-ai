@@ -21,6 +21,9 @@ const propertyKeys = new Set([
   'error_code',
   'addon_version',
   'tool',
+  'depth',
+  'provider',
+  'result_count',
   '$process_person_profile',
   '$geoip_disable',
   '$lib',
@@ -64,6 +67,16 @@ const chatErrorCodeSchema = z.enum([
   'unknown',
 ]);
 export type ChatErrorCode = z.infer<typeof chatErrorCodeSchema>;
+const webSearchDepthSchema = z.enum(['quick', 'standard', 'deep']);
+const webSearchProviderSchema = z.enum(['chatgpt', 'exa', 'none']);
+const webSearchOutcomeSchema = z.enum(['available', 'unverified', 'unavailable', 'failed']);
+export type WebSearchTelemetry = {
+  depth: string;
+  provider: string | undefined;
+  outcome: string;
+  duration: number;
+  resultCount: number;
+};
 type GameConnectionError = 'session_replaced' | 'engine_not_ready' | 'addon_ack_missing';
 const gameConnectionTimeoutMs = 30_000;
 type Properties = Record<string, string | number | boolean>;
@@ -187,6 +200,17 @@ export class UsageTelemetry {
       duration_ms: Math.max(0, Math.round(duration)),
       ...(firstTextMs === undefined ? {} : { first_text_ms: firstTextMs }),
       ...(failureCode ? { error_code: failureCode } : {}),
+    });
+  }
+
+  // Only fixed enums and counts: never queries, URLs, sources or provider errors.
+  webSearch({ depth, provider, outcome, duration, resultCount }: WebSearchTelemetry) {
+    this.record('web_search_finished', {
+      depth: webSearchDepthSchema.safeParse(depth).data ?? 'standard',
+      provider: webSearchProviderSchema.safeParse(provider?.toLowerCase()).data ?? 'none',
+      outcome: webSearchOutcomeSchema.safeParse(outcome).data ?? 'unavailable',
+      duration_ms: Math.max(0, Math.round(duration)),
+      result_count: Number.isFinite(resultCount) ? Math.max(0, Math.min(50, resultCount)) : 0,
     });
   }
 

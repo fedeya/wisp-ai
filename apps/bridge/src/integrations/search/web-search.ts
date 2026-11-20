@@ -273,7 +273,7 @@ export class WebSearch implements WowheadSearch {
     }
     if (provider === 'chatgpt') {
       const result = await searchPublicWeb(rawQuery, this.auth, model, signal);
-      return { sources: [], ...result };
+      return { sources: [], provider: 'ChatGPT', ...result };
     }
     try {
       const key = await this.vault.read(secretKey);

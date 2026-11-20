@@ -204,7 +204,7 @@ disabled. Eve's own analytics remain disabled with `DO_NOT_TRACK=1` in child
 processes; this does not override Wisp's separately managed user preference.
 
 `apps/bridge/src/telemetry.ts` reads the native preference before each send and
-reports `chat_completed`, `tool_executed`, `game_connected`,
+reports `chat_completed`, `tool_executed`, `web_search_finished`, `game_connected`,
 `game_connection_finished` and daily `app_active`.
 Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
 `timeout` when the underlying error identifies a timeout.
@@ -218,6 +218,10 @@ succeeds when the addon acknowledges the first ready snapshot. The outcome is
 `failed` if another session replaces the pending attempt (`session_replaced`).
 The event includes elapsed milliseconds. An addon that never sends a valid
 session packet cannot be measured by this event.
+Each web search reports its `depth` (`quick`, `standard` or `deep`), `provider`
+(`chatgpt`, `exa` or `none`), `outcome` (`available`, `unverified`,
+`unavailable` or `failed`), `duration_ms` and `result_count`. Queries, URLs,
+sources and provider errors are never sent.
 All agent tool settlements use this one path; no provider tracing, prompts or tool
 payloads are sent. Built-in names come from the public capability catalog. Skill
 loads, built-in memory tools, and bundled Everloot tools report `skill`, `memory`,
@@ -240,18 +244,19 @@ long as the app data directory is preserved.
 
 Suggested PostHog insights for the shared project:
 
-| Question                          | Event and aggregation                                                                        |
-| --------------------------------- | -------------------------------------------------------------------------------------------- |
-| First tracked installations       | `app_first_open`, unique installation IDs                                                    |
-| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`                            |
-| Feature use                       | `tool_executed`, event count, breakdown by `tool`                                            |
-| Queries and failures              | `chat_completed`, event count, breakdown by `mode`, `outcome` or `error_code`                |
-| Time until the first reply text   | `chat_completed`, percentiles of `first_text_ms` by `mode`                                   |
-| Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version`                      |
-| Desktop addon install results     | `addon_install_finished`, event count by `outcome` and `error_code`                          |
-| Desktop onboarding                | `onboarding_opened`, `onboarding_step_viewed`, `onboarding_finished`, unique installations   |
-| Addon handshake reliability       | `game_connection_finished`, event count by `outcome` / `error_code` and median `duration_ms` |
-| Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`                          |
+| Question                          | Event and aggregation                                                                           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| First tracked installations       | `app_first_open`, unique installation IDs                                                       |
+| Active installations and versions | `app_active`, unique installation IDs, breakdown by `app_version`                               |
+| Feature use                       | `tool_executed`, event count, breakdown by `tool`                                               |
+| Queries and failures              | `chat_completed`, event count, breakdown by `mode`, `outcome` or `error_code`                   |
+| Time until the first reply text   | `chat_completed`, percentiles of `first_text_ms` by `mode`                                      |
+| Addon adoption                    | `game_connected`, unique installation IDs, breakdown by `addon_version`                         |
+| Desktop addon install results     | `addon_install_finished`, event count by `outcome` and `error_code`                             |
+| Desktop onboarding                | `onboarding_opened`, `onboarding_step_viewed`, `onboarding_finished`, unique installations      |
+| Addon handshake reliability       | `game_connection_finished`, event count by `outcome` / `error_code` and median `duration_ms`    |
+| Web search cost and reliability   | `web_search_finished`, percentiles of `duration_ms` by `depth` / `provider`, count by `outcome` |
+| Website download intent           | `download_clicked`, event count, breakdown by `location` / `locale`                             |
 
 Actual installer download counts come from the `download_count` values on GitHub
 release assets. They include repeated/automated downloads and upgrades; do not

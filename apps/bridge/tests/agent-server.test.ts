@@ -117,3 +117,53 @@ test('agent server aborts game requests when Eve hangs up', async () => {
     await server.close();
   }
 });
+
+test('web search reports its depth, provider and outcome without the query', async () => {
+  const chat = workingChat();
+  const search = vi
+    .fn()
+    .mockResolvedValueOnce({
+      status: 'available',
+      source: 'Web',
+      version: 'unspecified',
+      query: 'private query',
+      provider: 'Exa',
+      sources: [{ url: 'https://example.com/a' }, { url: 'https://example.com/b' }],
+    })
+    .mockRejectedValueOnce(Error('Private provider failure'));
+  const telemetry = { webSearch: vi.fn() };
+  const server = await serve({
+    getChats: () => [chat],
+    defaultModel: () => 'model',
+    telemetry,
+    webSearch: { search, available: () => true },
+  });
+  try {
+    const found = await server.post('/wowhead', {
+      eveSession: 'eve',
+      query: 'private query',
+      depth: 'deep',
+    });
+    expect(found.status).toBe(200);
+    expect(telemetry.webSearch).toHaveBeenLastCalledWith({
+      depth: 'deep',
+      provider: 'Exa',
+      outcome: 'available',
+      duration: expect.any(Number),
+      resultCount: 2,
+    });
+    expect(
+      (await server.post('/wowhead', { eveSession: 'eve', query: 'private query' })).status,
+    ).toBe(503);
+    expect(telemetry.webSearch).toHaveBeenLastCalledWith({
+      depth: 'standard',
+      provider: undefined,
+      outcome: 'failed',
+      duration: expect.any(Number),
+      resultCount: 0,
+    });
+    expect(JSON.stringify(telemetry.webSearch.mock.calls)).not.toContain('private');
+  } finally {
+    await server.close();
+  }
+});

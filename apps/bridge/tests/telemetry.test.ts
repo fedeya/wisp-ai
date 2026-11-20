@@ -194,6 +194,53 @@ test('chat telemetry only sends allowlisted failure codes', async () => {
   expect(JSON.stringify(chats)).not.toContain('PRIVATE PROVIDER ERROR');
 });
 
+test('web search telemetry sends only its budget, provider, outcome and counts', async () => {
+  await preference(true);
+  const telemetry = createTelemetry();
+  telemetry.webSearch({
+    depth: 'quick',
+    provider: 'ChatGPT',
+    outcome: 'available',
+    duration: 20924.4,
+    resultCount: 3,
+  });
+  telemetry.webSearch({
+    depth: 'PRIVATE DEPTH',
+    provider: 'PRIVATE PROVIDER',
+    outcome: 'PRIVATE OUTCOME',
+    duration: -5,
+    resultCount: 500,
+  });
+  await telemetry.drain();
+  const searches = events()
+    .filter((event) => event.event === 'web_search_finished')
+    .map(({ properties }) => ({
+      depth: properties.depth,
+      provider: properties.provider,
+      outcome: properties.outcome,
+      duration_ms: properties.duration_ms,
+      result_count: properties.result_count,
+    }))
+    .sort((a, b) => b.duration_ms - a.duration_ms);
+  expect(searches).toEqual([
+    {
+      depth: 'quick',
+      provider: 'chatgpt',
+      outcome: 'available',
+      duration_ms: 20924,
+      result_count: 3,
+    },
+    {
+      depth: 'standard',
+      provider: 'none',
+      outcome: 'unavailable',
+      duration_ms: 0,
+      result_count: 50,
+    },
+  ]);
+  expect(JSON.stringify(events())).not.toContain('PRIVATE');
+});
+
 test('addon polls are deduplicated and only valid versions are sent', async () => {
   await preference(true);
   const telemetry = createTelemetry();
