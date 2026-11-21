@@ -38,7 +38,9 @@ export class PanelStore {
           const previous = all.find((p) => p.characterKey === characterKey && p.id === id);
           const next = all.filter((p) => p !== previous);
           if (input.operation === 'save') {
-            if (next.filter((p) => p.characterKey === characterKey).length >= 12) {
+            // Only new panels count against the limit, so panels merged past it
+            // can still be edited.
+            if (!previous && next.filter((p) => p.characterKey === characterKey).length >= 12) {
               throw Error('Keep at most 12 panels per character');
             }
             // Edits keep the key an adopted panel came from, so the addon can

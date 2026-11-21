@@ -260,3 +260,24 @@ test('editing an adopted panel keeps the key it was moved from', async () => {
     expect(readPanels(database.orm)[0].formerKey).toEqual(oldRealm);
   });
 });
+
+test('panels merged past the limit can be edited but not added to', async () => {
+  await withDatabase(async (database) => {
+    await database.transaction((db) =>
+      savePanels(
+        db,
+        Array.from({ length: 13 }, (_, i) => panel('p' + i, current)),
+      ),
+    );
+    const store = new PanelStore(database);
+    await store.load();
+    const edited = await store.mutate(current, {
+      operation: 'save',
+      panel: panel('p0', current, 'Edited'),
+    });
+    expect(edited.find((p) => p.id === 'p0')?.title).toBe('Edited');
+    await expect(
+      store.mutate(current, { operation: 'save', panel: panel('new', current) }),
+    ).rejects.toThrow('Keep at most 12 panels per character');
+  });
+});
