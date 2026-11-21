@@ -25,41 +25,14 @@ end
 local function keyFor(panel)
     return panel.characterKey .. ":" .. panel.id
 end
--- Whether an older character key names this character: the same GUID, or a
--- pre-GUID key with the same name (the bridge already chose which keys move).
-local function formerKey(characterKey)
-    local ok, key = pcall(C_EncodingUtil.DeserializeJSON, characterKey)
-    if not ok or type(key) ~= "table" then
-        return false
-    end
-    if key[4] then
-        return key[4] == UnitGUID("player")
-    end
-    return key[3] == UnitName("player")
-end
 local function stateFor(panel)
     ns.db.panelState = ns.db.panelState or {}
     local key = keyFor(panel)
-    if not ns.db.panelState[key] then
-        -- Keep position and visibility when the bridge moves a panel to this
-        -- character's new key.
-        local suffix, found, live = ":" .. panel.id, nil, {}
-        for _, other in ipairs(panels) do
-            live[keyFor(other)] = true
-        end
-        for old in pairs(ns.db.panelState) do
-            if
-                not live[old]
-                and old:sub(-#suffix) == suffix
-                and formerKey(old:sub(1, -#suffix - 1))
-            then
-                found = old
-                break
-            end
-        end
-        if found then
-            ns.db.panelState[key], ns.db.panelState[found] = ns.db.panelState[found], nil
-        end
+    -- The bridge names the key a panel was moved from, so its position and
+    -- visibility follow it to this character's new key.
+    local former = type(panel.formerKey) == "string" and panel.formerKey .. ":" .. panel.id
+    if not ns.db.panelState[key] and former and ns.db.panelState[former] then
+        ns.db.panelState[key], ns.db.panelState[former] = ns.db.panelState[former], nil
     end
     ns.db.panelState[key] = ns.db.panelState[key] or {}
     return ns.db.panelState[key]

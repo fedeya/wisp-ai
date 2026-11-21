@@ -215,7 +215,7 @@ it("panels with a GUID key follow that character and older keys match realm and 
     assert(not shown["Panel alt"], "another character's GUID is not shown")
 end)
 
-it("a panel moved to the character's GUID key keeps its saved layout", function()
+it("a panel moved to a new character key keeps the layout of the key it came from", function()
     local env = helper.env()
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
@@ -223,8 +223,8 @@ it("a panel moved to the character's GUID key keeps its saved layout", function(
         ns = helper.namespace({
             db = {
                 panelState = {
-                    ["legacy:farm"] = { hidden = true, point = "TOP" },
-                    ["alt:farm"] = { point = "BOTTOM" },
+                    ["pvp:farm"] = { hidden = true, point = "TOP" },
+                    ["pve:farm"] = { point = "BOTTOM" },
                 },
             },
         })
@@ -237,30 +237,30 @@ it("a panel moved to the character's GUID key keeps its saved layout", function(
         function UnitGUID()
             return "Player-1-00A"
         end
-        keys = {
-            guid = { "Forever", "", "Mage", "Player-1-00A" },
-            legacy = { "Forever", "Old Realm", "Mage" },
-            alt = { "Forever", "", "Mage", "Player-1-00B" },
-        }
         C_EncodingUtil = {
-            DeserializeJSON = function(key)
-                return keys[key]
+            DeserializeJSON = function()
+                return { "Forever", "", "Mage", "Player-1-00A" }
             end,
         }
     end
     helper.addon("UI/RichUI.lua", env)
     helper.addon("Panels/Panels.lua", env)
 
-    ns.Panels.ReceivePanels({
-        {
-            id = "farm",
-            characterKey = "guid",
+    local function farm(id, characterKey, formerKey)
+        return {
+            id = id,
+            characterKey = characterKey,
+            formerKey = formerKey,
             title = "Farm",
             ui = { { id = "card", kind = "card", title = "Farm" } },
-        },
-    })
+        }
+    end
+    ns.Panels.ReceivePanels({ farm("farm", "guid", "pvp") })
     local state = ns.db.panelState
     assert(state["guid:farm"] and state["guid:farm"].hidden == true, "layout follows the panel")
-    assert(state["legacy:farm"] == nil, "the old entry is moved, not copied")
-    assert(state["alt:farm"].point == "BOTTOM", "another character's layout is untouched")
+    assert(state["pvp:farm"] == nil, "the old entry is moved, not copied")
+    assert(state["pve:farm"].point == "BOTTOM", "keys the bridge did not move are untouched")
+
+    ns.Panels.ReceivePanels({ farm("farm", "other") })
+    assert(state["pve:farm"].point == "BOTTOM", "a panel without formerKey takes no state")
 end)

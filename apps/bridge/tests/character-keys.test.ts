@@ -137,11 +137,11 @@ test('a character with a GUID adopts every older key for it and keeps current da
     expect(db.select().from(routineRuns).get()?.characterKey).toBe(current);
     expect(
       readPanels(db)
-        .map((p) => [p.characterKey, p.id, p.title])
+        .map((p) => [p.characterKey, p.id, p.title, p.formerKey])
         .sort(),
     ).toEqual([
-      [current, 'farm', 'farm'],
-      [current, 'goal', 'Current goal'],
+      [current, 'farm', 'farm', oldRealm],
+      [current, 'goal', 'Current goal', undefined],
     ]);
     expect(
       readMemory(db, 'character', current)

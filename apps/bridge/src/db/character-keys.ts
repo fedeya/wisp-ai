@@ -62,8 +62,8 @@ export function adoptCharacterKey(
           .all()
           .map((row) => row.id),
       );
-      for (const { id } of db
-        .select({ id: table.id })
+      for (const { id, content } of db
+        .select({ id: table.id, content: table.content })
         .from(table)
         .where(eq(table.characterKey, from))
         .all()) {
@@ -71,7 +71,16 @@ export function adoptCharacterKey(
         if (taken.has(id)) {
           db.delete(table).where(row).run();
         } else {
-          db.update(table).set({ characterKey: key }).where(row).run();
+          // Panels remember where they came from so the addon can move their
+          // saved layout from exactly that key.
+          const moved =
+            table === panels
+              ? { content: JSON.stringify({ ...JSON.parse(content), formerKey: from }) }
+              : {};
+          db.update(table)
+            .set({ characterKey: key, ...moved })
+            .where(row)
+            .run();
         }
       }
     }
