@@ -6,6 +6,7 @@ local _, ns = ...
 -- only offers the latest recap without an ID; group deaths and fight totals are
 -- read on demand, after combat, when the meter's values are no longer secret.
 local MAX_DEATHS, MAX_RECAP_EVENTS, MAX_GROUP_DEATHS, TOP_SPELLS = 5, 30, 5, 10
+local RECAP_ATTEMPTS = 5
 local deaths = {}
 
 local function readable(value)
@@ -146,27 +147,48 @@ local function readRecap(recapID)
     }
 end
 
-local function recordDeath(diedAt)
+-- `place` holds what was true when the player died: time, zone and level.
+local function recordDeath(place)
     local death = readRecap(nil)
-    death.diedAt = diedAt
-    death.zone = GetRealZoneText and text(call(GetRealZoneText)) or nil
-    death.subzone = GetSubZoneText and text(call(GetSubZoneText)) or nil
-    death.level = UnitLevel and number(call(UnitLevel, "player")) or nil
+    for key, value in pairs(place) do
+        death[key] = value
+    end
     table.insert(deaths, 1, death)
     deaths[MAX_DEATHS + 1] = nil
+end
+
+local function hasRecap()
+    return C_DeathRecap ~= nil and call(C_DeathRecap.HasRecapEvents) == true
+end
+
+-- The recap can be ready a moment after PLAYER_DEAD (Blizzard's death dialog
+-- polls HasRecapEvents), so check once a second and record as soon as it is
+-- ready, or without a recap after the last attempt.
+local function waitForRecap(place, attempt)
+    if hasRecap() or attempt >= RECAP_ATTEMPTS then
+        recordDeath(place)
+        return
+    end
+    C_Timer.After(1, function()
+        waitForRecap(place, attempt + 1)
+    end)
 end
 
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("PLAYER_DEAD")
 frame:SetScript("OnEvent", function()
-    local diedAt = time()
-    -- Give the game a moment to finish the recap of this death.
+    local place = {
+        diedAt = time(),
+        zone = GetRealZoneText and text(call(GetRealZoneText)) or nil,
+        subzone = GetSubZoneText and text(call(GetSubZoneText)) or nil,
+        level = UnitLevel and number(call(UnitLevel, "player")) or nil,
+    }
     if C_Timer and C_Timer.After then
         C_Timer.After(1, function()
-            recordDeath(diedAt)
+            waitForRecap(place, 1)
         end)
     else
-        recordDeath(diedAt)
+        recordDeath(place)
     end
 end)
 

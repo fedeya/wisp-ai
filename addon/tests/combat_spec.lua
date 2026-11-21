@@ -79,12 +79,18 @@ local function setup(env)
                 end,
             }
         end
-        function die()
-            combatHandler(nil, "PLAYER_DEAD")
+        -- Runs one second of timers; returns how many ran.
+        function tick()
             local pending = timers
             timers = {}
             for _, fn in ipairs(pending) do
                 fn()
+            end
+            return #pending
+        end
+        function die()
+            combatHandler(nil, "PLAYER_DEAD")
+            while tick() > 0 do
             end
         end
     end
@@ -270,4 +276,39 @@ it("drops secret values and survives a failing recap API", function()
 
     ns.Combat.Clear()
     assert(ns.Combat.Read({}).deathCount == 0)
+end)
+
+it("waits for a late recap and gives up after five seconds", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+
+    -- The recap shows up on the third check; the death keeps the zone it happened in.
+    combatHandler(nil, "PLAYER_DEAD")
+    function GetRealZoneText()
+        return "Duskwood"
+    end
+    tick()
+    tick()
+    assert(ns.Combat.Read({}).deathCount == 0)
+    recaps.latest = {
+        maxHealth = 1000,
+        events = { { event = "SWING_DAMAGE", sourceName = "Stitches", amount = 900 } },
+    }
+    tick()
+    assert(#timers == 0)
+    local death = ns.Combat.Read({}).deaths[1]
+    assert(death.recapAvailable == true and death.killingBlow.source == "Stitches")
+    assert(death.zone == "Westfall")
+
+    -- Without a recap, the death is still recorded after the last attempt.
+    recaps.latest = nil
+    combatHandler(nil, "PLAYER_DEAD")
+    local seconds = 0
+    while tick() > 0 do
+        seconds = seconds + 1
+    end
+    assert(seconds == 5)
+    local all = ns.Combat.Read({ deaths = 2 })
+    assert(all.deathCount == 2 and all.deaths[1].recapAvailable == false)
 end)
