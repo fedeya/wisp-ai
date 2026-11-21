@@ -12,7 +12,7 @@ import {
   saveMemory,
   savePanels,
 } from '../src/db/product-store.ts';
-import { chats, routineRuns, routines } from '../src/db/schema.ts';
+import { chats, metadata, routineRuns, routines } from '../src/db/schema.ts';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';
@@ -215,6 +215,10 @@ test('adoption saves the name, moves in-memory chats and runs once per character
       [current]: { name: 'Fedrath', realm: '' },
     });
     expect([refreshes, changes]).toEqual([1, 1]);
+
+    // A damaged name row is skipped instead of breaking every label.
+    database.orm.insert(metadata).values({ key: 'character-name:broken', value: '{' }).run();
+    expect(Object.keys(readCharacterNames(database.orm))).toEqual([current]);
 
     // A rename keeps the key and only updates the saved name.
     adopt({ ...fedrath, name: 'Fedrath Vorn' });

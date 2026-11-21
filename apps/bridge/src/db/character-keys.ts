@@ -132,7 +132,14 @@ export function readCharacterNames(db: ApplicationOrm): Record<string, Character
       .where(like(metadata.key, namePrefix + '%'))
       .all()
       .flatMap((row) => {
-        const name = characterName.safeParse(JSON.parse(row.value));
+        // A damaged row only loses its label, never the whole desktop status.
+        let value: unknown;
+        try {
+          value = JSON.parse(row.value);
+        } catch {
+          return [];
+        }
+        const name = characterName.safeParse(value);
         return name.success ? [[row.key.slice(namePrefix.length), name.data]] : [];
       }),
   );
