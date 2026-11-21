@@ -202,7 +202,10 @@ function ns.UI.BuildUI()
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)
-    frame:SetFrameStrata("DIALOG")
+    -- Same layer as the bags and character panels, raised on click, so the
+    -- world map and other full-screen windows cover it instead of the reverse.
+    frame:SetFrameStrata("MEDIUM")
+    frame:SetToplevel(true)
     frame:SetResizable(true)
     if frame.SetResizeBounds then
         frame:SetResizeBounds(520, 360, 1100, 900)

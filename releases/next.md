@@ -9,6 +9,9 @@
 
 ## Fixed
 
+- The Wisp window and persistent panels no longer cover the world map. They
+  now stack with your bags and character window, and the one you click last
+  comes to the front.
 - Map pins, persistent panels and routines work again since the November 20
   WoW Forever hotfix, which stopped the game from reporting a realm name.
 - Routines, panels, character memory and chats you saved before the November 20
