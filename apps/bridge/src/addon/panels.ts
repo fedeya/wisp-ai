@@ -19,7 +19,10 @@ export class PanelStore {
    */
   refresh() {
     this.panels = readPanels(this.database.orm);
-    this.queue = this.queue.catch(() => {}).then(() => this.load());
+    const reload = this.queue.catch(() => {}).then(() => this.load());
+    // Nobody awaits this reload; a failure only leaves the cache from just now.
+    reload.catch(() => {});
+    this.queue = reload;
   }
   list(characterKey: string) {
     return this.panels.filter((p) => p.characterKey === characterKey);
@@ -30,6 +33,8 @@ export class PanelStore {
       .then(async () => {
         await this.database.initializeProducts();
         this.panels = await this.database.transaction((db) => {
+          // An adoption may have moved this character since the call was queued.
+          characterKey = this.database.characterKeys.resolve(characterKey);
           const id = input.operation === 'save' ? input.panel.id : 'id' in input ? input.id : '';
           const all = readPanels(db);
           const previous = all.find((p) => p.characterKey === characterKey && p.id === id);
@@ -56,6 +61,6 @@ export class PanelStore {
       });
     this.queue = work;
     await work;
-    return this.list(characterKey);
+    return this.list(this.database.characterKeys.resolve(characterKey));
   }
 }

@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
 import { adoptableKeys } from '@wisp/protocol/character-key';
-import { adoptCharacterKey } from '../src/db/character-keys.ts';
+import { adoptCharacterKey, CharacterKeyAliases } from '../src/db/character-keys.ts';
 import {
   importRoutines,
   readMemory,
@@ -264,5 +264,51 @@ test('editing an adopted panel keeps the keys it was moved from', async () => {
     });
     expect([saved.title, saved.formerKeys]).toEqual(['Renamed farm', [oldRealm]]);
     expect(readPanels(database.orm)[0].formerKeys).toEqual([oldRealm]);
+  });
+});
+
+test('aliases follow a key through several adoptions and back', () => {
+  const aliases = new CharacterKeyAliases();
+  aliases.record(['A'], 'B');
+  aliases.record(['B'], 'C');
+  expect([aliases.resolve('A'), aliases.resolve('B'), aliases.resolve('C')]).toEqual([
+    'C',
+    'C',
+    'C',
+  ]);
+  aliases.record(['C'], 'A');
+  expect([aliases.resolve('A'), aliases.resolve('B'), aliases.resolve('C')]).toEqual([
+    'A',
+    'A',
+    'A',
+  ]);
+  expect(aliases.resolve('unrelated')).toBe('unrelated');
+});
+
+test('a panel save queued before an adoption lands under the new key', async () => {
+  await withDatabase(async (database) => {
+    await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
+    const store = new PanelStore(database);
+    await store.load();
+    const chat = { ...newChat('chat', 'addon'), characterKey: oldRealm };
+    const adopt = createCharacterAdoption({
+      database,
+      panelStore: store,
+      chats: () => [chat],
+      changed: () => {},
+      logger: { info: () => {}, warn: () => {} },
+    });
+    const saving = store.mutate(oldRealm, {
+      operation: 'save',
+      panel: panel('farm', oldRealm, 'Edited farm'),
+    });
+    adopt(current);
+    expect((await saving).map((p) => [p.characterKey, p.title])).toEqual([
+      [current, 'Edited farm'],
+    ]);
+    expect(readPanels(database.orm).map((p) => [p.characterKey, p.title])).toEqual([
+      [current, 'Edited farm'],
+    ]);
+    await store.queue;
   });
 });

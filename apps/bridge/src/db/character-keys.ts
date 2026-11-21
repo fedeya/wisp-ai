@@ -34,6 +34,29 @@ function storedKeys(db: ApplicationOrm) {
   ]);
 }
 
+/**
+ * Where adopted character keys went. Writes queued before an adoption still
+ * name the old key; resolving it inside their transaction sends them to the
+ * key that now holds the data.
+ */
+export class CharacterKeyAliases {
+  private aliases = new Map<string, string>();
+  record(from: Iterable<string>, to: string) {
+    this.aliases.delete(to);
+    for (const key of from) {
+      if (key !== to) this.aliases.set(key, to);
+    }
+  }
+  resolve(key: string): string {
+    const seen = new Set<string>();
+    while (this.aliases.has(key) && !seen.has(key)) {
+      seen.add(key);
+      key = this.aliases.get(key)!;
+    }
+    return key;
+  }
+}
+
 const maxFormerKeys = 8;
 function withFormerKey(content: string, from: string) {
   const panel = JSON.parse(content) as { formerKeys?: unknown };

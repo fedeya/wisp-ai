@@ -7,7 +7,7 @@ import type { PanelStore } from '../addon/panels.ts';
 import type { Chat } from './chat.ts';
 
 interface CharacterAdoptionDependencies {
-  database: Pick<ApplicationDatabase, 'transactionSync'>;
+  database: Pick<ApplicationDatabase, 'transactionSync' | 'characterKeys'>;
   panelStore: Pick<PanelStore, 'refresh'>;
   chats: () => Chat[];
   changed: () => void;
@@ -45,6 +45,7 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
         ),
       );
       adopted.set(guid, key);
+      deps.database.characterKeys.record(merged, key);
       for (const chat of deps.chats()) {
         if (chat.characterKey && merged.includes(chat.characterKey)) {
           chat.characterKey = key;
