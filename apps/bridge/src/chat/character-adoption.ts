@@ -1,4 +1,4 @@
-import { parseCharacterKey, sameCharacter } from '@wisp/protocol/character-key';
+import { parseCharacterKey } from '@wisp/protocol/character-key';
 import type { Logger } from 'pino';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { adoptCharacterKey } from '../db/character-keys.ts';
@@ -35,16 +35,23 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
     const guid = guidOf(key);
     if (!guid || adopted.get(guid) === key) return queue;
     adopted.set(guid, key);
-    // In-memory chats are persisted from state, so they move first.
-    for (const chat of deps.chats()) {
-      if (chat.characterKey && chat.characterKey !== key && sameCharacter(chat.characterKey, key)) {
-        chat.characterKey = key;
-      }
-    }
     queue = queue
       .then(async () => {
         await deps.database.initializeProducts();
-        const merged = await deps.database.transaction((db) => adoptCharacterKey(db, key));
+        const merged = await deps.database.transaction((db) =>
+          adoptCharacterKey(
+            db,
+            key,
+            deps.chats().map((chat) => chat.characterKey),
+          ),
+        );
+        // Chats are saved by diffing state against the last save, so moving
+        // them after the database keeps both on the same keys.
+        for (const chat of deps.chats()) {
+          if (chat.characterKey && merged.includes(chat.characterKey)) {
+            chat.characterKey = key;
+          }
+        }
         if (merged.length) {
           await deps.panelStore.reload();
           deps.logger.info(

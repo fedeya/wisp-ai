@@ -13,4 +13,6 @@
 - Routines, panels, character memory and chats you saved before the November 20
   hotfix come back the next time you log in to that character. Wisp now
   recognizes each character by its in-game ID, so saved data follows it even if
-  its realm or name changes.
+  its realm or name changes. If you had characters with the same name on more
+  than one server, their older data stays hidden, because the game no longer
+  says which server each one was on.

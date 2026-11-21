@@ -5,7 +5,7 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
-import { adoptCharacterKey } from '../src/db/character-keys.ts';
+import { adoptCharacterKey, adoptableKeys } from '../src/db/character-keys.ts';
 import {
   importRoutines,
   readMemory,
@@ -20,7 +20,7 @@ import { MemoryStore } from '../src/agent/memory-store.ts';
 
 const key = (...parts: string[]) => JSON.stringify(['WoW Forever', ...parts]);
 const oldRealm = key('CAMWOW US2 Realm 2 PvP', 'Fedrath');
-const otherRealm = key('Old Realm', 'Fedrath');
+const noRealm = key('', 'Fedrath');
 const someoneElse = key('CAMWOW US2 Realm 2 PvP', 'Mage');
 const renamed = key('', 'Fedrath Old', 'Player-1-00A');
 const current = key('', 'Fedrath', 'Player-1-00A');
@@ -73,7 +73,7 @@ test('a character with a GUID adopts every older key for it and keeps current da
       importRoutines(db, {
         routines: [
           routine('daily', oldRealm),
-          routine('shared', otherRealm),
+          routine('shared', noRealm),
           routine('shared', current),
           routine('mage', someoneElse),
           routine('alt', otherGuid),
@@ -113,7 +113,7 @@ test('a character with a GUID adopts every older key for it and keeps current da
     });
 
     const merged = await database.transaction((db) => adoptCharacterKey(db, current));
-    expect(merged.sort()).toEqual([oldRealm, otherRealm, renamed].sort());
+    expect(merged.sort()).toEqual([oldRealm, noRealm, renamed].sort());
 
     const db = database.orm;
     const owned = (table: typeof routines) =>
@@ -210,5 +210,39 @@ test('memory merged over quota can still be trimmed but not grown', async () => 
     );
     expect(await store.update('character', current, 'k1', 'n')).toHaveLength(42);
     expect(await store.update('character', current, 'k0')).toHaveLength(41);
+  });
+});
+
+test('a name saved on several realms stays put, since the empty realm cannot pick one', async () => {
+  const pvp = key('Realm 2 PvP', 'Fedrath');
+  const pve = key('Realm 1 PvE', 'Fedrath');
+  expect(adoptableKeys([pvp, pve, noRealm, renamed, someoneElse, null], current).sort()).toEqual(
+    [noRealm, renamed].sort(),
+  );
+  expect(adoptableKeys([pvp, noRealm], current).sort()).toEqual([pvp, noRealm].sort());
+  await withDatabase(async (database) => {
+    await database.transaction((db) =>
+      savePanels(db, [panel('a', pvp), panel('b', pve), panel('c', noRealm)]),
+    );
+    const chat = { ...newChat('unsaved', 'addon'), characterKey: noRealm };
+    const pvpChat = { ...newChat('pvp', 'addon'), characterKey: pvp };
+    const adopt = createCharacterAdoption({
+      database,
+      panelStore: { reload: async () => {} },
+      chats: () => [chat, pvpChat],
+      changed: () => {},
+      logger: { info: () => {}, warn: () => {} },
+    });
+    await adopt(current);
+    expect(
+      readPanels(database.orm)
+        .map((p) => [p.id, p.characterKey])
+        .sort(),
+    ).toEqual([
+      ['a', pvp],
+      ['b', pve],
+      ['c', current],
+    ]);
+    expect([chat.characterKey, pvpChat.characterKey]).toEqual([current, pvp]);
   });
 });
