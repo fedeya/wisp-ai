@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { native } from '../api';
 import GameInstallation from '../components/settings/GameInstallation';
-import { ActionProgress, Spinner } from '../components/ui/ActionProgress';
+import { Spinner } from '../components/ui/ActionProgress';
 import { Button } from '../components/ui/Controls';
 import Icon from '../components/ui/Icon';
 import { Row, RowGroup } from '../components/ui/Rows';
@@ -37,7 +37,6 @@ function useOverview() {
     info: state.info,
     status: state.status,
     providerConnected: desktopConnected(state),
-    busy: state.busy,
     busyTarget: state.busyTarget,
     locked: desktopLocked(state),
     canInstall: !!state.wow,
@@ -136,10 +135,6 @@ export default function Overview() {
         </div>
         {header.tone === 'ok' && <CopyCommand />}
       </header>
-      {/* Only actions the user started: the header and checks already show Wisp's own progress. */}
-      <div className="has-[.action-progress:not(:empty)]:-mt-3 has-[.action-progress:not(:empty)]:mb-5">
-        <ActionProgress label={app.busy} />
-      </div>
 
       {!app.loading && app.info && !app.info.configured && <GameInstallation firstRun />}
 

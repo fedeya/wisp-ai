@@ -145,7 +145,7 @@ test('Overview shows the automatic addon update in progress instead of the updat
   expect(screen.getByText('Updating addon')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Update addon' })).toBeNull();
   // The header and the addon check show the progress; no extra progress line repeats it.
-  expect(document.querySelector('main .action-progress')?.textContent).toBe('');
+  expect(document.querySelector('main .action-progress')).toBeNull();
 
   await act(async () => finishUpdate());
   await screen.findByRole('heading', { name: 'Wisp is ready' });
