@@ -15,6 +15,7 @@ const status: Status = {
   routines: [],
   routineRuns: [],
   characters: {},
+  appUpdate: null,
 };
 function setup() {
   const queue: string[] = [];
@@ -43,6 +44,7 @@ function setup() {
     sendPanelCommand: vi.fn(),
     setCapability: vi.fn(async () => {}),
     setWowTransport: vi.fn(async () => {}),
+    setAppUpdate: vi.fn(),
     changed: vi.fn(),
   };
   const app = createDesktopApp(deps as never);
@@ -112,6 +114,16 @@ test('the addon installer can pause and resume the WoW transport', async () => {
   expect((await post('/addon/transport', { action: 'resume', wow: 'E:\\WoW' })).status).toBe(200);
   expect(deps.setWowTransport).toHaveBeenCalledWith({ action: 'resume', wow: 'E:\\WoW' });
   expect((await post('/addon/transport', { action: 'install' })).status).toBe(400);
+});
+test('the desktop reports the app update the game announces', async () => {
+  const { post, deps } = setup();
+  expect(await (await post('/app-update', { version: '0.0.9' })).json()).toEqual({ ok: true });
+  expect(deps.setAppUpdate).toHaveBeenCalledWith('0.0.9');
+  expect(deps.changed).toHaveBeenCalledOnce();
+  expect((await post('/app-update', { version: null })).status).toBe(200);
+  expect(deps.setAppUpdate).toHaveBeenLastCalledWith(null);
+  expect((await post('/app-update', { version: '' })).status).toBe(400);
+  expect(deps.setAppUpdate).toHaveBeenCalledTimes(2);
 });
 test('unknown routes and methods are refused', async () => {
   const { app } = setup();

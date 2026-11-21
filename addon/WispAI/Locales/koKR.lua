@@ -250,6 +250,7 @@ ns.Locales.koKR = {
 
     -- Chat notices
     ["notice.addonUpdated"] = "Wisp {installed} 버전이 설치되었습니다(현재 {loaded} 로드됨). 새 버전을 불러오려면 /reload를 입력하세요.",
+    ["notice.appUpdateAvailable"] = "Wisp {version} 버전을 사용할 수 있습니다. Wisp 앱을 열어 설치하세요.",
     ["notice.mapUnavailable"] = "지도 UI를 사용할 수 없습니다.",
     ["notice.leaveCombatMacro"] = "매크로를 집기 전에 전투에서 벗어나세요.",
 

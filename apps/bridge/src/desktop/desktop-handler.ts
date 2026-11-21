@@ -47,6 +47,7 @@ interface DesktopDependencies {
   readSimulationCharacter: () => Promise<unknown>;
   setCapability: (id: string, enabled: boolean) => Promise<void>;
   setWowTransport: (input: z.infer<typeof wowTransportInput>) => Promise<void>;
+  setAppUpdate: (version: string | null) => void;
   refreshMcpCatalog: () => void;
   requestStop: () => void;
   changed: () => void;
@@ -190,6 +191,11 @@ export function createDesktopApp(deps: DesktopDependencies) {
       return c.json(ok);
     })
     .post('/simulator/character', async (c) => c.json(await deps.readSimulationCharacter()))
+    .post('/app-update', json(routes['/app-update'].input), (c) => {
+      deps.setAppUpdate(c.req.valid('json').version);
+      deps.changed();
+      return c.json(ok);
+    })
     .post('/addon/transport', json(wowTransportInput), async (c) => {
       await deps.setWowTransport(c.req.valid('json'));
       return c.json(ok);

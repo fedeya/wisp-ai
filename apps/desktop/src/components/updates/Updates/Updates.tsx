@@ -26,6 +26,8 @@ type UpdatesProps = {
   locked: boolean;
   openSettings: () => void;
   onBusy: (label: string) => void;
+  /** The installable update found, or null; the game announces it. */
+  onAvailable?: (version: string | null) => void;
 };
 
 type UpdateOperation =
@@ -91,6 +93,7 @@ export default function Updates({
   locked,
   openSettings,
   onBusy,
+  onAvailable,
 }: UpdatesProps) {
   const statusHeading = useRef<HTMLHeadingElement>(null);
   const [updates] = useState(() =>
@@ -123,6 +126,11 @@ export default function Updates({
   const size = downloading ? downloadedSize(progress) : null;
   const channelLoaded = savedChannel !== null;
   const canInstall = supported && !!release;
+  const available = supported && release ? release.version : null;
+
+  useEffect(() => {
+    onAvailable?.(available);
+  }, [available, onAvailable]);
 
   const check = useCallback(async () => {
     const state = getState();

@@ -58,6 +58,15 @@ function ns.Core.NotifyAddonUpdate()
         loaded = ns.addonVersion,
     }))
 end
+local appUpdateNoticed
+-- Announces a Desktop app update once per version and UI session.
+function ns.Core.NotifyAppUpdate(version)
+    if type(version) ~= "string" or version == "" or version == appUpdateNoticed then
+        return
+    end
+    appUpdateNoticed = version
+    ns.Core.Log(ns.LocaleText("notice.appUpdateAvailable", { version = version }))
+end
 function WispAI_Receive(json)
     local ok, data = pcall(C_EncodingUtil.DeserializeJSON, json)
     if ok then

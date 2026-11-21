@@ -6,6 +6,7 @@
 
 - Wisp can now create macros with any command, including `/run`, `/click`, `/console`, chat commands and short aliases like `/tar`. Wisp explains what script, click and chat lines do, so review the code before you put the macro on a bar.
 - After an app update, Overview shows that Wisp is updating your addon instead of asking you to update it.
+- When a new version of the Wisp app is available, Wisp tells you in the game chat once, so you know to open the app and install it.
 
 ## Fixed
 

@@ -108,6 +108,8 @@ function createDesktopSession() {
   let loadedAccount = '';
   let startupDeadline = 0;
   let stopBridgeLifecycle: (() => void) | undefined;
+  let appUpdate: string | null = null;
+  let appUpdateSync: Promise<void> | undefined;
 
   function update(patch: Partial<DesktopState>) {
     if (!disposed) desktopStore.setState(patch);
@@ -132,6 +134,7 @@ function createDesktopSession() {
       const status = await call(bridge.status.$get());
       if (disposed) return;
       update({ status, connectionError: '', starting: false });
+      syncAppUpdate(status.appUpdate);
       const catalogRevision = JSON.stringify([
         status.auth.activeId,
         status.auth.status,
@@ -158,6 +161,24 @@ function createDesktopSession() {
     } finally {
       update({ loading: false });
     }
+  }
+
+  /**
+   * Tell the bridge which app update the game should announce. Status reads
+   * call this too, so a restarted bridge or a failed send catches up.
+   */
+  function syncAppUpdate(reported: string | null | undefined) {
+    if (!native || disposed || reported === undefined || reported === appUpdate || appUpdateSync) {
+      return;
+    }
+    appUpdateSync = call(bridge['app-update'].$post({ json: { version: appUpdate } }))
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        appUpdateSync = undefined;
+      });
   }
 
   async function work(
@@ -408,6 +429,11 @@ function createDesktopSession() {
       },
       setConfirmation: (confirm: Confirmation | null) => update({ confirm }),
       setBusy: (busy: string) => update({ busy }),
+      /** The app update the updater found (null when none), announced in game. */
+      setAppUpdate: (version: string | null) => {
+        appUpdate = version;
+        syncAppUpdate(getState().status?.appUpdate);
+      },
       clearFeedback: () => update({ feedback: '' }),
     },
   };

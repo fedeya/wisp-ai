@@ -40,6 +40,7 @@ function DesktopShell() {
   const app = useDesktop((state) => ({
     info: state.info,
     setBusy: state.actions.setBusy,
+    setAppUpdate: state.actions.setAppUpdate,
     busy: state.busy,
     clearFeedback: state.actions.clearFeedback,
     failed: state.failed,
@@ -134,6 +135,7 @@ function DesktopShell() {
                   locked={!!busy}
                   openSettings={() => void navigate('/settings')}
                   onBusy={app.setBusy}
+                  onAvailable={app.setAppUpdate}
                 />
                 <Outlet />
               </div>

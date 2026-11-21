@@ -250,6 +250,7 @@ ns.Locales.ruRU = {
 
     -- Chat notices
     ["notice.addonUpdated"] = "Установлен Wisp {installed} (загружен {loaded}). Введите /reload, чтобы загрузить новую версию.",
+    ["notice.appUpdateAvailable"] = "Доступен Wisp {version}. Откройте приложение Wisp, чтобы установить обновление.",
     ["notice.mapUnavailable"] = "Интерфейс карты недоступен.",
     ["notice.leaveCombatMacro"] = "Выйдите из боя, прежде чем брать макрос.",
 

@@ -250,6 +250,7 @@ ns.Locales.zhCN = {
 
     -- Chat notices
     ["notice.addonUpdated"] = "已安装 Wisp {installed}（当前加载 {loaded}）。输入 /reload 以载入新版本。",
+    ["notice.appUpdateAvailable"] = "Wisp {version} 已可用。打开 Wisp 应用进行安装。",
     ["notice.mapUnavailable"] = "地图界面不可用。",
     ["notice.leaveCombatMacro"] = "请先脱离战斗再拾取宏。",
 
