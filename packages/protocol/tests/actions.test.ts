@@ -1,20 +1,18 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { actionSchema, macroBodyError } from '../src/game-actions.ts';
-test('action schemas reject invalid coordinates, arbitrary commands and overlong UTF-8 macro text', () => {
-  assert.equal(
-    macroBodyError('#showtooltip\n/cast [@mouseover,help,nodead][] Frostbolt'),
-    undefined,
-  );
+test('action schemas reject invalid coordinates, control bytes and overlong UTF-8 macro text', () => {
   for (const body of [
+    '#showtooltip\n/cast [@mouseover,help,nodead][] Frostbolt',
     '/run print(1)',
     '/script x=1',
     '/click Button',
-    '/say hello',
-    '/cast Frostbolt\n/run print(1)',
-    'hello',
-    '   ',
+    '/say hello |cffff0000red|r',
+    '/tar Hogger\n/sc Frostbolt',
   ]) {
+    assert.equal(macroBodyError(body), undefined);
+  }
+  for (const body of ['   ', '/cast Frostbolt\x01', 'x'.repeat(256)]) {
     assert.ok(macroBodyError(body));
   }
   assert.throws(() =>

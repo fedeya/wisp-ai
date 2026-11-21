@@ -1,52 +1,14 @@
 import { z } from 'zod';
 import { settingsUpdate, settingsUndo } from './settings.ts';
-const macroCommands = new Set([
-  'cast',
-  'castsequence',
-  'castrandom',
-  'use',
-  'userandom',
-  'stopcasting',
-  'stopmacro',
-  'target',
-  'targetexact',
-  'targetenemy',
-  'targetfriend',
-  'cleartarget',
-  'focus',
-  'clearfocus',
-  'assist',
-  'petattack',
-  'petfollow',
-  'petpassive',
-  'petdefensive',
-  'petassist',
-  'startattack',
-  'stopattack',
-  'cancelaura',
-  'dismount',
-  'cancelform',
-  'equip',
-  'equipslot',
-]);
+// Any macro command is allowed; only the game's own size limit and control bytes are rejected.
 export function macroBodyError(body: string): string | undefined {
   if (
     !body.trim() ||
     Buffer.byteLength(body, 'utf8') > 255 ||
     // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
-    /[\x00-\x08\x0b\x0c\x0e-\x1f|]/.test(body)
+    /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(body)
   ) {
-    return 'Macro bodies must contain 1–255 UTF-8 bytes of plain macro text';
-  }
-  for (const line of body.replace(/\r\n?/g, '\n').split('\n')) {
-    if (!line.trim()) {
-      continue;
-    }
-    const directive = /^\s*#(showtooltip|show)(?:\s|$)/i.test(line);
-    const command = /^\s*\/([a-z]+)(?:\s|$)/i.exec(line)?.[1].toLowerCase();
-    if (!directive && (!command || !macroCommands.has(command))) {
-      return 'Use standard spell/item/targeting macro commands. Script, console, click and chat commands are not supported';
-    }
+    return 'Macro bodies must contain 1–255 UTF-8 bytes of macro text';
   }
 }
 export const waypointInput = z.object({

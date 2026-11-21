@@ -275,10 +275,16 @@ it(
                 and creates == 1
         )
         combat = false
+        r = act("create_macro", {
+            name = "Lua",
+            body = "/run print(1)\n/click Btn\n/say hi |cffff0000x|r",
+            perCharacter = true,
+        })
+        assert(r.status == "completed" and r.data.verified and creates == 2)
         assert(
-            act("create_macro", { name = "Lua", body = "/run print(1)", perCharacter = true }).status
+            act("create_macro", { name = "Ctl", body = "/cast X\1", perCharacter = true }).status
                     == "blocked"
-                and creates == 1
+                and creates == 2
         )
         GetNumMacros = function()
             return 120, 30
@@ -286,7 +292,7 @@ it(
         assert(
             act("create_macro", { name = "Full", body = "/cast Frostbolt", perCharacter = true }).status
                     == "blocked"
-                and creates == 1
+                and creates == 2
         )
     end
 )

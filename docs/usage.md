@@ -47,11 +47,11 @@ In-game **Settings > Integrations** controls optional addons, data sources, MCP 
 
 ### Actions you control
 
-| Action   | What to expect                                                                                                                                                                    |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Map pins | Requested pins use validated maps/coordinates and verified placement. Undo preserves pins you changed yourself.                                                                   |
-| Macros   | New macros only, outside combat. Inspect the code and place it yourself; Wisp cannot overwrite, run or assign it to a bar. Script, console, click and chat commands are excluded. |
-| Settings | Supported CVars and registered AceConfig options offer a preview. Use **Apply** or explicitly ask to apply it; **Undo** preserves later player edits.                             |
+| Action   | What to expect                                                                                                                                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Map pins | Requested pins use validated maps/coordinates and verified placement. Undo preserves pins you changed yourself.                                                                                                                                  |
+| Macros   | New macros only, outside combat. Inspect the code and place it yourself; Wisp cannot overwrite, run or assign it to a bar. Any macro command is allowed, including script, console, click and chat commands, so review the code before using it. |
+| Settings | Supported CVars and registered AceConfig options offer a preview. Use **Apply** or explicitly ask to apply it; **Undo** preserves later player edits.                                                                                            |
 
 Settings application checks combat, character identity and stale values, then reads back the result. Failures attempt rollback and report incomplete restoration; the last 30 proposals retain previous values locally. Action bars and keybindings are read-only. Unsupported addon options require an integration, not edits to another addon’s source.
 

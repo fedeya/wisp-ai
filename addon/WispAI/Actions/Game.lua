@@ -112,35 +112,7 @@ function actions.clear_waypoint()
     ns.db.wispWaypoint = nil
     return { applied = true, restoredPrevious = owned.previous ~= nil }
 end
-local macroCommands = {
-    cast = true,
-    castsequence = true,
-    castrandom = true,
-    use = true,
-    userandom = true,
-    stopcasting = true,
-    stopmacro = true,
-    target = true,
-    targetexact = true,
-    targetenemy = true,
-    targetfriend = true,
-    cleartarget = true,
-    focus = true,
-    clearfocus = true,
-    assist = true,
-    petattack = true,
-    petfollow = true,
-    petpassive = true,
-    petdefensive = true,
-    petassist = true,
-    startattack = true,
-    stopattack = true,
-    cancelaura = true,
-    dismount = true,
-    cancelform = true,
-    equip = true,
-    equipslot = true,
-}
+-- Any macro command is allowed; only the game's size limit and control bytes are rejected.
 local function validateMacro(args)
     assert(
         type(args.name) == "string"
@@ -152,21 +124,9 @@ local function validateMacro(args)
     assert(type(args.body) == "string", "Macro text is required")
     local body = args.body:gsub("\r\n", "\n"):gsub("\r", "\n")
     assert(
-        body:find("%S") and #body <= 255 and not body:find("[%z\1-\8\11\12\14-\31|]"),
+        body:find("%S") and #body <= 255 and not body:find("[%z\1-\8\11\12\14-\31]"),
         "Macro text must contain at most 255 UTF-8 bytes"
     )
-    for line in (body .. "\n"):gmatch("([^\n]*)\n") do
-        local text = line:match("^%s*(.-)%s*$")
-        if text ~= "" then
-            local directive = text:match("^#([%a]+)%s") or text:match("^#([%a]+)$")
-            local command = text:match("^/([%a]+)%s") or text:match("^/([%a]+)$")
-            assert(
-                (directive and (directive:lower() == "showtooltip" or directive:lower() == "show"))
-                    or (command and macroCommands[command:lower()]),
-                "Only standard spell/item/targeting macro commands are supported; scripts, console, click and chat commands are not"
-            )
-        end
-    end
     return body
 end
 function actions.create_macro(args)
