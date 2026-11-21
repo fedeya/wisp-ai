@@ -11,7 +11,9 @@
   a group member and what hit hardest in your last fight. Recaps start at login
   or reload and are not saved between sessions. Group deaths and fight totals
   need the game's damage meter turned on and are available after combat.
-- Wisp's interface in WoW is now in Spanish when your game client is in Spanish.
+- Wisp's interface in WoW now follows your game client's language: English,
+  German, Spanish, French, Italian, Korean, Portuguese, Russian and Chinese
+  (Simplified and Traditional).
 - Copy any finished reply: hover it and select **Copy**.
 - Wisp Desktop looks and behaves like a native Windows app, with its own title
   bar, and it remembers its window size and position.
