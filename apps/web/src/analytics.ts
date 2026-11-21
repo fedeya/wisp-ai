@@ -15,6 +15,11 @@ export type DownloadDetails = {
   channel?: 'stable' | 'nightly';
 };
 
+export type SafetyDetails = {
+  location: 'hero' | 'home-footer' | 'setup';
+  locale: string;
+};
+
 export function initializeAnalytics() {
   if (initialized) {
     return;
@@ -56,5 +61,16 @@ export function trackDownload(details: DownloadDetails) {
     );
   } catch {
     // Navigation remains native even if tracking is unavailable.
+  }
+}
+
+export function trackSafetyClick(details: SafetyDetails) {
+  if (!initialized) {
+    return;
+  }
+  try {
+    posthog.capture('safety_info_clicked', { surface: 'web', ...details });
+  } catch {
+    // The safety section must stay reachable even if tracking is unavailable.
   }
 }

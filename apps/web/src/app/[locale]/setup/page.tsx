@@ -46,7 +46,7 @@ export default async function Setup({ params }: LocalePageProps) {
           {t('Download for Windows')}
           <Icon name="download" size={17} />
         </DownloadLink>
-        <UsageRisk locale={locale} />
+        <UsageRisk locale={locale} location="setup" />
         <ol
           className={`guide-steps p-0 mx-0 mt-[58px] mb-0 list-none [counter-reset:setup] [&_li]:[counter-increment:setup] [&_li::before]:[content:'0'_counter(setup)] [&_li::before]:absolute [&_li::before]:left-[0] [&_li::before]:top-[3px] [&_li::before]:text-gold [&_li::before]:text-[22px] [&_li::before]:[font-family:Georgia,_serif] [&_li::before]:font-normal [&_li::before]:not-italic [&_li::before]:[line-height:normal]`}
         >
@@ -213,36 +213,49 @@ export default async function Setup({ params }: LocalePageProps) {
         </section>
         <section
           className="guide-extra mx-0 border-t-[1px] [border-top-style:solid] border-t-[var(--line)] pt-[32px] mt-[5px] mb-[36px] [scroll-margin-top:0]"
-          id="privacy"
+          id="safety"
         >
-          <h2 className="text-[28px] tracking-[-0.5px] mb-[17px]">
-            {t('Your controls and data.')}
-          </h2>
+          <h2 className="text-[28px] tracking-[-0.5px] mb-[17px]">{t('Is it safe?')}</h2>
           <p>
             {t(
-              'Release builds share usage analytics with PostHog by default: versions, activity, features used, outcomes and durations with a random installation ID. Analytics events exclude conversations, character names, tool arguments and results, and credentials. Turn it off in desktop Settings / Usage analytics.',
+              'The in-game part of Wisp is a regular addon. The desktop app doesn’t read the game’s memory, inject code or press keys for you.',
             )}
-          </p>
-          <p>
-            {t(
-              'Messages, relevant character readings and conversation context go to the AI connection you choose, including any gateway it uses. Enabled external sources receive lookup arguments. Conversations and preferences are stored locally. Data handling depends on your provider or endpoint.',
-            )}
-          </p>
-          <p>
-            {t('Control optional sources and tools in')}{' '}
-            <strong className="text-[#dfd4c0] font-medium">
-              {t('Settings ')}
-              <Icon name="chevron-right" size={13} />
-              {t(' Integrations')}
-            </strong>
-            {t('. View, edit or forget saved notes in ')}
-            <strong className="text-[#dfd4c0] font-medium">{t('Memory')}</strong>
-            {t('. Deleting a chat does not delete saved memory.')}
           </p>
           <p>
             {t(
               'You control movement, combat and trading. Wisp can create new macros, place verified map markers and apply supported settings changes when requested. It does not execute macros or place them on your action bar.',
             )}
+          </p>
+          <p>
+            {t(
+              'We don’t know whether Blizzard permits Wisp or whether using it could lead to an account ban. Wisp is open source, so you can ',
+            )}
+            <a className="text-gold underline underline-offset-2" href={site.repository}>
+              {t('review its code')}
+            </a>
+            {t('.')}
+          </p>
+        </section>
+        <section
+          className="guide-extra mx-0 border-t-[1px] [border-top-style:solid] border-t-[var(--line)] pt-[32px] mt-[5px] mb-[36px] [scroll-margin-top:0]"
+          id="privacy"
+        >
+          <h2 className="text-[28px] tracking-[-0.5px] mb-[17px]">{t('Your data.')}</h2>
+          <p>
+            {t(
+              'Conversations and preferences stay on your PC. What you ask, plus the character details needed to answer, go to the AI connection you choose.',
+            )}
+          </p>
+          <p>
+            {t(
+              'The app sends usage statistics with a random ID, without chats, character names or keys. You can turn them off in ',
+            )}
+            <strong className="text-[#dfd4c0] font-medium">
+              {t('Settings ')}
+              <Icon name="chevron-right" size={13} />
+              {t(' Usage analytics')}
+            </strong>
+            {t('.')}
           </p>
         </section>
       </main>

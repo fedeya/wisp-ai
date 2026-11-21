@@ -72,3 +72,20 @@ test('deployments can override the public project token and region', async () =>
     expect.objectContaining({ api_host: 'https://eu.i.posthog.com' }),
   );
 });
+
+test('safety link clicks record where the visitor opened the safety section', async () => {
+  const { initializeAnalytics, trackSafetyClick } = await import('../src/analytics.ts');
+  trackSafetyClick({ location: 'hero', locale: 'en' });
+  expect(sdk.capture).not.toHaveBeenCalled();
+  initializeAnalytics();
+  trackSafetyClick({ location: 'setup', locale: 'es' });
+  expect(sdk.capture).toHaveBeenCalledWith('safety_info_clicked', {
+    surface: 'web',
+    location: 'setup',
+    locale: 'es',
+  });
+  sdk.capture.mockImplementationOnce(() => {
+    throw new Error('offline');
+  });
+  expect(() => trackSafetyClick({ location: 'hero', locale: 'en' })).not.toThrow();
+});

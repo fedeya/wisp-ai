@@ -141,7 +141,7 @@ export default async function Home({ params }: LocalePageProps) {
               <span className="download-note mt-[13px] block text-[11px] leading-[1.6] text-[#b8ad99]">
                 {t('Windows x64 · Choose your AI connection')}
               </span>
-              <UsageRisk locale={locale} />
+              <UsageRisk locale={locale} location="hero" />
             </div>
             <div
               className="hero-product py-0 relative min-h-[0] self-center flex justify-end mt-[40px] md:mt-0 md:pb-0"
@@ -541,7 +541,7 @@ export default async function Home({ params }: LocalePageProps) {
             {release && `v${release.version}`}
             {t(' · Windows x64 · Open source')}
           </p>
-          <UsageRisk locale={locale} centered />
+          <UsageRisk locale={locale} location="home-footer" centered />
         </section>
         <section
           className={`${containerClassName} mb-12 flex flex-wrap items-center justify-between gap-x-8 gap-y-5 rounded-md border border-solid border-[#c4a16a38] bg-[#c4a16a0a] px-5 py-6 md:mb-16 md:px-8`}
