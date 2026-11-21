@@ -32,6 +32,11 @@ local function flag(value)
     return readable(value) and value == true or nil
 end
 
+-- Game tables are read defensively: anything that is not a table reads as empty.
+local function list(value)
+    return type(value) == "table" and value or {}
+end
+
 local function call(fn, ...)
     if type(fn) ~= "function" then
         return nil
@@ -50,84 +55,99 @@ local function inCombat()
         or false
 end
 
+-- One recap event in Wisp's shape. `diedAt` is the newest event's timestamp.
+local function normalizeEvent(entry, index, maxHealth, diedAt)
+    local event = text(entry.event)
+    local environment = text(entry.environmentalType)
+    local health = number(entry.currentHP)
+    local at = number(entry.timestamp)
+    return {
+        event = event,
+        spell = event == "SWING_DAMAGE" and "Melee" or text(entry.spellName) or environment,
+        spellId = positive(entry.spellId),
+        environment = environment,
+        source = not flag(entry.hideCaster) and text(entry.sourceName) or nil,
+        amount = number(entry.amount),
+        overkill = positive(entry.overkill),
+        absorbed = positive(entry.absorbed),
+        resisted = positive(entry.resisted),
+        blocked = positive(entry.blocked),
+        school = number(entry.school),
+        deadly = flag(entry.deadly),
+        avoidable = flag(entry.avoidable),
+        health = health,
+        healthPercent = health and maxHealth and math.floor(health / maxHealth * 100) or nil,
+        secondsBeforeDeath = at and diedAt and round(diedAt - at) or nil,
+        causedDeath = index == 1 or nil,
+    }
+end
+
+-- Damage per source and ability, largest first, and the overall total.
+local function totalsBySource(events)
+    local totals, total = {}, 0
+    for _, row in ipairs(events) do
+        if row.amount then
+            local key = (row.source or "?") .. "\0" .. (row.spell or "?")
+            local entry = totals[key]
+                or { source = row.source, ability = row.spell, amount = 0, hits = 0 }
+            entry.amount = entry.amount + row.amount
+            entry.hits = entry.hits + 1
+            totals[key] = entry
+            total = total + row.amount
+        end
+    end
+    local ranked = {}
+    for _, entry in pairs(totals) do
+        ranked[#ranked + 1] = entry
+    end
+    table.sort(ranked, function(a, b)
+        return a.amount > b.amount
+    end)
+    return ranked, total
+end
+
 -- Blizzard lists recap events newest first: event 1 caused the death.
+-- A nil recapID reads the player's latest death.
 local function readRecap(recapID)
     local recap = C_DeathRecap
     if not recap or not call(recap.HasRecapEvents, recapID) then
-        return nil
+        return { recapAvailable = false }
     end
-    local raw = call(recap.GetRecapEvents, recapID)
-    if type(raw) ~= "table" or #raw == 0 then
-        return nil
+    local raw = list(call(recap.GetRecapEvents, recapID))
+    if #raw == 0 then
+        return { recapAvailable = false }
     end
     local maxHealth = positive(call(recap.GetRecapMaxHealth, recapID))
     local diedAt
     for _, entry in ipairs(raw) do
-        local at = type(entry) == "table" and number(entry.timestamp)
+        local at = number(list(entry).timestamp)
         if at and (not diedAt or at > diedAt) then
             diedAt = at
         end
     end
-    local events, damage, total = {}, {}, 0
+    local events = {}
     for index = 1, math.min(#raw, MAX_RECAP_EVENTS) do
-        local entry = raw[index]
-        if type(entry) == "table" then
-            local event = text(entry.event)
-            local environment = text(entry.environmentalType)
-            local health = number(entry.currentHP)
-            local at = number(entry.timestamp)
-            local row = {
-                event = event,
-                spell = event == "SWING_DAMAGE" and "Melee" or text(entry.spellName) or environment,
-                spellId = positive(entry.spellId),
-                environment = environment,
-                source = not flag(entry.hideCaster) and text(entry.sourceName) or nil,
-                amount = number(entry.amount),
-                overkill = positive(entry.overkill),
-                absorbed = positive(entry.absorbed),
-                resisted = positive(entry.resisted),
-                blocked = positive(entry.blocked),
-                school = number(entry.school),
-                deadly = flag(entry.deadly),
-                avoidable = flag(entry.avoidable),
-                health = health,
-                healthPercent = health and maxHealth and math.floor(health / maxHealth * 100)
-                    or nil,
-                secondsBeforeDeath = at and diedAt and round(diedAt - at) or nil,
-                causedDeath = index == 1 or nil,
-            }
-            events[#events + 1] = row
-            if row.amount then
-                local key = (row.source or "?") .. "\0" .. (row.spell or "?")
-                local entryTotal = damage[key]
-                    or { source = row.source, ability = row.spell, amount = 0, hits = 0 }
-                entryTotal.amount = entryTotal.amount + row.amount
-                entryTotal.hits = entryTotal.hits + 1
-                damage[key] = entryTotal
-                total = total + row.amount
-            end
+        if type(raw[index]) == "table" then
+            events[#events + 1] = normalizeEvent(raw[index], index, maxHealth, diedAt)
         end
     end
-    local bySource = {}
-    for _, entry in pairs(damage) do
-        bySource[#bySource + 1] = entry
+    if #events == 0 then
+        return { recapAvailable = false }
     end
-    table.sort(bySource, function(a, b)
-        return a.amount > b.amount
-    end)
+    local bySource, total = totalsBySource(events)
     return {
+        recapAvailable = true,
         maxHealth = maxHealth,
         killingBlow = events[1],
         damageTaken = total,
         damageBySource = bySource,
-        secondsCovered = events[#events] and events[#events].secondsBeforeDeath or nil,
+        secondsCovered = events[#events].secondsBeforeDeath,
         events = events,
     }
 end
 
 local function recordDeath(diedAt)
-    local recap = readRecap(nil)
-    local death = recap or { recapAvailable = false }
+    local death = readRecap(nil)
     death.diedAt = diedAt
     death.zone = GetRealZoneText and text(call(GetRealZoneText)) or nil
     death.subzone = GetSubZoneText and text(call(GetSubZoneText)) or nil
@@ -191,20 +211,22 @@ local function groupDeaths(enums, eventLimit)
     local session =
         call(C_DamageMeter.GetCombatSessionFromType, enums.sessions.Current, enums.types.Deaths)
     local out = {}
-    for _, source in ipairs(type(session) == "table" and session.combatSources or {}) do
+    for _, source in ipairs(list(list(session).combatSources)) do
         if #out >= MAX_GROUP_DEATHS then
             break
         end
-        if type(source) == "table" and not flag(source.isLocalPlayer) then
+        source = list(source)
+        if not flag(source.isLocalPlayer) then
             local recapID = positive(source.deathRecapID)
-            local recap = recapID and readRecap(recapID)
+            local recap = recapID and readRecap(recapID) or { recapAvailable = false }
             out[#out + 1] = {
                 name = text(source.name),
                 class = text(source.classFilename),
                 deathTimeSeconds = number(source.deathTimeSeconds),
-                killingBlow = recap and recap.killingBlow or nil,
-                damageBySource = recap and recap.damageBySource or nil,
-                events = recap and trim(recap.events, eventLimit) or nil,
+                recapAvailable = recap.recapAvailable,
+                killingBlow = recap.killingBlow,
+                damageBySource = recap.damageBySource,
+                events = recap.events and trim(recap.events, eventLimit),
             }
         end
     end
@@ -222,12 +244,9 @@ local function readFight(enums)
     if type(taken) == "table" then
         fight.damageTaken = number(taken.totalAmount)
         local spells = {}
-        for _, spell in ipairs(type(taken.combatSpells) == "table" and taken.combatSpells or {}) do
-            local details = type(spell) == "table"
-                    and type(spell.combatSpellDetails) == "table"
-                    and spell.combatSpellDetails
-                or {}
-            spell = type(spell) == "table" and spell or {}
+        for _, spell in ipairs(list(taken.combatSpells)) do
+            spell = list(spell)
+            local details = list(spell.combatSpellDetails)
             spells[#spells + 1] = {
                 spellId = positive(spell.spellID),
                 source = text(spell.creatureName) or text(details.unitName),
@@ -251,8 +270,8 @@ local function readFight(enums)
         and call(C_DamageMeter.GetCombatSessionFromType, current, types.DamageTaken)
     if type(group) == "table" then
         local members = {}
-        for _, source in ipairs(type(group.combatSources) == "table" and group.combatSources or {}) do
-            source = type(source) == "table" and source or {}
+        for _, source in ipairs(list(group.combatSources)) do
+            source = list(source)
             members[#members + 1] = {
                 name = text(source.name),
                 class = text(source.classFilename),

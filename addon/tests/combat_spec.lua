@@ -151,7 +151,7 @@ it("copies the game's recap at each death and keeps the newest five", function()
     assert(data.view == "deaths" and data.deathCount == 1 and data.inCombat == false)
     local death = data.deaths[1]
     assert(death.zone == "Westfall" and death.level == 12 and death.secondsAgo == 30)
-    assert(death.maxHealth == 1000 and death.damageTaken == 1040)
+    assert(death.recapAvailable == true and death.maxHealth == 1000 and death.damageTaken == 1040)
     local blow = death.killingBlow
     assert(blow.causedDeath and blow.spell == "Melee" and blow.overkill == 40)
     assert(blow.source == "Defias Pillager" and blow.secondsBeforeDeath == 0)
@@ -226,8 +226,9 @@ it("reads group deaths and the last fight from the meter only after combat", fun
     assert(#group == 2)
     assert(group[1].name == "Tank" and group[1].class == "WARRIOR")
     assert(group[1].killingBlow.spell == "Cleave" and group[1].killingBlow.source == "Hogger")
-    assert(group[1].deathTimeSeconds == 31)
+    assert(group[1].deathTimeSeconds == 31 and group[1].recapAvailable == true)
     assert(group[2].name == "Healer" and group[2].killingBlow == nil)
+    assert(group[2].recapAvailable == false and group[2].events == nil)
 
     local fight = ns.Character.Inspect({ kind = "combat", args = { view = "fight" } }).data.fight
     assert(fight.durationSeconds == 42 and fight.damageTaken == 1500 and fight.damageDone == 2400)
