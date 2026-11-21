@@ -26,7 +26,7 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 ## Commands
 
 Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
-(`mise install` uses [mise.toml](mise.toml)).
+(`mise install` uses [mise.toml](mise.toml), which also pins Rust, Go, protoc and PowerShell 7).
 
 | Command                                         | Does                                                                 |
 | ----------------------------------------------- | -------------------------------------------------------------------- |

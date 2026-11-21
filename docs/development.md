@@ -5,7 +5,9 @@
 ## Prerequisites and checks
 
 Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json).
-[mise](https://mise.jdx.dev) installs the same versions CI uses from [mise.toml](../mise.toml).
+[mise](https://mise.jdx.dev) installs the same versions CI uses from [mise.toml](../mise.toml),
+along with Rust, Go, protoc and PowerShell 7 (`pwsh`) for the native host, the simulator and the
+`scripts/*.ps1` helpers.
 Busted and Luacheck need Lua 5.1 (or LuaJIT) with LuaRocks. From the repository root:
 
 ```sh
@@ -151,7 +153,7 @@ and partial-startup cleanup in temporary data directories.
 In addition to the workspace prerequisites, install Rust, Windows C++ build tools, Git, Go and protoc. Build the pinned simulator before starting the native app:
 
 ```powershell
-powershell -File scripts/build-simulator.ps1
+pwsh -File scripts/build-simulator.ps1
 pnpm desktop:dev
 ```
 
