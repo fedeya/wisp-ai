@@ -249,8 +249,10 @@ test('a new character key is adopted before the packet that reports it is handle
       data: { ready: true, event: 'level_up', values: { level: 20 } },
     }),
   );
-  const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
-  expect(adoptCharacter).toHaveBeenCalledWith(key);
+  const key = JSON.stringify(['WoW Forever', 'Player-1-00A']);
+  expect(adoptCharacter).toHaveBeenCalledWith(
+    expect.objectContaining({ key, name: 'Fedrath', guid: 'Player-1-00A' }),
+  );
   expect(observe).toHaveBeenCalledWith(key, expect.anything());
   expect(calls).toEqual(['adopt', 'observe']);
 });

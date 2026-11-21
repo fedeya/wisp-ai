@@ -209,7 +209,15 @@ export function basicGameContext(value: unknown) {
     sections: output,
   };
 }
-export function characterIdentity(value: unknown): string | undefined {
+export interface CharacterProfile {
+  /** `[game, guid]`, or `[game, realm, name]` from an addon that sends no GUID. */
+  key: string;
+  game: string;
+  realm: string;
+  name: string;
+  guid?: string;
+}
+export function characterProfile(value: unknown): CharacterProfile | undefined {
   const sections = record(record(value).sections),
     section = record(sections.character),
     data = record(section.data);
@@ -221,8 +229,13 @@ export function characterIdentity(value: unknown): string | undefined {
   ) {
     return;
   }
-  const key = [data.game || 'WoW Forever', data.realm, data.name];
-  return JSON.stringify(typeof data.guid === 'string' && data.guid ? [...key, data.guid] : key);
+  const game = typeof data.game === 'string' && data.game ? data.game : 'WoW Forever';
+  const guid = typeof data.guid === 'string' && data.guid ? data.guid : undefined;
+  const key = JSON.stringify(guid ? [game, guid] : [game, data.realm, data.name]);
+  return { key, game, realm: data.realm, name: data.name, ...(guid ? { guid } : {}) };
+}
+export function characterIdentity(value: unknown): string | undefined {
+  return characterProfile(value)?.key;
 }
 // JSON escapes the tag delimiters so user text and game strings cannot close a block.
 function tagged(name: string, data: unknown) {

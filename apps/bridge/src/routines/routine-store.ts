@@ -96,7 +96,6 @@ export class RoutineStore {
       .where(and(eq(routines.characterKey, row.characterKey), eq(routines.id, row.id)))
       .run();
   }
-  /** Writes resolve their character key inside `work`, after any adoption that ran first. */
   private async transact<T>(work: (db: ApplicationOrm) => T) {
     await this.database.initializeProducts();
     return this.database.transaction(work);
@@ -108,7 +107,6 @@ export class RoutineStore {
     now = Date.now(),
   ) {
     return this.transact((db) => {
-      characterKey = this.database.characterKeys.resolve(characterKey);
       if (input.operation === 'save') {
         const row = this.row(db, characterKey, input.routine.id);
         const old = row && decodeRoutine(row);
@@ -165,7 +163,6 @@ export class RoutineStore {
   }
   observe(characterKey: string, event: RoutineEvent, now = Date.now()) {
     return this.transact((db) => {
-      characterKey = this.database.characterKeys.resolve(characterKey);
       const rows = db
         .select()
         .from(routines)
@@ -184,7 +181,6 @@ export class RoutineStore {
   }
   claim(characterKey: string, now = Date.now()) {
     return this.transact((db) => {
-      characterKey = this.database.characterKeys.resolve(characterKey);
       const row = db
         .select()
         .from(routines)

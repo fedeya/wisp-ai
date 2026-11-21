@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { capabilityViewSchema } from './capabilities.js';
 import { savedRoutine, routineRun } from './routines.js';
+import { characterName } from './character-key.js';
 import { connectionView } from './providers.js';
 import { searchState } from './search.js';
 export const desktopInfoSchema = z.object({
@@ -60,6 +61,8 @@ export const statusSchema = z.object({
   panels: z.array(panelSchema),
   routines: z.array(savedRoutine),
   routineRuns: z.array(routineRun),
+  /** Saved names for GUID character keys, for labels. */
+  characters: z.record(z.string(), characterName).default({}),
 });
 export type DesktopInfo = z.infer<typeof desktopInfoSchema>;
 export type Model = z.infer<typeof modelSchema>;

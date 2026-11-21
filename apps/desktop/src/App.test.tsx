@@ -45,6 +45,7 @@ beforeEach(() => {
     panels: [],
     routines: [],
     routineRuns: [],
+    characters: {},
   };
   vi.mocked(desktop).mockImplementation(async (command) => {
     if (command === 'detect_game_folders') {

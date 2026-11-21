@@ -1,52 +1,48 @@
 import { z } from 'zod';
-// [game, realm, name, guid?]. The realm is empty in WoW Forever, which has no
-// realms. The GUID never changes for a character, so it is what ties stored
-// data to them; keys saved before it existed have only three parts.
-const identity = z.union([
-  z.tuple([z.string().min(1), z.string(), z.string().min(1), z.string().min(1)]),
-  z.tuple([z.string().min(1), z.string(), z.string().min(1)]),
-]);
-export interface CharacterIdentity {
-  game: string;
-  realm: string;
-  name: string;
-  guid?: string;
+// A character key is [game, guid]: the GUID never changes for a character, so
+// data stored under it survives realm and name changes. Keys saved before the
+// addon sent GUIDs are [game, realm, name]; the realm is empty in WoW Forever.
+const guidKey = z.tuple([z.string().min(1), z.string().min(1)]);
+const legacyKey = z.tuple([z.string().min(1), z.string(), z.string().min(1)]);
+export type CharacterKey =
+  | { kind: 'guid'; game: string; guid: string }
+  | { kind: 'legacy'; game: string; realm: string; name: string };
+export function parseCharacterKey(key: string): CharacterKey {
+  const value: unknown = JSON.parse(key);
+  const guid = guidKey.safeParse(value);
+  if (guid.success) return { kind: 'guid', game: guid.data[0], guid: guid.data[1] };
+  const [game, realm, name] = legacyKey.parse(value);
+  return { kind: 'legacy', game, realm, name };
 }
-export function parseCharacterKey(key: string): CharacterIdentity {
-  const [game, realm, name, guid] = identity.parse(JSON.parse(key));
-  return guid ? { game, realm, name, guid } : { game, realm, name };
-}
-function tryParse(key: string): CharacterIdentity | undefined {
+function tryParse(key: string): CharacterKey | undefined {
   try {
     return parseCharacterKey(key);
   } catch {
     return undefined;
   }
 }
-function sameCharacter(stored: CharacterIdentity, current: CharacterIdentity) {
-  if (stored.game !== current.game) return false;
-  if (stored.guid && current.guid) return stored.guid === current.guid;
-  return !stored.guid && stored.name === current.name;
-}
 /**
- * The stored keys whose data belongs to the character `key` names:
- * - keys with the same GUID (its realm or name changed);
- * - pre-GUID keys with an empty realm and the same game and name;
- * - pre-GUID keys with a realm and the same game and name, but only when a
- *   single realm has that name. WoW Forever reuses names across its PvP and
- *   PvE servers, and an empty realm can no longer tell which one is current.
+ * The pre-GUID keys whose data belongs to a character with this game and
+ * name: keys with an empty realm, and keys with a realm only when a single
+ * realm has that name. WoW Forever reuses names across its PvP and PvE
+ * servers, and an empty realm can no longer tell which one is current.
  */
-export function adoptableKeys(stored: Iterable<string | null | undefined>, key: string): string[] {
-  const current = tryParse(key);
-  if (!current) return [];
-  const candidates = [...new Set(stored)].flatMap((k) => {
-    const parsed = k && k !== key ? tryParse(k) : undefined;
-    return parsed && sameCharacter(parsed, current) ? [{ key: k!, ...parsed }] : [];
+export function adoptableKeys(
+  stored: Iterable<string | null | undefined>,
+  character: { game: string; name: string },
+): string[] {
+  const candidates = [...new Set(stored)].flatMap((key) => {
+    const parsed = key ? tryParse(key) : undefined;
+    return parsed?.kind === 'legacy' &&
+      parsed.game === character.game &&
+      parsed.name === character.name
+      ? [{ key: key!, realm: parsed.realm }]
+      : [];
   });
-  const realms = new Set(candidates.flatMap((c) => (!c.guid && c.realm ? [c.realm] : [])));
-  return candidates.filter((c) => c.guid || !c.realm || realms.size === 1).map((c) => c.key);
+  const realms = new Set(candidates.flatMap((c) => (c.realm ? [c.realm] : [])));
+  return candidates.filter((c) => !c.realm || realms.size === 1).map((c) => c.key);
 }
-export type ExpectedCharacter = Pick<CharacterIdentity, 'realm' | 'name' | 'guid'>;
+export type ExpectedCharacter = { guid: string } | { realm: string; name: string };
 /**
  * The character an action must run as, for the addon to double-check.
  * Undefined when the turn had no identity; the transport session still pins
@@ -55,11 +51,20 @@ export type ExpectedCharacter = Pick<CharacterIdentity, 'realm' | 'name' | 'guid
 export function expectedCharacter(key: string | undefined): ExpectedCharacter | undefined {
   const parsed = key ? tryParse(key) : undefined;
   if (!parsed) return undefined;
-  const { realm, name, guid } = parsed;
-  return guid ? { realm, name, guid } : { realm, name };
+  return parsed.kind === 'guid'
+    ? { guid: parsed.guid }
+    : { realm: parsed.realm, name: parsed.name };
 }
-export function characterLabel(key: string, separator = ' · '): string {
+export const characterName = z.object({ name: z.string().min(1), realm: z.string() });
+export type CharacterName = z.infer<typeof characterName>;
+/** A readable name: from `names` (saved by the bridge) or a pre-GUID key itself. */
+export function characterLabel(
+  key: string,
+  names: Record<string, CharacterName> = {},
+  separator = ' · ',
+): string {
   const parsed = tryParse(key);
-  if (!parsed) return key;
-  return parsed.realm ? parsed.name + separator + parsed.realm : parsed.name;
+  const name = names[key] ?? (parsed?.kind === 'legacy' ? parsed : undefined);
+  if (!name) return parsed ? 'Unknown character' : key;
+  return name.realm ? name.name + separator + name.realm : name.name;
 }

@@ -16,7 +16,7 @@ export default function Routines() {
     setConfirmation: state.actions.setConfirmation,
   }));
   if (app.loading || !app.status) return <DataState />;
-  const { routines, routineRuns, gameConnected } = app.status;
+  const { routines, routineRuns, gameConnected, characters } = app.status;
 
   return (
     <>
@@ -40,7 +40,8 @@ export default function Routines() {
               <div>
                 <h2>{routine.title}</h2>
                 <p className="text-muted text-sm">
-                  {routine.enabled ? 'Active' : 'Paused'} · {characterLabel(characterKey)}
+                  {routine.enabled ? 'Active' : 'Paused'} ·{' '}
+                  {characterLabel(characterKey, characters)}
                 </p>
               </div>
               <div className="actions gap-[10px] mt-0 flex flex-wrap items-center">

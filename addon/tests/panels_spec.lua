@@ -166,56 +166,61 @@ it(
     end
 )
 
-it("panels with a GUID key follow that character and older keys match realm and name", function()
-    local env = helper.env()
-    setfenv(1, env)
-    helper.fixture("addon/tests/wow-ui-stub.lua", env)
-    do
-        ns = helper.namespace({ db = {} })
-        function UnitName()
-            return "Mage"
+it(
+    "panels with a [game, guid] key follow that character and older keys match realm and name",
+    function()
+        local env = helper.env()
+        setfenv(1, env)
+        helper.fixture("addon/tests/wow-ui-stub.lua", env)
+        do
+            ns = helper.namespace({ db = {} })
+            function UnitName()
+                return "Mage"
+            end
+            function GetRealmName()
+                return ""
+            end
+            function UnitGUID()
+                return "Player-1-00A"
+            end
+            keys = {
+                mine = { "Forever", "Player-1-00A" },
+                alt = { "Forever", "Player-1-00B" },
+                legacy = { "Forever", "", "Mage" },
+                otherRealm = { "Forever", "Old Realm", "Mage" },
+            }
+            C_EncodingUtil = {
+                DeserializeJSON = function(key)
+                    return keys[key]
+                end,
+            }
         end
-        function GetRealmName()
-            return ""
-        end
-        function UnitGUID()
-            return "Player-1-00A"
-        end
-        keys = {
-            mine = { "Forever", "Old Realm", "Renamed", "Player-1-00A" },
-            alt = { "Forever", "", "Mage", "Player-1-00B" },
-            legacy = { "Forever", "", "Mage" },
-        }
-        C_EncodingUtil = {
-            DeserializeJSON = function(key)
-                return keys[key]
-            end,
-        }
-    end
-    helper.addon("UI/RichUI.lua", env)
-    helper.addon("Panels/Panels.lua", env)
+        helper.addon("UI/RichUI.lua", env)
+        helper.addon("Panels/Panels.lua", env)
 
-    local list = {}
-    for key in pairs(keys) do
-        list[#list + 1] = {
-            id = key,
-            characterKey = key,
-            title = "Panel " .. key,
-            ui = { { id = "card", kind = "card", title = key } },
-        }
-    end
-    ns.Panels.ReceivePanels(list)
-    local shown = {}
-    for _, w in ipairs(UI_TEST.widgets) do
-        if w.title and type(w.title) == "table" and w:IsShown() then
-            shown[w.title:GetText()] = true
+        local list = {}
+        for key in pairs(keys) do
+            list[#list + 1] = {
+                id = key,
+                characterKey = key,
+                title = "Panel " .. key,
+                ui = { { id = "card", kind = "card", title = key } },
+            }
         end
+        ns.Panels.ReceivePanels(list)
+        local shown = {}
+        for _, w in ipairs(UI_TEST.widgets) do
+            if w.title and type(w.title) == "table" and w:IsShown() then
+                shown[w.title:GetText()] = true
+            end
+        end
+        assert(shown["Panel mine"] and shown["Panel legacy"], "own panels are shown")
+        assert(not shown["Panel alt"], "another character's GUID is not shown")
+        assert(not shown["Panel otherRealm"], "a pre-GUID key from another realm is not shown")
     end
-    assert(shown["Panel mine"] and shown["Panel legacy"], "own panels are shown")
-    assert(not shown["Panel alt"], "another character's GUID is not shown")
-end)
+)
 
-it("a panel moved to a new character key keeps the layout of the key it came from", function()
+it("a panel moved to the GUID key keeps the layout of the key it came from", function()
     local env = helper.env()
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
@@ -239,29 +244,28 @@ it("a panel moved to a new character key keeps the layout of the key it came fro
         end
         C_EncodingUtil = {
             DeserializeJSON = function()
-                return { "Forever", "", "Mage", "Player-1-00A" }
+                return { "Forever", "Player-1-00A" }
             end,
         }
     end
     helper.addon("UI/RichUI.lua", env)
     helper.addon("Panels/Panels.lua", env)
 
-    local function farm(id, characterKey, formerKeys)
+    local function farm(id, characterKey, formerKey)
         return {
             id = id,
             characterKey = characterKey,
-            formerKeys = formerKeys,
+            formerKey = formerKey,
             title = "Farm",
             ui = { { id = "card", kind = "card", title = "Farm" } },
         }
     end
-    -- The addon missed the move to "middle"; the layout is still under "pvp".
-    ns.Panels.ReceivePanels({ farm("farm", "guid", { "pvp", "middle" }) })
+    ns.Panels.ReceivePanels({ farm("farm", "guid", "pvp") })
     local state = ns.db.panelState
     assert(state["guid:farm"] and state["guid:farm"].hidden == true, "layout follows the panel")
     assert(state["pvp:farm"] == nil, "the old entry is moved, not copied")
     assert(state["pve:farm"].point == "BOTTOM", "keys the bridge did not move are untouched")
 
     ns.Panels.ReceivePanels({ farm("farm", "other") })
-    assert(state["pve:farm"].point == "BOTTOM", "a panel without formerKeys takes no state")
+    assert(state["pve:farm"].point == "BOTTOM", "a panel without formerKey takes no state")
 end)

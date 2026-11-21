@@ -14,6 +14,7 @@ const status: Status = {
   panels: [],
   routines: [],
   routineRuns: [],
+  characters: {},
 };
 function setup() {
   const queue: string[] = [];

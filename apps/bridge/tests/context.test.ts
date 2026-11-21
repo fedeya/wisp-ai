@@ -139,7 +139,7 @@ test('the character GUID joins the identity and survives cached turns', () => {
     status: 'available',
     data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
   };
-  const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
+  const key = JSON.stringify(['WoW Forever', 'Player-1-00A']);
   assert.equal(characterIdentity({ sections: { character } }), key);
   const cache = new TurnContextCache();
   cache.resolve({ characterRevision: 1, sections: { character } });

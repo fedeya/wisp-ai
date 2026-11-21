@@ -33,8 +33,6 @@ export class PanelStore {
       .then(async () => {
         await this.database.initializeProducts();
         this.panels = await this.database.transaction((db) => {
-          // An adoption may have moved this character since the call was queued.
-          characterKey = this.database.characterKeys.resolve(characterKey);
           const id = input.operation === 'save' ? input.panel.id : 'id' in input ? input.id : '';
           const all = readPanels(db);
           const previous = all.find((p) => p.characterKey === characterKey && p.id === id);
@@ -43,14 +41,14 @@ export class PanelStore {
             if (next.filter((p) => p.characterKey === characterKey).length >= 12) {
               throw Error('Keep at most 12 panels per character');
             }
-            // Edits keep the keys an adopted panel came from, so the addon can
+            // Edits keep the key an adopted panel came from, so the addon can
             // still move its saved layout if it has not applied the move yet.
-            const formerKeys = previous?.formerKeys;
+            const formerKey = previous?.formerKey;
             next.push({
               ...panelContent.parse(input.panel),
               characterKey,
               updatedAt: Date.now(),
-              ...(formerKeys ? { formerKeys } : {}),
+              ...(formerKey ? { formerKey } : {}),
             });
           } else if (input.operation !== 'remove') {
             return readPanels(db);
@@ -61,6 +59,6 @@ export class PanelStore {
       });
     this.queue = work;
     await work;
-    return this.list(this.database.characterKeys.resolve(characterKey));
+    return this.list(characterKey);
   }
 }

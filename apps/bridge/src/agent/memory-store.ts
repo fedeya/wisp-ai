@@ -25,8 +25,6 @@ export class MemoryStore {
     }
     await this.database.initializeProducts();
     return this.database.transaction((db) => {
-      // An adoption may have moved this character since the call was queued.
-      owner = this.database.characterKeys.resolve(owner);
       const before = readMemory(db, slot, owner);
       const entries = before.filter((entry) => entry.key !== key);
       if (text !== undefined) {

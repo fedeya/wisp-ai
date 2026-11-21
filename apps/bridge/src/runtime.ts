@@ -4,6 +4,7 @@ import { UsageTelemetry } from './telemetry.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './addon/packet-receiver.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
+import { readCharacterNames } from './db/character-keys.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './desktop/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
@@ -388,6 +389,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       );
     }
     function desktopStatus(): Status {
+      const characters = readCharacterNames(applicationDatabase.orm);
       return {
         ready: eve.isReady(),
         gameConnected: transport.gameConnected(),
@@ -404,10 +406,11 @@ export async function startBridge(options: BridgeOptions = {}) {
         })),
         panels: panelStore.panels.map((p) => ({
           ...p,
-          character: characterLabel(p.characterKey, ' - '),
+          character: characterLabel(p.characterKey, characters, ' - '),
         })),
         routines: routineStore.list(),
         routineRuns: routineStore.history({ includeSilent: false, limit: 200 }),
+        characters,
       };
     }
     const desktopApp = createDesktopApp({

@@ -3,7 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { migrateDatabase } from './migrate.ts';
 import { preparePrivateDatabase } from './private-file.ts';
 import { importProductData } from './product-store.ts';
-import { CharacterKeyAliases } from './character-keys.ts';
 
 export type ApplicationOrm = Omit<ReturnType<typeof migrateDatabase>, '$client'>;
 
@@ -12,8 +11,6 @@ const sqliteBusy = 5;
 
 export class ApplicationDatabase {
   readonly file: string;
-  /** Old character keys and the key their data moved to. */
-  readonly characterKeys = new CharacterKeyAliases();
   private client?: DatabaseSync;
   private db?: ApplicationOrm;
   private opening?: Promise<void>;

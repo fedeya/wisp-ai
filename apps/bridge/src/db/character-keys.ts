@@ -1,84 +1,47 @@
-import { and, eq } from 'drizzle-orm';
-import { adoptableKeys } from '@wisp/protocol/character-key';
+import { and, eq, like } from 'drizzle-orm';
+import { adoptableKeys, characterName, type CharacterName } from '@wisp/protocol/character-key';
 import type { ApplicationOrm } from './application-database.ts';
-import { chats, memoryEntries, memoryScopes, panels, routineRuns, routines } from './schema.ts';
+import {
+  chats,
+  memoryEntries,
+  memoryScopes,
+  metadata,
+  panels,
+  routineRuns,
+  routines,
+} from './schema.ts';
 
 function storedKeys(db: ApplicationOrm) {
+  const keys = (rows: { key: string | null }[]) => rows.map((row) => row.key);
   return new Set([
-    ...db
-      .selectDistinct({ key: chats.characterKey })
-      .from(chats)
-      .all()
-      .map((row) => row.key),
-    ...db
-      .selectDistinct({ key: routines.characterKey })
-      .from(routines)
-      .all()
-      .map((row) => row.key),
-    ...db
-      .selectDistinct({ key: routineRuns.characterKey })
-      .from(routineRuns)
-      .all()
-      .map((row) => row.key),
-    ...db
-      .selectDistinct({ key: panels.characterKey })
-      .from(panels)
-      .all()
-      .map((row) => row.key),
-    ...db
-      .select({ key: memoryScopes.owner })
-      .from(memoryScopes)
-      .where(eq(memoryScopes.slot, 'character'))
-      .all()
-      .map((row) => row.key),
+    ...keys(db.selectDistinct({ key: chats.characterKey }).from(chats).all()),
+    ...keys(db.selectDistinct({ key: routines.characterKey }).from(routines).all()),
+    ...keys(db.selectDistinct({ key: routineRuns.characterKey }).from(routineRuns).all()),
+    ...keys(db.selectDistinct({ key: panels.characterKey }).from(panels).all()),
+    ...keys(
+      db
+        .select({ key: memoryScopes.owner })
+        .from(memoryScopes)
+        .where(eq(memoryScopes.slot, 'character'))
+        .all(),
+    ),
   ]);
 }
 
 /**
- * Where adopted character keys went. Writes queued before an adoption still
- * name the old key; resolving it inside their transaction sends them to the
- * key that now holds the data.
- */
-export class CharacterKeyAliases {
-  private aliases = new Map<string, string>();
-  record(from: Iterable<string>, to: string) {
-    this.aliases.delete(to);
-    for (const key of from) {
-      if (key !== to) this.aliases.set(key, to);
-    }
-  }
-  resolve(key: string): string {
-    const seen = new Set<string>();
-    while (this.aliases.has(key) && !seen.has(key)) {
-      seen.add(key);
-      key = this.aliases.get(key)!;
-    }
-    return key;
-  }
-}
-
-const maxFormerKeys = 8;
-function withFormerKey(content: string, from: string) {
-  const panel = JSON.parse(content) as { formerKeys?: unknown };
-  const earlier = Array.isArray(panel.formerKeys)
-    ? panel.formerKeys.filter((k): k is string => typeof k === 'string' && k !== from)
-    : [];
-  return JSON.stringify({ ...panel, formerKeys: [...earlier, from].slice(-maxFormerKeys) });
-}
-
-/**
- * Move everything stored for this character under older keys (see
- * `adoptableKeys` in `@wisp/protocol/character-key`) to `key`. `extra` adds keys only held in memory, such as
- * unsaved chats. Where a routine, panel or memory entry already exists under
- * `key`, the current one wins and the older copy is dropped.
+ * Move everything stored under this character's pre-GUID keys (see
+ * `adoptableKeys`) to its GUID `key`. `extra` adds keys only held in memory,
+ * such as unsaved chats. Where a routine, panel or memory entry already exists
+ * under `key`, the GUID one wins and the older copy is dropped.
  * Returns the keys that were merged.
  */
 export function adoptCharacterKey(
   db: ApplicationOrm,
   key: string,
+  character: { game: string; name: string },
   extra: Iterable<string | undefined> = [],
 ): string[] {
-  const merged = adoptableKeys([...storedKeys(db), ...extra], key);
+  const merged = adoptableKeys([...storedKeys(db), ...extra], character);
   for (const from of merged) {
     db.update(chats).set({ characterKey: key }).where(eq(chats.characterKey, from)).run();
     db.update(routineRuns)
@@ -103,10 +66,12 @@ export function adoptCharacterKey(
         if (taken.has(id)) {
           db.delete(table).where(row).run();
         } else {
-          // Panels remember every key they came from, so the addon can move
-          // their saved layout from exactly those keys, even if it never saw
-          // an intermediate key.
-          const moved = table === panels ? { content: withFormerKey(content, from) } : {};
+          // Panels remember the key they came from, so the addon can move
+          // their saved layout from exactly that key.
+          const moved =
+            table === panels
+              ? { content: JSON.stringify({ ...JSON.parse(content), formerKey: from }) }
+              : {};
           db.update(table)
             .set({ characterKey: key, ...moved })
             .where(row)
@@ -148,4 +113,27 @@ export function adoptCharacterKey(
     }
   }
   return merged;
+}
+
+// GUID keys carry no name, so the bridge keeps the latest one for labels.
+const namePrefix = 'character-name:';
+export function saveCharacterName(db: ApplicationOrm, key: string, name: CharacterName) {
+  const value = JSON.stringify({ name: name.name, realm: name.realm });
+  db.insert(metadata)
+    .values({ key: namePrefix + key, value })
+    .onConflictDoUpdate({ target: metadata.key, set: { value } })
+    .run();
+}
+export function readCharacterNames(db: ApplicationOrm): Record<string, CharacterName> {
+  return Object.fromEntries(
+    db
+      .select()
+      .from(metadata)
+      .where(like(metadata.key, namePrefix + '%'))
+      .all()
+      .flatMap((row) => {
+        const name = characterName.safeParse(JSON.parse(row.value));
+        return name.success ? [[row.key.slice(namePrefix.length), name.data]] : [];
+      }),
+  );
 }
