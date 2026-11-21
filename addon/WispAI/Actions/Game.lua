@@ -183,10 +183,13 @@ function ns.Actions.PerformAction(action)
     -- Requests only arrive for this addon session, and a character switch
     -- starts a new one. The expected character is an extra check when known.
     local expected = action.expectedCharacter
-    if
-        expected
-        and (expected.name ~= UnitName("player") or expected.realm ~= (GetRealmName() or ""))
-    then
+    local mismatch = expected
+        and (
+            expected.guid and expected.guid ~= UnitGUID("player")
+            or expected.name ~= UnitName("player")
+            or expected.realm ~= (GetRealmName() or "")
+        )
+    if mismatch then
         return {
             status = "blocked",
             error = "Character identity changed; request the action again for the current character",

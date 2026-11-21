@@ -13,7 +13,14 @@ local function clone(value)
 end
 local function matches(panel)
     local ok, key = pcall(C_EncodingUtil.DeserializeJSON, panel.characterKey or "")
-    return ok and type(key) == "table" and key[2] == GetRealmName() and key[3] == UnitName("player")
+    if not ok or type(key) ~= "table" then
+        return false
+    end
+    -- Keys with a GUID follow the character; older keys match realm and name.
+    if key[4] then
+        return key[4] == UnitGUID("player")
+    end
+    return key[2] == GetRealmName() and key[3] == UnitName("player")
 end
 local function keyFor(panel)
     return panel.characterKey .. ":" .. panel.id

@@ -134,6 +134,30 @@ test('realmless WoW Forever characters keep a fresh identity across cached turns
   );
 });
 
+test('the character GUID joins the identity and survives cached turns', () => {
+  const character = {
+    status: 'available',
+    data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
+  };
+  const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
+  assert.equal(characterIdentity({ sections: { character } }), key);
+  const cache = new TurnContextCache();
+  cache.resolve({ characterRevision: 1, sections: { character } });
+  assert.equal(characterIdentity(cache.resolve({ characterRevision: 1, sections: {} })), key);
+  assert.equal(
+    characterIdentity({
+      sections: { character: { ...character, data: { ...character.data, guid: '' } } },
+    }),
+    JSON.stringify(['WoW Forever', '', 'Fedrath']),
+  );
+  assert.equal(
+    JSON.stringify(basicGameContext({ sections: { character } }).sections.character).includes(
+      'Player-1-00A',
+    ),
+    false,
+  );
+});
+
 test('quests stay out of every prompt and are returned from local memory only when requested', async () => {
   const context = {
     capturedAt: 100,

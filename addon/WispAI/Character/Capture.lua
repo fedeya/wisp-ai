@@ -7,6 +7,8 @@ function collectors.character()
     return {
         name = UnitName("player"),
         realm = GetRealmName(),
+        -- Optional: a missing GUID must not cost the whole identity.
+        guid = UnitGUID and UnitGUID("player") or nil,
         level = UnitLevel("player"),
         class = class,
         race = UnitRace("player"),
@@ -286,6 +288,7 @@ function ns.Character.CaptureTurn()
             "game",
             "version",
             "build",
+            "guid",
         }) do
             data[key] = character.data[key]
         end

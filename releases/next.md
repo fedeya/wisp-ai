@@ -10,5 +10,7 @@
 
 - Map pins, persistent panels and routines work again since the November 20
   WoW Forever hotfix, which stopped the game from reporting a realm name.
-  Routines and panels you saved before the hotfix are no longer shown for your
-  character.
+- Routines, panels, character memory and chats you saved before the November 20
+  hotfix come back the next time you log in to that character. Wisp now
+  recognizes each character by its in-game ID, so saved data follows it even if
+  its realm or name changes.

@@ -46,6 +46,7 @@ const characterSummary = z.object({
     game: z.string().optional(),
     version: z.string().optional(),
     build: z.string().optional(),
+    guid: z.string().optional(),
   }),
 });
 
@@ -220,7 +221,8 @@ export function characterIdentity(value: unknown): string | undefined {
   ) {
     return;
   }
-  return JSON.stringify([data.game || 'WoW Forever', data.realm, data.name]);
+  const key = [data.game || 'WoW Forever', data.realm, data.name];
+  return JSON.stringify(typeof data.guid === 'string' && data.guid ? [...key, data.guid] : key);
 }
 // JSON escapes the tag delimiters so user text and game strings cannot close a block.
 function tagged(name: string, data: unknown) {

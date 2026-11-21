@@ -13,6 +13,12 @@ export class PanelStore {
     await this.database.initializeProducts();
     this.panels = readPanels(this.database.orm);
   }
+  /** Re-read after another writer changed panel rows, after pending mutations. */
+  reload() {
+    const work = this.queue.catch(() => {}).then(() => this.load());
+    this.queue = work;
+    return work;
+  }
   list(characterKey: string) {
     return this.panels.filter((p) => p.characterKey === characterKey);
   }

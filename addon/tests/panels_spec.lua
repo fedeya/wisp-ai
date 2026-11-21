@@ -165,3 +165,52 @@ it(
         assert.equal(1, settledCalls)
     end
 )
+
+it("panels with a GUID key follow that character and older keys match realm and name", function()
+    local env = helper.env()
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
+    do
+        ns = helper.namespace({ db = {} })
+        function UnitName()
+            return "Mage"
+        end
+        function GetRealmName()
+            return ""
+        end
+        function UnitGUID()
+            return "Player-1-00A"
+        end
+        keys = {
+            mine = { "Forever", "Old Realm", "Renamed", "Player-1-00A" },
+            alt = { "Forever", "", "Mage", "Player-1-00B" },
+            legacy = { "Forever", "", "Mage" },
+        }
+        C_EncodingUtil = {
+            DeserializeJSON = function(key)
+                return keys[key]
+            end,
+        }
+    end
+    helper.addon("UI/RichUI.lua", env)
+    helper.addon("Panels/Panels.lua", env)
+
+    local list = {}
+    for key in pairs(keys) do
+        list[#list + 1] = {
+            id = key,
+            characterKey = key,
+            title = "Panel " .. key,
+            ui = { { id = "card", kind = "card", title = key } },
+        }
+    end
+    ns.Panels.ReceivePanels(list)
+    local shown = {}
+    for _, w in ipairs(UI_TEST.widgets) do
+        if w.title and type(w.title) == "table" and w:IsShown() then
+            shown[w.title:GetText()] = true
+        end
+    end
+    assert(shown["Panel mine"] and shown["Panel legacy"], "own panels are shown")
+    assert(not shown["Panel alt"], "another character's GUID is not shown")
+end)

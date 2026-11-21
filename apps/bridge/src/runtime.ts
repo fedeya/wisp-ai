@@ -3,6 +3,7 @@ import { RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './addon/packet-receiver.ts';
+import { createCharacterAdoption } from './chat/character-adoption.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './desktop/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
@@ -287,6 +288,13 @@ export async function startBridge(options: BridgeOptions = {}) {
       isReady: () => eve.isReady(),
     });
     resources.defer(stopRoutineScheduler);
+    const adoptCharacter = createCharacterAdoption({
+      database: applicationDatabase,
+      panelStore,
+      chats: () => state.chats,
+      changed,
+      logger,
+    });
     const receivePacket = createPacketReceiver({
       telemetry,
       state,
@@ -304,6 +312,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       memorySnapshot,
       run,
       flushAcknowledgment: publisher.flush,
+      adoptCharacter,
       interrupt: run.interrupt,
       runtime,
       changed,

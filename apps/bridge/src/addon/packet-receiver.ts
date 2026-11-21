@@ -46,6 +46,7 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
+  adoptCharacter?: (key: string) => void;
   logger: Pick<Logger, 'info' | 'warn'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
@@ -276,7 +277,11 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       return;
     }
     if (packet.context) {
-      state.currentCharacterKey = characterIdentity(packet.context) || state.currentCharacterKey;
+      const identity = characterIdentity(packet.context);
+      if (identity) {
+        state.currentCharacterKey = identity;
+        deps.adoptCharacter?.(identity);
+      }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
       const identity = characterIdentity(packet.context);

@@ -343,3 +343,19 @@ it("macro inventory hides code by default and includes it only when requested", 
     })
     assert(r.data.macros[1].body == "/cast Frost Nova")
 end)
+
+it("a different character GUID blocks actions even with the same name", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    function UnitGUID()
+        return "Player-1-00A"
+    end
+
+    waypoint = nil
+    identity = { name = "Mage", realm = "Realm", guid = "Player-1-00B" }
+    local args = { mapId = 1, x = 60, y = 40, label = "NPC", source = "user" }
+    assert(act("set_waypoint", args).status == "blocked" and waypoint == nil)
+    identity.guid = "Player-1-00A"
+    assert(act("set_waypoint", args).status == "completed")
+end)
