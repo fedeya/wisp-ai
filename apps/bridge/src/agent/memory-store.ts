@@ -25,14 +25,16 @@ export class MemoryStore {
     }
     await this.database.initializeProducts();
     return this.database.transaction((db) => {
-      const entries = readMemory(db, slot, owner).filter((entry) => entry.key !== key);
+      const before = readMemory(db, slot, owner);
+      const entries = before.filter((entry) => entry.key !== key);
       if (text !== undefined) {
         entries.push({ key, text: text.trim(), updatedAt: new Date().toISOString() });
       }
-      if (
-        entries.length > 40 ||
-        entries.reduce((size, entry) => size + entry.text.length, 0) > 6000
-      ) {
+      const size = (list: MemoryEntry[]) => list.reduce((sum, entry) => sum + entry.text.length, 0);
+      // Merged character memory can start over quota, so changes that do not
+      // grow it stay allowed until it has been trimmed.
+      const grows = entries.length > before.length || size(entries) > size(before);
+      if (grows && (entries.length > 40 || size(entries) > 6000)) {
         throw Error('Memory is full; remove or shorten outdated entries first');
       }
       saveMemory(db, slot, owner, entries);

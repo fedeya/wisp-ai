@@ -14,23 +14,27 @@ interface CharacterAdoptionDependencies {
   logger: Pick<Logger, 'info' | 'warn'>;
 }
 
+function guidOf(key: string) {
+  try {
+    return parseCharacterKey(key).guid;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Once per character key with a GUID, move chats, routines, panels and
+ * Whenever a GUID shows up under a new key, move chats, routines, panels and
  * character memory saved under that character's older keys to it.
  */
 export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
-  const adopted = new Set<string>();
+  // The key each GUID's data was last moved to. If the key changes and later
+  // changes back, the data must move back too.
+  const adopted = new Map<string, string>();
   let queue = Promise.resolve();
   return function adoptCharacter(key: string): Promise<void> {
-    if (adopted.has(key)) return queue;
-    let guid: string | undefined;
-    try {
-      guid = parseCharacterKey(key).guid;
-    } catch {
-      return queue;
-    }
-    if (!guid) return queue;
-    adopted.add(key);
+    const guid = guidOf(key);
+    if (!guid || adopted.get(guid) === key) return queue;
+    adopted.set(guid, key);
     // In-memory chats are persisted from state, so they move first.
     for (const chat of deps.chats()) {
       if (chat.characterKey && chat.characterKey !== key && sameCharacter(chat.characterKey, key)) {
@@ -51,7 +55,7 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
         }
       })
       .catch((error) => {
-        adopted.delete(key);
+        if (adopted.get(guid) === key) adopted.delete(guid);
         deps.logger.warn(
           { event: 'character.keys_merge_failed', error: errorMessage(error) },
           'Could not move saved character data',

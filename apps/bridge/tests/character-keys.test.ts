@@ -16,6 +16,7 @@ import {
 import { chats, routineRuns, routines } from '../src/db/schema.ts';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { MemoryStore } from '../src/agent/memory-store.ts';
 
 const key = (...parts: string[]) => JSON.stringify(['WoW Forever', ...parts]);
 const oldRealm = key('CAMWOW US2 Realm 2 PvP', 'Fedrath');
@@ -162,7 +163,7 @@ test('a character with a GUID adopts every older key for it and keeps current da
   });
 });
 
-test('adoption moves in-memory chats, reloads panels and runs once per key', async () => {
+test('adoption moves in-memory chats, reloads panels and runs again only when the key changes', async () => {
   await withDatabase(async (database) => {
     await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
     const chat = { ...newChat('chat', 'addon'), characterKey: oldRealm };
@@ -184,5 +185,30 @@ test('adoption moves in-memory chats, reloads panels and runs once per key', asy
     expect(other.characterKey).toBe(someoneElse);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
     expect([reloads, changes]).toEqual([1, 1]);
+
+    // The same GUID moving to another key and back takes its data each time.
+    await adopt(renamed);
+    expect(chat.characterKey).toBe(renamed);
+    expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([renamed]);
+    await adopt(current);
+    expect(chat.characterKey).toBe(current);
+    expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
+    expect([reloads, changes]).toEqual([3, 3]);
+  });
+});
+
+test('memory merged over quota can still be trimmed but not grown', async () => {
+  await withDatabase(async (database) => {
+    const entries = Array.from({ length: 42 }, (_, i) => memory('k' + i, 'note ' + i));
+    await database.transaction((db) => saveMemory(db, 'character', current, entries));
+    const store = new MemoryStore(database);
+    await expect(store.update('character', current, 'extra', 'more')).rejects.toThrow(
+      'Memory is full',
+    );
+    await expect(store.update('character', current, 'k0', 'a much longer note 0')).rejects.toThrow(
+      'Memory is full',
+    );
+    expect(await store.update('character', current, 'k1', 'n')).toHaveLength(42);
+    expect(await store.update('character', current, 'k0')).toHaveLength(41);
   });
 });
