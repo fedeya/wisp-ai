@@ -30,19 +30,23 @@ export class PanelStore {
       .then(async () => {
         await this.database.initializeProducts();
         this.panels = await this.database.transaction((db) => {
-          const next = readPanels(db).filter(
-            (p) =>
-              !(
-                p.characterKey === characterKey &&
-                p.id ===
-                  (input.operation === 'save' ? input.panel.id : 'id' in input ? input.id : '')
-              ),
-          );
+          const id = input.operation === 'save' ? input.panel.id : 'id' in input ? input.id : '';
+          const all = readPanels(db);
+          const previous = all.find((p) => p.characterKey === characterKey && p.id === id);
+          const next = all.filter((p) => p !== previous);
           if (input.operation === 'save') {
             if (next.filter((p) => p.characterKey === characterKey).length >= 12) {
               throw Error('Keep at most 12 panels per character');
             }
-            next.push({ ...panelContent.parse(input.panel), characterKey, updatedAt: Date.now() });
+            // Edits keep the keys an adopted panel came from, so the addon can
+            // still move its saved layout if it has not applied the move yet.
+            const formerKeys = previous?.formerKeys;
+            next.push({
+              ...panelContent.parse(input.panel),
+              characterKey,
+              updatedAt: Date.now(),
+              ...(formerKeys ? { formerKeys } : {}),
+            });
           } else if (input.operation !== 'remove') {
             return readPanels(db);
           }

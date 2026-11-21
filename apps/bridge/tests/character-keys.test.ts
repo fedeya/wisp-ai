@@ -18,6 +18,7 @@ import { chats, routineRuns, routines } from '../src/db/schema.ts';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';
+import { PanelStore } from '../src/addon/panels.ts';
 
 const key = (...parts: string[]) => JSON.stringify(['WoW Forever', ...parts]);
 const oldRealm = key('CAMWOW US2 Realm 2 PvP', 'Fedrath');
@@ -248,5 +249,20 @@ test('a name saved on several realms stays put, since the empty realm cannot pic
       ['c', current],
     ]);
     expect([chat.characterKey, pvpChat.characterKey]).toEqual([current, pvp]);
+  });
+});
+
+test('editing an adopted panel keeps the keys it was moved from', async () => {
+  await withDatabase(async (database) => {
+    await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
+    await database.transaction((db) => adoptCharacterKey(db, current));
+    const store = new PanelStore(database);
+    await store.load();
+    const [saved] = await store.mutate(current, {
+      operation: 'save',
+      panel: panel('farm', current, 'Renamed farm'),
+    });
+    expect([saved.title, saved.formerKeys]).toEqual(['Renamed farm', [oldRealm]]);
+    expect(readPanels(database.orm)[0].formerKeys).toEqual([oldRealm]);
   });
 });
