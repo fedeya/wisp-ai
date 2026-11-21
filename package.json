@@ -5,6 +5,7 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
+    "prepare": "lefthook install",
     "release": "release-it",
     "release:dry": "release-it --dry-run",
     "release:notes": "node scripts/sync-release-notes.ts",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@johnnymorganz/stylua-bin": "2.6.0",
     "@types/node": "24.19.2",
+    "lefthook": "2.2.2",
     "oxfmt": "0.77.0",
     "oxlint": "1.92.0",
     "prettier": "3.9.10",

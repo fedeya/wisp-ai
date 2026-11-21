@@ -1,0 +1,29 @@
+# Fast checks on staged files before each commit; CI still runs `pnpm check`
+# and the full test suites. Installed by the root `prepare` script.
+# Skip once with `LEFTHOOK=0 git commit ...`.
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint
+      glob: '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts}'
+      run: pnpm exec oxlint --deny-warnings --no-error-on-unmatched-pattern {staged_files}
+    - name: format
+      glob: '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,json,jsonc,yml,yaml,md,mdx,toml}'
+      run: pnpm exec oxfmt --check --no-error-on-unmatched-pattern {staged_files}
+    - name: format-desktop-css-html
+      glob: 'apps/desktop/src/**/*.{css,html}'
+      run: pnpm exec prettier --check {staged_files}
+    - name: format-lua
+      glob:
+        - 'addon/**/*.lua'
+        - 'tests/**/*.lua'
+        - '.busted'
+        - '.luacheckrc'
+      run: pnpm exec stylua --check {staged_files}
+    - name: typecheck
+      # Whole projects: tsc with individual filenames bypasses tsconfig.
+      # Turbo reuses cached results when inputs have not changed.
+      glob: '**/*.{js,jsx,mjs,cjs,ts,tsx,mts,cts,json,jsonc}'
+      run: pnpm typecheck

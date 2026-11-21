@@ -8,6 +8,8 @@ packages:
 allowBuilds:
   esbuild: true
   core-js: false
+  # Hooks are installed by the root `prepare` script instead.
+  lefthook: false
 
 # Package boundaries stay explicit; undeclared transitive imports are not hoisted.
 hoist: false
