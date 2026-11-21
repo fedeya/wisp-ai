@@ -13,7 +13,7 @@ import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
-function fixture() {
+function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
   const database = new ApplicationDatabase('unused');
   const chat = { ...newChat('old', 'one'), eveId: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
@@ -52,6 +52,7 @@ function fixture() {
     changed: () => {},
     flushAcknowledgment,
     logger: { info: vi.fn(), warn: vi.fn() },
+    ...overrides,
   });
   return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
 }
@@ -221,4 +222,37 @@ test('retry reuses the failed question and ignores retries while working', () =>
   chat.status = 'working';
   f.receive(packetSchema.parse({ type: 'retry', chat: 'old', session: 'one', seq: 12, at: 1 }));
   expect(f.run).toHaveBeenCalledTimes(1);
+});
+
+test('routine events for a new character key wait until its older keys have moved', async () => {
+  let finishAdoption = () => {};
+  const adoptCharacter = vi.fn(() => new Promise<void>((resolve) => (finishAdoption = resolve)));
+  const observe = vi.fn(async () => []);
+  const capabilitySettings = new CapabilitySettings('unused');
+  vi.spyOn(capabilitySettings, 'enabled').mockReturnValue(true);
+  const f = fixture({
+    adoptCharacter,
+    routineStore: { observe } as unknown as RoutineStore,
+    capabilitySettings,
+  });
+  const character = {
+    status: 'available',
+    data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
+  };
+  f.receive(
+    packetSchema.parse({
+      type: 'routine_event',
+      session: 'one',
+      seq: 30,
+      at: Math.floor(Date.now() / 1000),
+      context: { sections: { character } },
+      data: { ready: true, event: 'level_up', values: { level: 20 } },
+    }),
+  );
+  const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
+  expect(adoptCharacter).toHaveBeenCalledWith(key);
+  await Promise.resolve();
+  expect(observe).not.toHaveBeenCalled();
+  finishAdoption();
+  await vi.waitFor(() => expect(observe).toHaveBeenCalledWith(key, expect.anything()));
 });

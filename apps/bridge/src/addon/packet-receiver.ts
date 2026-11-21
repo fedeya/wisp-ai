@@ -46,7 +46,7 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  adoptCharacter?: (key: string) => void;
+  adoptCharacter?: (key: string) => Promise<void>;
   logger: Pick<Logger, 'info' | 'warn'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
@@ -73,6 +73,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
   let lastDelivery = '';
+  // Routine work for a character waits until its older keys have moved.
+  let adoption: Promise<void> = Promise.resolve();
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
     state.chats.push(chat);
@@ -280,7 +282,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       const identity = characterIdentity(packet.context);
       if (identity) {
         state.currentCharacterKey = identity;
-        deps.adoptCharacter?.(identity);
+        adoption = deps.adoptCharacter?.(identity) ?? adoption;
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -299,8 +301,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       if (packet.type === 'routine_event' && capabilitySettings.enabled('tool:manage_routine')) {
         const event = routineEvent.safeParse({ event: data?.event, values: data?.values });
         if (event.success) {
-          void routineStore
-            .observe(identity, event.data)
+          void adoption
+            .then(() => routineStore.observe(identity, event.data))
             .then(changed)
             .catch((error) =>
               logger.warn(
@@ -320,8 +322,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         input.success &&
         ['pause', 'resume', 'remove'].includes(input.data.operation)
       ) {
-        void routineStore
-          .mutate(identity, input.data)
+        void adoption
+          .then(() => routineStore.mutate(identity, input.data))
           .then(changed)
           .catch((error) =>
             logger.warn(

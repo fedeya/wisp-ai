@@ -214,3 +214,53 @@ it("panels with a GUID key follow that character and older keys match realm and 
     assert(shown["Panel mine"] and shown["Panel legacy"], "own panels are shown")
     assert(not shown["Panel alt"], "another character's GUID is not shown")
 end)
+
+it("a panel moved to the character's GUID key keeps its saved layout", function()
+    local env = helper.env()
+    setfenv(1, env)
+    helper.fixture("addon/tests/wow-ui-stub.lua", env)
+    do
+        ns = helper.namespace({
+            db = {
+                panelState = {
+                    ["legacy:farm"] = { hidden = true, point = "TOP" },
+                    ["alt:farm"] = { point = "BOTTOM" },
+                },
+            },
+        })
+        function UnitName()
+            return "Mage"
+        end
+        function GetRealmName()
+            return ""
+        end
+        function UnitGUID()
+            return "Player-1-00A"
+        end
+        keys = {
+            guid = { "Forever", "", "Mage", "Player-1-00A" },
+            legacy = { "Forever", "Old Realm", "Mage" },
+            alt = { "Forever", "", "Mage", "Player-1-00B" },
+        }
+        C_EncodingUtil = {
+            DeserializeJSON = function(key)
+                return keys[key]
+            end,
+        }
+    end
+    helper.addon("UI/RichUI.lua", env)
+    helper.addon("Panels/Panels.lua", env)
+
+    ns.Panels.ReceivePanels({
+        {
+            id = "farm",
+            characterKey = "guid",
+            title = "Farm",
+            ui = { { id = "card", kind = "card", title = "Farm" } },
+        },
+    })
+    local state = ns.db.panelState
+    assert(state["guid:farm"] and state["guid:farm"].hidden == true, "layout follows the panel")
+    assert(state["legacy:farm"] == nil, "the old entry is moved, not copied")
+    assert(state["alt:farm"].point == "BOTTOM", "another character's layout is untouched")
+end)
