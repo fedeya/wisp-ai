@@ -188,6 +188,8 @@ export async function startBridge(options: BridgeOptions = {}) {
       hasActiveTurn: () => state.chats.some((c) => c.status === 'working'),
       afterOperation: () => void refreshModelCatalog(),
     });
+    // The app update the desktop last reported; the desktop resends it after a restart.
+    let appUpdateVersion: string | null = null;
     const snapshots = new SnapshotGate();
     const publisher = createSnapshotPublisher({
       state,
@@ -199,6 +201,7 @@ export async function startBridge(options: BridgeOptions = {}) {
           connected: eve.isReady(),
           bridgeVersion,
           expectedAddonVersion,
+          appUpdateVersion,
           contextWindowTokens: eve.contextWindowTokens(),
           defaultModel: defaultModel(),
           panels: character ? panelStore.list(character) : [],
@@ -415,6 +418,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         routines: routineStore.list(),
         routineRuns: routineStore.history({ includeSilent: false, limit: 200 }),
         characters,
+        appUpdate: appUpdateVersion,
       };
     }
     const desktopApp = createDesktopApp({
@@ -442,6 +446,9 @@ export async function startBridge(options: BridgeOptions = {}) {
             await transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
           }
         }),
+      setAppUpdate: (version) => {
+        appUpdateVersion = version;
+      },
       getStatus: desktopStatus,
       getChats: () => state.chats,
       currentCharacterKey: () => state.currentCharacterKey,

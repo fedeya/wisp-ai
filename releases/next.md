@@ -6,6 +6,11 @@
 
 - The WoW chat has a new look: a cleaner layout, new type and a palette shared
   with Wisp Desktop. Recent chats are grouped by day.
+- Ask Wisp why you died. Wisp now keeps the game's Death Recap for your last 5
+  deaths and reads the game's damage meter, so it can explain what killed you or
+  a group member and what hit hardest in your last fight. Recaps start at login
+  or reload and are not saved between sessions. Group deaths and fight totals
+  need the game's damage meter turned on and are available after combat.
 - Wisp's interface in WoW is now in Spanish when your game client is in Spanish.
 - Copy any finished reply: hover it and select **Copy**.
 - Wisp Desktop looks and behaves like a native Windows app, with its own title
@@ -24,6 +29,8 @@
 - After an app update, Overview shows that Wisp is updating your addon instead
   of asking you to update it, and WoW tells you to `/reload` once the new addon
   is ready.
+- When a new version of the Wisp app is available, Wisp tells you in the game
+  chat once, so you know to open the app and install it.
 - Routine notifications and the minimized chat bar have a new look.
 - New chats get their title sooner.
 

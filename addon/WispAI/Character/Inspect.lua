@@ -476,6 +476,9 @@ end
 inspectors.chat = function(args)
     return ns.ChatHistory.ReadChatHistory(args)
 end
+inspectors.combat = function(args)
+    return ns.Combat.Read(args)
+end
 function ns.Character.Inspect(inspection)
     if inspection and ns.Integrations.InspectIntegration then
         local result = ns.Integrations.InspectIntegration(inspection)

@@ -122,6 +122,14 @@ export const chatHistoryInput = z.strictObject({
   channelName: z.string().trim().min(1).max(120).optional(),
   channelIndex: z.number().int().min(1).max(99).optional(),
 });
+// `deaths` reads the game's Death Recap for the player's latest deaths (and,
+// optionally, group deaths); `fight` reads the game's damage meter.
+export const combatInput = z.strictObject({
+  view: z.enum(['deaths', 'fight']).default('deaths'),
+  deaths: z.number().int().min(1).max(5).default(1),
+  includeGroup: z.boolean().default(false),
+  eventLimit: z.number().int().min(1).max(30).default(20),
+});
 export const trainingInput = z
   .object({
     class: z
@@ -148,6 +156,7 @@ export const trainingInput = z
 export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('training'), args: trainingInput }),
   z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
+  z.object({ kind: z.literal('combat'), args: combatInput }),
   z.object({ kind: z.literal('questie_quest'), args: questInput }),
   z.object({ kind: z.literal('questie_chain'), args: questChainInput }),
   z.object({ kind: z.literal('object_locations'), args: objectLocationsInput }),

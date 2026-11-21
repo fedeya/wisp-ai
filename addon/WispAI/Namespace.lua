@@ -12,6 +12,7 @@ ns.Character = ns.Character or {}
 ns.Actions = ns.Actions or {}
 ns.Integrations = ns.Integrations or {}
 ns.ChatHistory = ns.ChatHistory or {}
+ns.Combat = ns.Combat or {}
 ns.Settings = ns.Settings or {}
 ns.UI = ns.UI or {}
 ns.Inline = ns.Inline or {}

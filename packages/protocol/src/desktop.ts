@@ -65,6 +65,8 @@ export const statusSchema = z.object({
   routineRuns: z.array(routineRun),
   /** Saved names for GUID character keys, for labels. */
   characters: z.record(z.string(), characterName).default({}),
+  /** Newer app version the desktop reported to this bridge; the addon announces it. */
+  appUpdate: z.string().nullable().default(null),
 });
 export type DesktopInfo = z.infer<typeof desktopInfoSchema>;
 export type Model = z.infer<typeof modelSchema>;

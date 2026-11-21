@@ -22,6 +22,8 @@ export interface AddonSnapshotInputs {
   connected: boolean;
   bridgeVersion: string;
   expectedAddonVersion: string | undefined;
+  /** Newer desktop app version available to install, if the desktop found one. */
+  appUpdateVersion: string | null;
   /** Context window Eve reported for its configured model, if any. */
   contextWindowTokens: number | undefined;
   defaultModel: string;
@@ -52,6 +54,7 @@ export function buildAddonSnapshot(inputs: AddonSnapshotInputs) {
     connected: inputs.connected,
     bridgeVersion: inputs.bridgeVersion,
     expectedAddonVersion: inputs.expectedAddonVersion,
+    appUpdateVersion: inputs.appUpdateVersion,
     contextPolicy: {
       windowTokens:
         state.modelCatalog.find((m) => m.slug === activeModel)?.contextWindow ||

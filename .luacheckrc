@@ -12,6 +12,8 @@ read_globals = {
     "C_AuctionHouse",
     "C_CVar",
     "C_Container",
+    "C_DamageMeter",
+    "C_DeathRecap",
     "C_EncodingUtil",
     "C_Item",
     "C_Map",

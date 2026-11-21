@@ -124,6 +124,10 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read WoW chat',
     'Read recent messages from the game chat channels enabled in Wisp settings.',
   ],
+  read_combat: [
+    'Read deaths and fights',
+    'Read the game’s Death Recap for your last deaths and the damage meter for your last fight.',
+  ],
   query_training: [
     'Ability catalog',
     'Look up Forever class abilities, levels, base prices and requirements without visiting a trainer.',

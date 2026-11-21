@@ -120,3 +120,60 @@ it("prints the /reload hint once when Desktop installed a newer addon", function
     receive("1.3.0")
     assert(#logs == 1)
 end)
+
+it("announces a Desktop app update once per version", function()
+    local env = helper.env()
+    setfenv(1, env)
+    do
+        logs = {}
+        SlashCmdList = {}
+        ns = helper.namespace({ slot = 1 })
+        function time()
+            return 1
+        end
+        function CreateFrame()
+            return { RegisterEvent = function() end, SetScript = function() end }
+        end
+        DEFAULT_CHAT_FRAME = {
+            AddMessage = function(_, text)
+                logs[#logs + 1] = text
+            end,
+        }
+        C_AddOns = {
+            GetAddOnMetadata = function()
+                return "1.2.9"
+            end,
+        }
+    end
+    helper.addon("Core.lua", env)
+    ns.db = { drafts = {} }
+    ns.Transport.Acknowledge = function() end
+    GetTime = function()
+        return 1
+    end
+    local rev = 0
+    local function receive(version)
+        rev = rev + 1
+        ns.Chat.ReceiveSnapshot({
+            v = 1,
+            session = ns.session,
+            rev = rev,
+            connected = true,
+            appUpdateVersion = version,
+        })
+    end
+
+    receive(nil)
+    receive("")
+    assert(#logs == 0)
+    receive("0.0.9")
+    assert(#logs == 1)
+    assert(logs[1]:find("Wisp 0.0.9 is available. Open the Wisp app to install it.", 1, true))
+    receive("0.0.9")
+    receive(nil)
+    receive("0.0.9")
+    assert(#logs == 1)
+    receive("0.0.10")
+    assert(#logs == 2)
+    assert(logs[2]:find("Wisp 0.0.10", 1, true))
+end)

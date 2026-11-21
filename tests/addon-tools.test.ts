@@ -13,6 +13,7 @@ import object from '../apps/agent/agent/tools/questie__find_object_locations.ts'
 import stored from '../apps/agent/agent/tools/syndicator__find_item.ts';
 import prices from '../apps/agent/agent/tools/auctionator__get_item_prices.ts';
 import hearthstone from '../apps/agent/agent/tools/wow__inspect_hearthstone.ts';
+import combat from '../apps/agent/agent/tools/wow__read_combat.ts';
 import {
   questChainInput,
   storedItemInput,
@@ -63,6 +64,7 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     };
     await settings.publish();
     assert.equal(await resolve(hearthstone), null);
+    assert.equal(await resolve(combat), null);
     for (const definition of [quest, chain, object, stored, prices]) {
       assert.equal(await resolve(definition), null);
     }
@@ -70,6 +72,7 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     assert.ok(state.receive(report));
     await settings.publish();
     assert.ok(await resolve(hearthstone));
+    assert.ok(await resolve(combat));
     for (const definition of [quest, chain, stored, prices]) {
       assert.ok(await resolve(definition));
     }

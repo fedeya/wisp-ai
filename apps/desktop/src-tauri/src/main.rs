@@ -179,6 +179,7 @@ fn permitted(method: &str, route: &str) -> bool {
                 "/routines/action",
                 "/routines/open",
                 "/simulator/character",
+                "/app-update",
             ]
             .contains(&route))
 }
@@ -904,6 +905,8 @@ mod tests {
         assert!(permitted("POST", "/mcps/save"));
         assert!(permitted("POST", "/routines/action"));
         assert!(permitted("POST", "/routines/open"));
+        assert!(permitted("POST", "/app-update"));
+        assert!(!permitted("GET", "/app-update"));
         assert!(!permitted("POST", "/suggestions"));
         assert!(!permitted("GET", "http://example.com"));
         assert!(!permitted("POST", "/model/responses"));

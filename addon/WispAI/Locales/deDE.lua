@@ -250,6 +250,7 @@ ns.Locales.deDE = {
 
     -- Chat notices
     ["notice.addonUpdated"] = "Wisp {installed} ist installiert (geladen: {loaded}). Gib /reload ein, um die neue Version zu laden.",
+    ["notice.appUpdateAvailable"] = "Wisp {version} ist verfügbar. Öffne die Wisp-App, um es zu installieren.",
     ["notice.mapUnavailable"] = "Die Kartenoberfläche ist nicht verfügbar.",
     ["notice.leaveCombatMacro"] = "Verlasse den Kampf, bevor du ein Makro aufnimmst.",
 

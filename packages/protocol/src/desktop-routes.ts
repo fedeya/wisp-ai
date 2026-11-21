@@ -66,6 +66,8 @@ export const desktopRoutes = {
   ),
   '/routines/open': postWith(z.object({ id }), ok),
   '/simulator/character': post(z.unknown()),
+  /** The app update the desktop found, or null when it has none to offer. */
+  '/app-update': postWith(z.object({ version: z.string().min(1).max(64).nullable() }), ok),
 };
 export type DesktopRoutes = typeof desktopRoutes;
 export type DesktopRoute = keyof DesktopRoutes;

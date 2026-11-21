@@ -46,6 +46,7 @@ beforeEach(() => {
     routines: [],
     routineRuns: [],
     characters: {},
+    appUpdate: null,
   };
   vi.mocked(desktop).mockImplementation(async (command) => {
     if (command === 'detect_game_folders') {
@@ -149,6 +150,32 @@ test('Overview shows the automatic addon update in progress instead of the updat
   expect(
     screen.getByText('Wisp updated the addon. Type /reload in WoW to finish updating.'),
   ).toBeTruthy();
+});
+
+test('an app update found by the updater is reported to the bridge until it holds', async () => {
+  const fallback = vi.mocked(desktop).getMockImplementation()!;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'update_channel') return 'stable' as never;
+    if (command === 'check_update') {
+      return { supported: true, update: { version: '0.0.9', notes: null } } as never;
+    }
+    return fallback(command, args);
+  });
+  const reports = () => vi.mocked(request).mock.calls.filter(([route]) => route === '/app-update');
+  renderApp();
+  expect(await screen.findByText('Wisp 0.0.9 is available.')).toBeTruthy();
+  await waitFor(() => expect(reports()).toEqual([['/app-update', { version: '0.0.9' }]]));
+
+  // The bridge holds it now, so status reads send nothing more.
+  status = { ...status, appUpdate: '0.0.9' };
+  await act(() => desktopStore.getState().actions.refresh());
+  expect(reports()).toHaveLength(1);
+
+  // A restarted bridge forgot it; the next status read resends it.
+  status = { ...status, appUpdate: null };
+  await act(() => desktopStore.getState().actions.refresh());
+  await waitFor(() => expect(reports()).toHaveLength(2));
+  expect(reports()[1]).toEqual(['/app-update', { version: '0.0.9' }]);
 });
 
 test('an automatic addon update failure still starts Wisp and offers a manual retry', async () => {

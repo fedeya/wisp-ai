@@ -95,6 +95,7 @@ const inspectionTools = {
   flight_paths: 'inspect_flight_paths',
   training: 'query_training',
   chat: 'read_chat',
+  combat: 'read_combat',
   resources: 'query_resources',
   compare_items: 'compare_items',
   auctions: 'inspect_auctions',
