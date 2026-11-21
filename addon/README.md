@@ -50,6 +50,7 @@ names come in its script.
 | `Actions/`                      | Validated game mutations, including waypoints and macros           |
 | `Integrations/`                 | Optional addon readiness and public API adapters                   |
 | `ChatHistory/`                  | Selected WoW chat channels and the bounded message history         |
+| `CombatLog/`                    | Bounded combat buffer around the player and recent death recaps    |
 | `Settings/`                     | Reading and updating game or registered addon settings             |
 | `UI/`                           | Window, widgets, rows, model controls, memory and capability views |
 | `Inline/`, `Panels/`, `Advice/` | Inline questions, saved panels and suggestions                     |

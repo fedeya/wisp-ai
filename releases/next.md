@@ -2,6 +2,10 @@
 
 <!-- Add user-facing notes for the next stable release here. -->
 
+## New
+
+- Ask Wisp why you died. Wisp now records the combat around your character and keeps a recap of your last 5 deaths: what dealt the killing blow, which enemies and abilities did the most damage, and how much healing you got. Recaps start at login or reload and are not saved between sessions.
+
 ## Improved
 
 - Wisp can now create macros with any command, including `/run`, `/click`, `/console`, chat commands and short aliases like `/tar`. Wisp explains what script, click and chat lines do, so review the code before you put the macro on a bar.
