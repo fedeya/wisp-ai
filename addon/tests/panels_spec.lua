@@ -246,21 +246,22 @@ it("a panel moved to a new character key keeps the layout of the key it came fro
     helper.addon("UI/RichUI.lua", env)
     helper.addon("Panels/Panels.lua", env)
 
-    local function farm(id, characterKey, formerKey)
+    local function farm(id, characterKey, formerKeys)
         return {
             id = id,
             characterKey = characterKey,
-            formerKey = formerKey,
+            formerKeys = formerKeys,
             title = "Farm",
             ui = { { id = "card", kind = "card", title = "Farm" } },
         }
     end
-    ns.Panels.ReceivePanels({ farm("farm", "guid", "pvp") })
+    -- The addon missed the move to "middle"; the layout is still under "pvp".
+    ns.Panels.ReceivePanels({ farm("farm", "guid", { "pvp", "middle" }) })
     local state = ns.db.panelState
     assert(state["guid:farm"] and state["guid:farm"].hidden == true, "layout follows the panel")
     assert(state["pvp:farm"] == nil, "the old entry is moved, not copied")
     assert(state["pve:farm"].point == "BOTTOM", "keys the bridge did not move are untouched")
 
     ns.Panels.ReceivePanels({ farm("farm", "other") })
-    assert(state["pve:farm"].point == "BOTTOM", "a panel without formerKey takes no state")
+    assert(state["pve:farm"].point == "BOTTOM", "a panel without formerKeys takes no state")
 end)

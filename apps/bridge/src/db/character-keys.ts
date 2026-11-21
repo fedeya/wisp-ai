@@ -34,6 +34,15 @@ function storedKeys(db: ApplicationOrm) {
   ]);
 }
 
+const maxFormerKeys = 8;
+function withFormerKey(content: string, from: string) {
+  const panel = JSON.parse(content) as { formerKeys?: unknown };
+  const earlier = Array.isArray(panel.formerKeys)
+    ? panel.formerKeys.filter((k): k is string => typeof k === 'string' && k !== from)
+    : [];
+  return JSON.stringify({ ...panel, formerKeys: [...earlier, from].slice(-maxFormerKeys) });
+}
+
 /**
  * Move everything stored for this character under older keys (see
  * `adoptableKeys` in `@wisp/protocol/character-key`) to `key`. `extra` adds keys only held in memory, such as
@@ -71,12 +80,10 @@ export function adoptCharacterKey(
         if (taken.has(id)) {
           db.delete(table).where(row).run();
         } else {
-          // Panels remember where they came from so the addon can move their
-          // saved layout from exactly that key.
-          const moved =
-            table === panels
-              ? { content: JSON.stringify({ ...JSON.parse(content), formerKey: from }) }
-              : {};
+          // Panels remember every key they came from, so the addon can move
+          // their saved layout from exactly those keys, even if it never saw
+          // an intermediate key.
+          const moved = table === panels ? { content: withFormerKey(content, from) } : {};
           db.update(table)
             .set({ characterKey: key, ...moved })
             .where(row)

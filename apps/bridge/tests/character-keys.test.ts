@@ -137,10 +137,10 @@ test('a character with a GUID adopts every older key for it and keeps current da
     expect(db.select().from(routineRuns).get()?.characterKey).toBe(current);
     expect(
       readPanels(db)
-        .map((p) => [p.characterKey, p.id, p.title, p.formerKey])
+        .map((p) => [p.characterKey, p.id, p.title, p.formerKeys])
         .sort(),
     ).toEqual([
-      [current, 'farm', 'farm', oldRealm],
+      [current, 'farm', 'farm', [oldRealm]],
       [current, 'goal', 'Current goal', undefined],
     ]);
     expect(
@@ -195,6 +195,9 @@ test('adoption moves in-memory chats, refreshes panels and runs again only when 
     expect(chat.characterKey).toBe(current);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
     expect([refreshes, changes]).toEqual([3, 3]);
+    // Every key the panel passed through stays listed, in order, in case the
+    // addon never saw the intermediate one.
+    expect(readPanels(database.orm)[0].formerKeys).toEqual([oldRealm, current, renamed]);
   });
 });
 

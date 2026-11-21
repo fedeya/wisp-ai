@@ -67,6 +67,9 @@ export const panelInput = z.discriminatedUnion('operation', [
 export type Panel = z.infer<typeof panelContent> & {
   characterKey: string;
   updatedAt: number;
-  /** The key this panel was moved from when its character got a new key, so the addon can keep its layout. */
-  formerKey?: string;
+  /**
+   * Keys this panel was moved from when its character got a new key, oldest
+   * first, so the addon can find its saved layout even if it missed a move.
+   */
+  formerKeys?: string[];
 };

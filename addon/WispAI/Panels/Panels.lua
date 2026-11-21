@@ -28,11 +28,18 @@ end
 local function stateFor(panel)
     ns.db.panelState = ns.db.panelState or {}
     local key = keyFor(panel)
-    -- The bridge names the key a panel was moved from, so its position and
-    -- visibility follow it to this character's new key.
-    local former = type(panel.formerKey) == "string" and panel.formerKey .. ":" .. panel.id
-    if not ns.db.panelState[key] and former and ns.db.panelState[former] then
-        ns.db.panelState[key], ns.db.panelState[former] = ns.db.panelState[former], nil
+    -- The bridge lists the keys a panel was moved from, oldest first, so its
+    -- position and visibility follow it to this character's new key even if
+    -- this addon never saw an intermediate key.
+    local formerKeys = type(panel.formerKeys) == "table" and panel.formerKeys or {}
+    for index = #formerKeys, 1, -1 do
+        if ns.db.panelState[key] then
+            break
+        end
+        local former = type(formerKeys[index]) == "string" and formerKeys[index] .. ":" .. panel.id
+        if former and ns.db.panelState[former] then
+            ns.db.panelState[key], ns.db.panelState[former] = ns.db.panelState[former], nil
+        end
     end
     ns.db.panelState[key] = ns.db.panelState[key] or {}
     return ns.db.panelState[key]
