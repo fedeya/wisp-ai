@@ -5,7 +5,8 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
-import { adoptCharacterKey, adoptableKeys } from '../src/db/character-keys.ts';
+import { adoptableKeys } from '@wisp/protocol/character-key';
+import { adoptCharacterKey } from '../src/db/character-keys.ts';
 import {
   importRoutines,
   readMemory,
@@ -163,37 +164,37 @@ test('a character with a GUID adopts every older key for it and keeps current da
   });
 });
 
-test('adoption moves in-memory chats, reloads panels and runs again only when the key changes', async () => {
+test('adoption moves in-memory chats, refreshes panels and runs again only when the key changes', async () => {
   await withDatabase(async (database) => {
     await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
     const chat = { ...newChat('chat', 'addon'), characterKey: oldRealm };
     const other = { ...newChat('other', 'addon'), characterKey: someoneElse };
-    let reloads = 0,
+    let refreshes = 0,
       changes = 0;
     const adopt = createCharacterAdoption({
       database,
-      panelStore: { reload: async () => void reloads++ },
+      panelStore: { refresh: () => void refreshes++ },
       chats: () => [chat, other],
       changed: () => void changes++,
       logger: { info: () => {}, warn: () => {} },
     });
-    await adopt(oldRealm);
-    expect(reloads).toBe(0);
-    await adopt(current);
-    await adopt(current);
+    adopt(oldRealm);
+    expect(refreshes).toBe(0);
+    adopt(current);
+    adopt(current);
     expect(chat.characterKey).toBe(current);
     expect(other.characterKey).toBe(someoneElse);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
-    expect([reloads, changes]).toEqual([1, 1]);
+    expect([refreshes, changes]).toEqual([1, 1]);
 
     // The same GUID moving to another key and back takes its data each time.
-    await adopt(renamed);
+    adopt(renamed);
     expect(chat.characterKey).toBe(renamed);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([renamed]);
-    await adopt(current);
+    adopt(current);
     expect(chat.characterKey).toBe(current);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
-    expect([reloads, changes]).toEqual([3, 3]);
+    expect([refreshes, changes]).toEqual([3, 3]);
   });
 });
 
@@ -228,12 +229,12 @@ test('a name saved on several realms stays put, since the empty realm cannot pic
     const pvpChat = { ...newChat('pvp', 'addon'), characterKey: pvp };
     const adopt = createCharacterAdoption({
       database,
-      panelStore: { reload: async () => {} },
+      panelStore: { refresh: () => {} },
       chats: () => [chat, pvpChat],
       changed: () => {},
       logger: { info: () => {}, warn: () => {} },
     });
-    await adopt(current);
+    adopt(current);
     expect(
       readPanels(database.orm)
         .map((p) => [p.id, p.characterKey])

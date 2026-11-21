@@ -46,7 +46,8 @@ interface ReceiverDependencies {
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
-  adoptCharacter?: (key: string) => Promise<void>;
+  /** Moves saved data to a new character key before the packet is handled. */
+  adoptCharacter?: (key: string) => void;
   logger: Pick<Logger, 'info' | 'warn'>;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
@@ -73,8 +74,6 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
   let lastDelivery = '';
-  // Routine work for a character waits until its older keys have moved.
-  let adoption: Promise<void> = Promise.resolve();
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
     state.chats.push(chat);
@@ -282,7 +281,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       const identity = characterIdentity(packet.context);
       if (identity) {
         state.currentCharacterKey = identity;
-        adoption = deps.adoptCharacter?.(identity) ?? adoption;
+        deps.adoptCharacter?.(identity);
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -301,8 +300,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       if (packet.type === 'routine_event' && capabilitySettings.enabled('tool:manage_routine')) {
         const event = routineEvent.safeParse({ event: data?.event, values: data?.values });
         if (event.success) {
-          void adoption
-            .then(() => routineStore.observe(identity, event.data))
+          void routineStore
+            .observe(identity, event.data)
             .then(changed)
             .catch((error) =>
               logger.warn(
@@ -322,8 +321,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         input.success &&
         ['pause', 'resume', 'remove'].includes(input.data.operation)
       ) {
-        void adoption
-          .then(() => routineStore.mutate(identity, input.data))
+        void routineStore
+          .mutate(identity, input.data)
           .then(changed)
           .catch((error) =>
             logger.warn(
@@ -343,43 +342,38 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       return;
     }
     if (packet.type === 'panel_ask' && packet.key && packet.nodeId) {
-      const identity = characterIdentity(packet.context);
-      // Panels move to a new character key during adoption; look them up after it.
-      void adoption.then(() => {
-        const panel = identity
-          ? panelStore.list(identity).find((p) => p.id === packet.key)
-          : undefined;
-        const node = panel?.ui.find((n) => n.id === packet.nodeId);
-        if (!panel || node?.kind !== 'button' || node.action.kind !== 'ask') {
-          return;
-        }
-        let values: ReturnType<typeof selectionValues>;
-        try {
-          values = selectionValues(panel.ui, packet.values);
-        } catch {
-          return;
-        }
-        const id = packet.chat || 'panel-' + randomUUID();
-        let chat = chatFor(id);
-        if (!chat) {
-          chat = createChat(id);
-          chat.inline = true;
-          chat.title = panel.title;
-          chat.titleGenerated = true;
-        }
-        state.inlineChat = id;
-        void run(
-          chat,
-          node.action.prompt +
-            '\n\nPersistent panel: ' +
-            panel.id +
-            '\nSelected values: ' +
-            JSON.stringify(values),
-          packet.messageId,
-          packet.context,
-        );
-        changed();
-      });
+      const identity = characterIdentity(packet.context),
+        panel = identity ? panelStore.list(identity).find((p) => p.id === packet.key) : undefined;
+      const node = panel?.ui.find((n) => n.id === packet.nodeId);
+      if (!panel || node?.kind !== 'button' || node.action.kind !== 'ask') {
+        return;
+      }
+      let values: ReturnType<typeof selectionValues>;
+      try {
+        values = selectionValues(panel.ui, packet.values);
+      } catch {
+        return;
+      }
+      const id = packet.chat || 'panel-' + randomUUID();
+      let chat = chatFor(id);
+      if (!chat) {
+        chat = createChat(id);
+        chat.inline = true;
+        chat.title = panel.title;
+        chat.titleGenerated = true;
+      }
+      state.inlineChat = id;
+      void run(
+        chat,
+        node.action.prompt +
+          '\n\nPersistent panel: ' +
+          panel.id +
+          '\nSelected values: ' +
+          JSON.stringify(values),
+        packet.messageId,
+        packet.context,
+      );
+      changed();
       return;
     }
     if (packet.type === 'ui_action') {
@@ -419,7 +413,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             args: undo
               ? { transactionId: node.action.transactionId }
               : { operation: 'apply', transactionId: node.action.transactionId },
-            ...expectedCharacter(identity ?? chat.characterKey),
+            expectedCharacter: expectedCharacter(identity ?? chat.characterKey),
           };
           chat.status = 'working';
           changed();
@@ -528,10 +522,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       const identity = characterIdentity(packet.context),
         transportSession = state.activeTransport;
       state.memoryViewRequest = packet.requestId;
-      const ready = adoption;
       void (async () => {
-        // Character memory moves to a new key during adoption.
-        await ready;
         if (packet.type !== 'memory_list') {
           if (packet.slot !== 'preferences' && packet.slot !== 'character') {
             throw new Error('Invalid memory scope');

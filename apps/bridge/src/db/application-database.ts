@@ -80,6 +80,10 @@ export class ApplicationDatabase {
   }
   async transaction<T>(work: (db: ApplicationOrm) => T): Promise<T> {
     await this.initialize();
+    return this.transactionSync(work);
+  }
+  /** A transaction on an already initialized database, for callers that must not yield. */
+  transactionSync<T>(work: (db: ApplicationOrm) => T): T {
     let result!: T;
     this.orm.transaction(
       (tx) => {

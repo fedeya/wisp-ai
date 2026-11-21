@@ -13,11 +13,13 @@ export class PanelStore {
     await this.database.initializeProducts();
     this.panels = readPanels(this.database.orm);
   }
-  /** Re-read after another writer changed panel rows, after pending mutations. */
-  reload() {
-    const work = this.queue.catch(() => {}).then(() => this.load());
-    this.queue = work;
-    return work;
+  /**
+   * Re-read after another writer changed panel rows: now, and again after any
+   * mutation already in flight, which would otherwise restore its own copy.
+   */
+  refresh() {
+    this.panels = readPanels(this.database.orm);
+    this.queue = this.queue.catch(() => {}).then(() => this.load());
   }
   list(characterKey: string) {
     return this.panels.filter((p) => p.characterKey === characterKey);

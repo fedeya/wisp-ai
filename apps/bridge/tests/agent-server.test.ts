@@ -194,29 +194,3 @@ test('web search reports its depth, provider and outcome without the query', asy
     await server.close();
   }
 });
-
-test('character-scoped tools wait for saved character data to move', async () => {
-  const chat = workingChat();
-  let finish = () => {};
-  const characterAdoption = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
-  const read = vi.fn(async () => []);
-  const server = await serve({
-    getChats: () => [chat],
-    characterAdoption,
-    memoryStore: { read } as never,
-  });
-  try {
-    const reply = server.post('/memory', {
-      eveSession: 'eve',
-      slot: 'character',
-      operation: 'list',
-    });
-    await vi.waitFor(() => expect(characterAdoption).toHaveBeenCalledOnce());
-    expect(read).not.toHaveBeenCalled();
-    finish();
-    expect((await reply).status).toBe(200);
-    expect(read).toHaveBeenCalledWith('character', 'Realm-Name');
-  } finally {
-    await server.close();
-  }
-});

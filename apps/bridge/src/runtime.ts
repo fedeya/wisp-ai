@@ -342,7 +342,6 @@ export async function startBridge(options: BridgeOptions = {}) {
     const server = createServer(
       createAgentHandler({
         logger,
-        characterAdoption: adoptCharacter.settled,
         telemetry,
         token,
         auth,

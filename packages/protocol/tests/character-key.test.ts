@@ -4,7 +4,7 @@ import {
   characterLabel,
   expectedCharacter,
   parseCharacterKey,
-  sameCharacter,
+  adoptableKeys,
 } from '../src/character-key.ts';
 
 test('character keys accept the empty realm WoW Forever reports', () => {
@@ -21,10 +21,11 @@ test('character keys accept the empty realm WoW Forever reports', () => {
 
 test('expected characters come only from a valid key', () => {
   assert.deepEqual(expectedCharacter(JSON.stringify(['WoW Forever', '', 'Fedrath'])), {
-    expectedCharacter: { realm: '', name: 'Fedrath' },
+    realm: '',
+    name: 'Fedrath',
   });
-  assert.deepEqual(expectedCharacter(undefined), {});
-  assert.deepEqual(expectedCharacter('not json'), {});
+  assert.equal(expectedCharacter(undefined), undefined);
+  assert.equal(expectedCharacter('not json'), undefined);
 });
 
 test('GUID keys follow a character and legacy keys match by game and name', () => {
@@ -38,12 +39,16 @@ test('GUID keys follow a character and legacy keys match by game and name', () =
   });
   assert.equal(characterLabel(current), 'Fedrath');
   assert.deepEqual(expectedCharacter(current), {
-    expectedCharacter: { realm: '', name: 'Fedrath', guid: 'Player-1-00A' },
+    realm: '',
+    name: 'Fedrath',
+    guid: 'Player-1-00A',
   });
-  assert.equal(sameCharacter(key('Old Realm', 'Fedrath'), current), true);
-  assert.equal(sameCharacter(key('', 'Renamed', 'Player-1-00A'), current), true);
-  assert.equal(sameCharacter(key('', 'Fedrath', 'Player-1-00B'), current), false);
-  assert.equal(sameCharacter(key('Old Realm', 'Mage'), current), false);
-  assert.equal(sameCharacter(JSON.stringify(['Retail', '', 'Fedrath']), current), false);
-  assert.equal(sameCharacter('not json', current), false);
+  const adopt = (...stored: string[]) => adoptableKeys(stored, current);
+  assert.deepEqual(adopt(key('Old Realm', 'Fedrath')), [key('Old Realm', 'Fedrath')]);
+  assert.deepEqual(adopt(key('', 'Renamed', 'Player-1-00A')), [key('', 'Renamed', 'Player-1-00A')]);
+  assert.deepEqual(adopt(key('', 'Fedrath', 'Player-1-00B')), []);
+  assert.deepEqual(adopt(key('Old Realm', 'Mage')), []);
+  assert.deepEqual(adopt(JSON.stringify(['Retail', '', 'Fedrath'])), []);
+  assert.deepEqual(adopt('not json', current), []);
+  assert.deepEqual(adoptableKeys([key('', 'Fedrath')], 'not json'), []);
 });

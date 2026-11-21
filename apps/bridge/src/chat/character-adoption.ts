@@ -7,8 +7,8 @@ import type { PanelStore } from '../addon/panels.ts';
 import type { Chat } from './chat.ts';
 
 interface CharacterAdoptionDependencies {
-  database: ApplicationDatabase;
-  panelStore: Pick<PanelStore, 'reload'>;
+  database: Pick<ApplicationDatabase, 'transactionSync'>;
+  panelStore: Pick<PanelStore, 'refresh'>;
   chats: () => Chat[];
   changed: () => void;
   logger: Pick<Logger, 'info' | 'warn'>;
@@ -25,51 +25,44 @@ function guidOf(key: string) {
 /**
  * Whenever a GUID shows up under a new key, move chats, routines, panels and
  * character memory saved under that character's older keys to it.
+ *
+ * Runs synchronously, so the packet that reported the key, and everything
+ * after it, already sees the data under the new key.
  */
 export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
   // The key each GUID's data was last moved to. If the key changes and later
   // changes back, the data must move back too.
   const adopted = new Map<string, string>();
-  let queue = Promise.resolve();
-  function adoptCharacter(key: string): Promise<void> {
+  return function adoptCharacter(key: string): void {
     const guid = guidOf(key);
-    if (!guid || adopted.get(guid) === key) return queue;
-    adopted.set(guid, key);
-    queue = queue
-      .then(async () => {
-        await deps.database.initializeProducts();
-        const merged = await deps.database.transaction((db) =>
-          adoptCharacterKey(
-            db,
-            key,
-            deps.chats().map((chat) => chat.characterKey),
-          ),
-        );
-        // Chats are saved by diffing state against the last save, so moving
-        // them after the database keeps both on the same keys.
-        for (const chat of deps.chats()) {
-          if (chat.characterKey && merged.includes(chat.characterKey)) {
-            chat.characterKey = key;
-          }
+    if (!guid || adopted.get(guid) === key) return;
+    try {
+      const merged = deps.database.transactionSync((db) =>
+        adoptCharacterKey(
+          db,
+          key,
+          deps.chats().map((chat) => chat.characterKey),
+        ),
+      );
+      adopted.set(guid, key);
+      for (const chat of deps.chats()) {
+        if (chat.characterKey && merged.includes(chat.characterKey)) {
+          chat.characterKey = key;
         }
-        if (merged.length) {
-          await deps.panelStore.reload();
-          deps.logger.info(
-            { event: 'character.keys_merged', count: merged.length },
-            'Saved character data moved to its current identity',
-          );
-          deps.changed();
-        }
-      })
-      .catch((error) => {
-        if (adopted.get(guid) === key) adopted.delete(guid);
-        deps.logger.warn(
-          { event: 'character.keys_merge_failed', error: errorMessage(error) },
-          'Could not move saved character data',
+      }
+      if (merged.length) {
+        deps.panelStore.refresh();
+        deps.logger.info(
+          { event: 'character.keys_merged', count: merged.length },
+          'Saved character data moved to its current identity',
         );
-      });
-    return queue;
-  }
-  // Resolves once every adoption started so far has finished.
-  return Object.assign(adoptCharacter, { settled: () => queue });
+        deps.changed();
+      }
+    } catch (error) {
+      deps.logger.warn(
+        { event: 'character.keys_merge_failed', error: errorMessage(error) },
+        'Could not move saved character data',
+      );
+    }
+  };
 }

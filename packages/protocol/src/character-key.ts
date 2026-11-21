@@ -23,29 +23,40 @@ function tryParse(key: string): CharacterIdentity | undefined {
     return undefined;
   }
 }
-/**
- * Whether data stored under `stored` belongs to the character `current` names.
- * Matching GUIDs follow a character through realm or name changes; keys saved
- * before GUIDs existed match by game and name, whatever their realm.
- */
-export function sameCharacter(stored: string, current: string): boolean {
-  const a = tryParse(stored),
-    b = tryParse(current);
-  if (!a || !b || a.game !== b.game) return false;
-  if (a.guid && b.guid) return a.guid === b.guid;
-  return !a.guid && a.name === b.name;
+function sameCharacter(stored: CharacterIdentity, current: CharacterIdentity) {
+  if (stored.game !== current.game) return false;
+  if (stored.guid && current.guid) return stored.guid === current.guid;
+  return !stored.guid && stored.name === current.name;
 }
 /**
- * The character an action must run as, for the addon to double-check. Empty
- * when the turn had no identity; the transport session still pins the character.
+ * The stored keys whose data belongs to the character `key` names:
+ * - keys with the same GUID (its realm or name changed);
+ * - pre-GUID keys with an empty realm and the same game and name;
+ * - pre-GUID keys with a realm and the same game and name, but only when a
+ *   single realm has that name. WoW Forever reuses names across its PvP and
+ *   PvE servers, and an empty realm can no longer tell which one is current.
  */
-export function expectedCharacter(key: string | undefined): {
-  expectedCharacter?: { realm: string; name: string; guid?: string };
-} {
+export function adoptableKeys(stored: Iterable<string | null | undefined>, key: string): string[] {
+  const current = tryParse(key);
+  if (!current) return [];
+  const candidates = [...new Set(stored)].flatMap((k) => {
+    const parsed = k && k !== key ? tryParse(k) : undefined;
+    return parsed && sameCharacter(parsed, current) ? [{ key: k!, ...parsed }] : [];
+  });
+  const realms = new Set(candidates.flatMap((c) => (!c.guid && c.realm ? [c.realm] : [])));
+  return candidates.filter((c) => c.guid || !c.realm || realms.size === 1).map((c) => c.key);
+}
+export type ExpectedCharacter = Pick<CharacterIdentity, 'realm' | 'name' | 'guid'>;
+/**
+ * The character an action must run as, for the addon to double-check.
+ * Undefined when the turn had no identity; the transport session still pins
+ * the character.
+ */
+export function expectedCharacter(key: string | undefined): ExpectedCharacter | undefined {
   const parsed = key ? tryParse(key) : undefined;
-  if (!parsed) return {};
+  if (!parsed) return undefined;
   const { realm, name, guid } = parsed;
-  return { expectedCharacter: guid ? { realm, name, guid } : { realm, name } };
+  return guid ? { realm, name, guid } : { realm, name };
 }
 export function characterLabel(key: string, separator = ' · '): string {
   const parsed = tryParse(key);

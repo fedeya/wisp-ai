@@ -224,10 +224,10 @@ test('retry reuses the failed question and ignores retries while working', () =>
   expect(f.run).toHaveBeenCalledTimes(1);
 });
 
-test('routine events for a new character key wait until its older keys have moved', async () => {
-  let finishAdoption = () => {};
-  const adoptCharacter = vi.fn(() => new Promise<void>((resolve) => (finishAdoption = resolve)));
-  const observe = vi.fn(async () => []);
+test('a new character key is adopted before the packet that reports it is handled', () => {
+  const calls: string[] = [];
+  const adoptCharacter = vi.fn(() => void calls.push('adopt'));
+  const observe = vi.fn(async () => void calls.push('observe'));
   const capabilitySettings = new CapabilitySettings('unused');
   vi.spyOn(capabilitySettings, 'enabled').mockReturnValue(true);
   const f = fixture({
@@ -251,39 +251,6 @@ test('routine events for a new character key wait until its older keys have move
   );
   const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
   expect(adoptCharacter).toHaveBeenCalledWith(key);
-  await Promise.resolve();
-  expect(observe).not.toHaveBeenCalled();
-  finishAdoption();
-  await vi.waitFor(() => expect(observe).toHaveBeenCalledWith(key, expect.anything()));
-});
-
-test('character memory changes for a new key wait until its older keys have moved', async () => {
-  let finishAdoption = () => {};
-  const adoptCharacter = vi.fn(() => new Promise<void>((resolve) => (finishAdoption = resolve)));
-  const update = vi.fn(async () => []);
-  const f = fixture({
-    adoptCharacter,
-    memoryStore: { update } as unknown as MemoryStore,
-  });
-  const character = {
-    status: 'available',
-    data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
-  };
-  f.receive(
-    packetSchema.parse({
-      type: 'memory_remove',
-      session: 'one',
-      seq: 31,
-      at: 1,
-      requestId: 'r1',
-      slot: 'character',
-      key: 'spec',
-      context: { sections: { character } },
-    }),
-  );
-  await Promise.resolve();
-  expect(update).not.toHaveBeenCalled();
-  finishAdoption();
-  const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
-  await vi.waitFor(() => expect(update).toHaveBeenCalledWith('character', key, 'spec', undefined));
+  expect(observe).toHaveBeenCalledWith(key, expect.anything());
+  expect(calls).toEqual(['adopt', 'observe']);
 });

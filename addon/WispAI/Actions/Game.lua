@@ -176,6 +176,14 @@ function actions.create_macro(args)
         note = "Macro was not executed or placed on an action bar. Click its reference to pick it up yourself.",
     }
 end
+-- The GUID identifies a character on its own; older requests carry only
+-- the name and realm.
+local function isCurrentCharacter(expected)
+    if expected.guid then
+        return expected.guid == UnitGUID("player")
+    end
+    return expected.name == UnitName("player") and expected.realm == (GetRealmName() or "")
+end
 function ns.Actions.PerformAction(action)
     if type(action) ~= "table" then
         return { status = "unavailable", error = "Unknown action" }
@@ -183,13 +191,7 @@ function ns.Actions.PerformAction(action)
     -- Requests only arrive for this addon session, and a character switch
     -- starts a new one. The expected character is an extra check when known.
     local expected = action.expectedCharacter
-    local mismatch = expected
-        and (
-            expected.guid and expected.guid ~= UnitGUID("player")
-            or expected.name ~= UnitName("player")
-            or expected.realm ~= (GetRealmName() or "")
-        )
-    if mismatch then
+    if expected and not isCurrentCharacter(expected) then
         return {
             status = "blocked",
             error = "Character identity changed; request the action again for the current character",
