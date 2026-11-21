@@ -328,7 +328,7 @@ test('the assembled runtime serves validated status, receives packets, persists 
   }
 });
 
-test('occupied bridge ports fall back to distinct listeners that both clients can reach', async () => {
+test('occupied bridge and Eve ports fall back to free ones that the clients can reach', async () => {
   const f = await fixture();
   const occupied = createServer();
   await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
@@ -336,12 +336,21 @@ test('occupied bridge ports fall back to distinct listeners that both clients ca
   const startAgent = vi.fn(f.options.startAgent!);
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
-    bridge = await startBridge({ ...f.options, agentPort: port, desktopPort: port, startAgent });
-    const { WOW_BRIDGE_URL, WOW_BRIDGE_TOKEN } = startAgent.mock.calls[0][0].environment;
+    bridge = await startBridge({
+      ...f.options,
+      agentPort: port,
+      desktopPort: port,
+      evePort: port,
+      startAgent,
+    });
+    const { environment, port: evePort } = startAgent.mock.calls[0][0];
+    const { WOW_BRIDGE_URL, WOW_BRIDGE_TOKEN } = environment;
     const agentPort = Number(new URL(WOW_BRIDGE_URL!).port);
     const desktop = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
+    expect(evePort).toBeGreaterThan(0);
+    expect(evePort).not.toBe(port);
     expect(new Set([port, agentPort, desktop.port]).size).toBe(3);
 
     const agentResponse = await fetch(WOW_BRIDGE_URL + '/session-model?session=missing', {

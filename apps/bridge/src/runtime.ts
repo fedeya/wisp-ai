@@ -39,7 +39,7 @@ import { McpManager } from './integrations/mcp/mcp-manager.ts';
 import { McpRelay } from './integrations/mcp/mcp-relay.ts';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
 import { startDesktopServer } from './desktop/desktop-server.ts';
-import { listenOnLoopback } from './loopback-server.ts';
+import { freeLoopbackPort, listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
 import { ModelConnections } from './models/model-connections.ts';
 import { createModelCatalogRefresh } from './models/model-catalog.ts';
@@ -55,6 +55,7 @@ export interface BridgeOptions {
   dataDirectory?: string;
   agentPort?: number;
   desktopPort?: number;
+  evePort?: number;
   vault?: SecretVault;
   client?: Pick<Client, 'sessions' | 'health' | 'info'>;
   startAgent?: typeof startEveProcess;
@@ -214,15 +215,18 @@ export async function startBridge(options: BridgeOptions = {}) {
     const pending = new GameRequests(changed);
     resources.defer(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
+    // Eve binds its port itself, so choose it here: another Wisp may hold 43186.
+    const evePort = await freeLoopbackPort(options.evePort ?? 43186);
     const client =
       options.client ||
       new Client({
-        baseUrl: 'http://127.0.0.1:43186',
+        baseUrl: 'http://127.0.0.1:' + evePort,
         auth: { bearer: () => token },
       });
     const eve = createEveLifecycle({
       agentRoot: paths.agent,
       engineRoot: paths.engine,
+      port: evePort,
       logPath: path.join(runtime, 'eve.log'),
       environment: () => ({
         ...process.env,

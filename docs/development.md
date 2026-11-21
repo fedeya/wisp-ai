@@ -294,7 +294,7 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 | Shared contracts              | [protocol](../packages/protocol/src)                                                                 |
 | Game UI, readings and actions | [addon](../addon/WispAI)                                                                             |
 
-The bridge owns accounts, persistence and tool execution. Eve runs on loopback **43186**. The bridge prefers **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If either port is occupied, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+The bridge owns accounts, persistence and tool execution. Eve prefers loopback **43186**, the bridge prefers **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
 Shared agent rules live in `apps/agent/agent/instructions.md`. Task procedures
 live in native Eve skills at `apps/agent/agent/skills/<name>/SKILL.md`, with a

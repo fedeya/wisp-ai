@@ -13,6 +13,8 @@ export interface EveLifecycleOptions {
   /** Authored agent sources and the folder Eve runs from (see `prepareEngine`). */
   agentRoot: string;
   engineRoot: string;
+  /** Loopback port Eve listens on; `client` must point at the same port. */
+  port: number;
   logPath: string;
   /** Environment for each spawn; read at spawn time so a model change applies. */
   environment: () => NodeJS.ProcessEnv;
@@ -57,6 +59,7 @@ export function createEveLifecycle(options: EveLifecycleOptions): EveLifecycle {
     if (logFile === undefined) throw Error('Eve log is not open.');
     return (options.startAgent || startEveProcess)({
       root: options.engineRoot,
+      port: options.port,
       logFile,
       environment: options.environment(),
       onError: (error) =>
