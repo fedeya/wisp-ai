@@ -256,3 +256,34 @@ test('routine events for a new character key wait until its older keys have move
   finishAdoption();
   await vi.waitFor(() => expect(observe).toHaveBeenCalledWith(key, expect.anything()));
 });
+
+test('character memory changes for a new key wait until its older keys have moved', async () => {
+  let finishAdoption = () => {};
+  const adoptCharacter = vi.fn(() => new Promise<void>((resolve) => (finishAdoption = resolve)));
+  const update = vi.fn(async () => []);
+  const f = fixture({
+    adoptCharacter,
+    memoryStore: { update } as unknown as MemoryStore,
+  });
+  const character = {
+    status: 'available',
+    data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
+  };
+  f.receive(
+    packetSchema.parse({
+      type: 'memory_remove',
+      session: 'one',
+      seq: 31,
+      at: 1,
+      requestId: 'r1',
+      slot: 'character',
+      key: 'spec',
+      context: { sections: { character } },
+    }),
+  );
+  await Promise.resolve();
+  expect(update).not.toHaveBeenCalled();
+  finishAdoption();
+  const key = JSON.stringify(['WoW Forever', '', 'Fedrath', 'Player-1-00A']);
+  await vi.waitFor(() => expect(update).toHaveBeenCalledWith('character', key, 'spec', undefined));
+});

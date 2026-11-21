@@ -343,38 +343,43 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       return;
     }
     if (packet.type === 'panel_ask' && packet.key && packet.nodeId) {
-      const identity = characterIdentity(packet.context),
-        panel = identity ? panelStore.list(identity).find((p) => p.id === packet.key) : undefined;
-      const node = panel?.ui.find((n) => n.id === packet.nodeId);
-      if (!panel || node?.kind !== 'button' || node.action.kind !== 'ask') {
-        return;
-      }
-      let values: ReturnType<typeof selectionValues>;
-      try {
-        values = selectionValues(panel.ui, packet.values);
-      } catch {
-        return;
-      }
-      const id = packet.chat || 'panel-' + randomUUID();
-      let chat = chatFor(id);
-      if (!chat) {
-        chat = createChat(id);
-        chat.inline = true;
-        chat.title = panel.title;
-        chat.titleGenerated = true;
-      }
-      state.inlineChat = id;
-      void run(
-        chat,
-        node.action.prompt +
-          '\n\nPersistent panel: ' +
-          panel.id +
-          '\nSelected values: ' +
-          JSON.stringify(values),
-        packet.messageId,
-        packet.context,
-      );
-      changed();
+      const identity = characterIdentity(packet.context);
+      // Panels move to a new character key during adoption; look them up after it.
+      void adoption.then(() => {
+        const panel = identity
+          ? panelStore.list(identity).find((p) => p.id === packet.key)
+          : undefined;
+        const node = panel?.ui.find((n) => n.id === packet.nodeId);
+        if (!panel || node?.kind !== 'button' || node.action.kind !== 'ask') {
+          return;
+        }
+        let values: ReturnType<typeof selectionValues>;
+        try {
+          values = selectionValues(panel.ui, packet.values);
+        } catch {
+          return;
+        }
+        const id = packet.chat || 'panel-' + randomUUID();
+        let chat = chatFor(id);
+        if (!chat) {
+          chat = createChat(id);
+          chat.inline = true;
+          chat.title = panel.title;
+          chat.titleGenerated = true;
+        }
+        state.inlineChat = id;
+        void run(
+          chat,
+          node.action.prompt +
+            '\n\nPersistent panel: ' +
+            panel.id +
+            '\nSelected values: ' +
+            JSON.stringify(values),
+          packet.messageId,
+          packet.context,
+        );
+        changed();
+      });
       return;
     }
     if (packet.type === 'ui_action') {
@@ -523,7 +528,10 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       const identity = characterIdentity(packet.context),
         transportSession = state.activeTransport;
       state.memoryViewRequest = packet.requestId;
+      const ready = adoption;
       void (async () => {
+        // Character memory moves to a new key during adoption.
+        await ready;
         if (packet.type !== 'memory_list') {
           if (packet.slot !== 'preferences' && packet.slot !== 'character') {
             throw new Error('Invalid memory scope');

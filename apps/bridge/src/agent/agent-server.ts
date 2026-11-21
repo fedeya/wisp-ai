@@ -39,6 +39,8 @@ export interface MemoryView {
 }
 interface AgentDependencies {
   logger?: Pick<Logger, 'info'>;
+  /** Waits for saved character data to move to the current character key. */
+  characterAdoption?: () => Promise<void>;
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
   auth: ChatGPTAuth;
@@ -340,6 +342,7 @@ export function createAgentApp(deps: AgentDependencies) {
   knowledge('/wowhead');
 
   tool('/routines', async ({ raw, chat }) => {
+    await deps.characterAdoption?.();
     const data = rpcRequests.routines.parse(raw);
     if (!capabilitySettings.enabled('tool:manage_routine')) {
       throw Error('Routines are disabled');
@@ -373,6 +376,7 @@ export function createAgentApp(deps: AgentDependencies) {
   });
 
   tool('/panels', async ({ raw, chat }) => {
+    await deps.characterAdoption?.();
     const data = rpcRequests.panels.parse(raw);
     if (!capabilitySettings.enabled('tool:manage_panel')) {
       throw Error('Persistent panels are disabled');
@@ -403,6 +407,7 @@ export function createAgentApp(deps: AgentDependencies) {
   tool('/identity', async ({ chat }) => ({ characterKey: chat.characterKey || null }));
 
   tool('/memory', async ({ raw, chat }) => {
+    await deps.characterAdoption?.();
     const data = rpcRequests.memory.parse(raw);
     if (data.slot !== 'preferences' && data.slot !== 'character') {
       throw new Error('Invalid memory scope');

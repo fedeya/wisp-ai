@@ -31,7 +31,7 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
   // changes back, the data must move back too.
   const adopted = new Map<string, string>();
   let queue = Promise.resolve();
-  return function adoptCharacter(key: string): Promise<void> {
+  function adoptCharacter(key: string): Promise<void> {
     const guid = guidOf(key);
     if (!guid || adopted.get(guid) === key) return queue;
     adopted.set(guid, key);
@@ -69,5 +69,7 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
         );
       });
     return queue;
-  };
+  }
+  // Resolves once every adoption started so far has finished.
+  return Object.assign(adoptCharacter, { settled: () => queue });
 }
