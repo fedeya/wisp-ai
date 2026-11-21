@@ -477,7 +477,7 @@ inspectors.chat = function(args)
     return ns.ChatHistory.ReadChatHistory(args)
 end
 inspectors.combat = function(args)
-    return ns.CombatLog.Read(args)
+    return ns.Combat.Read(args)
 end
 function ns.Character.Inspect(inspection)
     if inspection and ns.Integrations.InspectIntegration then

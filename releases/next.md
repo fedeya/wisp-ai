@@ -4,7 +4,7 @@
 
 ## New
 
-- Ask Wisp why you died. Wisp now records the combat around your character and keeps a recap of your last 5 deaths: what dealt the killing blow, which enemies and abilities did the most damage, and how much healing you got. Recaps start at login or reload and are not saved between sessions.
+- Ask Wisp why you died. Wisp now keeps the game's Death Recap for your last 5 deaths and reads the game's damage meter, so it can explain what killed you or a group member and what hit hardest in your last fight. Recaps start at login or reload and are not saved between sessions. Group deaths and fight totals need the game's damage meter turned on and are available after combat.
 
 ## Improved
 

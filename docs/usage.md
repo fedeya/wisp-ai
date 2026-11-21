@@ -173,8 +173,8 @@ In the in-game Wisp Settings, open **WoW chat history** to choose channels or cl
 
 Wisp keeps up to 200 messages for 30 minutes in addon memory, starting at login or reload; the buffer is not saved across sessions. Ask “What did the party leader say?” or “Is anyone looking for a healer?” The agent can consult `wow__read_chat` on demand, filtering by channel type, public channel name, sender, text or recent time. Each read returns up to 50 matches. Messages are shared with the chat’s selected AI provider when consulted, rather than attached to every question. Clearing the buffer does not remove results already returned in a Wisp conversation. The tool can also be disabled under Integrations.
 
-### Reading combat
+### Reading deaths and fights
 
-Wisp records combat involving your character in addon memory, starting at login or reload: damage, misses and heals you receive, debuffs placed on you and the spells you cast. The rolling buffer keeps up to 300 events from the last 2 minutes. Each death saves a recap of its last 20 seconds (the killing blow, damage by source and ability, healing received and the last 60 events), and Wisp keeps the 5 most recent deaths. Nothing is saved across sessions.
+WoW Forever does not let addons read the combat log, so Wisp uses the game’s own Death Recap and damage meter. When your character dies, Wisp keeps a copy of the game’s recap: the hits you took right before dying, newest first, with who dealt each one, the ability, the damage, the overkill and your health. Wisp keeps your 5 most recent deaths in addon memory, starting at login or reload; nothing is saved across sessions.
 
-Ask “Why did I die?” or “What hit me so hard in that fight?” The agent consults `wow__read_combat_log` on demand, so combat is shared with the chat’s selected AI provider only when it is read. Health values are read as each event arrives and are approximate.
+Ask “Why did I die?”, “What killed the tank?” or “What hit me hardest in that fight?” The agent consults `wow__read_combat` on demand, so this data is shared with the chat’s selected AI provider only when it is read. Group deaths and fight totals come from the game’s damage meter: turn it on under Options > Advanced Options > Damage Meter, and ask after combat ends, because the game hides the meter’s numbers during combat.
