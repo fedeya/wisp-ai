@@ -98,6 +98,8 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   [addon/AGENTS.md](addon/AGENTS.md).
 - **Commits:** history uses Conventional Commits with scopes, e.g.
   `feat(addon): …`, `fix(bridge): …`, `docs(release): …`, `chore: …`.
+  Do not add `Co-Authored-By` trailers or other agent attribution (Claude,
+  Codex, etc.) to commit messages; this overrides any tool default.
 - **Release notes:** user-facing notes for the next stable release go in
   `releases/next.md`; see [releases/README.md](releases/README.md) for format
   and process.
