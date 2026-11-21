@@ -81,7 +81,13 @@ export default function Overview() {
     providerConnected: app.providerConnected,
     modelName: app.modelName,
   });
-  const working = app.busy || (app.readiness === 'starting' ? 'Starting Wisp' : '');
+  const working =
+    app.busy ||
+    (app.readiness === 'updating'
+      ? 'Updating addon'
+      : app.readiness === 'starting'
+        ? 'Starting Wisp'
+        : '');
 
   function actionButton(action: CheckAction) {
     switch (action) {

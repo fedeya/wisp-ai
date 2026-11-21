@@ -33,6 +33,8 @@ type DesktopState = {
   connectionError: string;
   modelsError: string;
   onboarding: boolean;
+  /** The automatic addon update after an app update is running. */
+  addonUpdating: boolean;
 };
 
 const onboardingKey = 'wisp:onboarding:v1';
@@ -67,6 +69,7 @@ const initialState: DesktopState = {
   connectionError: '',
   modelsError: '',
   onboarding: false,
+  addonUpdating: false,
 };
 
 export const desktopConnected = ({ status }: DesktopState) =>
@@ -78,6 +81,7 @@ export function desktopReadiness(
   state: DesktopState,
 ):
   | 'loading'
+  | 'updating'
   | 'update'
   | 'starting'
   | 'unavailable'
@@ -86,8 +90,9 @@ export function desktopReadiness(
   | 'agent'
   | 'waiting'
   | 'ready' {
-  const { loading, info, status, starting } = state;
+  const { loading, info, status, starting, addonUpdating } = state;
   if (loading) return 'loading';
+  if (addonUpdating && info?.addonOutdated) return 'updating';
   if (info?.addonOutdated || info?.addonUpdateNotice === 'failed') return 'update';
   if (!status) return starting ? 'starting' : 'unavailable';
   if (!info?.configured) return 'setup';
@@ -356,6 +361,7 @@ function createDesktopSession() {
           const { info } = getState();
           if (info && info.wow === wow) update({ info: { ...info, ...addon } });
         },
+        onAddonUpdating: (addonUpdating) => update({ addonUpdating }),
         launchBridge,
         refresh,
         onError: (feedback) => update({ failed: true, feedback }),

@@ -116,6 +116,40 @@ test('AI Providers stays available while the addon updates and the reload remind
   expect(screen.queryByText(reminder)).toBeNull();
 });
 
+test('Overview shows the automatic addon update in progress instead of the update button', async () => {
+  const fallback = vi.mocked(desktop).getMockImplementation()!;
+  let finishUpdate!: () => void;
+  const updating = new Promise<void>((resolve) => {
+    finishUpdate = resolve;
+  });
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'desktop_info') {
+      const info = await fallback(command, args);
+      return { ...(info as object), addonOutdated: true, addonUpdatePending: true } as never;
+    }
+    if (command === 'auto_update_addon') {
+      await updating;
+      return {
+        wow: 'E:\\WoW',
+        addonOutdated: false,
+        addonUpdateNotice: 'reload_required',
+        addonUpdatePending: false,
+      } as never;
+    }
+    return fallback(command, args);
+  });
+  renderApp();
+  await screen.findByRole('heading', { name: 'Updating your Wisp addon' });
+  expect(screen.getByText('Updating addon')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Update addon' })).toBeNull();
+
+  await act(async () => finishUpdate());
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  expect(
+    screen.getByText('Wisp updated the addon. Type /reload in WoW to finish updating.'),
+  ).toBeTruthy();
+});
+
 test('an automatic addon update failure still starts Wisp and offers a manual retry', async () => {
   const fallback = vi.mocked(desktop).getMockImplementation()!;
   vi.mocked(desktop).mockImplementation(async (command, args) =>

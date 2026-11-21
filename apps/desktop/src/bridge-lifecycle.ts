@@ -1,11 +1,16 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { desktop, type DesktopInfo } from './api';
 
-type AddonInfo = Pick<DesktopInfo, 'wow' | 'addonOutdated' | 'addonUpdateNotice'>;
+type AddonInfo = Pick<
+  DesktopInfo,
+  'wow' | 'addonOutdated' | 'addonUpdateNotice' | 'addonUpdatePending'
+>;
 
 type BridgeLifecycleOptions = {
   onDesktopInfo: (info: DesktopInfo) => void;
   onAddonUpdate: (info: AddonInfo) => void;
+  /** Whether the automatic addon update is running. */
+  onAddonUpdating: (updating: boolean) => void;
   launchBridge: () => Promise<void>;
   refresh: () => Promise<void>;
   onError: (message: string) => void;
@@ -15,6 +20,7 @@ type BridgeLifecycleOptions = {
 export function startBridgeLifecycle({
   onDesktopInfo,
   onAddonUpdate,
+  onAddonUpdating,
   launchBridge,
   refresh,
   onError,
@@ -33,12 +39,16 @@ export function startBridgeLifecycle({
     const info = await desktop<DesktopInfo>('desktop_info');
     if (disposed) return;
     onDesktopInfo(info);
+    if (info.addonUpdatePending) onAddonUpdating(true);
     void desktop<AddonInfo | null>('auto_update_addon')
       .then((update) => {
         if (!disposed && update) onAddonUpdate(update);
       })
       .catch((error) => {
         if (!disposed) onError(String(error));
+      })
+      .finally(() => {
+        if (!disposed && info.addonUpdatePending) onAddonUpdating(false);
       });
     await refresh();
     if (disposed) {

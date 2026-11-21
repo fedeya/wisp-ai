@@ -42,6 +42,16 @@ test('an outdated addon offers the update, and a failed update says so', () => {
   expect(overviewHeader('update', 'failed').description).toMatch(/couldn’t update the addon/);
 });
 
+test('an automatic addon update shows progress instead of offering the update', () => {
+  const addon = check({ readiness: 'updating' }, 'addon');
+  expect(addon).toMatchObject({ tone: 'pending', title: 'Updating addon', status: 'Updating…' });
+  expect(addon.action).toBeUndefined();
+  expect(overviewHeader('updating')).toMatchObject({
+    title: 'Updating your Wisp addon',
+    tone: 'pending',
+  });
+});
+
 test('an addon updated by Wisp asks for /reload until dismissed', () => {
   expect(check({ addonUpdateNotice: 'reload_required' }, 'addon')).toMatchObject({
     tone: 'ok',

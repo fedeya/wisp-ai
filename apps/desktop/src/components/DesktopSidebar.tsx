@@ -19,6 +19,7 @@ const applicationPages = desktopPages.filter((page) => page.group === 'applicati
 
 const readinessLabels = {
   loading: 'Checking Wisp…',
+  updating: 'Updating addon…',
   update: 'Addon update needed',
   starting: 'Starting Wisp…',
   unavailable: 'Wisp unavailable',

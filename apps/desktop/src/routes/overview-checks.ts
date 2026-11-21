@@ -35,6 +35,11 @@ const headers: Record<Readiness, { title: string; description: string; tone: Che
     description: 'Checking your installation and connections.',
     tone: 'pending',
   },
+  updating: {
+    title: 'Updating your Wisp addon',
+    description: 'Wisp is updating the addon in your WoW folder to match this app.',
+    tone: 'pending',
+  },
   update: {
     title: 'Update your Wisp addon',
     description: 'The addon in your WoW folder is older than this app.',
@@ -90,6 +95,15 @@ export function overviewHeader(readiness: Readiness, addonUpdateNotice?: string 
 }
 
 function addonCheck({ readiness, addonUpdateNotice }: OverviewInput): OverviewCheck {
+  if (readiness === 'updating') {
+    return {
+      id: 'addon',
+      tone: 'pending',
+      title: 'Updating addon',
+      detail: 'This usually takes a few seconds.',
+      status: 'Updating…',
+    };
+  }
   if (readiness === 'update') {
     return {
       id: 'addon',

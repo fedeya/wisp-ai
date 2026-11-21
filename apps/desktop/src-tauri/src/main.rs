@@ -228,6 +228,8 @@ async fn desktop_info(
 ) -> Result<Value, String> {
     let (wow, addon_outdated) = addon_installation(&host).await?;
     let addon_notice = *host.addon_notice.lock().await;
+    let addon_update_pending = cfg!(all(windows, not(debug_assertions)))
+        && host.data.join(addon_update::PENDING_FILE).is_file();
     Ok(json!({
         "wow": wow,
         "configured": wow.is_some(),
@@ -236,6 +238,7 @@ async fn desktop_info(
         "version": env!("CARGO_PKG_VERSION"),
         "addonOutdated": addon_outdated,
         "addonUpdateNotice": addon_notice,
+        "addonUpdatePending": addon_update_pending,
         "telemetryEnabled": telemetry.enabled(),
     }))
 }
@@ -290,6 +293,7 @@ async fn auto_update_addon(
         "wow": wow,
         "addonOutdated": outdated,
         "addonUpdateNotice": notice,
+        "addonUpdatePending": false,
     })))
 }
 
