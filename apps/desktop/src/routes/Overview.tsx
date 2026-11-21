@@ -81,14 +81,6 @@ export default function Overview() {
     providerConnected: app.providerConnected,
     modelName: app.modelName,
   });
-  const working =
-    app.busy ||
-    (app.readiness === 'updating'
-      ? 'Updating addon'
-      : app.readiness === 'starting'
-        ? 'Starting Wisp'
-        : '');
-
   function actionButton(action: CheckAction) {
     switch (action) {
       case 'update-addon':
@@ -144,10 +136,9 @@ export default function Overview() {
         </div>
         {header.tone === 'ok' && <CopyCommand />}
       </header>
+      {/* Only actions the user started: the header and checks already show Wisp's own progress. */}
       <div className="has-[.action-progress:not(:empty)]:-mt-3 has-[.action-progress:not(:empty)]:mb-5">
-        <ActionProgress
-          label={working || (app.readiness === 'loading' ? 'Checking connections' : '')}
-        />
+        <ActionProgress label={app.busy} />
       </div>
 
       {!app.loading && app.info && !app.info.configured && <GameInstallation firstRun />}
