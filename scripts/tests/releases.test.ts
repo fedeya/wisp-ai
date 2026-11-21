@@ -53,6 +53,9 @@ test('stable preparation consumes user notes once and synchronizes all app versi
   const lock = await readFile(join(root, 'apps/desktop/src-tauri/Cargo.lock'), 'utf8');
   expect(lock).toContain('name = "wisp"\nversion = "0.0.8"');
   expect(lock).toContain('name = "other"\nversion = "1.2.3"');
+  expect(validateNotes('# Next\n\n<!-- comment -->\n\n## New\n\n- Item\n')).toBe(
+    '# Next\n\n## New\n\n- Item\n',
+  );
   expect(() => validateNotes('# Next\n<!-- unfinished -->')).toThrow('user-facing');
   await expect(prepareNotes('0.0.8', root)).rejects.toThrow();
 });

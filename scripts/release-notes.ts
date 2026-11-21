@@ -5,7 +5,11 @@ import { pathToFileURL } from 'node:url';
 import { stableVersion, nightlyVersion, newerNightly } from '@wisp/releases';
 
 export function validateNotes(notes: string) {
-  const content = notes.replace(/<!--[\s\S]*?-->/g, '').trim();
+  // Removing a comment can leave a run of blank lines, which oxfmt rejects.
+  const content = notes
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   if (!/^# .+/m.test(content) || !/^[-*] \S.+/m.test(content)) {
     throw Error('Write a title and user-facing release notes in releases/next.md first.');
   }
