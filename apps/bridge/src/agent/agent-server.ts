@@ -512,8 +512,13 @@ export function createAgentApp(deps: AgentDependencies) {
           abort,
         );
       if (inspection?.kind === 'search_armor' || inspection?.kind === 'search_weapons') {
-        if (!capabilitySettings.enabled('mcp:everloot')) {
-          throw new Error('Gear search needs the Everloot integration, which is off in Settings');
+        if (
+          !capabilitySettings.enabled('mcp:everloot') ||
+          !capabilitySettings.enabled('mcp_tool:everloot:item_categories')
+        ) {
+          throw new Error(
+            'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
+          );
         }
         return searchGear(
           inspection,

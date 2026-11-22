@@ -396,18 +396,27 @@ local function itemSummary(id)
         stats = C_Item.GetItemStats and C_Item.GetItemStats(link) or nil,
     }
 end
+-- An occupied slot whose item is not cached yet is unknown, not empty: the
+-- comparison waits for it instead of treating it as item level zero.
 local function weakestSlot(slots)
-    local best
+    local best, uncached
     for _, slot in ipairs(slots) do
         local equippedID = GetInventoryItemID("player", slot)
         local equipped = equippedID and itemSummary(equippedID)
-        local level = equipped and equipped.itemLevel or 0
-        if not best or not equippedID or level < best.level then
-            best = { slot = slot, equipped = equipped, empty = not equippedID, level = level }
-            if not equippedID then
-                break
+        if equippedID and not equipped then
+            uncached = uncached or equippedID
+        else
+            local level = equipped and equipped.itemLevel or 0
+            if not best or not equippedID or level < best.level then
+                best = { slot = slot, equipped = equipped, empty = not equippedID, level = level }
+                if not equippedID then
+                    break
+                end
             end
         end
+    end
+    if uncached and not (best and best.empty) then
+        return nil, uncached
     end
     return best
 end
@@ -417,7 +426,7 @@ function inspectors.gear_candidates(args)
     assert(C_Item and C_Item.GetItemInfo, "Item API is unavailable")
     local maxLevel = args.maxRequiredLevel or UnitLevel("player")
     local minLevel = args.minRequiredLevel or 0
-    local ranked, loadingIds = {}, {}
+    local ranked, loadingIds, equippedLoading = {}, {}, {}
     local counts =
         { requested = #args.itemIds, tooHighLevel = 0, tooLowLevel = 0, notEquipment = 0 }
     for _, id in ipairs(args.itemIds) do
@@ -432,25 +441,36 @@ function inspectors.gear_candidates(args)
         elseif (item.requiredLevel or 0) < minLevel then
             counts.tooLowLevel = counts.tooLowLevel + 1
         else
-            local target = weakestSlot(slots)
-            local equipped = target.equipped
-            item.slot = target.slot
-            item.emptySlot = target.empty
-            item.equipped = equipped
-                and { id = equipped.id, name = equipped.name, itemLevel = equipped.itemLevel }
-            item.itemLevelGain = (item.itemLevel or 0) - target.level
-            item.statDelta = item.stats and statDelta(item.stats, equipped and equipped.stats or {})
+            local target, uncachedID = weakestSlot(slots)
             item.link = nil
+            if target then
+                local equipped = target.equipped
+                item.slot = target.slot
+                item.emptySlot = target.empty
+                item.equipped = equipped
+                    and { id = equipped.id, name = equipped.name, itemLevel = equipped.itemLevel }
+                item.itemLevelGain = (item.itemLevel or 0) - target.level
+                item.statDelta = item.stats
+                    and statDelta(item.stats, equipped and equipped.stats or {})
+            else
+                item.equipped = { id = uncachedID, status = "loading" }
+                equippedLoading[uncachedID] = true
+            end
             ranked[#ranked + 1] = item
         end
     end
     table.sort(ranked, function(a, b)
-        if a.itemLevelGain ~= b.itemLevelGain then
-            return a.itemLevelGain > b.itemLevelGain
+        local gainA, gainB = a.itemLevelGain or -math.huge, b.itemLevelGain or -math.huge
+        if gainA ~= gainB then
+            return gainA > gainB
         end
         return a.id < b.id
     end)
     counts.matching = #ranked
+    for id in pairs(equippedLoading) do
+        loadingIds[#loadingIds + 1] = id
+    end
+    table.sort(loadingIds)
     return {
         status = #loadingIds > 0 and "loading" or "available",
         items = ranked,
