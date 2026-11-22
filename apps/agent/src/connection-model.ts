@@ -12,6 +12,7 @@ export function connectionModel(
   origin: string,
   token: string,
   webSearchEnabled: () => Promise<boolean>,
+  cacheKey?: string,
 ) {
   const native = !!selected.connectionId;
   const baseURL = native
@@ -51,11 +52,14 @@ export function connectionModel(
       transformParams: async ({ params }) => {
         if (!native) {
           return filterWebSearch(
-            subscriptionCallOptions(params),
+            subscriptionCallOptions(withCacheKey(params, cacheKey)),
             selected.webSearchAvailable !== false && (await webSearchEnabled()),
           );
         }
         params = applyModelReasoning(params, selected.provider!, selected.effort);
+        if (selected.provider === 'openai') {
+          params = withCacheKey(params, cacheKey);
+        }
         if (selected.provider === 'openai' || selected.provider === 'xai') {
           const namespace = selected.provider;
           params = {
@@ -73,4 +77,22 @@ export function connectionModel(
       },
     },
   });
+}
+
+// OpenAI routes requests that share a prompt_cache_key to the same cache, so
+// every step of a long tool loop can reuse the conversation's cached prefix.
+function withCacheKey<T extends { providerOptions?: Record<string, any> }>(
+  params: T,
+  cacheKey: string | undefined,
+): T {
+  if (!cacheKey) {
+    return params;
+  }
+  return {
+    ...params,
+    providerOptions: {
+      ...params.providerOptions,
+      openai: { promptCacheKey: cacheKey, ...params.providerOptions?.openai },
+    },
+  };
 }

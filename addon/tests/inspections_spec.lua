@@ -634,3 +634,37 @@ it("modern auction browse output stays labelled as cached partial data", functio
             and d.pricesAsOf:find("unknown")
     )
 end)
+
+it("gear readings carry equipped item stats so slots need no separate inspection", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+
+    C_Item = {
+        GetItemInfo = function(link)
+            if link == "item:7" then
+                return "Staff", link, 2, 20, 15, "Weapon", "Staff", 1, "INVTYPE_2HWEAPON", 0, 90
+            end
+        end,
+        GetItemStats = function()
+            return { ITEM_MOD_INTELLECT_SHORT = 4 }
+        end,
+    }
+    GetInventoryItemID = function(_, slot)
+        return (slot == 16 and 7) or (slot == 1 and 9) or nil
+    end
+    GetInventoryItemLink = function(_, slot)
+        return slot == 16 and "item:7" or "item:9"
+    end
+    local items = ns.Character.Capture({ "gear" }).sections.gear.data.items
+    assert(items[1].slot == 1 and items[1].link == "item:9" and items[1].stats == nil)
+    local staff = items[2]
+    assert(
+        staff.slot == 16
+            and staff.name == "Staff"
+            and staff.itemLevel == 20
+            and staff.requiredLevel == 15
+            and staff.equipLocation == "INVTYPE_2HWEAPON"
+            and staff.stats.ITEM_MOD_INTELLECT_SHORT == 4
+    )
+end)

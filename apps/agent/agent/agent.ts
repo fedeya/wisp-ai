@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { bridgeOrigin } from '@wisp/agent/agent-rpc';
 import { defineAgent, defineDynamic } from 'eve';
@@ -24,8 +25,13 @@ export default defineAgent({
         ? {}
         : { reasoningEffort: selected.effort };
     return {
-      model: connectionModel(selected, origin, process.env.WOW_BRIDGE_TOKEN!, () =>
-        capabilityEnabled('tool:web_search'),
+      model: connectionModel(
+        selected,
+        origin,
+        process.env.WOW_BRIDGE_TOKEN!,
+        () => capabilityEnabled('tool:web_search'),
+        // A stable per-conversation key keeps the tool loop on one prompt cache.
+        'wisp-' + createHash('sha256').update(ctx.session.id).digest('hex').slice(0, 32),
       ),
       reasoning: 'provider-default' as const,
       modelContextWindowTokens: selected.contextWindow,

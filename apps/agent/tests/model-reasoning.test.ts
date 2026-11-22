@@ -148,3 +148,34 @@ test('provider default omits explicit reasoning configuration', async () => {
     expect(body.generationConfig?.thinkingConfig).toBeUndefined();
   }
 });
+test.each([
+  ['subscription', undefined],
+  ['native openai', 'openai'],
+] as const)('%s requests carry the conversation prompt cache key', async (_name, provider) => {
+  let body: Record<string, any> | undefined;
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    body = JSON.parse(String(init.body));
+    throw Error('Captured request');
+  });
+  const model = connectionModel(
+    provider
+      ? {
+          model: 'test',
+          modelId: 'gpt-5.4',
+          provider,
+          connectionId: '35302f8c-128a-48fb-98a1-9eb03bb71f72',
+          effort: 'provider-default',
+        }
+      : { model: 'gpt-5.4', effort: 'provider-default' },
+    'http://127.0.0.1:43187',
+    'local',
+    async () => false,
+    'wisp-conversation',
+  );
+  await expect(
+    model.doStream({
+      prompt: [{ role: 'user', content: [{ type: 'text', text: 'Hello' }] }],
+    }),
+  ).rejects.toThrow('Captured request');
+  expect(body?.prompt_cache_key).toBe('wisp-conversation');
+});

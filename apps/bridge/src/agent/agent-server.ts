@@ -30,6 +30,7 @@ import type { Logger } from 'pino';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
+import { readLoadedItems, retriesItemLoading } from '../addon/item-loading.ts';
 import { characterIdentity, conversationTitle, queryCharacterSections } from '../chat/context.ts';
 export interface MemoryView {
   entries?: unknown[];
@@ -490,20 +491,22 @@ export function createAgentApp(deps: AgentDependencies) {
           stateRequest.refresh,
         );
       }
-      return pending.request(
-        {
-          chat: chat.id,
-          session: currentTransport(),
-          ...(action
-            ? {
-                action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
-              }
-            : inspection
-              ? { inspection }
-              : {}),
-        },
-        abort,
-      );
+      const read = () =>
+        pending.request(
+          {
+            chat: chat.id,
+            session: currentTransport(),
+            ...(action
+              ? {
+                  action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
+                }
+              : inspection
+                ? { inspection }
+                : {}),
+          },
+          abort,
+        );
+      return inspection && retriesItemLoading(inspection) ? readLoadedItems(read, abort) : read();
     });
   game('/state');
   game('/inspect');

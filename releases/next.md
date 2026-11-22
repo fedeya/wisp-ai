@@ -2,6 +2,10 @@
 
 <!-- Add user-facing notes for the next stable release here. -->
 
+## Improved
+
+- Wisp answers gear and upgrade questions faster: it reads your equipped items' stats in one step and spends fewer steps re-checking items.
+
 ## Fixed
 
 - An empty orange dot no longer shows in the Wisp window header when everything is working.
