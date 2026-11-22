@@ -89,6 +89,18 @@ export const compareInput = z.object({
   itemIds: z.array(z.number().int().positive()).min(1).max(5),
   slot: z.number().int().min(1).max(19).optional(),
 });
+export const rankItemsInput = z.strictObject({
+  itemIds: z.array(z.number().int().positive()).min(1).max(100),
+  maxRequiredLevel: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .optional()
+    .describe('Highest required level to keep; defaults to the character level.'),
+  minRequiredLevel: z.number().int().min(0).max(100).optional(),
+  limit: z.number().int().min(1).max(25).default(10),
+});
 export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
   limit: z.number().int().min(1).max(50).default(20),
@@ -167,6 +179,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reference'), args: referenceInput }),
   z.object({ kind: z.literal('progression'), args: progressionInput }),
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
+  z.object({ kind: z.literal('rank_items'), args: rankItemsInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
   z.object({

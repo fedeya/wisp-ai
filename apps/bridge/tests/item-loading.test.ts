@@ -55,3 +55,15 @@ test('loaded readings are returned without another addon request', async () => {
   });
   expect(reads).toBe(1);
 });
+
+test('gear rankings wait while candidates are still loading', async () => {
+  expect(retriesItemLoading({ kind: 'rank_items', args: { itemIds: [1] } })).toBe(true);
+  const replies = [
+    { data: { status: 'loading', items: [], loadingIds: [7] } },
+    { data: { status: 'available', items: [{ id: 7 }] } },
+  ];
+  let reads = 0;
+  const result = await readLoadedItems(async () => replies[reads++], undefined, [0, 0]);
+  expect(reads).toBe(2);
+  expect(result).toEqual(replies[1]);
+});

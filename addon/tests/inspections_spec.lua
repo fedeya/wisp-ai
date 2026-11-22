@@ -668,3 +668,76 @@ it("gear readings carry equipped item stats so slots need no separate inspection
             and staff.stats.ITEM_MOD_INTELLECT_SHORT == 4
     )
 end)
+
+it(
+    "ranking keeps level-appropriate candidates against the weakest slot and reports uncached ones",
+    function()
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
+
+        local items = {
+            -- id = { name, quality, itemLevel, requiredLevel, equipLocation, intellect }
+            [1] = { "Old Ring", 2, 10, 5, "INVTYPE_FINGER", 1 },
+            [2] = { "Older Ring", 2, 6, 1, "INVTYPE_FINGER", 1 },
+            [10] = { "Good Ring", 2, 22, 18, "INVTYPE_FINGER", 5 },
+            [11] = { "Later Ring", 3, 30, 25, "INVTYPE_FINGER", 9 },
+            [12] = { "Small Ring", 2, 12, 8, "INVTYPE_FINGER", 2 },
+            [13] = { "Linen", 1, 5, 0, "", nil },
+        }
+        local requested = {}
+        C_Item = {
+            GetItemInfo = function(id)
+                local item = items[id]
+                if item then
+                    return item[1],
+                        "item:" .. id,
+                        item[2],
+                        item[3],
+                        item[4],
+                        "Armor",
+                        "Misc",
+                        1,
+                        item[5]
+                end
+            end,
+            GetItemStats = function(link)
+                local item = items[tonumber(link:match(":(%d+)"))]
+                return item[6] and { ITEM_MOD_INTELLECT_SHORT = item[6] } or nil
+            end,
+            RequestLoadItemDataByID = function(id)
+                requested[#requested + 1] = id
+            end,
+        }
+        UnitLevel = function()
+            return 21
+        end
+        GetInventoryItemID = function(_, slot)
+            return (slot == 11 and 1) or (slot == 12 and 2) or nil
+        end
+
+        local d = ns.Character.Inspect({
+            kind = "rank_items",
+            args = { itemIds = { 10, 11, 12, 13, 99 }, limit = 10 },
+        }).data
+        assert(d.status == "loading" and d.loadingIds[1] == 99 and requested[1] == 99)
+        assert(
+            d.counts.requested == 5
+                and d.counts.matching == 2
+                and d.counts.tooHighLevel == 1
+                and d.counts.notEquipment == 1
+        )
+        local best = d.items[1]
+        -- Ring 10 replaces the weaker equipped ring (slot 12, item level 6).
+        assert(best.id == 10 and best.slot == 12 and best.itemLevelGain == 16)
+        assert(best.equipped.id == 2 and best.statDelta.ITEM_MOD_INTELLECT_SHORT == 4)
+        assert(best.link == nil and d.items[2].id == 12)
+
+        d = ns.Character.Inspect({
+            kind = "rank_items",
+            args = { itemIds = { 10, 11 }, maxRequiredLevel = 30, minRequiredLevel = 20, limit = 1 },
+        }).data
+        assert(d.status == "available" and d.loadingIds == nil)
+        assert(#d.items == 1 and d.items[1].id == 11 and d.counts.tooLowLevel == 1)
+    end
+)

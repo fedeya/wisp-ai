@@ -2,7 +2,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 // The addon asks the client to load uncached items and answers "loading" at
 // once. Retrying here costs one addon round trip instead of a model step.
-const RETRY_DELAYS_MS = [400, 800];
+const RETRY_DELAYS_MS = [400, 800, 1600];
 
 function loading(value: unknown): boolean {
   if (!value || typeof value !== 'object') {
@@ -23,6 +23,7 @@ function loading(value: unknown): boolean {
 export function retriesItemLoading(inspection: { kind: string; args?: unknown }) {
   return (
     inspection.kind === 'compare_items' ||
+    inspection.kind === 'rank_items' ||
     (inspection.kind === 'reference' &&
       (inspection.args as { kind?: unknown } | undefined)?.kind === 'item')
   );

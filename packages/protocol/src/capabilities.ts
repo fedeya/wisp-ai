@@ -134,6 +134,7 @@ export const toolDescriptions: Record<string, [string, string]> = {
   ],
   inspect_trainer: ['Inspect trainer', 'Read offers from the trainer window currently open.'],
   compare_items: ['Compare equipment', 'Compare item stats with current equipment.'],
+  rank_items: ['Rank gear candidates', 'Rank many items against your current equipment.'],
   query_resources: ['Read resources', 'Read money, bag contents, free space and skill ranks.'],
   inspect_auctions: [
     'Read auction results',

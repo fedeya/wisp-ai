@@ -337,6 +337,21 @@ local equipmentSlots = {
     INVTYPE_RELIC = { 18 },
     INVTYPE_TABARD = { 19 },
 }
+local function statDelta(candidate, equipped)
+    if not candidate or not equipped then
+        return nil
+    end
+    local delta = {}
+    for key, value in pairs(candidate) do
+        delta[key] = value - (equipped[key] or 0)
+    end
+    for key, value in pairs(equipped) do
+        if not candidate[key] then
+            delta[key] = -value
+        end
+    end
+    return delta
+end
 function inspectors.compare_items(args)
     local candidates = {}
     for _, id in ipairs(args.itemIds) do
@@ -347,18 +362,7 @@ function inspectors.compare_items(args)
         do
             local equippedID = GetInventoryItemID("player", slot)
             local equipped = equippedID and itemDetails(equippedID)
-            local delta
-            if item.stats and equipped and equipped.stats then
-                delta = {}
-                for key, value in pairs(item.stats) do
-                    delta[key] = value - (equipped.stats[key] or 0)
-                end
-                for key, value in pairs(equipped.stats) do
-                    if not item.stats[key] then
-                        delta[key] = -value
-                    end
-                end
-            end
+            local delta = item.stats and equipped and statDelta(item.stats, equipped.stats)
             comparisons[#comparisons + 1] =
                 { slot = slot, equipped = equipped, empty = not equippedID, statDelta = delta }
         end
@@ -367,6 +371,95 @@ function inspectors.compare_items(args)
     return {
         candidates = candidates,
         note = "Raw per-slot stat differences only. No DPS simulation, weights, set/proc valuation or combined two-hand/off-hand replacement calculation.",
+    }
+end
+
+-- Reads many candidate IDs at once (for example a category listing) and keeps
+-- the wearable-by-level ones, each compared with its weakest matching slot.
+local function itemSummary(id)
+    local name, link, quality, itemLevel, requiredLevel, _, _, _, equipLocation =
+        C_Item.GetItemInfo(id)
+    if not name then
+        if C_Item.RequestLoadItemDataByID then
+            C_Item.RequestLoadItemDataByID(id)
+        end
+        return nil
+    end
+    return {
+        id = id,
+        name = name,
+        link = link,
+        quality = quality,
+        itemLevel = itemLevel,
+        requiredLevel = requiredLevel,
+        equipLocation = equipLocation,
+        stats = C_Item.GetItemStats and C_Item.GetItemStats(link) or nil,
+    }
+end
+local function weakestSlot(slots)
+    local best
+    for _, slot in ipairs(slots) do
+        local equippedID = GetInventoryItemID("player", slot)
+        local equipped = equippedID and itemSummary(equippedID)
+        local level = equipped and equipped.itemLevel or 0
+        if not best or not equippedID or level < best.level then
+            best = { slot = slot, equipped = equipped, empty = not equippedID, level = level }
+            if not equippedID then
+                break
+            end
+        end
+    end
+    return best
+end
+function inspectors.rank_items(args)
+    assert(C_Item and C_Item.GetItemInfo, "Item API is unavailable")
+    local maxLevel = args.maxRequiredLevel or UnitLevel("player")
+    local minLevel = args.minRequiredLevel or 0
+    local ranked, loadingIds = {}, {}
+    local counts =
+        { requested = #args.itemIds, tooHighLevel = 0, tooLowLevel = 0, notEquipment = 0 }
+    for _, id in ipairs(args.itemIds) do
+        local item = itemSummary(id)
+        local slots = item and equipmentSlots[item.equipLocation]
+        if not item then
+            loadingIds[#loadingIds + 1] = id
+        elseif not slots then
+            counts.notEquipment = counts.notEquipment + 1
+        elseif (item.requiredLevel or 0) > maxLevel then
+            counts.tooHighLevel = counts.tooHighLevel + 1
+        elseif (item.requiredLevel or 0) < minLevel then
+            counts.tooLowLevel = counts.tooLowLevel + 1
+        else
+            local target = weakestSlot(slots)
+            local equipped = target.equipped
+            item.slot = target.slot
+            item.emptySlot = target.empty
+            item.equipped = equipped
+                and { id = equipped.id, name = equipped.name, itemLevel = equipped.itemLevel }
+            item.itemLevelGain = (item.itemLevel or 0) - target.level
+            item.statDelta = item.stats and statDelta(item.stats, equipped and equipped.stats or {})
+            item.link = nil
+            ranked[#ranked + 1] = item
+        end
+    end
+    table.sort(ranked, function(a, b)
+        if a.itemLevelGain ~= b.itemLevelGain then
+            return a.itemLevelGain > b.itemLevelGain
+        end
+        return a.id < b.id
+    end)
+    local limit = args.limit or 10
+    local shown = {}
+    for index = 1, math.min(limit, #ranked) do
+        shown[index] = ranked[index]
+    end
+    counts.matching = #ranked
+    return {
+        status = #loadingIds > 0 and "loading" or "available",
+        items = shown,
+        counts = counts,
+        loadingIds = #loadingIds > 0 and loadingIds or nil,
+        note = "Sorted by item level gain over the weakest matching equipped slot, not by stat weights. Armor/weapon proficiency is not checked. loadingIds were not in the client cache yet; request them again if needed.",
     }
 end
 function inspectors.auctions(args)

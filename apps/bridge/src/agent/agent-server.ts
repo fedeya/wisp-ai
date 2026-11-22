@@ -99,6 +99,7 @@ const inspectionTools = {
   combat: 'read_combat',
   resources: 'query_resources',
   compare_items: 'compare_items',
+  rank_items: 'rank_items',
   auctions: 'inspect_auctions',
   macros: 'inspect_macros',
   map: 'inspect_map',
