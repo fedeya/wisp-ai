@@ -38,6 +38,7 @@ Integrations\Auctionator.lua
 Integrations\Sources.lua
 ChatHistory\ChatHistory.lua
 Combat\Combat.lua
+Data\DungeonEntrances.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua

@@ -10,41 +10,43 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 
 ## Workspaces
 
-| Path                | Package          | What it is                                                                                        |
-| ------------------- | ---------------- | ------------------------------------------------------------------------------------------------- |
-| `apps/bridge`       | `@wisp/bridge`   | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging |
-| `apps/agent`        | `@wisp/agent`    | Eve agent runtime: model connections, tools, skills and instructions in `agent/`                  |
-| `apps/desktop`      | `@wisp/desktop`  | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                     |
-| `apps/web`          | `@wisp/web`      | Next.js website (setup guide, changelog from GitHub Releases)                                     |
-| `packages/protocol` | `@wisp/protocol` | Shared zod schemas and types for the wire protocol, desktop, settings and addon helpers           |
-| `packages/releases` | `@wisp/releases` | Release channel/version helpers shared by desktop, web, scripts                                   |
-| `addon/WispAI`      | `@wisp/addon`    | The WoW addon (Lua 5.1); sources must be listed in `WispAI.toc`                                   |
-| `simulator/`        | —                | Checked-in metadata and license for the pinned WoWSims simulator (not a workspace)                |
-| `scripts/`          | `@wisp/scripts`  | Build, staging, packaging and release scripts (`.ts` run directly with `node`, some `.ps1`)       |
-| `tests/`            | `@wisp/tests`    | Cross-component integration tests and repository-wide checks                                      |
+| Path                 | Package           | What it is                                                                                        |
+| -------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
+| `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging |
+| `apps/agent`         | `@wisp/agent`     | Eve agent runtime: model connections, tools, skills and instructions in `agent/`                  |
+| `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                     |
+| `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                     |
+| `packages/protocol`  | `@wisp/protocol`  | Shared zod schemas and types for the wire protocol, desktop, settings and addon helpers           |
+| `packages/releases`  | `@wisp/releases`  | Release channel/version helpers shared by desktop, web, scripts                                   |
+| `packages/game-data` | `@wisp/game-data` | Generates game data files (e.g. `addon/WispAI/Data/`) from Forever’s game tables on wago.tools    |
+| `addon/WispAI`       | `@wisp/addon`     | The WoW addon (Lua 5.1); sources must be listed in `WispAI.toc`                                   |
+| `simulator/`         | —                 | Checked-in metadata and license for the pinned WoWSims simulator (not a workspace)                |
+| `scripts/`           | `@wisp/scripts`   | Build, staging, packaging and release scripts (`.ts` run directly with `node`, some `.ps1`)       |
+| `tests/`             | `@wisp/tests`     | Cross-component integration tests and repository-wide checks                                      |
 
 ## Commands
 
 Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 (`mise install` uses [mise.toml](mise.toml), which also pins Rust, Go, protoc and PowerShell 7).
 
-| Command                                         | Does                                                                 |
-| ----------------------------------------------- | -------------------------------------------------------------------- |
-| `pnpm install --frozen-lockfile`                | Install workspace dependencies                                       |
-| `pnpm build`                                    | Turbo build of all workspaces (not the native host or installer)     |
-| `pnpm check`                                    | `format:check`, `lint`, `typecheck` and `typecheck:root`             |
-| `pnpm format` / `pnpm format:check`             | oxfmt, StyLua (`addon`, `tests`, `.busted`, `.luacheckrc`), Prettier |
-| `pnpm lint`                                     | oxlint `--deny-warnings`, then `pnpm lint:addon` (Luacheck)          |
-| `pnpm test`                                     | All Vitest suites and Busted specs                                   |
-| `pnpm test:core`                                | TypeScript suites except desktop UI and addon                        |
-| `pnpm test:integration`                         | `tests/` (`@wisp/tests`)                                             |
-| `pnpm test:addon`                               | Busted specs in `addon/tests/`                                       |
-| `pnpm test:ui`                                  | Desktop React tests (CI runs `pnpm ui:build` first)                  |
-| `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                         |
-| `pnpm start`                                    | Run the bridge                                                       |
-| `pnpm agent`                                    | Agent dev server (`eve dev`)                                         |
-| `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                  |
-| `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                    |
+| Command                                         | Does                                                                                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `pnpm install --frozen-lockfile`                | Install workspace dependencies                                                              |
+| `pnpm build`                                    | Turbo build of all workspaces (not the native host or installer)                            |
+| `pnpm check`                                    | `format:check`, `lint`, `typecheck` and `typecheck:root`                                    |
+| `pnpm format` / `pnpm format:check`             | oxfmt, StyLua (`addon`, `tests`, `.busted`, `.luacheckrc`), Prettier                        |
+| `pnpm lint`                                     | oxlint `--deny-warnings`, then `pnpm lint:addon` (Luacheck)                                 |
+| `pnpm test`                                     | All Vitest suites and Busted specs                                                          |
+| `pnpm test:core`                                | TypeScript suites except desktop UI and addon                                               |
+| `pnpm test:integration`                         | `tests/` (`@wisp/tests`)                                                                    |
+| `pnpm test:addon`                               | Busted specs in `addon/tests/`                                                              |
+| `pnpm test:ui`                                  | Desktop React tests (CI runs `pnpm ui:build` first)                                         |
+| `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                                                |
+| `pnpm start`                                    | Run the bridge                                                                              |
+| `pnpm agent`                                    | Agent dev server (`eve dev`)                                                                |
+| `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
+| `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
+| `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |
 
 Native Rust checks run in CI with `cargo fmt --check` and `cargo test` against
 `apps/desktop/src-tauri/Cargo.toml`. `apps/bridge/tests/simulation.test.ts` needs
