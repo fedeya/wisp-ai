@@ -762,3 +762,46 @@ test('a compact bulk confirmation updates both its latency and slot budget witho
     now.mockRestore();
   }
 });
+
+test('an active session rereads only its own state file between full folder walks', async () => {
+  const f = await fixture();
+  try {
+    await f.bridge.start();
+    await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true });
+    assert.equal(f.packets.length, 1);
+    const scan = vi.spyOn(f.bridge, 'scan');
+    const read = vi.spyOn(f.bridge, 'read');
+    await delay(1200);
+    assert.equal(scan.mock.calls.length, 0, 'no full walk within the scan interval');
+    assert.ok(read.mock.calls.some(([file]) => file === f.file));
+    assert.deepEqual(f.errors, []);
+  } finally {
+    await f.close();
+  }
+});
+
+test('an abandoned control write removes its temporary copy', async () => {
+  const f = await fixture();
+  try {
+    await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true });
+    // Make the game appear to rewrite the file between the bridge's two reads.
+    const transport = f.bridge as unknown as {
+      sharedFile: <T>(operation: () => Promise<T>) => Promise<T>;
+    };
+    const original = transport.sharedFile.bind(f.bridge);
+    let reads = 0;
+    transport.sharedFile = async <T>(operation: () => Promise<T>) => {
+      const value = await original(operation);
+      return (
+        typeof value === 'string' && ++reads === 2 ? value + '\r\nGame: enabled' : value
+      ) as T;
+    };
+    const before = await readFile(f.file, 'utf8');
+    await f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'abandoned' });
+    assert.ok(reads >= 2, 'the write reached its second read');
+    await assert.rejects(readFile(f.file + '.wisp-control.tmp'), { code: 'ENOENT' });
+    assert.equal(await readFile(f.file, 'utf8'), before, 'the changed file was not replaced');
+  } finally {
+    await f.close();
+  }
+});
