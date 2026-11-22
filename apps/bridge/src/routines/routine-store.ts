@@ -262,6 +262,12 @@ export class RoutineStore {
       }
     });
   }
+  // Drops a claimed run that was not started; the routine keeps its next time.
+  skip(id: string) {
+    return this.transact((db) => {
+      db.delete(routineRuns).where(eq(routineRuns.id, id)).run();
+    });
+  }
   defer(id: string, event: NonNullable<Routine['pending']>) {
     return this.transact((db) => {
       const run = this.getRun(id);
