@@ -26,7 +26,11 @@ ns.Locales.frFR = {
     ["status.setupRequired"] = "Configuration requise",
     ["status.connected"] = "Connecté",
     ["status.offline"] = "Hors ligne",
+    ["status.connecting"] = "Connexion…",
+    ["status.reconnecting"] = "Reconnexion…",
     ["status.channelsExhausted"] = "Canaux épuisés : /reload",
+    ["status.deliveryStalled"] = "Pas de réponse : /reload",
+    ["status.reloadNeeded"] = "Mise à jour installée : /reload",
     ["status.openDesktop"] = "Ouvrez Wisp Desktop",
 
     -- Header
@@ -251,6 +255,7 @@ ns.Locales.frFR = {
     -- Chat notices
     ["notice.addonUpdated"] = "Wisp {installed} est installé ({loaded} chargé). Tapez /reload pour charger la nouvelle version.",
     ["notice.appUpdateAvailable"] = "Wisp {version} est disponible. Ouvrez l'application Wisp pour l'installer.",
+    ["notice.deliveryStalled"] = "Wisp ne reçoit pas vos messages. Tapez /reload pour vous reconnecter.",
     ["notice.mapUnavailable"] = "L'interface de la carte n'est pas disponible.",
     ["notice.leaveCombatMacro"] = "Quittez le combat avant de prendre une macro.",
 

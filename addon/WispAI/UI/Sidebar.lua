@@ -32,8 +32,11 @@ local function characterLine()
     local name = UnitName and UnitName("player") or nil
     local className = UnitClass and UnitClass("player") or nil
     local level = UnitLevel and UnitLevel("player") or nil
+    local connecting = ns.Core.ConnectingStatus and ns.Core.ConnectingStatus()
     local state = ns.Transport.needsDesktopSetup and L["status.setupRequired"]
-        or (ns.connected and L["status.connected"] or L["status.offline"])
+        or (ns.connected and L["status.connected"])
+        or (connecting and L[connecting])
+        or L["status.offline"]
     local classLevel = className and level and (className .. " " .. level) or ""
     return name or "Wisp", classLevel, state
 end

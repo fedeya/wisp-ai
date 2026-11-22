@@ -26,7 +26,11 @@ ns.Locales.zhCN = {
     ["status.setupRequired"] = "需要设置",
     ["status.connected"] = "已连接",
     ["status.offline"] = "离线",
+    ["status.connecting"] = "正在连接…",
+    ["status.reconnecting"] = "正在重新连接…",
     ["status.channelsExhausted"] = "频道已用尽：/reload",
+    ["status.deliveryStalled"] = "无响应：/reload",
+    ["status.reloadNeeded"] = "已安装更新：/reload",
     ["status.openDesktop"] = "请打开 Wisp Desktop",
 
     -- Header
@@ -251,6 +255,7 @@ ns.Locales.zhCN = {
     -- Chat notices
     ["notice.addonUpdated"] = "已安装 Wisp {installed}（当前加载 {loaded}）。输入 /reload 以载入新版本。",
     ["notice.appUpdateAvailable"] = "Wisp {version} 已可用。打开 Wisp 应用进行安装。",
+    ["notice.deliveryStalled"] = "Wisp 未收到你的消息。输入 /reload 重新连接。",
     ["notice.mapUnavailable"] = "地图界面不可用。",
     ["notice.leaveCombatMacro"] = "请先脱离战斗再拾取宏。",
 

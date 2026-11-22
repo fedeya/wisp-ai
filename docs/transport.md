@@ -82,7 +82,9 @@ overwriting an unacknowledged fragment. Duplicate frames are reacknowledged
 without being applied twice; five seconds without progress restarts a transfer.
 
 A host generation change invalidates the base and permits a lower revision
-counter; retired generations cannot replace newer state. An addon UI reload
+counter. After the first generation of a UI session, it also marks the addon
+disconnected and shows "Reconnecting…" until the new host's first snapshot
+applies, which keeps the client reading; retired generations cannot replace newer state. An addon UI reload
 starts a new application session and ignores the persisted downlink baseline
 until a fresh publication arrives. A stale bulk snapshot from another session
 requests fresh state without permanently disabling bulk.
@@ -91,13 +93,18 @@ Compact receive checks use one 50-ms ticker with a 40-ms eligibility guard for
 timer jitter. An unchanged, previously validated frame needs only its header
 and CRC reread; a new identity requires full-frame validation. Idle reads back
 off during an eight-second ACK grace window, then stop when no work remains.
-Duplicate frames do not extend that window indefinitely. Opening addon settings
+Duplicate frames do not extend that window indefinitely. Each 60-second
+heartbeat hello opens a 10-second read window, so an idle client still confirms
+a restarted host and receives its notices within a minute. Opening addon settings
 pauses transport reads and writes so pending settings edits are preserved.
 
 ## Diagnostics and verification
 
 `/wisp diag` reports loaded versions, helper cursor, revision and connection
-state. `ns.transportStats` holds operation counters and downlink copy statistics;
+state. A user message still unacknowledged after 20 seconds of retries shows
+"Not responding: /reload" in the window header, prints one chat notice per UI
+session and saves the transport state to `WispAIDB.transportDiagnostics`, which
+the next `/reload` writes to disk. `ns.transportStats` holds operation counters and downlink copy statistics;
 the internal transport profiler is opt-in. Receipt/application checkpoints are
 distinct from the visible-text timing recorded when an assistant row appears.
 

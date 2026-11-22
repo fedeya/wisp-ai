@@ -365,6 +365,12 @@ export class DiskTransport {
         await delay(quietMs);
       }
       const current = await this.sharedFile(() => readFile(file, 'utf8'));
+      // An empty file is one being rewritten (truncated, not yet written).
+      // Replacing it would drop the writer's uplink frame and every other
+      // addon's setting; the watchdog retries once the content is back.
+      if (!current.trim()) {
+        return;
+      }
       if (
         this.stopped ||
         this.activeFile !== file ||

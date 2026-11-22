@@ -45,6 +45,10 @@ local compactAck = false
 -- The 50 ms ticker bounds compact reads; allow 10 ms of scheduler jitter so
 -- a slightly early callback does not defer useful data for another full tick.
 local COMPACT_RECEIVE_DELAY = 0.04
+-- Idle clients otherwise never read. After each periodic hello, read long
+-- enough for a restarted host to answer, so it learns the game is connected
+-- and app-update or /reload notices arrive without waiting for a user turn.
+local HEARTBEAT_READ_SECONDS = 10
 local cachedControl
 local baselinePending, persistedControl = true, nil
 local pendingWireAck, lastDataFrame, lastDataAck, partialDownlink
@@ -637,6 +641,12 @@ local function receive()
             return
         end
         if controlGeneration then
+            -- The host restarted (Desktop update or restart). Its state starts
+            -- over, so read until it arrives and say we are reconnecting.
+            ns.connected, ns.reconnecting = false, true
+            if ns.UI.Refresh then
+                ns.UI.Refresh()
+            end
             retiredGenerations[controlGeneration] = true
             retiredOrder[#retiredOrder + 1] = controlGeneration
             if #retiredOrder > 16 then
@@ -741,6 +751,77 @@ local function receive()
         nextReceive = GetTime() + (compactAck and COMPACT_RECEIVE_DELAY or 0.1)
     end
 end
+-- Copies the transport state worth reading after a failed delivery. Saved
+-- variables are written on /reload, so the snapshot survives the recovery.
+local function recordStall(age)
+    if not ns.db then
+        return
+    end
+    local stats = ns.transportStats
+    local pending = 0
+    for _ in pairs(awaiting) do
+        pending = pending + 1
+    end
+    ns.db.transportDiagnostics = {
+        at = time(),
+        ageSeconds = math.floor(age),
+        addonVersion = ns.addonVersion,
+        bridgeVersion = ns.bridgeVersion,
+        session = ns.session,
+        connected = ns.connected and true or false,
+        revision = ns.rev,
+        controlGeneration = controlGeneration,
+        slot = ns.slot,
+        reusable = reusable and true or false,
+        compactAck = compactAck and true or false,
+        bulkUnavailable = ns.bulkUnavailable and true or false,
+        exhausted = ns.exhausted and true or false,
+        awaiting = pending,
+        queued = #queue,
+        error = stats.error,
+        loadError = stats.loadError,
+        downlinkError = stats.downlinkError,
+        downlinkFrames = stats.downlinkFrames,
+        downlinkMessages = stats.downlinkMessages,
+        downlinkResyncs = stats.downlinkResyncs,
+        staleBulkReads = stats.staleBulkReads,
+        loads = stats.loads,
+    }
+end
+-- A user message that retries for this long without an acknowledgement will
+-- not recover by itself; tell the player instead of retrying silently.
+local STALLED_DELIVERY_SECONDS = 20
+local stallNoticeShown = false
+local function checkStalledDelivery()
+    -- Open addon settings pause the transport on purpose. Restart each
+    -- message's allowance so it gets the full window once settings close.
+    local paused = AddonList and AddonList:IsShown()
+    local oldest
+    for _, packet in pairs(awaiting) do
+        if packet.messageId and packet.enqueuedAt then
+            if paused then
+                packet.stallFrom = GetTime()
+            end
+            local age = GetTime() - (packet.stallFrom or packet.enqueuedAt)
+            oldest = math.max(oldest or 0, age)
+        end
+    end
+    local stalled = oldest ~= nil and oldest >= STALLED_DELIVERY_SECONDS
+    if stalled == (ns.deliveryStalled or false) then
+        return
+    end
+    ns.deliveryStalled = stalled
+    if stalled then
+        recordStall(oldest)
+        if not stallNoticeShown then
+            stallNoticeShown = true
+            ns.Core.Log(ns.LocaleText("notice.deliveryStalled"))
+        end
+    end
+    if ns.UI.Refresh then
+        ns.UI.Refresh()
+    end
+end
 function ns.Transport.StartTransport()
     if transportStarted then
         return true
@@ -802,6 +883,7 @@ function ns.Transport.StartTransport()
         end
     end)
     C_Timer.NewTicker(2, function()
+        checkStalledDelivery()
         local renewed
         for _, packet in pairs(awaiting) do
             if not packet.queued and packet.lastSent and GetTime() - packet.lastSent > 5 then
@@ -831,6 +913,8 @@ function ns.Transport.StartTransport()
     end)
     C_Timer.NewTicker(60, function()
         ns.Transport.Send({ type = "hello", chat = ns.active, heartbeat = true })
+        downlinkUntil = math.max(downlinkUntil, GetTime() + HEARTBEAT_READ_SECONDS)
+        nextReceive = 0
     end)
     return true
 end

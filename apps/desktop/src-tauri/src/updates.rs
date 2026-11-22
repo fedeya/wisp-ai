@@ -164,8 +164,12 @@ pub async fn install_update(
     }
     super::update_trace::append(&host.data, "bridge-stopped-before-install");
     let _ = app.emit("update-progress", json!({"phase": "installing"}));
+    // The installer reopens Wisp with this process's arguments, including
+    // --minimized after a launch with Windows; open on screen after the update.
+    super::native_shell::show_after_update(&host.data);
     // The NSIS hook also waits for the bridge process to finish releasing its files.
     if let Err(error) = update.install(bytes) {
+        super::native_shell::cancel_show_after_update(&host.data);
         super::update_trace::append(&host.data, "installer-launch-failed");
         let _ = super::start_host(&host).await;
         return Err(error.to_string());

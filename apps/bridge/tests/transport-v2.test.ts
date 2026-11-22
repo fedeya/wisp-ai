@@ -675,6 +675,29 @@ test(
   },
 );
 
+test('a file caught mid-rewrite is never replaced and its pending frame is restored afterwards', async () => {
+  const f = await fixture();
+  try {
+    await f.bridge.start();
+    await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
+    await f.bridge.publish({ rev: 1, text: 'x' });
+    const pending = readDownlink(await readFile(f.file, 'utf8'))!;
+    // A writer truncated the file and has not written it yet. On Linux the
+    // directory watcher reads it in exactly this state.
+    await delay(200);
+    await writeFile(f.file, '');
+    await f.bridge.read(f.file, false);
+    await delay(200);
+    assert.equal(await readFile(f.file, 'utf8'), '');
+    await writeFile(f.file, f.original);
+    await waitFor(async () => readDownlink(await readFile(f.file, 'utf8'))!.equals(pending));
+    assert.match(await readFile(f.file, 'utf8'), /^Other: disabled\r\n/);
+    assert.deepEqual(f.errors, []);
+  } finally {
+    await f.close();
+  }
+});
+
 test('matching first-attempt ACKs update fragment RTT independently from bulk latency', async () => {
   const f = await fixture();
   const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
