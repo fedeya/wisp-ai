@@ -16,6 +16,7 @@ const usageObserver = () => ({ observe: vi.fn(), usage: () => noUsage });
 function fixture(
   titlesEnabled = true,
   telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>,
+  idleTimeoutMs?: number,
 ) {
   const chat = newChat('chat', 'one');
   let transport = 'one';
@@ -29,7 +30,8 @@ function fixture(
     },
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
-  const session = { id: 'eve', send };
+  const cancel = vi.fn(async () => {});
+  const session = { id: 'eve', send, cancel };
   const client = {
     sessions: { create: vi.fn(async () => ({ session })), attach: () => session },
   } as unknown as Pick<Client, 'sessions'>;
@@ -65,11 +67,13 @@ function fixture(
     changed,
     logger,
     flushSnapshot,
+    idleTimeoutMs,
   });
   return {
     chat,
     run,
     send,
+    cancel,
     client,
     models,
     prepare,
@@ -708,4 +712,53 @@ test('a turn with no AI provider stops before the engine and explains the fix', 
     role: 'system',
     text: 'Model is no longer configured.',
   });
+});
+
+test('a turn whose engine goes silent fails as a timeout and frees the engine session', async () => {
+  const chats: { chat: string; outcome: string }[] = [];
+  const f = fixture(
+    true,
+    {
+      chat: (_mode, outcome) => chats.push({ chat: 'chat', outcome }),
+      toolObserver: () => () => {},
+      usageObserver,
+    } as Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>,
+    30,
+  );
+  f.send.mockResolvedValueOnce({
+    stream: async function* (options?: { signal?: AbortSignal }) {
+      yield { type: 'content.delta', data: { partId: 'reply', kind: 'text', delta: 'Hel' } };
+      // The engine keeps the stream open but never sends another event.
+      await new Promise<void>((_, reject) => {
+        options!.signal!.addEventListener('abort', () => reject(Error('Read aborted')), {
+          once: true,
+        });
+      });
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  });
+  await f.run(f.chat, 'Question');
+  await f.run.drain();
+  expect(f.chat.status).toBe('error');
+  expect(f.chat.messages.at(-1)?.text).toMatch(/received nothing from the AI/);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(f.chat.eveId).toBeUndefined();
+  expect(chats.at(-1)?.outcome).toBe('timeout');
+});
+
+test('steady engine activity keeps a long turn alive past the idle timeout', async () => {
+  const f = fixture(true, undefined, 40);
+  f.send.mockResolvedValueOnce({
+    stream: async function* () {
+      for (let index = 0; index < 5; index++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        yield { type: 'content.delta', data: { partId: 'reply', kind: 'text', delta: 'a' } };
+      }
+    },
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  });
+  await f.run(f.chat, 'Question');
+  await f.run.drain();
+  expect(f.chat.status).toBe('done');
+  expect(f.cancel).not.toHaveBeenCalled();
 });
