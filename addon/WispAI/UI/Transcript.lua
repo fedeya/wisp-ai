@@ -6,9 +6,51 @@ local transcript, content, scrollBar, newMessages
 local rows, scrollPositions = {}, {}
 local renderedChat
 local replyTurn = {}
-local rendering, scrollRange = false, 0
+local rendering, scrollRange, contentHeight = false, 0, 0
+-- A long chat renders only its latest messages, so opening it or resizing the
+-- window costs the same however long it is. Reaching the top renders earlier
+-- ones in steps. Each chat remembers the first message it renders.
+local WINDOW, STEP = 50, 50
+local windowStart = {}
+local hasEarlier = false
+
+local function firstShown(id, messages, follow)
+    local anchor = windowStart[id]
+    if anchor then
+        for index, message in ipairs(messages) do
+            if message.id == anchor then
+                -- Following the bottom drops what scrolling up added, once it grows.
+                if not follow or #messages - index < WINDOW + STEP then
+                    return index
+                end
+                break
+            end
+        end
+    end
+    local index = math.max(1, #messages - WINDOW + 1)
+    windowStart[id] = messages[index] and messages[index].id
+    return index
+end
+
+local function loadEarlier()
+    local chat = ns.Chat.Current()
+    if not hasEarlier or rendering or not chat or chat.id ~= renderedChat then
+        return
+    end
+    local messages = ns.UI.DisplayMessages(chat)
+    local first = firstShown(chat.id, messages, false)
+    windowStart[chat.id] = messages[math.max(1, first - STEP)].id
+    local height, offset = contentHeight, transcript:GetVerticalScroll()
+    ns.UI.Transcript.Refresh(chat, chat.id)
+    -- Keep the message that was at the top where it was.
+    scrollBar:SetValue(math.min(scrollRange, offset + contentHeight - height))
+end
 
 function ns.UI.ScrollTranscript(delta)
+    if delta > 0 and scrollBar:GetValue() <= 0 and hasEarlier then
+        loadEarlier()
+        return
+    end
     scrollBar:SetValue(math.max(0, math.min(scrollRange, scrollBar:GetValue() - delta * 45)))
 end
 
@@ -41,7 +83,10 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local previousSpeaker, previousMessage
     local messages, hasToolActivity, hasReplyContent, turnStart = ns.UI.DisplayMessages(chat)
     local animateTurn = ns.UI.ObserveReplyTurn(replyTurn, chat, messages[turnStart - 1])
-    for index, message in ipairs(messages) do
+    local first = firstShown(id, messages, follow)
+    hasEarlier = first > 1
+    for index = first, #messages do
+        local message = messages[index]
         if message.role ~= "tool" or ns.db.showTools then
             local key = id .. ":" .. (message.id or tostring(index))
             local row = rows[key]
@@ -82,6 +127,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     end
     content:SetWidth(width)
     content:SetHeight(math.max(1, y))
+    contentHeight = y
     scrollRange = math.max(0, y - transcript:GetHeight())
     scrollBar:SetMinMaxValues(0, math.max(1, scrollRange))
     scrollBar:EnableMouse(scrollRange > 0)
@@ -121,6 +167,9 @@ function ns.UI.Transcript.Build(chatPanel, header)
         if not rendering and newMessages and value >= scrollRange - 30 then
             newMessages.pending = false
             newMessages:Hide()
+        end
+        if not rendering and value <= 0 and hasEarlier then
+            loadEarlier()
         end
     end)
     newMessages = button(chatPanel, L["transcript.newMessages"], 140, function()
