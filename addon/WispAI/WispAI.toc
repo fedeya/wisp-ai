@@ -43,7 +43,6 @@ Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
 Character\FlightPaths.lua
-Character\DungeonEntrances.lua
 Character\Dungeons.lua
 Character\Inspect.lua
 Actions\Game.lua

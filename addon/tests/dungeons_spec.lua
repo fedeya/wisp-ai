@@ -70,8 +70,7 @@ local function setup(env, entrances)
         }
     end
     helper.addon("Character/Dungeons.lua", env)
-    env.ns.Character.DungeonEntrancesBuild = "1.60.1.70888"
-    env.ns.Character.DungeonEntrances = entrances
+    env.ns.Data.DungeonEntrances = entrances
         or {
             [43] = { name = "Wailing Caverns", raid = false, entrances = { { 1413, 47.7, 35 } } },
             [389] = { name = "Ragefire Chasm", raid = false, entrances = { { 1454, 53, 48.9 } } },
@@ -95,7 +94,6 @@ it("lists the group finder's dungeons with ranges and their entrances", function
     local data = env.ns.Character.ReadDungeons({})
     assert.equals(21, data.characterLevel)
     assert.equals("Horde", data.faction)
-    assert.equals("1.60.1.70888", data.entrancesBuild)
     assert.equals(4, #data.dungeons)
     assert.same({
         name = "Sima Ígnea",

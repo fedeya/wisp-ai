@@ -154,7 +154,7 @@ export function mapStubs(): ToolStub[] {
 
 // wow__dungeons for a level 21 Horde character: names and ranges as Forever's
 // group finder returns them, entrances from Wisp's generated table.
-const reading = { characterLevel: 21, faction: 'Horde', entrancesBuild: '1.60.1.70888' };
+const reading = { characterLevel: 21, faction: 'Horde' };
 const rfc = {
   name: 'Sima Ígnea',
   instanceMapId: 389,
