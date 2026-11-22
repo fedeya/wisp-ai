@@ -51,9 +51,12 @@ async function relations(id: number, fetcher: typeof fetch, signal?: AbortSignal
       signal,
     );
     const edges: Edge[] = Array.isArray(content.page?.edges) ? content.page.edges : [];
-    return { edges, status: 'available' as const };
+    // Everloot caps lines per relation, so an obtain relation is never missing
+    // entirely; notShown counts extra lines the agent may want to know about.
+    const notShown = Number.isInteger(content.page?.notShown) ? content.page.notShown : 0;
+    return { edges, notShown, status: 'available' as const };
   } catch {
-    return { edges: [] as Edge[], status: 'unavailable' as const };
+    return { edges: [] as Edge[], notShown: 0, status: 'unavailable' as const };
   }
 }
 
@@ -62,12 +65,18 @@ async function relations(id: number, fetcher: typeof fetch, signal?: AbortSignal
 export async function itemSources(
   itemIds: number[],
   readGame: (inspection: { kind: 'source_names'; args: unknown }) => Promise<unknown>,
-  options: { everloot: boolean; fetch?: typeof fetch; signal?: AbortSignal },
+  options: {
+    everloot: boolean;
+    questie: boolean;
+    auctionator: boolean;
+    fetch?: typeof fetch;
+    signal?: AbortSignal;
+  },
 ) {
   const ids = [...new Set(itemIds)];
   const found = options.everloot
     ? await Promise.all(ids.map((id) => relations(id, options.fetch ?? fetch, options.signal)))
-    : ids.map(() => ({ edges: [] as Edge[], status: 'disabled' as const }));
+    : ids.map(() => ({ edges: [] as Edge[], notShown: 0, status: 'disabled' as const }));
   const wanted = { npc: new Set<number>(), quest: new Set<number>(), spell: new Set<number>() };
   for (const { edges } of found) {
     for (const edge of edges) {
@@ -79,11 +88,13 @@ export async function itemSources(
   }
   const reading = (await readGame({
     kind: 'source_names',
+    // Questie names and Auctionator prices follow their own integration settings.
     args: {
-      itemIds: ids,
-      npcIds: [...wanted.npc].slice(0, 200),
-      questIds: [...wanted.quest].slice(0, 200),
+      itemIds: options.auctionator ? ids : [],
+      npcIds: options.questie ? [...wanted.npc].slice(0, 200) : [],
+      questIds: options.questie ? [...wanted.quest].slice(0, 200) : [],
       spellIds: [...wanted.spell].slice(0, 200),
+      useQuestie: options.questie,
     },
   })) as { data?: SourceNames; status?: string; error?: string };
   const names = reading?.data ?? {};
@@ -110,8 +121,8 @@ export async function itemSources(
               : undefined;
       (sources[kind] ??= []).push({
         kind: edge.toKind,
+        ...named,
         id: edge.toId,
-        ...(named ? { ...named, id: undefined } : {}),
         evidence: edge.evidence === 'observed' ? 'player-observed' : 'game files, unconfirmed',
         ...(edge.installs ? { installs: edge.installs, lastSeen: edge.lastSeen } : {}),
       });
@@ -126,6 +137,7 @@ export async function itemSources(
           : undefined,
       sourceKnown: Object.keys(sources).length > 0,
       sourcesStatus: found[index]!.status,
+      ...(found[index]!.notShown ? { moreSourcesNotShown: found[index]!.notShown } : {}),
     };
   });
   return {
@@ -135,8 +147,12 @@ export async function itemSources(
     realm: names.realm,
     sources: {
       everloot: options.everloot ? 'https://everloot.app/database/items' : 'disabled in Settings',
-      names: 'QuestieDB Forever and the game API',
-      prices: 'Auctionator public API (last seen, not live listings)',
+      names: options.questie
+        ? 'QuestieDB Forever and the game API'
+        : 'game API only (Questie disabled in Settings)',
+      prices: options.auctionator
+        ? 'Auctionator public API (last seen, not live listings)'
+        : 'disabled in Settings',
     },
     note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
   };

@@ -75,6 +75,7 @@ it("source names come from QuestieDB and the spell API with cached prices in one
             npcIds = { 2266, 9 },
             questIds = { 875 },
             spellIds = { 3855, 1 },
+            useQuestie = true,
         },
     })
     assert.equals("available", result.status)
@@ -101,4 +102,40 @@ it("missing QuestieDB or Auctionator leaves names and prices unavailable, not fa
     assert.equals("unavailable", data.namesStatus.npcs)
     assert.equals("unavailable", data.priceStatus)
     assert.is_truthy(data.priceError)
+end)
+
+it("an incompatible QuestieDB or a disabled Questie keeps prices and spell names", function()
+    local env = helper.env()
+    setup(env)
+    env.LibQuestieDB = {
+        flavor = { expansion = "Forever" },
+        RequireContract = function()
+            error("contract 4 is not supported")
+        end,
+    }
+    env.Auctionator = {
+        API = {
+            v1 = {
+                GetAuctionPriceByItemID = function()
+                    return 500
+                end,
+            },
+        },
+    }
+    local args = { itemIds = { 4320 }, npcIds = { 2266 }, questIds = {}, spellIds = { 3855 } }
+    local result = env.ns.Integrations.InspectIntegration({ kind = "source_names", args = args })
+    assert.equals("available", result.status)
+    assert.equals("unavailable", result.data.namesStatus.npcs)
+    assert.equals(500, result.data.prices[1].unitPriceCopper)
+    assert.equals("Botas de seda de araña", result.data.spells[1].name)
+
+    local lookups = 0
+    env.LibQuestieDB.RequireContract = function()
+        lookups = lookups + 1
+        return true
+    end
+    args.useQuestie = false
+    result = env.ns.Integrations.InspectIntegration({ kind = "source_names", args = args })
+    assert.equals(0, lookups)
+    assert.equals("unavailable", result.data.namesStatus.npcs)
 end)

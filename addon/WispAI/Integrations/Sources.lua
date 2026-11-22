@@ -3,17 +3,15 @@
 local _, ns = ...
 local sharedText = ns.Shared.Text
 
+-- An incompatible QuestieDB may throw from RequireContract; that only makes
+-- names unavailable and must not cancel the independent price and spell reads.
 local function questieDB()
     local db = LibQuestieDB
-    if
-        db
-        and db.flavor
-        and db.flavor.expansion == "Forever"
-        and db.RequireContract
-        and db.RequireContract(4)
-    then
-        return db
+    if not (db and db.flavor and db.flavor.expansion == "Forever" and db.RequireContract) then
+        return nil
     end
+    local ok, compatible = pcall(db.RequireContract, 4)
+    return ok and compatible and db or nil
 end
 
 local function text(value)
@@ -77,7 +75,7 @@ local function spellNames(ids)
 end
 
 function ns.Integrations.ReadSourceNames(args)
-    local db = questieDB()
+    local db = args.useQuestie ~= false and questieDB() or nil
     local npcs, npcStatus = npcNames(db, args.npcIds)
     local quests, questStatus = questNames(db, args.questIds)
     local prices, priceError

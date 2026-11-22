@@ -523,7 +523,13 @@ export function createAgentApp(deps: AgentDependencies) {
       }
       if (inspection?.kind === 'item_sources') {
         return itemSources(inspection.args.itemIds, (names) => request(names), {
-          everloot: capabilitySettings.enabled('mcp:everloot'),
+          everloot:
+            capabilitySettings.enabled('mcp:everloot') &&
+            capabilitySettings.enabled('mcp_tool:everloot:entity_relations'),
+          questie: capabilitySettings.enabled('integration:questie'),
+          auctionator:
+            capabilitySettings.enabled('integration:auctionator') &&
+            capabilitySettings.enabled('tool:get_item_prices'),
           signal: abort,
         });
       }

@@ -166,6 +166,7 @@ export const sourceNamesInput = z.strictObject({
   npcIds: z.array(z.number().int().positive()).max(200),
   questIds: z.array(z.number().int().positive()).max(200),
   spellIds: z.array(z.number().int().positive()).max(200),
+  useQuestie: z.boolean(),
 });
 // Bridge-to-addon only: the bridge resolves catalog IDs before the game read.
 export const gearCandidatesInput = z.strictObject({
