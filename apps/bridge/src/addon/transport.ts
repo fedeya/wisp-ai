@@ -1,4 +1,4 @@
-import { watch } from 'node:fs';
+import { watch, type FSWatcher } from 'node:fs';
 import { readdir, readFile, mkdir, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -89,7 +89,7 @@ export class DiskTransport {
   nextSlot = 1;
   peerRevision = 0;
   writing = Promise.resolve();
-  watchers: ReturnType<typeof watch>[] = [];
+  watchers = new Map<string, FSWatcher>();
   performance: {
     controlWrites: number;
     wireBytes: number;
@@ -163,23 +163,46 @@ export class DiskTransport {
         } else if (entry.name.toLowerCase() === 'addons.txt') {
           if (!this.mailboxDecoders.has(file)) {
             this.mailboxDecoders.set(file, new MailboxDecoder(UPLINK_KIND));
-            try {
-              this.watchers.push(
-                watch(dir, (_, name) => {
-                  if (String(name).toLowerCase() === 'addons.txt') {
-                    void this.read(file, false).catch(this.onError);
-                  }
-                }),
-              );
-            } catch (error) {
-              this.onError(error);
-            }
           }
+          this.watchDirectory(dir, file);
           await this.read(file, baseline);
         }
       }
     };
     await walk(account, 0);
+  }
+  /**
+   * Watch a character folder for state-file changes. The watch only speeds up
+   * reads; the one-second scan still finds every change. A watcher that fails
+   * (for example because its folder was deleted or renamed) is closed and
+   * dropped instead of raising an unhandled 'error' event, which would end the
+   * bridge process; the next scan that still finds the folder watches it again.
+   */
+  private watchDirectory(dir: string, file: string) {
+    if (this.stopped || this.watchers.has(dir)) {
+      return;
+    }
+    let watcher: FSWatcher;
+    try {
+      watcher = watch(dir, (_, name) => {
+        if (String(name).toLowerCase() === 'addons.txt') {
+          void this.read(file, false).catch(this.onError);
+        }
+      });
+    } catch (error) {
+      this.onError(error);
+      return;
+    }
+    watcher.on('error', (error) => {
+      watcher.close();
+      if (this.watchers.get(dir) === watcher) {
+        this.watchers.delete(dir);
+      }
+      if (!this.stopped) {
+        this.onError(error);
+      }
+    });
+    this.watchers.set(dir, watcher);
   }
   async read(file: string, baseline: boolean) {
     if (this.stopped) return;
@@ -674,9 +697,10 @@ export class DiskTransport {
     this.stopped = true;
     clearInterval(this.timer);
     clearInterval(this.controlTimer);
-    for (const w of this.watchers) {
-      w.close();
+    for (const watcher of this.watchers.values()) {
+      watcher.close();
     }
+    this.watchers.clear();
     await Promise.allSettled([this.scans, ...this.reads.values()]);
     await Promise.allSettled([this.writing, this.controlWriting]);
   }
