@@ -1,6 +1,6 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
-import { createTurnRunner } from '../src/agent/turn-runner.ts';
+import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/chat/context.ts';
@@ -284,6 +284,8 @@ test('chat telemetry separates plan usage limits from other failures', async () 
     'usage_limit',
     undefined,
   );
+  // Routines read this classification; the message alone does not mention a limit.
+  expect(endedOnUsageLimit(f.chat)).toBe(true);
 
   f.send.mockRejectedValueOnce(Error('You exceeded your current quota, please check your plan.'));
   await f.run(f.chat, 'Private question');
