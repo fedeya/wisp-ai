@@ -1460,17 +1460,37 @@ test('first-time setup resumes at the provider step and opens Overview after sav
     ).toHaveLength(2),
   );
 
+  // The browser sign-in still finishes after the user leaves the ChatGPT panel.
+  await fireEvent.click(screen.getByRole('button', { name: 'Back to providers' }));
+  await screen.findByRole('heading', { name: 'Choose your provider' });
   status.auth = { ...status.auth, status: 'connected', revision: status.auth.revision + 1 };
   await act(() => desktopStore.getState().actions.refresh());
-  expect(await screen.findByRole('heading', { name: 'ChatGPT added' })).toBeTruthy();
-  expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
-    event: {
-      kind: 'provider_connect_finished',
-      provider: 'openai',
-      method: 'subscription',
-      outcome: 'completed',
+  const subscriptionResults = () =>
+    vi
+      .mocked(desktop)
+      .mock.calls.filter(
+        ([command, body]) =>
+          command === 'telemetry_onboarding' &&
+          (body as { event: { kind: string; outcome?: string } }).event.kind ===
+            'provider_connect_finished' &&
+          (body as { event: { outcome?: string } }).event.outcome === 'completed',
+      );
+  await waitFor(() => expect(subscriptionResults()).toHaveLength(1));
+  expect(subscriptionResults()[0]).toEqual([
+    'telemetry_onboarding',
+    {
+      event: {
+        kind: 'provider_connect_finished',
+        provider: 'openai',
+        method: 'subscription',
+        outcome: 'completed',
+      },
     },
-  });
+  ]);
+  await fireEvent.click(screen.getByRole('button', { name: 'ChatGPT' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Use subscription' }));
+  expect(await screen.findByRole('heading', { name: 'ChatGPT added' })).toBeTruthy();
+  expect(subscriptionResults()).toHaveLength(1);
   expect(screen.getByRole('combobox', { name: 'Default model for new chats' }).textContent).toBe(
     'Choose a model',
   );

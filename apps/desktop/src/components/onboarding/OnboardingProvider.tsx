@@ -13,15 +13,18 @@ import {
   type ProviderConnectError,
   type ProviderConnectMethod,
 } from './onboarding-telemetry';
+import type { SignInTracking } from './use-sign-in-tracking';
 
 export default function OnboardingProvider({
   provider,
   onBack,
   onFinish,
+  signInTracking,
 }: {
   provider: ProviderId;
   onBack: () => void;
   onFinish: () => void;
+  signInTracking: SignInTracking;
 }) {
   const { auth, connections, locked, busy } = useDesktop((state) => ({
     auth: state.status?.auth,
@@ -39,16 +42,13 @@ export default function OnboardingProvider({
   const pending = auth?.status === 'authorizing';
   const reviewing = !!connectionId || (method === 'subscription' && connected);
   const panel = useRef<HTMLHeadingElement>(null);
-  const signingIn = useRef(false);
-  const cancelling = useRef(false);
-  const lastStatus = useRef(auth?.status);
 
   function connectFinished(
     connectMethod: ProviderConnectMethod,
-    outcome: 'completed' | 'cancelled' | ProviderConnectError,
+    outcome: 'completed' | ProviderConnectError,
   ) {
     trackOnboarding(
-      outcome === 'completed' || outcome === 'cancelled'
+      outcome === 'completed'
         ? { kind: 'provider_connect_finished', provider, method: connectMethod, outcome }
         : {
             kind: 'provider_connect_finished',
@@ -63,28 +63,6 @@ export default function OnboardingProvider({
   useEffect(() => {
     panel.current?.focus();
   }, [method]);
-
-  // A browser sign-in ends when the bridge leaves `authorizing`.
-  useEffect(() => {
-    const status = auth?.status;
-    const previous = lastStatus.current;
-    lastStatus.current = status;
-    if (!signingIn.current || !status || status === previous || status === 'authorizing') return;
-    if (previous !== 'authorizing' && status !== 'connected') return;
-    signingIn.current = false;
-    connectFinished(
-      'subscription',
-      status === 'connected'
-        ? 'completed'
-        : cancelling.current
-          ? 'cancelled'
-          : status === 'plan_permission_required'
-            ? 'plan_permission_required'
-            : 'sign_in_failed',
-    );
-    cancelling.current = false;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on status changes only
-  }, [auth?.status]);
 
   if (reviewing) {
     return <DefaultModelSettings onFinish={onFinish} review={{ provider, connectionId, onBack }} />;
@@ -153,7 +131,7 @@ export default function OnboardingProvider({
                 <Button
                   disabled={!!busy}
                   onClick={() => {
-                    cancelling.current = true;
+                    signInTracking.cancelling();
                     void work('Cancelling sign-in', () => call(bridge.auth.cancel.$post()), null);
                   }}
                 >
@@ -165,16 +143,11 @@ export default function OnboardingProvider({
                   disabled={locked}
                   onClick={() => {
                     setMethod('subscription');
-                    if (connected) {
-                      connectFinished('subscription', 'completed');
-                      return;
-                    }
-                    signingIn.current = true;
-                    cancelling.current = false;
+                    // An existing session was already reported when its sign-in ended.
+                    if (connected) return;
+                    signInTracking.started(provider);
                     void signIn(auth?.activeId || undefined).then((opened) => {
-                      if (opened) return;
-                      signingIn.current = false;
-                      connectFinished('subscription', 'sign_in_open_failed');
+                      if (!opened) signInTracking.openFailed(provider);
                     });
                   }}
                 >

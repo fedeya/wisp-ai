@@ -25,8 +25,8 @@ import {
   type RailStepState,
   type WizardScreen,
 } from './setup-steps';
-
 import { trackOnboarding, type OnboardingStep } from './onboarding-telemetry';
+import { useSignInTracking } from './use-sign-in-tracking';
 
 /** Welcome and ready are not tracked: telemetry only knows the two setup steps. */
 const trackedStep: Partial<Record<WizardScreen, OnboardingStep>> = {
@@ -50,6 +50,7 @@ export default function Onboarding() {
   const { finishOnboarding, markOnboardingComplete, install } = useDesktopActions();
   const [screen, setScreen] = useState<WizardScreen>(() => firstScreen(app.configured));
   const [provider, setProvider] = useState<ProviderId>();
+  const signInTracking = useSignInTracking();
   const title = useRef<HTMLHeadingElement>(null);
   const viewedSteps = useRef(new Set<OnboardingStep>());
   const step = trackedStep[screen];
@@ -146,6 +147,7 @@ export default function Onboarding() {
                       provider={provider}
                       onBack={() => setProvider(undefined)}
                       onFinish={complete}
+                      signInTracking={signInTracking}
                     />
                   ) : (
                     <ProviderPicker onSelect={selectProvider}>
