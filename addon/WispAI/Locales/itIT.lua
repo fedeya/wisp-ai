@@ -27,6 +27,8 @@ ns.Locales.itIT = {
     ["status.connected"] = "Connesso",
     ["status.offline"] = "Offline",
     ["status.channelsExhausted"] = "Canali esauriti: /reload",
+    ["status.deliveryStalled"] = "Nessuna risposta: /reload",
+    ["status.reloadNeeded"] = "Aggiornamento installato: /reload",
     ["status.openDesktop"] = "Apri Wisp Desktop",
 
     -- Header
@@ -251,6 +253,7 @@ ns.Locales.itIT = {
     -- Chat notices
     ["notice.addonUpdated"] = "Wisp {installed} è installato (caricato {loaded}). Digita /reload per caricare la nuova versione.",
     ["notice.appUpdateAvailable"] = "Wisp {version} è disponibile. Apri l'app Wisp per installarlo.",
+    ["notice.deliveryStalled"] = "Wisp non riceve i tuoi messaggi. Digita /reload per riconnetterti.",
     ["notice.mapUnavailable"] = "L'interfaccia della mappa non è disponibile.",
     ["notice.leaveCombatMacro"] = "Esci dal combattimento prima di prendere una macro.",
 

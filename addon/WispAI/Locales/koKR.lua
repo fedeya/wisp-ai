@@ -27,6 +27,8 @@ ns.Locales.koKR = {
     ["status.connected"] = "연결됨",
     ["status.offline"] = "오프라인",
     ["status.channelsExhausted"] = "채널 소진: /reload",
+    ["status.deliveryStalled"] = "응답 없음: /reload",
+    ["status.reloadNeeded"] = "업데이트 설치됨: /reload",
     ["status.openDesktop"] = "Wisp Desktop을 여세요",
 
     -- Header
@@ -251,6 +253,7 @@ ns.Locales.koKR = {
     -- Chat notices
     ["notice.addonUpdated"] = "Wisp {installed} 버전이 설치되었습니다(현재 {loaded} 로드됨). 새 버전을 불러오려면 /reload를 입력하세요.",
     ["notice.appUpdateAvailable"] = "Wisp {version} 버전을 사용할 수 있습니다. Wisp 앱을 열어 설치하세요.",
+    ["notice.deliveryStalled"] = "Wisp가 메시지를 받지 못하고 있습니다. 다시 연결하려면 /reload를 입력하세요.",
     ["notice.mapUnavailable"] = "지도 UI를 사용할 수 없습니다.",
     ["notice.leaveCombatMacro"] = "매크로를 집기 전에 전투에서 벗어나세요.",
 
