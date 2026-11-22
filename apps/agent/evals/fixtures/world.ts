@@ -1,9 +1,8 @@
 import type { ToolStub } from 'eve/evals';
 
-// Catalog, web and map fixtures for non-gear questions. Put these before
+// Quest, dungeon and map fixtures for non-gear questions. Put these before
 // fedrathStubs(): the first matching stub wins.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value));
-const thewowdb = { name: 'TheWoWDB', version: 'forever' };
 
 export function questStubs(): ToolStub[] {
   return json([
@@ -70,63 +69,22 @@ export function questStubs(): ToolStub[] {
   ]);
 }
 
-export function dungeonStubs(): ToolStub[] {
-  return json([
-    {
-      id: 'zone-search',
-      tool: 'thewowdb__search_database',
-      outcome: {
-        response: {
-          status: 'available',
-          source: thewowdb,
-          data: {
-            results: [
-              { id: 2437, name: 'Sima Ígnea', kind: 'zone' },
-              { id: 718, name: 'Cuevas de los Lamentos', kind: 'zone' },
-            ],
-          },
-        },
-      },
-    },
-    {
-      id: 'zone-entity',
-      tool: 'thewowdb__get_database_entity',
-      outcome: {
-        response: {
-          status: 'available',
-          source: thewowdb,
-          data: { name: 'Sima Ígnea', kind: 'zone', levelRange: [13, 18], parent: 'Orgrimmar' },
-        },
-      },
-    },
-    {
-      id: 'web-search',
-      tool: 'web__web_search',
-      outcome: {
-        response: {
-          results: [
-            {
-              title: 'WoW Forever dungeon level guide',
-              url: 'https://example.org/forever/dungeons',
-              excerpt:
-                'Ragefire Chasm (Sima Ígnea) 13-18, Wailing Caverns 17-24, Deadmines 17-26, Shadowfang Keep 22-30. Dungeon Finder unlocks at level 13.',
-            },
-          ],
-        },
-      },
-    },
-    {
-      id: 'web-fetch',
-      tool: 'web_fetch',
-      outcome: {
-        response: {
-          url: 'https://example.org/forever/dungeons',
-          content:
-            'Ragefire Chasm sits inside Orgrimmar in the Cleft of Shadow (entrance 52.8, 49.6). Recommended 13-18. Wailing Caverns in the Barrens: 17-24.',
-        },
-      },
-    },
-  ]);
+// Catalog and web lookups the dungeon scenarios should not need, since
+// wow__query_dungeons answers them. They return nothing rather than facts, so
+// a stray search neither reaches the real services nor contradicts the game.
+export function noLookupStubs(): ToolStub[] {
+  return json(
+    [
+      'thewowdb__search_database',
+      'thewowdb__get_database_entity',
+      'web__web_search',
+      'web_fetch',
+    ].map((tool) => ({
+      id: 'no-' + tool,
+      tool,
+      outcome: { response: { status: 'available', data: { results: [] } } },
+    })),
+  );
 }
 
 export function mapStubs(): ToolStub[] {
@@ -152,7 +110,7 @@ export function mapStubs(): ToolStub[] {
   ]);
 }
 
-// wow__dungeons for a level 21 Horde character: names and ranges as Forever's
+// wow__query_dungeons for a level 21 Horde character: names and ranges as Forever's
 // group finder returns them, entrances from Wisp's generated table.
 const reading = { characterLevel: 21, faction: 'Horde' };
 const rfc = {
@@ -271,17 +229,17 @@ const dungeons = [
   },
 ];
 
-export function dungeonJournalStubs(): ToolStub[] {
+export function dungeonStubs(): ToolStub[] {
   return json([
     {
       id: 'dungeon-rfc',
-      tool: 'wow__dungeons',
+      tool: 'wow__query_dungeons',
       match: { dungeon: { pattern: '[Ss]ima|[Rr]agefire|RFC|rfc' } },
       outcome: { response: { status: 'available', data: { ...reading, dungeons: [rfc] } } },
     },
     {
       id: 'dungeon-list',
-      tool: 'wow__dungeons',
+      tool: 'wow__query_dungeons',
       outcome: { response: { status: 'available', data: { ...reading, dungeons } } },
     },
   ]);

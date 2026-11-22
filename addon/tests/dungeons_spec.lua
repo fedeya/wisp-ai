@@ -108,10 +108,12 @@ it("lists the group finder's dungeons with ranges and their entrances", function
     local data = env.ns.Character.ReadDungeons({})
     assert.equals(21, data.characterLevel)
     assert.equals("Horde", data.faction)
+    assert.is_true(data.groupFinder)
     assert.equals(5, #data.dungeons)
     assert.same({
         name = "Sima Ígnea",
         englishName = "Ragefire Chasm",
+        instanceName = "Ragefire Chasm",
         instanceMapId = 389,
         minLevel = 13,
         maxLevel = 18,
@@ -182,4 +184,17 @@ it("lists dungeons without an entrance and fails only when the game lists none",
     assert.has_error(function()
         env.ns.Character.ReadDungeons({})
     end)
+end)
+
+it("says when the group finder cannot be read and keeps the table's instances", function()
+    local env = helper.env()
+    setup(env)
+    env.C_LFGList = nil
+    local data = env.ns.Character.ReadDungeons({})
+    assert.is_false(data.groupFinder)
+    assert.equals(4, #data.dungeons)
+    for _, entry in ipairs(data.dungeons) do
+        assert.is_nil(entry.minLevel)
+        assert.is_true(entry.notInGroupFinder)
+    end
 end)

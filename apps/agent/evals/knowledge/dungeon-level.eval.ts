@@ -1,7 +1,7 @@
 import { defineEval } from 'eve/evals';
 import { satisfies } from 'eve/evals/expect';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
-import { dungeonJournalStubs, dungeonStubs } from '../fixtures/world.ts';
+import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt =
@@ -12,7 +12,7 @@ export default defineEval({
   tags: ['tiers'],
   async test(t) {
     const session = await t.session({
-      stubs: [...dungeonJournalStubs(), ...dungeonStubs(), ...fedrathStubs()],
+      stubs: [...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
     });
     const started = performance.now();
     const turn = await session.send(playerMessage(prompt));

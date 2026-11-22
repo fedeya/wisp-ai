@@ -150,7 +150,7 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read flight paths',
     'Find flight points on the world map and read routes from the flight master maps your character has opened.',
   ],
-  dungeons: [
+  query_dungeons: [
     'Dungeon journal',
     'Read Forever dungeons, their level ranges and entrances from the game.',
   ],

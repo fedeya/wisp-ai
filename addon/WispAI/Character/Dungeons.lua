@@ -17,14 +17,18 @@ local function level(value)
     return type(value) == "number" and value > 0 and value or nil
 end
 
+-- The group finder's dungeon activities, or nil when the game cannot list them.
 local function activities()
     local lfg = C_LFGList
     if not (lfg and lfg.GetAvailableActivities and lfg.GetActivityInfoTable) then
-        return {}
+        return nil
     end
     local ok, ids = pcall(lfg.GetAvailableActivities)
+    if not ok or type(ids) ~= "table" then
+        return nil
+    end
     local out = {}
-    for _, id in ipairs(ok and type(ids) == "table" and ids or {}) do
+    for _, id in ipairs(ids) do
         local read, info = pcall(lfg.GetActivityInfoTable, id)
         if read and type(info) == "table" and info.categoryID == DUNGEON_CATEGORY then
             out[#out + 1] = { id = id, info = info }
@@ -79,14 +83,20 @@ local function instanceName(instanceMapId, fallback)
     return text(name ~= "" and name or fallback)
 end
 
-local function list()
+-- Every group finder activity (a wing is its own activity), then the table's
+-- raids and dungeons the group finder does not list. instanceName is the
+-- instance's English name, shared by its wings, so "Scarlet Monastery" finds
+-- every wing; englishName is the activity's own.
+local function list(activityList)
     local out, listed = {}, {}
-    for _, activity in ipairs(activities()) do
+    for _, activity in ipairs(activityList or {}) do
         local info = activity.info
+        local known = ns.Data.DungeonEntrances[info.mapID]
         listed[info.mapID] = true
         out[#out + 1] = {
             name = text(info.fullName),
             englishName = ns.Data.GroupFinderNames[activity.id],
+            instanceName = known and known.name or nil,
             instanceMapId = info.mapID,
             minLevel = level(info.minLevelSuggestion),
             maxLevel = level(info.maxLevelSuggestion),
@@ -94,7 +104,6 @@ local function list()
             entrances = entrances(info.mapID),
         }
     end
-    -- Raids and dungeons the group finder does not list keep their entrance.
     for id, known in pairs(ns.Data.DungeonEntrances) do
         if not listed[id] then
             out[#out + 1] = {
@@ -119,21 +128,24 @@ local function list()
 end
 
 local function matches(entry, wanted)
-    for _, name in ipairs({ entry.name, entry.englishName }) do
+    for _, name in ipairs({ entry.name, entry.englishName, entry.instanceName }) do
         if type(name) == "string" and fold(name):find(wanted, 1, true) then
             return true
         end
     end
-    local known = ns.Data.DungeonEntrances[entry.instanceMapId]
-    return known and fold(known.name):find(wanted, 1, true) and true or false
+    return false
 end
 
 function ns.Character.ReadDungeons(args)
-    local dungeons = list()
-    assert(dungeons[1], "The game listed no dungeons")
+    local activityList = activities()
+    local dungeons = list(activityList)
+    assert(dungeons[1], "Neither the group finder nor Wisp's entrance table lists any dungeon")
     local result = {
         characterLevel = UnitLevel and UnitLevel("player") or nil,
         faction = UnitFactionGroup and UnitFactionGroup("player") or nil,
+        -- false: the game's group finder could not be read, so no entry has a
+        -- level range and the list holds only the entrance table's instances.
+        groupFinder = activityList ~= nil,
     }
     if not args.dungeon then
         result.dungeons = dungeons

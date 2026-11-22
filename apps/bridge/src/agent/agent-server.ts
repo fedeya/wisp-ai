@@ -96,7 +96,7 @@ const inspectionTools = {
   target: 'inspect_target',
   trainer: 'inspect_trainer',
   flight_paths: 'inspect_flight_paths',
-  dungeons: 'dungeons',
+  dungeons: 'query_dungeons',
   training: 'query_training',
   chat: 'read_chat',
   combat: 'read_combat',
