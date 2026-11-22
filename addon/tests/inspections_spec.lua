@@ -783,3 +783,46 @@ it("gear candidates wait for an uncached equipped item instead of treating it as
     d = ns.Character.Inspect({ kind = "gear_candidates", args = { itemIds = { 10 } } }).data
     assert(d.status == "available" and d.items[1].itemLevelGain == 10 and d.items[1].slot == 8)
 end)
+
+it("gear candidates leave stat differences unknown when equipped stats are unread", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+
+    C_Item = {
+        GetItemInfo = function(id)
+            return "Item " .. id,
+                "item:" .. id,
+                2,
+                id == 10 and 22 or 12,
+                15,
+                "Armor",
+                "Misc",
+                1,
+                "INVTYPE_FEET"
+        end,
+        GetItemStats = function(link)
+            if link == "item:10" then
+                return { ITEM_MOD_INTELLECT_SHORT = 4 }
+            end
+        end,
+        RequestLoadItemDataByID = function() end,
+    }
+    UnitLevel = function()
+        return 21
+    end
+    GetInventoryItemID = function(_, slot)
+        return slot == 8 and 77 or nil
+    end
+
+    local item =
+        ns.Character.Inspect({ kind = "gear_candidates", args = { itemIds = { 10 } } }).data.items[1]
+    assert(item.statDelta == nil and item.itemLevelGain == 10 and item.equipped.id == 77)
+
+    GetInventoryItemID = function()
+        return nil
+    end
+    item =
+        ns.Character.Inspect({ kind = "gear_candidates", args = { itemIds = { 10 } } }).data.items[1]
+    assert(item.emptySlot and item.statDelta.ITEM_MOD_INTELLECT_SHORT == 4)
+end)

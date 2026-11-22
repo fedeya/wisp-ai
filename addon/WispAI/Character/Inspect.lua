@@ -450,8 +450,10 @@ function inspectors.gear_candidates(args)
                 item.equipped = equipped
                     and { id = equipped.id, name = equipped.name, itemLevel = equipped.itemLevel }
                 item.itemLevelGain = (item.itemLevel or 0) - target.level
-                item.statDelta = item.stats
-                    and statDelta(item.stats, equipped and equipped.stats or {})
+                -- Only a genuinely empty slot compares against no stats; unread
+                -- equipped stats leave the difference unknown, not inflated.
+                local baseline = target.empty and {} or (equipped and equipped.stats)
+                item.statDelta = item.stats and baseline and statDelta(item.stats, baseline) or nil
             else
                 item.equipped = { id = uncachedID, status = "loading" }
                 equippedLoading[uncachedID] = true
