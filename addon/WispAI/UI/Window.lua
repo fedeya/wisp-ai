@@ -4,12 +4,13 @@ local COLORS = ns.UI.Widgets.COLORS
 local label, box = ns.UI.Widgets.Label, ns.UI.Widgets.Box
 local TEXT = ns.UI.Widgets.TEXT
 local refreshReferences = ns.UI.MessageFormat.RefreshReferences
+local markItemLoaded = ns.UI.MessageFormat.MarkItemLoaded
 local frame, header, body, chatPanel, mini, gear, resize, settings
 local rendering = false
 -- Minimized, the window is its title bar alone: the bar's 36 units and the
 -- frame's top and bottom hairlines, so restoring keeps the bar where it was.
 local MINI_WIDTH, MINI_HEIGHT = 240, 38
--- Item and macro data, and quest log changes, are redrawn in batches.
+-- Item and macro data, and quest log changes, are handled in batches.
 local ITEM_BATCH_SECONDS, QUEST_BATCH_SECONDS = 0.2, 0.4
 
 --- Window control: diagonal arrows pointing in to minimize the window to its
@@ -334,34 +335,73 @@ function ns.UI.BuildUI()
     end)
     ns.UI.Routines.Build(frame, chatPanel)
     settings = ns.UI.SettingsPanel.Build(frame, chatPanel)
-    -- Opening bags or the quest log fires these events in bursts. Each burst
-    -- waits for one timer and redraws the transcript once, not once per event.
+    -- Opening bags or the quest log fires these events in bursts. A burst waits
+    -- for one timer, then redraws only a chat on screen that shows one of the
+    -- changed items or a macro. Quest links read the stored quest on hover, so
+    -- quest updates only store it.
+    local loadedItems, macrosChanged = {}, false
     local itemsPending, questsPending = false, false
-    local function redrawReferences()
-        ns.itemRevision = ns.itemRevision + 1
-        ns.UI.Refresh()
+    local function shows(chat, changed)
+        for _, message in ipairs(chat and chat.messages or {}) do
+            if type(message.references) == "table" then
+                for _, ref in pairs(message.references) do
+                    if type(ref) == "table" and changed(ref) then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
     end
     local function flushItems()
         itemsPending = false
-        redrawReferences()
+        local items, macros = loadedItems, macrosChanged
+        loadedItems, macrosChanged = {}, false
+        for id in pairs(items) do
+            markItemLoaded(id)
+        end
+        local function changed(ref)
+            return ref.kind == "item" and items[tonumber(ref.id)] == true
+                or ref.kind == "macro" and macros
+        end
+        -- Restoring a minimized window redraws it, and the inline panel
+        -- redraws only while it is open.
+        if not ns.db.minimized and shows(ns.Chat.Current(), changed) then
+            ns.UI.Refresh()
+        elseif
+            ns.Inline.RefreshInline
+            and ns.Inline.InlineCurrent
+            and shows(ns.Inline.InlineCurrent(), changed)
+        then
+            ns.Inline.RefreshInline()
+        end
     end
     local function flushQuests()
         questsPending = false
-        if refreshReferences() then
-            redrawReferences()
-        end
+        refreshReferences()
     end
     local itemEvents = CreateFrame("Frame")
     itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
     itemEvents:RegisterEvent("QUEST_LOG_UPDATE")
     itemEvents:RegisterEvent("UPDATE_MACROS")
-    itemEvents:SetScript("OnEvent", function(_, event)
+    itemEvents:SetScript("OnEvent", function(_, event, itemID)
         if event == "QUEST_LOG_UPDATE" then
             if not questsPending then
                 questsPending = true
                 C_Timer.After(QUEST_BATCH_SECONDS, flushQuests)
             end
-        elseif not itemsPending then
+            return
+        end
+        if event == "GET_ITEM_INFO_RECEIVED" then
+            local id = tonumber(itemID)
+            if not id then
+                return
+            end
+            loadedItems[id] = true
+        else
+            macrosChanged = true
+        end
+        if not itemsPending then
             itemsPending = true
             C_Timer.After(ITEM_BATCH_SECONDS, flushItems)
         end

@@ -219,7 +219,7 @@ it("does not reparse syntax for item data, references, resize or completion", fu
     env.GetItemIcon = function()
         return "LoadedIcon"
     end
-    ns.itemRevision = ns.itemRevision + 1
+    ns.UI.MessageFormat.MarkItemLoaded(100)
     original.streaming, chat.status = false, "done"
     ns.UI.RenderMessageRow(row, chat, original, 600, true)
     assert.is_truthy(widget.tableRows[2].cells[1]:GetText():find("|TLoadedIcon:", 1, true))

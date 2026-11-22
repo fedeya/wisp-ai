@@ -1,8 +1,8 @@
 local helper = require("addon.tests.support")
 
 -- Builds the window with a controllable timer queue and quest log, and counts
--- transcript redraws caused by the item, macro and quest events.
-local function scenario()
+-- redraws caused by the item, macro and quest events.
+local function scenario(references)
     local env = helper.env()
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
@@ -35,7 +35,13 @@ local function scenario()
         active = "chat",
         connected = true,
     })
-    ns.chats = { { id = "chat", title = "Events", status = "idle", messages = {} } }
+    local reply = {
+        id = "m1",
+        role = "assistant",
+        text = "[[ref:robe]]",
+        references = references or { robe = { kind = "item", id = 100, label = "Robe" } },
+    }
+    ns.chats = { { id = "chat", title = "Events", status = "done", messages = { reply } } }
     function ns.Chat.Current()
         return ns.chats[1]
     end
@@ -51,7 +57,7 @@ local function scenario()
     end
     assert(events, "the window must listen for item and quest events")
 
-    local state = { redraws = 0, quest = quest }
+    local state = { redraws = 0, quest = quest, ns = ns, reply = reply }
     function ns.UI.Refresh()
         state.redraws = state.redraws + 1
     end
@@ -84,31 +90,83 @@ local function scenario()
     function state.writes()
         return writes
     end
-    function state.revision()
-        return ns.itemRevision
+    function state.signature()
+        return ns.UI.MessageFormat.Signature(reply.references)
     end
     return state
 end
 
 describe("item, macro and quest events", function()
-    it("redraw a burst of item data once, after one timer", function()
+    it("redraw a burst that loads a shown item once, after one timer", function()
         local s = scenario()
-        local revision = s.revision()
-        for id = 1, 50 do
+        local before = s.signature()
+        for id = 51, 100 do
             s.fire("GET_ITEM_INFO_RECEIVED", id, true)
         end
-        s.fire("UPDATE_MACROS")
         assert.same({ 0.2 }, s.delays())
         assert.equal(0, s.redraws)
-        assert.equal(revision, s.revision())
         s.flush()
         assert.equal(1, s.redraws)
-        assert.equal(revision + 1, s.revision())
-        s.fire("GET_ITEM_INFO_RECEIVED", 51, true)
+        assert.are_not.equal(before, s.signature(), "the reply showing the item must render again")
+        s.fire("GET_ITEM_INFO_RECEIVED", 100, true)
         assert.equal(1, s.timers(), "a later burst arms a new timer")
     end)
 
-    it("leave unchanged quests alone and redraw a real change once", function()
+    it("do not redraw for items no chat on screen shows", function()
+        local s = scenario()
+        local before = s.signature()
+        for id = 1, 50 do
+            s.fire("GET_ITEM_INFO_RECEIVED", id, true)
+        end
+        s.fire("GET_ITEM_INFO_RECEIVED", nil, false)
+        assert.equal(1, s.timers())
+        s.flush()
+        assert.equal(0, s.redraws)
+        assert.equal(before, s.signature(), "unrelated items must not render the reply again")
+    end)
+
+    it("redraw macro changes only for chats that show a macro", function()
+        local s = scenario()
+        s.fire("UPDATE_MACROS")
+        s.flush()
+        assert.equal(0, s.redraws)
+
+        s = scenario({ heal = { kind = "macro", name = "Heal", label = "Heal" } })
+        s.fire("UPDATE_MACROS")
+        s.fire("UPDATE_MACROS")
+        assert.equal(1, s.timers())
+        s.flush()
+        assert.equal(1, s.redraws)
+    end)
+
+    it(
+        "leave a minimized window to redraw when restored, but redraw an open inline chat",
+        function()
+            local s = scenario()
+            s.ns.db.minimized = true
+            local inlineRedraws = 0
+            s.ns.Inline.RefreshInline = function()
+                inlineRedraws = inlineRedraws + 1
+            end
+            s.ns.Inline.InlineCurrent = function()
+                return nil
+            end
+            s.fire("GET_ITEM_INFO_RECEIVED", 100, true)
+            s.flush()
+            assert.equal(0, s.redraws)
+            assert.equal(0, inlineRedraws)
+
+            s.ns.Inline.InlineCurrent = function()
+                return { id = "inline", messages = { s.reply } }
+            end
+            s.fire("GET_ITEM_INFO_RECEIVED", 100, true)
+            s.flush()
+            assert.equal(0, s.redraws)
+            assert.equal(1, inlineRedraws)
+        end
+    )
+
+    it("store changed quests without redrawing, and leave unchanged quests alone", function()
         local s = scenario()
         for _ = 1, 10 do
             s.fire("QUEST_LOG_UPDATE")
@@ -116,7 +174,6 @@ describe("item, macro and quest events", function()
         assert.same({ 0.4 }, s.delays())
         s.flush()
         assert.equal(0, s.writes(), "BuildUI already stored the quest")
-        assert.equal(0, s.redraws)
 
         s.quest.level = 11
         for _ = 1, 10 do
@@ -125,18 +182,18 @@ describe("item, macro and quest events", function()
         assert.equal(1, s.timers())
         s.flush()
         assert.equal(1, s.writes())
-        assert.equal(1, s.redraws)
+        assert.equal(11, s.ns.UI.MessageFormat.Quest(42).level)
+        assert.equal(0, s.redraws, "quest links read the stored quest when hovered")
     end)
 
     it("batch item and quest events on separate timers", function()
         local s = scenario()
-        s.quest.title = "Quest B"
-        s.fire("GET_ITEM_INFO_RECEIVED", 7, true)
+        s.fire("GET_ITEM_INFO_RECEIVED", 100, true)
         s.fire("QUEST_LOG_UPDATE")
-        s.fire("GET_ITEM_INFO_RECEIVED", 8, true)
+        s.fire("UPDATE_MACROS")
         s.fire("QUEST_LOG_UPDATE")
         assert.same({ 0.2, 0.4 }, s.delays())
         s.flush()
-        assert.equal(2, s.redraws)
+        assert.equal(1, s.redraws)
     end)
 end)

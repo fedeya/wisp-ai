@@ -19,7 +19,6 @@ local TOOL_STATES = {
 }
 local toolGroupsExpanded = {}
 
-ns.itemRevision = 0
 local function linked(row)
     row:EnableMouse(true)
     row:SetHyperlinksEnabled(true)

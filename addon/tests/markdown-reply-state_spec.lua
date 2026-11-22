@@ -184,7 +184,10 @@ it("refreshes mutable references and item data without reparsing cached syntax",
     env.GetItemIcon = function()
         return "LoadedIcon"
     end
-    ns.itemRevision = ns.itemRevision + 1
+    ns.UI.MessageFormat.MarkItemLoaded(999)
+    local _, unrelatedKey = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.equal(changedKey, unrelatedKey, "another item's data must not render the reply again")
+    ns.UI.MessageFormat.MarkItemLoaded(100)
     local loaded, loadedKey = ns.Markdown.ReplyView.Update(state, "chat", original)
     assert.is_truthy(loaded.parts[1].text:find("|TLoadedIcon:", 1, true))
     assert.are_not.equal(changedKey, loadedKey)

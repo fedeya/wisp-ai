@@ -145,6 +145,15 @@ local function nativeReference(key, references)
         .. "]|h|r"
     )
 end
+-- Item data the game loads later changes how a link looks, so each item ID
+-- counts its loads and only replies showing that item render again.
+local itemLoads = {}
+local function markItemLoaded(id)
+    id = tonumber(id)
+    if id then
+        itemLoads[id] = (itemLoads[id] or 0) + 1
+    end
+end
 local function referenceSignature(references)
     local parts = {}
     for key, ref in pairs(references or {}) do
@@ -152,9 +161,11 @@ local function referenceSignature(references)
         for field, value in pairs(ref) do
             values[#values + 1] = field .. "=" .. tostring(value)
         end
-        -- The game's resolved icon can change without changing the reply.
+        -- The game's resolved icon or quality can change without changing the reply.
         if ref.kind == "macro" then
             values[#values + 1] = "macroIcon=" .. tostring(macroIcon(ref.name))
+        elseif ref.kind == "item" then
+            values[#values + 1] = "itemLoads=" .. tostring(itemLoads[tonumber(ref.id)] or 0)
         end
         table.sort(values)
         parts[#parts + 1] = key .. ":" .. table.concat(values, "\30")
@@ -167,6 +178,7 @@ ns.UI.MessageFormat = {
     Reference = nativeReference,
     RefreshReferences = refreshReferences,
     Signature = referenceSignature,
+    MarkItemLoaded = markItemLoaded,
     MapLocation = mapLocation,
     MacroNameFromLink = macroNameFromLink,
     Quest = function(id)

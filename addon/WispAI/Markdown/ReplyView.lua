@@ -278,7 +278,7 @@ function view.Update(state, chatId, message)
         or state.role ~= message.role
     local references = ns.UI.MessageFormat.Signature(message.references)
     local native = ns.UI.RichSignature(message.ui)
-    local dependencies = tostring(ns.itemRevision) .. "\31" .. references .. "\31" .. native
+    local dependencies = references .. "\31" .. native
     local signature = (message.role or "")
         .. "\31"
         .. (message.text or "")
