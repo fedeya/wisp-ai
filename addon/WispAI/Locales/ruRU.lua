@@ -26,7 +26,11 @@ ns.Locales.ruRU = {
     ["status.setupRequired"] = "Нужна настройка",
     ["status.connected"] = "Подключено",
     ["status.offline"] = "Нет связи",
+    ["status.connecting"] = "Подключение…",
+    ["status.reconnecting"] = "Переподключение…",
     ["status.channelsExhausted"] = "Каналы исчерпаны: /reload",
+    ["status.deliveryStalled"] = "Нет ответа: /reload",
+    ["status.reloadNeeded"] = "Обновление установлено: /reload",
     ["status.openDesktop"] = "Откройте Wisp Desktop",
 
     -- Header
@@ -251,6 +255,7 @@ ns.Locales.ruRU = {
     -- Chat notices
     ["notice.addonUpdated"] = "Установлен Wisp {installed} (загружен {loaded}). Введите /reload, чтобы загрузить новую версию.",
     ["notice.appUpdateAvailable"] = "Доступен Wisp {version}. Откройте приложение Wisp, чтобы установить обновление.",
+    ["notice.deliveryStalled"] = "Wisp не получает ваши сообщения. Введите /reload, чтобы переподключиться.",
     ["notice.mapUnavailable"] = "Интерфейс карты недоступен.",
     ["notice.leaveCombatMacro"] = "Выйдите из боя, прежде чем брать макрос.",
 

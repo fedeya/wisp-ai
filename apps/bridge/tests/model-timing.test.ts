@@ -38,3 +38,47 @@ test('model observation forwards bytes immediately and logs only timings and cac
   expect(record.inputTokens).toBe(3000);
   expect(record.firstTextMs).toBeGreaterThanOrEqual(0);
 });
+
+async function observe(body: Record<string, unknown>) {
+  const logger = { info: vi.fn() };
+  const tap = modelTiming(body, performance.now(), logger);
+  tap.resume();
+  tap.end(
+    Buffer.from('data: ' + JSON.stringify({ type: 'response.completed', response: {} }) + '\n\n'),
+  );
+  await new Promise<void>((resolve) => tap.on('finish', resolve));
+  return logger.info.mock.calls[0]![0];
+}
+
+test('model timing reports where a conversation rewrote earlier history, without content', async () => {
+  const user = { role: 'user', content: 'private question' };
+  const call = { type: 'function_call', name: 'wow__query_character', arguments: '{}' };
+  const output = { type: 'function_call_output', output: 'private reading' };
+  const base = { model: 'test', instructions: 'same', tools: [], prompt_cache_key: 'conv-a' };
+
+  const first = await observe({ ...base, input: [user] });
+  expect(first).toMatchObject({ promptCacheKey: true, inputItems: 1 });
+  expect(first.historyStable).toBeUndefined();
+
+  const appended = await observe({ ...base, input: [user, call, output] });
+  expect(appended).toMatchObject({
+    inputItems: 3,
+    previousItems: 1,
+    historyStable: true,
+    prefixChanged: false,
+  });
+
+  const rewritten = await observe({
+    ...base,
+    input: [user, { ...call, arguments: '{"sections":["gear"]}' }, output],
+  });
+  expect(rewritten).toMatchObject({
+    historyStable: false,
+    divergedAt: 1,
+    divergedType: 'function_call',
+  });
+  expect(JSON.stringify(rewritten)).not.toContain('private');
+
+  const other = await observe({ ...base, prompt_cache_key: 'conv-b', input: [user] });
+  expect(other.previousItems).toBeUndefined();
+});

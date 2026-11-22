@@ -100,11 +100,11 @@ end
   run('assert(ns.Transport.StartTransport());assert(resets==0 and saves==0)');
   return {
     run,
-    control: (revision: number, sequence = revision) => {
+    control: (revision: number, sequence = revision, generation = 91) => {
       const frame = encodeFrame({
         kind: COMPACT_DOWNLINK_KIND,
         flags: 3,
-        generation: 91,
+        generation,
         sequence,
         payload: Buffer.from(JSON.stringify({ r: revision })),
       });
@@ -147,6 +147,38 @@ assert(ns.bulkRead==nil and not ns.bulkUnavailable and #logs==0)
 now=now+.04;timers[.04]()
 `);
   expect(h.ack()).toMatchObject({ kind: COMPACT_ACK_KIND, flags: 2, sequence: 18 });
+});
+
+test('a restarted host shows reconnecting until its first snapshot is applied', () => {
+  const h = reloadHarness();
+  h.control(17);
+  h.run(`
+bulkPayload('previous-addon-session',17)
+ns.Transport.Send({type='hello'})
+now=.04;timers[.04]()
+`);
+  h.control(18);
+  h.run(`
+bulkPayload(ns.session,18)
+for i=1,5 do now=now+.1;timers[.1]();timers[.05]()end
+assert(ns.connected and ns.rev==18 and ns.reconnecting==nil,'the first host generation is not a restart')
+assert(ns.Core.ConnectingStatus()==nil)
+`);
+  // Desktop restarts the bridge: a new generation starts its revisions over.
+  h.control(3, 0, 92);
+  h.run(`
+bulkPayload(ns.session,3)
+onLoad=function()
+ observed={connected=ns.connected,status=ns.Core.ConnectingStatus()}
+ WispAI_Receive('bulk payload')
+ return true
+end
+for i=1,5 do now=now+.1;timers[.1]();timers[.05]()end
+assert(observed and observed.connected==false,'a new host generation is not connected yet')
+assert(observed.status=='status.reconnecting')
+assert(ns.connected and ns.rev==3 and ns.reconnecting==nil,'the fresh snapshot ends reconnecting')
+assert(ns.Core.ConnectingStatus()==nil)
+`);
 });
 
 test('a changed old-session publication during multipart hello preserves the bank for the next fresh helper', () => {

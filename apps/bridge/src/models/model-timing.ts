@@ -29,6 +29,11 @@ export function modelTiming(
     .update(JSON.stringify({ model: body.model, instructions, tools: body.tools }))
     .digest('hex')
     .slice(0, 16);
+  const history = historyChange(
+    typeof body.prompt_cache_key === 'string' ? body.prompt_cache_key : prefixHash,
+    prefixHash,
+    Array.isArray(body.input) ? body.input : [],
+  );
   return new Transform({
     transform(chunk: Buffer, _encoding, done) {
       this.push(chunk);
@@ -62,6 +67,8 @@ export function modelTiming(
                 totalMs: Math.round(performance.now() - started),
                 inputTokens: event.response?.usage?.input_tokens,
                 cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
+                promptCacheKey: typeof body.prompt_cache_key === 'string',
+                ...history,
               },
               'Model timing',
             );
@@ -76,4 +83,38 @@ export function modelTiming(
       done();
     },
   });
+}
+
+// A prompt cache can only hit when a request starts with the previous request
+// of the same conversation. Remember per-item hashes (never content) so the log
+// shows whether earlier history was rewritten, and where.
+const recent = new Map<string, { prefixHash: string; items: string[] }>();
+function historyChange(key: string, prefixHash: string, input: unknown[]) {
+  const items = input.map((item) =>
+    createHash('sha256').update(JSON.stringify(item)).digest('hex').slice(0, 12),
+  );
+  const previous = recent.get(key);
+  recent.delete(key);
+  recent.set(key, { prefixHash, items });
+  if (recent.size > 64) {
+    recent.delete(recent.keys().next().value!);
+  }
+  if (!previous) {
+    return { inputItems: items.length };
+  }
+  const diverged = previous.items.findIndex((hash, index) => items[index] !== hash);
+  const item = diverged >= 0 ? (input[diverged] as Record<string, unknown> | undefined) : undefined;
+  return {
+    inputItems: items.length,
+    previousItems: previous.items.length,
+    prefixChanged: previous.prefixHash !== prefixHash,
+    historyStable: diverged < 0,
+    divergedAt: diverged >= 0 ? diverged : undefined,
+    divergedType:
+      item && typeof item === 'object'
+        ? String(item.type ?? item.role ?? 'unknown').slice(0, 40)
+        : diverged >= 0
+          ? 'removed'
+          : undefined,
+  };
 }

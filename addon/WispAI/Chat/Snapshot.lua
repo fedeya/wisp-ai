@@ -32,6 +32,7 @@ function ns.Chat.ReceiveSnapshot(data)
     local previous = ns.Chat.Current()
     local previousState = previous and previous.status
     ns.rev, ns.connected, ns.lastSeen = data.rev, data.connected, GetTime()
+    ns.reconnecting = nil
     ns.bridgeVersion = data.bridgeVersion
     ns.expectedAddonVersion = data.expectedAddonVersion
     ns.Core.NotifyAddonUpdate()
