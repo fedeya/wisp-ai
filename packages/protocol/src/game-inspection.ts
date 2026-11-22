@@ -178,6 +178,10 @@ export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
   limit: z.number().int().min(1).max(50).default(20),
 });
+export const dungeonsInput = z.strictObject({
+  dungeon: z.string().trim().min(1).max(80).optional(),
+  questLimit: z.number().int().min(1).max(40).default(15),
+});
 export const flightPathsInput = z.strictObject({
   origin: z.string().trim().min(1).max(120).optional(),
   destination: z.string().trim().min(1).max(120).optional(),
@@ -257,6 +261,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('item_sources'), args: itemSourcesInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
+  z.object({ kind: z.literal('dungeons'), args: dungeonsInput }),
   z.object({
     kind: z.literal('macros'),
     args: z.object({

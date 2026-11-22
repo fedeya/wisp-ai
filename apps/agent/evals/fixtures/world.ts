@@ -151,3 +151,226 @@ export function mapStubs(): ToolStub[] {
     },
   ]);
 }
+
+// Polestar's journal as wow__dungeons returns it for a level 21 Horde
+// character: ranges and entrances follow Polestar's Forever data.
+const dungeon = (
+  key: string,
+  name: string,
+  minLevel: number,
+  maxLevel: number,
+  bestLevel: number,
+  zone: string,
+  entrance: [number, number, number],
+  extra: Record<string, unknown> = {},
+) => ({
+  key,
+  name,
+  kind: 'dungeon',
+  minLevel,
+  maxLevel,
+  bestLevel,
+  players: 5,
+  zone,
+  entrance: { mapId: entrance[0], x: entrance[1], y: entrance[2] },
+  ...extra,
+});
+const journal = {
+  source: 'Polestar dungeon journal',
+  version: '0.4.1.1',
+  characterLevel: 21,
+  faction: 'H',
+};
+
+export function dungeonJournalStubs(): ToolStub[] {
+  return json([
+    {
+      id: 'dungeon-rfc',
+      tool: 'wow__dungeons',
+      match: { dungeon: { pattern: '[Ss]ima|[Rr]agefire|RFC|rfc' } },
+      outcome: {
+        response: {
+          status: 'available',
+          data: {
+            ...journal,
+            moreQuests: false,
+            dungeon: {
+              ...dungeon(
+                'ragefire-chasm',
+                'Sima Ígnea',
+                13,
+                18,
+                15,
+                'Orgrimmar',
+                [1454, 49.3, 95.1],
+                {
+                  questCount: 8,
+                },
+              ),
+              quests: [
+                {
+                  id: 5723,
+                  title: 'Poner a prueba la fuerza del enemigo',
+                  level: 15,
+                  minLevel: 9,
+                  objectives: 'Mata a 8 troggs Furia Ardiente\nMata a 8 chamanes Furia Ardiente',
+                  start: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
+                  finish: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
+                  rewards: { xp: 1350 },
+                },
+                {
+                  id: 5725,
+                  title: 'El poder de destruir...',
+                  level: 16,
+                  minLevel: 10,
+                  state: 'completed',
+                  start: { name: 'Varimathras', mapId: 1458, x: 56.2, y: 92.2 },
+                  finish: { name: 'Varimathras', mapId: 1458, x: 56.2, y: 92.2 },
+                },
+                {
+                  id: 5722,
+                  title: 'Buscando la bolsa perdida',
+                  level: 16,
+                  minLevel: 10,
+                  objectives: 'Recupera la bolsa de Maur Grimtotem',
+                  start: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
+                  finish: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
+                  rewards: { xp: 1600 },
+                },
+              ],
+              bosses: [
+                { name: 'Oggleflint', level: 16 },
+                {
+                  name: 'Taragaman el Hambriento',
+                  level: 16,
+                  loot: [{ id: 5214, name: 'Varita de las sombras', quality: 2 }],
+                },
+                { name: 'Jergosh el Invocador', level: 16 },
+                { name: 'Bazzalan', level: 16 },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      id: 'dungeon-list',
+      tool: 'wow__dungeons',
+      outcome: {
+        response: {
+          status: 'available',
+          data: {
+            ...journal,
+            dungeons: [
+              dungeon('ragefire-chasm', 'Sima Ígnea', 13, 18, 15, 'Orgrimmar', [1454, 49.3, 95.1], {
+                questCount: 8,
+              }),
+              dungeon(
+                'the-hall-of-thanes',
+                'La Sala de los Thanes',
+                13,
+                18,
+                15,
+                'Forjaz',
+                [1455, 15.1, 86],
+                {
+                  newInForever: true,
+                  questCount: 1,
+                  enemyTerritory: 'Entrada en territorio de la Alianza (en Forjaz)',
+                },
+              ),
+              dungeon(
+                'ruins-of-lordaeron',
+                'Ruinas de Lordaeron',
+                15,
+                22,
+                19,
+                'Entrañas',
+                [1458, 72.7, 11.5],
+                {
+                  newInForever: true,
+                  questCount: 10,
+                },
+              ),
+              dungeon(
+                'wailing-caverns',
+                'Cuevas de los Lamentos',
+                17,
+                24,
+                21,
+                'Los Baldíos',
+                [1413, 46.7, 35.7],
+                {
+                  questCount: 9,
+                },
+              ),
+              dungeon(
+                'shadowfang-keep',
+                'Castillo de Colmillo Oscuro',
+                20,
+                30,
+                24,
+                'Bosque de Argénteos',
+                [1421, 45, 67.9],
+                {
+                  questCount: 6,
+                },
+              ),
+              dungeon(
+                'blackfathom-deeps',
+                'Cavernas de Brazanegra',
+                24,
+                32,
+                27,
+                'Vallefresno',
+                [1440, 15.1, 13.2],
+                {
+                  questCount: 9,
+                },
+              ),
+              dungeon(
+                'stormwind-stockade',
+                'Las Mazmorras',
+                24,
+                32,
+                27,
+                'Ventormenta',
+                [1453, 50.8, 67],
+                {
+                  enemyTerritory: 'Entrada en territorio de la Alianza (en Ventormenta)',
+                },
+              ),
+              dungeon(
+                'excavation-site-wetlands',
+                'Excavación: Los Humedales',
+                26,
+                33,
+                29,
+                'Los Humedales',
+                [1437, 50.8, 61.1],
+                {
+                  newInForever: true,
+                  questCount: 5,
+                },
+              ),
+              dungeon(
+                'city-of-dalaran',
+                'Ciudad de Dalaran',
+                28,
+                35,
+                32,
+                'Montañas de Alterac',
+                [1416, 8.8, 59.6],
+                {
+                  newInForever: true,
+                  questCount: 4,
+                  attunements: 1,
+                },
+              ),
+            ],
+          },
+        },
+      },
+    },
+  ]);
+}

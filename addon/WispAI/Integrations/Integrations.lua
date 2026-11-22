@@ -29,6 +29,7 @@ function ns.Integrations.InspectIntegration(inspection)
         stored_item = ns.Integrations.FindStoredItem,
         item_prices = ns.Integrations.ReadAuctionatorPrices,
         source_names = ns.Integrations.ReadSourceNames,
+        dungeons = ns.Integrations.ReadDungeons,
     }
     local reader = readers[inspection.kind]
     if not reader then

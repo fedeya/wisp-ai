@@ -8,3 +8,4 @@
 - Quest, dungeon and map questions need fewer steps, so answers arrive sooner.
 - When Wisp recommends items, it now tells you where each one comes from (drop, vendor, quest or recipe) and its last auction price, checked for all of them at once.
 - Routines use less of your ChatGPT usage: they pause after you reach your usage limit instead of retrying every few minutes, and skip a check when nothing has changed since the last one had nothing to report.
+- With [Polestar](https://www.curseforge.com/wow/addons/polestar) installed, Wisp answers dungeon questions from its Forever dungeon journal: which dungeons fit your level, including the ones new in Forever, where each entrance is, which quests to take before a run and what the bosses drop.
