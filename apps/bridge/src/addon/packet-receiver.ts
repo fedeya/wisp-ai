@@ -1,6 +1,6 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { Client } from 'eve/client';
-import type { Packet } from '@wisp/protocol/protocol';
+import type { AddonAttachment, Packet } from '@wisp/protocol/protocol';
 import { selectionValues } from '@wisp/protocol/ui-schema';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
 import { randomUUID } from 'node:crypto';
@@ -46,7 +46,13 @@ interface ReceiverDependencies {
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Promise<void>;
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
-  run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
+  run: (
+    chat: Chat,
+    text: string,
+    messageId?: string,
+    context?: unknown,
+    attachment?: AddonAttachment,
+  ) => Promise<void>;
   interrupt: (chat: Chat) => void;
   runtime: string;
   changed: () => void;
@@ -488,7 +494,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         return;
       }
       state.inlineChat = chat.id;
-      void run(chat, packet.text, packet.messageId, packet.context);
+      void run(chat, packet.text, packet.messageId, packet.context, packet.attachment);
       changed();
       return;
     }

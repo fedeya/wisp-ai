@@ -68,7 +68,11 @@ it(
         for key in pairs(env.WispAI) do
             keys[#keys + 1] = key
         end
-        assert.same({ "ActivateInline" }, keys)
+        table.sort(keys)
+        -- The binding entry point plus the public addon API (docs/public-api.md).
+        assert.same({ "API_VERSION", "ActivateInline", "Ask", "IsAvailable" }, keys)
+        assert.equals(1, env.WispAI.API_VERSION)
+        assert.is_function(ns.Api.Ask)
         local activation
         ns.Inline.ActivateInline = function(key)
             activation = key

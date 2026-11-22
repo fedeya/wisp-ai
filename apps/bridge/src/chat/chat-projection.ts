@@ -61,6 +61,13 @@ export function projectChats(state: SessionState, now = Date.now()) {
                         ...display,
                         id: m.id || c.id + '-message-' + index,
                         text: display.text.slice(0, 20000),
+                        // The addon shows where an attachment came from, never its body.
+                        ...(display.attachment && {
+                          attachment: {
+                            source: display.attachment.source,
+                            label: display.attachment.label,
+                          },
+                        }),
                       },
                     ]
                   : [];

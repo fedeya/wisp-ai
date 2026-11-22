@@ -2,6 +2,7 @@ import type { Client } from 'eve/client';
 import { applyEvent, type Chat } from '../chat/events.ts';
 import { ReplyProjection } from '../reply/reply-stream.ts';
 import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
+import type { AddonAttachment } from '@wisp/protocol/protocol';
 import { sendChatTurn } from './agent-session.ts';
 import { beginTurn, settleTurn } from '../chat/chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from '../chat/context.ts';
@@ -110,7 +111,13 @@ export function createTurnRunner(deps: TurnDependencies) {
     running.add(work);
     void work.finally(() => running.delete(work));
   }
-  async function execute(chat: Chat, text: string, messageId?: string, context?: unknown) {
+  async function execute(
+    chat: Chat,
+    text: string,
+    messageId?: string,
+    context?: unknown,
+    attachment?: AddonAttachment,
+  ) {
     if (isStopping() || chat.status === 'working') {
       return;
     }
@@ -129,7 +136,9 @@ export function createTurnRunner(deps: TurnDependencies) {
     generations.set(chat, generation);
     const ownsTurn = () => generations.get(chat) === generation;
     const owner = currentTransport();
-    beginTurn(chat, owner, characterIdentity(context), text, messageId);
+    beginTurn(chat, owner, characterIdentity(context), text, messageId, attachment);
+    // A retry reuses the stored user message, so read the attachment back from it.
+    const turnAttachment = chat.messages.findLast((message) => message.role === 'user')?.attachment;
     rememberTurnQuests(chat, context);
     const assertCurrent = () => {
       controller.signal.throwIfAborted();
@@ -186,7 +195,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       const response = await sendChatTurn(
         client,
         chat,
-        turnInput(text, context, chat, capabilitySettings.snapshot()),
+        turnInput(text, context, chat, capabilitySettings.snapshot(), turnAttachment),
         controller.signal,
       );
       assertCurrent();
@@ -327,8 +336,14 @@ export function createTurnRunner(deps: TurnDependencies) {
       }
     }
   }
-  function run(chat: Chat, text: string, messageId?: string, context?: unknown) {
-    const work = execute(chat, text, messageId, context);
+  function run(
+    chat: Chat,
+    text: string,
+    messageId?: string,
+    context?: unknown,
+    attachment?: AddonAttachment,
+  ) {
+    const work = execute(chat, text, messageId, context, attachment);
     running.add(work);
     void work.then(
       () => running.delete(work),

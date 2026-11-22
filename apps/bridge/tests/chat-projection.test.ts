@@ -89,3 +89,21 @@ test('routine traffic cannot displace ordinary chats and silent runs stay hidden
   expect(chats.some((c) => c.id.startsWith('quiet-'))).toBe(false);
   expect(state.chats).toHaveLength(121);
 });
+
+test('an addon attachment is stored with the message but only its origin reaches the addon', () => {
+  const chat = newChat('inline', 'session');
+  chat.inline = true;
+  chat.messages.push({
+    role: 'user',
+    text: 'Review this',
+    attachment: { source: 'MyMeter', label: 'Last fight', text: 'Damage 1200' },
+  });
+  const restored = chatSchema.parse(JSON.parse(JSON.stringify(chat)));
+  expect(restored.messages[0].attachment?.text).toBe('Damage 1200');
+  const state = createSessionState([restored]);
+  state.inlineChat = restored.id;
+  expect(projectChats(state).chats[0].messages?.[0].attachment).toEqual({
+    source: 'MyMeter',
+    label: 'Last fight',
+  });
+});

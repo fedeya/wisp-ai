@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { AddonAttachment } from '@wisp/protocol/protocol';
 import type { Chat, ChatStatus } from './chat.ts';
 export type { ChatStatus } from './chat.ts';
 
@@ -19,6 +20,7 @@ export function beginTurn(
   characterKey: string | undefined,
   text: string,
   messageId: string = randomUUID(),
+  attachment?: AddonAttachment,
 ) {
   if (chat.status === 'working') {
     throw Error('A turn is already running for this conversation.');
@@ -32,7 +34,12 @@ export function beginTurn(
   chat.lastUsedAt = chat.lastActivityAt = Date.now();
   const previous = chat.messages.findLast((message) => message.role === 'user');
   if (!retrying || previous?.id !== messageId) {
-    chat.messages.push({ id: messageId, role: 'user', text });
+    chat.messages.push({
+      id: messageId,
+      role: 'user',
+      text,
+      ...(attachment ? { attachment } : {}),
+    });
   }
 }
 export function isWorking(chat: Chat) {

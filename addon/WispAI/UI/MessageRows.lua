@@ -19,6 +19,22 @@ local TOOL_STATES = {
 }
 local toolGroupsExpanded = {}
 
+-- A muted line under a user message naming the addon data it carried (WispAI.Ask).
+local function attachmentNote(attachment)
+    if type(attachment) ~= "table" then
+        return ""
+    end
+    local function plain(value)
+        return (tostring(value or ""):gsub("[|%c]", ""))
+    end
+    return ("\n|cff%02x%02x%02x%s|r"):format(
+        math.floor(MUTED[1] * 255),
+        math.floor(MUTED[2] * 255),
+        math.floor(MUTED[3] * 255),
+        plain(attachment.source) .. " · " .. plain(attachment.label)
+    )
+end
+
 ns.itemRevision = 0
 local function linked(row)
     row:EnableMouse(true)
@@ -658,6 +674,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                 text = message.parts[1].text
             else
                 text, pending = formatted(message.text, message.references, message.role == "user")
+            end
+            if message.role == "user" and not interleaved then
+                text = text .. attachmentNote(message.attachment)
             end
             ns.UI.Widgets.ChatFont(row.text, message.text)
             setText(row.text, text)

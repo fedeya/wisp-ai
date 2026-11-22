@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { uiNode } from '@wisp/protocol/ui-schema';
 import { referenceSchema } from '@wisp/protocol/rich-reference';
+import { addonAttachment } from '@wisp/protocol/protocol';
 export const chatStatus = z.enum([
   'idle',
   'working',
@@ -27,6 +28,8 @@ export const chatSchema = z.object({
       id: z.string().optional(),
       role: z.enum(['user', 'assistant', 'system', 'tool']),
       text: z.string(),
+      // Data another addon attached to this user message through WispAI.Ask.
+      attachment: addonAttachment.optional(),
       // Exact final-answer source, independent of parser/display limits. Never reasoning.
       rawReply: z.string().optional(),
       replyFormat: z.literal('text').optional(),

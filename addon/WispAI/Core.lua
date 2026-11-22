@@ -1,7 +1,16 @@
 local addonName, ns = ...
+-- The only global other code may call. Ask and IsAvailable are the public addon
+-- API (docs/public-api.md); ActivateInline is the key binding entry point.
 WispAI = {
+    API_VERSION = 1,
     ActivateInline = function(...)
         return ns.Inline.ActivateInline(...)
+    end,
+    Ask = function(request)
+        return ns.Api.Ask(request)
+    end,
+    IsAvailable = function()
+        return ns.Api.IsAvailable()
     end,
 }
 ns.VERSION = 1

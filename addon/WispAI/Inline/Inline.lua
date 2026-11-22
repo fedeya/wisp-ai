@@ -3,8 +3,9 @@ local L = ns.L
 local uiWidgets = ns.UI.Widgets
 BINDING_HEADER_WISPAI = "Wisp"
 BINDING_NAME_WISPAI_INLINE = L["inline.bindingName"]
-local panel, entry, title, scroll, content, busy, send
+local panel, entry, title, scroll, content, busy, send, chip
 local rows = {}
+local CHIP_PREVIEW_LINES = 12
 local newMessages, renderedChat
 local replyTurn = {}
 local bindingCapture, hotkey, bindingEvents, lastActivation, bindingSignature
@@ -217,6 +218,68 @@ local function inputReference(link)
     end
     return link
 end
+local function attachmentSize(text)
+    local bytes = #text
+    return bytes < 1024 and (bytes .. " B") or ("%.1f KB"):format(bytes / 1024)
+end
+-- Shows what another addon attached, and moves the transcript down to make room.
+local function refreshChip()
+    local attachment = panel.attachment
+    chip:SetShown(attachment ~= nil)
+    scroll:SetPoint("TOPLEFT", 12, attachment and -66 or -42)
+    if attachment then
+        uiWidgets.SetText(
+            chip.label,
+            ("%s · %s · %s"):format(
+                attachment.source,
+                attachment.label,
+                attachmentSize(attachment.text)
+            )
+        )
+    end
+end
+local function showChipPreview()
+    local attachment = panel.attachment
+    if not attachment or not GameTooltip.SetOwner then
+        return
+    end
+    GameTooltip:SetOwner(chip, "ANCHOR_BOTTOMLEFT")
+    GameTooltip:SetText(attachment.label)
+    local count = 0
+    for line in (attachment.text .. "\n"):gmatch("([^\n]*)\n") do
+        count = count + 1
+        if count > CHIP_PREVIEW_LINES then
+            GameTooltip:AddLine("…", unpack(uiWidgets.MUTED))
+            break
+        end
+        -- Attachment text is raw data: escape pipes so it cannot draw markup.
+        local shown = ns.Shared.Text.TruncateUtf8Bytes(line, 120):gsub("|", "||")
+        GameTooltip:AddLine(shown, 1, 1, 1, false)
+    end
+    GameTooltip:Show()
+end
+-- Drops the current inline conversation so the next question starts a new one.
+local function resetInline()
+    if ns.inlineId then
+        ns.pendingChats[ns.inlineId] = nil
+        for id, pending in pairs(ns.pendingMessages) do
+            if pending.chat == ns.inlineId then
+                ns.pendingMessages[id] = nil
+            end
+        end
+    end
+    ns.inlineId = nil
+    entry:SetText("")
+    scroll:SetVerticalScroll(0)
+end
+local function placeAtCursor()
+    if GetCursorPosition then
+        local x, y = GetCursorPosition()
+        local scale = UIParent:GetEffectiveScale()
+        panel:ClearAllPoints()
+        panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 12, y / scale - 12)
+    end
+end
 function ns.Inline.EnsureInlineChat()
     local chat = ns.Inline.InlineCurrent()
     if not ns.inlineId then
@@ -250,9 +313,16 @@ function ns.Inline.SendInline()
     if reference then
         text = text .. "\n\n" .. inputReference(reference)
     end
+    -- An attachment goes with the first question only; the model keeps it in history.
+    local attachment = panel.attachment
     ns.messageCounter = (ns.messageCounter or 0) + 1
     local id = ns.session .. "-message-" .. ns.messageCounter
-    local message = { id = id, role = "user", text = text }
+    local message = {
+        id = id,
+        role = "user",
+        text = text,
+        attachment = attachment and { source = attachment.source, label = attachment.label },
+    }
     ns.pendingMessages[id] = { chat = chat.id, message = message }
     ns.workStarted[chat.id] = GetTime()
     chat.messages[#chat.messages + 1] = message
@@ -262,10 +332,13 @@ function ns.Inline.SendInline()
         chat = chat.id,
         messageId = id,
         text = text,
+        attachment = attachment,
         context = ns.Character.CaptureTurn and ns.Character.CaptureTurn()
             or ns.Character.Capture({ "character", "location" }),
     })
     entry:SetText("")
+    panel.attachment, panel.prefill = nil, nil
+    refreshChip()
     ns.Inline.RefreshInline()
 end
 function ns.Inline.RefreshInline(preserveScrollForChat)
@@ -384,7 +457,7 @@ function ns.Inline.OpenInline()
         ns.Inline.InitInline()
     end
     if not reference then
-        if panel.reference then
+        if panel.reference or panel.source then
             panel:Show()
             entry:SetFocus()
             return
@@ -392,31 +465,51 @@ function ns.Inline.OpenInline()
         ns.Core.Log(L["inline.hoverHint"])
         return
     end
-    if panel.reference ~= reference then
-        if ns.inlineId then
-            ns.pendingChats[ns.inlineId] = nil
-            for id, pending in pairs(ns.pendingMessages) do
-                if pending.chat == ns.inlineId then
-                    ns.pendingMessages[id] = nil
-                end
-            end
-        end
-        ns.inlineId = nil
-        entry:SetText("")
+    if panel.reference ~= reference or panel.source then
+        resetInline()
         panel.reference = reference
-        scroll:SetVerticalScroll(0)
+        panel.source, panel.attachment, panel.prefill = nil, nil, nil
+        refreshChip()
     end
     local name = reference:match("|h(.-)|h") or reference:match("%[([^%]]+)%]") or "Reference"
     uiWidgets.SetText(title, L["inline.titleFor"]:format((name:gsub("[|%c]", ""))))
-    if GetCursorPosition then
-        local x, y = GetCursorPosition()
-        local scale = UIParent:GetEffectiveScale()
-        panel:ClearAllPoints()
-        panel:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / scale + 12, y / scale - 12)
-    end
+    placeAtCursor()
     panel:Show()
     ns.Inline.RefreshInline()
     entry:SetFocus()
+end
+--- Opens the popup for another addon's `WispAI.Ask`, prefilled and never sent.
+--- `request` was validated and cleaned by ns.Api.Ask. Returns true, or false and
+--- "busy" when a question is being answered or the player typed their own text.
+function ns.Inline.OpenRequest(request)
+    if bindingCapture and bindingCapture:IsShown() then
+        return false, "busy"
+    end
+    if not panel then
+        ns.Inline.InitInline()
+    end
+    local current = ns.Inline.InlineCurrent()
+    if current and current.status == "working" then
+        return false, "busy"
+    end
+    local typed = (entry:GetText() or ""):match("^%s*(.-)%s*$")
+    if panel:IsShown() and typed ~= "" and typed ~= panel.prefill then
+        return false, "busy"
+    end
+    resetInline()
+    panel.source = request.source
+    panel.reference = request.link
+    panel.attachment = request.attachment
+    panel.prefill = request.prompt
+    entry:SetText(panel.prefill)
+    local name = request.title ~= "" and request.title or request.source
+    uiWidgets.SetText(title, L["inline.titleFor"]:format(name))
+    refreshChip()
+    placeAtCursor()
+    panel:Show()
+    ns.Inline.RefreshInline()
+    entry:SetFocus()
+    return true
 end
 function ns.Inline.InitInline()
     if panel then
@@ -513,6 +606,28 @@ function ns.Inline.InitInline()
             )
         )
     end)
+    chip = CreateFrame("Frame", "WispAIInlineAttachment", panel, "BackdropTemplate")
+    uiWidgets.Box(chip, uiWidgets.COLORS.raised, uiWidgets.COLORS.line)
+    chip:SetHeight(22)
+    chip:SetPoint("TOPLEFT", 12, -38)
+    chip:SetPoint("RIGHT", -12, 0)
+    chip:EnableMouse(true)
+    chip:SetScript("OnEnter", showChipPreview)
+    chip:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    local removeAttachment = uiWidgets.Button(chip, "x", 20, function()
+        panel.attachment = nil
+        GameTooltip:Hide()
+        refreshChip()
+    end, "ghost")
+    removeAttachment:SetHeight(18)
+    removeAttachment:SetPoint("RIGHT", -2, 0)
+    chip.label = uiWidgets.Label(chip, "", uiWidgets.MUTED, uiWidgets.FONTS.caption)
+    chip.label:SetPoint("LEFT", 8, 0)
+    chip.label:SetPoint("RIGHT", removeAttachment, "LEFT", -4, 0)
+    chip.label:SetWordWrap(false)
+    chip:Hide()
     content = CreateFrame("Frame", nil, scroll)
     content:SetSize(370, 1)
     content._wispScroll = scroll

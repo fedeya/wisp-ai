@@ -657,3 +657,21 @@ test('disabled titles do not request automatic naming', async () => {
   expect(f.chat.titleGenerated).not.toBe(true);
   expect(f.complete).not.toHaveBeenCalled();
 });
+
+test('an addon attachment reaches the model once and survives a retry', async () => {
+  const f = fixture();
+  const attachment = { source: 'MyMeter', label: 'Last fight', text: 'Damage 1200' };
+  f.send.mockRejectedValueOnce(new Error('Provider unavailable'));
+  await f.run(f.chat, 'Review this', 'ask', undefined, attachment);
+  expect(f.chat.status).toBe('error');
+  expect(f.chat.messages.find((m) => m.id === 'ask')?.attachment).toEqual(attachment);
+  // A retry sends only the stored text; the attachment comes from the stored message.
+  await f.run(f.chat, 'Review this', 'ask');
+  expect(f.chat.status).toBe('done');
+  const input = f.send.mock.calls.at(-1)![0];
+  expect(input.match(/<addon_attachment>/g)).toHaveLength(1);
+  expect(input).toContain('Damage 1200');
+  await f.run(f.chat, 'And my rotation?', 'follow-up');
+  expect(f.send.mock.calls.at(-1)![0]).not.toContain('<addon_attachment>');
+  await f.run.drain();
+});

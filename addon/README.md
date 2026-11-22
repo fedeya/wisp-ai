@@ -41,20 +41,21 @@ and the language list draws each name with a font that covers it. A Korean or
 Chinese client keeps the game font for every language, since player and zone
 names come in its script.
 
-| Directory                       | Responsibility                                                     |
-| ------------------------------- | ------------------------------------------------------------------ |
-| `Shared/`                       | Pure cross-subsystem number validation and UTF-8 byte truncation   |
-| `Chat/`                         | Conversation commands and incoming snapshot reconciliation         |
-| `Transport/`                    | Wire frames, retries, downlink state and timing                    |
-| `Character/`                    | Live collectors, inspections and the training catalog              |
-| `Actions/`                      | Validated game mutations, including waypoints and macros           |
-| `Integrations/`                 | Optional addon readiness and public API adapters                   |
-| `ChatHistory/`                  | Selected WoW chat channels and the bounded message history         |
-| `Combat/`                       | Death recaps and fight summaries from the game's recap and meter   |
-| `Settings/`                     | Reading and updating game or registered addon settings             |
-| `UI/`                           | Window, widgets, rows, model controls, memory and capability views |
-| `Inline/`, `Panels/`, `Advice/` | Inline questions, saved panels and suggestions                     |
-| `Markdown/`                     | Syntax, parsing, bounded caching and shared text presentation      |
+| Directory                       | Responsibility                                                      |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `Shared/`                       | Pure cross-subsystem number validation and UTF-8 byte truncation    |
+| `Chat/`                         | Conversation commands and incoming snapshot reconciliation          |
+| `Transport/`                    | Wire frames, retries, downlink state and timing                     |
+| `Character/`                    | Live collectors, inspections and the training catalog               |
+| `Actions/`                      | Validated game mutations, including waypoints and macros            |
+| `Integrations/`                 | Optional addon readiness and public API adapters                    |
+| `ChatHistory/`                  | Selected WoW chat channels and the bounded message history          |
+| `Combat/`                       | Death recaps and fight summaries from the game's recap and meter    |
+| `Settings/`                     | Reading and updating game or registered addon settings              |
+| `UI/`                           | Window, widgets, rows, model controls, memory and capability views  |
+| `Inline/`, `Panels/`, `Advice/` | Inline questions, saved panels and suggestions                      |
+| `Api/`                          | `WispAI.Ask` for other addons ([public API](../docs/public-api.md)) |
+| `Markdown/`                     | Syntax, parsing, bounded caching and shared text presentation       |
 
 See [the Lua guidelines](../docs/lua-guidelines.md) for naming, API boundaries,
 formatting, validation, performance practices and the required local checks.

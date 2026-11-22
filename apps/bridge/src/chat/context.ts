@@ -1,6 +1,7 @@
 import { integrationContext, type CapabilityView } from '@wisp/protocol/capabilities';
 import type { Chat, Message } from './events.ts';
 import { linkedReferences } from '@wisp/protocol/references';
+import type { AddonAttachment } from '@wisp/protocol/protocol';
 import { z } from 'zod';
 import { replyContent } from '../reply/reply-content.ts';
 export { conversationTitle } from './conversation-title.ts';
@@ -250,6 +251,7 @@ export function turnInput(
   context: unknown,
   chat: Pick<Chat, 'id' | 'title' | 'titleGenerated' | 'lastUIResult' | 'proactive' | 'routineId'>,
   capabilities?: CapabilityView[],
+  attachment?: AddonAttachment,
 ) {
   const references = linkedReferences(text);
   return [
@@ -262,6 +264,7 @@ export function turnInput(
       routineId: chat.routineId,
     }),
     ...(references.length ? [tagged('linked_references', references)] : []),
+    ...(attachment ? [tagged('addon_attachment', attachment)] : []),
     ...(chat.lastUIResult ? [tagged('last_ui_result', chat.lastUIResult)] : []),
     tagged('user_message', text),
   ].join('\n\n');
@@ -287,7 +290,7 @@ export function withConversationHistory(input: string, messages: Message[]): str
 }
 export function visibleUserText(input: string) {
   const match =
-    /^<game_context>\n[^\n]*\n<\/game_context>\n\n(?:<integrations_context>\n[^\n]*\n<\/integrations_context>\n\n)?<conversation_context>\n[^\n]*\n<\/conversation_context>\n\n(?:<linked_references>\n[^\n]*\n<\/linked_references>\n\n)?(?:<last_ui_result>\n[^\n]*\n<\/last_ui_result>\n\n)?(?:<historical_conversation>\n[^\n]*\n<\/historical_conversation>\n\n)?<user_message>\n([^\n]*)\n<\/user_message>$/.exec(
+    /^<game_context>\n[^\n]*\n<\/game_context>\n\n(?:<integrations_context>\n[^\n]*\n<\/integrations_context>\n\n)?<conversation_context>\n[^\n]*\n<\/conversation_context>\n\n(?:<linked_references>\n[^\n]*\n<\/linked_references>\n\n)?(?:<addon_attachment>\n[^\n]*\n<\/addon_attachment>\n\n)?(?:<last_ui_result>\n[^\n]*\n<\/last_ui_result>\n\n)?(?:<historical_conversation>\n[^\n]*\n<\/historical_conversation>\n\n)?<user_message>\n([^\n]*)\n<\/user_message>$/.exec(
       input,
     );
   if (match) {

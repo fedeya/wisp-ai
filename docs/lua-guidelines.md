@@ -45,9 +45,11 @@ the login lifecycle.
   dependency over adding more shared fields. Do not duplicate ownership.
 - Use plain function tables for modules. Use a metatable or instance only when
   independent mutable state calls for one; follow the existing module pattern.
-- Keep `ns` private. `WispAI.ActivateInline` is the public binding entry point and
-  `WispAI_Receive` receives bridge payloads. Saved variables, slash commands and
+- Keep `ns` private. `WispAI.ActivateInline` is the public binding entry point,
+  `WispAI.Ask` and `WispAI.IsAvailable` are the [public addon API](public-api.md),
+  and `WispAI_Receive` receives bridge payloads. Saved variables, slash commands and
   binding labels are intentional WoW registrations, not a general export surface.
+  Changing the public addon API needs a compatible change or a new `API_VERSION`.
 
 ## Names and formatting
 

@@ -73,5 +73,6 @@ UI\Composer.lua
 UI\ConversationStatus.lua
 UI\Window.lua
 Inline\Inline.lua
+Api\Api.lua
 Panels\Panels.lua
 Advice\Advice.lua

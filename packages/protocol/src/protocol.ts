@@ -4,6 +4,16 @@ import { SLOT_COUNT } from './addon-helpers.js';
 export { BIT_COUNT, SLOT_COUNT, luaJson } from './addon-helpers.js';
 export const PREFIX = 'WispAI';
 const identifier = z.string().min(1).max(200);
+/**
+ * Data another addon attached through `WispAI.Ask`. It reaches the model as
+ * untrusted data, never as instructions. The addon enforces the same limits in bytes.
+ */
+export const addonAttachment = z.strictObject({
+  source: z.string().min(1).max(40),
+  label: z.string().min(1).max(60),
+  text: z.string().min(1).max(4000),
+});
+export type AddonAttachment = z.infer<typeof addonAttachment>;
 const envelope = z.object({
   transportVersion: z.literal(2).optional(),
   mailboxVersion: z.literal(1).optional(),
@@ -66,9 +76,15 @@ export const packetSchema = z.discriminatedUnion('type', [
     chat: identifier,
   }),
   envelope.extend({
-    type: z.enum(['say', 'inline_say']),
+    type: z.literal('say'),
     chat: identifier,
     text: z.string().min(1).max(16000),
+  }),
+  envelope.extend({
+    type: z.literal('inline_say'),
+    chat: identifier,
+    text: z.string().min(1).max(16000),
+    attachment: addonAttachment.optional(),
   }),
   envelope.extend({ type: z.literal('state_result'), requestId: identifier, chat: identifier }),
   envelope.extend({

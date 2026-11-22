@@ -44,3 +44,19 @@ test('payload strings cannot terminate the Lua long string', () => {
   const payload = luaJson(JSON.stringify({ text: ']=] ]] ]==] print("bad")' }));
   assert.ok(payload.startsWith('WispAI_Receive([===['));
 });
+test('inline questions accept a bounded addon attachment and say packets ignore it', () => {
+  const attachment = { source: 'MyMeter', label: 'Last fight', text: 'Damage | 1200' };
+  const inline = { ...message, type: 'inline_say' };
+  const parsed = packetSchema.parse({ ...inline, attachment });
+  assert.equal(parsed.type === 'inline_say' && parsed.attachment?.text, 'Damage | 1200');
+  for (const invalid of [
+    { ...attachment, source: '' },
+    { ...attachment, source: 'a'.repeat(41) },
+    { ...attachment, label: 'a'.repeat(61) },
+    { ...attachment, text: 'a'.repeat(4001) },
+    { ...attachment, extra: true },
+  ]) {
+    assert.equal(packetSchema.safeParse({ ...inline, attachment: invalid }).success, false);
+  }
+  assert.equal('attachment' in packetSchema.parse({ ...message, attachment }), false);
+});
