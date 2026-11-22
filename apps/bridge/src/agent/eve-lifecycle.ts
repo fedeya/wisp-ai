@@ -8,6 +8,11 @@ import { errorMessage } from '../errors.ts';
 
 /** How often a running Eve is probed for readiness. */
 export const EVE_HEALTH_INTERVAL_MS = 3000;
+/**
+ * Waits before starting Eve again after it exits on its own. The step grows
+ * with each crash until Eve becomes ready again; the last step repeats.
+ */
+export const EVE_RESTART_DELAYS_MS = [1000, 2000, 5000, 10_000, 30_000];
 
 export interface EveLifecycleOptions {
   /** Authored agent sources and the folder Eve runs from (see `prepareEngine`). */
@@ -20,6 +25,8 @@ export interface EveLifecycleOptions {
   environment: () => NodeJS.ProcessEnv;
   client: Pick<Client, 'health' | 'info'>;
   startAgent?: typeof startEveProcess;
+  /** Backoff after unexpected exits; defaults to `EVE_RESTART_DELAYS_MS`. */
+  restartDelaysMs?: readonly number[];
   changed: () => void;
   isStopping: () => boolean;
   logger: Pick<Logger, 'info' | 'error'>;
@@ -54,25 +61,67 @@ export function createEveLifecycle(options: EveLifecycleOptions): EveLifecycle {
   let enginePrepared = false;
   let ready = false;
   let contextWindowTokens: number | undefined;
+  const restartDelaysMs = options.restartDelaysMs ?? EVE_RESTART_DELAYS_MS;
+  let restartTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Unexpected exits since Eve last became ready; picks the next backoff step. */
+  let crashes = 0;
+
+  /**
+   * Start Eve again after it ended without being asked to. Each crash before
+   * Eve becomes ready again waits longer, so a broken engine is retried slowly
+   * instead of in a tight loop.
+   */
+  function scheduleRestart() {
+    if (restartTimer || options.isStopping()) return;
+    const delayMs = restartDelaysMs[Math.min(crashes, restartDelaysMs.length - 1)]!;
+    crashes++;
+    logger.info({ event: 'eve.restart_scheduled', attempt: crashes, delayMs }, 'Restarting Eve');
+    restartTimer = setTimeout(() => {
+      restartTimer = undefined;
+      if (eve || options.isStopping()) return;
+      start();
+      changed();
+    }, delayMs);
+    restartTimer.unref?.();
+  }
+
+  function cancelRestart() {
+    clearTimeout(restartTimer);
+    restartTimer = undefined;
+  }
 
   function spawn() {
     if (logFile === undefined) throw Error('Eve log is not open.');
-    return (options.startAgent || startEveProcess)({
+    let child: ChildProcess | undefined;
+    // Only the current child may report a crash: one stopped by stop() or
+    // replaced by restart() is no longer `eve` when its exit arrives.
+    const ended = () => {
+      if (!child || eve !== child) return false;
+      eve = undefined;
+      ready = false;
+      changed();
+      scheduleRestart();
+      return true;
+    };
+    child = (options.startAgent || startEveProcess)({
       root: options.engineRoot,
       port: options.port,
       logFile,
       environment: options.environment(),
-      onError: (error) =>
+      onError: (error) => {
         logger.error(
           { event: 'eve.spawn_failed', error: errorMessage(error) },
           'Could not start Eve',
-        ),
+        );
+        // A process that never started emits 'error' without 'exit'.
+        if (child && child.pid === undefined) ended();
+      },
       onExit: (code) => {
-        ready = false;
-        changed();
-        logger.info({ event: 'eve.exited', code }, 'Eve exited');
+        logger.info({ event: 'eve.exited', code, unexpected: child === eve }, 'Eve exited');
+        ended();
       },
     });
+    return child;
   }
 
   function start() {
@@ -84,15 +133,18 @@ export function createEveLifecycle(options: EveLifecycleOptions): EveLifecycle {
         { event: 'eve.spawn_failed', error: errorMessage(error) },
         'Could not start Eve',
       );
+      scheduleRestart();
     }
   }
 
   async function stop() {
-    if (eve) {
-      await stopEveProcess(eve);
-      eve = undefined;
-    }
+    cancelRestart();
+    const current = eve;
+    eve = undefined;
     ready = false;
+    if (current) {
+      await stopEveProcess(current);
+    }
   }
 
   function checkHealth() {
@@ -115,6 +167,7 @@ export function createEveLifecycle(options: EveLifecycleOptions): EveLifecycle {
           if (eve !== current || current.exitCode !== null || current.signalCode !== null) return;
           contextWindowTokens = windowTokens;
           ready = true;
+          crashes = 0;
           changed();
           logger.info({ event: 'eve.ready' }, 'Eve ready');
         }
