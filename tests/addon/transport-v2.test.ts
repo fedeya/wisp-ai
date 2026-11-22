@@ -334,6 +334,25 @@ assert(ns.deliveryStalled==true and #logs==1,'the chat notice appears once per U
 `);
 });
 
+test('open addon settings pause the stall timeout and give a full window after they close', () => {
+  const h = transportHarness();
+  h.run(`
+ns.db={}
+ns.LocaleText=function(key)return key end
+ns.Transport.Send({type='say',chat='chat',messageId='paused',text='hello'})
+local shown=true
+AddonList={IsShown=function()return shown end}
+now=10;timers[2]()
+now=30;timers[2]()
+assert(not ns.deliveryStalled and #logs==0,'an intentional settings pause is not a stall')
+shown=false
+now=49;timers[2]()
+assert(not ns.deliveryStalled,'closing settings restarts the delivery allowance')
+now=51;timers[2]()
+assert(ns.deliveryStalled==true and #logs==1)
+`);
+});
+
 test('consuming the last bulk helper marks exhaustion and subsequent envelopes clamp the advertised cursor', () => {
   const h = transportHarness();
   h.run("ns.Transport.Send({type='hello'});timers[.04]()");

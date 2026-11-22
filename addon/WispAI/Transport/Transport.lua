@@ -783,10 +783,16 @@ end
 local STALLED_DELIVERY_SECONDS = 20
 local stallNoticeShown = false
 local function checkStalledDelivery()
+    -- Open addon settings pause the transport on purpose. Restart each
+    -- message's allowance so it gets the full window once settings close.
+    local paused = AddonList and AddonList:IsShown()
     local oldest
     for _, packet in pairs(awaiting) do
         if packet.messageId and packet.enqueuedAt then
-            local age = GetTime() - packet.enqueuedAt
+            if paused then
+                packet.stallFrom = GetTime()
+            end
+            local age = GetTime() - (packet.stallFrom or packet.enqueuedAt)
             oldest = math.max(oldest or 0, age)
         end
     end
