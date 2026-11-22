@@ -14,9 +14,9 @@ Candidates the tools returned (name, item level / required level, stats, source,
 - Neck: Medallón de explorador 20442 (23/18, +6 AGILITY +2 sta; quest reward) is a poor mage pick. Colgante de luz espectral 12047 (22/17, +3 int +3 spi; drop from an NPC in Bosque de Argénteos; no price).
 - Shoulder: Sobrehombros de lana con doble pespunte 4314 (22/17, +4 sta +4 spell power; Tailoring 110; 10s). Sobrehombros de seda tejida 14112 (26/21, +4 int +4 spi; drop in Cavernas de los Lamentos; no price).
 - Feet: Botas de seda de araña 4320 (25/20, +5 sp +4 int +2 sta; Tailoring 125; 70s). Sandalias del eclipse 210990 (24/21, +5 int +4 spi) has NO known source and no price: recommending it as obtainable is wrong. Botas de aprendiz bendecidas 3065 (20/15, +3 int +3 spi; vendor in Orgrimmar; 25s).
-- Finger: Sello de los Renegados 15700 (25/21, +3 sta +4 sp; reward of a level 21 quest; no price). Anillo de perla tallada 11288 (20/15, +2 int +2 spi; world drop; 30s).
+- Finger: Sello de los Renegados 15700 (25/21, +3 sta +4 sp; reward of the level 21 quest Pruebas de la Ciudad Sombría; no price). Anillo de perla tallada 11288 (20/15, +2 int +2 spi; world drop; 30s).
 - Waist: Faja de seda azur 7055 (21/16, +3 int +2 spi; Tailoring 140; 56s). Wrist: Brazales de tela fina 3647 (17/12, +2 int; vendor in Orgrimmar; 9s).
-- Wands: Varita de llamas 5240 (22/17, +1 int; Enchanting; 33s). Varita de las sombras 5214 (26/21, +2 int +1 spi; drop from Taragaman el Hambriento in Sima Ígnea; no price).
+- Wands: Varita de llamas 5240 (22/17, +1 int; Enchanting; 33s). Varita de las sombras 5214 (26/21, +2 int +1 spi; drop from Taragaman el Hambriento in Sima Ígnea, the dungeon inside Orgrimmar; no price).
 - Staves: Bastón del sabio 5291 (24/19, +6 int +5 spi +2 sta; vendor in Orgrimmar; no price) vs equipped Bastón de aprendiz (20/15, +5 int +4 sta +3 spi): a small trade, not a clear upgrade.
 Any item not in this list does not exist in the data and must not be recommended.`;
 
