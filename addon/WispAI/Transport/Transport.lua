@@ -641,6 +641,12 @@ local function receive()
             return
         end
         if controlGeneration then
+            -- The host restarted (Desktop update or restart). Its state starts
+            -- over, so read until it arrives and say we are reconnecting.
+            ns.connected, ns.reconnecting = false, true
+            if ns.UI.Refresh then
+                ns.UI.Refresh()
+            end
             retiredGenerations[controlGeneration] = true
             retiredOrder[#retiredOrder + 1] = controlGeneration
             if #retiredOrder > 16 then

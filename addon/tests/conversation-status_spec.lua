@@ -71,3 +71,23 @@ it("tells the player to reload after Desktop installs a newer addon", function()
     ns.UI.ConversationStatus.Refresh(nil)
     assert(status:IsShown() and status:GetText() == "Update installed: /reload")
 end)
+
+it("shows connecting and reconnecting instead of asking for Desktop", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local status, mark = buildStatus(env)
+    ns.connected = false
+    local connecting = "status.reconnecting"
+    ns.Core.ConnectingStatus = function()
+        return connecting
+    end
+    ns.UI.ConversationStatus.Refresh(nil)
+    assert(status:IsShown() and status:GetText() == "Reconnecting…")
+    assert(mark:IsShown(), "reconnecting keeps the warning dot")
+    connecting = "status.connecting"
+    ns.UI.ConversationStatus.Refresh(nil)
+    assert(status:GetText() == "Connecting…")
+    connecting = nil
+    ns.UI.ConversationStatus.Refresh(nil)
+    assert(status:GetText() == "Open Wisp Desktop", "after the grace period, ask for Desktop")
+end)

@@ -8,6 +8,7 @@
 
 ## Fixed
 
+- The Wisp window now shows "Connecting…" right after login and "Reconnecting…" while Wisp restarts or updates, instead of claiming to be connected or asking you to open Wisp Desktop.
 - After Wisp restarts or updates while WoW is open, the app now shows the game as connected within a minute, and update notices reach the game, without you having to send a message first.
 - When Wisp stops receiving your messages, for example after an app update while WoW is open, the Wisp window now says so and asks you to type /reload instead of waiting forever. It also tells you when an installed update needs a /reload.
 - An empty orange dot no longer shows in the Wisp window header when everything is working.

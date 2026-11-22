@@ -19,6 +19,23 @@ ns.connected, ns.rev = false, 0
 function ns.Core.Log(text)
     DEFAULT_CHAT_FRAME:AddMessage("|cff77dbc6Wisp:|r " .. text)
 end
+-- Give the bridge this long after login before asking for Wisp Desktop.
+local CONNECT_GRACE_SECONDS = 15
+local connectingUntil = 0
+--- Locale key for a connection that is being (re)established, or nil.
+--- Login waits a short grace period; a restarted bridge stays "reconnecting"
+--- until its first snapshot is applied.
+function ns.Core.ConnectingStatus()
+    if ns.connected then
+        return nil
+    end
+    if ns.reconnecting then
+        return "status.reconnecting"
+    end
+    if GetTime() < connectingUntil then
+        return "status.connecting"
+    end
+end
 local reloadNoticeShown = false
 local function versionParts(version)
     local major, minor, patch = tostring(version or ""):match("^(%d+)%.(%d+)%.(%d+)$")
@@ -92,6 +109,12 @@ events:SetScript("OnEvent", function(_, event, name)
         end
         ns.active = ns.db.activeChat
     elseif event == "PLAYER_LOGIN" then
+        connectingUntil = GetTime() + CONNECT_GRACE_SECONDS
+        C_Timer.After(CONNECT_GRACE_SECONDS, function()
+            if ns.UI.Refresh then
+                ns.UI.Refresh()
+            end
+        end)
         ns.UI.BuildUI()
         if ns.Inline.InitInline then
             ns.Inline.InitInline()

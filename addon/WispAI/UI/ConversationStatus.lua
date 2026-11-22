@@ -31,10 +31,12 @@ local function layoutCrumbs(inRoutine)
 end
 
 function ns.UI.ConversationStatus.Refresh(chat)
+    local connecting = ns.Core.ConnectingStatus and ns.Core.ConnectingStatus()
     local problem = ns.Transport.needsDesktopSetup and L["status.setupRequired"]
         or ns.exhausted and L["status.channelsExhausted"]
         or ns.deliveryStalled and L["status.deliveryStalled"]
         or ns.Core.ReloadNeeded and ns.Core.ReloadNeeded() and L["status.reloadNeeded"]
+        or (connecting and L[connecting])
         or (not ns.connected and L["status.openDesktop"])
     -- The sidebar footer shows a healthy connection; the header only reports problems.
     setText(status, problem or "")

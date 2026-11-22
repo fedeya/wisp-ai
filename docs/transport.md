@@ -82,7 +82,9 @@ overwriting an unacknowledged fragment. Duplicate frames are reacknowledged
 without being applied twice; five seconds without progress restarts a transfer.
 
 A host generation change invalidates the base and permits a lower revision
-counter; retired generations cannot replace newer state. An addon UI reload
+counter. After the first generation of a UI session, it also marks the addon
+disconnected and shows "Reconnecting…" until the new host's first snapshot
+applies, which keeps the client reading; retired generations cannot replace newer state. An addon UI reload
 starts a new application session and ignores the persisted downlink baseline
 until a fresh publication arrives. A stale bulk snapshot from another session
 requests fresh state without permanently disabling bulk.
