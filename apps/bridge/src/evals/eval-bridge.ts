@@ -79,7 +79,7 @@ async function serve() {
       if (req.method === 'GET' && url.pathname === '/session-model') {
         res
           .writeHead(200, { 'content-type': 'application/json' })
-          .end(JSON.stringify({ model, effort, webSearchAvailable: false }));
+          .end(JSON.stringify({ model, effort, webSearchAvailable: true }));
         return;
       }
       // Evals run one fixture character with empty, throwaway memory.
