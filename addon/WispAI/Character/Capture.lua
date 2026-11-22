@@ -213,12 +213,39 @@ function collectors.quests()
     end
     return { quests = out, count = #out }
 end
+-- Equipped items are always cached, so their stats come with the reading and
+-- the agent does not need one inspection per slot to compare gear.
+local function equippedSummary(entry)
+    local getInfo = C_Item and C_Item.GetItemInfo
+    if not entry.link or type(getInfo) ~= "function" then
+        return entry
+    end
+    local ok, name, _, quality, itemLevel, requiredLevel, _, _, _, equipLocation =
+        pcall(getInfo, entry.link)
+    if not ok or not name then
+        return entry
+    end
+    entry.name, entry.quality, entry.itemLevel = name, quality, itemLevel
+    entry.requiredLevel, entry.equipLocation = requiredLevel, equipLocation
+    if C_Item.GetItemStats then
+        local statsOk, stats = pcall(C_Item.GetItemStats, entry.link)
+        entry.stats = statsOk and stats or nil
+    end
+    return entry
+end
 function collectors.gear()
     local out = {}
     for slot = 1, 19 do
         local id = GetInventoryItemID("player", slot)
         if id then
-            table.insert(out, { slot = slot, id = id, link = GetInventoryItemLink("player", slot) })
+            table.insert(
+                out,
+                equippedSummary({
+                    slot = slot,
+                    id = id,
+                    link = GetInventoryItemLink("player", slot),
+                })
+            )
         end
     end
     return { items = out }

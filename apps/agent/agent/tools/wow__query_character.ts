@@ -7,7 +7,7 @@ export default enabledTool(
   'query_character',
   defineTool({
     description:
-      'Read only the character sections needed for the question. quests includes rewardXP when the game provides the experience reward for the character; missing rewardXP is unknown, not zero. quests normally reads the local synchronized quest cache, revalidated when this turn was submitted, without contacting the game. Other sections are read live. Set refresh=true for an explicit update after submission; missing/incomplete cache falls back to live reading. Never use conversation memory as live state. talents includes unspentPoints, spentPoints, totalPoints, selected ranks/branches and pending changes. Request related sections together. Unknown data does not mean absence or zero.',
+      "Read only the character sections needed for the question. quests includes rewardXP when the game provides the experience reward for the character; missing rewardXP is unknown, not zero. quests normally reads the local synchronized quest cache, revalidated when this turn was submitted, without contacting the game. Other sections are read live. Set refresh=true for an explicit update after submission; missing/incomplete cache falls back to live reading. Never use conversation memory as live state. talents includes unspentPoints, spentPoints, totalPoints, selected ranks/branches and pending changes. gear includes each equipped item's name, itemLevel, requiredLevel, equipLocation and stats. Request related sections together. Unknown data does not mean absence or zero.",
     inputSchema: z.object({
       sections: characterSections,
       refresh: z
