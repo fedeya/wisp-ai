@@ -872,7 +872,7 @@ fn main() {
                 .build(app)?;
             if let Some(window) = app.get_webview_window("main") {
                 native_shell::disable_browser_shortcuts(&window);
-                if !native_shell::started_minimized() {
+                if !native_shell::start_hidden(&app.state::<Host>().data) {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }

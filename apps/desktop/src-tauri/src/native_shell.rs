@@ -1,6 +1,7 @@
 //! Desktop-app behaviour that WebView2 does not give us by default: no browser
 //! accelerator keys in release builds, native notifications while the window is
 //! out of sight, and launching with Windows.
+use std::path::Path;
 use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_notification::NotificationExt as _;
@@ -10,9 +11,30 @@ use tauri_plugin_notification::NotificationExt as _;
 pub const AUTOSTART_NAME: &str = "Wisp AI";
 /// Passed by the autostart entry so Wisp starts in the tray instead of on screen.
 pub const MINIMIZED_ARG: &str = "--minimized";
+/// Written right before an update launches the installer. The installer
+/// relaunches Wisp with the arguments of the process it replaced, so a Wisp
+/// that was started with Windows would come back with `--minimized` and stay in
+/// the tray. The marker makes that relaunch open on screen instead.
+const SHOW_AFTER_UPDATE_FILE: &str = "runtime/show-after-update";
 
-pub fn started_minimized() -> bool {
-    std::env::args().any(|arg| arg == MINIMIZED_ARG)
+/// Whether the main window stays hidden at launch. Consumes the post-update
+/// marker, so only the first launch after an update ignores `--minimized`.
+pub fn start_hidden(data: &Path) -> bool {
+    start_hidden_with(std::env::args(), data)
+}
+
+fn start_hidden_with(mut args: impl Iterator<Item = String>, data: &Path) -> bool {
+    let after_update = std::fs::remove_file(data.join(SHOW_AFTER_UPDATE_FILE)).is_ok();
+    args.any(|arg| arg == MINIMIZED_ARG) && !after_update
+}
+
+pub fn show_after_update(data: &Path) {
+    let _ = std::fs::create_dir_all(data.join("runtime"));
+    let _ = std::fs::write(data.join(SHOW_AFTER_UPDATE_FILE), "");
+}
+
+pub fn cancel_show_after_update(data: &Path) {
+    let _ = std::fs::remove_file(data.join(SHOW_AFTER_UPDATE_FILE));
 }
 
 /// Turns off WebView2's browser shortcuts (F5, Ctrl+R, Ctrl+F, Ctrl+P, F12,
@@ -83,4 +105,40 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
     }
     .map_err(|error| error.to_string())?;
     launcher.is_enabled().map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(list: &[&str]) -> impl Iterator<Item = String> {
+        list.iter()
+            .map(|arg| arg.to_string())
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+
+    #[test]
+    fn only_the_first_launch_after_an_update_ignores_minimized() {
+        let data = std::env::temp_dir().join(format!(
+            "wisp-show-after-update-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let autostart = ["wisp-ai.exe", MINIMIZED_ARG];
+        assert!(start_hidden_with(args(&autostart), &data));
+        assert!(!start_hidden_with(args(&["wisp-ai.exe"]), &data));
+
+        show_after_update(&data);
+        assert!(!start_hidden_with(args(&autostart), &data));
+        assert!(start_hidden_with(args(&autostart), &data));
+
+        show_after_update(&data);
+        cancel_show_after_update(&data);
+        assert!(start_hidden_with(args(&autostart), &data));
+        std::fs::remove_dir_all(data).unwrap();
+    }
 }
