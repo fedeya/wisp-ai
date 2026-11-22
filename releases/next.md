@@ -5,4 +5,5 @@
 ## Fixed
 
 - An empty orange dot no longer shows in the Wisp window header when everything is working.
+- Switching to another chat no longer briefly shows a reply as raw Markdown before its tables, links and bold text appear.
 - With Wisp set to Chinese, chat titles, your character and zone, and messages written with accents or ¿ (such as Spanish) now display correctly instead of showing gaps or empty boxes.

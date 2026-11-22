@@ -1162,3 +1162,68 @@ it(
         )
     end
 )
+
+it("shows a finished reply formatted on the first render after switching chats", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    time = os.time
+    -- Longer than the synchronous parse limit, so syntax is processed across frames.
+    local source = "**Buy the shoulders first**, then the [[ref:robe]].\n\n"
+        .. "| Rank | Item |\n|---|---|\n"
+        .. string.rep("| [1] | **[[ref:robe]]** costs `12g` |\n", 12)
+    assert(#source > 512)
+    ns = helper.namespace({
+        db = { sidebar = true, drafts = {} },
+        connected = true,
+        session = "test",
+        chats = {
+            {
+                id = "old",
+                title = "Old",
+                status = "done",
+                messages = {
+                    { id = "question", role = "user", text = "What should I buy?" },
+                    {
+                        id = "answer",
+                        role = "assistant",
+                        text = source,
+                        references = { robe = { kind = "item", id = 100, label = "Robe" } },
+                    },
+                },
+                activity = {},
+            },
+        },
+        pendingChats = {},
+        pendingMessages = {},
+        workStarted = {},
+    })
+    function ns.Transport.Send() end
+    helper.addon("Chat/State.lua", env)
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
+    ns.Chat.StartNew()
+
+    local function shownText()
+        local texts = {}
+        for _, widget in ipairs(UI_TEST.widgets) do
+            if widget.kind == "FontString" and widget:IsVisible() and widget.text ~= "" then
+                texts[#texts + 1] = widget.text
+            end
+        end
+        return table.concat(texts, "\n")
+    end
+
+    ns.Chat.Select("old")
+    -- A finished reply is settled during the render, so the very first frame
+    -- already shows it formatted: no raw Markdown and no empty gap.
+    local _, _, pending = ns.Markdown.Cache.Get(source)
+    assert(not pending, "the reply's syntax was settled during the switch")
+    local first = shownText()
+    assert(first:find("What should I buy?", 1, true), "the transcript rendered the chat")
+    assert(first:find("Buy the shoulders first", 1, true), "the formatted reply appears at once")
+    assert(first:find("[Robe]", 1, true), "item references are rendered as links")
+    assert(not first:find("**", 1, true), "no literal bold markers")
+    assert(not first:find("|---|", 1, true), "no literal table separators")
+    assert(not first:find("[[ref:", 1, true), "no literal reference markup")
+end)

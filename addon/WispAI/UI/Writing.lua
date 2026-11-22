@@ -230,8 +230,8 @@ function writer.Reveal(row, units, layout)
         writing.elapsed = writing.duration * firstBytes / writing.bytes
         drawWriting(first, firstBytes)
     end
-    -- Keep the first glyph visible while syntax is pending. Starting the
-    -- reveal on the raw preview would replay the same text after formatting.
+    -- Do not start the reveal while syntax is pending; it would replay the
+    -- same text once the formatted reply arrives.
     if layout.pending and previousSource == "" then
         snapshot.source = ""
         return

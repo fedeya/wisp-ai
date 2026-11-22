@@ -347,7 +347,7 @@ it("reveals streamed prose without cutting UTF-8 or remeasuring the row", functi
     assert.is_nil(row.scripts.OnUpdate)
 end)
 
-it("holds the first glyph until the first long reply is formatted", function()
+it("formats a finished long reply on its first render", function()
     local env, ns = setup()
     local original =
         message("Primero, revisá la quest.\n\n" .. string.rep("- **Opción** con detalles.\n", 26))
@@ -355,15 +355,25 @@ it("holds the first glyph until the first long reply is formatted", function()
     local chat = { id = "chat", status = "done", messages = { original } }
     local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
     ns.UI.RenderMessageRow(row, chat, original, 300, true, true)
-    assert.equal("P", row.text:GetText())
-    assert.is_nil(row.scripts.OnUpdate)
-    settled(ns, original)
-    ns.UI.RenderMessageRow(row, chat, original, 300, true)
-    assert.equal("P", row.rich.prose[1]:GetText())
+    assert.equal("P", row.rich.prose[1]:GetText(), "formatted at once, then revealed")
     assert.equal("", row.rich.prose[2]:GetText())
     row.scripts.OnUpdate(row, 1)
     assert.equal("Primero, revisá la quest.", row.rich.prose[1]:GetText())
     assert.is_nil(row.scripts.OnUpdate)
+end)
+
+it("hides a streaming reply's pending preview until it is formatted", function()
+    local env, ns = setup()
+    local original =
+        message("Primero, revisá la quest.\n\n" .. string.rep("- **Opción** con detalles.\n", 26))
+    original.streaming = true
+    local chat = { id = "chat", status = "working", messages = { original } }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, original, 300, true, true)
+    assert.is_false(row.text:IsShown(), "the raw preview only reserves space")
+    settled(ns, original)
+    ns.UI.RenderMessageRow(row, chat, original, 300, true)
+    assert.equal("P", row.rich.prose[1]:GetText())
 end)
 
 it("preserves native markup and finishes the reveal when the row is hidden", function()

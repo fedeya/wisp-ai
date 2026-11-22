@@ -4,6 +4,9 @@ local _, ns = ...
 -- or width. Presentation caches can keep their compiled strings after AST eviction.
 local MAX_SOURCE, MAX_NODES, MAX_NESTING = 65536, 20000, 128
 local SYNC_BYTES, FRAME_BUDGET, MAX_RESUMES = 512, 0.002, 128
+-- Finished replies the player just opened may use more of one frame, shared by
+-- every reply drawn in that frame, so they appear formatted on the first draw.
+local SETTLE_BUDGET = 0.010
 local Cache = {}
 Cache.__index = Cache
 
@@ -195,6 +198,35 @@ function Cache:Get(source, inline, urgent)
     return nil, nil, true
 end
 
+-- Resumes a pending entry's task once. Returns true when it finished, storing
+-- its document or limit error. Unexpected task errors drop the entry and raise.
+local function advance(self, entry)
+    local ok, document, err = coroutine.resume(entry.task)
+    if not ok then
+        if type(document) == "table" and document.markdownLimit then
+            err = {}
+            for key, value in pairs(document) do
+                if key ~= "markdownLimit" then
+                    err[key] = value
+                end
+            end
+            document = nil
+        else
+            drop(self, entry)
+            error(document, 0)
+        end
+    elseif coroutine.status(entry.task) ~= "dead" then
+        return false
+    elseif not document and not err then
+        drop(self, entry)
+        error("Markdown task finished without a document or error", 0)
+    end
+    removePending(self, entry)
+    entry.document, entry.error, entry.task = document, err, nil
+    self.revision = self.revision + 1
+    return true
+end
+
 function Cache:Step()
     if self.running then
         return 0, self.pendingCount
@@ -203,35 +235,14 @@ function Cache:Step()
     local deadline = self.clock() + self.budget
     local resumed, completed = 0, 0
     while self.lastPending do
-        local entry = self.lastPending
-        local ok, document, err = coroutine.resume(entry.task)
-        resumed = resumed + 1
+        local ok, done = pcall(advance, self, self.lastPending)
         if not ok then
-            if type(document) == "table" and document.markdownLimit then
-                err = {}
-                for key, value in pairs(document) do
-                    if key ~= "markdownLimit" then
-                        err[key] = value
-                    end
-                end
-                document = nil
-            else
-                drop(self, entry)
-                self.running = false
-                error(document, 0)
-            end
-        elseif coroutine.status(entry.task) ~= "dead" then
-            document = nil
-        elseif not document and not err then
-            drop(self, entry)
             self.running = false
-            error("Markdown task finished without a document or error", 0)
+            error(done, 0)
         end
-        if document or err then
-            removePending(self, entry)
-            entry.document, entry.error, entry.task = document, err, nil
+        resumed = resumed + 1
+        if done then
             completed = completed + 1
-            self.revision = self.revision + 1
         end
         if resumed >= self.maxResumes or self.clock() >= deadline then
             break
@@ -268,6 +279,38 @@ function Cache:Cancel(source, inline)
     return true
 end
 
+--- Finishes parsing a pending source now, within a budget shared by every call
+--- in the same frame. Returns like `Get`: document, error, still pending.
+--- Returns nothing when the source has no entry (for example `Get` deferred
+--- admission as busy), so the caller keeps the state `Get` reported.
+function Cache:Settle(source, inline)
+    local entry = type(source) == "string" and self.entries[inline and 2 or 1][source]
+    if not entry then
+        return
+    end
+    if not entry.pending then
+        return entry.document, entry.error, false
+    end
+    local frameId = self.frameId()
+    if self.settleFrame ~= frameId then
+        self.settleFrame, self.settleSpent = frameId, 0
+    end
+    local start = self.clock()
+    local done, resumed = false, 0
+    while not done and resumed < self.maxResumes and coroutine.status(entry.task) == "suspended" do
+        if self.settleSpent + (self.clock() - start) >= self.settleBudget then
+            break
+        end
+        done = advance(self, entry)
+        resumed = resumed + 1
+    end
+    self.settleSpent = self.settleSpent + (self.clock() - start)
+    if done then
+        return entry.document, entry.error, false
+    end
+    return nil, nil, true
+end
+
 local function new(options)
     options = options or {}
     return setmetatable({
@@ -282,6 +325,10 @@ local function new(options)
         maxPending = options.maxPending or 32,
         syncBytes = options.syncBytes == nil and SYNC_BYTES or options.syncBytes,
         budget = options.budget or FRAME_BUDGET,
+        settleBudget = options.settleBudget or SETTLE_BUDGET,
+        frameId = options.frameId or function()
+            return GetTime and GetTime() or 0
+        end,
         maxResumes = options.maxResumes or MAX_RESUMES,
         clock = options.clock or clock,
         onReady = options.onReady,
@@ -327,6 +374,11 @@ function api.Step()
     local completed, pending = default:Step()
     api.revision = default.revision
     return completed, pending
+end
+function api.Settle(source, inline)
+    local document, err, pending = default:Settle(source, inline)
+    api.revision = default.revision
+    return document, err, pending
 end
 function api.Cancel(source, inline)
     local cancelled = default:Cancel(source, inline)

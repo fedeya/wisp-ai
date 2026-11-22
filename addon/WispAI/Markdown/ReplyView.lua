@@ -188,12 +188,30 @@ local function project(message)
         elseif part.type == "text" and part.text ~= "" then
             sources[#sources + 1] = part.text
             local tree, err, loading = ns.Markdown.Cache.Get(part.text, false, message.streaming)
+            -- A finished reply, such as one in a chat the player just opened, is
+            -- parsed now (within a per-frame budget) so it appears formatted.
+            if loading and not message.streaming and ns.Markdown.Cache.Settle then
+                local settledTree, settledErr, stillLoading =
+                    ns.Markdown.Cache.Settle(part.text, false)
+                -- No answer means nothing was queued (a busy cache deferred
+                -- admission): keep `Get`'s pending state so the row retries.
+                if stillLoading ~= nil then
+                    tree, err, loading = settledTree, settledErr, stillLoading
+                end
+            end
             pending = pending or loading
             if tree then
                 document(tree)
             else
                 errorCode = err and err.code or errorCode
+                local count = #parts
                 prose(ns.Markdown.InlineRenderer.Preview(part.text))
+                -- If syntax is still queued (a streaming reply, or one too large
+                -- for this frame's budget) the literal preview only reserves the
+                -- reply's space; showing it would flash raw Markdown.
+                if loading and #parts > count then
+                    parts[#parts].placeholder = true
+                end
             end
         end
     end

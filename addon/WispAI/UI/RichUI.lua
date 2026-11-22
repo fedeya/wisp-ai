@@ -696,7 +696,8 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
                         part._markdown and part.text or rendered(part.text),
                         part.style == "code" and (_G[style] or style) or uiFont(style)
                     )
-                    f:Show()
+                    -- Pending syntax: reserve the space without showing raw Markdown.
+                    f:SetShown(not part.placeholder)
                     y = y + f:GetStringHeight() + 8
                     if writingUnits then
                         unit = { fonts = { f } }

@@ -670,7 +670,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
                     row.text:SetWidth(width - padding * 2)
                 end
             end
-            row.text:SetShown(not interleaved)
+            -- A placeholder keeps the reply's height until its syntax is ready.
+            local placeholder = message._markdownSimple and message.parts[1].placeholder
+            row.text:SetShown(not interleaved and not placeholder)
             writingUnits = writing and not interleaved and { { fonts = { row.text } } } or nil
             row.height = top
                 + math.max(

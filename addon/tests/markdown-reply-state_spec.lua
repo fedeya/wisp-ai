@@ -78,6 +78,8 @@ end)
 it("cancels obsolete part sources without cancelling unchanged pending parts", function()
     local _, ns = setup()
     local state, original = ns.Markdown.ReplyView.New(), reply("canonical source remains unchanged")
+    -- Parts change while syntax is pending only while a reply streams.
+    original.streaming = true
     original.parts = {
         { type = "text", text = tableSource },
         { type = "text", text = "first" .. longSuffix },
@@ -106,6 +108,7 @@ end)
 it("retains compatible prefixes and replaces their presentation once syntax completes", function()
     local _, ns = setup()
     local state, original = ns.Markdown.ReplyView.New(), reply("same canonical source")
+    original.streaming = true
     original.parts = { { type = "text", text = tableSource } }
     local stable, stableKey = ns.Markdown.ReplyView.Update(state, "chat", original)
     original.parts[1].text = tableSource .. longSuffix
@@ -196,6 +199,7 @@ it(
     function()
         local _, ns = setup()
         local state, original = ns.Markdown.ReplyView.New(), reply("A|B\n---|---\n[[ref:robe]]|y")
+        original.streaming = true
         original.references = { robe = { kind = "item", id = 100, label = "Old robe" } }
         original.ui = { { id = "action", kind = "button", label = "Old action" } }
         local stable = ns.Markdown.ReplyView.Update(state, "chat", original)
@@ -260,4 +264,27 @@ it("invalidates native inline waits independently without recompiling the docume
     drain(ns)
     local _, settledKey = ns.Markdown.ReplyView.Update(state, "chat", original)
     assert.equal(completedKey, settledKey)
+end)
+
+it("keeps a finished reply pending and hidden when the cache defers admission", function()
+    local _, ns = setup()
+    local state, original = ns.Markdown.ReplyView.New(), reply(tableSource .. longSuffix)
+    local get, busy = ns.Markdown.Cache.Get, true
+    ns.Markdown.Cache.Get = function(source, inline, urgent)
+        if busy and source == original.text then
+            return nil, { code = "busy" }, true
+        end
+        return get(source, inline, urgent)
+    end
+    local waiting = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.is_true(waiting._markdownPending, "a deferred reply still waits for syntax")
+    assert.is_true(waiting.parts[1].placeholder, "its raw preview stays hidden")
+    -- Capacity frees up when other queued syntax completes, which bumps the
+    -- cache revision and makes the pending row project again.
+    busy = false
+    ns.Markdown.Cache.Get("another queued reply" .. longSuffix)
+    drain(ns)
+    local view = ns.Markdown.ReplyView.Update(state, "chat", original)
+    assert.is_false(view._markdownPending, "the retry admits and settles it")
+    assert.equal(1, #view.ui)
 end)

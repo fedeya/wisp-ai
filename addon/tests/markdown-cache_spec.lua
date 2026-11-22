@@ -102,6 +102,65 @@ it("yields long documents across steps within a shared approximate time budget",
     assert.is_true(state.ready > 0)
 end)
 
+it("settles a pending document now when its reply is already finished", function()
+    local cache, state = setup({ syncBytes = 0 })
+    local _, _, pending = cache:Get("finished")
+    assert.is_true(pending)
+    local document, err, still = cache:Settle("finished")
+    assert.equal("finished", document.source)
+    assert.is_nil(err)
+    assert.is_false(still)
+    assert.equal(0, cache.pendingCount)
+    assert.equal(1, cache.revision)
+    assert.equal("finished", cache:Get("finished").source, "the settled syntax is cached")
+    local again, againErr, againPending = cache:Settle("unknown")
+    assert.is_nil(again, "only sources already requested are settled")
+    assert.is_nil(againErr)
+    assert.is_nil(againPending, "an unknown source reports no state to override")
+    assert.equal(4, #state.resumed)
+end)
+
+it("shares the settle budget between every reply drawn in one frame", function()
+    local frame = 1
+    local cache, state = setup({
+        syncBytes = 0,
+        settleBudget = 0.002,
+        frameId = function()
+            return frame
+        end,
+    })
+    cache:Get("first")
+    cache:Get("second")
+    local _, _, pending = cache:Settle("first")
+    assert.is_true(pending, "four 0.75 ms chunks do not fit a 2 ms budget")
+    assert.equal(3, #state.resumed)
+    _, _, pending = cache:Settle("second")
+    assert.is_true(pending)
+    assert.equal(3, #state.resumed, "the frame's budget is already spent")
+    frame = 2
+    local document = cache:Settle("first")
+    assert.equal("first", document.source, "the next frame finishes it")
+    assert.equal(1, cache.pendingCount, "second is still queued for the scheduler")
+    drain(cache)
+    assert.equal("second", cache:Get("second").source)
+end)
+
+it("propagates unexpected task errors from settling and drops the entry", function()
+    local cache = setup({ syncBytes = 0 })
+    cache:Get("bug")
+    assert.has_error(function()
+        cache:Settle("bug")
+    end, "unexpected parser bug")
+    assert.is_nil(cache.entries[1].bug)
+    local document, err = cache:Settle("limit") -- never requested: ignored
+    assert.is_nil(document)
+    assert.is_nil(err)
+    cache:Get("limit")
+    document, err = cache:Settle("limit")
+    assert.is_nil(document)
+    assert.equal("max_nodes", err.code, "limit errors are stored like Step does")
+end)
+
 it("bounds work even when the clock does not advance", function()
     local cache, state = setup({ syncBytes = 0, maxResumes = 2 })
     cache.clock = function()
