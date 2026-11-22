@@ -197,6 +197,27 @@ test('new checked revisions load once and repeated readiness never burns unchang
   );
 });
 
+test('an idle connected addon reads the reply to its periodic hello from a restarted host', () => {
+  const h = transportHarness();
+  // A long-running session: its startup hello already went out.
+  h.run(
+    "ns.Transport.Send({type='hello'});timers[.04]();ns.Transport.Acknowledge({1});ns.connected=true;ns.rev=40",
+  );
+  // A restarted host publishes a new generation while the addon is idle.
+  h.control(50, 0x13572468);
+  h.run('nextRev=50;for i=1,50 do now=now+.1;timers[.1]()end;assert(loads==0 and ns.rev==40)');
+  h.run('timers[60]();for i=1,10 do now=now+.04;timers[.04]()end');
+  // Saving the hello rewrites the game's stale downlink bits; the host repairs its control.
+  h.control(50, 0x13572468);
+  h.run(`
+for i=1,20 do now=now+.1;timers[.1]()end
+assert(loads==1 and ns.rev==50,'the heartbeat opens a read window for the new host state')
+`);
+  h.run(
+    'for i=1,200 do now=now+.1;timers[.1]()end;assert(loads==1,"the window closes and idle reads stop")',
+  );
+});
+
 test('a bulk helper overlapping the uplink preserves its disabled state and uses an explicit character', () => {
   const h = transportHarness();
   h.run("ns.Transport.Send({type='hello'});timers[.04]()");

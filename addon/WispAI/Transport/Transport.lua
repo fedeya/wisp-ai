@@ -45,6 +45,10 @@ local compactAck = false
 -- The 50 ms ticker bounds compact reads; allow 10 ms of scheduler jitter so
 -- a slightly early callback does not defer useful data for another full tick.
 local COMPACT_RECEIVE_DELAY = 0.04
+-- Idle clients otherwise never read. After each periodic hello, read long
+-- enough for a restarted host to answer, so it learns the game is connected
+-- and app-update or /reload notices arrive without waiting for a user turn.
+local HEARTBEAT_READ_SECONDS = 10
 local cachedControl
 local baselinePending, persistedControl = true, nil
 local pendingWireAck, lastDataFrame, lastDataAck, partialDownlink
@@ -831,6 +835,8 @@ function ns.Transport.StartTransport()
     end)
     C_Timer.NewTicker(60, function()
         ns.Transport.Send({ type = "hello", chat = ns.active, heartbeat = true })
+        downlinkUntil = math.max(downlinkUntil, GetTime() + HEARTBEAT_READ_SECONDS)
+        nextReceive = 0
     end)
     return true
 end

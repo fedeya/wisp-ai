@@ -8,6 +8,7 @@
 
 ## Fixed
 
+- After Wisp restarts or updates while WoW is open, the app now shows the game as connected within a minute, and update notices reach the game, without you having to send a message first.
 - An empty orange dot no longer shows in the Wisp window header when everything is working.
 - With Wisp set to Chinese, chat titles, your character and zone, and messages written with accents or ¿ (such as Spanish) now display correctly instead of showing gaps or empty boxes.
 - When Wisp starts with Windows, installing an update now reopens the Wisp window instead of leaving it hidden in the tray.

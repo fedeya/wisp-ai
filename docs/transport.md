@@ -91,7 +91,9 @@ Compact receive checks use one 50-ms ticker with a 40-ms eligibility guard for
 timer jitter. An unchanged, previously validated frame needs only its header
 and CRC reread; a new identity requires full-frame validation. Idle reads back
 off during an eight-second ACK grace window, then stop when no work remains.
-Duplicate frames do not extend that window indefinitely. Opening addon settings
+Duplicate frames do not extend that window indefinitely. Each 60-second
+heartbeat hello opens a 10-second read window, so an idle client still confirms
+a restarted host and receives its notices within a minute. Opening addon settings
 pauses transport reads and writes so pending settings edits are preserved.
 
 ## Diagnostics and verification
