@@ -47,6 +47,7 @@ Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 | `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
 | `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
 | `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |
+| `pnpm data:check`                               | Say whether a newer Forever build is out than the pinned one                                |
 
 Native Rust checks run in CI with `cargo fmt --check` and `cargo test` against
 `apps/desktop/src-tauri/Cargo.toml`. `apps/bridge/tests/simulation.test.ts` needs

@@ -3,12 +3,14 @@ import type { Dataset } from './dataset.ts';
 import { dungeonEntrances } from './datasets/dungeon-entrances.ts';
 
 export { parseCsv, type Row } from './csv.ts';
-export { mapPosition, type MapPoint } from './coordinates.ts';
+export { mapPosition, zonesAt, type MapPoint } from './coordinates.ts';
+export { render, type Curated, type Dataset, type Output } from './dataset.ts';
 export { luaModule, luaString, luaValue, type LuaTable, type LuaValue } from './lua.ts';
-export { memoryTables, wagoTables, type TableSource } from './wago.ts';
-export type { Curated, Dataset } from './dataset.ts';
+export { byId, num, str } from './rows.ts';
+export { latestBuild, memoryTables, wagoTables, type Locale, type TableSource } from './wago.ts';
 
-// The Forever build every dataset is generated from.
+// The Forever build every dataset is generated from; product is wago.tools'
+// name for it ("wowf").
 export const pinned: { product: string; build: string } = JSON.parse(
   readFileSync(new URL('../build.json', import.meta.url), 'utf8'),
 );
