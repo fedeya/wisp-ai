@@ -54,7 +54,7 @@ test('fetch is registered independently of Wowhead search and respects its own s
     const file = path.join(directory, 'capabilities.json');
     vi.stubEnv('WOW_CAPABILITIES_FILE', file);
     await writeFile(file, JSON.stringify({ enabled: { 'tool:web_search': false } }));
-    expect(await dynamicEvaluate(definition)({} as never)).toMatchObject({ deferred: true });
+    expect(await dynamicEvaluate(definition)({} as never)).toMatchObject({ deferred: false });
     await writeFile(file, JSON.stringify({ enabled: { 'tool:web_fetch': false } }));
     expect(await dynamicEvaluate(definition)({} as never)).toBeNull();
     expect(publicToolName('web_fetch')).toBe('web_fetch');

@@ -7,7 +7,7 @@ const prompt = 'find upgrades for me';
 
 export default defineEval({
   description: 'A level 21 mage asks for upgrades; the agent searches real candidates per slot.',
-  tags: ['gear'],
+  tags: ['gear', 'tiers'],
   async test(t) {
     const session = await t.session({ stubs: fedrathStubs() });
     const started = performance.now();

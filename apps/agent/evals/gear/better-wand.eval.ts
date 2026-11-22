@@ -6,7 +6,7 @@ const prompt = 'hay alguna varita mejor que la mía que pueda conseguir?';
 
 export default defineEval({
   description: 'A Spanish wand question uses the weapon search instead of guessing names.',
-  tags: ['gear'],
+  tags: ['gear', 'tiers'],
   async test(t) {
     const session = await t.session({ stubs: fedrathStubs() });
     const started = performance.now();

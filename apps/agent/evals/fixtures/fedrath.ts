@@ -135,8 +135,41 @@ const gearReading = {
     quests: {
       status: 'available',
       data: {
-        count: 1,
-        quests: [{ id: 875, title: 'Destripadoras alabruja', level: 16, complete: false }],
+        count: 4,
+        quests: [
+          {
+            id: 875,
+            title: 'Destripadoras alabruja',
+            level: 16,
+            rewardXP: 1150,
+            complete: false,
+            objectives: [{ text: 'Anillo de destripadora: 4/8', type: 'item', finished: false }],
+          },
+          {
+            id: 1061,
+            title: 'El espíritu de los vientos',
+            level: 21,
+            rewardXP: 1850,
+            complete: true,
+            objectives: [],
+          },
+          {
+            id: 5881,
+            title: 'Calling in the Reserves',
+            level: 24,
+            rewardXP: 2400,
+            complete: false,
+            objectives: [{ text: 'Entrega el aviso', type: 'event', finished: false }],
+          },
+          {
+            id: 1489,
+            title: 'Caverna de la Tormenta',
+            level: 27,
+            rewardXP: 2900,
+            complete: false,
+            objectives: [{ text: 'Mata a Hamuul Runatótem 0/1', type: 'monster', finished: false }],
+          },
+        ],
       },
     },
   },
