@@ -1,10 +1,4 @@
-import { existsSync } from 'node:fs';
-import path from 'node:path';
 import type { ToolStub } from 'eve/evals';
-
-// Evals run from apps/agent; stub a tool only where this checkout defines it,
-// so the same scenarios can compare older configurations.
-const hasTool = (name: string) => existsSync(path.resolve('agent', 'tools', name + '.ts'));
 
 // Stub responses must be plain JSON values.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value));
@@ -402,7 +396,9 @@ const prices: Record<number, number> = {
   20442: 12000,
 };
 
-// Mirrors the bridge's item_sources result for every fixture candidate.
+// Per-item answers in the shape the bridge's item_sources returns: only names,
+// zones, quest levels and evidence, never details production cannot see. The
+// eval bridge serves these for the requested IDs only.
 const relationKinds: Record<string, string> = {
   dropped_by: 'drops',
   drops_from: 'drops',
@@ -410,44 +406,40 @@ const relationKinds: Record<string, string> = {
   reward_from: 'quests',
   created_by: 'crafted',
 };
-function itemSourcesResult() {
+export function itemSourcesFixture() {
   const ids = [...Object.values(armor), ...Object.values(weapons)].flat().map((entry) => entry.id);
-  return {
-    status: 'available',
-    priceStatus: 'available',
-    realm: 'Vorn',
-    items: ids.map((itemId) => {
+  return Object.fromEntries(
+    ids.map((itemId) => {
       const found: Record<string, unknown[]> = {};
-      for (const edge of (sources[itemId] ?? []) as Array<Record<string, unknown>>) {
-        const { rel, ...rest } = edge;
-        (found[relationKinds[String(rel)] ?? 'other'] ??= []).push({
-          ...rest,
-          evidence: rel === 'created_by' ? 'game files, unconfirmed' : 'player-observed',
+      for (const edge of (sources[itemId] ?? []) as Array<Record<string, any>>) {
+        const kind = relationKinds[String(edge.rel)];
+        if (!kind) {
+          continue;
+        }
+        (found[kind] ??= []).push({
+          kind: edge.kind,
+          name: edge.name,
+          ...(edge.zone ? { zones: [edge.zone] } : {}),
+          ...(edge.level ? { requiredLevel: edge.level } : {}),
+          evidence: edge.rel === 'created_by' ? 'game files, unconfirmed' : 'player-observed',
         });
       }
-      return {
+      return [
         itemId,
-        ...found,
-        auction: prices[itemId] ? { unitPriceCopper: prices[itemId], ageDays: 0 } : undefined,
-        sourceKnown: Object.keys(found).length > 0,
-        sourcesStatus: 'available',
-      };
+        {
+          itemId,
+          ...found,
+          auction: prices[itemId] ? { unitPriceCopper: prices[itemId], ageDays: 0 } : undefined,
+          sourceKnown: Object.keys(found).length > 0,
+          sourcesStatus: 'available',
+        },
+      ];
     }),
-    note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
-  };
+  );
 }
 
 export function fedrathStubs(): ToolStub[] {
   return json([
-    ...(hasTool('wow__item_sources')
-      ? [
-          {
-            id: 'item-sources',
-            tool: 'wow__item_sources',
-            outcome: { response: itemSourcesResult() },
-          },
-        ]
-      : []),
     {
       id: 'character',
       tool: 'wow__query_character',
