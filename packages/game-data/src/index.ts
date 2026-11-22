@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Dataset } from './dataset.ts';
 import { dungeonEntrances } from './datasets/dungeon-entrances.ts';
+import { groupFinderNames } from './datasets/group-finder-names.ts';
 
 export { parseCsv, type Row } from './csv.ts';
 export { mapPosition, zonesAt, type MapPoint } from './coordinates.ts';
@@ -16,5 +17,5 @@ export const pinned: { product: string; build: string } = JSON.parse(
 );
 
 export function datasets(): Dataset[] {
-  return [dungeonEntrances()];
+  return [dungeonEntrances(), groupFinderNames()];
 }

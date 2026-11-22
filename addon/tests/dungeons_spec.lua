@@ -10,7 +10,7 @@ local ACTIVITIES = {
         maxLevelSuggestion = 24,
         maxNumPlayers = 5,
     },
-    [801] = {
+    [798] = {
         categoryID = 2,
         fullName = "Sima Ígnea",
         mapID = 389,
@@ -24,6 +24,14 @@ local ACTIVITIES = {
         mapID = 2999,
         minLevelSuggestion = 15,
         maxLevelSuggestion = 22,
+        maxNumPlayers = 5,
+    },
+    [805] = {
+        categoryID = 2,
+        fullName = "Monasterio Escarlata - Cementerio",
+        mapID = 189,
+        minLevelSuggestion = 30,
+        maxLevelSuggestion = 38,
         maxNumPlayers = 5,
     },
     [7] = {
@@ -55,7 +63,7 @@ local function setup(env, entrances)
         end
         C_LFGList = {
             GetAvailableActivities = function()
-                return { 7, 796, 801, 900 }
+                return { 7, 796, 798, 805, 900 }
             end,
             GetActivityInfoTable = function(id)
                 return ACTIVITIES[id]
@@ -70,6 +78,12 @@ local function setup(env, entrances)
         }
     end
     helper.addon("Character/Dungeons.lua", env)
+    env.ns.Data.GroupFinderNames = {
+        [796] = "Wailing Caverns",
+        [798] = "Ragefire Chasm",
+        [805] = "Scarlet Monastery - Graveyard",
+        [900] = "Ruins of Lordaeron",
+    }
     env.ns.Data.DungeonEntrances = entrances
         or {
             [43] = { name = "Wailing Caverns", raid = false, entrances = { { 1413, 47.7, 35 } } },
@@ -94,9 +108,10 @@ it("lists the group finder's dungeons with ranges and their entrances", function
     local data = env.ns.Character.ReadDungeons({})
     assert.equals(21, data.characterLevel)
     assert.equals("Horde", data.faction)
-    assert.equals(4, #data.dungeons)
+    assert.equals(5, #data.dungeons)
     assert.same({
         name = "Sima Ígnea",
+        englishName = "Ragefire Chasm",
         instanceMapId = 389,
         minLevel = 13,
         maxLevel = 18,
@@ -110,7 +125,7 @@ end)
 it("keeps raids the group finder does not list, with their localized name", function()
     local env = helper.env()
     setup(env)
-    local raid = env.ns.Character.ReadDungeons({}).dungeons[4]
+    local raid = env.ns.Character.ReadDungeons({}).dungeons[5]
     assert.equals("Núcleo de Magma", raid.name)
     assert.equals("Molten Core", raid.englishName)
     assert.is_true(raid.raid)
@@ -128,6 +143,30 @@ it("filters by a localized or English name and reports unknown names", function(
     assert.equals(389, found[1].instanceMapId)
     found = env.ns.Character.ReadDungeons({ dungeon = "Wailing" }).dungeons
     assert.equals("Cuevas de los Lamentos", found[1].name)
+end)
+
+it("matches names regardless of case and accents in UTF-8", function()
+    local env = helper.env()
+    setup(env)
+    for _, query in ipairs({ "sima ígnea", "SIMA ÍGNEA", "sima ignea", "Sima Ígnea" }) do
+        local found = env.ns.Character.ReadDungeons({ dungeon = query }).dungeons
+        assert.equals(389, found[1].instanceMapId, query)
+    end
+end)
+
+it("matches a wing by its English name on a localized client", function()
+    local env = helper.env()
+    setup(env)
+    for _, query in ipairs({ "Graveyard", "Scarlet Monastery - Graveyard", "cementerio" }) do
+        local found = env.ns.Character.ReadDungeons({ dungeon = query }).dungeons
+        assert.equals(1, #found, query)
+        assert.equals("Monasterio Escarlata - Cementerio", found[1].name)
+    end
+end)
+
+it("reports unknown names", function()
+    local env = helper.env()
+    setup(env)
     assert.has_error(function()
         env.ns.Character.ReadDungeons({ dungeon = "Karazhan" })
     end)
@@ -137,7 +176,7 @@ it("lists dungeons without an entrance and fails only when the game lists none",
     local env = helper.env()
     setup(env, {})
     local data = env.ns.Character.ReadDungeons({})
-    assert.equals(3, #data.dungeons)
+    assert.equals(4, #data.dungeons)
     assert.is_nil(data.dungeons[1].entrances)
     env.C_LFGList = nil
     assert.has_error(function()
