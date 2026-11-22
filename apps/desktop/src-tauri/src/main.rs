@@ -348,6 +348,7 @@ async fn start_host(host: &Host) -> Result<(), String> {
         "Spawned the bridge"
     );
     *child = Some(process);
+    host.mark_stop_requested(false);
     host.supervised.store(true, Ordering::SeqCst);
     Ok(())
 }
@@ -370,8 +371,37 @@ fn bridge_relaunch_delay(crashes: usize) -> Duration {
     BRIDGE_RELAUNCH_DELAYS[crashes.min(BRIDGE_RELAUNCH_DELAYS.len() - 1)]
 }
 
+/// Present while a deliberate bridge stop is in progress or done, by this
+/// process or another one (the update helper). Removed when a bridge starts.
+const BRIDGE_STOP_MARKER: &str = "runtime/bridge-stop-requested";
+
 impl Host {
+    fn stop_requested(&self) -> bool {
+        self.data.join(BRIDGE_STOP_MARKER).is_file()
+    }
+
+    fn mark_stop_requested(&self, requested: bool) {
+        let marker = self.data.join(BRIDGE_STOP_MARKER);
+        let result = if requested {
+            fs::write(&marker, b"")
+        } else {
+            fs::remove_file(&marker).or_else(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => Ok(()),
+                _ => Err(error),
+            })
+        };
+        if let Err(error) = result {
+            tracing::warn!(
+                component = "desktop",
+                event = "bridge.stop_marker_failed",
+                error = %error,
+                "Could not update the bridge stop marker"
+            );
+        }
+    }
+
     /// Takes the bridge child if it exited while it was meant to be running.
+    /// An exit that another process requested turns supervision off instead.
     fn take_crashed_child(&self) -> Result<Option<std::process::ExitStatus>, String> {
         if !self.supervised.load(Ordering::SeqCst) {
             return Ok(None);
@@ -384,8 +414,18 @@ impl Host {
             Some(process) => process.try_wait().map_err(|error| error.to_string())?,
             None => None,
         };
-        if status.is_some() {
-            *child = None;
+        if status.is_none() {
+            return Ok(None);
+        }
+        *child = None;
+        if self.stop_requested() {
+            self.supervised.store(false, Ordering::SeqCst);
+            tracing::info!(
+                component = "desktop",
+                event = "bridge.stopped_elsewhere",
+                "The bridge was stopped on request by another Wisp process"
+            );
+            return Ok(None);
         }
         Ok(status)
     }
@@ -433,8 +473,10 @@ async fn supervise_bridge(app: tauri::AppHandle) {
         crashes += 1;
         pause(delay).await;
         let _operation = host.lifecycle.lock().await;
-        // A stop request during the wait wins over the relaunch.
-        if !host.supervised.load(Ordering::SeqCst) {
+        // A stop request during the wait wins over the relaunch, including
+        // one from another process such as the update helper.
+        if !host.supervised.load(Ordering::SeqCst) || host.stop_requested() {
+            host.supervised.store(false, Ordering::SeqCst);
             relaunching = false;
             continue;
         }
@@ -469,9 +511,15 @@ async fn stop_host(host: &Host) -> Result<(), String> {
     // bridge that is exiting on request. A stop that fails (for example the
     // bridge refuses while a reply is running) leaves the app and bridge
     // running, so the previous supervision comes back with it.
+    //
+    // The flag only reaches this process. The update helper stops the bridge
+    // from a separate process while the desktop app may still be open, so the
+    // stop is also recorded on disk for that app's supervisor to honor.
     let supervised = host.supervised.swap(false, Ordering::SeqCst);
+    host.mark_stop_requested(true);
     let result = request_bridge_stop(host).await;
     if result.is_err() {
+        host.mark_stop_requested(false);
         host.supervised.store(supervised, Ordering::SeqCst);
     }
     result
@@ -1033,6 +1081,39 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
+    fn a_stop_requested_by_another_process_is_not_relaunched() {
+        let data = std::env::temp_dir().join(format!("wisp-elsewhere-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(data.join("runtime")).unwrap();
+        let host = Host {
+            data: data.clone(),
+            payload: PathBuf::new(),
+            child: Mutex::new(None),
+            lifecycle: tauri::async_runtime::Mutex::new(()),
+            supervised: AtomicBool::new(true),
+            addon_notice: Default::default(),
+            client: reqwest::Client::new(),
+        };
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "exit 0"]);
+            command
+        } else {
+            let mut command = Command::new("sh");
+            command.args(["-c", "exit 0"]);
+            command
+        };
+        let mut process = command.spawn().expect("spawn a short-lived child");
+        process.wait().expect("the child exits");
+        *host.child.lock().unwrap() = Some(process);
+        // The update helper's stop_host runs in its own process and leaves only the marker.
+        fs::write(data.join(BRIDGE_STOP_MARKER), b"").unwrap();
+        assert_eq!(host.take_crashed_child().unwrap(), None);
+        assert!(!host.supervised.load(Ordering::SeqCst));
+        assert!(host.child.lock().unwrap().is_none());
+        let _ = fs::remove_dir_all(data);
+    }
+
+    #[test]
     fn a_rejected_stop_keeps_supervising_the_bridge() {
         let data = std::env::temp_dir().join(format!("wisp-stop-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(data.join("runtime")).unwrap();
@@ -1049,9 +1130,14 @@ mod tests {
         };
         assert!(tauri::async_runtime::block_on(stop_host(&host)).is_err());
         assert!(host.supervised.load(Ordering::SeqCst));
+        assert!(!host.stop_requested(), "a failed stop withdraws its marker");
         fs::remove_file(data.join("runtime/desktop.json")).unwrap();
         assert!(tauri::async_runtime::block_on(stop_host(&host)).is_ok());
         assert!(!host.supervised.load(Ordering::SeqCst));
+        assert!(
+            host.stop_requested(),
+            "a completed stop stays visible to other processes"
+        );
         let _ = fs::remove_dir_all(data);
     }
 
