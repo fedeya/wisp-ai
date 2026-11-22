@@ -1,6 +1,6 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
-import { ACTIVE_SESSION_MS, createPacketReceiver } from '../src/addon/packet-receiver.ts';
+import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { GameRequests } from '../src/addon/game-requests.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
@@ -257,49 +257,25 @@ test('a new character key is adopted before the packet that reports it is handle
   expect(calls).toEqual(['adopt', 'observe']);
 });
 
-test('a heartbeat from another game window cannot take an active session, but the player can', () => {
+test('a new game window logs why it took the bridge and how long the old one was idle', () => {
   let clock = 1_000_000;
   const info = vi.fn();
   const f = fixture({ now: () => clock, logger: { info, warn: vi.fn() } });
   f.receive(packetSchema.parse({ type: 'poll', session: 'one', seq: 1, at: 1 }));
   clock += 30_000;
-  f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 2, heartbeat: true }));
-  clock += 60_000;
-  f.receive(packetSchema.parse({ type: 'poll', session: 'one', seq: 2, at: 3 }));
-  f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 2, at: 4, heartbeat: true }));
-  expect(f.state.activeTransport).toBe('one');
-  expect(f.interrupt).not.toHaveBeenCalled();
-  expect(f.state.chats[0].status).toBe('working');
-  const events = () => info.mock.calls.map(([fields]) => (fields as { event: string }).event);
-  expect(events().filter((event) => event === 'transport.heartbeat_held_off')).toHaveLength(1);
-
-  // The player's own unanswered request in the other window takes the bridge.
   f.receive(
     packetSchema.parse({
       type: 'hello',
       session: 'two',
-      seq: 3,
-      at: 5,
+      seq: 1,
+      at: 2,
       heartbeat: true,
       takeover: true,
     }),
   );
   expect(f.state.activeTransport).toBe('two');
-  expect(f.interrupt).toHaveBeenCalledTimes(1);
   expect(info).toHaveBeenCalledWith(
-    expect.objectContaining({ event: 'transport.session_changed', reason: 'takeover' }),
+    { event: 'transport.session_changed', reason: 'takeover', previousIdleMs: 30_000 },
     expect.any(String),
   );
-  // Now the first window's heartbeat is the one held off.
-  f.receive(packetSchema.parse({ type: 'hello', session: 'one', seq: 3, at: 6, heartbeat: true }));
-  expect(f.state.activeTransport).toBe('two');
-});
-
-test('a heartbeat takes the bridge once the connected window has gone quiet', () => {
-  let clock = 1_000_000;
-  const f = fixture({ now: () => clock });
-  f.receive(packetSchema.parse({ type: 'poll', session: 'one', seq: 1, at: 1 }));
-  clock += ACTIVE_SESSION_MS;
-  f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 2, heartbeat: true }));
-  expect(f.state.activeTransport).toBe('two');
 });

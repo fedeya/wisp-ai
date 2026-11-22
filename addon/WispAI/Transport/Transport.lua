@@ -884,32 +884,38 @@ function ns.Transport.StartTransport()
     end)
     C_Timer.NewTicker(2, function()
         checkStalledDelivery()
-        local renewed
+        local stale, takeover = {}, nil
         for _, packet in pairs(awaiting) do
             if not packet.queued and packet.lastSent and GetTime() - packet.lastSent > 5 then
-                if not renewed then
-                    -- A fresh bridge must negotiate a hello, never replay a
-                    -- cached action from the previous process. Renew the
-                    -- handshake before retrying an unacknowledged request.
-                    -- `takeover` lets the player's own request move the bridge
-                    -- from another game window; the periodic heartbeat cannot.
-                    local context
-                    if ns.Character.CaptureTurn then
-                        ns.characterAcknowledged, ns.questAcknowledged = 0, 0
-                        local ok, captured = pcall(ns.Character.CaptureTurn)
-                        if ok then
-                            context = captured
-                        end
-                    end
-                    ns.Transport.Send({
-                        type = "hello",
-                        chat = ns.active,
-                        context = context,
-                        heartbeat = true,
-                        takeover = true,
-                    })
-                    renewed = true
+                stale[#stale + 1] = packet
+                -- Only a message the player wrote (it has a messageId) may move
+                -- the bridge from another game window. Background packets such
+                -- as routine ticks and quest syncs never do.
+                if packet.messageId then
+                    takeover = true
                 end
+            end
+        end
+        if #stale > 0 then
+            -- A fresh bridge must negotiate a hello, never replay a cached
+            -- action from the previous process. Renew the handshake before
+            -- retrying unacknowledged requests.
+            local context
+            if ns.Character.CaptureTurn then
+                ns.characterAcknowledged, ns.questAcknowledged = 0, 0
+                local ok, captured = pcall(ns.Character.CaptureTurn)
+                if ok then
+                    context = captured
+                end
+            end
+            ns.Transport.Send({
+                type = "hello",
+                chat = ns.active,
+                context = context,
+                heartbeat = true,
+                takeover = takeover,
+            })
+            for _, packet in ipairs(stale) do
                 enqueue(packet)
             end
         end

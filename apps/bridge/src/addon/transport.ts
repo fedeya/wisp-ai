@@ -58,6 +58,12 @@ export function preferBulkDelivery(bytes: number, costs: DownlinkCosts) {
   return fragments * costs.fragmentMs - costs.bulkMs >= slotCostMs;
 }
 
+/**
+ * A game window that sent anything this recently keeps the bridge: another window's
+ * periodic heartbeat (every 60 seconds) cannot take it. Two windows otherwise steal
+ * the session from each other on every heartbeat, interrupting turns each time.
+ */
+export const ACTIVE_SESSION_MS = 150_000;
 export class DiskTransport {
   private scans?: Promise<void>;
   private reads = new Map<string, Promise<void>>();
@@ -66,6 +72,9 @@ export class DiskTransport {
   private activeFile?: string;
   private activeSession?: string;
   private activeAt = 0;
+  /** Wall-clock time of the last message from the active window. */
+  private activeSeenAt = 0;
+  private onHeldOff: (session: string) => void;
   private uplinkBusy = new Map<string, boolean>();
   private uplinkObserved = new Map<string, { frame: Buffer; at: number }>();
   private publishedRevision = 0;
@@ -115,10 +124,12 @@ export class DiskTransport {
     wow: string,
     receive: (packet: Packet) => void,
     onError: (error: unknown) => void = console.error,
+    onHeldOff: (session: string) => void = () => {},
   ) {
     this.wow = wow;
     this.receive = receive;
     this.onError = onError;
+    this.onHeldOff = onHeldOff;
   }
   async start() {
     await this.scan(true);
@@ -276,6 +287,16 @@ export class DiskTransport {
               // Ignore old sessions from inactive historical character files.
               if (this.activeFile && packet.at < this.activeAt) {
                 packet = undefined;
+              } else if (
+                this.activeFile &&
+                packet.heartbeat &&
+                !packet.takeover &&
+                Date.now() - this.activeSeenAt < ACTIVE_SESSION_MS
+              ) {
+                // Another game window's periodic heartbeat never takes a session
+                // that is still in use; only its player's own request can.
+                this.onHeldOff(packet.session);
+                packet = undefined;
               } else {
                 this.activeFile = file;
                 this.activeSession = packet.session;
@@ -290,6 +311,7 @@ export class DiskTransport {
             }
             if (packet && file === this.activeFile && packet.session === this.activeSession) {
               this.activeAt = Math.max(this.activeAt, packet.at);
+              this.activeSeenAt = Date.now();
               if (packet.mailboxVersion === 1) {
                 this.mailboxVersion = true;
                 this.compactAck ||= packet.compactAck === true;

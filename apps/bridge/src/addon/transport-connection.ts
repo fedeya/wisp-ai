@@ -22,7 +22,7 @@ export interface TransportConnectionDependencies {
   saveWow: (wow: string) => Promise<void>;
   changed: () => void;
   isStopping: () => boolean;
-  logger: Pick<Logger, 'error'>;
+  logger: Pick<Logger, 'error' | 'info'>;
 }
 
 export interface TransportConnection {
@@ -58,6 +58,17 @@ export function createTransportConnection(
     );
   }
 
+  // Logged once per waiting window, not on every 60-second heartbeat.
+  const heldOff = new Set<string>();
+  function logHeldOff(session: string) {
+    if (heldOff.has(session) || heldOff.size >= 32) return;
+    heldOff.add(session);
+    logger.info(
+      { event: 'transport.heartbeat_held_off' },
+      'Another game window is connected; its heartbeat did not take the bridge',
+    );
+  }
+
   async function disconnect() {
     const previous = transport;
     transport = undefined;
@@ -87,6 +98,7 @@ export function createTransportConnection(
         if (transport === next) deps.receive(packet);
       },
       logError,
+      logHeldOff,
     );
     transport = next;
     try {
