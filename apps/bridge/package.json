@@ -68,7 +68,8 @@
     "db:generate": "drizzle-kit generate",
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "cd ../.. && vitest run --config apps/bridge/vitest.config.ts"
+    "test": "cd ../.. && vitest run --config apps/bridge/vitest.config.ts",
+    "eval:sign-in": "node src/evals/eval-bridge.ts sign-in"
   },
   "dependencies": {
     "@hono/node-server": "2.1.5",
