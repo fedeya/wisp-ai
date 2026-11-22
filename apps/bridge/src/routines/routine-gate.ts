@@ -2,6 +2,9 @@ import type { RoutineRun } from '@wisp/protocol/routines';
 
 const USAGE_PAUSE_MS = 30 * 60_000;
 const MAX_USAGE_PAUSE_MS = 4 * 60 * 60_000;
+// Conditions outside the fingerprint (timers, cooldowns) still get a fresh
+// check at least this often while the snapshot stays the same.
+const QUIET_RECHECK_MS = 30 * 60_000;
 
 // The parts of a routine tick that a read-only routine can react to. Map
 // coordinates are left out: walking alone should not trigger another run.
@@ -31,16 +34,24 @@ export function routineFingerprint(context: unknown, questRevision: number | und
 export function createRoutineGate() {
   let pausedUntil = 0;
   let usagePause = 0;
-  const quiet = new Map<string, string>();
+  // Keyed by character, routine and definition version, so an edited routine
+  // or another character's routine is always evaluated on its own.
+  const quiet = new Map<string, { fingerprint: string; at: number }>();
   return {
     paused(now = Date.now()) {
       return now < pausedUntil;
     },
-    unchanged(routineId: string, event: string, fingerprint: string | undefined) {
-      return event === 'interval' && !!fingerprint && quiet.get(routineId) === fingerprint;
+    unchanged(key: string, event: string, fingerprint: string | undefined, now = Date.now()) {
+      const last = quiet.get(key);
+      return (
+        event === 'interval' &&
+        !!fingerprint &&
+        last?.fingerprint === fingerprint &&
+        now - last.at < QUIET_RECHECK_MS
+      );
     },
     finished(
-      routineId: string,
+      key: string,
       status: RoutineRun['status'],
       fingerprint: string | undefined,
       usageLimited: boolean,
@@ -54,9 +65,9 @@ export function createRoutineGate() {
         pausedUntil = 0;
       }
       if (status === 'no_tip' && fingerprint) {
-        quiet.set(routineId, fingerprint);
+        quiet.set(key, { fingerprint, at: now });
       } else {
-        quiet.delete(routineId);
+        quiet.delete(key);
       }
     },
   };

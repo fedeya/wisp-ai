@@ -41,6 +41,14 @@ test('only interval runs after a quiet run with the same state are skipped', () 
   expect(gate.unchanged('xp', 'interval', 'same')).toBe(false);
 });
 
+test('an unchanged snapshot is rechecked at least every 30 minutes', () => {
+  const gate = createRoutineGate();
+  const minute = 60_000;
+  gate.finished('timer', 'no_tip', 'same', false, 0);
+  expect(gate.unchanged('timer', 'interval', 'same', 29 * minute)).toBe(true);
+  expect(gate.unchanged('timer', 'interval', 'same', 30 * minute)).toBe(false);
+});
+
 test('usage limits pause routines with growing backoff until a run succeeds', () => {
   const gate = createRoutineGate();
   const minute = 60_000;
@@ -92,7 +100,8 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
         context: context(xp),
       };
     };
-    const outcomes: Array<'quiet' | 'limit'> = ['quiet', 'quiet', 'limit'];
+    const outcomes: Array<'quiet' | 'limit'> = ['quiet', 'quiet', 'quiet', 'limit'];
+    const limited = new Set<unknown>();
     let runs = 0;
     stop = startRoutineScheduler({
       state,
@@ -102,11 +111,14 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
       isReady: () => true,
       logger: { error: vi.fn() },
       changed: () => {},
+      // The turn runner classifies limits from error codes; the text may not say so.
+      usageLimited: (chat) => limited.has(chat),
       run: async (chat) => {
         const outcome = outcomes[runs++];
         if (outcome === 'limit') {
           chat.status = 'error';
-          chat.messages.push({ role: 'system', text: 'You have reached your usage limit.' });
+          chat.messages.push({ role: 'system', text: 'Private plan details' });
+          limited.add(chat);
         } else {
           chat.status = 'done';
           chat.tipSkipped = true;
@@ -127,18 +139,32 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     expect(runs).toBe(1);
     expect(store.history()).toHaveLength(1);
 
+    // Editing the routine evaluates the new instruction even with the same state.
+    await store.mutate('mage', {
+      operation: 'save',
+      routine: routineDefinition.parse({
+        id: 'xp',
+        title: 'XP',
+        instruction: 'Tell me when I am close to leveling up.',
+        triggers: [{ kind: 'interval', seconds: 60 }],
+        cooldownSeconds: 60,
+      }),
+    });
+    await minute();
+    expect(runs).toBe(2);
+
     // New XP: the routine runs again.
     vi.setSystemTime(Date.now() + 60_000);
     present(400);
     await vi.advanceTimersByTimeAsync(3000);
-    expect(runs).toBe(2);
+    expect(runs).toBe(3);
 
-    // Quests changed, then the model reports a usage limit.
+    // Quests changed, then the turn fails on a usage limit.
     state.questRevision = 2;
     vi.setSystemTime(Date.now() + 60_000);
     present(400);
     await vi.advanceTimersByTimeAsync(3000);
-    expect(runs).toBe(3);
+    expect(runs).toBe(4);
     expect(store.history().at(-1)?.status).toBe('error');
 
     // Further intervals wait out the 30-minute pause.
@@ -146,7 +172,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
       state.questRevision++;
       await minute();
     }
-    expect(runs).toBe(3);
+    expect(runs).toBe(4);
   } finally {
     await stop?.();
     vi.useRealTimers();

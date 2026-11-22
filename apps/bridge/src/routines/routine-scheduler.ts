@@ -4,7 +4,7 @@ import type { RoutineStore } from './routine-store.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
-import { isUsageLimit } from '../agent/turn-runner.ts';
+import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
 import type { Logger } from 'pino';
 interface SchedulerDependencies {
@@ -16,6 +16,8 @@ interface SchedulerDependencies {
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   changed: () => void;
   logger: Pick<Logger, 'error'>;
+  /** Whether a finished routine chat failed on a usage limit; tests replace it. */
+  usageLimited?: (chat: Chat) => boolean;
 }
 export function startRoutineScheduler(deps: SchedulerDependencies) {
   const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed, logger } =
@@ -59,7 +61,12 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
         return;
       }
       const fingerprint = routineFingerprint(presence.context, state.questRevision);
-      if (gate.unchanged(claimed.routine.id, claimed.event.event, fingerprint)) {
+      const quietKey = JSON.stringify([
+        presence.identity,
+        claimed.routine.id,
+        claimed.routine.updatedAt,
+      ]);
+      if (gate.unchanged(quietKey, claimed.event.event, fingerprint)) {
         await routineStore.skip(claimed.run.id);
         return;
       }
@@ -106,12 +113,11 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
               : chat.tipSkipped
                 ? 'no_tip'
                 : 'done';
-      const failure = chat.messages.findLast((m) => m.role === 'system')?.text;
       gate.finished(
-        claimed.routine.id,
+        quietKey,
         status,
         fingerprint,
-        status === 'error' && isUsageLimit({ message: failure }),
+        status === 'error' && (deps.usageLimited ?? endedOnUsageLimit)(chat),
       );
       await routineStore.finish(chat.id, status, summary);
     })()
