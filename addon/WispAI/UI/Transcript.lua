@@ -37,7 +37,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
         follow = false
     end
     local width = math.max(100, transcript:GetWidth() - 6)
-    local y, used = 0, {}
+    local y, used, changed = 0, {}, false
     local previousSpeaker, previousMessage
     local messages, hasToolActivity, hasReplyContent, turnStart = ns.UI.DisplayMessages(chat)
     local animateTurn = ns.UI.ObserveReplyTurn(replyTurn, chat, messages[turnStart - 1])
@@ -58,6 +58,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
                 row:Show()
             end
             ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
+            changed = ns.UI.RowChanged(row, message) or changed
             previousSpeaker, previousMessage = speaker, message
             ns.UI.PositionMessageRow(row, content, y, width)
             if ns.Transport.RecordFirstText then
@@ -90,7 +91,7 @@ function ns.UI.Transcript.Refresh(chat, preserveScrollForChat)
     local position = follow and scrollRange or math.min(oldOffset, scrollRange)
     scrollBar:SetValue(position)
     ns.UI.Widgets.SetScroll(transcript, position)
-    ns.UI.UpdateNewMessages(newMessages, chat, follow, switched)
+    ns.UI.UpdateNewMessages(newMessages, chat, follow, switched, changed)
     renderedChat = id
     rendering = false
 end

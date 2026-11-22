@@ -442,26 +442,30 @@ function ns.UI.MessageGap(previous, message)
     end
     return previous and ns.UI.MessageSpeaker(previous) ~= ns.UI.MessageSpeaker(message) and 12 or 0
 end
-function ns.UI.ChatSignature(chat)
-    local parts = { chat and chat.id or "" }
-    for _, message in ipairs(chat and chat.messages or {}) do
-        parts[#parts + 1] = (message.id or "")
-            .. (message.text or "")
-            .. (message.tool and message.tool.status or "")
-            .. (message.tool and message.tool.resultPreview or "")
-            .. (ns.UI.RichSignature and ns.UI.RichSignature({ message.ui, message.parts }) or "")
-    end
-    return table.concat(parts, "\31")
+-- Whether a rendered row says something different from the last time it was
+-- drawn. A row drawn for the first time is not a change by itself: it may be an
+-- earlier message coming into view; a new last message is checked separately.
+function ns.UI.RowChanged(row, message)
+    local said = row.replyView and row.replyView.said
+    local status = message.tool and message.tool.status
+    local preview = message.tool and message.tool.resultPreview
+    local changed = row.seenSaid ~= nil
+        and (row.seenSaid ~= said or row.seenStatus ~= status or row.seenPreview ~= preview)
+    row.seenSaid, row.seenStatus, row.seenPreview = said, status, preview
+    return changed
 end
-function ns.UI.UpdateNewMessages(button, chat, follow, switched)
-    local signature = ns.UI.ChatSignature(chat)
-    if not switched and button.signature and button.signature ~= signature and not follow then
+-- `changed` says whether a rendered row changed; a new last message counts too.
+function ns.UI.UpdateNewMessages(button, chat, follow, switched, changed)
+    local messages = chat and chat.messages or {}
+    local last = messages[#messages]
+    local lastId = last and (last.id or tostring(#messages)) or ""
+    if not switched and button.lastId and (changed or button.lastId ~= lastId) and not follow then
         button.pending = true
     end
     if follow or switched then
         button.pending = false
     end
-    button.signature = signature
+    button.lastId = lastId
     button:SetShown(button.pending == true and not follow)
 end
 function ns.UI.MessageSpeaker(message)

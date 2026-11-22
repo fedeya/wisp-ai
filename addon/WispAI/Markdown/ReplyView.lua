@@ -279,18 +279,15 @@ function view.Update(state, chatId, message)
     local references = ns.UI.MessageFormat.Signature(message.references)
     local native = ns.UI.RichSignature(message.ui)
     local dependencies = references .. "\31" .. native
-    local signature = (message.role or "")
-        .. "\31"
-        .. (message.text or "")
-        .. "\31"
-        .. dependencies
-        .. "\31"
-        .. ns.UI.RichSignature(message.parts)
-        .. "\31"
-        .. tostring(message.streaming)
-        .. "\31"
-        .. tostring(message._markdown)
-    local contentChanged = state.signature ~= signature
+    local parts = ns.UI.RichSignature(message.parts)
+    -- Fields are compared one by one: Lua strings are interned, so comparing
+    -- a reply's text is cheap, while copying it into a signature is not.
+    local said = state.text ~= message.text or state.native ~= native or state.parts ~= parts
+    local contentChanged = said
+        or state.role ~= message.role
+        or state.dependencies ~= dependencies
+        or state.streaming ~= message.streaming
+        or state.markdown ~= message._markdown
     local syntaxChanged = state.pending and state.syntaxRevision ~= cache.revision
     local inlineChanged = state.inlinePending and state.inlineRevision ~= cache.revision
 
@@ -346,8 +343,14 @@ function view.Update(state, chatId, message)
     if identityChanged or contentChanged or syntaxChanged or inlineChanged then
         state.revision = state.revision + 1
     end
+    -- Counts changes to what the reply says, not to how its links resolve.
+    if said or identityChanged then
+        state.said = (state.said or 0) + 1
+    end
     state.chatId, state.messageId, state.role = chatId, message.id, message.role
-    state.signature = signature
+    state.text, state.native, state.parts = message.text, native, parts
+    state.dependencies, state.streaming, state.markdown =
+        dependencies, message.streaming, message._markdown
     state.inlineRevision = cache.revision
     local key = state.revision .. ":" .. view.revision
     if not state.presentation then

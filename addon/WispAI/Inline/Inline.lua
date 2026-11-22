@@ -276,7 +276,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         ns.UI.RefreshModelControls()
     end
     local chat = ns.Inline.InlineCurrent()
-    local y, used = 0, {}
+    local y, used, changed = 0, {}, false
     local previousSpeaker, previousMessage
     local width = math.max(180, scroll:GetWidth() - 6)
     local previousRange = scroll:GetVerticalScrollRange()
@@ -303,6 +303,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
                 row:Show()
             end
             ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateReply)
+            changed = ns.UI.RowChanged(row, message) or changed
             previousSpeaker, previousMessage = speaker, message
             local h = row.height
             ns.UI.PositionMessageRow(row, content, y, width)
@@ -371,7 +372,7 @@ function ns.Inline.RefreshInline(preserveScrollForChat)
         local bottom = math.max(0, y - scroll:GetHeight())
         uiWidgets.SetScroll(scroll, follow and bottom or math.min(offset, bottom))
     end
-    ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id))
+    ns.UI.UpdateNewMessages(newMessages, chat, follow, renderedChat ~= (chat and chat.id), changed)
     renderedChat = chat and chat.id
     uiWidgets.SetText(send, working and L["composer.stop"] or L["inline.ask"])
 end
