@@ -1,12 +1,15 @@
 local helper = require("addon.tests.support")
 local LOCALES = helper.LOCALES
 
-local function buildUI(gameLocale, language)
+local function buildUI(gameLocale, language, prepare)
     local env = helper.env()
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
     GetLocale = function()
         return gameLocale
+    end
+    if prepare then
+        prepare(env)
     end
     time = os.time
     ns = helper.namespace({
@@ -150,9 +153,13 @@ describe("locales", function()
             local env = buildUI("enUS", language)
             local widgets = env.ns.UI.Widgets
             assert.equal(face, widgets.ScriptFace())
-            assert.is_false(widgets.InterSupports("Hello"))
+            -- An empty edit box may receive the UI language's script.
+            assert.is_false(widgets.InterSupports(""))
             local font = env.CreateFrame("Frame"):CreateFontString()
             widgets.ChatFont(font, env.ns.L["activity.thinking"])
+            assert.equal(face, font.fontPath)
+            font = env.CreateFrame("Frame"):CreateFontString()
+            widgets.ChatFont(font, "")
             assert.equal(face, font.fontPath)
         end
         -- The game font already covers the client's own language.
@@ -165,7 +172,98 @@ describe("locales", function()
         assert.is_true(env.ns.UI.Widgets.InterSupports("Привет"))
         env = buildUI("koKR", "enUS")
         assert.is_nil(env.ns.UI.Widgets.ScriptFace())
-        assert.is_false(env.ns.UI.Widgets.InterSupports("Hello"))
+        assert.is_false(env.ns.UI.Widgets.InterSupports(""))
+        assert.is_false(env.ns.UI.Widgets.InterSupports("레벨업"))
+    end)
+
+    describe("with the UI in Chinese", function()
+        local INTER = "Interface\\AddOns\\WispAI\\Fonts\\Inter-Medium.ttf"
+        local INTER_STRONG = "Interface\\AddOns\\WispAI\\Fonts\\Inter-SemiBold.ttf"
+        local ARKAI = "Fonts\\ARKai_T.ttf"
+        -- Gives the stub the client's font objects, so Wisp's font roles exist.
+        local function withFonts(env)
+            env.CreateFont = function()
+                return env.CreateFrame("Frame"):CreateFontString()
+            end
+            for _, name in ipairs({
+                "GameFontNormalHuge",
+                "GameFontNormalLarge",
+                "GameFontHighlight",
+                "GameFontHighlightSmall",
+            }) do
+                env[name] = env.CreateFont()
+            end
+        end
+
+        for gameLocale, roleFace in pairs({ esES = ARKAI, zhCN = "Fonts\\FRIZQT__.TTF" }) do
+            it(
+                "keeps the script face for chrome and Inter for Latin text on " .. gameLocale,
+                function()
+                    local env = buildUI(gameLocale, "zhCN", withFonts)
+                    local widgets = env.ns.UI.Widgets
+                    local FONTS = widgets.FONTS
+                    -- UI chrome is painted for Chinese: the script face on another
+                    -- client, the client's own font on a Chinese one.
+                    assert.equal(roleFace, FONTS.body.fontPath)
+                    assert.equal(roleFace, FONTS.strong.fontPath)
+
+                    -- User and game text in Latin keeps Inter, accents included.
+                    local host = env.CreateFrame("Frame")
+                    for text, role in pairs({
+                        ["Rotación para subir de nivel"] = "strong",
+                        ["¿Mejorar equipo en la subasta?"] = "body",
+                        ["Mago 21 · Los Baldíos"] = "small",
+                    }) do
+                        local font = host:CreateFontString()
+                        widgets.SetContentText(font, text, FONTS[role])
+                        assert.equal(text, font:GetText())
+                        assert.equal(role == "strong" and INTER_STRONG or INTER, font.fontPath)
+                    end
+                    assert.is_true(widgets.InterSupports("Rotación para subir de nivel"))
+                    local chat = host:CreateFontString()
+                    widgets.ChatFont(chat, "¿Mejorar equipo en la subasta?")
+                    assert.equal(INTER, chat.fontPath)
+
+                    -- Chinese text, from the UI or the player, keeps the role's face.
+                    local chinese = host:CreateFontString()
+                    widgets.SetContentText(chinese, env.ns.L["sidebar.newChat"], FONTS.body)
+                    assert.equal(FONTS.body, chinese.font)
+                    assert.are_not.equal(INTER, chinese.fontPath)
+                    assert.is_false(widgets.InterSupports("升级循环"))
+                end
+            )
+        end
+
+        it("shows Latin chat titles and the character line in Inter", function()
+            local env = buildUI("esES", "zhCN", function(env)
+                withFonts(env)
+                env.UnitName = function()
+                    return "Gandalfín"
+                end
+                env.UnitClass = function()
+                    return "Mago"
+                end
+                env.UnitLevel = function()
+                    return 21
+                end
+            end)
+            local ns = env.ns
+            ns.chats[1] = { id = "c1", title = "Rotación para subir de nivel", messages = {} }
+            ns.chats[2] = { id = "c2", title = "升级循环", messages = {} }
+            ns.UI.Sidebar.Refresh()
+            local titles = {}
+            for _, w in ipairs(env.UI_TEST.widgets) do
+                if w.kind == "FontString" and w.text ~= "" then
+                    titles[w.text] = w
+                end
+            end
+            local latin = assert(titles["Rotación para subir de nivel"])
+            assert.equal(INTER, latin.fontPath)
+            local chinese = assert(titles["升级循环"])
+            assert.are_not.equal(INTER, chinese.fontPath)
+            assert.equal(INTER_STRONG, assert(titles["Gandalfín"]).fontPath)
+            assert.equal(INTER, assert(titles["Mago 21"]).fontPath)
+        end)
     end)
 
     it("keeps Inter for quoted tool labels and other general punctuation", function()

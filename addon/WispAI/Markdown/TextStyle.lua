@@ -16,7 +16,7 @@ local function styleFont(font, span, level)
         height = math.max(9, math.floor(height * 0.78 + 0.5))
     end
     -- Conservatively restrict code and Inter prose to Latin/Greek/Cyrillic;
-    -- unsupported scripts and CJK/Hangul clients keep the localized game font.
+    -- other scripts keep the localized game font or the UI language's script face.
     if span.code and ns.UI.Widgets.LatinScript(span.text) then
         if font:SetFont(codeFont, height, flags) then
             return

@@ -67,7 +67,7 @@ function ns.UI.ConversationStatus.Refresh(chat)
     end
     local visible = not ns.db.minimized
     layoutCrumbs(inRoutine)
-    setText(sessionTitle, place)
+    ns.UI.Widgets.SetContentText(sessionTitle, place, ns.UI.Widgets.FONTS.body)
     sessionTitle:SetTextColor(unpack(inRoutine and ns.UI.Widgets.TEXT or MUTED))
     sessionTitle:SetShown(visible)
     separator:SetShown(visible)

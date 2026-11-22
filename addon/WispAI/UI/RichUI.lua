@@ -48,7 +48,8 @@ local function font(parent, style)
     style = style or "GameFontNormal"
     local f = parent:CreateFontString(nil, "OVERLAY", style)
     if uiFont(style) ~= (_G[style] or style) then
-        f:SetFontObject(uiFont(style))
+        f.face = uiFont(style)
+        f:SetFontObject(f.face)
     end
     f:SetJustifyH("LEFT")
     f:SetWordWrap(true)
@@ -60,7 +61,8 @@ local function line(f, value, width, x, y)
     f:SetWidth(math.max(1, width))
     f:ClearAllPoints()
     f:SetPoint("TOPLEFT", x, -y)
-    uiWidgets.SetText(f, value)
+    -- Panel text comes from the model and the game: Latin keeps Inter.
+    uiWidgets.SetContentText(f, value, f.face)
     f:SetShown(value ~= "")
     return value ~= "" and f:GetStringHeight() or 0
 end
@@ -687,15 +689,13 @@ function ns.UI.RenderRichUI(host, chat, message, width, collectWriting, animateP
                     else
                         f:SetTextColor(unpack(TEXT))
                     end
-                    if f.markdownStyle ~= style then
-                        f:SetFontObject(
-                            part.style == "code" and (_G[style] or style) or uiFont(style)
-                        )
-                        f.markdownStyle = style
-                    end
                     f:SetPoint("TOPLEFT", left, -y)
                     f:SetWidth(math.max(1, width - left))
-                    uiWidgets.SetText(f, part._markdown and part.text or rendered(part.text))
+                    uiWidgets.SetContentText(
+                        f,
+                        part._markdown and part.text or rendered(part.text),
+                        part.style == "code" and (_G[style] or style) or uiFont(style)
+                    )
                     f:Show()
                     y = y + f:GetStringHeight() + 8
                     if writingUnits then

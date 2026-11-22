@@ -271,8 +271,8 @@ function ns.UI.Activity.Refresh(chat)
         elseif loading then
             title, detail = L["empty.loading"], L["empty.fetching"]
         end
-        setText(emptyState.title, title)
-        setText(emptyState.detail, detail)
+        ns.UI.Widgets.SetContentText(emptyState.title, title, ns.UI.Widgets.FONTS.heading)
+        ns.UI.Widgets.SetContentText(emptyState.detail, detail, ns.UI.Widgets.FONTS.body)
         for _, dot in ipairs(emptyState.dots) do
             dot:SetShown(emptyState.loading)
         end

@@ -44,7 +44,11 @@ function ns.UI.Memory.Refresh()
         local width = math.max(220, memoryPanel:GetWidth() - 48)
         row:SetWidth(width)
         row.text:SetWidth(width - 24)
-        setText(row.text, entry.text:gsub("|", "||"))
+        ns.UI.Widgets.SetContentText(
+            row.text,
+            (entry.text:gsub("|", "||")),
+            ns.UI.Widgets.FONTS.body
+        )
         setText(
             row.scope,
             entry.slot == "preferences" and L["memory.player"] or L["memory.character"]

@@ -194,12 +194,16 @@ end
 
 local function refreshFooter()
     local name, classLevel, state = characterLine()
-    setText(footer.name, name)
+    widgets.SetContentText(footer.name, name, FONTS.strong)
     -- First UTF-8 character, so accented names keep a whole glyph.
-    setText(footer.initial, string.upper(name:match("^[%z\1-\127\194-\244][\128-\191]*") or ""))
+    widgets.SetContentText(
+        footer.initial,
+        string.upper(name:match("^[%z\1-\127\194-\244][\128-\191]*") or ""),
+        FONTS.strong
+    )
     -- Name and class/level are written out; the connection is the avatar's dot,
     -- with its state spelled out only in the avatar's tooltip.
-    setText(footer.detail, classLevel)
+    widgets.SetContentText(footer.detail, classLevel, FONTS.small)
     footer.tooltip = classLevel ~= "" and (classLevel .. " · " .. state) or state
     local tint = ns.Transport.needsDesktopSetup and COLORS.warning
         or (ns.connected and COLORS.success or COLORS.muted)
@@ -235,15 +239,12 @@ function ns.UI.Sidebar.Refresh()
         b.chatId, b.fullTitle = session.id, session.title
         local selected = session.id == ns.active and not ns.routinesPage
         widgets.SetSelected(b, selected)
-        if FONTS.strong then
-            b.label:SetFontObject(selected and FONTS.strong or FONTS.body)
-        end
         local busy = session.status == "working"
         b.selected = selected
         b.marked = not selected and (busy or session.unread == true)
         b.mark:SetColorTexture(unpack(busy and ACCENT or TEXT))
         paintRowEnd(b)
-        setText(b.label, session.title)
+        widgets.SetContentText(b.label, session.title, selected and FONTS.strong or FONTS.body)
         if b.y ~= y then
             b.y = y
             b:ClearAllPoints()
