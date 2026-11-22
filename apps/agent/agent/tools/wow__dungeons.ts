@@ -7,9 +7,9 @@ export default enabledTool(
   'dungeons',
   defineTool({
     description:
-      'Forever dungeon and raid journal from the Polestar addon. Without dungeon: every dungeon and raid with its level range, best level, group size, zone, entrance (UI map ID and 0–100 coordinates, ready for wow__set_map_waypoint), whether the entrance is in enemy territory, whether it is new in Forever, and its quest count for this faction. With dungeon (a name in any language or a key from the list): that dungeon’s summary plus its quests for this faction (level, state for this character, objectives, start and finish points, rewards) and its bosses in kill order with their known drops (item IDs, names, quality). Forever adds dungeons and changes ranges, so prefer this over general knowledge. Unavailable when Polestar is not installed; then use other sources.',
+      'Forever dungeon facts. Without dungeon: every dungeon the game’s group finder lists, with its suggested level range and group size in the client’s language, entrances (UI map ID and 0–100 coordinates, ready for wow__set_map_waypoint) from QuestieDB or Polestar, and, when Polestar is installed, best level, zone, enemy-territory note, whether it is new in Forever, quest count, and raids. With dungeon (a listed name or part of it): that entry plus, from Polestar, its quests for this faction (level, state for this character, objectives, start and finish points, rewards) and bosses in kill order with known drops. sources says which layers were available. Forever adds dungeons and changes ranges, so prefer this over general knowledge.',
     inputSchema: dungeonsInput,
-    label: { start: () => 'Reading dungeon journal', complete: () => 'Read dungeon journal' },
+    label: { start: () => 'Reading dungeons', complete: () => 'Read dungeons' },
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',

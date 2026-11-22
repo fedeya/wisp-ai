@@ -16,6 +16,7 @@ read_globals = {
     "C_DeathRecap",
     "C_EncodingUtil",
     "C_Item",
+    "C_LFGList",
     "C_Map",
     "C_QuestLog",
     "C_Reputation",

@@ -152,35 +152,40 @@ export function mapStubs(): ToolStub[] {
   ]);
 }
 
-// Polestar's journal as wow__dungeons returns it for a level 21 Horde
-// character: ranges and entrances follow Polestar's Forever data.
-const dungeon = (
-  key: string,
+// wow__dungeons for a level 21 Horde character with Questie and Polestar
+// installed: names and ranges from Forever's group finder, entrances from
+// QuestieDB, extras and the RFC page from Polestar's journal.
+const entry = (
   name: string,
+  instanceMapId: number,
   minLevel: number,
   maxLevel: number,
-  bestLevel: number,
-  zone: string,
-  entrance: [number, number, number],
+  entrance: [number, number, number, string] | null,
   extra: Record<string, unknown> = {},
 ) => ({
-  key,
   name,
-  kind: 'dungeon',
+  instanceMapId,
   minLevel,
   maxLevel,
-  bestLevel,
   players: 5,
-  zone,
-  entrance: { mapId: entrance[0], x: entrance[1], y: entrance[2] },
+  source: 'group finder',
+  ...(entrance && {
+    entrances: [{ mapId: entrance[0], x: entrance[1], y: entrance[2], source: entrance[3] }],
+  }),
   ...extra,
 });
-const journal = {
-  source: 'Polestar dungeon journal',
-  version: '0.4.1.1',
+const reading = {
+  sources: { groupFinder: true, questie: true, polestar: '0.4.1.1' },
   characterLevel: 21,
   faction: 'H',
 };
+const questie = 'QuestieDB Forever';
+const rfc = entry('Sima Ígnea', 389, 13, 18, [1454, 52.6, 49, questie], {
+  journalKey: 'ragefire-chasm',
+  bestLevel: 15,
+  zone: 'Orgrimmar',
+  questCount: 8,
+});
 
 export function dungeonJournalStubs(): ToolStub[] {
   return json([
@@ -192,28 +197,17 @@ export function dungeonJournalStubs(): ToolStub[] {
         response: {
           status: 'available',
           data: {
-            ...journal,
+            ...reading,
             moreQuests: false,
             dungeon: {
-              ...dungeon(
-                'ragefire-chasm',
-                'Sima Ígnea',
-                13,
-                18,
-                15,
-                'Orgrimmar',
-                [1454, 49.3, 95.1],
-                {
-                  questCount: 8,
-                },
-              ),
+              ...rfc,
               quests: [
                 {
                   id: 5723,
                   title: 'Poner a prueba la fuerza del enemigo',
                   level: 15,
                   minLevel: 9,
-                  objectives: 'Mata a 8 troggs Furia Ardiente\nMata a 8 chamanes Furia Ardiente',
+                  objectives: 'Mata a 8 troggs Furia Ardiente. Mata a 8 chamanes Furia Ardiente.',
                   start: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
                   finish: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
                   rewards: { xp: 1350 },
@@ -225,7 +219,6 @@ export function dungeonJournalStubs(): ToolStub[] {
                   minLevel: 10,
                   state: 'completed',
                   start: { name: 'Varimathras', mapId: 1458, x: 56.2, y: 92.2 },
-                  finish: { name: 'Varimathras', mapId: 1458, x: 56.2, y: 92.2 },
                 },
                 {
                   id: 5722,
@@ -234,7 +227,6 @@ export function dungeonJournalStubs(): ToolStub[] {
                   minLevel: 10,
                   objectives: 'Recupera la bolsa de Maur Grimtotem',
                   start: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
-                  finish: { name: 'Rahauro', mapId: 1456, x: 70.6, y: 30.7 },
                   rewards: { xp: 1600 },
                 },
               ],
@@ -260,113 +252,67 @@ export function dungeonJournalStubs(): ToolStub[] {
         response: {
           status: 'available',
           data: {
-            ...journal,
+            ...reading,
             dungeons: [
-              dungeon('ragefire-chasm', 'Sima Ígnea', 13, 18, 15, 'Orgrimmar', [1454, 49.3, 95.1], {
-                questCount: 8,
+              rfc,
+              entry('Salón de Señores Feudales', 3065, 13, 20, [1455, 27.63, 47.83, questie], {
+                newInForever: true,
+                bestLevel: 15,
+                zone: 'Forjaz',
+                questCount: 1,
+                enemyTerritory: 'Entrada en territorio de la Alianza (en Forjaz)',
               }),
-              dungeon(
-                'the-hall-of-thanes',
-                'La Sala de los Thanes',
-                13,
-                18,
-                15,
-                'Forjaz',
-                [1455, 15.1, 86],
-                {
-                  newInForever: true,
-                  questCount: 1,
-                  enemyTerritory: 'Entrada en territorio de la Alianza (en Forjaz)',
-                },
-              ),
-              dungeon(
-                'ruins-of-lordaeron',
-                'Ruinas de Lordaeron',
-                15,
-                22,
-                19,
-                'Entrañas',
-                [1458, 72.7, 11.5],
-                {
-                  newInForever: true,
-                  questCount: 10,
-                },
-              ),
-              dungeon(
-                'wailing-caverns',
-                'Cuevas de los Lamentos',
-                17,
-                24,
-                21,
-                'Los Baldíos',
-                [1413, 46.7, 35.7],
-                {
-                  questCount: 9,
-                },
-              ),
-              dungeon(
-                'shadowfang-keep',
-                'Castillo de Colmillo Oscuro',
-                20,
-                30,
-                24,
-                'Bosque de Argénteos',
-                [1421, 45, 67.9],
-                {
-                  questCount: 6,
-                },
-              ),
-              dungeon(
-                'blackfathom-deeps',
-                'Cavernas de Brazanegra',
-                24,
-                32,
-                27,
-                'Vallefresno',
-                [1440, 15.1, 13.2],
-                {
-                  questCount: 9,
-                },
-              ),
-              dungeon(
-                'stormwind-stockade',
-                'Las Mazmorras',
-                24,
-                32,
-                27,
-                'Ventormenta',
-                [1453, 50.8, 67],
-                {
-                  enemyTerritory: 'Entrada en territorio de la Alianza (en Ventormenta)',
-                },
-              ),
-              dungeon(
-                'excavation-site-wetlands',
-                'Excavación: Los Humedales',
+              entry('Cuevas de los Lamentos', 43, 15, 24, [1413, 46, 36.5, questie], {
+                bestLevel: 21,
+                zone: 'Los Baldíos',
+                questCount: 9,
+              }),
+              entry('Ruinas de Lordaeron', 2999, 15, 22, [1458, 72.41, 11.37, questie], {
+                newInForever: true,
+                bestLevel: 19,
+                zone: 'Entrañas',
+                questCount: 10,
+              }),
+              entry('Minas de la Muerte', 36, 17, 26, [1436, 42.5, 71.7, questie], {
+                zone: 'Páramos de Poniente',
+                enemyTerritory: 'Entrada en territorio de la Alianza (Páramos de Poniente)',
+              }),
+              entry('Castillo de Colmillo Oscuro', 33, 20, 30, [1421, 44.8, 67.8, questie], {
+                bestLevel: 24,
+                zone: 'Bosque de Argénteos',
+                questCount: 6,
+              }),
+              entry('Cavernas de Brazanegra', 48, 24, 32, [1440, 14.5, 14.2, questie], {
+                bestLevel: 27,
+                zone: 'Vallefresno',
+                questCount: 9,
+              }),
+              entry(
+                'Sitio de Excavación: Los Humedales',
+                2998,
                 26,
                 33,
-                29,
-                'Los Humedales',
-                [1437, 50.8, 61.1],
+                [1437, 47.79, 56.16, questie],
                 {
                   newInForever: true,
+                  bestLevel: 29,
+                  zone: 'Los Humedales',
                   questCount: 5,
                 },
               ),
-              dungeon(
-                'city-of-dalaran',
-                'Ciudad de Dalaran',
-                28,
-                35,
-                32,
-                'Montañas de Alterac',
-                [1416, 8.8, 59.6],
-                {
-                  newInForever: true,
-                  questCount: 4,
-                  attunements: 1,
-                },
-              ),
+              entry('Ciudad de Dalaran', 2959, 28, 35, [1416, 8.46, 59.21, questie], {
+                newInForever: true,
+                bestLevel: 32,
+                zone: 'Montañas de Alterac',
+                questCount: 4,
+                attunements: 1,
+              }),
+              entry('Gnomeregan', 90, 29, 38, [1426, 24.3, 39.8, questie], {
+                enemyTerritory: 'Entrada en territorio de la Alianza (Dun Morogh)',
+              }),
+              entry('Horado Rajacieno', 47, 29, 38, [1413, 42.9, 90.2, questie], { questCount: 4 }),
+              entry('La Ciudad Anegada', 2970, 35, 42, null, { newInForever: true }),
+              entry("Bastión de Krol'dok", 3039, 40, 47, null, { newInForever: true }),
             ],
           },
         },
