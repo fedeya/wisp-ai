@@ -60,6 +60,21 @@ export class ModelConnections implements ModelCatalog {
   list() {
     return this.connections.map((c) => ({ ...c, hasKey: this.keys.has(c.id) }));
   }
+  /**
+   * False only when nothing could answer a chat: no ChatGPT account was ever signed in
+   * and no API connection has a key (or is a keyless compatible endpoint) with models.
+   * Expired or limited accounts still count, so their own errors explain the fix.
+   */
+  hasProvider() {
+    return (
+      this.chatgpt.state().status !== 'signed_out' ||
+      this.connections.some(
+        (connection) =>
+          (this.keys.has(connection.id) || connection.provider === 'compatible') &&
+          connection.models.length > 0,
+      )
+    );
+  }
   connected(model: string) {
     const selected = parseConnectionModel(model);
     if (!selected) {

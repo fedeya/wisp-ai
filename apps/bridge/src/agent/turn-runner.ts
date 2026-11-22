@@ -27,6 +27,16 @@ function isTimeout(error: unknown): boolean {
   );
 }
 
+/** Nothing can answer: the player skipped connecting an AI provider. */
+class NoProviderError extends Error {
+  constructor() {
+    super(
+      'No AI is connected to Wisp yet. Open the Wisp app and connect ChatGPT or an API key, then send your message again.',
+    );
+    this.name = 'NoProviderError';
+  }
+}
+
 // Plan quotas and provider rate limits are expected account states, not Wisp failures.
 // Chats whose latest turn failed on a plan or provider usage limit, as
 // classified from error codes and causes, not from the displayed message.
@@ -55,6 +65,8 @@ interface TurnDependencies {
   isReady: () => boolean;
   isStopping: () => boolean;
   accountBusy: () => boolean;
+  /** Whether any provider could answer. Omitted means yes. */
+  hasProvider?: () => boolean;
   isCurrent: (chat: Chat) => boolean;
   changed: () => void;
   logger: Pick<Logger, 'info' | 'error'>;
@@ -168,6 +180,10 @@ export function createTurnRunner(deps: TurnDependencies) {
       if (accountBusy()) {
         failureCode = 'account_busy';
         throw Error('Finish the connection operation first.');
+      }
+      if (deps.hasProvider && !deps.hasProvider()) {
+        failureCode = 'no_provider';
+        throw new NoProviderError();
       }
       failureCode = 'model_preparation_failed';
       const chosenModel = chat.modelSettings?.model || defaultModel();
@@ -283,6 +299,8 @@ export function createTurnRunner(deps: TurnDependencies) {
       chat.messages.push({
         role: 'system',
         text: error instanceof Error ? error.message : String(error),
+        // The addon shows this notice in the game's language; `text` is the fallback.
+        ...(error instanceof NoProviderError ? { notice: 'noProvider' as const } : {}),
       });
       logger[failed ? 'error' : 'info'](
         {

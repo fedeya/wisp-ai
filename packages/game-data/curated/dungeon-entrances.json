@@ -1,0 +1,77 @@
+{
+  "$comment": "Entrances for instances new in Forever, which have no entrance in Map.db2: { UI map ID, x, y } in 0-100 map coordinates. Zones: instance map ID -> UI maps its entrance is drawn on, since neighbouring zones' world bounds overlap.",
+  "zones": {
+    "33": [1421],
+    "34": [1453],
+    "36": [1436],
+    "43": [1413],
+    "47": [1413],
+    "48": [1440],
+    "70": [1418],
+    "90": [1426],
+    "109": [1435],
+    "129": [1413],
+    "189": [1420],
+    "209": [1446],
+    "229": [1427, 1428],
+    "230": [1427, 1428],
+    "249": [1445],
+    "289": [1422],
+    "309": [1434],
+    "329": [1423],
+    "349": [1443],
+    "389": [1454],
+    "409": [1427, 1428],
+    "429": [1444],
+    "469": [1428],
+    "509": [1451],
+    "531": [1451]
+  },
+  "entrances": {
+    "2959": {
+      "value": [1416, 8.5, 59.3],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "City of Dalaran, Alterac Mountains; QuestieDB Forever: 8.46, 59.21"
+    },
+    "2970": {
+      "value": [1434, 21.3, 27.8],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "The Drowned City, Stranglethorn Vale"
+    },
+    "2974": {
+      "value": [1447, 38.6, 33.2],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "Blackmaw Hold, Azshara"
+    },
+    "2994": {
+      "value": [1445, 75.3, 14.1],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "Alcaz Prison, Dustwallow Marsh"
+    },
+    "2998": {
+      "value": [1437, 47.8, 56.2],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "Excavation Site: Wetlands; QuestieDB Forever: 47.79, 56.16"
+    },
+    "2999": {
+      "value": [1458, 72.5, 11.4],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "Ruins of Lordaeron, Undercity; QuestieDB Forever: 72.41, 11.37"
+    },
+    "3001": {
+      "value": [1449, 48.1, 6.1],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "The Shaper's Terrace, Un'Goro Crater"
+    },
+    "3039": {
+      "value": [2548, 37.5, 37.3],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "Krol'dok Stronghold"
+    },
+    "3065": {
+      "value": [1455, 27.7, 47.9],
+      "source": "OpenMap Forever places (MIT)",
+      "note": "The Hall of Thanes, Ironforge; QuestieDB Forever: 27.63, 47.83"
+    }
+  }
+}

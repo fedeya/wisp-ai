@@ -256,6 +256,7 @@ ns.Locales.zhTW = {
     ["notice.addonUpdated"] = "已安裝 Wisp {installed}（目前載入 {loaded}）。輸入 /reload 以載入新版本。",
     ["notice.appUpdateAvailable"] = "Wisp {version} 已可使用。開啟 Wisp 應用程式進行安裝。",
     ["notice.deliveryStalled"] = "Wisp 沒有收到你的訊息。輸入 /reload 重新連線。",
+    ["notice.noProvider"] = "Wisp 尚未連接任何 AI。開啟 Wisp 應用程式，連接 ChatGPT 或 API 金鑰，然後重新傳送訊息。",
     ["notice.mapUnavailable"] = "地圖介面無法使用。",
     ["notice.leaveCombatMacro"] = "請先脫離戰鬥再拿起巨集。",
 

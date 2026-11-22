@@ -14,6 +14,7 @@
     "start": "turbo run start --filter=@wisp/bridge",
     "agent": "turbo run dev --filter=@wisp/agent",
     "install-addon": "node apps/bridge/scripts/install.ts",
+    "data:generate": "pnpm --filter @wisp/game-data generate",
     "build": "turbo run build",
     "check": "turbo run format:check lint typecheck typecheck:root",
     "typecheck": "turbo run typecheck typecheck:root",

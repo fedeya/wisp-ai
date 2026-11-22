@@ -66,6 +66,28 @@ test('connections persist metadata separately from secrets and work without Chat
   await expect(restored.prepare(slug)).rejects.toThrow('not found');
 });
 
+test('a provider exists once ChatGPT was signed in or an API connection has a key', async () => {
+  const { manager, chatgpt } = await fixture();
+  let status = 'signed_out';
+  chatgpt.state = () => ({ status });
+  expect(manager.hasProvider()).toBe(false);
+  // An expired or limited ChatGPT account still counts: its own error explains the fix.
+  status = 'reauth_required';
+  expect(manager.hasProvider()).toBe(true);
+  status = 'signed_out';
+  const { id } = await manager.save(setup);
+  expect(manager.hasProvider()).toBe(true);
+  await manager.remove(id);
+  expect(manager.hasProvider()).toBe(false);
+  await manager.save({
+    provider: 'compatible',
+    name: 'Local',
+    baseURL: 'http://127.0.0.1:11434/v1',
+    models: [{ id: 'local-test', contextWindow: 32000 }],
+  });
+  expect(manager.hasProvider()).toBe(true);
+});
+
 test('a failed metadata write rolls back the API key', async () => {
   const { manager, file, secrets } = await fixture();
   await mkdir(file);

@@ -27,6 +27,8 @@ export const chatSchema = z.object({
       id: z.string().optional(),
       role: z.enum(['user', 'assistant', 'system', 'tool']),
       text: z.string(),
+      // System notices the addon can show in the game's language; `text` stays the fallback.
+      notice: z.enum(['noProvider']).optional(),
       // Exact final-answer source, independent of parser/display limits. Never reasoning.
       rawReply: z.string().optional(),
       replyFormat: z.literal('text').optional(),
