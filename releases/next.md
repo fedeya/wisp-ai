@@ -11,3 +11,7 @@
 - Opening your bags or quest log stutters less with Wisp open: the chat now only redraws replies that show an item the game just loaded, at most once per burst of updates, instead of redrawing everything for every update.
 - Routines use less of your ChatGPT usage: they pause after you reach your usage limit instead of retrying every few minutes, and skip a check when nothing has changed since the last one had nothing to report.
 - Wisp answers dungeon questions from the game's own data, so it knows the dungeons new in Forever, their real level ranges and where each entrance is, and can mark it on your map without searching the web.
+
+## Fixed
+
+- With two game windows open, Wisp no longer switches between them every few seconds, interrupting answers and leaving messages stuck on "Waiting for bridge". The window you last typed in keeps Wisp.

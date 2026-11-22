@@ -891,6 +891,8 @@ function ns.Transport.StartTransport()
                     -- A fresh bridge must negotiate a hello, never replay a
                     -- cached action from the previous process. Renew the
                     -- handshake before retrying an unacknowledged request.
+                    -- `takeover` lets the player's own request move the bridge
+                    -- from another game window; the periodic heartbeat cannot.
                     local context
                     if ns.Character.CaptureTurn then
                         ns.characterAcknowledged, ns.questAcknowledged = 0, 0
@@ -904,6 +906,7 @@ function ns.Transport.StartTransport()
                         chat = ns.active,
                         context = context,
                         heartbeat = true,
+                        takeover = true,
                     })
                     renewed = true
                 end

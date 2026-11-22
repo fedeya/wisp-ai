@@ -310,6 +310,7 @@ end
 now=6;timers[2]()
 assert(captures==1 and #packets==3)
 assert(packets[2].type=='hello' and packets[2].heartbeat==true)
+assert(packets[2].takeover==true,'a retried request may take the bridge from another game window')
 assert(packets[2].context.characterRevision==12 and packets[2].context.questRevision==13)
 assert(packets[3].type=='say' and packets[3].seq==packets[1].seq)
 assert(packets[3].messageId=='retry-me' and packets[3].session==packets[1].session)

@@ -54,7 +54,14 @@ interface ReceiverDependencies {
   /** Records a character's name and moves its pre-GUID data before the packet is handled. */
   adoptCharacter?: (character: CharacterProfile) => void;
   logger: Pick<Logger, 'info' | 'warn'>;
+  now?: () => number;
 }
+/**
+ * A game window that sent anything this recently keeps the bridge: another window's
+ * periodic heartbeat (every 60 seconds) cannot take it. Two windows otherwise steal
+ * the session from each other on every heartbeat, interrupting turns each time.
+ */
+export const ACTIVE_SESSION_MS = 150_000;
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
     state,
@@ -79,20 +86,55 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
   let lastDelivery = '';
+  const now = deps.now ?? Date.now;
+  let activeSeenAt = 0;
+  // Sessions already logged as held off, so a waiting window logs once, not every minute.
+  const heldOff = new Set<string>();
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
     state.chats.push(chat);
     return chat;
   };
   return function receive(packet: Packet) {
+    const receivedAt = now();
+    if (state.activeTransport && packet.session === state.activeTransport) {
+      activeSeenAt = receivedAt;
+    }
     const establishesSession =
       packet.type === 'hello' || (!state.activeTransport && packet.type === 'poll');
     if (!establishesSession && packet.session !== state.activeTransport) {
       return;
     }
+    if (
+      packet.type === 'hello' &&
+      packet.heartbeat &&
+      !packet.takeover &&
+      state.activeTransport &&
+      packet.session !== state.activeTransport &&
+      receivedAt - activeSeenAt < ACTIVE_SESSION_MS
+    ) {
+      if (!heldOff.has(packet.session) && heldOff.size < 32) {
+        heldOff.add(packet.session);
+        logger.info(
+          { event: 'transport.heartbeat_held_off' },
+          'Another game window is connected; its heartbeat did not take the bridge',
+        );
+      }
+      return;
+    }
     const beforeIntegrations = JSON.stringify(capabilitySettings.snapshot());
     const newTransport = establishesSession && state.activeTransport !== packet.session;
     if (newTransport) {
+      logger.info(
+        {
+          event: 'transport.session_changed',
+          reason: packet.takeover ? 'takeover' : packet.heartbeat ? 'heartbeat' : packet.type,
+          previousIdleMs: state.activeTransport ? receivedAt - activeSeenAt : undefined,
+        },
+        'Game window connected',
+      );
+      activeSeenAt = receivedAt;
+      heldOff.delete(packet.session);
       contextCache = new TurnContextCache();
       lastDelivery = '';
       pending.cancelAll('The addon reloaded or the character changed. Query again.');

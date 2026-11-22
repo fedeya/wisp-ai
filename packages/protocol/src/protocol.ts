@@ -46,6 +46,9 @@ const envelope = z.object({
   key: identifier.optional(),
   enabled: z.boolean().optional(),
   heartbeat: z.boolean().optional(),
+  // A hello sent because the player's own request went unanswered: it may take the
+  // bridge from another game window, which a periodic heartbeat never does.
+  takeover: z.boolean().optional(),
   integrations: z.unknown().optional(),
   nodeId: identifier.optional(),
   values: z.unknown().optional(),
