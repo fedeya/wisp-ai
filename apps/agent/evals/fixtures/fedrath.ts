@@ -396,8 +396,48 @@ const prices: Record<number, number> = {
   20442: 12000,
 };
 
+// Mirrors the bridge's item_sources result for every fixture candidate.
+const relationKinds: Record<string, string> = {
+  dropped_by: 'drops',
+  drops_from: 'drops',
+  sold_by: 'vendors',
+  reward_from: 'quests',
+  created_by: 'crafted',
+};
+function itemSourcesResult() {
+  const ids = [...Object.values(armor), ...Object.values(weapons)].flat().map((entry) => entry.id);
+  return {
+    status: 'available',
+    priceStatus: 'available',
+    realm: 'Vorn',
+    items: ids.map((itemId) => {
+      const found: Record<string, unknown[]> = {};
+      for (const edge of (sources[itemId] ?? []) as Array<Record<string, unknown>>) {
+        const { rel, ...rest } = edge;
+        (found[relationKinds[String(rel)] ?? 'other'] ??= []).push({
+          ...rest,
+          evidence: rel === 'created_by' ? 'game files, unconfirmed' : 'player-observed',
+        });
+      }
+      return {
+        itemId,
+        ...found,
+        auction: prices[itemId] ? { unitPriceCopper: prices[itemId], ageDays: 0 } : undefined,
+        sourceKnown: Object.keys(found).length > 0,
+        sourcesStatus: 'available',
+      };
+    }),
+    note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
+  };
+}
+
 export function fedrathStubs(): ToolStub[] {
   return json([
+    {
+      id: 'item-sources',
+      tool: 'wow__item_sources',
+      outcome: { response: itemSourcesResult() },
+    },
     {
       id: 'character',
       tool: 'wow__query_character',

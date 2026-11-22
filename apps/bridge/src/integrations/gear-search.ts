@@ -4,8 +4,8 @@ import {
   type armorSearchInput,
   type weaponSearchInput,
 } from '@wisp/protocol/game-inspection';
+import { callEverloot } from './everloot.ts';
 
-const EVERLOOT_MCP = 'https://everloot.app/mcp/public';
 // Everloot lists at most 100 items per call; one call per quality keeps every
 // slot/type listing checked so far (all under 100 per quality) complete.
 const PAGE = 100;
@@ -53,34 +53,17 @@ async function listCategory(
   fetcher: typeof fetch,
   signal?: AbortSignal,
 ): Promise<CategoryPage> {
-  const response = await fetcher(EVERLOOT_MCP, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      accept: 'application/json, text/event-stream',
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'tools/call',
-      params: { name: 'item_categories', arguments: { ...category, quality, limit: PAGE } },
-    }),
-    redirect: 'error',
-    signal: signal
-      ? AbortSignal.any([signal, AbortSignal.timeout(15000)])
-      : AbortSignal.timeout(15000),
-  });
-  if (!response.ok) {
-    throw new Error('Everloot item catalog returned HTTP ' + response.status);
+  let content;
+  try {
+    content = await callEverloot(
+      'item_categories',
+      { ...category, quality, limit: PAGE },
+      fetcher,
+      signal,
+    );
+  } catch (error) {
+    throw new Error('Everloot item catalog could not list this category', { cause: error });
   }
-  const text = await response.text();
-  // Streamable HTTP servers may answer with one SSE event instead of JSON.
-  const json = JSON.parse(text.trimStart().startsWith('{') ? text : text.split('data:')[1] || '');
-  const result = json?.result;
-  if (json?.error || result?.isError || !result?.structuredContent) {
-    throw new Error('Everloot item catalog could not list this category');
-  }
-  const content = result.structuredContent;
   const itemIds = Array.isArray(content.items)
     ? content.items
         .map((item: { itemId?: unknown }) => item.itemId)

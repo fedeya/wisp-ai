@@ -32,6 +32,7 @@ import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
 import { readLoadedItems, retriesItemLoading } from '../addon/item-loading.ts';
 import { searchGear } from '../integrations/gear-search.ts';
+import { itemSources } from '../integrations/item-sources.ts';
 import { characterIdentity, conversationTitle, queryCharacterSections } from '../chat/context.ts';
 export interface MemoryView {
   entries?: unknown[];
@@ -102,6 +103,7 @@ const inspectionTools = {
   compare_items: 'compare_items',
   search_armor: 'search_armor',
   search_weapons: 'search_weapons',
+  item_sources: 'item_sources',
   auctions: 'inspect_auctions',
   macros: 'inspect_macros',
   map: 'inspect_map',
@@ -518,6 +520,12 @@ export function createAgentApp(deps: AgentDependencies) {
           (candidates) => readLoadedItems(() => request(candidates), abort),
           { signal: abort },
         );
+      }
+      if (inspection?.kind === 'item_sources') {
+        return itemSources(inspection.args.itemIds, (names) => request(names), {
+          everloot: capabilitySettings.enabled('mcp:everloot'),
+          signal: abort,
+        });
       }
       return inspection && retriesItemLoading(inspection)
         ? readLoadedItems(() => request(), abort)

@@ -157,6 +157,16 @@ export const weaponSearchInput = z.strictObject({
   weaponType: z.enum(weaponTypes),
   ...gearLevels,
 });
+export const itemSourcesInput = z.strictObject({
+  itemIds: z.array(z.number().int().positive()).min(1).max(20),
+});
+// Bridge-to-addon only: names for source entities plus cached prices.
+export const sourceNamesInput = z.strictObject({
+  itemIds: z.array(z.number().int().positive()).max(20),
+  npcIds: z.array(z.number().int().positive()).max(200),
+  questIds: z.array(z.number().int().positive()).max(200),
+  spellIds: z.array(z.number().int().positive()).max(200),
+});
 // Bridge-to-addon only: the bridge resolves catalog IDs before the game read.
 export const gearCandidatesInput = z.strictObject({
   itemIds: z.array(z.number().int().positive()).min(1).max(500),
@@ -243,6 +253,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
   z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
   z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
+  z.object({ kind: z.literal('item_sources'), args: itemSourcesInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
   z.object({

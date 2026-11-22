@@ -35,6 +35,7 @@ Integrations\Integrations.lua
 Integrations\Questie.lua
 Integrations\Syndicator.lua
 Integrations\Auctionator.lua
+Integrations\Sources.lua
 ChatHistory\ChatHistory.lua
 Combat\Combat.lua
 Character\TrainingData.lua
