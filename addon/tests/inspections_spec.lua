@@ -741,3 +741,45 @@ it(
         assert(#d.items == 1 and d.items[1].id == 11 and d.counts.tooLowLevel == 2)
     end
 )
+
+it("gear candidates wait for an uncached equipped item instead of treating it as empty", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+
+    local cached = { [10] = true }
+    C_Item = {
+        GetItemInfo = function(id)
+            if cached[id] then
+                return "Item " .. id,
+                    "item:" .. id,
+                    2,
+                    id == 10 and 22 or 12,
+                    15,
+                    "Armor",
+                    "Misc",
+                    1,
+                    "INVTYPE_FEET"
+            end
+        end,
+        GetItemStats = function()
+            return { ITEM_MOD_INTELLECT_SHORT = 2 }
+        end,
+        RequestLoadItemDataByID = function() end,
+    }
+    UnitLevel = function()
+        return 21
+    end
+    GetInventoryItemID = function(_, slot)
+        return slot == 8 and 77 or nil
+    end
+
+    local d = ns.Character.Inspect({ kind = "gear_candidates", args = { itemIds = { 10 } } }).data
+    assert(d.status == "loading" and d.loadingIds[1] == 77)
+    assert(d.items[1].itemLevelGain == nil and d.items[1].statDelta == nil)
+    assert(d.items[1].equipped.id == 77 and d.items[1].equipped.status == "loading")
+
+    cached[77] = true
+    d = ns.Character.Inspect({ kind = "gear_candidates", args = { itemIds = { 10 } } }).data
+    assert(d.status == "available" and d.items[1].itemLevelGain == 10 and d.items[1].slot == 8)
+end)
