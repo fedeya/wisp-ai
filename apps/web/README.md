@@ -68,6 +68,11 @@ Safari 16.4+, Firefox 128+); desktop previews use the current WebView2 runtime.
    repository tools only; agent, bridge, addon and test dependencies belong to their
    own workspaces and are not installed by the web deployment. Do not override
    installation with an unfiltered `pnpm install`.
+   Its `ignoreCommand` runs `turbo-ignore`, so Vercel skips the build when a push
+   changes neither `apps/web` nor a workspace it depends on (such as
+   `@wisp/releases`). Leave **Ignored Build Step** in the dashboard on
+   **Automatic** so this file decides. Keep the pinned `turbo-ignore` version in
+   step with the root `turbo` version.
 4. Add `wisp.fedeya.sh` in the project's Domains settings and apply the DNS record
    Vercel provides.
 

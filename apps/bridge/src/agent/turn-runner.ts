@@ -28,6 +28,12 @@ function isTimeout(error: unknown): boolean {
 }
 
 // Plan quotas and provider rate limits are expected account states, not Wisp failures.
+// Chats whose latest turn failed on a plan or provider usage limit, as
+// classified from error codes and causes, not from the displayed message.
+const usageLimitedChats = new WeakSet<Chat>();
+export function endedOnUsageLimit(chat: Chat) {
+  return usageLimitedChats.has(chat);
+}
 function isUsageLimit(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
@@ -125,6 +131,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
     controllers.set(chat, controller);
+    usageLimitedChats.delete(chat);
     const generation = Symbol();
     generations.set(chat, generation);
     const ownsTurn = () => generations.get(chat) === generation;
@@ -266,6 +273,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           (error instanceof Error && isUsageLimit(error.cause))
         ) {
           failureCode = 'usage_limit';
+          usageLimitedChats.add(chat);
         }
       }
       parts.flush(chat, Date.now(), true);
