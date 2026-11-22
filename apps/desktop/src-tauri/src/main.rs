@@ -465,7 +465,19 @@ async fn pause(duration: Duration) {
 }
 
 async fn stop_host(host: &Host) -> Result<(), String> {
-    host.supervised.store(false, Ordering::SeqCst);
+    // Supervision is off while stopping so the supervisor never relaunches a
+    // bridge that is exiting on request. A stop that fails (for example the
+    // bridge refuses while a reply is running) leaves the app and bridge
+    // running, so the previous supervision comes back with it.
+    let supervised = host.supervised.swap(false, Ordering::SeqCst);
+    let result = request_bridge_stop(host).await;
+    if result.is_err() {
+        host.supervised.store(supervised, Ordering::SeqCst);
+    }
+    result
+}
+
+async fn request_bridge_stop(host: &Host) -> Result<(), String> {
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     loop {
         match host.request("POST", "/stop", json!({})).await {
@@ -1020,6 +1032,29 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_rejected_stop_keeps_supervising_the_bridge() {
+        let data = std::env::temp_dir().join(format!("wisp-stop-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(data.join("runtime")).unwrap();
+        // An unusable identity makes the stop request fail like a refused stop.
+        fs::write(data.join("runtime/desktop.json"), "{}").unwrap();
+        let host = Host {
+            data: data.clone(),
+            payload: PathBuf::new(),
+            child: Mutex::new(None),
+            lifecycle: tauri::async_runtime::Mutex::new(()),
+            supervised: AtomicBool::new(true),
+            addon_notice: Default::default(),
+            client: reqwest::Client::new(),
+        };
+        assert!(tauri::async_runtime::block_on(stop_host(&host)).is_err());
+        assert!(host.supervised.load(Ordering::SeqCst));
+        fs::remove_file(data.join("runtime/desktop.json")).unwrap();
+        assert!(tauri::async_runtime::block_on(stop_host(&host)).is_ok());
+        assert!(!host.supervised.load(Ordering::SeqCst));
+        let _ = fs::remove_dir_all(data);
+    }
+
     #[test]
     fn bridge_relaunch_backs_off_and_repeats_the_last_step() {
         assert_eq!(bridge_relaunch_delay(0), Duration::from_secs(1));
