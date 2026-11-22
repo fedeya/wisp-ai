@@ -13,8 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # The check script has no dependencies, so it runs without pnpm install;
+      # verify-deps-before-run=false stops pnpm installing the workspace first.
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
           node-version: '24.22.1'
       - name: Compare the pinned Forever build with the latest
-        run: node packages/game-data/src/check.ts
+        run: pnpm --config.verify-deps-before-run=false data:check
