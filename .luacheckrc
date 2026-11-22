@@ -90,7 +90,6 @@ read_globals = {
     "IsShiftKeyDown",
     "ItemRefTooltip",
     "LibQuestieDB",
-    "Polestar",
     "LibStub",
     "MAX_ACCOUNT_MACROS",
     "MAX_CHARACTER_MACROS",

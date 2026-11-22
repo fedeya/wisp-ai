@@ -588,6 +588,9 @@ end
 inspectors.chat = function(args)
     return ns.ChatHistory.ReadChatHistory(args)
 end
+inspectors.dungeons = function(args)
+    return ns.Character.ReadDungeons(args)
+end
 inspectors.combat = function(args)
     return ns.Combat.Read(args)
 end
@@ -626,6 +629,7 @@ function ns.Character.Inspect(inspection)
         capturedAt = time(),
         character = UnitName("player"),
         source = inspection.kind == "flight_paths" and "WoW flight maps"
+            or (inspection.kind == "dungeons" and "WoW group finder and Wisp dungeon entrance table")
             or (inspection.kind == "training" and "Bundled What's Training? Forever catalog")
             or "WoW addon live API",
         status = ok and "available" or "unavailable",

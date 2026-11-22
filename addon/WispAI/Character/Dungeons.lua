@@ -1,0 +1,130 @@
+-- Forever dungeon facts from the game itself, so no other addon is needed:
+-- the group finder lists every dungeon with its suggested level range and
+-- group size in the client's language, and Wisp's generated entrance table
+-- (DungeonEntrances.lua, from the game's Map tables) places each entrance.
+local _, ns = ...
+local sharedText = ns.Shared.Text
+
+local DUNGEON_CATEGORY = 2
+
+local function text(value)
+    return type(value) == "string" and sharedText.TruncateUtf8Bytes(value, 160) or nil
+end
+
+local function level(value)
+    return type(value) == "number" and value > 0 and value or nil
+end
+
+local function activities()
+    local lfg = C_LFGList
+    if not (lfg and lfg.GetAvailableActivities and lfg.GetActivityInfoTable) then
+        return {}
+    end
+    local ok, ids = pcall(lfg.GetAvailableActivities)
+    local out = {}
+    for _, id in ipairs(ok and type(ids) == "table" and ids or {}) do
+        local read, info = pcall(lfg.GetActivityInfoTable, id)
+        if read and type(info) == "table" and info.categoryID == DUNGEON_CATEGORY then
+            out[#out + 1] = info
+        end
+    end
+    return out
+end
+
+local function zoneName(mapId)
+    local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(mapId)
+    return info and text(info.name) or nil
+end
+
+local function entrances(instanceMapId)
+    local known = ns.Character.DungeonEntrances[instanceMapId]
+    if not known then
+        return nil
+    end
+    local out = {}
+    for _, point in ipairs(known.entrances) do
+        out[#out + 1] = { mapId = point[1], zone = zoneName(point[1]), x = point[2], y = point[3] }
+    end
+    return out
+end
+
+-- The instance's name in the client's language when the game has it.
+local function instanceName(instanceMapId, fallback)
+    local name = GetRealZoneText and GetRealZoneText(instanceMapId)
+    return text(name ~= "" and name or fallback)
+end
+
+local function list()
+    local out, listed = {}, {}
+    for _, info in ipairs(activities()) do
+        listed[info.mapID] = true
+        out[#out + 1] = {
+            name = text(info.fullName),
+            instanceMapId = info.mapID,
+            minLevel = level(info.minLevelSuggestion),
+            maxLevel = level(info.maxLevelSuggestion),
+            players = info.maxNumPlayers,
+            entrances = entrances(info.mapID),
+        }
+    end
+    -- Raids and dungeons the group finder does not list keep their entrance.
+    for id, known in pairs(ns.Character.DungeonEntrances) do
+        if not listed[id] then
+            out[#out + 1] = {
+                name = instanceName(id, known.name),
+                englishName = known.name,
+                instanceMapId = id,
+                raid = known.raid or nil,
+                players = known.players,
+                entrances = entrances(id),
+                notInGroupFinder = true,
+            }
+        end
+    end
+    table.sort(out, function(a, b)
+        local la, lb = a.minLevel or 99, b.minLevel or 99
+        if la ~= lb then
+            return la < lb
+        end
+        return (a.name or "") < (b.name or "")
+    end)
+    return out
+end
+
+local function matches(entry, wanted)
+    for _, name in ipairs({ entry.name, entry.englishName }) do
+        if type(name) == "string" and name:lower():find(wanted, 1, true) then
+            return true
+        end
+    end
+    local known = ns.Character.DungeonEntrances[entry.instanceMapId]
+    return known and known.name:lower():find(wanted, 1, true) and true or false
+end
+
+function ns.Character.ReadDungeons(args)
+    local dungeons = list()
+    assert(dungeons[1], "The game listed no dungeons")
+    local result = {
+        characterLevel = UnitLevel and UnitLevel("player") or nil,
+        faction = UnitFactionGroup and UnitFactionGroup("player") or nil,
+        entrancesBuild = ns.Character.DungeonEntrancesBuild,
+    }
+    if not args.dungeon then
+        result.dungeons = dungeons
+        return result
+    end
+    local wanted, found = args.dungeon:lower(), {}
+    for _, entry in ipairs(dungeons) do
+        if matches(entry, wanted) then
+            found[#found + 1] = entry
+        end
+    end
+    assert(
+        found[1],
+        "No dungeon named "
+            .. args.dungeon
+            .. "; read the list without a name for the names the game uses"
+    )
+    result.dungeons = found
+    return result
+end

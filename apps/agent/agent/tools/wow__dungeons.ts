@@ -7,7 +7,7 @@ export default enabledTool(
   'dungeons',
   defineTool({
     description:
-      'Forever dungeon facts. Without dungeon: every dungeon the game’s group finder lists, with its suggested level range and group size in the client’s language, entrances (UI map ID and 0–100 coordinates, ready for wow__set_map_waypoint) from QuestieDB or Polestar, and, when Polestar is installed, best level, zone, enemy-territory note, whether it is new in Forever, quest count, and raids. With dungeon (a listed name or part of it): that entry plus, from Polestar, its quests for this faction (level, state for this character, objectives, start and finish points, rewards) and bosses in kill order with known drops. sources says which layers were available. Forever adds dungeons and changes ranges, so prefer this over general knowledge.',
+      'Forever dungeons and raids from the game itself: every dungeon the group finder lists, with its suggested level range and group size in the client’s language, plus raids and dungeons it does not list; each with its entrance (UI map ID, zone name and 0–100 coordinates, ready for wow__set_map_waypoint) from Wisp’s table generated from the game’s map data. dungeon (part of a localized or English name) filters the list; wings are separate entries. Forever adds dungeons and changes ranges, so prefer this over general knowledge. It does not cover quests or drops: use the quest and item source tools for those.',
     inputSchema: dungeonsInput,
     label: { start: () => 'Reading dungeons', complete: () => 'Read dungeons' },
     execute: async (args, ctx) =>

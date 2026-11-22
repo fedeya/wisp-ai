@@ -36,13 +36,14 @@ Integrations\Questie.lua
 Integrations\Syndicator.lua
 Integrations\Auctionator.lua
 Integrations\Sources.lua
-Integrations\Dungeons.lua
 ChatHistory\ChatHistory.lua
 Combat\Combat.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
 Character\FlightPaths.lua
+Character\DungeonEntrances.lua
+Character\Dungeons.lua
 Character\Inspect.lua
 Actions\Game.lua
 Settings\Settings.lua

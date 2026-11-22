@@ -152,7 +152,7 @@ export const toolDescriptions: Record<string, [string, string]> = {
   ],
   dungeons: [
     'Dungeon journal',
-    'Read Forever dungeon level ranges from the group finder, entrances from Questie, and quests and boss drops from Polestar.',
+    'Read Forever dungeons, their level ranges and entrances from the game.',
   ],
   inspect_map: ['Read maps', 'Look up maps and read your current map pin.'],
   inspect_hearthstone: ['Read Hearthstone bind', 'Read where your Hearthstone takes you.'],
