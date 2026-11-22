@@ -28,7 +28,7 @@ function isTimeout(error: unknown): boolean {
 }
 
 // Plan quotas and provider rate limits are expected account states, not Wisp failures.
-function isUsageLimit(error: unknown): boolean {
+export function isUsageLimit(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const code = 'code' in error && typeof error.code === 'string' ? error.code : '';
   const message = 'message' in error && typeof error.message === 'string' ? error.message : '';

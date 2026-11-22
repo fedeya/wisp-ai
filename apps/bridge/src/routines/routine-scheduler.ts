@@ -4,6 +4,8 @@ import type { RoutineStore } from './routine-store.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
+import { isUsageLimit } from '../agent/turn-runner.ts';
+import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
 import type { Logger } from 'pino';
 interface SchedulerDependencies {
   state: SessionState;
@@ -25,9 +27,11 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
   };
   let dispatchingRoutine = false;
   let dispatch: Promise<void> | undefined;
+  const gate = createRoutineGate();
   const timer = setInterval(() => {
     if (
       dispatchingRoutine ||
+      gate.paused() ||
       isStopping() ||
       !isReady() ||
       !capabilitySettings.enabled('tool:manage_routine') ||
@@ -52,6 +56,11 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
       }
       if (isStopping()) {
         await routineStore.defer(claimed.run.id, claimed.event);
+        return;
+      }
+      const fingerprint = routineFingerprint(presence.context, state.questRevision);
+      if (gate.unchanged(claimed.routine.id, claimed.event.event, fingerprint)) {
+        await routineStore.skip(claimed.run.id);
         return;
       }
       const chat = createChat(claimed.run.id);
@@ -87,8 +96,7 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
         .filter((m) => m.role === 'assistant' || m.role === 'system')
         .map((m) => m.text)
         .join('\n');
-      await routineStore.finish(
-        chat.id,
+      const status =
         chat.status === 'interrupted'
           ? 'interrupted'
           : chat.status === 'error'
@@ -97,9 +105,15 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
               ? 'cancelled'
               : chat.tipSkipped
                 ? 'no_tip'
-                : 'done',
-        summary,
+                : 'done';
+      const failure = chat.messages.findLast((m) => m.role === 'system')?.text;
+      gate.finished(
+        claimed.routine.id,
+        status,
+        fingerprint,
+        status === 'error' && isUsageLimit({ message: failure }),
       );
+      await routineStore.finish(chat.id, status, summary);
     })()
       .catch((error) =>
         logger.error(
