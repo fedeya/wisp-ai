@@ -1,5 +1,5 @@
 import { watch, type FSWatcher } from 'node:fs';
-import { readdir, readFile, mkdir, writeFile, rename } from 'node:fs/promises';
+import { readdir, readFile, mkdir, writeFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -58,6 +58,9 @@ export function preferBulkDelivery(bytes: number, costs: DownlinkCosts) {
   return fragments * costs.fragmentMs - costs.bulkMs >= slotCostMs;
 }
 
+/** How often the fallback tick walks every character folder once a session is active. */
+export const FULL_SCAN_INTERVAL_MS = 5000;
+
 export class DiskTransport {
   private scans?: Promise<void>;
   private reads = new Map<string, Promise<void>>();
@@ -82,7 +85,6 @@ export class DiskTransport {
   private controlTimer?: ReturnType<typeof setInterval>;
   private controlWriting?: Promise<void>;
   private lastControlWriteAt = 0;
-  seen = new Map<string, number>();
   stopped = false;
   published = '';
   timer?: ReturnType<typeof setInterval>;
@@ -123,12 +125,22 @@ export class DiskTransport {
   async start() {
     await this.scan(true);
     if (this.stopped) return;
+    let lastScanAt = Date.now();
     this.timer = setInterval(() => {
-      this.scans ??= this.scan(false)
-        .catch(this.onError)
-        .finally(() => {
-          this.scans = undefined;
-        });
+      if (this.scans) return;
+      // Folder watchers deliver most changes; this tick is the fallback.
+      // Walking every character folder and rereading every state file each
+      // second costs I/O that grows with the number of characters, so once a
+      // game session is active only its file is reread every second and the
+      // full walk (new characters, character switches) runs less often.
+      const active = this.activeFile;
+      const work =
+        !active || Date.now() - lastScanAt >= FULL_SCAN_INTERVAL_MS
+          ? ((lastScanAt = Date.now()), this.scan(false))
+          : this.read(active, false);
+      this.scans = work.catch(this.onError).finally(() => {
+        this.scans = undefined;
+      });
     }, 1000);
     this.controlTimer = setInterval(() => {
       if (this.activeFile && this.controlPending()) {
@@ -318,7 +330,9 @@ export class DiskTransport {
                 this.compactAck ||= packet.compactAck === true;
                 this.bulkAvailable &&= packet.bulkAvailable !== false;
               }
-              this.deliver(packet);
+              // Duplicates (application resends) are expected here: the packet
+              // receiver dedupes by session and sequence and re-acknowledges them.
+              this.receive(packet);
             }
           }
         }
@@ -327,20 +341,6 @@ export class DiskTransport {
     if (file === this.activeFile) {
       this.repairControl(text);
     }
-  }
-  private deliver(packet: Packet) {
-    const key = packet.session + ':' + packet.seq;
-    if (this.seen.has(key)) {
-      this.receive(packet);
-      return;
-    }
-    this.seen.set(key, Date.now());
-    for (const [id, at] of this.seen) {
-      if (Date.now() - at > 3600_000) {
-        this.seen.delete(id);
-      }
-    }
-    this.receive(packet);
   }
   private repairControl(text: string) {
     if (
@@ -411,16 +411,25 @@ export class DiskTransport {
       }
       const temporary = file + '.wisp-control.tmp';
       await writeFile(temporary, replaceDownlink(current, frame), 'utf8');
-      if (this.stopped || this.activeFile !== file || this.notification !== frame) {
-        return;
+      let replaced = false;
+      try {
+        if (this.stopped || this.activeFile !== file || this.notification !== frame) {
+          return;
+        }
+        const latest = await this.sharedFile(() => readFile(file, 'utf8'));
+        // Preserve concurrent game packets and unrelated user addon settings.
+        // A changed file is retried from a fresh snapshot by the watchdog.
+        if (latest !== current) {
+          return;
+        }
+        await this.sharedFile(() => rename(temporary, file));
+        replaced = true;
+      } finally {
+        // An abandoned write must not leave its copy beside the game's files.
+        if (!replaced) {
+          await rm(temporary, { force: true }).catch(() => {});
+        }
       }
-      const latest = await this.sharedFile(() => readFile(file, 'utf8'));
-      // Preserve concurrent game packets and unrelated user addon settings.
-      // A changed file is retried from a fresh snapshot by the watchdog.
-      if (latest !== current) {
-        return;
-      }
-      await this.sharedFile(() => rename(temporary, file));
       this.lastControlWriteAt = Date.now();
       this.performance.controlWrites++;
       this.performance.wireBytes += frame.length;
