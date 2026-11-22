@@ -60,14 +60,16 @@ end
 function methods:GetAlpha()
     return self.alpha or 1
 end
+-- As in the client, an explicit SetFont outlives a later SetFontObject: the
+-- string keeps that face until SetFont sets another one.
 function methods:SetFontObject(font)
-    if self.font == font then
-        return
-    end
     self.font = font
-    self.fontPath, self.fontSize, self.fontFlags = "Fonts\\FRIZQT__.TTF", 14, ""
+    if not self.explicitFont then
+        self.fontPath, self.fontSize, self.fontFlags = "Fonts\\FRIZQT__.TTF", 14, ""
+    end
 end
 function methods:SetFont(path, size, flags)
+    self.explicitFont = true
     self.fontPath, self.fontSize, self.fontFlags = path, size, flags
     return true
 end

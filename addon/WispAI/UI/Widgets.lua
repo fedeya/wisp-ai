@@ -124,18 +124,46 @@ local INTER_CHAT_SCALE = 0.85
 local function interSize(size)
     return math.max(8, math.floor(size * INTER_CHAT_SCALE + 0.5))
 end
+--- Puts `fontObject`'s face and shadow back on `font`. An explicit SetFont
+--- outlives a later SetFontObject, so leaving an override needs this.
+local function restoreFace(font, fontObject)
+    if type(fontObject) ~= "table" or not fontObject.GetFont then
+        return
+    end
+    local path, size, flags = fontObject:GetFont()
+    if path then
+        font:SetFont(path, size, flags or "")
+    end
+    if fontObject.GetShadowOffset then
+        local x, y = fontObject:GetShadowOffset()
+        if x then
+            font:SetShadowOffset(x, y)
+        end
+        local r, g, b, a = fontObject:GetShadowColor()
+        if r then
+            font:SetShadowColor(r, g, b, a)
+        end
+    end
+end
 --- Applies Inter at the player's chat size, or the chat font itself when Inter
 --- cannot render `text` (or, for empty text, the UI language is CJK/Hangul).
 local function chatFont(font, text, strong)
     font:SetFontObject(ChatFontNormal)
     local _, size, flags = ChatFontNormal:GetFont()
+    local override = false
     if interSupports(text) then
-        if font:SetFont(strong and INTER_STRONG or INTER, interSize(size), flags) then
+        override = font:SetFont(strong and INTER_STRONG or INTER, interSize(size), flags)
+        if override then
             softShadow(font)
         end
     elseif scriptFont then
-        font:SetFont(scriptFont, size, flags)
+        override = font:SetFont(scriptFont, size, flags)
     end
+    if not override and font._wispOverride then
+        -- A recycled row that showed Inter text keeps it until reset explicitly.
+        restoreFace(font, ChatFontNormal)
+    end
+    font._wispOverride = override or nil
 end
 
 --- Sets fonts for the UI language `locale` (from `ns.ActiveLocale`). The window
@@ -239,13 +267,17 @@ local function setContentText(font, text, fontObject)
     if fontObject then
         font:SetFontObject(fontObject)
         local role = roleOf[fontObject]
-        if role and not useInter and interSupports(text) then
-            if font:SetFont(role.path, role.size, "") then
-                softShadow(font)
-            else
-                font:SetFontObject(fontObject)
-            end
+        local inter = role
+            and not useInter
+            and interSupports(text)
+            and font:SetFont(role.path, role.size, "")
+        if inter then
+            softShadow(font)
+        elseif font._wispOverride then
+            -- A recycled string that showed Latin text keeps that Inter face.
+            restoreFace(font, fontObject)
         end
+        font._wispOverride = inter or nil
     end
     setText(font, text)
 end

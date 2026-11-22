@@ -139,6 +139,7 @@ describe("locales", function()
         local item = { fontString = env.CreateFrame("Frame"):CreateFontString() }
         radios[10].initialize(item)
         assert.equal("Fonts\\2002.TTF", item.fontString.fontPath)
+        item = { fontString = env.CreateFrame("Frame"):CreateFontString() }
         item.fontString:SetFontObject({})
         radios[2].initialize(item)
         assert.equal("Fonts\\FRIZQT__.TTF", item.fontString.fontPath)
@@ -230,6 +231,25 @@ describe("locales", function()
                     assert.equal(FONTS.body, chinese.font)
                     assert.are_not.equal(INTER, chinese.fontPath)
                     assert.is_false(widgets.InterSupports("升级循环"))
+
+                    -- A recycled string switches faces both ways, although an
+                    -- explicit face outlives SetFontObject.
+                    local reused = host:CreateFontString()
+                    widgets.SetContentText(reused, "Rotación para subir de nivel", FONTS.body)
+                    assert.equal(INTER, reused.fontPath)
+                    widgets.SetContentText(reused, "升级循环", FONTS.body)
+                    assert.equal(roleFace, reused.fontPath)
+                    assert.equal(FONTS.body.fontSize, reused.fontSize)
+                    widgets.SetContentText(reused, "¿Mejorar equipo en la subasta?", FONTS.body)
+                    assert.equal(INTER, reused.fontPath)
+
+                    local row = host:CreateFontString()
+                    widgets.ChatFont(row, "¿Mejorar equipo en la subasta?")
+                    assert.equal(INTER, row.fontPath)
+                    widgets.ChatFont(row, "升级循环")
+                    assert.equal(roleFace, row.fontPath)
+                    widgets.ChatFont(row, "Rotación para subir de nivel")
+                    assert.equal(INTER, row.fontPath)
                 end
             )
         end
