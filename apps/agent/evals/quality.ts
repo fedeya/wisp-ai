@@ -40,7 +40,7 @@ export const scenarios: Record<string, Scenario> = {
     facts:
       character +
       `
-Sources the tools returned: TheWoWDB lists Sima Ígnea (Ragefire Chasm) as a zone for levels 13-18 inside Orgrimmar. A web guide says: Ragefire Chasm 13-18, Wailing Caverns (Cuevas de los Lamentos, the Barrens) 17-24, Deadmines 17-26 (Alliance territory, Westfall), Shadowfang Keep 22-30, and Dungeon Finder unlocks at level 13. The guide page gives the Ragefire entrance in the Cleft of Shadow (Circo de las Sombras). No source in the data covers dungeons above Shadowfang Keep.`,
+Sources the tools returned: TheWoWDB lists Sima Ígnea (Ragefire Chasm) as a zone for levels 13-18 inside Orgrimmar. A web guide says: Ragefire Chasm 13-18, Wailing Caverns (Cuevas de los Lamentos, the Barrens) 17-24, Deadmines 17-26 (Alliance territory, Westfall), Shadowfang Keep 22-30, and Dungeon Finder unlocks at level 13. The guide page gives the Ragefire entrance in the Cleft of Shadow (any reasonable Spanish name is acceptable). No source in the data covers dungeons above Shadowfang Keep.`,
     goodAnswer:
       'Answers in Spanish that a level 21 mage can already do dungeons, recommends Cuevas de los Lamentos as the right fit now (Sima Ígnea is easy and close), gives the sourced ranges, and makes clear which ranges are guidance. Any dungeon or range beyond the sources should be clearly marked as approximate or omitted; presenting unsourced ranges as fact lowers correctness.',
   },
@@ -48,7 +48,7 @@ Sources the tools returned: TheWoWDB lists Sima Ígnea (Ragefire Chasm) as a zon
     facts:
       character +
       `
-Sources the tools returned: Orgrimmar is UI map 1454. A guide page states the Ragefire Chasm (Sima Ígnea) entrance is in the Cleft of Shadow (Circo de las Sombras) at 52.8, 49.6. The waypoint tool succeeded when called.`,
+Sources the tools returned: Orgrimmar is UI map 1454. A guide page states the Ragefire Chasm (Sima Ígnea) entrance is in the Cleft of Shadow at 52.8, 49.6; any reasonable Spanish name for that area (such as Falla de las Sombras or Circo de las Sombras) is acceptable. The waypoint tool succeeded and reported placed=true and navigation=true.`,
     goodAnswer:
       'Places one waypoint on Orgrimmar (1454) at 52.8, 49.6 and says so in Spanish, briefly naming where the entrance is. Does not invent other coordinates and does not refuse when a source gave them.',
   },
