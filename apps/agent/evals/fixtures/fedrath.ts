@@ -1,4 +1,10 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import type { ToolStub } from 'eve/evals';
+
+// Evals run from apps/agent; stub a tool only where this checkout defines it,
+// so the same scenarios can compare older configurations.
+const hasTool = (name: string) => existsSync(path.resolve('agent', 'tools', name + '.ts'));
 
 // Stub responses must be plain JSON values.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value));
@@ -433,11 +439,15 @@ function itemSourcesResult() {
 
 export function fedrathStubs(): ToolStub[] {
   return json([
-    {
-      id: 'item-sources',
-      tool: 'wow__item_sources',
-      outcome: { response: itemSourcesResult() },
-    },
+    ...(hasTool('wow__item_sources')
+      ? [
+          {
+            id: 'item-sources',
+            tool: 'wow__item_sources',
+            outcome: { response: itemSourcesResult() },
+          },
+        ]
+      : []),
     {
       id: 'character',
       tool: 'wow__query_character',

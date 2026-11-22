@@ -37,6 +37,23 @@ export async function saveTurn(name: string, prompt: string, turn: ReportedTurn,
       '',
     ].join('\n'),
   );
+  // Full runs for apps/agent/evals/grade.ts, which grades answers afterwards.
+  const presented = turn.toolCalls
+    .filter((call) => (call.toolName ?? call.name) === 'wisp__present_ui')
+    .map((call) => call.input);
+  await appendFile(
+    path.join(dir, 'runs.jsonl'),
+    JSON.stringify({
+      label,
+      name,
+      prompt,
+      seconds: Math.round(ms / 100) / 10,
+      steps,
+      tools: calls.map((call) => call.tool),
+      presented,
+      reply: turn.reply ?? '',
+    }) + '\n',
+  );
   await appendFile(
     path.join(dir, 'summary.jsonl'),
     JSON.stringify({
