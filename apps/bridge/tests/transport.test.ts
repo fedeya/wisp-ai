@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DiskTransport } from '../src/addon/transport.ts';
 test('a failed payload write can retry the same snapshot after the filesystem recovers', async () => {
+  await mkdir(path.resolve('runtime'), { recursive: true });
   const root = await mkdtemp(path.resolve('runtime', 'transport-retry-'));
   const blocker = path.join(root, 'Interface');
   const bridge = new DiskTransport(root, () => {});
@@ -57,6 +58,36 @@ test('payload writes stay ordered and acknowledgements never rewind the receive 
   } finally {
     bridge.stop();
     assert.ok(path.resolve(root).startsWith(base + path.sep));
+    await rm(root, { recursive: true, force: true });
+  }
+});
+test('a failing folder watcher is dropped and rewatched instead of ending the bridge', async () => {
+  const base = path.resolve('runtime');
+  await mkdir(base, { recursive: true });
+  const root = await mkdtemp(path.join(base, 'transport-watch-'));
+  const character = path.join(root, 'WTF', 'Account', 'ACCOUNT', 'Realm', 'Hero');
+  await mkdir(character, { recursive: true });
+  await writeFile(path.join(character, 'AddOns.txt'), 'WispAI: enabled\n');
+  const errors: unknown[] = [];
+  const bridge = new DiskTransport(
+    root,
+    () => {},
+    (error) => errors.push(error),
+  );
+  try {
+    await bridge.start();
+    const first = bridge.watchers.get(character);
+    assert.ok(first, 'the character folder is watched');
+    // Without a listener this 'error' would be an uncaught exception.
+    first.emit('error', new Error('folder removed'));
+    assert.equal(bridge.watchers.has(character), false);
+    assert.equal((errors[0] as Error).message, 'folder removed');
+    await bridge.scan(false);
+    const second = bridge.watchers.get(character);
+    assert.ok(second && second !== first, 'the next scan watches the folder again');
+  } finally {
+    await bridge.stop();
+    assert.equal(bridge.watchers.size, 0);
     await rm(root, { recursive: true, force: true });
   }
 });

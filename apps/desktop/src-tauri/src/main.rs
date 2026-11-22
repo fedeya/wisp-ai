@@ -13,7 +13,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     time::Duration,
 };
 use tauri::{
@@ -28,6 +31,8 @@ struct Host {
     payload: PathBuf,
     child: Mutex<Option<Child>>,
     lifecycle: tauri::async_runtime::Mutex<()>,
+    /// Whether the bridge child is meant to be running; see `supervise_bridge`.
+    supervised: AtomicBool,
     addon_notice: tauri::async_runtime::Mutex<Option<addon_update::Notice>>,
     client: reqwest::Client,
 }
@@ -343,10 +348,184 @@ async fn start_host(host: &Host) -> Result<(), String> {
         "Spawned the bridge"
     );
     *child = Some(process);
+    host.mark_stop_requested(false);
+    host.supervised.store(true, Ordering::SeqCst);
     Ok(())
 }
 
+/// Waits before relaunching a bridge that exited on its own. The step grows
+/// with each crash of a bridge that ran less than `BRIDGE_STABLE_AFTER`; the
+/// last step repeats.
+const BRIDGE_RELAUNCH_DELAYS: [Duration; 5] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(5),
+    Duration::from_secs(10),
+    Duration::from_secs(30),
+];
+/// A bridge that ran this long before exiting restarts the backoff.
+const BRIDGE_STABLE_AFTER: Duration = Duration::from_secs(60);
+const BRIDGE_SUPERVISE_INTERVAL: Duration = Duration::from_secs(2);
+
+fn bridge_relaunch_delay(crashes: usize) -> Duration {
+    BRIDGE_RELAUNCH_DELAYS[crashes.min(BRIDGE_RELAUNCH_DELAYS.len() - 1)]
+}
+
+/// Present while a deliberate bridge stop is in progress or done, by this
+/// process or another one (the update helper). Removed when a bridge starts.
+const BRIDGE_STOP_MARKER: &str = "runtime/bridge-stop-requested";
+
+impl Host {
+    fn stop_requested(&self) -> bool {
+        self.data.join(BRIDGE_STOP_MARKER).is_file()
+    }
+
+    fn mark_stop_requested(&self, requested: bool) {
+        let marker = self.data.join(BRIDGE_STOP_MARKER);
+        let result = if requested {
+            fs::write(&marker, b"")
+        } else {
+            fs::remove_file(&marker).or_else(|error| match error.kind() {
+                std::io::ErrorKind::NotFound => Ok(()),
+                _ => Err(error),
+            })
+        };
+        if let Err(error) = result {
+            tracing::warn!(
+                component = "desktop",
+                event = "bridge.stop_marker_failed",
+                error = %error,
+                "Could not update the bridge stop marker"
+            );
+        }
+    }
+
+    /// Takes the bridge child if it exited while it was meant to be running.
+    /// An exit that another process requested turns supervision off instead.
+    fn take_crashed_child(&self) -> Result<Option<std::process::ExitStatus>, String> {
+        if !self.supervised.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| "Application state is unavailable.")?;
+        let status = match child.as_mut() {
+            Some(process) => process.try_wait().map_err(|error| error.to_string())?,
+            None => None,
+        };
+        if status.is_none() {
+            return Ok(None);
+        }
+        *child = None;
+        if self.stop_requested() {
+            self.supervised.store(false, Ordering::SeqCst);
+            tracing::info!(
+                component = "desktop",
+                event = "bridge.stopped_elsewhere",
+                "The bridge was stopped on request by another Wisp process"
+            );
+            return Ok(None);
+        }
+        Ok(status)
+    }
+}
+
+/// Relaunches the bridge when it exits without a stop request, so a crash
+/// does not leave Wisp offline until the app is reopened. Every deliberate
+/// stop goes through `stop_host`, which turns supervision off first.
+async fn supervise_bridge(app: tauri::AppHandle) {
+    let mut crashes = 0usize;
+    let mut launched_at = std::time::Instant::now();
+    // Set while a relaunch is owed: after a crash, and after a failed spawn.
+    let mut relaunching = false;
+    loop {
+        pause(BRIDGE_SUPERVISE_INTERVAL).await;
+        let host = app.state::<Host>();
+        if !relaunching {
+            let _operation = host.lifecycle.lock().await;
+            match host.take_crashed_child() {
+                Ok(Some(status)) => {
+                    relaunching = true;
+                    tracing::warn!(
+                        component = "desktop",
+                        event = "bridge.exited_unexpectedly",
+                        code = ?status.code(),
+                        "The bridge exited without a stop request"
+                    );
+                }
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::error!(
+                        component = "desktop",
+                        event = "bridge.supervise_failed",
+                        error = %error,
+                        "Bridge supervision failed"
+                    );
+                    continue;
+                }
+            }
+        }
+        if launched_at.elapsed() >= BRIDGE_STABLE_AFTER {
+            crashes = 0;
+        }
+        let delay = bridge_relaunch_delay(crashes);
+        crashes += 1;
+        pause(delay).await;
+        let _operation = host.lifecycle.lock().await;
+        // A stop request during the wait wins over the relaunch, including
+        // one from another process such as the update helper.
+        if !host.supervised.load(Ordering::SeqCst) || host.stop_requested() {
+            host.supervised.store(false, Ordering::SeqCst);
+            relaunching = false;
+            continue;
+        }
+        launched_at = std::time::Instant::now();
+        match start_host(&host).await {
+            Ok(()) => {
+                relaunching = false;
+                tracing::info!(
+                    component = "desktop",
+                    event = "bridge.relaunched",
+                    attempt = crashes,
+                    "Relaunched the bridge"
+                );
+            }
+            Err(error) => tracing::error!(
+                component = "desktop",
+                event = "bridge.relaunch_failed",
+                attempt = crashes,
+                error = %error,
+                "Could not relaunch the bridge"
+            ),
+        }
+    }
+}
+
+async fn pause(duration: Duration) {
+    let _ = tauri::async_runtime::spawn_blocking(move || std::thread::sleep(duration)).await;
+}
+
 async fn stop_host(host: &Host) -> Result<(), String> {
+    // Supervision is off while stopping so the supervisor never relaunches a
+    // bridge that is exiting on request. A stop that fails (for example the
+    // bridge refuses while a reply is running) leaves the app and bridge
+    // running, so the previous supervision comes back with it.
+    //
+    // The flag only reaches this process. The update helper stops the bridge
+    // from a separate process while the desktop app may still be open, so the
+    // stop is also recorded on disk for that app's supervisor to honor.
+    let supervised = host.supervised.swap(false, Ordering::SeqCst);
+    host.mark_stop_requested(true);
+    let result = request_bridge_stop(host).await;
+    if result.is_err() {
+        host.mark_stop_requested(false);
+        host.supervised.store(supervised, Ordering::SeqCst);
+    }
+    result
+}
+
+async fn request_bridge_stop(host: &Host) -> Result<(), String> {
     let deadline = std::time::Instant::now() + Duration::from_secs(20);
     loop {
         match host.request("POST", "/stop", json!({})).await {
@@ -617,6 +796,7 @@ fn prepare_update() -> Result<(), String> {
         payload: PathBuf::new(),
         child: Mutex::new(None),
         lifecycle: tauri::async_runtime::Mutex::new(()),
+        supervised: AtomicBool::new(false),
         addon_notice: Default::default(),
         client: reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -825,12 +1005,14 @@ fn main() {
                 payload,
                 child: Mutex::new(None),
                 lifecycle: tauri::async_runtime::Mutex::new(()),
+                supervised: AtomicBool::new(false),
                 addon_notice: Default::default(),
                 client: reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
                     .build()
                     .map_err(|e| e.to_string())?,
             });
+            tauri::async_runtime::spawn(supervise_bridge(app.handle().clone()));
             let show =
                 tauri::menu::MenuItem::with_id(app, "show", "Open Wisp", true, None::<&str>)?;
             let exit =
@@ -898,6 +1080,107 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_stop_requested_by_another_process_is_not_relaunched() {
+        let data = std::env::temp_dir().join(format!("wisp-elsewhere-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(data.join("runtime")).unwrap();
+        let host = Host {
+            data: data.clone(),
+            payload: PathBuf::new(),
+            child: Mutex::new(None),
+            lifecycle: tauri::async_runtime::Mutex::new(()),
+            supervised: AtomicBool::new(true),
+            addon_notice: Default::default(),
+            client: reqwest::Client::new(),
+        };
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "exit 0"]);
+            command
+        } else {
+            let mut command = Command::new("sh");
+            command.args(["-c", "exit 0"]);
+            command
+        };
+        let mut process = command.spawn().expect("spawn a short-lived child");
+        process.wait().expect("the child exits");
+        *host.child.lock().unwrap() = Some(process);
+        // The update helper's stop_host runs in its own process and leaves only the marker.
+        fs::write(data.join(BRIDGE_STOP_MARKER), b"").unwrap();
+        assert_eq!(host.take_crashed_child().unwrap(), None);
+        assert!(!host.supervised.load(Ordering::SeqCst));
+        assert!(host.child.lock().unwrap().is_none());
+        let _ = fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn a_rejected_stop_keeps_supervising_the_bridge() {
+        let data = std::env::temp_dir().join(format!("wisp-stop-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(data.join("runtime")).unwrap();
+        // An unusable identity makes the stop request fail like a refused stop.
+        fs::write(data.join("runtime/desktop.json"), "{}").unwrap();
+        let host = Host {
+            data: data.clone(),
+            payload: PathBuf::new(),
+            child: Mutex::new(None),
+            lifecycle: tauri::async_runtime::Mutex::new(()),
+            supervised: AtomicBool::new(true),
+            addon_notice: Default::default(),
+            client: reqwest::Client::new(),
+        };
+        assert!(tauri::async_runtime::block_on(stop_host(&host)).is_err());
+        assert!(host.supervised.load(Ordering::SeqCst));
+        assert!(!host.stop_requested(), "a failed stop withdraws its marker");
+        fs::remove_file(data.join("runtime/desktop.json")).unwrap();
+        assert!(tauri::async_runtime::block_on(stop_host(&host)).is_ok());
+        assert!(!host.supervised.load(Ordering::SeqCst));
+        assert!(
+            host.stop_requested(),
+            "a completed stop stays visible to other processes"
+        );
+        let _ = fs::remove_dir_all(data);
+    }
+
+    #[test]
+    fn bridge_relaunch_backs_off_and_repeats_the_last_step() {
+        assert_eq!(bridge_relaunch_delay(0), Duration::from_secs(1));
+        assert_eq!(bridge_relaunch_delay(3), Duration::from_secs(10));
+        assert_eq!(bridge_relaunch_delay(4), Duration::from_secs(30));
+        assert_eq!(bridge_relaunch_delay(99), Duration::from_secs(30));
+    }
+
+    #[test]
+    fn only_a_supervised_bridge_that_exited_counts_as_crashed() {
+        let host = Host {
+            data: PathBuf::new(),
+            payload: PathBuf::new(),
+            child: Mutex::new(None),
+            lifecycle: tauri::async_runtime::Mutex::new(()),
+            supervised: AtomicBool::new(false),
+            addon_notice: Default::default(),
+            client: reqwest::Client::new(),
+        };
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.args(["/C", "exit 3"]);
+            command
+        } else {
+            let mut command = Command::new("sh");
+            command.args(["-c", "exit 3"]);
+            command
+        };
+        let mut process = command.spawn().expect("spawn a short-lived child");
+        process.wait().expect("the child exits");
+        *host.child.lock().unwrap() = Some(process);
+        // A bridge stopped on request is not a crash.
+        assert_eq!(host.take_crashed_child().unwrap(), None);
+        assert!(host.child.lock().unwrap().is_some());
+        host.supervised.store(true, Ordering::SeqCst);
+        let status = host.take_crashed_child().unwrap().expect("a crash");
+        assert_eq!(status.code(), Some(3));
+        assert!(host.child.lock().unwrap().is_none());
+        assert_eq!(host.take_crashed_child().unwrap(), None);
+    }
     #[test]
     fn desktop_routes_are_explicit() {
         assert!(permitted("GET", "/status"));

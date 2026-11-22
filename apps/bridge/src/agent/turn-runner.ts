@@ -37,6 +37,25 @@ class NoProviderError extends Error {
   }
 }
 
+/**
+ * How long an admitted turn may receive nothing from the engine before it
+ * fails. Tools are bounded well below this (simulations 45 s, page reads
+ * 120 s) and long reasoning still streams, so silence this long means
+ * the engine or its provider stopped answering without closing the stream.
+ */
+export const TURN_IDLE_TIMEOUT_MS = 10 * 60_000;
+
+/** The engine stopped sending events for a running turn. */
+class TurnStalledError extends Error {
+  constructor(idleMs: number) {
+    super(
+      `Wisp received nothing from the AI for ${Math.round(idleMs / 60_000) || 1} minutes and stopped waiting. Please try again.`,
+    );
+    // Classified as a timeout by isTimeout() and in telemetry.
+    this.name = 'TimeoutError';
+  }
+}
+
 // Plan quotas and provider rate limits are expected account states, not Wisp failures.
 // Chats whose latest turn failed on a plan or provider usage limit, as
 // classified from error codes and causes, not from the displayed message.
@@ -71,6 +90,8 @@ interface TurnDependencies {
   changed: () => void;
   logger: Pick<Logger, 'info' | 'error'>;
   flushSnapshot?: () => void;
+  /** How long an admitted turn may go without engine activity; defaults to `TURN_IDLE_TIMEOUT_MS`. */
+  idleTimeoutMs?: number;
 }
 export function createTurnRunner(deps: TurnDependencies) {
   const {
@@ -87,12 +108,13 @@ export function createTurnRunner(deps: TurnDependencies) {
     changed,
     logger,
   } = deps;
+  const idleTimeoutMs = deps.idleTimeoutMs ?? TURN_IDLE_TIMEOUT_MS;
   const generations = new WeakMap<Chat, symbol>();
   const running = new Set<Promise<void>>();
   const controllers = new WeakMap<Chat, AbortController>();
   const projections = new WeakMap<
     Chat,
-    { parts: ReplyProjection; assertCurrent: () => void; signal: AbortSignal }
+    { parts: ReplyProjection; assertCurrent: () => void; signal: AbortSignal; touch: () => void }
   >();
   const naming = new WeakSet<Chat>();
   // Runs beside the turn: a slow or failed title never delays or fails the reply.
@@ -157,9 +179,23 @@ export function createTurnRunner(deps: TurnDependencies) {
         throw Error('The conversation was deleted or the character changed.');
       }
     };
+    // Once the engine admits the turn, every stream event or presentation call
+    // restarts this watchdog. If the engine goes silent without closing the
+    // stream, the turn fails as a timeout instead of staying "working" until
+    // the player cancels it.
+    let stalled: TurnStalledError | undefined;
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const touch = () => {
+      clearTimeout(idle);
+      idle = setTimeout(() => {
+        stalled = new TurnStalledError(idleTimeoutMs);
+        controller.abort(stalled);
+      }, idleTimeoutMs);
+      idle.unref?.();
+    };
     changed();
     const parts = new ReplyProjection();
-    projections.set(chat, { parts, assertCurrent, signal: controller.signal });
+    projections.set(chat, { parts, assertCurrent, signal: controller.signal, touch });
     const streaming = setInterval(() => {
       if (
         ownsTurn() &&
@@ -217,7 +253,9 @@ export function createTurnRunner(deps: TurnDependencies) {
       admittedMs = Math.round(performance.now() - started);
       changed();
       failureCode = 'turn_stream_failed';
+      touch();
       for await (const event of response.stream({ signal: controller.signal })) {
+        touch();
         assertCurrent();
         const sourceRevision = parts.sourceRevision;
         const progressRevision = parts.presentationProgressRevision;
@@ -275,32 +313,45 @@ export function createTurnRunner(deps: TurnDependencies) {
       if (!ownsTurn()) {
         return;
       }
-      const failed = !controller.signal.aborted && isCurrent(chat) && currentTransport() === owner;
+      // A stalled turn is aborted by its watchdog; report the stall, not the
+      // abort it caused, and count it as a failure rather than an interruption.
+      const failure = stalled ?? error;
+      const failed =
+        (stalled !== undefined || !controller.signal.aborted) &&
+        isCurrent(chat) &&
+        currentTransport() === owner;
       settleTurn(chat, failed ? 'error' : 'interrupted');
       if (failed) {
         outcome =
-          timedOut || isTimeout(error) || (error instanceof Error && isTimeout(error.cause))
+          timedOut || isTimeout(failure) || (failure instanceof Error && isTimeout(failure.cause))
             ? 'timeout'
             : 'failed';
-        if (error instanceof ChatGPTAuthError && failureCode === 'model_preparation_failed') {
+        if (failure instanceof ChatGPTAuthError && failureCode === 'model_preparation_failed') {
           failureCode = 'model_auth_failed';
         }
         if (
           usageLimited ||
-          isUsageLimit(error) ||
-          (error instanceof Error && isUsageLimit(error.cause))
+          isUsageLimit(failure) ||
+          (failure instanceof Error && isUsageLimit(failure.cause))
         ) {
           failureCode = 'usage_limit';
           usageLimitedChats.add(chat);
         }
       }
       parts.flush(chat, Date.now(), true);
+      if (stalled && chat.eveId) {
+        // Free the engine session the stalled turn may still be holding.
+        void client.sessions
+          .attach(chat.eveId)
+          .cancel()
+          .catch(() => {});
+      }
       chat.eveId = undefined;
       chat.messages.push({
         role: 'system',
-        text: error instanceof Error ? error.message : String(error),
+        text: failure instanceof Error ? failure.message : String(failure),
         // The addon shows this notice in the game's language; `text` is the fallback.
-        ...(error instanceof NoProviderError ? { notice: 'noProvider' as const } : {}),
+        ...(failure instanceof NoProviderError ? { notice: 'noProvider' as const } : {}),
       });
       logger[failed ? 'error' : 'info'](
         {
@@ -308,7 +359,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           chat: chat.id,
           messageId,
           outcome,
-          error: errorMessage(error),
+          error: errorMessage(failure),
         },
         'Turn failed',
       );
@@ -335,6 +386,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         'Turn timing',
       );
       clearInterval(streaming);
+      clearTimeout(idle);
       if (projections.get(chat)?.parts === parts) {
         projections.delete(chat);
       }
@@ -372,12 +424,14 @@ export function createTurnRunner(deps: TurnDependencies) {
         throw Error('This reply is no longer active.');
       }
       active.assertCurrent();
+      active.touch();
       const value = await active.parts.acceptPresentation(
         callId,
         input,
         AbortSignal.any([signal, active.signal]),
       );
       active.assertCurrent();
+      active.touch();
       return value;
     },
     drain: () => Promise.allSettled(running),
