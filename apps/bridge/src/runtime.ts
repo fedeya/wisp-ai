@@ -278,6 +278,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isReady: () => eve.isReady(),
       isStopping: () => shutdownRequested,
       accountBusy: accounts.busy,
+      hasProvider: () => connections.hasProvider(),
       isCurrent: (chat) => state.chats.includes(chat),
       flushSnapshot: publisher.flush,
     });

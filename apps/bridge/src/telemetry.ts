@@ -61,6 +61,7 @@ const chatErrorCodeSchema = z.enum([
   'capability_sync_failed',
   'engine_not_ready',
   'account_busy',
+  'no_provider',
   'model_preparation_failed',
   'model_auth_failed',
   'model_catalog_failed',

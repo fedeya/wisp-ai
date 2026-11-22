@@ -41,6 +41,7 @@ function fixture(
   );
   const isReady = vi.fn(() => true);
   const accountBusy = vi.fn(() => false);
+  const hasProvider = vi.fn(() => true);
   const logger = { info: vi.fn(), error: vi.fn() };
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
@@ -59,6 +60,7 @@ function fixture(
     isReady,
     isStopping: () => false,
     accountBusy,
+    hasProvider,
     isCurrent: () => current,
     changed,
     logger,
@@ -74,6 +76,7 @@ function fixture(
     complete,
     isReady,
     accountBusy,
+    hasProvider,
     logger,
     flushSnapshot,
     changed,
@@ -674,4 +677,35 @@ test('disabled titles do not request automatic naming', async () => {
   await f.run.drain();
   expect(f.chat.titleGenerated).not.toBe(true);
   expect(f.complete).not.toHaveBeenCalled();
+});
+
+test('a turn with no AI provider stops before the engine and explains the fix', async () => {
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
+  const f = fixture(true, telemetry);
+  f.hasProvider.mockReturnValueOnce(false);
+  await f.run(f.chat, 'Private question');
+  expect(f.prepare).not.toHaveBeenCalled();
+  expect(f.send).not.toHaveBeenCalled();
+  expect(f.chat.status).toBe('error');
+  expect(f.chat.messages.at(-1)).toEqual({
+    role: 'system',
+    text: expect.stringContaining('connect ChatGPT or an API key'),
+    notice: 'noProvider',
+  });
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'failed',
+    expect.any(Number),
+    'no_provider',
+    undefined,
+    noUsage,
+  );
+
+  // Other failures keep their own message and carry no notice code.
+  f.prepare.mockRejectedValueOnce(new Error('Model is no longer configured.'));
+  await f.run(f.chat, 'Private question');
+  expect(f.chat.messages.at(-1)).toEqual({
+    role: 'system',
+    text: 'Model is no longer configured.',
+  });
 });
