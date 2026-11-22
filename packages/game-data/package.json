@@ -8,6 +8,7 @@
   },
   "scripts": {
     "generate": "node src/generate.ts",
+    "check": "node src/check.ts",
     "typecheck": "tsc --noEmit",
     "test": "cd ../.. && vitest run --config packages/game-data/vitest.config.ts"
   },

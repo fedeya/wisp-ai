@@ -1,15 +1,12 @@
 {
-  "$comment": "Entrances for instances new in Forever, which have no entrance in Map.db2: { UI map ID, x, y } in 0-100 map coordinates. Zones: instance map ID -> UI maps its entrance is drawn on, since neighbouring zones' world bounds overlap.",
+  "$comment": "Facts the game tables lack. zones: instance map ID -> UI map(s) to draw its entrance on, only where several zones' bounds contain it (generation lists the candidates). entrances: { UI map ID, x, y } for instances with no entrance in Map.db2. skip: instances left out, with why.",
   "zones": {
-    "33": [1421],
     "34": [1453],
     "36": [1436],
     "43": [1413],
     "47": [1413],
     "48": [1440],
     "70": [1418],
-    "90": [1426],
-    "109": [1435],
     "129": [1413],
     "189": [1420],
     "209": [1446],
@@ -17,15 +14,8 @@
     "230": [1427, 1428],
     "249": [1445],
     "289": [1422],
-    "309": [1434],
-    "329": [1423],
-    "349": [1443],
-    "389": [1454],
     "409": [1427, 1428],
-    "429": [1444],
-    "469": [1428],
-    "509": [1451],
-    "531": [1451]
+    "429": [1444]
   },
   "entrances": {
     "2959": {
@@ -73,5 +63,8 @@
       "source": "OpenMap Forever places (MIT)",
       "note": "The Hall of Thanes, Ironforge; QuestieDB Forever: 27.63, 47.83"
     }
+  },
+  "skip": {
+    "44": "Unused duplicate of Scarlet Monastery (189)"
   }
 }
