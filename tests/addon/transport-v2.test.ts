@@ -197,6 +197,27 @@ test('new checked revisions load once and repeated readiness never burns unchang
   );
 });
 
+test('an idle connected addon reads the reply to its periodic hello from a restarted host', () => {
+  const h = transportHarness();
+  // A long-running session: its startup hello already went out.
+  h.run(
+    "ns.Transport.Send({type='hello'});timers[.04]();ns.Transport.Acknowledge({1});ns.connected=true;ns.rev=40",
+  );
+  // A restarted host publishes a new generation while the addon is idle.
+  h.control(50, 0x13572468);
+  h.run('nextRev=50;for i=1,50 do now=now+.1;timers[.1]()end;assert(loads==0 and ns.rev==40)');
+  h.run('timers[60]();for i=1,10 do now=now+.04;timers[.04]()end');
+  // Saving the hello rewrites the game's stale downlink bits; the host repairs its control.
+  h.control(50, 0x13572468);
+  h.run(`
+for i=1,20 do now=now+.1;timers[.1]()end
+assert(loads==1 and ns.rev==50,'the heartbeat opens a read window for the new host state')
+`);
+  h.run(
+    'for i=1,200 do now=now+.1;timers[.1]()end;assert(loads==1,"the window closes and idle reads stop")',
+  );
+});
+
 test('a bulk helper overlapping the uplink preserves its disabled state and uses an explicit character', () => {
   const h = transportHarness();
   h.run("ns.Transport.Send({type='hello'});timers[.04]()");
@@ -303,6 +324,54 @@ assert(packets[3].messageId=='retry-me' and packets[3].session==packets[1].sessi
   expect(retry.payload.toString()).toBe('say');
   expect(retry.sequence).not.toBe(original.sequence);
   expect(handshake.sequence).not.toBe(retry.sequence);
+});
+
+test('a message unacknowledged for 20 seconds warns once, records diagnostics and clears on acknowledgement', () => {
+  const h = transportHarness();
+  h.run(`
+ns.db={};refreshes=0
+ns.UI.Refresh=function()refreshes=refreshes+1 end
+ns.LocaleText=function(key)return key end
+ns.Transport.Send({type='say',chat='chat',messageId='stuck',text='hello'})
+now=19;timers[2]()
+assert(not ns.deliveryStalled and #logs==0,'a slow delivery is not reported early')
+now=21;timers[2]()
+assert(ns.deliveryStalled==true and refreshes==1)
+assert(#logs==1 and logs[1]=='notice.deliveryStalled')
+local diagnostics=ns.db.transportDiagnostics
+assert(diagnostics.ageSeconds==21 and diagnostics.awaiting>=1 and diagnostics.session==ns.session)
+now=40;timers[2]()
+assert(#logs==1 and refreshes==1,'the warning and refresh are not repeated while stalled')
+`);
+  h.run(`
+local ids={}
+for id=1,20 do ids[#ids+1]=id end
+ns.Transport.Acknowledge(ids)
+now=42;timers[2]()
+assert(ns.deliveryStalled==false and refreshes==2)
+ns.Transport.Send({type='say',chat='chat',messageId='stuck-again',text='hello'})
+now=70;timers[2]()
+assert(ns.deliveryStalled==true and #logs==1,'the chat notice appears once per UI session')
+`);
+});
+
+test('open addon settings pause the stall timeout and give a full window after they close', () => {
+  const h = transportHarness();
+  h.run(`
+ns.db={}
+ns.LocaleText=function(key)return key end
+ns.Transport.Send({type='say',chat='chat',messageId='paused',text='hello'})
+local shown=true
+AddonList={IsShown=function()return shown end}
+now=10;timers[2]()
+now=30;timers[2]()
+assert(not ns.deliveryStalled and #logs==0,'an intentional settings pause is not a stall')
+shown=false
+now=49;timers[2]()
+assert(not ns.deliveryStalled,'closing settings restarts the delivery allowance')
+now=51;timers[2]()
+assert(ns.deliveryStalled==true and #logs==1)
+`);
 });
 
 test('consuming the last bulk helper marks exhaustion and subsequent envelopes clamp the advertised cursor', () => {
