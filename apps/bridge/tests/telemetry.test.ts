@@ -100,6 +100,46 @@ test('the live native opt-out stops new events without restarting the bridge', a
   expect(properties).not.toHaveProperty('first_text_ms');
 });
 
+test('chat telemetry sums model token usage for the turn and ignores other events', async () => {
+  await preference(true);
+  const telemetry = createTelemetry();
+  const turn = telemetry.usageObserver();
+  turn.observe({
+    type: 'usage.recorded',
+    data: {
+      kind: 'model',
+      usage: { inputTokens: 12000, outputTokens: 300, cacheReadTokens: 9000 },
+    },
+  });
+  turn.observe({
+    type: 'usage.recorded',
+    data: { kind: 'model', usage: { inputTokens: 15000, outputTokens: 450 } },
+  });
+  turn.observe({ type: 'usage.recorded', data: { kind: 'tool', usage: { inputTokens: 5 } } });
+  turn.observe({
+    type: 'usage.recorded',
+    data: { kind: 'model', usage: { inputTokens: -1, outputTokens: 'PRIVATE' } },
+  });
+  turn.observe({ type: 'call.settled', data: { callId: 'a' } });
+  telemetry.chat('chat', 'completed', 10, undefined, undefined, turn.usage());
+  const empty = telemetry.usageObserver();
+  telemetry.chat('chat', 'failed', 5, 'engine_not_ready', undefined, empty.usage());
+  await telemetry.drain();
+  const chats = events()
+    .filter((event) => event.event === 'chat_completed')
+    .map((event) => event.properties);
+  const used = chats.find((properties) => properties.outcome === 'completed');
+  const failed = chats.find((properties) => properties.outcome === 'failed');
+  expect(used).toMatchObject({
+    model_calls: 2,
+    input_tokens: 27000,
+    output_tokens: 750,
+    cache_read_tokens: 9000,
+  });
+  expect(failed).not.toHaveProperty('model_calls');
+  expect(failed).not.toHaveProperty('input_tokens');
+});
+
 test('tool telemetry counts public categories and drops private call data', async () => {
   await preference(true);
   const telemetry = createTelemetry();

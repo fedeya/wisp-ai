@@ -45,7 +45,7 @@ function isUsageLimit(error: unknown): boolean {
 }
 
 interface TurnDependencies {
-  telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver'>;
+  telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>;
   client: Pick<Client, 'sessions'>;
   models: ModelCatalog;
   capabilitySettings: Pick<CapabilitySettings, 'publish' | 'enabled' | 'snapshot'>;
@@ -123,6 +123,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     const controller = new AbortController();
     const started = performance.now();
     const observeTool = deps.telemetry?.toolObserver();
+    const turnUsage = deps.telemetry?.usageObserver();
     let outcome: ChatOutcome = 'cancelled';
     let failureCode: ChatErrorCode = 'capability_sync_failed';
     let timedOut = false;
@@ -206,6 +207,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         const progressRevision = parts.presentationProgressRevision;
         const visibleChanged = applyEvent(chat, event, parts);
         observeTool?.(event);
+        turnUsage?.observe(event);
         if (visibleChanged && !chat.proactive) {
           const firstText =
             firstTextMs === undefined &&
@@ -299,6 +301,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         performance.now() - started,
         outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? failureCode : undefined,
         firstTextMs,
+        turnUsage?.usage(),
       );
       logger.info(
         {

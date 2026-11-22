@@ -18,6 +18,10 @@ const propertyKeys = new Set([
   'outcome',
   'duration_ms',
   'first_text_ms',
+  'model_calls',
+  'input_tokens',
+  'output_tokens',
+  'cache_read_tokens',
   'error_code',
   'addon_version',
   'tool',
@@ -77,6 +81,13 @@ export type WebSearchTelemetry = {
   outcome: string;
   duration: number;
   resultCount: number;
+};
+const tokenCount = z.number().int().nonnegative().max(100_000_000);
+export type TurnUsage = {
+  modelCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
 };
 type GameConnectionError = 'session_replaced' | 'engine_not_ready' | 'addon_ack_missing';
 const gameConnectionTimeoutMs = 30_000;
@@ -187,6 +198,7 @@ export class UsageTelemetry {
     duration: number,
     errorCode?: ChatErrorCode,
     firstTextMs?: number,
+    usage?: TurnUsage,
   ) {
     this.active();
     const failureCode =
@@ -201,7 +213,42 @@ export class UsageTelemetry {
       duration_ms: Math.max(0, Math.round(duration)),
       ...(firstTextMs === undefined ? {} : { first_text_ms: firstTextMs }),
       ...(failureCode ? { error_code: failureCode } : {}),
+      ...(usage?.modelCalls
+        ? {
+            model_calls: usage.modelCalls,
+            input_tokens: usage.inputTokens,
+            output_tokens: usage.outputTokens,
+            cache_read_tokens: usage.cacheReadTokens,
+          }
+        : {}),
     });
+  }
+
+  // Sums the model usage the runtime reports during one turn. Counts only.
+  usageObserver() {
+    const usage: TurnUsage = { modelCalls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+    const observe = (raw: unknown) => {
+      const event = z
+        .object({
+          type: z.literal('usage.recorded'),
+          data: z.object({
+            kind: z.literal('model'),
+            usage: z.object({
+              inputTokens: tokenCount,
+              outputTokens: tokenCount,
+              cacheReadTokens: tokenCount.optional(),
+            }),
+          }),
+        })
+        .safeParse(raw);
+      if (!event.success) return;
+      const reported = event.data.data.usage;
+      usage.modelCalls++;
+      usage.inputTokens += reported.inputTokens;
+      usage.outputTokens += reported.outputTokens;
+      usage.cacheReadTokens += reported.cacheReadTokens ?? 0;
+    };
+    return { observe, usage: () => ({ ...usage }) };
   }
 
   // Only fixed enums and counts: never queries, URLs, sources or provider errors.

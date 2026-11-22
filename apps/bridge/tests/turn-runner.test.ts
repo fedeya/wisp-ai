@@ -10,7 +10,13 @@ import { SnapshotGate } from '../src/addon/snapshots.ts';
 import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
 import type { UsageTelemetry } from '../src/telemetry.ts';
 
-function fixture(titlesEnabled = true, telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver'>) {
+const noUsage = { modelCalls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
+const usageObserver = () => ({ observe: vi.fn(), usage: () => noUsage });
+
+function fixture(
+  titlesEnabled = true,
+  telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>,
+) {
   const chat = newChat('chat', 'one');
   let transport = 'one';
   let current = true;
@@ -141,7 +147,7 @@ test('a streamed comparison requests publication before the tool settles', async
 
 test('real streamed turns report their mode, outcome and tool lifecycle to telemetry', async () => {
   const observe = vi.fn();
-  const telemetry = { chat: vi.fn(), toolObserver: () => observe };
+  const telemetry = { chat: vi.fn(), toolObserver: () => observe, usageObserver };
   const f = fixture(true, telemetry);
   f.chat.inline = true;
   await f.run(f.chat, 'Private question');
@@ -156,6 +162,7 @@ test('real streamed turns report their mode, outcome and tool lifecycle to telem
     expect.any(Number),
     undefined,
     timing.firstTextMs,
+    noUsage,
   );
   f.chat.inline = false;
   f.chat.routineId = 'private-routine-id';
@@ -166,11 +173,12 @@ test('real streamed turns report their mode, outcome and tool lifecycle to telem
     expect.any(Number),
     undefined,
     expect.any(Number),
+    noUsage,
   );
 });
 
 test('chat telemetry distinguishes early failures before a turn reaches the engine', async () => {
-  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
   const f = fixture(true, telemetry);
   f.isReady.mockReturnValueOnce(false);
   f.accountBusy.mockReturnValueOnce(true);
@@ -192,13 +200,14 @@ test('chat telemetry distinguishes early failures before a turn reaches the engi
       expect.any(Number),
       code,
       undefined,
+      noUsage,
     );
   }
   expect(f.send).not.toHaveBeenCalled();
 });
 
 test('chat telemetry distinguishes failed, timed-out and interrupted turns', async () => {
-  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
   const f = fixture(true, telemetry);
   f.send.mockRejectedValueOnce(Error('Private provider error'));
   await f.run(f.chat, 'Private question');
@@ -208,6 +217,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     expect.any(Number),
     'turn_start_failed',
     undefined,
+    noUsage,
   );
 
   f.send.mockImplementationOnce(async () => ({
@@ -225,6 +235,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     expect.any(Number),
     'turn_result_failed',
     undefined,
+    noUsage,
   );
 
   f.send.mockImplementationOnce(async () => ({
@@ -243,6 +254,7 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     expect.any(Number),
     'timeout',
     undefined,
+    noUsage,
   );
 
   f.send.mockImplementationOnce(async () => {
@@ -257,11 +269,12 @@ test('chat telemetry distinguishes failed, timed-out and interrupted turns', asy
     expect.any(Number),
     undefined,
     undefined,
+    noUsage,
   );
 });
 
 test('chat telemetry separates plan usage limits from other failures', async () => {
-  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
   const f = fixture(true, telemetry);
   f.send.mockImplementationOnce(async () => ({
     stream: async function* () {},
@@ -283,6 +296,7 @@ test('chat telemetry separates plan usage limits from other failures', async () 
     expect.any(Number),
     'usage_limit',
     undefined,
+    noUsage,
   );
   // Routines read this classification; the message alone does not mention a limit.
   expect(endedOnUsageLimit(f.chat)).toBe(true);
@@ -295,6 +309,7 @@ test('chat telemetry separates plan usage limits from other failures', async () 
     expect.any(Number),
     'usage_limit',
     undefined,
+    noUsage,
   );
 });
 
@@ -451,7 +466,7 @@ test.each(['character', 'delete', 'interrupt'] as const)(
 );
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {
-  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn() };
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
   const f = fixture(true, telemetry);
   f.chat.messages.push({ role: 'assistant', text: 'Previous answer' });
   f.send.mockImplementationOnce(async () => ({
@@ -479,6 +494,7 @@ test('old assistant messages cannot count as the first text of a new turn', asyn
     expect.any(Number),
     undefined,
     undefined,
+    noUsage,
   );
 });
 
