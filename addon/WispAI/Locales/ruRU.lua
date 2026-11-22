@@ -256,6 +256,7 @@ ns.Locales.ruRU = {
     ["notice.addonUpdated"] = "Установлен Wisp {installed} (загружен {loaded}). Введите /reload, чтобы загрузить новую версию.",
     ["notice.appUpdateAvailable"] = "Доступен Wisp {version}. Откройте приложение Wisp, чтобы установить обновление.",
     ["notice.deliveryStalled"] = "Wisp не получает ваши сообщения. Введите /reload, чтобы переподключиться.",
+    ["notice.noProvider"] = "К Wisp ещё не подключён ИИ. Откройте приложение Wisp, подключите ChatGPT или API-ключ и отправьте сообщение снова.",
     ["notice.mapUnavailable"] = "Интерфейс карты недоступен.",
     ["notice.leaveCombatMacro"] = "Выйдите из боя, прежде чем брать макрос.",
 

@@ -1,4 +1,18 @@
 local _, ns = ...
+
+--- Bridge notices that carry a known code ("noProvider") are shown in the
+--- player's language; unknown codes keep the bridge's English text.
+function ns.Chat.LocalizeNotices(messages)
+    for _, message in ipairs(messages or {}) do
+        local key = message.role == "system"
+            and type(message.notice) == "string"
+            and "notice." .. message.notice
+        if key and ns.Locales.enUS[key] then
+            message.text = ns.L[key]
+        end
+    end
+end
+
 function ns.Chat.ReceiveSnapshot(data)
     if
         ns.bulkRead
@@ -86,6 +100,9 @@ function ns.Chat.ReceiveSnapshot(data)
         for _, chat in ipairs(data.chats) do
             incoming[chat.id] = chat
             local authoritative = chat.messages ~= nil
+            if authoritative then
+                ns.Chat.LocalizeNotices(chat.messages)
+            end
             if chat.messages == nil and existing[chat.id] then
                 chat.messages = existing[chat.id].messages
             end

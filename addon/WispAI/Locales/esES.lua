@@ -256,6 +256,7 @@ ns.Locales.esES = {
     ["notice.addonUpdated"] = "Wisp {installed} está instalado (cargado {loaded}). Escribe /reload para cargar la versión nueva.",
     ["notice.appUpdateAvailable"] = "Wisp {version} está disponible. Abre la app de Wisp para instalarlo.",
     ["notice.deliveryStalled"] = "Wisp no está recibiendo tus mensajes. Escribe /reload para reconectar.",
+    ["notice.noProvider"] = "Wisp todavía no tiene ninguna IA conectada. Abre la app de Wisp, conecta ChatGPT o una clave de API y vuelve a enviar tu mensaje.",
     ["notice.mapUnavailable"] = "La interfaz del mapa no está disponible.",
     ["notice.leaveCombatMacro"] = "Sal del combate antes de coger una macro.",
 
