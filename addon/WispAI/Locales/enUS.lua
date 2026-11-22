@@ -29,6 +29,8 @@ ns.Locales.enUS = {
     ["status.connected"] = "Connected",
     ["status.offline"] = "Offline",
     ["status.channelsExhausted"] = "Channels exhausted: /reload",
+    ["status.deliveryStalled"] = "Not responding: /reload",
+    ["status.reloadNeeded"] = "Update installed: /reload",
     ["status.openDesktop"] = "Open Wisp Desktop",
 
     -- Header
@@ -264,6 +266,7 @@ ns.Locales.enUS = {
     -- Chat notices
     ["notice.addonUpdated"] = "Wisp {installed} is installed (loaded {loaded}). Type /reload to load the new version.",
     ["notice.appUpdateAvailable"] = "Wisp {version} is available. Open the Wisp app to install it.",
+    ["notice.deliveryStalled"] = "Wisp isn't receiving your messages. Type /reload to reconnect.",
     ["notice.mapUnavailable"] = "The map UI is unavailable.",
     ["notice.leaveCombatMacro"] = "Leave combat before picking up a macro.",
 

@@ -47,3 +47,27 @@ it("shows the header status dot with the setup text when setup is required", fun
     assert(status:IsShown() and status:GetText() == "Setup required")
     assert(mark:IsShown(), "a setup problem must show the warning dot")
 end)
+
+it("tells the player to reload when deliveries stall", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local status, mark = buildStatus(env)
+    ns.deliveryStalled = true
+    ns.UI.ConversationStatus.Refresh(nil)
+    assert(status:IsShown() and status:GetText() == "Not responding: /reload")
+    assert(mark:IsShown(), "a stalled delivery must show the warning dot")
+    ns.deliveryStalled = false
+    ns.UI.ConversationStatus.Refresh(nil)
+    assert(not status:IsShown(), "the warning clears once deliveries recover")
+end)
+
+it("tells the player to reload after Desktop installs a newer addon", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local status = buildStatus(env)
+    ns.Core.ReloadNeeded = function()
+        return true
+    end
+    ns.UI.ConversationStatus.Refresh(nil)
+    assert(status:IsShown() and status:GetText() == "Update installed: /reload")
+end)

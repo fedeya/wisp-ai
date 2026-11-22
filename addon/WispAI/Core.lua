@@ -27,7 +27,7 @@ local function versionParts(version)
     end
 end
 -- True when Desktop installed a newer addon than the one this UI session loaded.
-local function reloadNeeded()
+function ns.Core.ReloadNeeded()
     local expected = ns.expectedAddonVersion
     if
         type(expected) ~= "string"
@@ -49,7 +49,7 @@ local function reloadNeeded()
 end
 -- Prints the /reload hint at most once per UI session; /reload resets it.
 function ns.Core.NotifyAddonUpdate()
-    if reloadNoticeShown or not reloadNeeded() then
+    if reloadNoticeShown or not ns.Core.ReloadNeeded() then
         return
     end
     reloadNoticeShown = true

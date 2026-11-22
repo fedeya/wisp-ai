@@ -326,6 +326,54 @@ assert(packets[3].messageId=='retry-me' and packets[3].session==packets[1].sessi
   expect(handshake.sequence).not.toBe(retry.sequence);
 });
 
+test('a message unacknowledged for 20 seconds warns once, records diagnostics and clears on acknowledgement', () => {
+  const h = transportHarness();
+  h.run(`
+ns.db={};refreshes=0
+ns.UI.Refresh=function()refreshes=refreshes+1 end
+ns.LocaleText=function(key)return key end
+ns.Transport.Send({type='say',chat='chat',messageId='stuck',text='hello'})
+now=19;timers[2]()
+assert(not ns.deliveryStalled and #logs==0,'a slow delivery is not reported early')
+now=21;timers[2]()
+assert(ns.deliveryStalled==true and refreshes==1)
+assert(#logs==1 and logs[1]=='notice.deliveryStalled')
+local diagnostics=ns.db.transportDiagnostics
+assert(diagnostics.ageSeconds==21 and diagnostics.awaiting>=1 and diagnostics.session==ns.session)
+now=40;timers[2]()
+assert(#logs==1 and refreshes==1,'the warning and refresh are not repeated while stalled')
+`);
+  h.run(`
+local ids={}
+for id=1,20 do ids[#ids+1]=id end
+ns.Transport.Acknowledge(ids)
+now=42;timers[2]()
+assert(ns.deliveryStalled==false and refreshes==2)
+ns.Transport.Send({type='say',chat='chat',messageId='stuck-again',text='hello'})
+now=70;timers[2]()
+assert(ns.deliveryStalled==true and #logs==1,'the chat notice appears once per UI session')
+`);
+});
+
+test('open addon settings pause the stall timeout and give a full window after they close', () => {
+  const h = transportHarness();
+  h.run(`
+ns.db={}
+ns.LocaleText=function(key)return key end
+ns.Transport.Send({type='say',chat='chat',messageId='paused',text='hello'})
+local shown=true
+AddonList={IsShown=function()return shown end}
+now=10;timers[2]()
+now=30;timers[2]()
+assert(not ns.deliveryStalled and #logs==0,'an intentional settings pause is not a stall')
+shown=false
+now=49;timers[2]()
+assert(not ns.deliveryStalled,'closing settings restarts the delivery allowance')
+now=51;timers[2]()
+assert(ns.deliveryStalled==true and #logs==1)
+`);
+});
+
 test('consuming the last bulk helper marks exhaustion and subsequent envelopes clamp the advertised cursor', () => {
   const h = transportHarness();
   h.run("ns.Transport.Send({type='hello'});timers[.04]()");
