@@ -62,11 +62,16 @@ export default function ConnectionEditor({
   provider,
   close,
   onConnected,
+  onSetupFailed,
 }: {
   connection?: ConnectionView;
   provider: ProviderId;
   close: () => void;
   onConnected?: (connectionId: string) => void;
+  /** Setup only: which action failed, for onboarding telemetry. Never the message. */
+  onSetupFailed?: (
+    code: 'model_discovery_failed' | 'model_test_failed' | 'connection_save_failed',
+  ) => void;
 }) {
   const app = useDesktop((state) => ({
     busy: state.busy,
@@ -88,7 +93,7 @@ export default function ConnectionEditor({
   const form = useForm({
     defaultValues,
     onSubmit: async ({ value }) => {
-      await work(
+      const saved = await work(
         'Saving AI connection',
         async () => {
           const saved = await call(
@@ -102,6 +107,7 @@ export default function ConnectionEditor({
         onConnected ? null : 'Connection saved.',
         'connection-editor',
       );
+      if (!saved) onSetupFailed?.('connection_save_failed');
     },
   });
   const { baseURL, apiKey, modelId, models } = useSelector(form.store, (state) => state.values);
@@ -127,8 +133,8 @@ export default function ConnectionEditor({
     if (pickingModels) modelsHeading.current?.focus();
   }, [pickingModels]);
 
-  function discoverModels() {
-    return work(
+  async function discoverModels() {
+    const loaded = await work(
       'Loading provider models',
       async () => {
         const result = await call(
@@ -142,6 +148,8 @@ export default function ConnectionEditor({
       null,
       'connection-editor',
     );
+    if (!loaded) onSetupFailed?.('model_discovery_failed');
+    return loaded;
   }
 
   function addModel(id: string, contextWindow?: number) {
@@ -161,8 +169,8 @@ export default function ConnectionEditor({
     return true;
   }
 
-  function testModel(model: ConnectionModel) {
-    return work(
+  async function testModel(model: ConnectionModel) {
+    const verified = await work(
       'Testing AI model',
       () =>
         call(
@@ -176,6 +184,8 @@ export default function ConnectionEditor({
       `Tool calling verified for ${model.name || model.id}.`,
       'connection-editor',
     );
+    if (!verified) onSetupFailed?.('model_test_failed');
+    return verified;
   }
 
   const nameField = (

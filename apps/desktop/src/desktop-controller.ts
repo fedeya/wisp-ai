@@ -208,8 +208,9 @@ function createDesktopSession() {
     update({ models, modelsError: '' });
   }
 
+  /** Resolves false when the sign-in page could not be opened. */
   async function signIn(profileId?: string, add = false) {
-    await work(
+    return work(
       'Opening sign-in',
       async () => {
         const { authorizationUrl } = await call(

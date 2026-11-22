@@ -8,6 +8,11 @@ import DefaultModelSettings from '../connections/DefaultModelSettings';
 import { ProviderLogo, providerPresentation } from '../connections/provider-directory';
 import { Button, Card } from '../ui/Controls';
 import Icon from '../ui/Icon';
+import {
+  trackOnboarding,
+  type ProviderConnectError,
+  type ProviderConnectMethod,
+} from './onboarding-telemetry';
 
 export default function OnboardingProvider({
   provider,
@@ -34,10 +39,52 @@ export default function OnboardingProvider({
   const pending = auth?.status === 'authorizing';
   const reviewing = !!connectionId || (method === 'subscription' && connected);
   const panel = useRef<HTMLHeadingElement>(null);
+  const signingIn = useRef(false);
+  const cancelling = useRef(false);
+  const lastStatus = useRef(auth?.status);
+
+  function connectFinished(
+    connectMethod: ProviderConnectMethod,
+    outcome: 'completed' | 'cancelled' | ProviderConnectError,
+  ) {
+    trackOnboarding(
+      outcome === 'completed' || outcome === 'cancelled'
+        ? { kind: 'provider_connect_finished', provider, method: connectMethod, outcome }
+        : {
+            kind: 'provider_connect_finished',
+            provider,
+            method: connectMethod,
+            outcome: 'failed',
+            error_code: outcome,
+          },
+    );
+  }
 
   useEffect(() => {
     panel.current?.focus();
   }, [method]);
+
+  // A browser sign-in ends when the bridge leaves `authorizing`.
+  useEffect(() => {
+    const status = auth?.status;
+    const previous = lastStatus.current;
+    lastStatus.current = status;
+    if (!signingIn.current || !status || status === previous || status === 'authorizing') return;
+    if (previous !== 'authorizing' && status !== 'connected') return;
+    signingIn.current = false;
+    connectFinished(
+      'subscription',
+      status === 'connected'
+        ? 'completed'
+        : cancelling.current
+          ? 'cancelled'
+          : status === 'plan_permission_required'
+            ? 'plan_permission_required'
+            : 'sign_in_failed',
+    );
+    cancelling.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on status changes only
+  }, [auth?.status]);
 
   if (reviewing) {
     return <DefaultModelSettings onFinish={onFinish} review={{ provider, connectionId, onBack }} />;
@@ -80,7 +127,11 @@ export default function OnboardingProvider({
             provider={provider}
             connection={existing.length === 1 ? existing[0] : undefined}
             close={onBack}
-            onConnected={setConnectionId}
+            onConnected={(id) => {
+              connectFinished('api_key', 'completed');
+              setConnectionId(id);
+            }}
+            onSetupFailed={(code) => connectFinished('api_key', code)}
           />
         ) : (
           <>
@@ -101,9 +152,10 @@ export default function OnboardingProvider({
               {pending ? (
                 <Button
                   disabled={!!busy}
-                  onClick={() =>
-                    void work('Cancelling sign-in', () => call(bridge.auth.cancel.$post()), null)
-                  }
+                  onClick={() => {
+                    cancelling.current = true;
+                    void work('Cancelling sign-in', () => call(bridge.auth.cancel.$post()), null);
+                  }}
                 >
                   Cancel sign-in
                 </Button>
@@ -113,7 +165,17 @@ export default function OnboardingProvider({
                   disabled={locked}
                   onClick={() => {
                     setMethod('subscription');
-                    if (!connected) void signIn(auth?.activeId || undefined);
+                    if (connected) {
+                      connectFinished('subscription', 'completed');
+                      return;
+                    }
+                    signingIn.current = true;
+                    cancelling.current = false;
+                    void signIn(auth?.activeId || undefined).then((opened) => {
+                      if (opened) return;
+                      signingIn.current = false;
+                      connectFinished('subscription', 'sign_in_open_failed');
+                    });
                   }}
                 >
                   {busy === 'Opening sign-in'

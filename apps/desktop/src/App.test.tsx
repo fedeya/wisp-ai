@@ -1418,6 +1418,9 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
     event: { kind: 'opened', step: 'ai_provider' },
   });
+  expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
+    event: { kind: 'provider_selected', provider: 'openai' },
+  });
   await screen.findByRole('heading', { level: 2, name: 'ChatGPT' });
   expect(screen.getByRole('heading', { level: 1, name: 'Connect AI' })).toBeTruthy();
   expect(screen.getByRole('heading', { name: 'Subscription' })).toBeTruthy();
@@ -1430,9 +1433,44 @@ test('first-time setup resumes at the provider step and opens Overview after sav
   expect(screen.queryByRole('button', { name: 'Add account' })).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
 
+  status.auth = { ...status.auth, status: 'authorizing', revision: status.auth.revision + 1 };
+  await act(() => desktopStore.getState().actions.refresh());
+  await screen.findByRole('button', { name: 'Cancel sign-in' });
+  status.auth = {
+    ...status.auth,
+    status: 'plan_permission_required',
+    revision: status.auth.revision + 1,
+  };
+  await act(() => desktopStore.getState().actions.refresh());
+  await waitFor(() =>
+    expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
+      event: {
+        kind: 'provider_connect_finished',
+        provider: 'openai',
+        method: 'subscription',
+        outcome: 'failed',
+        error_code: 'plan_permission_required',
+      },
+    }),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: 'Continue with ChatGPT' }));
+  await waitFor(() =>
+    expect(
+      vi.mocked(desktop).mock.calls.filter(([command]) => command === 'open_sign_in'),
+    ).toHaveLength(2),
+  );
+
   status.auth = { ...status.auth, status: 'connected', revision: status.auth.revision + 1 };
   await act(() => desktopStore.getState().actions.refresh());
   expect(await screen.findByRole('heading', { name: 'ChatGPT added' })).toBeTruthy();
+  expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
+    event: {
+      kind: 'provider_connect_finished',
+      provider: 'openai',
+      method: 'subscription',
+      outcome: 'completed',
+    },
+  });
   expect(screen.getByRole('combobox', { name: 'Default model for new chats' }).textContent).toBe(
     'Choose a model',
   );
@@ -1472,8 +1510,10 @@ test('onboarding searches the provider catalog and suggests a single saved model
   const model = { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 };
   const slug = `connection:${id}:${model.id}`;
   const original = vi.mocked(request).getMockImplementation()!;
+  let discoveries = 0;
   vi.mocked(request).mockImplementation(async (route, body) => {
     if (route === '/connections/discover') {
+      if (discoveries++ === 0) throw new Error('401 Unauthorized: PRIVATE provider message');
       return { models: [{ ...model, supportsTools: true }] } as never;
     }
     if (route === '/connections/save') {
@@ -1520,6 +1560,18 @@ test('onboarding searches the provider catalog and suggests a single saved model
   expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
   await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'fixture-only' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
+  await waitFor(() =>
+    expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
+      event: {
+        kind: 'provider_connect_finished',
+        provider: 'openrouter',
+        method: 'api_key',
+        outcome: 'failed',
+        error_code: 'model_discovery_failed',
+      },
+    }),
+  );
+  await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
   await fireEvent.click(await screen.findByRole('button', { name: `Add ${model.id}` }));
   await fireEvent.click(screen.getByRole('button', { name: 'Back to API key' }));
   expect(screen.getByLabelText<HTMLInputElement>('API key').value).toBe('fixture-only');
@@ -1527,6 +1579,32 @@ test('onboarding searches the provider catalog and suggests a single saved model
   expect(await screen.findByRole('button', { name: `Added ${model.id}` })).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Save connection' }));
   expect(await screen.findByRole('heading', { name: 'OpenRouter added' })).toBeTruthy();
+  expect(
+    vi
+      .mocked(desktop)
+      .mock.calls.filter(
+        ([command, body]) =>
+          command === 'telemetry_onboarding' &&
+          (body as { event: { kind: string } }).event.kind.startsWith('provider_'),
+      )
+      .map(([, body]) => (body as { event: unknown }).event),
+  ).toEqual([
+    { kind: 'provider_selected', provider: 'google' },
+    { kind: 'provider_selected', provider: 'openrouter' },
+    {
+      kind: 'provider_connect_finished',
+      provider: 'openrouter',
+      method: 'api_key',
+      outcome: 'failed',
+      error_code: 'model_discovery_failed',
+    },
+    {
+      kind: 'provider_connect_finished',
+      provider: 'openrouter',
+      method: 'api_key',
+      outcome: 'completed',
+    },
+  ]);
   expect(await screen.findByText(model.name)).toBeTruthy();
   expect(screen.queryByRole('combobox', { name: 'Default model for new chats' })).toBeNull();
   expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());

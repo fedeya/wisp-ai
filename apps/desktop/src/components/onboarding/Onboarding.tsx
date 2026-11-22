@@ -1,7 +1,7 @@
 import type { ProviderId } from '@wisp/protocol/providers';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import logo from '../../../../../assets/wisp.png';
-import { desktop, native } from '../../api';
+import { native } from '../../api';
 import { desktopConnected, desktopLocked, desktopReadiness } from '../../desktop-controller';
 import { overviewChecks } from '../../routes/overview-checks';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
@@ -26,14 +26,7 @@ import {
   type WizardScreen,
 } from './setup-steps';
 
-type OnboardingStep = 'addon' | 'ai_provider';
-type OnboardingEvent =
-  | { kind: 'opened' | 'step_viewed' | 'skipped'; step: OnboardingStep }
-  | { kind: 'completed' };
-
-function trackOnboarding(event: OnboardingEvent) {
-  void desktop('telemetry_onboarding', { event }).catch(() => {});
-}
+import { trackOnboarding, type OnboardingStep } from './onboarding-telemetry';
 
 /** Welcome and ready are not tracked: telemetry only knows the two setup steps. */
 const trackedStep: Partial<Record<WizardScreen, OnboardingStep>> = {
@@ -86,6 +79,11 @@ export default function Onboarding() {
   function skip() {
     if (step) trackOnboarding({ kind: 'skipped', step });
     finishOnboarding();
+  }
+
+  function selectProvider(id: ProviderId) {
+    trackOnboarding({ kind: 'provider_selected', provider: id });
+    setProvider(id);
   }
 
   const installing = app.busy === 'Installing addon';
@@ -150,7 +148,7 @@ export default function Onboarding() {
                       onFinish={complete}
                     />
                   ) : (
-                    <ProviderPicker onSelect={setProvider}>
+                    <ProviderPicker onSelect={selectProvider}>
                       <section aria-labelledby="choose-provider" className="mb-5">
                         <h2 id="choose-provider" className={groupLabel}>
                           Choose your provider
@@ -161,7 +159,7 @@ export default function Onboarding() {
                               key={id}
                               id={id}
                               disabled={!!app.busy}
-                              onSelect={setProvider}
+                              onSelect={selectProvider}
                             />
                           ))}
                         </ul>

@@ -28,6 +28,8 @@ fn filter_event(file: &Path, mut event: Event) -> Option<Event> {
                 "arch",
                 "section",
                 "step",
+                "provider",
+                "method",
                 "outcome",
                 "error_code",
                 "$process_person_profile",
@@ -86,18 +88,112 @@ pub enum OnboardingStep {
     AiProvider,
 }
 
+/// Mirrors `providerDefinitions` in `@wisp/protocol/providers`. Unknown ids become
+/// `other`, so a renamed or new provider never sends free-form text.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Provider {
+    Gateway,
+    Openai,
+    Anthropic,
+    Google,
+    Deepseek,
+    Xai,
+    Groq,
+    Mistral,
+    Cerebras,
+    Cohere,
+    Togetherai,
+    Fireworks,
+    Deepinfra,
+    Alibaba,
+    Moonshotai,
+    Minimax,
+    Baseten,
+    Zai,
+    Openrouter,
+    Compatible,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectMethod {
+    Subscription,
+    ApiKey,
+}
+
+#[derive(Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectOutcome {
+    Completed,
+    Failed,
+    Cancelled,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectError {
+    SignInOpenFailed,
+    SignInFailed,
+    PlanPermissionRequired,
+    ModelDiscoveryFailed,
+    ModelTestFailed,
+    ConnectionSaveFailed,
+    #[serde(other)]
+    Unknown,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OnboardingEvent {
-    Opened { step: OnboardingStep },
-    StepViewed { step: OnboardingStep },
+    Opened {
+        step: OnboardingStep,
+    },
+    StepViewed {
+        step: OnboardingStep,
+    },
     Completed,
-    Skipped { step: OnboardingStep },
+    Skipped {
+        step: OnboardingStep,
+    },
+    ProviderSelected {
+        provider: Provider,
+    },
+    ProviderConnectFinished {
+        provider: Provider,
+        method: ConnectMethod,
+        outcome: ConnectOutcome,
+        #[serde(default)]
+        error_code: Option<ConnectError>,
+    },
 }
 
 impl OnboardingEvent {
     fn payload(self) -> (&'static str, Value) {
         match self {
+            Self::ProviderSelected { provider } => (
+                "onboarding_provider_selected",
+                json!({ "step": OnboardingStep::AiProvider, "provider": provider }),
+            ),
+            Self::ProviderConnectFinished {
+                provider,
+                method,
+                outcome,
+                error_code,
+            } => {
+                let mut properties = json!({
+                    "step": OnboardingStep::AiProvider,
+                    "provider": provider,
+                    "method": method,
+                });
+                if outcome == ConnectOutcome::Failed {
+                    properties["error_code"] = json!(error_code.unwrap_or(ConnectError::Unknown));
+                }
+                properties["outcome"] = json!(outcome);
+                ("onboarding_provider_connect_finished", properties)
+            }
             Self::Opened { step } => ("onboarding_opened", json!({ "step": step })),
             Self::StepViewed { step } => ("onboarding_step_viewed", json!({ "step": step })),
             Self::Completed => (
@@ -430,6 +526,66 @@ mod tests {
                 json!({ "kind": "skipped", "step": "addon" }),
                 "onboarding_finished",
                 json!({ "step": "addon", "outcome": "skipped" }),
+            ),
+            (
+                json!({ "kind": "provider_selected", "provider": "openrouter" }),
+                "onboarding_provider_selected",
+                json!({ "step": "ai_provider", "provider": "openrouter" }),
+            ),
+            (
+                json!({ "kind": "provider_selected", "provider": "Alice's private endpoint" }),
+                "onboarding_provider_selected",
+                json!({ "step": "ai_provider", "provider": "other" }),
+            ),
+            (
+                json!({
+                    "kind": "provider_connect_finished",
+                    "provider": "openai",
+                    "method": "subscription",
+                    "outcome": "failed",
+                    "error_code": "plan_permission_required",
+                }),
+                "onboarding_provider_connect_finished",
+                json!({
+                    "step": "ai_provider",
+                    "provider": "openai",
+                    "method": "subscription",
+                    "outcome": "failed",
+                    "error_code": "plan_permission_required",
+                }),
+            ),
+            (
+                json!({
+                    "kind": "provider_connect_finished",
+                    "provider": "anthropic",
+                    "method": "api_key",
+                    "outcome": "failed",
+                    "error_code": "401 Unauthorized: sk-ant-PRIVATE",
+                }),
+                "onboarding_provider_connect_finished",
+                json!({
+                    "step": "ai_provider",
+                    "provider": "anthropic",
+                    "method": "api_key",
+                    "outcome": "failed",
+                    "error_code": "unknown",
+                }),
+            ),
+            (
+                json!({
+                    "kind": "provider_connect_finished",
+                    "provider": "anthropic",
+                    "method": "api_key",
+                    "outcome": "completed",
+                    "error_code": "connection_save_failed",
+                }),
+                "onboarding_provider_connect_finished",
+                json!({
+                    "step": "ai_provider",
+                    "provider": "anthropic",
+                    "method": "api_key",
+                    "outcome": "completed",
+                }),
             ),
         ] {
             let (event_name, properties) = serde_json::from_value::<OnboardingEvent>(input)
