@@ -16,12 +16,16 @@ export default defineEval({
     turn.expectOk();
     t.calledTool('wow__search_armor');
     t.notCalledTool('thewowdb__search_database').soft();
-    t.maxToolCalls(20).soft();
+    t.maxToolCalls(30).soft();
     const reply = turn.reply ?? '';
+    // Wisp names items through registered references, so check those too.
+    const presented = JSON.stringify(
+      turn.toolCalls.filter((call) => call.name === 'wisp__present_ui').map((call) => call.input),
+    );
     t.check(
-      reply,
+      reply + presented,
       satisfies(
-        (text: string) => /Botas de seda de araña|Sobrehombros|Capucha de seda azur/i.test(text),
+        (text: string) => /"id":(4320|4314|7048)|Botas de seda de araña|Sobrehombros/i.test(text),
         'recommends searched candidates',
       ),
     );

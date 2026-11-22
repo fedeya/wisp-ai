@@ -447,6 +447,23 @@ export function fedrathStubs(): ToolStub[] {
       },
     },
     {
+      id: 'present',
+      tool: 'wisp__present_ui',
+      outcome: { response: { status: 'presented' } },
+    },
+    {
+      id: 'auctions',
+      tool: 'wow__inspect_auctions',
+      outcome: { throw: { message: 'Open the auction house and load a search first' } },
+    },
+    {
+      id: 'compare',
+      tool: 'wow__compare_items',
+      outcome: {
+        throw: { message: 'Not used in this eval: search results already compare items.' },
+      },
+    },
+    {
       id: 'catalog-search',
       tool: 'thewowdb__search_database',
       outcome: {

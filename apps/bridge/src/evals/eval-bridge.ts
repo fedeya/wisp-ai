@@ -82,6 +82,19 @@ async function serve() {
           .end(JSON.stringify({ model, effort, webSearchAvailable: false }));
         return;
       }
+      // Evals run one fixture character with empty, throwaway memory.
+      if (req.method === 'POST' && url.pathname === '/identity') {
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ characterKey: 'eval-character' }));
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/memory') {
+        res
+          .writeHead(200, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ entries: [] }));
+        return;
+      }
       if (req.method === 'POST' && url.pathname === '/model/responses') {
         await proxyModel(req, res, auth);
         return;
