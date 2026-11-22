@@ -411,7 +411,9 @@ local function weakestSlot(slots)
     end
     return best
 end
-function inspectors.rank_items(args)
+-- Bridge-only: the bridge lists catalog IDs for gear searches and the agent
+-- chooses among every match, so nothing is cut here.
+function inspectors.gear_candidates(args)
     assert(C_Item and C_Item.GetItemInfo, "Item API is unavailable")
     local maxLevel = args.maxRequiredLevel or UnitLevel("player")
     local minLevel = args.minRequiredLevel or 0
@@ -448,18 +450,13 @@ function inspectors.rank_items(args)
         end
         return a.id < b.id
     end)
-    local limit = args.limit or 10
-    local shown = {}
-    for index = 1, math.min(limit, #ranked) do
-        shown[index] = ranked[index]
-    end
     counts.matching = #ranked
     return {
         status = #loadingIds > 0 and "loading" or "available",
-        items = shown,
+        items = ranked,
         counts = counts,
         loadingIds = #loadingIds > 0 and loadingIds or nil,
-        note = "Sorted by item level gain over the weakest matching equipped slot, not by stat weights. Armor/weapon proficiency is not checked. loadingIds were not in the client cache yet; request them again if needed.",
+        note = "Every match, ordered by item level gain over the weakest matching equipped slot; the order is not a recommendation or stat weighting. Armor/weapon proficiency is not checked. loadingIds were not in the client cache yet.",
     }
 end
 function inspectors.auctions(args)

@@ -717,8 +717,8 @@ it(
         end
 
         local d = ns.Character.Inspect({
-            kind = "rank_items",
-            args = { itemIds = { 10, 11, 12, 13, 99 }, limit = 10 },
+            kind = "gear_candidates",
+            args = { itemIds = { 10, 11, 12, 13, 99 } },
         }).data
         assert(d.status == "loading" and d.loadingIds[1] == 99 and requested[1] == 99)
         assert(
@@ -731,13 +731,13 @@ it(
         -- Ring 10 replaces the weaker equipped ring (slot 12, item level 6).
         assert(best.id == 10 and best.slot == 12 and best.itemLevelGain == 16)
         assert(best.equipped.id == 2 and best.statDelta.ITEM_MOD_INTELLECT_SHORT == 4)
-        assert(best.link == nil and d.items[2].id == 12)
+        assert(best.link == nil and d.items[2].id == 12 and #d.items == 2)
 
         d = ns.Character.Inspect({
-            kind = "rank_items",
-            args = { itemIds = { 10, 11 }, maxRequiredLevel = 30, minRequiredLevel = 20, limit = 1 },
+            kind = "gear_candidates",
+            args = { itemIds = { 10, 11, 12 }, maxRequiredLevel = 30, minRequiredLevel = 20 },
         }).data
         assert(d.status == "available" and d.loadingIds == nil)
-        assert(#d.items == 1 and d.items[1].id == 11 and d.counts.tooLowLevel == 1)
+        assert(#d.items == 1 and d.items[1].id == 11 and d.counts.tooLowLevel == 2)
     end
 )

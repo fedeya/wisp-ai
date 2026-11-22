@@ -57,7 +57,7 @@ test('loaded readings are returned without another addon request', async () => {
 });
 
 test('gear rankings wait while candidates are still loading', async () => {
-  expect(retriesItemLoading({ kind: 'rank_items', args: { itemIds: [1] } })).toBe(true);
+  expect(retriesItemLoading({ kind: 'gear_candidates', args: { itemIds: [1] } })).toBe(true);
   const replies = [
     { data: { status: 'loading', items: [], loadingIds: [7] } },
     { data: { status: 'available', items: [{ id: 7 }] } },

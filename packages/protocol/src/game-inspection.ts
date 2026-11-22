@@ -89,8 +89,8 @@ export const compareInput = z.object({
   itemIds: z.array(z.number().int().positive()).min(1).max(5),
   slot: z.number().int().min(1).max(19).optional(),
 });
-export const rankItemsInput = z.strictObject({
-  itemIds: z.array(z.number().int().positive()).min(1).max(100),
+const gearLevels = {
+  minRequiredLevel: z.number().int().min(0).max(100).optional(),
   maxRequiredLevel: z
     .number()
     .int()
@@ -98,8 +98,70 @@ export const rankItemsInput = z.strictObject({
     .max(100)
     .optional()
     .describe('Highest required level to keep; defaults to the character level.'),
+  quality: z
+    .array(z.enum(['poor', 'common', 'uncommon', 'rare', 'epic']))
+    .min(1)
+    .max(5)
+    .default(['common', 'uncommon', 'rare'])
+    .describe('Item qualities to search.'),
+};
+export const armorSlots = [
+  'head',
+  'neck',
+  'shoulder',
+  'back',
+  'chest',
+  'wrist',
+  'hands',
+  'waist',
+  'legs',
+  'feet',
+  'finger',
+  'trinket',
+] as const;
+// Jewelry, trinkets and cloaks have no armor type of their own.
+export const typelessArmorSlots: readonly string[] = ['neck', 'finger', 'trinket', 'back'];
+export const armorSearchInput = z
+  .strictObject({
+    slot: z.enum(armorSlots),
+    armorType: z
+      .enum(['cloth', 'leather', 'mail', 'plate'])
+      .optional()
+      .describe('Required for body slots; ignored for neck, finger, trinket and back.'),
+    ...gearLevels,
+  })
+  .refine(
+    (args) => typelessArmorSlots.includes(args.slot) || args.armorType !== undefined,
+    'armorType is required for this slot',
+  );
+export const weaponTypes = [
+  'staves',
+  'wands',
+  'daggers',
+  'one-handed-swords',
+  'two-handed-swords',
+  'one-handed-maces',
+  'two-handed-maces',
+  'one-handed-axes',
+  'two-handed-axes',
+  'polearms',
+  'fist-weapons',
+  'bows',
+  'guns',
+  'crossbows',
+  'thrown',
+  'shields',
+  'held-in-off-hand',
+] as const;
+export const weaponSearchInput = z.strictObject({
+  weaponType: z.enum(weaponTypes),
+  ...gearLevels,
+});
+// Bridge-to-addon only: the bridge resolves catalog IDs before the game read.
+export const gearCandidatesInput = z.strictObject({
+  itemIds: z.array(z.number().int().positive()).min(1).max(500),
   minRequiredLevel: z.number().int().min(0).max(100).optional(),
-  limit: z.number().int().min(1).max(25).default(10),
+  maxRequiredLevel: z.number().int().min(1).max(100).optional(),
 });
 export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
@@ -179,7 +241,8 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reference'), args: referenceInput }),
   z.object({ kind: z.literal('progression'), args: progressionInput }),
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
-  z.object({ kind: z.literal('rank_items'), args: rankItemsInput }),
+  z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
+  z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
   z.object({

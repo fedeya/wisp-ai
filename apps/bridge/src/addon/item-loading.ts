@@ -23,7 +23,7 @@ function loading(value: unknown): boolean {
 export function retriesItemLoading(inspection: { kind: string; args?: unknown }) {
   return (
     inspection.kind === 'compare_items' ||
-    inspection.kind === 'rank_items' ||
+    inspection.kind === 'gear_candidates' ||
     (inspection.kind === 'reference' &&
       (inspection.args as { kind?: unknown } | undefined)?.kind === 'item')
   );
