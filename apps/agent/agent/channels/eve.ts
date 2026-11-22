@@ -21,4 +21,15 @@ const desktop: AuthFn<Request> = async (request) => {
   };
 };
 
-export default eveChannel({ auth: [desktop, localDev()] });
+// localDev() admits callers only in local development, where evals replace
+// game and integration tools with fixtures.
+const developer = localDev();
+export default eveChannel({
+  auth: [
+    desktop,
+    async (request) => {
+      const caller = await developer(request);
+      return caller ? { ...caller, allowToolStubs: true } : null;
+    },
+  ],
+});

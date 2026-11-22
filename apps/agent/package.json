@@ -24,7 +24,8 @@
     "dev": "eve dev",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "cd ../.. && vitest run --config apps/agent/vitest.config.ts"
+    "test": "cd ../.. && vitest run --config apps/agent/vitest.config.ts",
+    "eval": "eve eval"
   },
   "dependencies": {
     "@ai-sdk/alibaba": "2.0.85",
