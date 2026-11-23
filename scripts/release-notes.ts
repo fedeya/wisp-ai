@@ -50,13 +50,36 @@ export function latestStableTag(sha: string, root = process.cwd()) {
     return undefined;
   }
 }
-type NightlyRelease = {
+export type GitHubRelease = {
   tag_name: string;
   draft: boolean;
   prerelease: boolean;
   published_at: string | null;
   assets: { name: string }[];
 };
+// Every release of the repository, drafts included, newest first, one page at a time.
+export async function* githubReleases(): AsyncGenerator<GitHubRelease[]> {
+  for (let page = 1; ; page++) {
+    const response = await fetch(
+      `https://api.github.com/repos/fedeya/wisp-ai/releases?per_page=100&page=${page}`,
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
+        },
+        signal: AbortSignal.timeout(15000),
+      },
+    );
+    if (!response.ok) {
+      throw Error(`Cannot list GitHub releases: GitHub ${response.status}.`);
+    }
+    const releases: GitHubRelease[] = await response.json();
+    yield releases;
+    if (releases.length < 100) {
+      return;
+    }
+  }
+}
 
 export async function previousPublishedNightly(version: string, sha: string, root = process.cwd()) {
   if (!nightlyVersion.test(version)) {
@@ -73,21 +96,7 @@ export async function publishedNightly(
   if (!/^[a-f0-9]{40}$/.test(sha)) {
     throw Error('Invalid Nightly source identity.');
   }
-  for (let page = 1; ; page++) {
-    const response = await fetch(
-      `https://api.github.com/repos/fedeya/wisp-ai/releases?per_page=100&page=${page}`,
-      {
-        headers: {
-          Accept: 'application/vnd.github+json',
-          ...(process.env.GH_TOKEN ? { Authorization: `Bearer ${process.env.GH_TOKEN}` } : {}),
-        },
-        signal: AbortSignal.timeout(15000),
-      },
-    );
-    if (!response.ok) {
-      throw Error(`Cannot determine the previous published Nightly: GitHub ${response.status}.`);
-    }
-    const releases: NightlyRelease[] = await response.json();
+  for await (const releases of githubReleases()) {
     const candidates = releases
       .filter((release) => {
         const candidate = release.tag_name.slice(1);
@@ -117,10 +126,8 @@ export async function publishedNightly(
         }
       }
     }
-    if (releases.length < 100) {
-      return undefined;
-    }
   }
+  return undefined;
 }
 
 export function formatNightlyNotes(sha: string, previous?: string, changes = '', stable?: string) {

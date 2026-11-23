@@ -91,8 +91,9 @@ file against the pinned simulator, so engine tests do not silently skip on Linux
 On `main`, Windows release runs the validation workflow in parallel with packaging
 and installer verification. Nightly publication waits for both to pass. The release
 input check gates only packaging, so web/docs-only pushes still receive all checks
-without building or publishing an installer. Tag builds and manual builds outside
-`main` wait for validation before packaging. Manual builds always request packaging.
+without building or publishing an installer. Releases build only from `main`; a
+Stable promotion skips validation because it rebuilds a Nightly whose own run passed
+it. Manual builds always request packaging.
 
 The shared `setup-simulator` action caches the executable, manifest, class/item
 metadata and license for both validation and packaging. Its key includes the Go
@@ -165,7 +166,7 @@ To build an installer after the simulator is ready:
 pnpm build:desktop
 ```
 
-`pnpm package:windows` is an alias. Output in `dist/` includes the unsigned per-user installer, SHA-256 checksum and build metrics. Packaged resources include Node/npm, the bridge, agent, protocol, addon and simulator; updates preserve user data. See [packaging code](../scripts/build-desktop.ts), [staging](../scripts/stage-desktop.ts) and the [release workflow](../.github/workflows/release.yml) for resource verification and cache details. Tag builds create draft releases for review before publication.
+`pnpm package:windows` is an alias. Output in `dist/` includes the unsigned per-user installer, SHA-256 checksum and build metrics. Packaged resources include Node/npm, the bridge, agent, protocol, addon and simulator; updates preserve user data. See [packaging code](../scripts/build-desktop.ts), [staging](../scripts/stage-desktop.ts) and the [release workflow](../.github/workflows/release.yml) for resource verification and cache details. Stable promotions create draft releases for review before publication.
 
 Windows installers package the bridge, addon installation/migration commands,
 Eve's production server and npm into `payload/wisp-engine.exe`. Dependencies are

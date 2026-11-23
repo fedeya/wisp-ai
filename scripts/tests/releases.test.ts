@@ -1,12 +1,16 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { copyFile, mkdtemp, mkdir, readFile, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { newerStable, nightlyBuildVersion, syncVersion } from '../release-version.ts';
-import { stableNotes, validateNotes } from '../release-notes.ts';
+import { stableNotes, validateNotes, type GitHubRelease } from '../release-notes.ts';
 import { recordStableRelease } from '../record-stable-release.ts';
-import { latestStable, stableFromNightly } from '../resolve-stable-release.ts';
+import {
+  latestStable,
+  resolveStableRelease,
+  stableFromNightly,
+} from '../resolve-stable-release.ts';
 
 const exists = (path: string) =>
   access(path).then(
@@ -96,6 +100,85 @@ test('a stable promotion takes the Nightly version unless one is given, newer th
   expect(newerStable('0.3.2', '0.3.2')).toBe(false);
   expect(newerStable('0.4.0', '1.0.0')).toBe(false);
 });
+
+test(
+  'a stable promotion resolves a published Nightly from main and refuses taken versions',
+  { timeout: 30000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wisp-promote-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', args, { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+    const commit = (message: string) =>
+      git(
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.invalid',
+        'commit',
+        '--allow-empty',
+        '-m',
+        message,
+      );
+    git('init');
+    commit('stable');
+    git('tag', 'v0.3.2');
+    commit('first nightly');
+    const promoted = git('rev-parse', 'HEAD');
+    git('tag', 'v0.3.3-nightly.1.1');
+    commit('second nightly');
+    git('tag', 'v0.3.3-nightly.2.1');
+    commit('main after the last nightly');
+    const main = git('rev-parse', 'HEAD');
+
+    const release = (tag: string, extra: Partial<GitHubRelease> = {}): GitHubRelease => ({
+      tag_name: tag,
+      draft: false,
+      prerelease: tag.includes('-'),
+      published_at: '2026-11-20T00:00:00Z',
+      assets: [{ name: 'latest.json' }, { name: `WispAI-${tag.slice(1)}-windows-x64-setup.exe` }],
+      ...extra,
+    });
+    // The second page proves the existing-release check reads every page.
+    const pages = (...last: GitHubRelease[]) => {
+      const first = [
+        release('v0.3.3-nightly.2.1'),
+        release('v0.3.3-nightly.1.1'),
+        ...Array.from({ length: 98 }, (_, index) => release(`v0.2.0-nightly.${index}.1`)),
+      ];
+      const fetch = vi
+        .fn()
+        .mockImplementation(async (url: string) =>
+          Response.json(url.endsWith('page=1') ? first : [release('v0.3.2'), ...last]),
+        );
+      vi.stubGlobal('fetch', fetch);
+    };
+    try {
+      pages();
+      expect(await resolveStableRelease(main, {}, root)).toEqual({
+        sha: git('rev-parse', 'v0.3.3-nightly.2.1^{commit}'),
+        version: '0.3.3',
+        nightly: 'v0.3.3-nightly.2.1',
+      });
+      expect(
+        await resolveStableRelease(main, { nightly: 'v0.3.3-nightly.1.1', version: '0.4.0' }, root),
+      ).toEqual({ sha: promoted, version: '0.4.0', nightly: 'v0.3.3-nightly.1.1' });
+      await expect(
+        resolveStableRelease(main, { nightly: 'v0.3.3-nightly.9.1' }, root),
+      ).rejects.toThrow('not a published Nightly built from main');
+      await expect(resolveStableRelease(main, { version: '0.3.2' }, root)).rejects.toThrow(
+        'newer than v0.3.2',
+      );
+      await expect(resolveStableRelease(main, { version: '0.4' }, root)).rejects.toThrow('X.Y.Z');
+
+      pages(release('v0.3.3', { draft: true, published_at: null }));
+      await expect(resolveStableRelease(main, {}, root)).rejects.toThrow('existing v0.3.3 draft');
+      pages(release('v0.3.3'));
+      await expect(resolveStableRelease(main, {}, root)).rejects.toThrow('already released');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  },
+);
 
 test(
   'recording a published release archives its notes and removes only the fragments it shipped',
