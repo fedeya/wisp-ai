@@ -193,6 +193,10 @@ jobs:
         run: node scripts/release-version.ts "$RELEASE_VERSION"
         env:
           RELEASE_VERSION: ${{ needs.windows.outputs.version }}
+      # The artifact download can stop early without failing and leave a truncated
+      # installer; nothing is published unless it matches its checksum and signature.
+      - name: Verify the downloaded release assets
+        run: node scripts/verify-release-assets.ts
       # A draft creates no tag; publishing it tags the promoted Nightly's commit.
       - uses: softprops/action-gh-release@v2
         with:
@@ -201,6 +205,7 @@ jobs:
           target_commitish: ${{ needs.resolve.outputs.sha }}
           draft: true
           prerelease: ${{ needs.windows.outputs.nightly == 'true' }}
+          fail_on_unmatched_files: true
           body_path: dist/release-notes.md
           files: |
             dist/*-setup.exe
