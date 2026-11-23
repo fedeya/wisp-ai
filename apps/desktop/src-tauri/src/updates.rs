@@ -244,6 +244,7 @@ pub async fn check_update(
 /// so an automatic install later only has to run the installer. Returns its version.
 #[tauri::command]
 pub async fn download_update(
+    app: tauri::AppHandle,
     host: tauri::State<'_, Host>,
     updates: tauri::State<'_, Updates>,
 ) -> Result<String, String> {
@@ -255,10 +256,9 @@ pub async fn download_update(
         return Ok(update.version);
     }
     update.timeout = Some(Duration::from_secs(30 * 60));
-    let bytes = update
-        .download(|_, _| {}, || {})
-        .await
-        .map_err(|e| e.to_string())?;
+    // Report progress too: a manual install that starts meanwhile waits for this
+    // download, and its progress bar only moves with these events.
+    let bytes = download_with_progress(&app, &update).await?;
     // A check or channel change during the download may have replaced the update.
     if updates.pending_update().map(|u| u.version) != Ok(update.version.clone()) {
         return Err("The update changed while downloading.".into());
@@ -269,6 +269,27 @@ pub async fn download_update(
         .lock()
         .map_err(|_| "Update state is unavailable.")? = Some(prepared);
     Ok(update.version)
+}
+
+/// Downloads and verifies `update`, emitting `update-progress` for each chunk.
+async fn download_with_progress(
+    app: &tauri::AppHandle,
+    update: &Update,
+) -> Result<Vec<u8>, String> {
+    let mut downloaded = 0u64;
+    update
+        .download(
+            |chunk, total| {
+                downloaded += chunk as u64;
+                let _ = app.emit(
+                    "update-progress",
+                    json!({"phase": "downloading", "downloaded": downloaded, "total": total}),
+                );
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn main_window_hidden(app: &tauri::AppHandle) -> bool {
@@ -298,23 +319,8 @@ pub async fn install_update(
     let downloading = updates.downloading.lock().await;
     let bytes = match updates.downloaded_bytes(&update.version) {
         Some(bytes) => bytes,
-        None => {
-            // Download and verify the signature while Wisp is still running.
-            let mut downloaded = 0u64;
-            update
-                .download(
-                    |chunk, total| {
-                        downloaded += chunk as u64;
-                        let _ = app.emit(
-                            "update-progress",
-                            json!({"phase": "downloading", "downloaded": downloaded, "total": total}),
-                        );
-                    },
-                    || {},
-                )
-                .await
-                .map_err(|e| e.to_string())?
-        }
+        // Download and verify the signature while Wisp is still running.
+        None => download_with_progress(&app, &update).await?,
     };
     drop(downloading);
     super::update_trace::append(&host.data, "download-verified");
