@@ -116,7 +116,7 @@ function DesktopShell() {
                 </nav>
               )}
               <div
-                className={`app-scroll flex min-h-0 flex-1 flex-col ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
+                className={`app-scroll flex min-h-0 flex-1 flex-col ${fixedHeight ? 'overflow-hidden [scrollbar-gutter:auto]' : 'overflow-y-auto'}`}
               >
                 <div
                   className={`mx-auto w-full max-w-[1450px] min-w-0 px-(--page-gutter) ${page.detail ? 'pt-4' : 'pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
