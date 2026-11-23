@@ -21,10 +21,29 @@ local function closeGameOptions()
     end
 end
 
+-- Puts the template's game face back, then swaps in a face for the UI
+-- language's script when the game runs in another language (Korean on an
+-- English client), as Wisp's own widgets do.
+local function useLanguageFont(font, fontObject)
+    if not font then
+        return
+    end
+    local base = _G[fontObject]
+    if base and base.GetFont then
+        local path, size, flags = base:GetFont()
+        if path then
+            font:SetFont(path, size, flags or "")
+        end
+    end
+    ns.UI.Widgets.UseLanguageFace(font, ns.ActiveLocale())
+end
+
 -- Texts are set on show so a language picked in Wisp applies without /reload.
 local function localize()
     description:SetText(L["gameOptions.description"])
+    useLanguageFont(description, "GameFontHighlight")
     open:SetText(L["gameOptions.open"])
+    useLanguageFont(open:GetFontString(), "GameFontNormal")
 end
 
 --- Adds Wisp to the game's AddOns options, using the Settings API when the
