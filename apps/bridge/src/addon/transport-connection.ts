@@ -8,7 +8,7 @@ import type { GameRequests } from './game-requests.ts';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { SessionState } from '../session-state.ts';
 import type { SnapshotGate } from './snapshots.ts';
-import { DiskTransport } from './transport.ts';
+import { DiskTransport, type SlowDownlink } from './transport.ts';
 
 export interface TransportConnectionDependencies {
   state: SessionState;
@@ -69,6 +69,15 @@ export function createTransportConnection(
     );
   }
 
+  function logSlowDownlink(report: SlowDownlink) {
+    logger.info(
+      { event: `transport.downlink_${report.phase}`, ...report },
+      report.phase === 'stalled'
+        ? 'A reply is taking long to reach the game'
+        : 'A slow reply reached the game',
+    );
+  }
+
   async function disconnect() {
     const previous = transport;
     transport = undefined;
@@ -99,6 +108,7 @@ export function createTransportConnection(
       },
       logError,
       logHeldOff,
+      logSlowDownlink,
     );
     transport = next;
     try {

@@ -21,3 +21,4 @@
 - With two game windows open, Wisp no longer switches between them every few seconds, interrupting answers and leaving messages stuck on "Waiting for bridge". The window you last typed in keeps Wisp.
 - When WoW stops answering Wisp, the answer no longer stalls for minutes trying to read your character again and again: after the first 30-second wait, Wisp answers with what it knows and suggests /reload.
 - Messages with an emoji now use the same font as the rest of the chat, instead of switching to the game's font.
+- Right after you log in or /reload, Wisp's first answer no longer takes minutes to appear in the game. The addon was busy resending its startup messages and never paused to read the answer; it now leaves room to read between them.

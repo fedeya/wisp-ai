@@ -271,6 +271,59 @@ ns.Transport.Send({type=string.rep('a',200)})
 timers[0.04]()
 ns.Transport.Send({type='state_result'})
 timers[0.04](); timers[0.04](); timers[0.04]()
-assert(sent[3]=='a' and sent[4]=='a' and sent[5]=='a' and sent[6]=='s', 'fragments cannot interleave')
+assert(sent[3]=='a' and sent[4]=='a' and sent[5]=='a' and #sent==5, 'fragments cannot interleave')
+now=now+0.3; timers[0.04]()
+assert(sent[6]=='s', 'the next packet follows the read window')
+`);
+});
+
+test('a backlog of retries leaves read windows so the reply and its acknowledgements arrive', () => {
+  const run = transportHarness();
+  run(`
+ns.LocaleText=function(key)return key end
+ns.db={}
+ns.connected=true
+ns.chats[1].status='working'
+-- A startup backlog: a large hello with full context and many unacknowledged packets.
+C_EncodingUtil.SerializeJSON=function(packet)
+    return packet.type=='hello' and string.rep('h',4000) or string.rep('x',1600)
+end
+for _=1,16 do ns.Transport.Send({type='quest_sync',data={}}) end
+ns.Transport.Send({type='say',chat='chat',messageId='m',text='el huesoooo'})
+local function step()
+    now=now+0.01
+    local tick=math.floor(now*100+0.5)
+    if tick%4==0 then timers[.04]() end
+    if tick%10==0 then timers[.1]() end
+    if tick%50==0 then timers[0.5]() end
+    if tick%200==0 then timers[2]() end
+end
+for _=1,100 do step() end
+-- The host answers. Every game save writes its stale in-memory downlink bits,
+-- so the host rewrites its control after each finished uplink packet (it holds
+-- off while a packet's last frame is still pending, as the bridge does).
+publishRevision(1)
+local published={}
+for name,value in pairs(disk)do published[name]=value end
+local save=C_AddOns.SaveAddOns
+local repairAt
+C_AddOns.SaveAddOns=function()
+    save()
+    repairAt=states['WispAI_S0282'] and now+0.06 or nil
+end
+local readAt
+for _=1,3000 do
+    step()
+    if repairAt and now>=repairAt and loads==0 then
+        for name,value in pairs(published)do
+            if name:match('^WispAI_B') or tonumber(name:match('^WispAI_S(%d+)') or 9999)<=256 then
+                disk[name]=value
+            end
+        end
+        repairAt=nil
+    end
+    if loads>0 then readAt=now break end
+end
+assert(readAt and readAt<2, 'the reply must be read within a second, not starved by retries: '..tostring(readAt))
 `);
 });

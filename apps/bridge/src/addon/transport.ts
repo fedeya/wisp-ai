@@ -37,7 +37,27 @@ interface DownlinkTransfer {
   lastProgressAt: number;
   sentAt?: number;
   writes: number;
+  startedAt: number;
+  restarts: number;
+  stallReported: boolean;
 }
+
+/** What the bridge knows about a snapshot that is taking long to reach the game. */
+export interface SlowDownlink {
+  phase: 'stalled' | 'delivered';
+  revision: number;
+  ageMs: number;
+  restarts: number;
+  bulk: boolean;
+  frames: number;
+  frame: number;
+  /** Time since the game last wrote an uplink frame; small values mean it is still sending. */
+  uplinkQuietMs?: number;
+  uplinkBusy: boolean;
+}
+
+/** A transfer in flight this long is reported once, then again when it lands. */
+export const SLOW_DOWNLINK_MS = 10_000;
 
 export interface DownlinkCosts {
   fragmentMs: number;
@@ -79,6 +99,7 @@ export class DiskTransport {
   /** Wall-clock time of the last message from the active window. */
   private activeSeenAt = 0;
   private onHeldOff: (session: string) => void;
+  private onSlowDownlink: (report: SlowDownlink) => void;
   private uplinkBusy = new Map<string, boolean>();
   private uplinkObserved = new Map<string, { frame: Buffer; at: number }>();
   private publishedRevision = 0;
@@ -128,11 +149,13 @@ export class DiskTransport {
     receive: (packet: Packet) => void,
     onError: (error: unknown) => void = console.error,
     onHeldOff: (session: string) => void = () => {},
+    onSlowDownlink: (report: SlowDownlink) => void = () => {},
   ) {
     this.wow = wow;
     this.receive = receive;
     this.onError = onError;
     this.onHeldOff = onHeldOff;
+    this.onSlowDownlink = onSlowDownlink;
   }
   async start() {
     await this.scan(true);
@@ -161,6 +184,11 @@ export class DiskTransport {
           // A lost final ACK or an interrupted receiver must not pin the lane
           // forever. A fresh FIRST frame also restarts partial reassembly.
           this.performance.restarts++;
+          transfer.restarts++;
+          if (!transfer.stallReported && Date.now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
+            transfer.stallReported = true;
+            this.reportSlowDownlink('stalled', transfer);
+          }
           this.frameTransfer(transfer);
         }
         void this.read(this.activeFile, false).catch(this.onError);
@@ -488,6 +516,25 @@ export class DiskTransport {
       }
     }
   }
+  private reportSlowDownlink(phase: SlowDownlink['phase'], transfer: DownlinkTransfer) {
+    const file = this.activeFile;
+    const observed = file ? this.uplinkObserved.get(file) : undefined;
+    try {
+      this.onSlowDownlink({
+        phase,
+        revision: transfer.snapshot.revision,
+        ageMs: Date.now() - transfer.startedAt,
+        restarts: transfer.restarts,
+        bulk: transfer.bulk,
+        frames: transfer.frames.length,
+        frame: transfer.index,
+        uplinkQuietMs: observed ? Date.now() - observed.at : undefined,
+        uplinkBusy: Boolean(file && this.uplinkBusy.get(file)),
+      });
+    } catch (error) {
+      this.onError(error);
+    }
+  }
   private clearDownlink() {
     this.downlink = undefined;
     this.latestSnapshot = undefined;
@@ -547,6 +594,9 @@ export class DiskTransport {
       bulkSlot: this.nextSlot,
       lastProgressAt: Date.now(),
       writes: 0,
+      startedAt: Date.now(),
+      restarts: 0,
+      stallReported: false,
     };
     this.downlink = transfer;
     if (transfer.bulk) {
@@ -593,6 +643,9 @@ export class DiskTransport {
       // confirmed bulk read here so scarcity estimates do not wait for the
       // next user message; max also avoids counting a newer app cursor twice.
       this.nextSlot = Math.max(this.nextSlot, Math.min(1024, transfer.bulkSlot + 1));
+    }
+    if (transfer.stallReported || Date.now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
+      this.reportSlowDownlink('delivered', transfer);
     }
     this.peerRevision = Math.max(this.peerRevision, revision);
     this.acknowledgedSnapshot = record;

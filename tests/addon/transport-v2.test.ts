@@ -339,6 +339,9 @@ assert(packets[3].messageId=='retry-me' and packets[3].session==packets[1].sessi
   const handshake = decodeFrame(h.saved())!;
   expect(handshake.payload.toString()).toBe('hello');
   h.run('now=6.08;timers[.04]();assert(#logs==0)');
+  expect(decodeFrame(h.saved())!.payload.toString()).toBe('hello');
+  // The retry waits for the read window after the handshake.
+  h.run('now=6.34;timers[.04]();assert(#logs==0)');
   const retry = decodeFrame(h.saved())!;
   expect(retry.payload.toString()).toBe('say');
   expect(retry.sequence).not.toBe(original.sequence);

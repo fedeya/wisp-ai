@@ -4,7 +4,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deflateSync } from 'node:zlib';
-import { ACTIVE_SESSION_MS, DiskTransport, preferBulkDelivery } from '../src/addon/transport.ts';
+import {
+  ACTIVE_SESSION_MS,
+  DiskTransport,
+  SLOW_DOWNLINK_MS,
+  preferBulkDelivery,
+  type SlowDownlink,
+} from '../src/addon/transport.ts';
 import type { Packet } from '@wisp/protocol/protocol';
 import {
   DOWNLINK_HELPERS,
@@ -44,6 +50,7 @@ async function fixture(
   const errors: unknown[] = [];
   const packets: Packet[] = [];
   const heldOff: string[] = [];
+  const slow: SlowDownlink[] = [];
   const bridge = new DiskTransport(
     root,
     (packet) => {
@@ -52,6 +59,7 @@ async function fixture(
     },
     (error) => errors.push(error),
     (session) => heldOff.push(session),
+    (report) => slow.push(report),
   );
   const hello = { type: 'hello', session: 'v2', seq: 1, at: 1, transportVersion: 2 };
   return {
@@ -63,6 +71,7 @@ async function fixture(
     packets,
     errors,
     heldOff,
+    slow,
     hello,
     async send(packet: unknown, firstSequence = 0, compressed = false, target = file) {
       const raw = Buffer.from(JSON.stringify(packet));
@@ -842,6 +851,42 @@ test('an abandoned control write removes its temporary copy', async () => {
     await assert.rejects(readFile(f.file + '.wisp-control.tmp'), { code: 'ENOENT' });
     assert.equal(await readFile(f.file, 'utf8'), before, 'the changed file was not replaced');
   } finally {
+    await f.close();
+  }
+});
+
+test('a reply the game has not read for 10 seconds is reported once, then again when it lands', async () => {
+  const f = await fixture();
+  let clock = 1_000_000;
+  const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+  try {
+    await mailbox(f);
+    const snapshot = { rev: 1, text: 'el huesoooo' };
+    await f.bridge.publish(snapshot);
+    // The watchdog restarts an unacknowledged transfer every five seconds.
+    clock += 6000;
+    await delay(400);
+    assert.equal(f.slow.length, 0, 'a single restart is not yet slow');
+    clock += SLOW_DOWNLINK_MS;
+    for (let i = 0; i < 40 && f.slow.length === 0; i++) await delay(50);
+    clock += 6000;
+    await delay(400);
+    assert.equal(f.slow.length, 1, 'a stalled transfer is reported once');
+    assert.equal(f.slow[0]!.phase, 'stalled');
+    assert.equal(f.slow[0]!.revision, 1);
+    assert.ok(f.slow[0]!.ageMs >= SLOW_DOWNLINK_MS);
+    assert.ok(f.slow[0]!.restarts >= 2);
+    assert.deepEqual((await drainMailbox(f)).state, snapshot);
+    assert.equal(f.slow.length, 2);
+    assert.equal(f.slow[1]!.phase, 'delivered');
+    assert.ok(f.slow[1]!.ageMs > f.slow[0]!.ageMs);
+    // A prompt reply after that is not reported.
+    await f.bridge.publish({ rev: 2, text: 'rápido' });
+    await drainMailbox(f, snapshot);
+    assert.equal(f.slow.length, 2);
+    assert.deepEqual(f.errors, []);
+  } finally {
+    now.mockRestore();
     await f.close();
   }
 });

@@ -212,6 +212,10 @@ local deliveries, reports = {}, {}
 local acknowledgedReport
 local acknowledgmentUntil = 0
 local nextReceive, emptyDelay, activeUntil = 0, 0.5, 0
+-- Long enough for the host to see a finished packet, write its control and
+-- for one receive tick to read it before the next queued packet starts.
+local UPLINK_YIELD_SECONDS = 0.3
+local uplinkYieldUntil = 0
 ns.transportStats = { loads = 0, unchanged = 0, version = 2 }
 ns.slot = 1
 local function unavailable(reason, recovery)
@@ -512,6 +516,9 @@ local function transmit()
     if not item and not wireAck then
         return
     end
+    if not wireAck and item.index == 1 and GetTime() < uplinkYieldUntil then
+        return
+    end
     if baselinePending then
         -- Downlink settings survive /reload. Capture the old physical identity
         -- before our first publication lets the host answer this addon session.
@@ -578,6 +585,14 @@ local function transmit()
             emptyDelay = 0.5
         end
         table.remove(queue, 1)
+        if queue[1] and next(awaiting) ~= nil then
+            -- Every save rewrites the downlink carriers from memory, so a
+            -- back-to-back backlog would erase each answer before it is read.
+            -- Pause between packets: the host writes, and receive reads, its
+            -- acknowledgements before the next packet goes out.
+            uplinkYieldUntil = GetTime() + UPLINK_YIELD_SECONDS
+            nextReceive = math.min(nextReceive, GetTime() + 0.04)
+        end
     end
 end
 local controlGeneration
@@ -600,7 +615,9 @@ local function receive()
     if unsent and not sent then
         return
     end
-    if queue[1] then
+    -- A partly sent packet owns the uplink until its last frame. Between
+    -- packets the host's answer must be read, or retries can starve it.
+    if queue[1] and queue[1].index > 1 then
         return
     end
     -- The hello can be acknowledged before Eve is ready. Keep reading until
