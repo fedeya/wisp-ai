@@ -1,7 +1,7 @@
 import { candidate, item, type Item } from './fedrath.ts';
 import moltenCore from './molten-core.json' with { type: 'json' };
 
-// The game's reading of Shadowfang Keep's AtlasLoot drops for Fedrath, a
+// The game's reading of Shadowfang Keep's and Wailing Caverns' AtlasLoot drops for Fedrath, a
 // level 21 mage, as the addon's gear_candidates answers it. Item IDs, item
 // class, subclass and inventory type are Forever's (Item.db2, build
 // 1.60.1.71037); names, levels and stats are illustrative, since the client
@@ -81,6 +81,35 @@ const ROWS: Record<number, Row> = {
   1484: ['Witching Stave', 2, 26, 21, 2, 10, 17, { [INT]: 6, [SPI]: 5 }],
   23173: ['Abomination Skin Leggings', 4, 28, 23, 4, 1, 7, { [INT]: 6, [STA]: 6, [SP]: 6 }],
   23171: ['The Axe of Severing', 4, 28, 23, 2, 1, 17, { [STR]: 10, [STA]: 8 }],
+  // Wailing Caverns, named as AtlasLoot's source comments name them.
+  6460: ["Cobrahn's Grasp", 3, 22, 17, 4, 3, 6, { [STR]: 3, [STA]: 3 }],
+  10410: ['Leggings of the Fang', 3, 26, 21, 4, 2, 7, { [AGI]: 7, [STA]: 4 }],
+  6465: ['Robe of the Moccasin', 2, 22, 17, 4, 1, 20, { [INT]: 4, [SPI]: 3 }],
+  10412: ['Belt of the Fang', 3, 25, 20, 4, 2, 6, { [AGI]: 4, [STA]: 3 }],
+  5404: ["Serpent's Shoulders", 2, 22, 17, 4, 2, 3, { [AGI]: 3, [STA]: 2 }],
+  273088: ['Snake Eye Kaleidoscope', 3, 24, 19, 4, 0, 2, { [INT]: 4, [SPI]: 3 }],
+  13245: ["Kresh's Back", 3, 22, 17, 4, 6, 14, { [STA]: 4 }],
+  6447: ['Worn Turtle Shell Shield', 2, 20, 15, 4, 6, 14, { [STA]: 3 }],
+  273084: ['Cloak of Hermitic Bliss', 3, 23, 18, 4, 1, 16, { [INT]: 3, [SPI]: 3 }],
+  6472: ['Stinging Viper', 3, 24, 19, 2, 4, 13, { [STR]: 3 }],
+  6473: ['Armor of the Fang', 3, 26, 21, 4, 2, 5, { [AGI]: 7, [STA]: 6 }],
+  273089: ['Slither Cord', 3, 23, 18, 4, 1, 6, { [INT]: 3, [SP]: 3 }],
+  6449: ['Glowing Lizardscale Cloak', 3, 22, 17, 4, 1, 16, { [AGI]: 3, [STA]: 2 }],
+  6448: ['Tail Spike', 2, 22, 17, 2, 15, 13, { [AGI]: 2 }],
+  273137: ["Skum's Bucket", 3, 23, 18, 4, 0, 23, { [INT]: 3, [SP]: 3 }],
+  6469: ['Venomstrike', 3, 24, 19, 2, 2, 15, { [AGI]: 2 }],
+  5970: ['Serpent Gloves', 2, 22, 17, 4, 1, 10, { [INT]: 3, [SPI]: 3 }],
+  10411: ['Footpads of the Fang', 3, 25, 20, 4, 2, 8, { [AGI]: 4, [STA]: 3 }],
+  6459: ['Savage Trodders', 3, 24, 19, 4, 3, 8, { [STR]: 4, [STA]: 3 }],
+  6630: ['Seedcloud Buckler', 3, 24, 19, 4, 6, 14, { [STA]: 3, [SPI]: 3 }],
+  6631: ['Living Root', 3, 24, 19, 2, 10, 17, { [INT]: 4, [SPI]: 9 }],
+  6629: ['Sporid Cape', 3, 24, 19, 4, 1, 16, { [STA]: 3, [SPI]: 3 }],
+  6461: ['Slime-encrusted Pads', 3, 24, 19, 4, 1, 3, { [INT]: 4, [STA]: 3 }],
+  6627: ['Mutant Scale Breastplate', 3, 24, 19, 4, 3, 5, { [STR]: 5, [STA]: 5 }],
+  6463: ['Deep Fathom Ring', 3, 24, 19, 4, 0, 11, { [STA]: 3, [SPI]: 3 }],
+  5243: ['Firebelcher', 3, 24, 19, 2, 19, 26, { [INT]: 2 }],
+  6632: ['Feyscale Cloak', 3, 24, 19, 4, 1, 16, { [STA]: 3, [SPI]: 2 }],
+  10413: ['Gloves of the Fang', 2, 23, 18, 4, 2, 10, { [AGI]: 3 }],
 };
 // Items that are not equipment, read by name only.
 const OTHER: Record<number, [string, number]> = {
@@ -89,6 +118,9 @@ const OTHER: Record<number, [string, number]> = {
   273105: ['Recipe: Gilnean Feast', 2],
   6895: ["Jordan's Smithing Hammer", 1],
   6283: ['The Book of Ur', 1],
+  6446: ['Snakeskin Bag', 2],
+  10441: ['Glowing Shard', 1],
+  252781: ["Pattern: Stormrider's Leather Gloves", 2],
 };
 
 // Fedrath knows staves, daggers and wands; mages can also learn one-handed
