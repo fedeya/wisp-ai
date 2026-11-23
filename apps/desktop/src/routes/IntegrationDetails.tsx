@@ -67,7 +67,7 @@ export default function IntegrationDetails() {
     : entry?.description;
 
   return (
-    <div className="max-w-[780px]">
+    <div>
       <header className="mb-3 flex items-center gap-3">
         <IntegrationIcon id={id} icon={webSearch ? 'globe' : server ? 'server' : icon} />
         <div className="min-w-0 flex-1">

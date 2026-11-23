@@ -97,17 +97,13 @@ function DesktopShell() {
           <WindowTitleBar controls />
           <div className="flex min-h-0 flex-1">
             <DesktopSidebar />
-            <main
-              className={`app-scroll flex min-h-0 min-w-0 flex-1 flex-col rounded-tl-[8px] border-0 border-t border-l border-solid border-divider bg-canvas ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
-            >
-              <div
-                className={`w-full min-w-0 px-(--page-gutter) [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:20px] ${page.detail ? '' : 'mx-auto max-w-[1450px] pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
-              >
-                {page.detail && (
-                  <nav
-                    aria-label="Detail navigation"
-                    className="-mx-(--page-gutter) mb-4 flex min-h-[46px] items-center border-0 border-b border-solid border-border bg-sidebar px-(--page-gutter)"
-                  >
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-tl-[8px] border-0 border-t border-l border-solid border-divider bg-canvas [--page-gutter:32px] max-lg:[--page-gutter:24px] max-md:[--page-gutter:20px]">
+              {page.detail && (
+                <nav
+                  aria-label="Detail navigation"
+                  className="shrink-0 border-0 border-b border-solid border-border bg-sidebar"
+                >
+                  <div className="mx-auto flex min-h-[46px] w-full max-w-[1450px] items-center px-(--page-gutter)">
                     <Link
                       to={{ pathname: (page.back ?? page).path, search }}
                       aria-label={`Back to ${(page.back ?? page).title}`}
@@ -116,33 +112,41 @@ function DesktopShell() {
                       <Icon name="back" size={16} />
                       {(page.back ?? page).title}
                     </Link>
-                  </nav>
-                )}
-                {page.name !== 'Overview' &&
-                  page.name !== 'Connections' &&
-                  page.name !== 'Integrations' && (
-                    <header className="page-header gap-[18px] mb-[20px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
-                      <div>
-                        <h1>{page.title}</h1>
-                        <p className="text-muted text-base">{page.caption}</p>
-                      </div>
-                    </header>
-                  )}
-                {!native && (
-                  <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-xs leading-[1.5] [&_.icon-button]:ml-auto">
-                    Design preview. Desktop actions are available in the installed Wisp app.
                   </div>
-                )}
-                <Updates
-                  showSettings={page.name === 'Settings'}
-                  version={app.info?.version || '0.0.7'}
-                  locked={!!busy}
-                  openSettings={() => void navigate('/settings')}
-                  onBusy={app.setBusy}
-                  idle={idle && !busy}
-                  onAvailable={app.setAppUpdate}
-                />
-                <Outlet />
+                </nav>
+              )}
+              <div
+                className={`app-scroll flex min-h-0 flex-1 flex-col ${fixedHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}
+              >
+                <div
+                  className={`mx-auto w-full max-w-[1450px] min-w-0 px-(--page-gutter) ${page.detail ? 'pt-4' : 'pt-6'} ${fixedHeight ? 'flex min-h-0 flex-1 flex-col' : 'pb-10'}`}
+                >
+                  {page.name !== 'Overview' &&
+                    page.name !== 'Connections' &&
+                    page.name !== 'Integrations' && (
+                      <header className="page-header gap-[18px] mb-[20px] flex flex-wrap items-start justify-between max-lg:gap-[12px]">
+                        <div>
+                          <h1>{page.title}</h1>
+                          <p className="text-muted text-base">{page.caption}</p>
+                        </div>
+                      </header>
+                    )}
+                  {!native && (
+                    <div className="banner gap-[12px] border border-solid border-[#355c56] px-[16px] py-[12px] flex items-center rounded-[6px] [background:#1c3330] text-[#b7e8db] mb-[20px] text-xs leading-[1.5] [&_.icon-button]:ml-auto">
+                      Design preview. Desktop actions are available in the installed Wisp app.
+                    </div>
+                  )}
+                  <Updates
+                    showSettings={page.name === 'Settings'}
+                    version={app.info?.version || '0.0.7'}
+                    locked={!!busy}
+                    openSettings={() => void navigate('/settings')}
+                    onBusy={app.setBusy}
+                    idle={idle && !busy}
+                    onAvailable={app.setAppUpdate}
+                  />
+                  <Outlet />
+                </div>
               </div>
             </main>
           </div>
