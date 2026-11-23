@@ -164,8 +164,9 @@ test.each(['openrouter', 'gateway', 'compatible'] as const)(
     expect(models.map(({ id, supportsTools }) => [id, supportsTools])).toEqual([
       ['lab/tools', true],
       ['lab/text', false],
-      ['lab/unknown', undefined],
-      ['lab/tagged', provider === 'gateway' ? true : undefined],
+      // A local server's models are the player's own choice; aggregators must say.
+      ['lab/unknown', provider === 'compatible' ? true : undefined],
+      ['lab/tagged', provider === 'openrouter' ? undefined : true],
     ]);
     expect(models[0]).toMatchObject({ name: 'Tools', contextWindow: 32000 });
     expect(models[2]?.contextWindow).toBeUndefined();
@@ -300,8 +301,101 @@ test.each([
   },
   {
     provider: 'xai',
-    body: { data: [{ id: 'grok-4' }] },
-    expected: { 'grok-4': undefined },
+    body: { data: [{ id: 'grok-4' }, { id: 'grok-code-fast-1' }, { id: 'grok-2-image-1212' }] },
+    expected: { 'grok-4': true, 'grok-code-fast-1': true, 'grok-2-image-1212': false },
+  },
+  {
+    provider: 'groq',
+    body: {
+      data: [
+        { id: 'llama-3.3-70b-versatile' },
+        { id: 'openai/gpt-oss-120b' },
+        { id: 'whisper-large-v3-turbo' },
+        { id: 'playai-tts' },
+        { id: 'meta-llama/llama-guard-4-12b' },
+        { id: 'groq/compound' },
+      ],
+    },
+    expected: {
+      'llama-3.3-70b-versatile': true,
+      'openai/gpt-oss-120b': true,
+      'whisper-large-v3-turbo': false,
+      'playai-tts': false,
+      'meta-llama/llama-guard-4-12b': false,
+      'groq/compound': false,
+    },
+  },
+  {
+    provider: 'cerebras',
+    body: { data: [{ id: 'gpt-oss-120b' }, { id: 'llama-3.3-70b' }] },
+    expected: { 'gpt-oss-120b': true, 'llama-3.3-70b': true },
+  },
+  {
+    provider: 'togetherai',
+    body: [
+      { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', type: 'chat' },
+      { id: 'black-forest-labs/FLUX.1-schnell', type: 'image' },
+      { id: 'BAAI/bge-large-en-v1.5', type: 'embedding' },
+    ],
+    expected: {
+      'meta-llama/Llama-3.3-70B-Instruct-Turbo': true,
+      'black-forest-labs/FLUX.1-schnell': false,
+      'BAAI/bge-large-en-v1.5': false,
+    },
+  },
+  {
+    provider: 'deepinfra',
+    body: {
+      data: [
+        { id: 'meta-llama/Llama-3.3-70B-Instruct' },
+        { id: 'BAAI/bge-m3' },
+        { id: 'openai/whisper-large-v3' },
+      ],
+    },
+    expected: {
+      'meta-llama/Llama-3.3-70B-Instruct': true,
+      'BAAI/bge-m3': false,
+      'openai/whisper-large-v3': false,
+    },
+  },
+  {
+    provider: 'alibaba',
+    body: {
+      data: [
+        { id: 'qwen-plus' },
+        { id: 'qwen3-max' },
+        { id: 'text-embedding-v4' },
+        { id: 'qwen-image-plus' },
+        { id: 'qwen3-tts-flash' },
+      ],
+    },
+    expected: {
+      'qwen-plus': true,
+      'qwen3-max': true,
+      'text-embedding-v4': false,
+      'qwen-image-plus': false,
+      'qwen3-tts-flash': false,
+    },
+  },
+  {
+    provider: 'moonshotai',
+    body: { data: [{ id: 'kimi-k2.5' }, { id: 'moonshot-v1-8k-vision-preview' }] },
+    expected: { 'kimi-k2.5': true, 'moonshot-v1-8k-vision-preview': true },
+  },
+  {
+    provider: 'minimax',
+    body: { data: [{ id: 'MiniMax-M2.5', type: 'model' }] },
+    expected: { 'MiniMax-M2.5': true },
+  },
+  {
+    provider: 'baseten',
+    body: { data: [{ id: 'moonshotai/Kimi-K2.5' }, { id: 'deepseek-ai/DeepSeek-V3.1' }] },
+    expected: { 'moonshotai/Kimi-K2.5': true, 'deepseek-ai/DeepSeek-V3.1': true },
+  },
+  {
+    provider: 'zai',
+    body: { data: [{ id: 'glm-4.7' }, { id: 'glm-4.5v' }, { id: 'cogview-4' }] },
+    expected: { 'glm-4.7': true, 'glm-4.5v': true, 'cogview-4': false },
   },
 ] as const)(
   '$provider discovery marks the models that call tools',
@@ -310,6 +404,23 @@ test.each([
     const found = await manager.discover({ provider, name: provider, apiKey: 'key' });
     const { models } = desktopRoutes['/connections/discover'].output.parse(found);
     expect(Object.fromEntries(models.map((m) => [m.id, m.supportsTools]))).toEqual(expected);
+  },
+);
+
+// Discovery offers only models marked as calling tools, so a provider with no
+// answer shows an empty catalog. These read the answer from each model's metadata.
+const metadataProviders = new Set(['gateway', 'openrouter', 'mistral', 'cohere', 'fireworks']);
+test.each(providerDefinitions.filter(({ id }) => !metadataProviders.has(id)))(
+  '$name discovery offers its example model',
+  async ({ id: provider, example }) => {
+    const { manager } = await fixture(async () => Response.json({ data: [{ id: example }] }));
+    const found = await manager.discover({
+      provider,
+      name: provider,
+      apiKey: 'key',
+      baseURL: provider === 'compatible' ? 'http://localhost:1234/v1' : undefined,
+    });
+    expect(found.models).toEqual([expect.objectContaining({ id: example, supportsTools: true })]);
   },
 );
 

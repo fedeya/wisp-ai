@@ -26,9 +26,9 @@ import { readJson, writeJson } from '../json-file.ts';
 
 /**
  * Whether a discovered model accepts function tools: true or false when the
- * provider's model list or the pinned SDK catalog says so, otherwise undefined.
- * Discovery only offers models marked true, so a guess here would let players
- * pick a model that fails on the first tool call.
+ * provider's model list, the pinned SDK catalog or what the provider serves
+ * says so, otherwise undefined. Discovery only offers models marked true, so
+ * every provider needs an answer here or its catalog shows nothing.
  */
 function discoveredToolSupport(
   provider: ProviderId,
@@ -62,8 +62,32 @@ function discoveredToolSupport(
   if (officialEndpoint && (provider === 'anthropic' || provider === 'deepseek')) {
     return true;
   }
+  // Together tags each model with what it does; only chat models take tools.
+  if (provider === 'togetherai' && officialEndpoint && typeof m.type === 'string') {
+    return m.type === 'chat';
+  }
+  // These lists say nothing about tools. Their chat models all call tools, so
+  // only the speech, image, embedding and safety models listed beside them are
+  // left out. A local server is the player's own choice of models.
+  if ((officialEndpoint && toolCallingChatProviders.has(provider)) || provider === 'compatible') {
+    return !nonChatModel.test(id);
+  }
   return modelToolSupport(provider, id);
 }
+const toolCallingChatProviders = new Set<ProviderId>([
+  'xai',
+  'groq',
+  'cerebras',
+  'togetherai',
+  'deepinfra',
+  'alibaba',
+  'moonshotai',
+  'minimax',
+  'baseten',
+  'zai',
+]);
+const nonChatModel =
+  /embed|bge-|whisper|tts|speech|transcri|audio|orpheus|image|imagine|video|dall-e|flux|stable-diffusion|sdxl|guard|moderation|rerank|paraformer|cogview|cogvideo|wan\d|ocr|compound/i;
 
 export interface ModelCatalog {
   models(): Promise<AccountModel[]>;
@@ -314,11 +338,14 @@ export class ModelConnections implements ModelCatalog {
       models?: Record<string, unknown>[];
     };
     const models = new Map<string, DiscoveredConnectionModel>();
-    const rows = Array.isArray(body?.data)
-      ? body.data
-      : Array.isArray(body?.models)
-        ? body.models
-        : [];
+    // Together answers with a bare array instead of `{ data }`.
+    const rows = Array.isArray(body)
+      ? (body as Record<string, unknown>[])
+      : Array.isArray(body?.data)
+        ? body.data
+        : Array.isArray(body?.models)
+          ? body.models
+          : [];
     for (const m of rows) {
       if (!m || typeof m !== 'object') continue;
       if (input.provider === 'gateway' && typeof m.type === 'string' && m.type !== 'language') {
