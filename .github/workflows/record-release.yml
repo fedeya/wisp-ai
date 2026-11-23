@@ -1,0 +1,89 @@
+name: Record stable release
+# After a Stable release is published, main gets its archived notes
+# (releases/X.Y.Z.md), loses the Changie fragments it shipped and moves to its
+# version, through a pull request because the main ruleset blocks direct pushes.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable tag, for example v0.3.3
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: record-release-${{ inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+jobs:
+  record:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Pull requests opened with GITHUB_TOKEN start no checks, and this repository
+      # does not let Actions open them, so a GitHub App opens it when configured.
+      - uses: actions/create-github-app-token@v2
+        id: app
+        if: vars.RELEASE_APP_ID != ''
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token || github.token }}
+      - uses: ./.github/actions/setup-workspace
+      - name: Read the published release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "Not a stable tag: $TAG" >&2; exit 1; fi
+          if [ "$(gh release view "$TAG" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')" != false ]; then
+            echo "$TAG is not a published stable release." >&2; exit 1
+          fi
+          gh release view "$TAG" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Archive notes and move main's version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          RELEASE_BODY="$(cat "$RUNNER_TEMP/notes.md")" node scripts/record-stable-release.ts
+          pnpm install --lockfile-only --ignore-scripts
+          pnpm exec oxfmt --write releases
+      - name: Open the pull request
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          HAS_APP: ${{ steps.app.outputs.token != '' }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug || 'github-actions' }}
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then echo "main already records $TAG."; exit 0; fi
+          branch="release/record-$TAG"
+          # Commit as the App's bot account (github-actions[bot] without one) so GitHub links it.
+          bot="$APP_SLUG[bot]"
+          id=$(gh api "users/$bot" --jq .id)
+          git config user.name "$bot"
+          git config user.email "$id+$bot@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -A
+          git commit -m "chore(release): record $TAG"
+          git push --force origin "$branch"
+          if [ "$HAS_APP" != true ]; then
+            echo "::warning::Set the RELEASE_APP_ID variable and RELEASE_APP_PRIVATE_KEY secret to open this pull request automatically. Open it now: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch"
+            exit 0
+          fi
+          url=$(gh pr list --head "$branch" --json url --jq '.[0].url')
+          if [ -z "$url" ]; then
+            url=$(gh pr create --base main --head "$branch" --title "chore(release): record $TAG" \
+              --body "Archives the published $TAG notes in \`releases/\`, removes the Changie fragments it shipped and moves main to its version. Opened by the Record stable release workflow.")
+          fi
+          gh pr merge "$url" --auto --squash || echo "::warning::Enable auto-merge on $url by hand."

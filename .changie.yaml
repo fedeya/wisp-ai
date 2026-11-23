@@ -1,0 +1,20 @@
+# Player-facing release notes. Each pull request adds one fragment with
+# `pnpm changie new`; a stable release collects them into releases/<version>.md.
+# See releases/README.md.
+changesDir: releases
+unreleasedDir: unreleased
+versionExt: md
+versionFormat: "# What's new in Wisp"
+kindFormat: '## {{.Kind}}'
+changeFormat: '- {{.Body}}'
+headerPath: ''
+changelogPath: ''
+newlines:
+  afterVersion: 0
+  beforeKind: 1
+  afterKind: 1
+  endOfVersion: 1
+kinds:
+  - label: New
+  - label: Improved
+  - label: Fixed

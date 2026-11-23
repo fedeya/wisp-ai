@@ -1,25 +1,36 @@
 import { readFile, writeFile, mkdir, appendFile } from 'node:fs/promises';
-import { syncVersion, nightlyBuildVersion } from './release-version.ts';
-import { nightlyNotes, previousPublishedNightly, validateNotes } from './release-notes.ts';
+import { syncVersion, nightlyBuildVersion, newerStable } from './release-version.ts';
+import {
+  latestStableTag,
+  nightlyNotes,
+  previousPublishedNightly,
+  stableNotes,
+} from './release-notes.ts';
 
-const nightly = process.env.GITHUB_REF === 'refs/heads/main';
-let version = JSON.parse(await readFile('package.json', 'utf8')).version;
+// RELEASE_CHANNEL and RELEASE_VERSION come from the release workflow's resolve job.
+// The version is stamped into this checkout only; main is updated after publication.
+const sha = process.env.GITHUB_SHA!;
+const nightly = process.env.RELEASE_CHANNEL !== 'stable';
+let version: string;
+let notes: string;
 if (nightly) {
+  // After a stable promotion and before main records it, the tag is ahead.
+  const committed = JSON.parse(await readFile('package.json', 'utf8')).version;
+  const stable = latestStableTag(sha)?.slice(1);
+  const base = stable && newerStable(stable, committed) ? stable : committed;
   version = nightlyBuildVersion(
-    version,
+    base,
     process.env.GITHUB_RUN_NUMBER!,
     process.env.GITHUB_RUN_ATTEMPT!,
   );
   await syncVersion(version);
-} else if (process.env.GITHUB_REF_NAME !== `v${version}`) {
-  throw Error('Release tag must match the app version.');
+  const previous = await previousPublishedNightly(version, sha);
+  notes = await nightlyNotes(sha, process.cwd(), previous);
+} else {
+  version = process.env.RELEASE_VERSION!;
+  notes = stableNotes(version);
+  await syncVersion(version);
 }
-const previous = nightly
-  ? await previousPublishedNightly(version, process.env.GITHUB_SHA!)
-  : undefined;
-const notes = nightly
-  ? await nightlyNotes(process.env.GITHUB_SHA!, process.cwd(), previous)
-  : validateNotes(await readFile(`releases/${version}.md`, 'utf8'));
 await mkdir('dist', { recursive: true });
 await writeFile('dist/release-notes.md', notes);
 if (process.env.GITHUB_OUTPUT) {

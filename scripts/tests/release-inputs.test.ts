@@ -27,7 +27,8 @@ async function checkInputs(directory: string, environment: NodeJS.ProcessEnv) {
 const nonAppFiles = [
   'apps/web/src/app/page.tsx',
   'docs/development.md',
-  'releases/next.md',
+  'releases/unreleased/Fixed-20261123-014627.yaml',
+  '.changie.yaml',
   '.agents/skills/visual-pr/SKILL.md',
   '.github/workflows/check.yml',
   'AGENTS.md',
