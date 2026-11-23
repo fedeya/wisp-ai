@@ -24,6 +24,7 @@ import type { GameRequests } from '../addon/game-requests.ts';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
+import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { proxyModel } from '../models/model-proxy.ts';
 import type { Logger } from 'pino';
@@ -46,6 +47,8 @@ interface AgentDependencies {
   token: string;
   auth: ChatGPTAuth;
   connections: ModelConnections;
+  /** Records why model requests failed, for chat telemetry. */
+  modelFailures?: ModelFailures;
   webSearch: WowheadSearch;
   mcpRelay: McpRelay;
   capabilitySettings: CapabilitySettings;
@@ -168,11 +171,13 @@ export function createAgentApp(deps: AgentDependencies) {
     };
   app.post(
     '/model/responses',
-    proxy((c) => proxyModel(c.env.incoming, c.env.outgoing, auth, deps.logger)),
+    proxy((c) => proxyModel(c.env.incoming, c.env.outgoing, auth, deps.logger, deps.modelFailures)),
   );
   app.post(
     '/model/connections/*',
-    proxy((c) => proxyConnectionModel(c.env.incoming, c.env.outgoing, connections)),
+    proxy((c) =>
+      proxyConnectionModel(c.env.incoming, c.env.outgoing, connections, deps.modelFailures),
+    ),
   );
   app.all('/mcp/*', async (c) => {
     const { incoming, outgoing } = c.env;

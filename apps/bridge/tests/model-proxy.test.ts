@@ -2,7 +2,9 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createOpenAI } from '@ai-sdk/openai';
-import { proxyModel } from '../src/models/model-proxy.ts';
+import { proxyConnectionModel, proxyModel } from '../src/models/model-proxy.ts';
+import { ModelFailures } from '../src/models/model-failures.ts';
+import type { ModelConnections } from '../src/models/model-connections.ts';
 import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
 import { subscriptionCallOptions } from '@wisp/agent/model-tools';
 
@@ -53,8 +55,9 @@ test('SDK streams via bridge, forces private responses, and preserves terminal f
       });
     },
   } as unknown as ChatGPTAuth;
+  const failures = new ModelFailures();
   const server = createServer((req, res) => {
-    void proxyModel(req, res, auth).catch((e) => {
+    void proxyModel(req, res, auth, undefined, failures).catch((e) => {
       if (res.headersSent) {
         res.destroy();
       } else {
@@ -100,6 +103,46 @@ test('SDK streams via bridge, forces private responses, and preserves terminal f
       body: JSON.stringify({ model: 'hidden-model' }),
     });
     assert.equal(bad.status, 400);
+    // Rejected before reaching OpenAI; the streamed failures above were HTTP 200.
+    assert.equal(failures.since('chatgpt', 0), 'wisp_rejected');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('connection proxy records the provider status of failed requests by connection', async () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  let status = 404;
+  const connections = {
+    forward: async () => {
+      if (status === 0) throw new TypeError('fetch failed');
+      return Response.json({ error: { message: 'Private provider error' } }, { status });
+    },
+  } as unknown as ModelConnections;
+  const failures = new ModelFailures();
+  const server = createServer((req, res) => {
+    void proxyConnectionModel(req, res, connections, failures).catch(() => {
+      res.writeHead(503).end();
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const url =
+    'http://127.0.0.1:' +
+    (server.address() as { port: number }).port +
+    '/model/connections/' +
+    id +
+    '/chat/completions';
+  try {
+    assert.equal((await fetch(url, { method: 'POST', body: '{}' })).status, 404);
+    assert.equal(failures.since(id, 0), 'not_found');
+    status = 429;
+    await fetch(url, { method: 'POST', body: '{}' });
+    assert.equal(failures.since(id, 0), 'rate_limited');
+    status = 0;
+    assert.equal((await fetch(url, { method: 'POST', body: '{}' })).status, 503);
+    assert.equal(failures.since(id, 0), 'network');
+    assert.equal(failures.since('chatgpt', 0), undefined);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((r) => server.close(() => r()));

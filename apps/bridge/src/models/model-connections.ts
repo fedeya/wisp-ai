@@ -327,6 +327,12 @@ export class ModelConnections implements ModelCatalog {
     const connection = this.get(parsed.connection);
     return { connectionId: connection.id, provider: connection.provider, modelId: parsed.model };
   }
+  /** Who answers a model: a connection's provider, or the ChatGPT subscription. */
+  provider(model: string): ProviderId | 'chatgpt' | undefined {
+    const parsed = parseConnectionModel(model);
+    if (!parsed) return 'chatgpt';
+    return this.connections.find((c) => c.id === parsed.connection)?.provider;
+  }
   private headers(provider: string, secret: string): Record<string, string> {
     return provider === 'anthropic' || provider === 'minimax'
       ? { 'x-api-key': secret, 'anthropic-version': '2023-06-01' }

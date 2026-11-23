@@ -72,7 +72,9 @@ Development runs do not send usage analytics.
 
 Events include a random persistent installation ID, app/addon versions, operating
 system and architecture, app activity, desktop sections visited, chat mode
-(chat, hover, routine or tip), tool names, outcomes and durations. Custom MCP tool
+(chat, hover, routine or tip), the kind of AI provider (such as `anthropic` or
+`chatgpt`, never model names or endpoints), tool names, outcomes, failure
+categories and durations. Custom MCP tool
 names are replaced with `external_tool`. Analytics events exclude conversations,
 tool arguments/results, character/account names, credentials, local paths and logs.
 This is pseudonymous installation analytics, not a count of individual people.

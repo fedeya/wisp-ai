@@ -13,6 +13,7 @@ import { errorMessage } from '../errors.ts';
 import type { Logger } from 'pino';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
+import { modelSource, type ModelFailures } from '../models/model-failures.ts';
 import type { ChatErrorCode, ChatOutcome, UsageTelemetry } from '../telemetry.ts';
 
 function isTimeout(error: unknown): boolean {
@@ -84,6 +85,10 @@ interface TurnDependencies {
   isReady: () => boolean;
   isStopping: () => boolean;
   accountBusy: () => boolean;
+  /** Why this turn's proxied model requests failed, as fixed categories. */
+  modelFailures?: Pick<ModelFailures, 'since'>;
+  /** Who answers a model id (for example `anthropic` or `chatgpt`), never the id itself. */
+  modelProvider?: (model: string) => string | undefined;
   /** Whether any provider could answer. Omitted means yes. */
   hasProvider?: () => boolean;
   isCurrent: (chat: Chat) => boolean;
@@ -367,6 +372,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         'Turn failed',
       );
     } finally {
+      const model = chat.modelSettings?.model || defaultModel();
       deps.telemetry?.chat(
         chat.routineId ? 'routine' : chat.proactive ? 'tip' : chat.inline ? 'hover' : 'chat',
         outcome,
@@ -374,6 +380,15 @@ export function createTurnRunner(deps: TurnDependencies) {
         outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? failureCode : undefined,
         firstTextMs,
         turnUsage?.usage(),
+        model
+          ? {
+              provider: deps.modelProvider?.(model),
+              failureKind:
+                outcome === 'failed' || outcome === 'timeout'
+                  ? deps.modelFailures?.since(modelSource(model), started)
+                  : undefined,
+            }
+          : {},
       );
       logger.info(
         {

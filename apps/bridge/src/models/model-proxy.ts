@@ -5,12 +5,14 @@ import { readCompletedResponse } from './response-stream.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { modelTiming } from './model-timing.ts';
+import { httpFailureKind, thrownFailureKind, type ModelFailures } from './model-failures.ts';
 import type { Logger } from 'pino';
 
 export async function proxyConnectionModel(
   req: IncomingMessage,
   res: ServerResponse,
   connections: ModelConnections,
+  failures?: ModelFailures,
 ) {
   const route = /^\/model\/connections\/([0-9a-f-]{36})(\/.*)$/i.exec(req.url || '');
   if (!route) {
@@ -36,13 +38,22 @@ export async function proxyConnectionModel(
       headers.set(key, value);
     }
   }
-  const response = await connections.forward(
-    route[1]!,
-    route[2]!,
-    body,
-    headers,
-    AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
-  );
+  let response: Response;
+  try {
+    response = await connections.forward(
+      route[1]!,
+      route[2]!,
+      body,
+      headers,
+      AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
+    );
+  } catch (error) {
+    failures?.record(route[1]!, thrownFailureKind(error, abort.signal));
+    throw error;
+  }
+  if (!response.ok) {
+    failures?.record(route[1]!, httpFailureKind(response.status));
+  }
   res.writeHead(response.status, {
     'content-type': response.headers.get('content-type') || 'application/json',
     'cache-control': 'no-store',
@@ -61,6 +72,7 @@ export async function proxyModel(
   res: ServerResponse,
   auth: ChatGPTAuth,
   logger?: Pick<Logger, 'info'>,
+  failures?: ModelFailures,
 ) {
   const abort = new AbortController();
   res.on('close', () => {
@@ -68,31 +80,17 @@ export async function proxyModel(
       abort.abort();
     }
   });
-  req.setEncoding('utf8');
-  let raw = '';
-  for await (const chunk of req) {
-    raw += chunk;
-    if (raw.length > 8 * 1024 * 1024) {
-      throw Error('Model request is too large');
-    }
+  let request: Awaited<ReturnType<typeof sendChatGPTRequest>>;
+  try {
+    request = await sendChatGPTRequest(req, auth, abort.signal);
+  } catch (error) {
+    failures?.record('chatgpt', thrownFailureKind(error, abort.signal));
+    throw error;
   }
-  const body = JSON.parse(raw);
-  if (!body || typeof body !== 'object' || typeof body.model !== 'string') {
-    throw Error('Invalid model request');
+  const { response, body, streaming, started } = request;
+  if (!response.ok) {
+    failures?.record('chatgpt', httpFailureKind(response.status));
   }
-  if (!(await auth.models()).some((m) => m.slug === body.model)) {
-    throw Error('Choose an available model in Wisp > ChatGPT.');
-  }
-  const streaming = body.stream === true;
-  body.store = false;
-  body.stream = true;
-  const started = performance.now();
-  const response = await auth.authorized('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
-  });
   if (response.ok && !streaming) {
     const completed = await readCompletedResponse(response);
     res
@@ -117,4 +115,32 @@ export async function proxyModel(
   } else {
     await pipeline(Readable.fromWeb(response.body as never), res);
   }
+}
+async function sendChatGPTRequest(req: IncomingMessage, auth: ChatGPTAuth, signal: AbortSignal) {
+  req.setEncoding('utf8');
+  let raw = '';
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > 8 * 1024 * 1024) {
+      throw Error('Model request is too large');
+    }
+  }
+  const body = JSON.parse(raw);
+  if (!body || typeof body !== 'object' || typeof body.model !== 'string') {
+    throw Error('Invalid model request');
+  }
+  if (!(await auth.models()).some((m) => m.slug === body.model)) {
+    throw Error('Choose an available model in Wisp > ChatGPT.');
+  }
+  const streaming = body.stream === true;
+  body.store = false;
+  body.stream = true;
+  const started = performance.now();
+  const response = await auth.authorized('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(180000)]),
+  });
+  return { response, body, streaming, started };
 }
