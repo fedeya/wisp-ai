@@ -431,3 +431,33 @@ for _, surfaceName in ipairs({ "main", "inline" }) do
         end
     )
 end
+
+it("shows a tool left running by an interrupted turn as cancelled", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    ns.db = { sidebar = true, showTools = true, drafts = {} }
+    local function call(id, status)
+        return { id = id, role = "tool", text = id, tool = { label = id, status = status } }
+    end
+    local chat = {
+        id = "chat",
+        status = "working",
+        messages = {
+            { id = "q", role = "user", text = "Compare" },
+            call("Reading talents", "completed"),
+            call("Simulating DPS", "running"),
+        },
+    }
+    local messages = ns.UI.DisplayMessages(chat)
+    check.equal("running", messages[2].tool.status)
+
+    chat.status = "interrupted"
+    messages = ns.UI.DisplayMessages(chat)
+    check.equal("cancelled", messages[2].tool.status)
+    check.equal("Simulating DPS  +1", messages[2].text)
+    -- A lone call renders through the per-call row used inside expanded groups.
+    table.remove(chat.messages, 2)
+    messages = ns.UI.DisplayMessages(chat)
+    check.equal("cancelled", messages[2].tool.status)
+end)

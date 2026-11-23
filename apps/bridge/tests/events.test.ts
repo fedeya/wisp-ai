@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { applyEvent, type Chat } from '../src/chat/events.ts';
 import { rebuildHistory } from '../src/chat/history.ts';
+import { settleTurn } from '../src/chat/chat-lifecycle.ts';
 test('UI gets tool states and final text, never hidden reasoning', () => {
   const chat: Chat = {
     id: 'test',
@@ -155,4 +156,37 @@ test('new-format event history reconstructs historical tool calls without duplic
     ['user', 'tool', 'assistant'],
   );
   assert.equal(rebuildHistory(chat, []), null);
+});
+
+test('a turn that stops mid-call leaves no call running', () => {
+  const chat: Chat = {
+    id: 'test',
+    owner: 'game',
+    title: 'test',
+    status: 'working',
+    messages: [],
+    activity: [],
+  };
+  const parts = new ReplyProjection();
+  for (const callId of ['done', 'open']) {
+    applyEvent(
+      chat,
+      { type: 'call.requested', data: { callId, capability: { name: 'search' }, input: {} } },
+      parts,
+    );
+  }
+  applyEvent(
+    chat,
+    { type: 'call.settled', data: { callId: 'done', outcome: 'completed', output: 'ok' } },
+    parts,
+  );
+  settleTurn(chat, 'interrupted');
+  assert.deepEqual(
+    chat.activity.map((call) => call.status),
+    ['completed', 'cancelled'],
+  );
+  assert.deepEqual(
+    chat.messages.map((message) => message.tool?.status),
+    ['completed', 'cancelled'],
+  );
 });

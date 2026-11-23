@@ -16,6 +16,8 @@ local TOOL_STATES = {
     completed = { cell = 0, tint = MUTED },
     running = { cell = 1, tint = ACCENT },
     failed = { cell = 2, tint = COLORS.danger },
+    -- Stopped with its turn: the failure mark, without the alarm.
+    cancelled = { cell = 2, tint = MUTED },
 }
 local toolGroupsExpanded = {}
 
@@ -309,7 +311,13 @@ local function toolDetails(tool, name)
     return #lines > 0 and table.concat(lines, "\n\n") or nil
 end
 
-local function toolCallRow(chatId, call, id, callId, indent)
+-- A call still marked running after its turn stopped will never finish.
+local function toolStatus(tool, working)
+    local status = tool.status or "completed"
+    return (status == "running" and not working) and "cancelled" or status
+end
+
+local function toolCallRow(chatId, call, id, callId, indent, working)
     local tool = call.tool or {}
     local name = tool.label or call.text or "Tool"
     local detail = toolDetails(tool, name)
@@ -319,7 +327,7 @@ local function toolCallRow(chatId, call, id, callId, indent)
         id = id,
         role = "tool",
         text = name,
-        tool = { status = tool.status or "completed" },
+        tool = { status = toolStatus(tool, working) },
         toolIndent = indent,
         groupKey = key,
         groupExpanded = expanded,
@@ -327,19 +335,22 @@ local function toolCallRow(chatId, call, id, callId, indent)
     }
 end
 
-local function appendToolGroup(messages, chatId, calls, id, loading)
+local function appendToolGroup(messages, chatId, calls, id, loading, working)
     if #calls == 1 then
         local call = calls[1]
-        messages[#messages + 1] = toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0)
+        messages[#messages + 1] =
+            toolCallRow(chatId, call, id, id .. "-call-" .. (call.id or 1), 0, working)
         return
     end
-    local running, failed, latest
+    local running, failed, cancelled, latest
     for _, call in ipairs(calls) do
         local tool = call.tool or {}
         latest = tool.label or call.text or "Tool"
-        local status = tool.status or "completed"
+        local status = toolStatus(tool, working)
         if status == "running" then
             running = latest
+        elseif status == "cancelled" then
+            cancelled = true
         elseif status ~= "completed" then
             failed = true
         end
@@ -354,14 +365,17 @@ local function appendToolGroup(messages, chatId, calls, id, loading)
                 expanded and not loading and (#calls .. " tool calls")
                 or (latest .. "  +" .. (#calls - 1))
             ),
-        tool = { status = running and "running" or (failed and "failed" or "completed") },
+        tool = {
+            status = running and "running"
+                or (failed and "failed" or (cancelled and "cancelled" or "completed")),
+        },
         groupKey = key,
         groupExpanded = expanded,
     }
     if expanded then
         for index, call in ipairs(calls) do
             local callId = id .. "-call-" .. (call.id or index)
-            messages[#messages + 1] = toolCallRow(chatId, call, callId, callId, 18)
+            messages[#messages + 1] = toolCallRow(chatId, call, callId, callId, 18, working)
         end
     end
 end
@@ -373,12 +387,13 @@ end
 function ns.UI.DisplayMessages(chat)
     local messages, calls, groupId = {}, {}, nil
     local hasReplyContent, turnStart = false, 1
+    local working = chat ~= nil and chat.status == "working"
     local function flushTools(loading)
         if not groupId then
             return
         end
         local header = #messages + 1
-        appendToolGroup(messages, chat.id, calls, groupId, loading)
+        appendToolGroup(messages, chat.id, calls, groupId, loading, working)
         messages[header].turnLoading = loading
         calls, groupId = {}, nil
     end
@@ -407,7 +422,7 @@ function ns.UI.DisplayMessages(chat)
         end
     end
     local hasToolActivity = groupId ~= nil
-    flushTools(hasToolActivity and chat.status == "working")
+    flushTools(hasToolActivity and working)
     return messages, hasToolActivity, hasReplyContent, turnStart
 end
 
