@@ -106,15 +106,29 @@ export async function dungeonLoot(
 ): Promise<LootResult> {
   const wanted = args.dungeon ? fold(args.dungeon) : undefined;
   const boss = args.boss ? fold(args.boss) : undefined;
+  const named = data.data.instances.filter((instance) =>
+    args.instanceMapId !== undefined
+      ? instance.instanceMapId === args.instanceMapId
+      : // Word breaks are ignored: AtlasLoot keys run words together
+        // ("TheTempleOfAtal'Hakkar").
+        [instance.name, instance.key].some((name) =>
+          compact(fold(name)).includes(compact(wanted!)),
+        ),
+  );
+  // A name can match only an empty table of an instance whose loot sits
+  // under another name ("Onyxias Lair" is empty; "Onyxia" has the drops):
+  // add the other tables of that instance map.
+  const emptyMaps = new Set(
+    named
+      .filter((instance) => !instance.bosses.some((entry) => entry.items.length))
+      .map((instance) => instance.instanceMapId)
+      .filter((id) => id !== undefined),
+  );
   const instances = data.data.instances
-    .filter((instance) =>
-      args.instanceMapId !== undefined
-        ? instance.instanceMapId === args.instanceMapId
-        : // Word breaks are ignored: AtlasLoot keys run words together
-          // ("TheTempleOfAtal'Hakkar").
-          [instance.name, instance.key].some((name) =>
-            compact(fold(name)).includes(compact(wanted!)),
-          ),
+    .filter(
+      (instance) =>
+        named.includes(instance) ||
+        (instance.instanceMapId !== undefined && emptyMaps.has(instance.instanceMapId)),
     )
     .map((instance) => ({
       ...instance,

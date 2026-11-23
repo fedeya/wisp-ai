@@ -214,6 +214,37 @@ describe('dungeon loot', () => {
     expect(result.instances![0]!.bosses[0]!.itemCount).toBe(300);
   });
 
+  it('reads the populated table when a name matches only an empty one of the same map', async () => {
+    const loot = {
+      ...data,
+      data: {
+        instances: [
+          {
+            key: 'Onyxia',
+            name: 'Onyxia',
+            instanceMapId: 249,
+            kind: 'raid',
+            bosses: [{ name: 'Onyxia', items: [{ id: 17078 }] }],
+          },
+          {
+            key: 'OnyxiasLairNew',
+            name: 'Onyxias Lair',
+            instanceMapId: 249,
+            kind: 'raid',
+            bosses: [],
+          },
+        ],
+      },
+    };
+    const result = await dungeonLoot(
+      { dungeon: "Onyxia's Lair", boss: 'onyxia' },
+      async () => ({ status: 'available', data: {} }),
+      loot,
+    );
+    expect(result.instances!.map((instance) => instance.name)).toEqual(['Onyxia', 'Onyxias Lair']);
+    expect(result.instances![0]!.bosses[0]!.items!.map((item) => item.id)).toEqual([17078]);
+  });
+
   it('matches English names without accents and reports bosses without known drops', async () => {
     let read = false;
     const result = await dungeonLoot(
