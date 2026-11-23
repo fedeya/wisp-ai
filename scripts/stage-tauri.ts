@@ -6,32 +6,26 @@ import { verifySimulator } from './verify-simulator.ts';
 import { findNpmDirectory } from './node-runtime.ts';
 import { addonReleaseVersion, stampAddonReleaseVersion } from './addon-release-version.ts';
 
-export async function stageTauri({ packaged = false } = {}) {
-  const root = fileURLToPath(new URL('../', import.meta.url));
+function payloadDirectory(root: string) {
   const stage = path.resolve(root, 'apps/desktop/src-tauri/resources/payload');
   if (stage !== path.join(root, 'apps', 'desktop', 'src-tauri', 'resources', 'payload')) {
     throw Error('Invalid payload directory.');
   }
+  return stage;
+}
+
+export async function stageTauri({ packaged = false } = {}) {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const stage = payloadDirectory(root);
   const addonVersion = packaged ? addonReleaseVersion(root) : undefined;
   await verifySimulator(root);
   await rm(stage, { recursive: true, force: true });
   // Hoisting is restricted to the standalone deployment: Windows installer resources
   // must contain real directories, without junctions back to the developer's store.
   if (packaged) {
-    const { buildEngine } = await import('./build-engine.ts');
-    const executable = await buildEngine();
+    // The packaged engine is added afterwards with stageEngine, so it can build
+    // while the native executable compiles.
     await mkdir(stage, { recursive: true });
-    await copyFile(executable, path.join(stage, 'wisp-engine.exe'));
-    const eve = path.dirname(fileURLToPath(import.meta.resolve('eve/package.json')));
-    await copyFile(path.join(eve, 'LICENSE'), path.join(stage, 'EVE-LICENSE.txt'));
-    await copyFile(path.join(eve, 'NOTICE'), path.join(stage, 'EVE-NOTICE.txt'));
-    await writeFile(
-      path.join(stage, 'package.json'),
-      JSON.stringify({
-        name: '@wisp/engine-payload',
-        version: JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).version,
-      }),
-    );
   } else {
     const executable = process.env.npm_execpath || 'pnpm';
     const args = [
@@ -93,5 +87,22 @@ export async function stageTauri({ packaged = false } = {}) {
   );
   console.log(
     'Deployed production bridge, agent and protocol without personal data or desktop build tools.',
+  );
+}
+
+// Adds the packaged engine to a payload staged with stageTauri({ packaged: true }).
+export async function stageEngine(executable: string) {
+  const root = fileURLToPath(new URL('../', import.meta.url));
+  const stage = payloadDirectory(root);
+  await copyFile(executable, path.join(stage, 'wisp-engine.exe'));
+  const eve = path.dirname(fileURLToPath(import.meta.resolve('eve/package.json')));
+  await copyFile(path.join(eve, 'LICENSE'), path.join(stage, 'EVE-LICENSE.txt'));
+  await copyFile(path.join(eve, 'NOTICE'), path.join(stage, 'EVE-NOTICE.txt'));
+  await writeFile(
+    path.join(stage, 'package.json'),
+    JSON.stringify({
+      name: '@wisp/engine-payload',
+      version: JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8')).version,
+    }),
   );
 }
