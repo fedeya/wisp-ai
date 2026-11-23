@@ -45,13 +45,16 @@ local function setup(env)
     end
 end
 
-local function modelRow(env, name)
+local function shownRow(env, name)
     for _, row in ipairs(env.UI_TEST.frames.WispAIModelPicker.rows) do
         if row.entry and row.entry.model and row.entry.model.displayName == name then
             return row
         end
     end
-    error("no visible model row " .. name)
+end
+
+local function modelRow(env, name)
+    return shownRow(env, name) or error("no visible picker row " .. name)
 end
 
 local function pickModel(env, name)
@@ -83,18 +86,6 @@ it(
                 },
             },
         }
-        local options = {}
-        MenuUtil = {
-            CreateContextMenu = function(_, build)
-                options = {}
-                build(nil, {
-                    CreateTitle = function() end,
-                    CreateRadio = function(_, label, selected, choose)
-                        options[label] = { selected = selected, choose = choose }
-                    end,
-                })
-            end,
-        }
         ns.UI.Refresh()
         local controls = UI_TEST.frames.WispAIChatModelControls
         assert(controls.model:GetText() == "Luna" and controls.effort:GetText() == "Effort: medium")
@@ -117,8 +108,15 @@ it(
         ns.UI.Refresh()
         assert(not ns.modelPending.main and controls.model:GetText() == "Sol")
         controls.effort.scripts.OnClick(controls.effort)
-        assert(options.ultra and not options.high, "efforts come from the selected model")
-        options.ultra.choose()
+        local picker = UI_TEST.frames.WispAIModelPicker
+        assert(not picker.search:IsShown(), "the effort list has no search box")
+        assert(picker.rows[1].entry.header == "Reasoning effort")
+        assert(modelRow(env, "medium").mark:IsShown(), "the current effort is marked")
+        assert(
+            shownRow(env, "ultra") and not shownRow(env, "high"),
+            "efforts come from the selected model"
+        )
+        pickModel(env, "ultra")
         assert(packets[#packets].data.effort == "ultra")
         chat.modelRequestId = packets[#packets].requestId
         chat.modelSettings.effort = "ultra"
@@ -162,24 +160,12 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
             },
         },
     }
-    local options = {}
-    MenuUtil = {
-        CreateContextMenu = function(_, build)
-            options = {}
-            build(nil, {
-                CreateTitle = function() end,
-                CreateRadio = function(_, label, selected, choose)
-                    options[label] = { selected = selected, choose = choose }
-                end,
-            })
-        end,
-    }
     ns.UI.Refresh()
     local controls = UI_TEST.frames.WispAIChatModelControls
     assert(controls.effort:GetText() == "Effort: Default")
     controls.effort.scripts.OnClick(controls.effort)
-    assert(options.Default.selected() and not options.medium.selected())
-    options.high.choose()
+    assert(modelRow(env, "Default").mark:IsShown() and not modelRow(env, "medium").mark:IsShown())
+    pickModel(env, "high")
     local packet = packets[#packets]
     assert(packet.data.effort == "high" and packet.chat == "main")
     local chat = ns.Chat.Current()
@@ -196,8 +182,8 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
     inlineChat.modelRequestId = packet.requestId
     ns.UI.Refresh()
     inline.effort.scripts.OnClick(inline.effort)
-    assert(options.On and options.Off and options.Default)
-    options.On.choose()
+    assert(shownRow(env, "On") and shownRow(env, "Off") and shownRow(env, "Default"))
+    pickModel(env, "On")
     packet = packets[#packets]
     assert(packet.data.effort == "enabled" and packet.chat == ns.inlineId)
     assert(chat.modelSettings.effort == "high")
@@ -664,5 +650,11 @@ it(
         controls.model.scripts.OnClick(controls.model)
         controls.model.scripts.OnClick(controls.model)
         assert(not picker:IsShown())
+        -- A click anywhere else lands on the layer under the picker and closes it.
+        controls.model.scripts.OnClick(controls.model)
+        local catcher = UI_TEST.frames.WispAIModelPickerCatcher
+        assert(catcher:IsVisible())
+        catcher.scripts.OnMouseDown(catcher, "LeftButton")
+        assert(not picker:IsShown() and not catcher:IsVisible())
     end
 )

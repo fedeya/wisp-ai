@@ -3,13 +3,15 @@ local L = ns.L
 local widgets = ns.UI.Widgets
 local COLORS = widgets.COLORS
 
--- A searchable model list. Catalogs from aggregators run to hundreds of
--- models, more than a context menu can show, so the picker filters as the
+-- The model and effort menus. Catalogs from aggregators run to hundreds of
+-- models, more than a context menu can show, so the model picker filters as the
 -- player types and draws only the rows in view: a fixed set of row buttons is
--- repainted on scroll instead of one button per model.
+-- repainted on scroll instead of one button per model. The effort menu is the
+-- same list without the search box.
 local ROW_HEIGHT = 20
 local VISIBLE_ROWS = 12
 local MIN_WIDTH = 260
+local MIN_PLAIN_WIDTH = 140
 local SEARCH_HEIGHT = 24
 local PADDING = 6
 
@@ -136,6 +138,9 @@ end
 
 local function filter(query)
     state.list = ns.UI.ModelPicker._Rows(state.models, query)
+    if state.title and #state.list > 0 then
+        table.insert(state.list, 1, { header = state.title })
+    end
     state.offset = 0
     state.active = nil
     move(1)
@@ -152,12 +157,21 @@ end
 
 local function build()
     local frame = CreateFrame("Frame", "WispAIModelPicker", UIParent, "BackdropTemplate")
-    frame:SetFrameStrata("DIALOG")
+    frame:SetFrameStrata("FULLSCREEN_DIALOG")
     frame:SetToplevel(true)
     frame:SetClampedToScreen(true)
     frame:EnableMouse(true)
-    frame:SetHeight(PADDING * 3 + SEARCH_HEIGHT + ROW_HEIGHT * VISIBLE_ROWS)
     widgets.Box(frame, COLORS.window, COLORS.lineStrong)
+    -- A click anywhere outside the picker lands on this invisible layer under
+    -- it and closes the picker, as it would a menu. As the picker's child it
+    -- shows and hides with it.
+    local catcher = CreateFrame("Frame", "WispAIModelPickerCatcher", frame)
+    catcher:SetAllPoints(UIParent)
+    catcher:SetFrameStrata("FULLSCREEN")
+    catcher:EnableMouse(true)
+    catcher:SetScript("OnMouseDown", function()
+        frame:Hide()
+    end)
     if UISpecialFrames then
         table.insert(UISpecialFrames, "WispAIModelPicker")
     end
@@ -199,10 +213,9 @@ local function build()
     frame.search = search
 
     local list = CreateFrame("Frame", nil, frame)
-    list:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -PADDING)
-    list:SetPoint("TOPRIGHT", search, "BOTTOMRIGHT", 0, -PADDING)
     list:SetHeight(ROW_HEIGHT * VISIBLE_ROWS)
     list:EnableMouseWheel(true)
+    frame.list = list
     list:SetScript("OnMouseWheel", function(_, delta)
         state.offset = math.max(0, math.min(maxOffset(), state.offset - delta * 3))
         paint()
@@ -234,25 +247,17 @@ local function build()
 
     frame:SetScript("OnHide", function()
         search:ClearFocus()
-        frame:UnregisterAllEvents()
         state.anchor, state.choose, state.models = nil, nil, nil
-    end)
-    -- A click anywhere else closes the picker, as it would a menu.
-    frame:SetScript("OnEvent", function()
-        local over = MouseIsOver
-            and (MouseIsOver(frame) or (state.anchor and MouseIsOver(state.anchor)))
-        if MouseIsOver and not over then
-            frame:Hide()
-        end
     end)
     frame:Hide()
     return frame
 end
 
---- Opens the picker under `anchor`, or closes it when it is already open there.
---- `options.models` are catalog entries (slug, displayName, optional group),
+--- Opens the picker over `anchor`, or closes it when it is already open there.
+--- `options.models` are entries with slug, displayName and an optional group,
 --- `options.selected` the current slug, and `options.choose(slug)` runs after a
---- pick, with the picker already closed.
+--- pick, with the picker already closed. `options.search = false` drops the
+--- search box and fits the list to its rows; `options.title` heads the list.
 function ns.UI.ModelPicker.Toggle(anchor, options)
     picker = picker or build()
     if picker:IsShown() and state.anchor == anchor then
@@ -264,13 +269,27 @@ function ns.UI.ModelPicker.Toggle(anchor, options)
     state.models = options.models or {}
     state.selected = options.selected
     state.choose = options.choose
-    picker:ClearAllPoints()
-    picker:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
-    picker:SetWidth(math.max(MIN_WIDTH, anchor:GetWidth() or 0))
-    picker:Show()
-    pcall(picker.RegisterEvent, picker, "GLOBAL_MOUSE_DOWN")
+    state.title = options.title
+    local searchable = options.search ~= false
+    picker.search:SetShown(searchable)
     picker.search:SetText("")
     filter("")
+    local list = picker.list
+    list:ClearAllPoints()
+    if searchable then
+        list:SetPoint("TOPLEFT", picker.search, "BOTTOMLEFT", 0, -PADDING)
+        list:SetPoint("TOPRIGHT", picker.search, "BOTTOMRIGHT", 0, -PADDING)
+        picker:SetHeight(PADDING * 3 + SEARCH_HEIGHT + ROW_HEIGHT * VISIBLE_ROWS)
+    else
+        list:SetPoint("TOPLEFT", PADDING, -PADDING)
+        list:SetPoint("TOPRIGHT", -PADDING, -PADDING)
+        local shown = math.max(1, math.min(VISIBLE_ROWS, #state.list))
+        picker:SetHeight(PADDING * 2 + ROW_HEIGHT * shown)
+    end
+    picker:ClearAllPoints()
+    picker:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
+    picker:SetWidth(math.max(searchable and MIN_WIDTH or MIN_PLAIN_WIDTH, anchor:GetWidth() or 0))
+    picker:Show()
     -- Start on the current model, scrolled to the middle of the list.
     for position, entry in ipairs(state.list) do
         if entry.model and entry.model.slug == state.selected then
@@ -280,7 +299,9 @@ function ns.UI.ModelPicker.Toggle(anchor, options)
         end
     end
     paint()
-    picker.search:SetFocus()
+    if searchable then
+        picker.search:SetFocus()
+    end
 end
 
 function ns.UI.ModelPicker.Close()
