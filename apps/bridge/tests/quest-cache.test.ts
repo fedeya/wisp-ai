@@ -67,12 +67,12 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
     expect(result.sections.quests.data.quests[0].rewardXP).toBe(850);
     expect(result.sections.talents.data.unspentPoints).toBe(1);
     expect(request).toHaveBeenLastCalledWith(
-      { chat: 'chat', session: 'addon', sections: ['talents'] },
+      { chat: 'chat', session: 'addon', agent: true, sections: ['talents'] },
       expect.any(AbortSignal),
     );
     await (await read(['quests'], true)).json();
     expect(request).toHaveBeenLastCalledWith(
-      { chat: 'chat', session: 'addon', sections: ['quests'] },
+      { chat: 'chat', session: 'addon', agent: true, sections: ['quests'] },
       expect.any(AbortSignal),
     );
     allowed = false;

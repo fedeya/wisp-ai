@@ -6,6 +6,8 @@ export interface GameRequest {
   sections?: string[];
   inspection?: unknown;
   action?: unknown;
+  /** Agent tool calls fail fast while WoW is unresponsive and get errors written for the agent. */
+  agent?: boolean;
 }
 interface PendingRequest extends GameRequest {
   resolve: (value: unknown) => void;
@@ -13,10 +15,11 @@ interface PendingRequest extends GameRequest {
   dispose: () => void;
 }
 
-/** How long new game requests fail at once after one timed out, unless WoW answers first. */
+/** How long new agent game requests fail at once after one timed out, unless WoW answers first. */
 export const UNRESPONSIVE_MS = 60_000;
+const TIMEOUT_MESSAGE = 'WoW did not respond in time. Open Wisp and try again.';
 // The agent reads these: they tell it to stop calling game tools for the rest of the turn.
-const TIMEOUT_MESSAGE =
+const AGENT_TIMEOUT_MESSAGE =
   'WoW did not respond in time. Do not call game tools again in this turn: answer with what you already know, and tell the player to type /reload in WoW if Wisp keeps not responding.';
 const UNRESPONSIVE_MESSAGE =
   'WoW did not respond to the previous game request, so this one was not sent. Do not call game tools again in this turn: answer with what you already know, and tell the player to type /reload in WoW if Wisp keeps not responding.';
@@ -58,8 +61,10 @@ export class GameRequests {
       return Promise.reject(new Error('Game request cancelled'));
     }
     // One timeout means the whole game channel is stuck: every game tool waits on it.
-    // Fail the next ones at once instead of making the player wait 30 seconds each.
+    // Fail the agent's next ones at once instead of making the player wait 30 seconds each.
+    // Requests the player starts (a settings button, a simulation) are always sent.
     if (
+      input.agent &&
       this.unresponsiveSince !== undefined &&
       this.now() - this.unresponsiveSince < UNRESPONSIVE_MS
     ) {
@@ -116,7 +121,7 @@ export class GameRequests {
           if (this.timedOut.size <= 64) break;
           this.timedOut.delete(oldest);
         }
-        finish(() => reject(new Error(TIMEOUT_MESSAGE)));
+        finish(() => reject(new Error(input.agent ? AGENT_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE)));
       }, timeout);
       signal?.addEventListener('abort', abort, { once: true });
       this.pending.set(id, {

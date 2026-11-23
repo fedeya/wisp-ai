@@ -83,7 +83,12 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
       onTimeout: (timeout) => timeouts.push(timeout),
     });
     requests.heard();
-    const first = requests.request({ chat: 'chat', session: 'one', sections: ['gear'] });
+    const first = requests.request({
+      chat: 'chat',
+      session: 'one',
+      agent: true,
+      sections: ['gear'],
+    });
     const firstRejected = expect(first).rejects.toThrow('Do not call game tools again');
     clock += 30_000;
     await vi.advanceTimersByTimeAsync(30_000);
@@ -92,18 +97,33 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
 
     // The next read in the same turn does not wait another 30 seconds.
     await expect(
-      requests.request({ chat: 'chat', session: 'one', inspection: { kind: 'target' } }),
+      requests.request({
+        chat: 'chat',
+        session: 'one',
+        agent: true,
+        inspection: { kind: 'target' },
+      }),
     ).rejects.toThrow('was not sent');
     expect(requests.snapshot()).toEqual([]);
 
     // A minute later the channel is tried again; an answer clears the state.
     clock += UNRESPONSIVE_MS;
-    const retried = requests.request({ chat: 'chat', session: 'one', sections: ['gear'] });
+    const retried = requests.request({
+      chat: 'chat',
+      session: 'one',
+      agent: true,
+      sections: ['gear'],
+    });
     const [{ id }] = requests.snapshot();
     requests.heard();
     expect(requests.receive(id, 'one', 'chat', { ok: true })).toBe(true);
     expect(await retried).toEqual({ ok: true });
-    const after = requests.request({ chat: 'chat', session: 'one', sections: ['gear'] });
+    const after = requests.request({
+      chat: 'chat',
+      session: 'one',
+      agent: true,
+      sections: ['gear'],
+    });
     expect(requests.snapshot()).toHaveLength(1);
     requests.cancelAll('done');
     await expect(after).rejects.toThrow('done');
@@ -121,7 +141,12 @@ test('a timeout reports whether the addon kept talking while the request waited'
       now: () => clock,
       onTimeout: (timeout) => timeouts.push(timeout),
     });
-    const action = requests.request({ chat: 'chat', session: 'one', action: { kind: 'test' } });
+    const action = requests.request({
+      chat: 'chat',
+      session: 'one',
+      agent: true,
+      action: { kind: 'test' },
+    });
     const rejected = expect(action).rejects.toThrow('did not respond');
     clock += 10_000;
     requests.heard();
@@ -131,7 +156,12 @@ test('a timeout reports whether the addon kept talking while the request waited'
     expect(timeouts).toEqual([{ kind: 'action', addonSilent: false, waitedMs: 30_000 }]);
     // A reconnection starts over instead of failing the new window's requests.
     requests.cancelAll('reconnected');
-    const fresh = requests.request({ chat: 'chat', session: 'two', sections: ['gear'] });
+    const fresh = requests.request({
+      chat: 'chat',
+      session: 'two',
+      agent: true,
+      sections: ['gear'],
+    });
     expect(requests.snapshot()).toHaveLength(1);
     requests.cancelAll('done');
     await expect(fresh).rejects.toThrow('done');
@@ -145,7 +175,12 @@ test('a valid late answer to a timed-out read lets new requests through again', 
   try {
     let clock = 1_000_000;
     const requests = new GameRequests(() => {}, { now: () => clock });
-    const read = requests.request({ chat: 'chat', session: 'one', sections: ['gear'] });
+    const read = requests.request({
+      chat: 'chat',
+      session: 'one',
+      agent: true,
+      sections: ['gear'],
+    });
     const [{ id: first }] = requests.snapshot();
     await vi.advanceTimersByTimeAsync(10_000);
     const [{ id: retried }] = requests.snapshot();
@@ -153,23 +188,59 @@ test('a valid late answer to a timed-out read lets new requests through again', 
     clock += 30_000;
     await vi.advanceTimersByTimeAsync(20_000);
     await rejected;
-    await expect(requests.request({ chat: 'chat', session: 'one' })).rejects.toThrow(
+    await expect(requests.request({ chat: 'chat', session: 'one', agent: true })).rejects.toThrow(
       'was not sent',
     );
 
     // Answers from the wrong window or conversation do not count.
     expect(requests.receive(first, 'two', 'chat', {})).toBe(false);
     expect(requests.receive(first, 'one', 'other', {})).toBe(false);
-    await expect(requests.request({ chat: 'chat', session: 'one' })).rejects.toThrow(
+    await expect(requests.request({ chat: 'chat', session: 'one', agent: true })).rejects.toThrow(
       'was not sent',
     );
 
     // WoW answers the original ID late: the rejected read stays rejected, new ones are sent.
     expect(requests.receive(retried, 'one', 'chat', { late: true })).toBe(false);
-    const next = requests.request({ chat: 'chat', session: 'one', sections: ['gear'] });
+    const next = requests.request({
+      chat: 'chat',
+      session: 'one',
+      agent: true,
+      sections: ['gear'],
+    });
     expect(requests.snapshot()).toHaveLength(1);
     requests.cancelAll('done');
     await expect(next).rejects.toThrow('done');
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('requests the player starts are still sent while WoW is unresponsive, with a message for the player', async () => {
+  vi.useFakeTimers();
+  try {
+    let clock = 1_000_000;
+    const requests = new GameRequests(() => {}, { now: () => clock });
+    const settings = requests.request({ chat: 'chat', session: 'one', action: { kind: 'test' } });
+    const rejected = expect(settings).rejects.toThrow(
+      'WoW did not respond in time. Open Wisp and try again.',
+    );
+    clock += 30_000;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await rejected;
+
+    // The agent's next call fails at once; the player's next click is sent.
+    await expect(requests.request({ chat: 'chat', session: 'one', agent: true })).rejects.toThrow(
+      'was not sent',
+    );
+    const simulation = requests.request({ chat: 'sim', session: 'one', sections: ['gear'] });
+    const [{ id }] = requests.snapshot();
+    expect(requests.receive(id, 'one', 'sim', { ok: true })).toBe(true);
+    expect(await simulation).toEqual({ ok: true });
+    // Its answer shows WoW is back, so the agent's calls go through again.
+    const agent = requests.request({ chat: 'chat', session: 'one', agent: true });
+    expect(requests.snapshot()).toHaveLength(1);
+    requests.cancelAll('done');
+    await expect(agent).rejects.toThrow('done');
   } finally {
     vi.useRealTimers();
   }
