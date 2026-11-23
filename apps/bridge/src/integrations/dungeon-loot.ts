@@ -40,7 +40,7 @@ function positive(value: unknown): value is number {
 }
 
 const NOTE =
-  'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot. proficiency: usable now, trainable (the class learns that weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; hiddenUnusable counts items this class can never use (includeUnusable lists them). summary lists every drop with its name, drop chance, required level and, when it beats current gear, itemLevelGain (proficiency only when not usable); full adds stats, statDelta and the equipped item, for one boss or a few items. unread items were not read from the game (too many, or not cached yet).';
+  'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot. proficiency: usable now, trainable (the class learns that weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; hiddenUnusable counts items this class can never use (includeUnusable lists them). summary lists every drop with its name, drop chance, required level and, when it beats current gear, itemLevelGain and statDelta (proficiency only when not usable); full adds the stats of every item and the equipped item, for one boss. unread items were not read from the game (too many, or not cached yet).';
 
 function fold(text: string) {
   return text
@@ -223,6 +223,8 @@ export async function dungeonLoot(
           chance: item.chance,
           requiredLevel: item.requiredLevel,
           itemLevelGain: positive(item.itemLevelGain) ? item.itemLevelGain : undefined,
+          // Upgrades carry what they change, so the answer needs no full read.
+          statDelta: positive(item.itemLevelGain) ? item.statDelta : undefined,
           proficiency: item.proficiency === 'usable' ? undefined : item.proficiency,
           trainableAtLevel: item.trainableAtLevel,
           addedInForever: item.addedInForever,

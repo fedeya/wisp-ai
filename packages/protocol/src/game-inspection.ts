@@ -211,7 +211,7 @@ export const dungeonLootInput = z
       .enum(['summary', 'full'])
       .optional()
       .describe(
-        'summary: every drop per boss with name, drop chance, required level and item level gain; full: also stats and the comparison with equipped gear. Default: full with boss, summary without. A full answer too large for one read comes back as the summary.',
+        'summary: every drop per boss with name, drop chance and required level, plus item level gain and stat changes for upgrades; full: also the stats of every item and the equipped item. Default: full with boss, summary without. A full answer too large for one read comes back as the summary.',
       ),
     includeUnusable: z
       .boolean()
