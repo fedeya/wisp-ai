@@ -174,6 +174,26 @@ test('with automatic installs off, nothing downloads or installs while idle', as
   expect(installCalls()).toHaveLength(0);
 });
 
+test('an older version offered by returning to Stable never downloads or installs by itself', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  const older = { version: '0.2.0', notes: 'Stable notes.', downgrade: true };
+  const mocked = vi.mocked(desktop).getMockImplementation()!;
+  vi.mocked(desktop).mockImplementation(async (command, args) =>
+    command === 'check_update'
+      ? ({ supported: true, update: older } as never)
+      : mocked(command, args),
+  );
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS * 2));
+  expect(desktop).not.toHaveBeenCalledWith('download_update');
+  expect(installCalls()).toHaveLength(0);
+  expect(
+    screen.getByText(/older than the one installed, so it never installs by itself/),
+  ).toBeTruthy();
+  expect(screen.queryByText(/installs by itself after 10 minutes/)).toBeNull();
+});
+
 test('a downloaded update installs after Wisp stays idle, and activity restarts the wait', async () => {
   vi.useFakeTimers();
   autoInstallOn();
