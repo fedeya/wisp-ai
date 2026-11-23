@@ -445,13 +445,17 @@ end
 -- Whether a rendered row says something different from the last time it was
 -- drawn. A row drawn for the first time is not a change by itself: it may be an
 -- earlier message coming into view; a new last message is checked separately.
+-- Expanding or collapsing tools rewrites a row's text, but the player did that.
 function ns.UI.RowChanged(row, message)
     local said = row.replyView and row.replyView.said
     local status = message.tool and message.tool.status
     local preview = message.tool and message.tool.resultPreview
+    local expanded = message.groupExpanded and true or false
     local changed = row.seenSaid ~= nil
+        and row.seenExpanded == expanded
         and (row.seenSaid ~= said or row.seenStatus ~= status or row.seenPreview ~= preview)
     row.seenSaid, row.seenStatus, row.seenPreview = said, status, preview
+    row.seenExpanded = expanded
     return changed
 end
 -- `changed` says whether a rendered row changed; a new last message counts too.

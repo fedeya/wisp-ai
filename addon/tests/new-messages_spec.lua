@@ -1,7 +1,7 @@
 local helper = require("addon.tests.support")
 
 -- Opens the window on a long reply, scrolled up, and returns the jump button.
-local function scenario()
+local function scenario(tools)
     local env = helper.env()
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
@@ -21,14 +21,20 @@ local function scenario()
                 text = string.rep("Long reply about [[ref:robe]] ", 1000),
                 references = { robe = { kind = "item", id = 100, label = "Robe" } },
             },
+        },
+    }
+    for _, tool in
+        ipairs(tools or {
             {
                 id = "tool",
                 role = "tool",
                 text = "Searching",
                 tool = { name = "search", status = "running" },
             },
-        },
-    }
+        })
+    do
+        chat.messages[#chat.messages + 1] = tool
+    end
     ns.chats = { chat }
     function ns.Chat.Current()
         return chat
@@ -48,6 +54,7 @@ local function scenario()
         chat = chat,
         ns = ns,
         jump = jump,
+        widgets = UI_TEST.widgets,
         transcript = UI_TEST.frames.WispAIProgress.parent.parent,
     }
 end
@@ -65,6 +72,34 @@ describe("the new messages button", function()
         s.chat.messages[2].tool = { name = "search", status = "done", resultPreview = "Found it" }
         s.ns.UI.Refresh()
         assert.is_true(s.jump:IsShown())
+    end)
+
+    it("ignores expanding and collapsing tool calls", function()
+        local s = scenario({
+            {
+                id = "a",
+                role = "tool",
+                text = "Searching",
+                tool = { name = "search", status = "completed" },
+            },
+            {
+                id = "b",
+                role = "tool",
+                text = "Reading",
+                tool = { name = "read", status = "completed" },
+            },
+        })
+        local disclosure
+        for _, widget in ipairs(s.widgets) do
+            if widget.parent and widget.parent.disclosure == widget and widget:IsShown() then
+                disclosure = widget
+            end
+        end
+        assert(disclosure, "the tool group can be expanded")
+        disclosure.scripts.OnClick(disclosure)
+        assert.is_false(s.jump:IsShown(), "expanding tools is not new content")
+        disclosure.scripts.OnClick(disclosure)
+        assert.is_false(s.jump:IsShown(), "collapsing tools is not new content")
     end)
 
     it("ignores a redraw that only resolves a link or changes the width", function()
