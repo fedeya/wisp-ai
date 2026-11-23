@@ -15,4 +15,6 @@
 
 ## Fixed
 
+- **Discover models** now lists the models you can use for OpenAI, Google Gemini, Mistral, Cohere, Fireworks and DeepSeek API keys, instead of saying no supported models were found. Image, speech and embedding models stay hidden because they can't use Wisp's tools.
+
 - With two game windows open, Wisp no longer switches between them every few seconds, interrupting answers and leaving messages stuck on "Waiting for bridge". The window you last typed in keeps Wisp.

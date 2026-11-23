@@ -217,6 +217,113 @@ test('anthropic discovery marks native models as supporting tools', async () => 
   expect(customModels[0]?.supportsTools).toBeUndefined();
 });
 
+test.each([
+  {
+    provider: 'google',
+    body: {
+      models: [
+        { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemini-flash-latest', supportedGenerationMethods: ['generateContent'] },
+        { name: 'models/gemma-3-27b-it', supportedGenerationMethods: ['generateContent'] },
+        {
+          name: 'models/gemini-2.5-flash-preview-tts',
+          supportedGenerationMethods: ['generateContent'],
+        },
+        { name: 'models/gemini-embedding-001', supportedGenerationMethods: ['embedContent'] },
+      ],
+    },
+    expected: {
+      'gemini-2.5-flash': true,
+      'gemini-flash-latest': true,
+      'gemma-3-27b-it': undefined,
+      'gemini-2.5-flash-preview-tts': undefined,
+    },
+  },
+  {
+    provider: 'openai',
+    body: {
+      data: [
+        { id: 'gpt-5' },
+        { id: 'gpt-4o-2024-08-06' },
+        { id: 'o3' },
+        { id: 'gpt-5-chat-latest' },
+        { id: 'text-embedding-3-small' },
+        { id: 'whisper-1' },
+      ],
+    },
+    expected: {
+      'gpt-5': true,
+      'gpt-4o-2024-08-06': true,
+      o3: true,
+      'gpt-5-chat-latest': false,
+      'text-embedding-3-small': undefined,
+      'whisper-1': undefined,
+    },
+  },
+  {
+    provider: 'mistral',
+    body: {
+      data: [
+        { id: 'mistral-small-latest', capabilities: { function_calling: true } },
+        { id: 'ft:mistral-small:custom', capabilities: { function_calling: false } },
+      ],
+    },
+    expected: { 'mistral-small-latest': true, 'ft:mistral-small:custom': false },
+  },
+  {
+    provider: 'cohere',
+    body: {
+      models: [
+        { name: 'command-a-03-2025', features: ['json_mode', 'tools', 'tool_choice'] },
+        { name: 'embed-v4.0', features: [] },
+      ],
+    },
+    expected: { 'command-a-03-2025': true, 'embed-v4.0': false },
+  },
+  {
+    provider: 'fireworks',
+    body: {
+      data: [
+        { id: 'accounts/fireworks/models/kimi-k2p5', supports_tools: true },
+        { id: 'accounts/fireworks/models/flux-1-dev', supports_tools: false },
+      ],
+    },
+    expected: {
+      'accounts/fireworks/models/kimi-k2p5': true,
+      'accounts/fireworks/models/flux-1-dev': false,
+    },
+  },
+  {
+    provider: 'deepseek',
+    body: { data: [{ id: 'deepseek-chat' }] },
+    expected: { 'deepseek-chat': true },
+  },
+  {
+    provider: 'xai',
+    body: { data: [{ id: 'grok-4' }] },
+    expected: { 'grok-4': undefined },
+  },
+] as const)(
+  '$provider discovery marks the models that call tools',
+  async ({ provider, body, expected }) => {
+    const { manager } = await fixture(async () => Response.json(body));
+    const found = await manager.discover({ provider, name: provider, apiKey: 'key' });
+    const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+    expect(Object.fromEntries(models.map((m) => [m.id, m.supportsTools]))).toEqual(expected);
+  },
+);
+
+test('deepseek discovery through a custom endpoint makes no claim about tools', async () => {
+  const { manager } = await fixture(async () => Response.json({ data: [{ id: 'deepseek-chat' }] }));
+  const found = await manager.discover({
+    provider: 'deepseek',
+    name: 'DeepSeek proxy',
+    apiKey: 'key',
+    baseURL: 'https://proxy.example.com/v1',
+  });
+  expect(found.models[0]?.supportsTools).toBeUndefined();
+});
+
 test('validates endpoints, credentials, unique model IDs and context capacity', async () => {
   const { manager } = await fixture();
   for (const baseURL of [

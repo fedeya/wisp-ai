@@ -7,5 +7,5 @@
     "rootDir": "src",
     "rewriteRelativeImportExtensions": true
   },
-  "include": ["src/providers.ts", "src/reasoning.ts"]
+  "include": ["src/providers.ts", "src/reasoning.ts", "src/tool-support.ts"]
 }

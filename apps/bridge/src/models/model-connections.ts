@@ -12,15 +12,58 @@ import {
   type ReasoningEffort,
   type ConnectionConfig,
   type DiscoveredConnectionModel,
+  type ProviderId,
 } from '@wisp/protocol/providers';
 import { createProviderModel } from '@wisp/agent/providers';
 import { modelReasoningEfforts } from '@wisp/agent/reasoning';
+import { modelToolSupport } from '@wisp/agent/tool-support';
 import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
 import type { SecretVault } from '../auth/secret-vault.ts';
 import { readJson, writeJson } from '../json-file.ts';
+
+/**
+ * Whether a discovered model accepts function tools: true or false when the
+ * provider's model list or the pinned SDK catalog says so, otherwise undefined.
+ * Discovery only offers models marked true, so a guess here would let players
+ * pick a model that fails on the first tool call.
+ */
+function discoveredToolSupport(
+  provider: ProviderId,
+  id: string,
+  m: Record<string, unknown>,
+  officialEndpoint: boolean,
+): boolean | undefined {
+  // OpenRouter and other OpenAI-style aggregators.
+  if (Array.isArray(m.supported_parameters)) {
+    return m.supported_parameters.includes('tools');
+  }
+  if (provider === 'gateway' && Array.isArray(m.tags) && m.tags.includes('tool-use')) {
+    return true;
+  }
+  // Mistral.
+  const capabilities = m.capabilities as Record<string, unknown> | null | undefined;
+  if (typeof capabilities?.function_calling === 'boolean') {
+    return capabilities.function_calling;
+  }
+  // Cohere.
+  if (Array.isArray(m.features)) {
+    return m.features.includes('tools');
+  }
+  // Fireworks.
+  for (const value of [m.supports_tools, m.supportsTools]) {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+  }
+  // These official endpoints list only chat models, and all of them call tools.
+  if (officialEndpoint && (provider === 'anthropic' || provider === 'deepseek')) {
+    return true;
+  }
+  return modelToolSupport(provider, id);
+}
 
 export interface ModelCatalog {
   models(): Promise<AccountModel[]>;
@@ -250,6 +293,8 @@ export class ModelConnections implements ModelCatalog {
     const input = connectionDiscovery.parse(raw);
     const secret = await this.credential(input);
     const baseURL = this.baseURL(input);
+    const officialEndpoint =
+      baseURL === providerDefinitions.find((p) => p.id === input.provider)!.baseURL;
     const url =
       input.provider === 'gateway'
         ? input.baseURL
@@ -310,13 +355,7 @@ export class ModelConnections implements ModelCatalog {
               )
               .filter((value): value is ReasoningEffort => reasoningEffort.safeParse(value).success)
           : undefined;
-      const supportsTools = Array.isArray(m.supported_parameters)
-        ? m.supported_parameters.includes('tools')
-        : input.provider === 'gateway' && Array.isArray(m.tags) && m.tags.includes('tool-use')
-          ? true
-          : input.provider === 'anthropic' && baseURL === 'https://api.anthropic.com/v1'
-            ? true
-            : undefined;
+      const supportsTools = discoveredToolSupport(input.provider, id, m, officialEndpoint);
       const model = discoveredConnectionModel.safeParse({
         id,
         name:
