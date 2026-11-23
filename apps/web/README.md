@@ -68,10 +68,17 @@ Safari 16.4+, Firefox 128+); desktop previews use the current WebView2 runtime.
    repository tools only; agent, bridge, addon and test dependencies belong to their
    own workspaces and are not installed by the web deployment. Do not override
    installation with an unfiltered `pnpm install`.
-   Its `ignoreCommand` runs `turbo-ignore`, so Vercel skips the build when a push
-   changes neither `apps/web` nor a workspace it depends on (such as
-   `@wisp/releases`). Leave **Ignored Build Step** in the dashboard on
-   **Automatic** so this file decides. Keep the pinned `turbo-ignore` version in
+   Two checks skip deployments that cannot change the site. Vercel's built-in
+   [skipping of unaffected projects](https://vercel.com/docs/monorepos#skipping-unaffected-projects)
+   runs first and does not use a build slot; keep **Skip deployment** enabled under
+   **Settings → Build and Deployment → Root Directory**. It treats changes outside
+   the pnpm workspaces (such as `docs/`, `releases/` or `.github/`) as global, so
+   the `ignoreCommand` in `vercel.json` then runs `turbo query affected` for the
+   `@wisp/web#build` task against the last deployed commit
+   (`VERCEL_GIT_PREVIOUS_SHA`, or `HEAD^` without one) and cancels the build
+   unless `apps/web`, a workspace it depends on (such as `@wisp/releases`) or
+   their lockfile entries changed. Leave **Ignored Build Step** in the dashboard
+   on **Automatic** so this file decides, and keep the pinned `turbo` version in
    step with the root `turbo` version.
 4. Add `wisp.fedeya.sh` in the project's Domains settings and apply the DNS record
    Vercel provides.
