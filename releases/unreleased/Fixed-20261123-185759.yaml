@@ -1,0 +1,3 @@
+kind: Fixed
+body: Switching from Nightly back to Stable no longer installs the older Stable version by itself while automatic updates are on. Wisp shows it, and you install it when you choose.
+time: 2026-11-23T18:57:59.4009136-03:00
