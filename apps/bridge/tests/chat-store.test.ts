@@ -180,6 +180,16 @@ test('restart interrupts active turns and queued saves capture independent snaps
         {
           ...chat(),
           status: 'working',
+          activity: [{ id: 'call', name: 'query_character', label: 'Read', status: 'running' }],
+          messages: [
+            { role: 'user', text: 'Hello' },
+            {
+              id: 'tool-call',
+              role: 'tool',
+              text: 'Read',
+              tool: { id: 'call', name: 'query_character', label: 'Read', status: 'running' },
+            },
+          ],
           usage: {
             inputTokens: 1,
             outputTokens: 2,
@@ -194,6 +204,9 @@ test('restart interrupts active turns and queued saves capture independent snaps
     const chats = await store.load();
     expect(chats[0].status).toBe('interrupted');
     expect(chats[0].usage!.compacting).toBe(false);
+    // The calls died with the turn; none is left running.
+    expect(chats[0].messages[1]?.tool?.status).toBe('cancelled');
+    expect(chats[0].activity.map(({ status }) => status)).not.toContain('running');
     const first = store.flush(chats);
     chats[0].title = 'Latest';
     await Promise.all([first, store.flush(chats)]);

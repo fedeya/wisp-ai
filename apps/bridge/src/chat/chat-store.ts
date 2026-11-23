@@ -6,6 +6,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
+import { cancelRunningCalls } from './chat-lifecycle.ts';
 import { ApplicationDatabase, type ApplicationOrm } from '../db/application-database.ts';
 import { writeMigrationBackup } from '../db/private-file.ts';
 import { chats as chatTable, messages as messageTable, chatInstanceState } from '../db/schema.ts';
@@ -90,22 +91,29 @@ export class ChatStore {
       this.writable = true;
       return chats
         .filter((chat) => !isEmptyDraft(chat))
-        .map((chat) => ({
-          ...chat,
-          messages: chat.messages.map((message) =>
-            message.streaming &&
-            (message.rawReply !== undefined || message.replyFormat === 'text') &&
-            this.saved.get(chat.id)?.state
-              ? { ...message, streaming: false }
-              : message,
-          ),
-          lastActivityAt: chat.lastActivityAt ?? chat.lastUsedAt ?? 0,
-          status:
-            chat.status === 'working' && this.saved.get(chat.id)?.state
-              ? 'interrupted'
-              : chat.status,
-          usage: chat.usage ? { ...chat.usage, compacting: false } : undefined,
-        }));
+        .map((chat) => {
+          const restored: Chat = {
+            ...chat,
+            messages: chat.messages.map((message) =>
+              message.streaming &&
+              (message.rawReply !== undefined || message.replyFormat === 'text') &&
+              this.saved.get(chat.id)?.state
+                ? { ...message, streaming: false }
+                : message,
+            ),
+            lastActivityAt: chat.lastActivityAt ?? chat.lastUsedAt ?? 0,
+            status:
+              chat.status === 'working' && this.saved.get(chat.id)?.state
+                ? 'interrupted'
+                : chat.status,
+            usage: chat.usage ? { ...chat.usage, compacting: false } : undefined,
+          };
+          // The turn died with the previous bridge, and so did its calls.
+          if (restored.status === 'interrupted') {
+            cancelRunningCalls(restored);
+          }
+          return restored;
+        });
     } catch (cause) {
       if (this.ownsDatabase) {
         await this.database.close();
