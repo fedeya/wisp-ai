@@ -77,6 +77,37 @@ describe('dungeon loot', () => {
     ]);
   });
 
+  it('keeps shared loot when filtering by boss and labels only trash as trash', async () => {
+    const zulGurub = {
+      key: "Zul'Gurub",
+      name: "Zul'Gurub",
+      instanceMapId: 309,
+      kind: 'raid',
+      bosses: [
+        { name: 'High Priestess Jeklik', npcIds: [14517], items: [{ id: 19721 }] },
+        { name: 'High Priest Venoxis', npcIds: [14507], items: [{ id: 19900 }] },
+        { name: 'High Priest Shared loot', extra: true, items: [{ id: 22721 }] },
+        { name: 'Trash', extra: true, items: [{ id: 19727 }] },
+        { name: 'Jinxed Hoodoo Pile', extra: true, items: [{ id: 19881 }] },
+      ],
+    };
+    const loot = { ...data, data: { instances: [zulGurub] } };
+    const unread = async () => ({ status: 'available', data: {} });
+    const jeklik = await dungeonLoot({ instanceMapId: 309, boss: 'jeklik' }, unread, loot);
+    expect(jeklik.instances![0]!.bosses.map((entry) => [entry.name, entry.source])).toEqual([
+      ['High Priestess Jeklik', 'boss'],
+      ['High Priest Shared loot', 'shared'],
+    ]);
+    const all = await dungeonLoot({ instanceMapId: 309 }, unread, loot);
+    expect(all.instances![0]!.bosses.map((entry) => entry.source)).toEqual([
+      'boss',
+      'boss',
+      'shared',
+      'trash',
+      'other',
+    ]);
+  });
+
   it('matches English names without accents and reports bosses without known drops', async () => {
     let read = false;
     const result = await dungeonLoot(

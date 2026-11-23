@@ -44,6 +44,13 @@ function fold(text: string) {
     .trim();
 }
 
+const TRASH = /^trash( mobs)?$/i;
+// Lists such as Zul'Gurub's "High Priest Shared loot" or Molten Core's
+// "All bosses" drop from several bosses.
+function shared(entry: LootBoss) {
+  return Boolean(entry.extra) && /\bshared\b|^all bosses$/i.test(entry.name);
+}
+
 function compact(text: string) {
   return text.replaceAll(' ', '');
 }
@@ -72,7 +79,10 @@ export async function dungeonLoot(
     )
     .map((instance) => ({
       ...instance,
-      bosses: instance.bosses.filter((entry) => !boss || fold(entry.name).includes(boss)),
+      // Loot shared by several bosses stays next to the one asked for.
+      bosses: instance.bosses.filter(
+        (entry) => !boss || fold(entry.name).includes(boss) || shared(entry),
+      ),
     }));
   const source = {
     name: 'AtlasLoot Classic Forever',
@@ -128,7 +138,15 @@ export async function dungeonLoot(
       bosses: instance.bosses.map((entry) => ({
         name: entry.name,
         npcIds: entry.npcIds,
-        trash: entry.extra,
+        // AtlasLoot's extra lists hold trash, shared loot, rare or
+        // summoned bosses, chests and quest rewards; only trash is trash.
+        source: !entry.extra
+          ? 'boss'
+          : TRASH.test(entry.name)
+            ? 'trash'
+            : shared(entry)
+              ? 'shared'
+              : 'other',
         noDropsYet: entry.noDropsYet,
         items: entry.items.map((item) => {
           const game = known.get(item.id);
@@ -143,6 +161,6 @@ export async function dungeonLoot(
     })),
     loadingIds: reading.loadingIds,
     unreadItems: ids.length > MAX_ITEMS ? ids.length - MAX_ITEMS : undefined,
-    note: 'Bosses list their drops in AtlasLoot order. statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot; armor and weapon proficiency is not checked. unread items were not read from the game (too many, or not cached yet); narrow with boss.',
+    note: 'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot; armor and weapon proficiency is not checked. unread items were not read from the game (too many, or not cached yet); narrow with boss.',
   };
 }
