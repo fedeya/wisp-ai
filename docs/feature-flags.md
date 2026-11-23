@@ -16,7 +16,8 @@ Its provider, `ChannelFeatureProvider` in `apps/bridge/src/features.ts`, decides
 each flag in this order:
 
 1. The player's override, saved as `features` in the bridge config and changed
-   under **Settings → Experimental** in the desktop app.
+   on the desktop's **Settings → Experimental** page. Settings links to it only
+   while the build ships at least one flag.
 2. The flag's `channels` in the registry, for the evaluation context's channel.
 
 The channel comes from `featureChannel` in `@wisp/protocol/features`:

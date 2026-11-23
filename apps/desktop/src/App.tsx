@@ -22,6 +22,7 @@ import {
   connectionsPage,
   desktopPages,
   diagnosticsPage,
+  experimentalPage,
   integrationsPage,
   type DesktopPage,
 } from './routes/desktop-routes';
@@ -185,6 +186,16 @@ export function createDesktopRouter() {
           Component: diagnosticsPage.Component,
           handle: {
             ...diagnosticsPage,
+            detail: true,
+            back: { path: '/settings', title: 'Settings' },
+          } satisfies DesktopRouteHandle,
+        },
+        {
+          id: experimentalPage.name,
+          path: experimentalPage.path,
+          Component: experimentalPage.Component,
+          handle: {
+            ...experimentalPage,
             detail: true,
             back: { path: '/settings', title: 'Settings' },
           } satisfies DesktopRouteHandle,

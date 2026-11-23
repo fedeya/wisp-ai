@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
-import ExperimentalSettings from '../components/settings/ExperimentalSettings';
 import GameInstallation from '../components/settings/GameInstallation';
 import StartupSettings from '../components/settings/StartupSettings';
 import TelemetrySettings from '../components/settings/TelemetrySettings';
@@ -9,7 +8,7 @@ import Icon from '../components/ui/Icon';
 import { Row, RowGroup } from '../components/ui/Rows';
 import { desktopActive } from '../desktop-controller';
 import { useDesktop } from '../use-desktop';
-import { diagnosticsPage } from './desktop-routes';
+import { diagnosticsPage, experimentalPage } from './desktop-routes';
 
 function GameFolder() {
   const app = useDesktop((state) => ({ info: state.info, active: desktopActive(state) }));
@@ -40,6 +39,27 @@ function GameFolder() {
   );
 }
 
+const pageLink =
+  'block text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent hover:[&>div]:bg-raised';
+
+/** Shown only while this build ships feature flags. */
+function ExperimentalLink() {
+  const count = useDesktop((state) => state.status?.features.flags.length ?? 0);
+  if (!count) return null;
+  return (
+    <RowGroup label="Experimental">
+      <Link to={experimentalPage.path} aria-label="Open experimental features" className={pageLink}>
+        <Row
+          icon={<Icon name={experimentalPage.icon} size={18} />}
+          title={experimentalPage.title}
+          detail={`${count} ${count === 1 ? 'feature' : 'features'} in testing that you can turn on or off.`}
+          trailing={<Icon name="chevronRight" size={16} />}
+        />
+      </Link>
+    </RowGroup>
+  );
+}
+
 export default function Settings() {
   return (
     <>
@@ -48,13 +68,9 @@ export default function Settings() {
         <StartupSettings />
         <TelemetrySettings />
       </RowGroup>
-      <ExperimentalSettings />
+      <ExperimentalLink />
       <RowGroup label="Troubleshooting">
-        <Link
-          to={diagnosticsPage.path}
-          aria-label="Open diagnostics"
-          className="block text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent hover:[&>div]:bg-raised"
-        >
+        <Link to={diagnosticsPage.path} aria-label="Open diagnostics" className={pageLink}>
           <Row
             icon={<Icon name={diagnosticsPage.icon} size={18} />}
             title={diagnosticsPage.title}

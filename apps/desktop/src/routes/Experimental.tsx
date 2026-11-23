@@ -1,9 +1,11 @@
+import { Navigate } from 'react-router';
 import type { FeatureChannel, FeatureView } from '@wisp/protocol/features';
-import { desktopLocked } from '../../desktop-controller';
-import { useDesktop, useDesktopActions } from '../../use-desktop';
-import { Button } from '../ui/Controls';
-import { Row, RowGroup } from '../ui/Rows';
-import Toggle from '../ui/Toggle';
+import DataState from '../components/ui/DataState';
+import { Button } from '../components/ui/Controls';
+import { Row, RowGroup } from '../components/ui/Rows';
+import Toggle from '../components/ui/Toggle';
+import { desktopLocked } from '../desktop-controller';
+import { useDesktop, useDesktopActions } from '../use-desktop';
 
 const channelName: Record<FeatureChannel, string> = {
   development: 'development builds',
@@ -19,17 +21,20 @@ function source(flag: FeatureView, channel: FeatureChannel) {
 }
 
 /** Unfinished features this build ships, with a switch to try or hide each one. */
-export default function ExperimentalSettings() {
+export default function Experimental() {
   const app = useDesktop((state) => ({
+    loading: state.loading,
     features: state.status?.features,
     locked: desktopLocked(state),
   }));
   const { setFeature } = useDesktopActions();
   const { features, locked } = app;
-  if (!features?.flags.length) return null;
+  if (app.loading || !features) return <DataState />;
+  // Reached by an old link after the last flag shipped: nothing to show.
+  if (!features.flags.length) return <Navigate to="/settings" replace />;
 
   return (
-    <RowGroup label="Experimental">
+    <RowGroup label={`Features in testing · ${channelName[features.channel]}`}>
       {features.flags.map((flag) => (
         <Row
           key={flag.id}

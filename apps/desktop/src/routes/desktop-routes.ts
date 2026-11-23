@@ -1,5 +1,6 @@
 import Settings from './Settings';
 import Diagnostics from './Diagnostics';
+import Experimental from './Experimental';
 import Memory from './Memory';
 import Panels from './Panels';
 import Routines from './Routines';
@@ -86,4 +87,18 @@ export const diagnosticsPage = {
   caption: 'Logs and connection details for troubleshooting.',
 } as const;
 
-export type DesktopPage = (typeof desktopPages)[number] | typeof diagnosticsPage;
+/** Feature flags this build ships, reached from Settings only while there are any. */
+export const experimentalPage = {
+  name: 'Experimental',
+  Component: Experimental,
+  path: '/settings/experimental',
+  group: 'application',
+  icon: 'spark',
+  title: 'Experimental',
+  caption: 'Try features that are still in testing, or turn them off.',
+} as const;
+
+export type DesktopPage =
+  | (typeof desktopPages)[number]
+  | typeof diagnosticsPage
+  | typeof experimentalPage;
