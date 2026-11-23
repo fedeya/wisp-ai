@@ -91,6 +91,7 @@ const inspectionTools = {
   object_locations: 'find_object_locations',
   stored_item: 'find_item',
   item_prices: 'get_item_prices',
+  polestar_guide: 'get_guide_step',
   reference: 'inspect_reference',
   progression: 'query_progression',
   target: 'inspect_target',

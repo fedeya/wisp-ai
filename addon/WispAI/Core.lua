@@ -108,6 +108,16 @@ events:SetScript("OnEvent", function(_, event, name)
             ns.db.showTools = true
         end
         ns.active = ns.db.activeChat
+        -- Before PLAYER_LOGIN, when Polestar restores its tabs.
+        if ns.Integrations.RestorePolestarGuides then
+            local ok, result, failures = pcall(ns.Integrations.RestorePolestarGuides)
+            if not ok then
+                failures = { tostring(result) }
+            end
+            for _, failure in ipairs(failures or {}) do
+                ns.Core.Log("Could not restore a Polestar guide (" .. failure .. ").")
+            end
+        end
     elseif event == "PLAYER_LOGIN" then
         connectingUntil = GetTime() + CONNECT_GRACE_SECONDS
         C_Timer.After(CONNECT_GRACE_SECONDS, function()

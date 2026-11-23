@@ -12,6 +12,8 @@ import chain from '../apps/agent/agent/tools/questie__get_quest_chain.ts';
 import object from '../apps/agent/agent/tools/questie__find_object_locations.ts';
 import stored from '../apps/agent/agent/tools/syndicator__find_item.ts';
 import prices from '../apps/agent/agent/tools/auctionator__get_item_prices.ts';
+import guideStep from '../apps/agent/agent/tools/polestar__get_guide_step.ts';
+import createGuide from '../apps/agent/agent/tools/polestar__create_guide.ts';
 import hearthstone from '../apps/agent/agent/tools/wow__inspect_hearthstone.ts';
 import combat from '../apps/agent/agent/tools/wow__read_combat.ts';
 import {
@@ -19,6 +21,7 @@ import {
   storedItemInput,
   itemPricesInput,
   objectLocationsInput,
+  polestarGuideInput,
   inspectionSchema,
 } from '@wisp/protocol/game-inspection';
 import { integrationContext } from '@wisp/protocol/capabilities';
@@ -61,11 +64,12 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
       },
       syndicator: { status: 'ready' },
       auctionator: { status: 'partial' },
+      polestar: { status: 'ready', guides: true },
     };
     await settings.publish();
     assert.equal(await resolve(hearthstone), null);
     assert.equal(await resolve(combat), null);
-    for (const definition of [quest, chain, object, stored, prices]) {
+    for (const definition of [quest, chain, object, stored, prices, guideStep, createGuide]) {
       assert.equal(await resolve(definition), null);
     }
     assert.equal(await resolve(flightPaths), null);
@@ -73,7 +77,7 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     await settings.publish();
     assert.ok(await resolve(hearthstone));
     assert.ok(await resolve(combat));
-    for (const definition of [quest, chain, stored, prices]) {
+    for (const definition of [quest, chain, stored, prices, guideStep, createGuide]) {
       assert.ok(await resolve(definition));
     }
     assert.ok(await resolve(flightPaths));
@@ -99,10 +103,13 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
       ...report,
       syndicator: { status: 'waiting' },
       auctionator: { status: 'missing' },
+      polestar: { status: 'partial', guides: false },
     });
     await settings.publish();
     assert.equal(await resolve(stored), null);
     assert.equal(await resolve(prices), null);
+    assert.ok(await resolve(guideStep), 'Reading the step does not need the guide API');
+    assert.equal(await resolve(createGuide), null);
     state.reset();
     await settings.publish();
     assert.equal(await resolve(hearthstone), null);
@@ -124,6 +131,9 @@ test('new inspection inputs bound work and reject executable or cross-version ar
   assert.equal(storedItemInput.safeParse({ itemId: 1, script: 'x' }).success, false);
   assert.equal(itemPricesInput.safeParse({ itemIds: Array(21).fill(1) }).success, false);
   assert.equal(objectLocationsInput.safeParse({}).success, false);
+  assert.deepEqual(polestarGuideInput.parse({}), { upcoming: 2 });
+  assert.equal(polestarGuideInput.safeParse({ upcoming: 6 }).success, false);
+  assert.equal(polestarGuideInput.safeParse({ guideId: 'x' }).success, false);
   assert.equal(objectLocationsInput.safeParse({ objectId: 99, mapId: 1454 }).success, true);
   assert.equal(inspectionSchema.safeParse({ kind: 'hearthstone', args: {} }).success, true);
   assert.equal(

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { listen } from '@tauri-apps/api/event';
 import { desktop } from '../../../api';
 import { chooseOption } from '../../../select-test-helpers';
-import Updates from './Updates';
+import Updates, { AUTO_INSTALL_IDLE_MS, GAME_CHECK_MS } from './Updates';
 
 vi.mock('../../../api', () => ({ native: true, desktop: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
@@ -21,9 +21,29 @@ beforeEach(() => {
     if (command === 'update_channel') {
       return (args?.channel || 'stable') as never;
     }
+    if (command === 'update_auto_install') return (args?.enabled ?? false) as never;
+    if (command === 'download_update') return release.version as never;
     return { supported: true, update: release } as never;
   });
 });
+
+/** Whether the mocked process list has WoW running. */
+let gameRunning = false;
+/** Saved automatic installs on; install calls stay pending unless `install` says otherwise. */
+function autoInstallOn(install: () => Promise<unknown> = () => new Promise(() => {})) {
+  gameRunning = false;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'game_running') return gameRunning as never;
+    if (command === 'update_channel') return 'stable' as never;
+    if (command === 'update_auto_install') return (args?.enabled ?? true) as never;
+    if (command === 'download_update') return release.version as never;
+    if (command === 'install_update') return install() as never;
+    return { supported: true, update: release } as never;
+  });
+}
+
+const installCalls = () =>
+  vi.mocked(desktop).mock.calls.filter(([command]) => command === 'install_update');
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -144,6 +164,138 @@ test('switching channels persists the choice and checks the new feed', async () 
   expect(
     vi.mocked(desktop).mock.calls.filter(([command]) => command === 'check_update'),
   ).toHaveLength(2);
+});
+
+test('with automatic installs off, nothing downloads or installs while idle', async () => {
+  vi.useFakeTimers();
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS * 2));
+  expect(desktop).not.toHaveBeenCalledWith('download_update');
+  expect(installCalls()).toHaveLength(0);
+});
+
+test('a downloaded update installs after Wisp stays idle, and activity restarts the wait', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  const options = props();
+  const view = render(<Updates {...options} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(desktop).toHaveBeenCalledWith('download_update');
+  expect(screen.getByText(/installs by itself after 10 minutes/)).toBeTruthy();
+
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS - 1000));
+  view.rerender(<Updates {...options} idle={false} />);
+  view.rerender(<Updates {...options} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS - 1000));
+  expect(installCalls()).toHaveLength(0);
+
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(installCalls()).toEqual([['install_update', { automatic: true }]]);
+  expect(options.onBusy).toHaveBeenCalledWith('Updating Wisp');
+});
+
+test('an automatic install says it is opening the updater, not waiting for a reply', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
+  expect(
+    screen.getByText('Opening the Windows updater. Wisp will close and reopen automatically…'),
+  ).toBeTruthy();
+  expect(screen.queryByText('Waiting for the active reply to finish…')).toBeNull();
+});
+
+test('a failed background download is retried by the next check', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  const base = vi.mocked(desktop).getMockImplementation()!;
+  let failures = 1;
+  vi.mocked(desktop).mockImplementation(async (command, args) => {
+    if (command === 'download_update' && failures-- > 0) throw Error('offline');
+    return base(command, args);
+  });
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  const downloads = () =>
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'download_update');
+  expect(downloads()).toHaveLength(1);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
+  expect(installCalls()).toHaveLength(0);
+
+  await act(() => vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000));
+  expect(downloads()).toHaveLength(2);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
+  expect(installCalls()).toHaveLength(1);
+});
+
+test('an update waits for WoW to stay closed for the whole idle window', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  gameRunning = true;
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS * 3));
+  expect(installCalls()).toHaveLength(0);
+  expect(desktop).toHaveBeenCalledWith('game_running');
+
+  // Closing WoW starts the wait; the bridge may still report the game connected.
+  gameRunning = false;
+  await act(() => vi.advanceTimersByTimeAsync(GAME_CHECK_MS));
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS - 1000));
+  expect(installCalls()).toHaveLength(0);
+  await act(() => vi.advanceTimersByTimeAsync(1000));
+  expect(installCalls()).toHaveLength(1);
+});
+
+test('an update never installs by itself while a reply keeps Wisp busy', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  render(<Updates {...props()} idle={false} />);
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS * 3));
+  expect(installCalls()).toHaveLength(0);
+});
+
+test('a reply that starts at the last moment only postpones the automatic install', async () => {
+  vi.useFakeTimers();
+  autoInstallOn(async () => {
+    throw Error('Wisp is busy; the update will install later.');
+  });
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
+  expect(installCalls()).toHaveLength(1);
+  expect(screen.queryByRole('alert')).toBeNull();
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
+  expect(installCalls()).toHaveLength(2);
+});
+
+test('a failed automatic install is reported and left to the user', async () => {
+  vi.useFakeTimers();
+  autoInstallOn(async () => {
+    throw Error('installer could not start.');
+  });
+  render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
+  expect(screen.getByRole('alert').textContent).toContain(
+    'Automatic update failed: installer could not start.',
+  );
+  await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS * 2));
+  expect(installCalls()).toHaveLength(1);
+  expect(
+    (screen.getByRole('button', { name: 'Update and restart' }) as HTMLButtonElement).disabled,
+  ).toBe(false);
+});
+
+test('the automatic install setting is saved', async () => {
+  render(<Updates {...props()} />);
+  const toggle = await screen.findByRole('switch', { name: 'Install updates automatically' });
+  await waitFor(() => expect((toggle as HTMLButtonElement).disabled).toBe(false));
+  await fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(desktop).toHaveBeenCalledWith('update_auto_install', { enabled: true }),
+  );
+  await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
 });
 
 test('a failed check after switching cannot offer the previous channel installer', async () => {

@@ -18,6 +18,8 @@ local function setup(env)
     helper.addon("Integrations/Questie.lua", env)
     helper.addon("Integrations/Syndicator.lua", env)
     helper.addon("Integrations/Auctionator.lua", env)
+    helper.addon("Integrations/PolestarGuides.lua", env)
+    helper.addon("Integrations/Polestar.lua", env)
 end
 
 it("reports missing providers without requiring their APIs at load time", function()
@@ -35,6 +37,7 @@ it("reports missing providers without requiring their APIs at load time", functi
         },
         syndicator = { status = "missing" },
         auctionator = { status = "missing" },
+        polestar = { status = "missing", guides = false },
     }, env.ns.Integrations.IntegrationReport())
 end)
 
@@ -89,6 +92,7 @@ it("dispatches every inspection and preserves unavailable errors and timestamps"
         object_locations = "QuestieDB Forever is not loaded",
         stored_item = "Syndicator inventory API is not ready",
         item_prices = "Auctionator price API is unavailable",
+        polestar_guide = "Polestar is not loaded",
     }) do
         local result = env.ns.Integrations.InspectIntegration({ kind = kind })
         assert.equals("unavailable", result.status)

@@ -68,6 +68,15 @@ export const storedItemInput = z.strictObject({
 export const itemPricesInput = z.strictObject({
   itemIds: z.array(z.number().int().positive()).min(1).max(20),
 });
+export const polestarGuideInput = z.strictObject({
+  upcoming: z
+    .number()
+    .int()
+    .min(0)
+    .max(5)
+    .default(2)
+    .describe('How many steps after the current one to include.'),
+});
 export const referenceInput = z
   .object({
     kind: z.enum(['item', 'spell', 'quest', 'talent']),
@@ -250,6 +259,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('object_locations'), args: objectLocationsInput }),
   z.object({ kind: z.literal('stored_item'), args: storedItemInput }),
   z.object({ kind: z.literal('item_prices'), args: itemPricesInput }),
+  z.object({ kind: z.literal('polestar_guide'), args: polestarGuideInput }),
   z.object({ kind: z.literal('npc_locations'), args: npcLocationsInput }),
   z.object({ kind: z.literal('settings'), args: settingsRead }),
   z.object({ kind: z.literal('reference'), args: referenceInput }),

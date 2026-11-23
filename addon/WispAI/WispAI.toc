@@ -6,7 +6,7 @@
 ## Version: 1.0.0
 ## SavedVariables: WispAIDB
 ## DefaultState: enabled
-## OptionalDeps: QuestieDB, Questie, Syndicator, Auctionator
+## OptionalDeps: QuestieDB, Questie, Syndicator, Auctionator, Polestar
 
 Namespace.lua
 Locale.lua
@@ -35,6 +35,8 @@ Integrations\Integrations.lua
 Integrations\Questie.lua
 Integrations\Syndicator.lua
 Integrations\Auctionator.lua
+Integrations\PolestarGuides.lua
+Integrations\Polestar.lua
 Integrations\Sources.lua
 ChatHistory\ChatHistory.lua
 Combat\Combat.lua

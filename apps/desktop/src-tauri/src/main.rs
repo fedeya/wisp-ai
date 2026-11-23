@@ -984,6 +984,9 @@ fn main() {
             import_legacy,
             updates::check_update,
             updates::install_update,
+            updates::download_update,
+            updates::update_auto_install,
+            updates::game_running,
             native_shell::notify,
             native_shell::autostart_enabled,
             native_shell::set_autostart
@@ -992,6 +995,7 @@ fn main() {
             let data = app.path().app_data_dir()?;
             update_trace::append(&data, "app-opened");
             fs::create_dir_all(data.join("runtime"))?;
+            updates::discard_stale_installer(&data);
             if let Err(error) = init_desktop_log(&data) {
                 eprintln!("Could not initialize desktop diagnostics: {error}");
             }

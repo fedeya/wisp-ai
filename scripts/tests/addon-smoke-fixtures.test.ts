@@ -8,6 +8,7 @@ test('synthetic addon diagnostics load the real adapters and their shared depend
     questie: { quests: true, objects: true },
     syndicator: { status: 'ready' },
     auctionator: { status: 'ready' },
+    polestar: { status: 'missing', guides: false },
   });
   expect(Object.keys(result.inspections).sort()).toEqual([
     'item_prices',

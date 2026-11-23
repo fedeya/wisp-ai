@@ -11,30 +11,58 @@ use tauri_plugin_notification::NotificationExt as _;
 pub const AUTOSTART_NAME: &str = "Wisp AI";
 /// Passed by the autostart entry so Wisp starts in the tray instead of on screen.
 pub const MINIMIZED_ARG: &str = "--minimized";
-/// Written right before an update launches the installer. The installer
-/// relaunches Wisp with the arguments of the process it replaced, so a Wisp
-/// that was started with Windows would come back with `--minimized` and stay in
-/// the tray. The marker makes that relaunch open on screen instead.
-const SHOW_AFTER_UPDATE_FILE: &str = "runtime/show-after-update";
+/// Written right before an update launches the installer, which relaunches Wisp
+/// with the arguments of the process it replaced. Without it, a Wisp started
+/// with Windows would come back with `--minimized`, and one hidden in the tray
+/// would open on screen, whatever the update intended.
+///
+/// The file holds `tray` to come back hidden; any other content (older builds
+/// write an empty file) means come back on screen.
+const AFTER_UPDATE_FILE: &str = "runtime/show-after-update";
+const TRAY: &str = "tray";
+
+/// Where the window goes on the first launch after an update.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AfterUpdate {
+    /// On screen, even when launched with `--minimized`.
+    Show,
+    /// In the tray: an update that installed itself while Wisp was there.
+    Tray,
+}
 
 /// Whether the main window stays hidden at launch. Consumes the post-update
-/// marker, so only the first launch after an update ignores `--minimized`.
+/// marker, so it only decides the first launch after an update.
 pub fn start_hidden(data: &Path) -> bool {
     start_hidden_with(std::env::args(), data)
 }
 
 fn start_hidden_with(mut args: impl Iterator<Item = String>, data: &Path) -> bool {
-    let after_update = std::fs::remove_file(data.join(SHOW_AFTER_UPDATE_FILE)).is_ok();
-    args.any(|arg| arg == MINIMIZED_ARG) && !after_update
+    let path = data.join(AFTER_UPDATE_FILE);
+    let after_update = std::fs::read_to_string(&path).ok().map(|value| {
+        let _ = std::fs::remove_file(&path);
+        if value == TRAY {
+            AfterUpdate::Tray
+        } else {
+            AfterUpdate::Show
+        }
+    });
+    match after_update {
+        Some(after) => after == AfterUpdate::Tray,
+        None => args.any(|arg| arg == MINIMIZED_ARG),
+    }
 }
 
-pub fn show_after_update(data: &Path) {
+pub fn set_after_update(data: &Path, after: AfterUpdate) {
     let _ = std::fs::create_dir_all(data.join("runtime"));
-    let _ = std::fs::write(data.join(SHOW_AFTER_UPDATE_FILE), "");
+    let content = match after {
+        AfterUpdate::Show => "",
+        AfterUpdate::Tray => TRAY,
+    };
+    let _ = std::fs::write(data.join(AFTER_UPDATE_FILE), content);
 }
 
-pub fn cancel_show_after_update(data: &Path) {
-    let _ = std::fs::remove_file(data.join(SHOW_AFTER_UPDATE_FILE));
+pub fn cancel_after_update(data: &Path) {
+    let _ = std::fs::remove_file(data.join(AFTER_UPDATE_FILE));
 }
 
 /// Turns off WebView2's browser shortcuts (F5, Ctrl+R, Ctrl+F, Ctrl+P, F12,
@@ -132,13 +160,37 @@ mod tests {
         assert!(start_hidden_with(args(&autostart), &data));
         assert!(!start_hidden_with(args(&["wisp-ai.exe"]), &data));
 
-        show_after_update(&data);
+        set_after_update(&data, AfterUpdate::Show);
         assert!(!start_hidden_with(args(&autostart), &data));
         assert!(start_hidden_with(args(&autostart), &data));
 
-        show_after_update(&data);
-        cancel_show_after_update(&data);
+        set_after_update(&data, AfterUpdate::Show);
+        cancel_after_update(&data);
         assert!(start_hidden_with(args(&autostart), &data));
+        std::fs::remove_dir_all(data).unwrap();
+    }
+
+    #[test]
+    fn an_update_that_installed_itself_from_the_tray_comes_back_hidden_once() {
+        let data = std::env::temp_dir().join(format!(
+            "wisp-tray-after-update-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let manual = ["wisp-ai.exe"];
+        set_after_update(&data, AfterUpdate::Tray);
+        assert!(start_hidden_with(args(&manual), &data));
+        assert!(!start_hidden_with(args(&manual), &data));
+
+        // Builds before the tray option wrote an empty marker to mean "show".
+        std::fs::write(data.join(AFTER_UPDATE_FILE), "").unwrap();
+        assert!(!start_hidden_with(
+            args(&["wisp-ai.exe", MINIMIZED_ARG]),
+            &data
+        ));
         std::fs::remove_dir_all(data).unwrap();
     }
 }

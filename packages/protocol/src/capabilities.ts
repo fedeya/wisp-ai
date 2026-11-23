@@ -75,6 +75,14 @@ export const toolDescriptions: Record<string, [string, string]> = {
     'Read cached auction prices',
     'Look up the last recorded price per item and when it was seen.',
   ],
+  get_guide_step: [
+    'Read guide step',
+    'See the Polestar guide you are following, your current step and what comes next.',
+  ],
+  create_guide: [
+    'Create guides',
+    'Build a step-by-step guide and open it in Polestar, which tracks it and points the way.',
+  ],
   find_npc_locations: [
     'Find NPC locations',
     'Find NPCs, class trainers and city services on the map.',
@@ -210,6 +218,14 @@ export const integrations: Capability[] = [
     description: 'Look up saved auction prices on your realm and when they were recorded.',
   },
   {
+    id: 'integration:polestar',
+    name: 'Polestar',
+    group: 'integrations',
+    kind: 'addon',
+    description:
+      'Know which guide you are following and your current step, and get custom guides built for you.',
+  },
+  {
     id: 'integration:questie',
     name: 'Questie',
     group: 'integrations',
@@ -246,6 +262,9 @@ export function toolIntegration(name: string): string {
   }
   if (name === 'get_item_prices') {
     return 'auctionator';
+  }
+  if (name === 'get_guide_step' || name === 'create_guide') {
+    return 'polestar';
   }
   if (['search_database', 'get_database_entity'].includes(name)) {
     return 'thewowdb';

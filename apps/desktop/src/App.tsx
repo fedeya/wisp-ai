@@ -16,7 +16,7 @@ import FeedbackToast from './components/ui/FeedbackToast';
 import Icon from './components/ui/Icon';
 import Updates from './components/updates/Updates';
 import { useDesktop } from './use-desktop';
-import { desktopReadiness, mountDesktop } from './desktop-controller';
+import { desktopActive, desktopReadiness, mountDesktop } from './desktop-controller';
 import { installNativeShell, useAppShortcuts, useNativeNotifications } from './native-shell';
 import {
   connectionsPage,
@@ -56,6 +56,9 @@ function DesktopShell() {
   const fixedHeight = match?.id === integrationsPage.name;
   const { busy, clearFeedback, failed, feedback, loading } = app;
   const readiness = useDesktop(desktopReadiness);
+  // An automatic update restarts the bridge, so it waits until nothing uses it.
+  // Whether WoW is open comes from the process list (see Updates), not the bridge.
+  const idle = useDesktop((state) => !desktopActive(state));
   useAppShortcuts(!loading && !app.onboarding);
   useNativeNotifications(busy ? '' : feedback, failed, readiness);
 
@@ -135,6 +138,7 @@ function DesktopShell() {
                   locked={!!busy}
                   openSettings={() => void navigate('/settings')}
                   onBusy={app.setBusy}
+                  idle={idle && !busy}
                   onAvailable={app.setAppUpdate}
                 />
                 <Outlet />

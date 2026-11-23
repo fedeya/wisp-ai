@@ -18,7 +18,11 @@ import Icon from '../components/ui/Icon';
 import { useDesktop } from '../use-desktop';
 
 const categories = [
-  { id: 'quests', label: 'Quests & navigation', integrations: ['integration:questie'] },
+  {
+    id: 'quests',
+    label: 'Quests & navigation',
+    integrations: ['integration:questie', 'integration:polestar'],
+  },
   {
     id: 'databases',
     label: 'Game databases',

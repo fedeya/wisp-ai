@@ -8,6 +8,14 @@ import { Spinner } from '../../ui/ActionProgress';
 import { Button, Card, Select } from '../../ui/Controls';
 import Icon from '../../ui/Icon';
 import { groupLabel } from '../../ui/Rows';
+import Toggle from '../../ui/Toggle';
+
+/** How long Wisp must stay idle before a downloaded update installs by itself. */
+export const AUTO_INSTALL_IDLE_MS = 10 * 60 * 1000;
+/** The native refusal when a reply started just before an automatic install. */
+const AUTOMATIC_BUSY = 'Wisp is busy; the update will install later.';
+/** How often a scheduled update checks whether WoW is still running. */
+export const GAME_CHECK_MS = 30 * 1000;
 
 type Release = { version: string; notes: string | null };
 const updateChannels = [
@@ -26,6 +34,11 @@ type UpdatesProps = {
   locked: boolean;
   openSettings: () => void;
   onBusy: (label: string) => void;
+  /**
+   * Whether an automatic install would interrupt nothing: WoW is not connected,
+   * no reply is running and no desktop operation is busy.
+   */
+  idle?: boolean;
   /** The installable update found, or null; the game announces it. */
   onAvailable?: (version: string | null) => void;
 };
@@ -43,6 +56,12 @@ type UpdateState = {
   error: string;
   dismissed: string;
   lastChecked: string;
+  /** Install downloaded updates while idle; null until the saved setting loads. */
+  autoInstall: boolean | null;
+  /** The version downloaded in the background and ready to install. */
+  prepared: string;
+  /** A version whose automatic install failed; it waits for the user. */
+  autoFailed: string;
 };
 
 function downloadPercent(progress: Progress) {
@@ -93,6 +112,7 @@ export default function Updates({
   locked,
   openSettings,
   onBusy,
+  idle = false,
   onAvailable,
 }: UpdatesProps) {
   const statusHeading = useRef<HTMLHeadingElement>(null);
@@ -105,6 +125,9 @@ export default function Updates({
       error: '',
       dismissed: '',
       lastChecked: '',
+      autoInstall: null,
+      prepared: '',
+      autoFailed: '',
     })),
   );
   const { getState, setState } = updates;
@@ -116,7 +139,13 @@ export default function Updates({
     dismissed,
     lastChecked,
     channel: savedChannel,
+    autoInstall,
+    prepared,
+    autoFailed,
   } = useStore(updates);
+  const [autoInstallError, setAutoInstallError] = useState('');
+  /** Whether WoW is running; null until checked. Only a closed game counts as idle. */
+  const [gameRunning, setGameRunning] = useState<boolean | null>(null);
   const channel = savedChannel ?? 'stable';
   const checking = operation?.kind === 'checking';
   const installing = operation?.kind === 'installing';
@@ -127,6 +156,11 @@ export default function Updates({
   const channelLoaded = savedChannel !== null;
   const canInstall = supported && !!release;
   const available = supported && release ? release.version : null;
+  /** The version that installs by itself the next time Wisp stays idle. */
+  const scheduled =
+    autoInstall && available && prepared === available && autoFailed !== available
+      ? available
+      : null;
 
   useEffect(() => {
     onAvailable?.(available);
@@ -157,6 +191,7 @@ export default function Updates({
     setState({
       operation: { kind: 'changing-channel', channel: next },
       release: null,
+      prepared: '',
       dismissed: '',
       lastChecked: '',
       error: '',
@@ -191,6 +226,88 @@ export default function Updates({
     }
   }
 
+  const installAutomatically = useCallback(async () => {
+    const { release, operation } = getState();
+    if (!release || operation) return;
+    setState({
+      // The installer is already downloaded and nothing is running, so the next
+      // step is the Windows updater: never "waiting for the active reply".
+      operation: { kind: 'installing', progress: { phase: 'installing' } },
+      error: '',
+    });
+    onBusy('Updating Wisp');
+    try {
+      await desktop('install_update', { automatic: true });
+    } catch (error) {
+      const message = String(error).replace(/^Error: /, '');
+      // A reply that started at the last moment only postpones the install.
+      if (message !== AUTOMATIC_BUSY) {
+        setState({
+          autoFailed: release.version,
+          error: `Automatic update failed: ${message} You can install it yourself.`,
+        });
+      }
+    } finally {
+      setState({ operation: null });
+      onBusy('');
+    }
+  }, [getState, onBusy, setState]);
+
+  async function changeAutoInstall(enabled: boolean) {
+    setAutoInstallError('');
+    try {
+      const saved = await desktop<boolean>('update_auto_install', { enabled });
+      setState({ autoInstall: saved });
+    } catch {
+      setAutoInstallError('Could not change the automatic update setting. Try again.');
+    }
+  }
+
+  // Download a found update in the background so the idle install is quick.
+  // Each successful check (`lastChecked`) retries a download that failed.
+  useEffect(() => {
+    if (!native || !autoInstall || !available || prepared === available) return;
+    let current = true;
+    void desktop<string>('download_update')
+      .then((version) => {
+        if (current && version === getState().release?.version) setState({ prepared: version });
+      })
+      // Until the next check retries, the manual install still downloads by itself.
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [autoInstall, available, getState, lastChecked, prepared, setState]);
+
+  // The bridge keeps reporting the game as connected after WoW exits, so ask
+  // Windows for the process while an update waits to install.
+  useEffect(() => {
+    if (!native || !scheduled) return;
+    let current = true;
+    const look = () =>
+      void desktop<boolean>('game_running')
+        .then((running) => {
+          if (current) setGameRunning(running);
+        })
+        .catch(() => {
+          if (current) setGameRunning(null);
+        });
+    look();
+    const timer = setInterval(look, GAME_CHECK_MS);
+    return () => {
+      current = false;
+      clearInterval(timer);
+    };
+  }, [scheduled]);
+
+  // Install once WoW has stayed closed and Wisp idle for the whole window; any
+  // activity or a game launch restarts it.
+  useEffect(() => {
+    if (!scheduled || !idle || gameRunning !== false || locked || operation) return;
+    const timer = setTimeout(() => void installAutomatically(), AUTO_INSTALL_IDLE_MS);
+    return () => clearTimeout(timer);
+  }, [gameRunning, idle, installAutomatically, locked, operation, scheduled]);
+
   useEffect(() => {
     if (!native) return;
     let disposed = false;
@@ -220,6 +337,13 @@ export default function Updates({
           setState({ error: 'Could not load the update channel. Restart Wisp to try again.' });
         }
       });
+    void desktop<boolean>('update_auto_install')
+      .then((enabled) => {
+        if (!disposed) setState({ autoInstall: enabled });
+      })
+      .catch(() => {
+        if (!disposed) setAutoInstallError('Could not read the automatic update setting.');
+      });
     const timer = setInterval(() => void check(), 6 * 60 * 60 * 1000);
     return () => {
       disposed = true;
@@ -241,7 +365,9 @@ export default function Updates({
               Wisp {release.version} is available.
             </p>
             <p className="m-0 mt-0.5 text-xs leading-snug text-muted">
-              See what’s new before installing.
+              {scheduled
+                ? 'It installs by itself once WoW is closed and Wisp is idle.'
+                : 'See what’s new before installing.'}
             </p>
           </div>
         </div>
@@ -374,6 +500,8 @@ export default function Updates({
             <p className="mb-0 mt-3 text-xs text-muted">
               Wisp restarts after installing and keeps your chats and settings. It updates your
               installed WoW addon when needed and reminds you to type /reload if WoW is open.
+              {scheduled &&
+                ' Downloaded and ready: it installs by itself after 10 minutes with WoW closed and no reply running.'}
             </p>
           </section>
         )}
@@ -402,6 +530,26 @@ export default function Updates({
             disabled={busy}
           />
         </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3 [border-top-style:solid]">
+          <div className="min-w-0">
+            <h3 className="m-0 text-base font-semibold">Install updates automatically</h3>
+            <p className="mb-0 mt-1 text-sm text-muted">
+              Downloads updates in the background and installs them after 10 minutes with WoW closed
+              and no reply running.
+            </p>
+          </div>
+          <Toggle
+            label="Install updates automatically"
+            checked={autoInstall ?? false}
+            disabled={!native || autoInstall === null || installing}
+            onChange={(enabled) => void changeAutoInstall(enabled)}
+          />
+        </div>
+        {autoInstallError && (
+          <p role="alert" className="mb-0 mt-2 text-sm text-danger">
+            {autoInstallError}
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 [border-top-style:solid]">
           <p className="m-0 text-xs text-muted">Wisp checks at startup and every six hours.</p>
           <a

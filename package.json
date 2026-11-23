@@ -6,8 +6,6 @@
   "type": "module",
   "scripts": {
     "prepare": "lefthook install",
-    "release": "release-it",
-    "release:dry": "release-it --dry-run",
     "release:notes": "node scripts/sync-release-notes.ts",
     "web:dev": "turbo run dev --filter=@wisp/web",
     "web:build": "turbo run build --filter=@wisp/web",
@@ -41,11 +39,11 @@
   "devDependencies": {
     "@johnnymorganz/stylua-bin": "2.6.0",
     "@types/node": "24.19.2",
+    "changie": "1.26.0",
     "lefthook": "2.2.2",
     "oxfmt": "0.77.0",
     "oxlint": "1.92.0",
     "prettier": "3.9.10",
-    "release-it": "21.1.2",
     "turbo": "2.11.10",
     "typescript": "5.9.3",
     "vitest": "5.1.0"

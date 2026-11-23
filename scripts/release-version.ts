@@ -38,6 +38,19 @@ export async function syncVersion(version: string, root = process.cwd()) {
     ),
   );
 }
+export function newerStable(candidate: string, previous: string) {
+  if (!/^\d+\.\d+\.\d+$/.test(candidate) || !/^\d+\.\d+\.\d+$/.test(previous)) {
+    throw Error('Expected stable versions.');
+  }
+  const next = candidate.split('.').map(Number),
+    last = previous.split('.').map(Number);
+  for (let index = 0; index < 3; index++) {
+    if (next[index] !== last[index]) {
+      return next[index] > last[index];
+    }
+  }
+  return false;
+}
 export function nightlyBuildVersion(stable: string, run: string, attempt: string) {
   if (!/^\d+\.\d+\.\d+$/.test(stable) || !/^\d+$/.test(run) || !/^\d+$/.test(attempt)) {
     throw Error('Invalid nightly build identity.');

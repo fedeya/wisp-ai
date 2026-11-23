@@ -176,6 +176,17 @@ function actions.create_macro(args)
         note = "Macro was not executed or placed on an action bar. Click its reference to pick it up yourself.",
     }
 end
+-- Actions owned by other subsystems, looked up when called: Settings loads
+-- after this file.
+function actions.update_settings(args)
+    return ns.Settings.UpdateSettings(args)
+end
+function actions.undo_settings(args)
+    return ns.Settings.ApplySettings(args.transactionId, true)
+end
+function actions.polestar_guide(args)
+    return ns.Integrations.CreatePolestarGuide(args)
+end
 -- The GUID identifies a character on its own; older requests carry only
 -- the name and realm.
 local function isCurrentCharacter(expected)
@@ -198,14 +209,6 @@ function ns.Actions.PerformAction(action)
         }
     end
     local apply = actions[action.kind]
-    if action.kind == "update_settings" then
-        apply = ns.Settings.UpdateSettings
-    end
-    if action.kind == "undo_settings" then
-        apply = function(args)
-            return ns.Settings.ApplySettings(args.transactionId, true)
-        end
-    end
     if not apply then
         return { status = "unavailable", error = "Unknown action" }
     end

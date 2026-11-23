@@ -18,6 +18,7 @@ function ns.Integrations.IntegrationReport()
         questie = ns.Integrations._QuestieReport(),
         syndicator = ns.Integrations._SyndicatorReport(),
         auctionator = ns.Integrations._AuctionatorReport(),
+        polestar = ns.Integrations._PolestarReport(),
     }
 end
 
@@ -28,6 +29,7 @@ function ns.Integrations.InspectIntegration(inspection)
         object_locations = ns.Integrations.FindObjectLocations,
         stored_item = ns.Integrations.FindStoredItem,
         item_prices = ns.Integrations.ReadAuctionatorPrices,
+        polestar_guide = ns.Integrations.ReadPolestarGuide,
         source_names = ns.Integrations.ReadSourceNames,
     }
     local reader = readers[inspection.kind]

@@ -40,6 +40,8 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
     'Integrations/Questie.lua',
     'Integrations/Syndicator.lua',
     'Integrations/Auctionator.lua',
+    'Integrations/PolestarGuides.lua',
+    'Integrations/Polestar.lua',
   ]) {
     run(
       `assert(load(${JSON.stringify(readFileSync(root + '/addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,

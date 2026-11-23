@@ -7,14 +7,14 @@ import {
   formatNightlyNotes,
   nightlyNotes,
   previousPublishedNightly,
+  publishedNightly,
   validateNotes,
 } from '../release-notes.ts';
 
 afterEach(() => vi.unstubAllGlobals());
 
 const sha = 'a'.repeat(40);
-const authored =
-  '# Next release\n\n<!-- private drafting note -->\n\n## Fixed\n\n- Conversations reconnect without restarting Wisp.\n';
+const authored = 'kind: Fixed\nbody: Conversations reconnect without restarting Wisp.\n';
 
 test('nightly release notes contain a technical list and exact comparison link', () => {
   const notes = formatNightlyNotes(sha, 'v0.0.7', '- test: added regression coverage');
@@ -65,8 +65,8 @@ test(
         stdio: ['ignore', 'pipe', 'pipe'],
       }).trim();
     try {
-      await mkdir(join(root, 'releases'));
-      await writeFile(join(root, 'releases/next.md'), authored);
+      await mkdir(join(root, 'releases/unreleased'), { recursive: true });
+      await writeFile(join(root, 'releases/unreleased/Fixed-1.yaml'), authored);
       git('init');
       git('add', '.');
       const commit = (message: string) =>
@@ -98,7 +98,7 @@ test(
       commit('docs: update README');
       git('tag', 'v9.0.0');
       git('tag', 'v0.0.8-nightly.2.9');
-      await rm(join(root, 'releases/next.md'));
+      await rm(join(root, 'releases/unreleased/Fixed-1.yaml'));
       const notes = await nightlyNotes(buildSha, root);
       expect(notes).toContain(`/compare/v0.0.7...${buildSha}`);
       expect(notes).not.toContain('v9.0.0');
@@ -129,6 +129,11 @@ test(
       );
       const previous = await previousPublishedNightly('0.0.8-nightly.3.1', buildSha, root);
       expect(previous).toBe('v0.0.8-nightly.1.1');
+      // Stable promotes the newest published Nightly that main contains.
+      expect(await publishedNightly(buildSha, root)).toBe('v0.0.8-nightly.3.1');
+      expect(
+        await publishedNightly(buildSha, root, (candidate) => candidate === '0.0.8-nightly.2.9'),
+      ).toBeUndefined();
       const incremental = await nightlyNotes(buildSha, root, previous);
       expect(incremental).not.toContain('added regression coverage');
       expect(incremental).toContain('retained change from failed build');

@@ -53,8 +53,8 @@ jobs:
           }
           $ref = "refs/tags/$tag"
           git fetch --no-tags origin "${ref}:${ref}"
-          $sourceVersion = (git show "${ref}:package.json" | ConvertFrom-Json).version
-          if ($sourceVersion -cne $version) { throw 'Release tag does not match the app version.' }
+          # A promoted Nightly keeps its committed version; the build stamped the tag's,
+          # which the installer name checked above already proves.
 
           $stage = Join-Path $env:RUNNER_TEMP 'curseforge-addon'
           New-Item -ItemType Directory -Path $stage | Out-Null

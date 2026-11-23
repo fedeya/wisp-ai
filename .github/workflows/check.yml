@@ -149,9 +149,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not read release build.' }
           if ($run.name -ne 'Windows release' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GH_REPO -or $run.event -notin @('push', 'workflow_dispatch')) { throw 'Expected a successful release build from this repository.' }
           "sha=$($run.head_sha)" >> $env:GITHUB_OUTPUT
+      - uses: actions/download-artifact@v4
+        with:
+          name: Wisp-windows-x64
+          path: ${{ runner.temp }}/release-artifact
+          run-id: ${{ github.event.workflow_run.id || inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      # A promoted Stable is built from an older commit than the run's head SHA.
+      # Builds that predate release-source.txt were built from the head SHA.
+      - name: Resolve the built source commit
+        id: source
+        shell: pwsh
+        env:
+          ARTIFACT: ${{ runner.temp }}/release-artifact
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha || steps.release-run.outputs.sha }}
+        run: |
+          $file = Join-Path $env:ARTIFACT 'release-source.txt'
+          $sha = if (Test-Path -LiteralPath $file) { (Get-Content -LiteralPath $file -Raw).Trim() } else { $env:HEAD_SHA }
+          if ($sha -cnotmatch '^[0-9a-f]{40}$') { throw 'Expected a commit SHA for the release build.' }
+          "sha=$sha" >> $env:GITHUB_OUTPUT
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha || steps.release-run.outputs.sha }}
+          ref: ${{ steps.source.outputs.sha }}
           fetch-depth: 0
       # The verified release can predate the local composite action itself.
       - uses: pnpm/action-setup@v4
@@ -161,17 +180,13 @@ jobs:
           cache: pnpm
       # Historical release lockfiles may predate the build-script allowlist.
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: actions/download-artifact@v4
-        with:
-          name: Wisp-windows-x64
-          path: work/release-artifact
-          run-id: ${{ github.event.workflow_run.id || inputs.release_run_id }}
-          github-token: ${{ github.token }}
       - name: Verify installed application and upgrades
         shell: pwsh
+        env:
+          ARTIFACT: ${{ runner.temp }}/release-artifact
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $installers = @(Get-ChildItem work/release-artifact -Recurse -Filter '*-setup.exe')
+          $installers = @(Get-ChildItem $env:ARTIFACT -Recurse -Filter '*-setup.exe')
           if ($installers.Count -ne 1) { throw 'Expected one release installer.' }
           node scripts/verify-installer.ts $installers[0].FullName
       - uses: actions/upload-artifact@v4
