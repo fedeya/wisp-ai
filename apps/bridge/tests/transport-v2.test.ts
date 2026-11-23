@@ -97,8 +97,9 @@ async function fixture(
 }
 
 async function waitFor<T>(read: () => Promise<T>, timeout = 2500) {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
+  // Tests mock Date.now; a frozen clock must not turn this into an endless wait.
+  const deadline = performance.now() + timeout;
+  while (performance.now() < deadline) {
     const result = await read();
     if (result) {
       return result;
@@ -857,8 +858,12 @@ test('an abandoned control write removes its temporary copy', async () => {
 
 test('a reply the game has not read for 10 seconds is reported once, then again when it lands', async () => {
   const f = await fixture();
-  let clock = 1_000_000;
-  const now = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+  // Jump the clock ahead but keep it running: the transport throttles control
+  // rewrites by Date.now, so a frozen clock can leave a frame the test's own
+  // ACK write reverted on disk forever when the runner is slow.
+  const realNow = Date.now.bind(Date);
+  let clock = 0;
+  const now = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + clock);
   try {
     await mailbox(f);
     const snapshot = { rev: 1, text: 'el huesoooo' };
