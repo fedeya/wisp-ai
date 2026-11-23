@@ -216,6 +216,12 @@ local nextReceive, emptyDelay, activeUntil = 0, 0.5, 0
 -- for one receive tick to read it before the next queued packet starts.
 local UPLINK_YIELD_SECONDS = 0.3
 local uplinkYieldUntil = 0
+-- First retry of an unacknowledged packet; each further retry doubles the gap.
+local RETRY_SECONDS, MAX_RETRY_SECONDS = 5, 30
+-- A bridge silent this long may have restarted or moved to another window.
+local RENEW_AFTER_SECONDS = 10
+-- Last snapshot from the bridge for this session, and the last renewed hello.
+local heardAt, lastRenewAt
 ns.transportStats = { loads = 0, unchanged = 0, version = 2 }
 ns.slot = 1
 local function unavailable(reason, recovery)
@@ -434,7 +440,9 @@ function ns.Transport.Send(packet)
         ns.Transport.WakeTransport()
     end
 end
+-- Called for every snapshot of this session, so it also marks the bridge as heard.
 function ns.Transport.Acknowledge(ids)
+    heardAt = GetTime()
     local refreshed = false
     for _, id in ipairs(ids) do
         local packet = awaiting[id]
@@ -671,6 +679,8 @@ local function receive()
             end
         end
         controlGeneration = incomingGeneration
+        -- A new host does not know this session until the next hello.
+        heardAt = nil
         partialDownlink, lastDataFrame, lastDataAck = nil, nil, nil
         if reusable then
             -- Revision counters belong to a host generation. Keep rendered
@@ -839,6 +849,73 @@ local function checkStalledDelivery()
         ns.UI.Refresh()
     end
 end
+-- An unsent hello already carries the session and fresh context; a second
+-- copy would only add a large packet to the queue.
+local function helloQueued()
+    for _, item in ipairs(queue) do
+        if item.packet.type == "hello" and item.index == 1 then
+            return true
+        end
+    end
+    return false
+end
+-- Retry unacknowledged packets. A hello is renewed only when the bridge may not
+-- know this session: nothing heard from it lately (it restarted, or another
+-- window holds it). A bridge that is answering, only slowly, gets the packets
+-- again with growing gaps, so retries cannot crowd out its replies.
+local function retryUnacknowledged()
+    local now = GetTime()
+    local silent = not heardAt or now - heardAt > RENEW_AFTER_SECONDS
+    local renew = silent
+        and not helloQueued()
+        and (not lastRenewAt or now - lastRenewAt >= RENEW_AFTER_SECONDS)
+    local due, takeover = {}, nil
+    for _, packet in pairs(awaiting) do
+        local sinceSent = packet.lastSent and now - packet.lastSent
+        if
+            not packet.queued
+            and sinceSent
+            and sinceSent > RETRY_SECONDS
+            and (renew or sinceSent > (packet.retryDelay or RETRY_SECONDS))
+        then
+            due[#due + 1] = packet
+            -- Only a message the player wrote (it has a messageId) may move
+            -- the bridge from another game window. Background packets such
+            -- as routine ticks and quest syncs never do.
+            if packet.messageId then
+                takeover = true
+            end
+        end
+    end
+    if #due == 0 then
+        return
+    end
+    if renew then
+        -- A fresh bridge must negotiate a hello, never replay a cached action
+        -- from the previous process. Renew the handshake, with full context for
+        -- its empty cache, before retrying every unacknowledged request.
+        lastRenewAt = now
+        local context
+        if ns.Character.CaptureTurn then
+            ns.characterAcknowledged, ns.questAcknowledged = 0, 0
+            local ok, captured = pcall(ns.Character.CaptureTurn)
+            if ok then
+                context = captured
+            end
+        end
+        ns.Transport.Send({
+            type = "hello",
+            chat = ns.active,
+            context = context,
+            heartbeat = true,
+            takeover = takeover,
+        })
+    end
+    for _, packet in ipairs(due) do
+        packet.retryDelay = math.min(MAX_RETRY_SECONDS, (packet.retryDelay or RETRY_SECONDS) * 2)
+        enqueue(packet)
+    end
+end
 function ns.Transport.StartTransport()
     if transportStarted then
         return true
@@ -901,44 +978,12 @@ function ns.Transport.StartTransport()
     end)
     C_Timer.NewTicker(2, function()
         checkStalledDelivery()
-        local stale, takeover = {}, nil
-        for _, packet in pairs(awaiting) do
-            if not packet.queued and packet.lastSent and GetTime() - packet.lastSent > 5 then
-                stale[#stale + 1] = packet
-                -- Only a message the player wrote (it has a messageId) may move
-                -- the bridge from another game window. Background packets such
-                -- as routine ticks and quest syncs never do.
-                if packet.messageId then
-                    takeover = true
-                end
-            end
-        end
-        if #stale > 0 then
-            -- A fresh bridge must negotiate a hello, never replay a cached
-            -- action from the previous process. Renew the handshake before
-            -- retrying unacknowledged requests.
-            local context
-            if ns.Character.CaptureTurn then
-                ns.characterAcknowledged, ns.questAcknowledged = 0, 0
-                local ok, captured = pcall(ns.Character.CaptureTurn)
-                if ok then
-                    context = captured
-                end
-            end
-            ns.Transport.Send({
-                type = "hello",
-                chat = ns.active,
-                context = context,
-                heartbeat = true,
-                takeover = takeover,
-            })
-            for _, packet in ipairs(stale) do
-                enqueue(packet)
-            end
-        end
+        retryUnacknowledged()
     end)
     C_Timer.NewTicker(60, function()
-        ns.Transport.Send({ type = "hello", chat = ns.active, heartbeat = true })
+        if not helloQueued() then
+            ns.Transport.Send({ type = "hello", chat = ns.active, heartbeat = true })
+        end
         downlinkUntil = math.max(downlinkUntil, GetTime() + HEARTBEAT_READ_SECONDS)
         nextReceive = 0
     end)
