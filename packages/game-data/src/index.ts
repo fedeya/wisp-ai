@@ -4,6 +4,7 @@ import type { Dataset } from './dataset.ts';
 import { dungeonEntrances } from './datasets/dungeon-entrances.ts';
 import { dungeonLoot } from './datasets/dungeon-loot.ts';
 import { groupFinderNames } from './datasets/group-finder-names.ts';
+import { itemProficiencies } from './datasets/item-proficiencies.ts';
 
 export { parseCsv, type Row } from './csv.ts';
 export { mapPosition, zonesAt, type MapPoint } from './coordinates.ts';
@@ -41,5 +42,5 @@ export function datasets(sources?: DatasetSources): Dataset[] {
     }
     return sources.atlasLoot(areas);
   };
-  return [dungeonEntrances(), dungeonLoot(loot), groupFinderNames()];
+  return [dungeonEntrances(), dungeonLoot(loot), groupFinderNames(), itemProficiencies()];
 }

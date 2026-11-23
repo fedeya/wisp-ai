@@ -41,6 +41,17 @@ Map.db2 name; `curated/dungeon-loot.json` holds the few that need a hand
 To update it, set the newer file's ID, name and sha256 in `build.json` (the
 file page on CurseForge lists the name) and run `pnpm data:generate dungeon-loot`.
 
+## Item proficiencies
+
+`item-proficiencies` tells the addon which weapon or armor skill an item
+subclass needs and which classes learn that skill from what level, so gear
+readings can say whether the character can equip an item now, could train the
+skill, or belongs to a class that never can. It comes from Forever's own
+tables: each weapon and armor skill line's proficiency spells (SkillLineAbility)
+name the item subclasses they allow (SpellEquippedItems), and
+SkillRaceClassInfo lists the classes that get the skill. Skills every class has
+(Defense, Unarmed, Cloth) gate nothing and are left out.
+
 ## After a Forever patch
 
 `pnpm data:check` says whether wago.tools lists a newer Forever build than the

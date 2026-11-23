@@ -108,6 +108,112 @@ describe('dungeon loot', () => {
     ]);
   });
 
+  it('hides gear the class can never use and summarizes upgrades without a boss', async () => {
+    const reading = {
+      status: 'available',
+      data: {
+        status: 'available',
+        items: [
+          {
+            id: 1,
+            name: 'Bow',
+            slot: 18,
+            itemLevelGain: 12,
+            proficiency: 'trainable',
+            trainableAtLevel: 1,
+          },
+          {
+            id: 2,
+            name: 'Plate Helm',
+            slot: 1,
+            itemLevelGain: 20,
+            proficiency: 'class_cannot_use',
+          },
+          { id: 3, name: 'Cloth Gloves', slot: 10, itemLevelGain: 4, proficiency: 'usable' },
+          { id: 4, name: 'Old Boots', slot: 8, itemLevelGain: -3, proficiency: 'usable' },
+        ],
+        other: [{ id: 5, name: 'Recipe' }],
+      },
+    };
+    const loot = {
+      ...data,
+      data: {
+        instances: [
+          {
+            key: 'Test',
+            name: 'Test Keep',
+            instanceMapId: 1,
+            kind: 'dungeon',
+            bosses: [{ name: 'Boss', items: [1, 2, 3, 4, 5].map((id) => ({ id, chance: id })) }],
+          },
+        ],
+      },
+    };
+    const summary = await dungeonLoot({ instanceMapId: 1 }, async () => reading, loot);
+    expect(summary.detail).toBe('summary');
+    expect(summary.instances![0]!.bosses[0]).toMatchObject({
+      itemCount: 4,
+      upgradeCount: 2,
+      hiddenUnusable: 1,
+      bestUpgrades: [
+        {
+          id: 1,
+          name: 'Bow',
+          itemLevelGain: 12,
+          proficiency: 'trainable',
+          trainableAtLevel: 1,
+          chance: 1,
+        },
+        { id: 3, name: 'Cloth Gloves', itemLevelGain: 4, proficiency: 'usable', chance: 3 },
+      ],
+    });
+    expect(summary.instances![0]!.bosses[0]!.items).toBeUndefined();
+
+    const full = await dungeonLoot(
+      { instanceMapId: 1, detail: 'full', includeUnusable: true },
+      async () => reading,
+      loot,
+    );
+    expect(full.instances![0]!.bosses[0]!.items!.map((item) => item.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(full.instances![0]!.bosses[0]!.hiddenUnusable).toBeUndefined();
+  });
+
+  it('falls back to the summary when full detail is too large', async () => {
+    const ids = Array.from({ length: 300 }, (_, index) => index + 1);
+    const loot = {
+      ...data,
+      data: {
+        instances: [
+          {
+            key: 'Big',
+            name: 'Big Raid',
+            instanceMapId: 2,
+            kind: 'raid',
+            bosses: [{ name: 'Boss', items: ids.map((id) => ({ id })) }],
+          },
+        ],
+      },
+    };
+    const result = await dungeonLoot(
+      { instanceMapId: 2, detail: 'full' },
+      async () => ({
+        status: 'available',
+        data: {
+          items: ids.map((id) => ({
+            id,
+            name: `Item ${id}`,
+            stats: { ITEM_MOD_STAMINA_SHORT: id },
+            tooltip: 'x'.repeat(100),
+          })),
+        },
+      }),
+      loot,
+    );
+    expect(result.detail).toBe('summary');
+    expect(result.truncated).toContain('boss');
+    expect(result.instances![0]!.bosses[0]!.itemCount).toBe(300);
+  });
+
   it('matches English names without accents and reports bosses without known drops', async () => {
     let read = false;
     const result = await dungeonLoot(

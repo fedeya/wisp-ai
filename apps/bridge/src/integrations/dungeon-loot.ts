@@ -33,6 +33,13 @@ interface LootData {
 
 // The game reads at most this many items per call.
 const MAX_ITEMS = 500;
+// Full detail larger than this (about 10k tokens) falls back to the summary.
+const MAX_FULL_CHARS = 40_000;
+// Upgrades a summary lists per boss.
+const SUMMARY_UPGRADES = 3;
+
+const NOTE =
+  'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot. proficiency: usable now, trainable (the class learns that weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; hiddenUnusable counts items this class can never use (includeUnusable lists them). summary lists per boss the item count and the best upgrades; ask with boss or detail full for every item. unread items were not read from the game (too many, or not cached yet).';
 
 function fold(text: string) {
   return text
@@ -57,6 +64,38 @@ function compact(text: string) {
 
 type GameItem = Record<string, unknown> & { id: number };
 
+export interface LootBossResult {
+  name: string;
+  npcIds?: number[];
+  source: 'boss' | 'trash' | 'shared' | 'other';
+  noDropsYet?: boolean;
+  hiddenUnusable?: number;
+  // full
+  items?: GameItem[];
+  // summary
+  itemCount?: number;
+  upgradeCount?: number;
+  bestUpgrades?: Record<string, unknown>[];
+}
+export interface LootResult {
+  status: string;
+  error?: string;
+  detail?: 'summary' | 'full';
+  source: { name: string; note: string; chance: string };
+  instances?: {
+    name: string;
+    instanceMapId?: number;
+    kind: string;
+    forever?: boolean;
+    levels?: { min: number; recommended: number; max: number };
+    bosses: LootBossResult[];
+  }[];
+  loadingIds?: number[];
+  unreadItems?: number;
+  truncated?: string;
+  note?: string;
+}
+
 // The instances and bosses that match, each item joined with the game's
 // reading of it: name, quality, levels, stats and, for equipment, the change
 // against the weakest equipped item in its slot.
@@ -64,7 +103,7 @@ export async function dungeonLoot(
   args: z.infer<typeof dungeonLootInput>,
   readGame: (inspection: { kind: 'gear_candidates'; args: unknown }) => Promise<unknown>,
   data: LootData = generated as LootData,
-) {
+): Promise<LootResult> {
   const wanted = args.dungeon ? fold(args.dungeon) : undefined;
   const boss = args.boss ? fold(args.boss) : undefined;
   const instances = data.data.instances
@@ -126,16 +165,23 @@ export async function dungeonLoot(
   for (const item of [...(reading.items ?? []), ...(reading.other ?? [])]) {
     known.set(item.id, item);
   }
-  return {
-    status: reading.status === 'loading' ? 'loading' : 'available',
-    source,
-    instances: instances.map((instance) => ({
-      name: instance.name,
-      instanceMapId: instance.instanceMapId,
-      kind: instance.kind,
-      forever: instance.forever,
-      levels: instance.levels,
-      bosses: instance.bosses.map((entry) => ({
+  const detail = args.detail ?? (args.boss ? 'full' : 'summary');
+  const bosses = (instance: LootInstance, level: 'summary' | 'full'): LootBossResult[] =>
+    instance.bosses.map((entry) => {
+      const items = entry.items.map((item) => {
+        const game = known.get(item.id);
+        return {
+          ...(game ?? { id: item.id }),
+          chance: item.chance,
+          addedInForever: item.forever,
+          ...(game ? {} : { unread: true }),
+        } as GameItem;
+      });
+      const shown = args.includeUnusable
+        ? items
+        : items.filter((item) => item.proficiency !== 'class_cannot_use');
+      const hiddenUnusable = items.length - shown.length || undefined;
+      const heading: LootBossResult = {
         name: entry.name,
         npcIds: entry.npcIds,
         // AtlasLoot's extra lists hold trash, shared loot, rare or
@@ -148,19 +194,52 @@ export async function dungeonLoot(
               ? 'shared'
               : 'other',
         noDropsYet: entry.noDropsYet,
-        items: entry.items.map((item) => {
-          const game = known.get(item.id);
-          return {
-            ...(game ?? { id: item.id }),
-            chance: item.chance,
-            addedInForever: item.forever,
-            ...(game ? {} : { unread: true }),
-          };
-        }),
-      })),
+        hiddenUnusable,
+      };
+      if (level === 'full') {
+        return { ...heading, items: shown };
+      }
+      const upgrades = shown
+        .filter((item) => typeof item.itemLevelGain === 'number' && item.itemLevelGain > 0)
+        .sort((a, b) => (b.itemLevelGain as number) - (a.itemLevelGain as number));
+      return {
+        ...heading,
+        itemCount: shown.length,
+        upgradeCount: upgrades.length,
+        bestUpgrades: upgrades.slice(0, SUMMARY_UPGRADES).map((item) => ({
+          id: item.id,
+          name: item.name,
+          slot: item.slot,
+          itemLevelGain: item.itemLevelGain,
+          proficiency: item.proficiency,
+          trainableAtLevel: item.trainableAtLevel,
+          chance: item.chance,
+        })),
+      };
+    });
+  const result = (level: 'summary' | 'full'): LootResult => ({
+    status: reading.status === 'loading' ? 'loading' : 'available',
+    detail: level,
+    source,
+    instances: instances.map((instance) => ({
+      name: instance.name,
+      instanceMapId: instance.instanceMapId,
+      kind: instance.kind,
+      forever: instance.forever,
+      levels: instance.levels,
+      bosses: bosses(instance, level),
     })),
     loadingIds: reading.loadingIds,
     unreadItems: ids.length > MAX_ITEMS ? ids.length - MAX_ITEMS : undefined,
-    note: 'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot; armor and weapon proficiency is not checked. unread items were not read from the game (too many, or not cached yet); narrow with boss.',
-  };
+    note: NOTE,
+  });
+  const full = result(detail);
+  if (detail === 'full' && JSON.stringify(full).length > MAX_FULL_CHARS) {
+    return {
+      ...result('summary'),
+      truncated:
+        'Too many items for full detail; this is the summary. Ask again with boss for full detail.',
+    };
+  }
+  return full;
 }

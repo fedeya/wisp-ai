@@ -18,6 +18,7 @@ local function setup(env)
         end
     end
     helper.addon("Character/Capture.lua", env)
+    helper.addon("Data/ItemProficiencies.lua", env)
     helper.addon("Character/Inspect.lua", env)
     helper.addon("Actions/Game.lua", env)
 end
@@ -833,4 +834,85 @@ it("gear candidates leave stat differences unknown when equipped stats are unrea
     item =
         ns.Character.Inspect({ kind = "gear_candidates", args = { itemIds = { 10 } } }).data.items[1]
     assert(item.emptySlot and item.statDelta.ITEM_MOD_INTELLECT_SHORT == 4)
+end)
+
+it("gear candidates tell usable, trainable and class-forbidden weapons and armor apart", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+
+    -- id = { name, classID, subclassID, equipLocation }
+    local items = {
+        [20] = { "Sword", 2, 7, "INVTYPE_WEAPON" },
+        [21] = { "Bow", 2, 2, "INVTYPE_RANGED" },
+        [22] = { "Breastplate", 4, 4, "INVTYPE_CHEST" },
+        [23] = { "Wand", 2, 19, "INVTYPE_RANGEDRIGHT" },
+        [24] = { "Robe", 4, 1, "INVTYPE_ROBE" },
+    }
+    C_Item = {
+        GetItemInfo = function(id)
+            local item = items[id]
+            return item[1],
+                "item:" .. id,
+                2,
+                20,
+                15,
+                "Weapon",
+                "Misc",
+                1,
+                item[4],
+                nil,
+                0,
+                item[2],
+                item[3]
+        end,
+        GetItemStats = function()
+            return {}
+        end,
+    }
+    UnitLevel = function()
+        return 21
+    end
+    UnitClass = function()
+        return "Warrior", "WARRIOR"
+    end
+    GetInventoryItemID = function()
+        return nil
+    end
+    local lines = {
+        { name = "Weapon Skills", isHeader = true },
+        { name = "Swords", skillID = 43 },
+    }
+    C_SkillInfo = {
+        GetNumSkillLines = function()
+            return #lines
+        end,
+        GetSkillLineInfo = function(index)
+            return lines[index]
+        end,
+    }
+
+    local function read()
+        local byId = {}
+        local d = ns.Character.Inspect({
+            kind = "gear_candidates",
+            args = { itemIds = { 20, 21, 22, 23, 24 } },
+        }).data
+        for _, item in ipairs(d.items) do
+            byId[item.id] = item
+        end
+        return byId
+    end
+    local byId = read()
+    assert(byId[20].proficiency == "usable" and byId[24].proficiency == "usable")
+    assert(byId[21].proficiency == "trainable" and byId[21].trainableAtLevel == 1)
+    assert(byId[22].proficiency == "trainable" and byId[22].trainableAtLevel == 40)
+    assert(byId[23].proficiency == "class_cannot_use" and byId[23].trainableAtLevel == nil)
+    assert(byId[20].classID == nil and byId[20].subclassID == nil)
+
+    -- A collapsed header hides skills: only what the class can never use is certain.
+    lines[1].isCollapsed = true
+    byId = read()
+    assert(byId[21].proficiency == nil and byId[20].proficiency == nil)
+    assert(byId[23].proficiency == "class_cannot_use")
 end)

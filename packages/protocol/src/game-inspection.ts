@@ -207,6 +207,18 @@ export const dungeonLootInput = z
       .max(80)
       .optional()
       .describe('Part of an English boss name, to read one boss.'),
+    detail: z
+      .enum(['summary', 'full'])
+      .optional()
+      .describe(
+        'summary: per boss, counts and the best upgrades for this character; full: every item with stats. Default: full with boss, summary without.',
+      ),
+    includeUnusable: z
+      .boolean()
+      .optional()
+      .describe(
+        'Also list weapons and armor this class can never use (default false: only counted). Set it when asking for another character.',
+      ),
   })
   .refine(
     (args) => args.instanceMapId !== undefined || args.dungeon !== undefined,

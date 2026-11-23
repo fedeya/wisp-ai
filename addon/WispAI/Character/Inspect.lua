@@ -377,7 +377,7 @@ end
 -- Reads many candidate IDs at once (for example a category listing) and keeps
 -- the wearable-by-level ones, each compared with its weakest matching slot.
 local function itemSummary(id)
-    local name, link, quality, itemLevel, requiredLevel, _, _, _, equipLocation =
+    local name, link, quality, itemLevel, requiredLevel, _, _, _, equipLocation, _, _, classID, subclassID =
         C_Item.GetItemInfo(id)
     if not name then
         if C_Item.RequestLoadItemDataByID then
@@ -393,8 +393,50 @@ local function itemSummary(id)
         itemLevel = itemLevel,
         requiredLevel = requiredLevel,
         equipLocation = equipLocation,
+        classID = classID,
+        subclassID = subclassID,
         stats = C_Item.GetItemStats and C_Item.GetItemStats(link) or nil,
     }
+end
+-- The weapon and armor skills the player has, or nil when the skill list
+-- cannot be read whole (no API, or a collapsed header hides some lines).
+local function knownSkills()
+    if not (C_SkillInfo and C_SkillInfo.GetNumSkillLines and C_SkillInfo.GetSkillLineInfo) then
+        return nil
+    end
+    local known = {}
+    for index = 1, C_SkillInfo.GetNumSkillLines() do
+        local info = C_SkillInfo.GetSkillLineInfo(index)
+        if info and info.isHeader and info.isCollapsed then
+            return nil
+        elseif info and not info.isHeader and info.skillID then
+            known[info.skillID] = true
+        end
+    end
+    return known
+end
+-- usable: the player can equip it now; trainable: the class can learn the
+-- skill it needs (from trainableAtLevel); class_cannot_use: never for this
+-- class. nil when the item's type or the player's skills are unknown.
+local function proficiency(item, playerClass, known)
+    local data = ns.Data.ItemProficiencies
+    if not data or not item.classID or not item.subclassID then
+        return nil
+    end
+    local bySubclass = data.subclasses[item.classID]
+    local skill = bySubclass and bySubclass[item.subclassID]
+    if not skill then
+        return "usable"
+    end
+    local minLevel = data.skills[skill] and data.skills[skill][playerClass]
+    if minLevel == nil then
+        return "class_cannot_use"
+    elseif not known then
+        return nil
+    elseif known[skill] then
+        return "usable"
+    end
+    return "trainable", math.max(minLevel, 1)
 end
 -- An occupied slot whose item is not cached yet is unknown, not empty: the
 -- comparison waits for it instead of treating it as item level zero.
@@ -429,6 +471,8 @@ function inspectors.gear_candidates(args)
     local ranked, other, loadingIds, equippedLoading = {}, {}, {}, {}
     local counts =
         { requested = #args.itemIds, tooHighLevel = 0, tooLowLevel = 0, notEquipment = 0 }
+    local playerClass = UnitClass and select(2, UnitClass("player"))
+    local known = knownSkills()
     for _, id in ipairs(args.itemIds) do
         local item = itemSummary(id)
         local slots = item and equipmentSlots[item.equipLocation]
@@ -461,6 +505,8 @@ function inspectors.gear_candidates(args)
                 item.equipped = { id = uncachedID, status = "loading" }
                 equippedLoading[uncachedID] = true
             end
+            item.proficiency, item.trainableAtLevel = proficiency(item, playerClass, known)
+            item.classID, item.subclassID = nil, nil
             ranked[#ranked + 1] = item
         end
     end
@@ -482,7 +528,7 @@ function inspectors.gear_candidates(args)
         other = args.includeOther and other or nil,
         counts = counts,
         loadingIds = #loadingIds > 0 and loadingIds or nil,
-        note = "Every match, ordered by item level gain over the weakest matching equipped slot; the order is not a recommendation or stat weighting. Armor/weapon proficiency is not checked. loadingIds were not in the client cache yet.",
+        note = "Every match, ordered by item level gain over the weakest matching equipped slot; the order is not a recommendation or stat weighting. proficiency: usable (the character can equip it), trainable (the class can learn the weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; missing when unknown. loadingIds were not in the client cache yet.",
     }
 end
 function inspectors.auctions(args)
