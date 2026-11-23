@@ -84,6 +84,15 @@ function ns.Core.NotifyAppUpdate(version)
     appUpdateNoticed = version
     ns.Core.Log(ns.LocaleText("notice.appUpdateAvailable", { version = version }))
 end
+local features = {}
+-- Keeps the feature flags the bridge resolved, by name; a snapshot replaces them all.
+function ns.Core.SetFeatures(values)
+    features = type(values) == "table" and values or {}
+end
+-- Whether the bridge turned a feature flag on. Every flag is off until the first snapshot.
+function ns.Core.FeatureEnabled(name)
+    return features[name] == true
+end
 function WispAI_Receive(json)
     local ok, data = pcall(C_EncodingUtil.DeserializeJSON, json)
     if ok then

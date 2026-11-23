@@ -29,6 +29,7 @@ import IntegrationDetails from './routes/IntegrationDetails';
 import ProviderDetails from './routes/ProviderDetails';
 import Onboarding from './components/onboarding/Onboarding';
 import { Spinner } from './components/ui/ActionProgress';
+import { FeatureFlags } from './features';
 
 /** Detail pages show a back link to their parent: `back`, or the page itself. */
 type DesktopRouteHandle = DesktopPage & {
@@ -193,5 +194,9 @@ export default function App({ router }: { router: ReturnType<typeof createDeskto
   useEffect(mountDesktop, []);
   useEffect(installNativeShell, []);
 
-  return <RouterProvider router={router} />;
+  return (
+    <FeatureFlags>
+      <RouterProvider router={router} />
+    </FeatureFlags>
+  );
 }

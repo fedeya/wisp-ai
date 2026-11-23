@@ -24,6 +24,8 @@ export interface AddonSnapshotInputs {
   expectedAddonVersion: string | undefined;
   /** Newer desktop app version available to install, if the desktop found one. */
   appUpdateVersion: string | null;
+  /** Resolved feature flags, by name. */
+  features: Record<string, boolean>;
   /** Context window Eve reported for its configured model, if any. */
   contextWindowTokens: number | undefined;
   defaultModel: string;
@@ -55,6 +57,7 @@ export function buildAddonSnapshot(inputs: AddonSnapshotInputs) {
     bridgeVersion: inputs.bridgeVersion,
     expectedAddonVersion: inputs.expectedAddonVersion,
     appUpdateVersion: inputs.appUpdateVersion,
+    features: inputs.features,
     contextPolicy: {
       windowTokens:
         state.modelCatalog.find((m) => m.slug === activeModel)?.contextWindow ||

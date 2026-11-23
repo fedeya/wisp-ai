@@ -290,6 +290,15 @@ function createDesktopSession() {
     );
   }
 
+  async function setFeature(id: string, enabled: boolean | null) {
+    await work(
+      'Updating experimental feature',
+      () => call(bridge.features.set.$post({ json: { id, enabled } })),
+      'Experimental feature updated.',
+      'feature:' + id,
+    );
+  }
+
   async function panelAction(panel: Panel, action: 'show' | 'hide' | 'remove') {
     await work(
       'Updating panel',
@@ -417,6 +426,7 @@ function createDesktopSession() {
       },
       showLogs,
       setIntegration,
+      setFeature,
       panelAction,
       removeMcp,
       testMcp,

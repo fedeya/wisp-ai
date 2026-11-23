@@ -4,6 +4,7 @@ import { savedRoutine, routineRun } from './routines.js';
 import { characterName } from './character-key.js';
 import { connectionView } from './providers.js';
 import { searchState } from './search.js';
+import { featuresStateSchema } from './features.js';
 export const desktopInfoSchema = z.object({
   wow: z.string().nullable().optional(),
   configured: z.boolean(),
@@ -67,6 +68,8 @@ export const statusSchema = z.object({
   characters: z.record(z.string(), characterName).default({}),
   /** Newer app version the desktop reported to this bridge; the addon announces it. */
   appUpdate: z.string().nullable().default(null),
+  /** Experimental features: the channel and each flag's value and source. */
+  features: featuresStateSchema.default({ channel: 'stable', flags: [] }),
 });
 export type DesktopInfo = z.infer<typeof desktopInfoSchema>;
 export type Model = z.infer<typeof modelSchema>;

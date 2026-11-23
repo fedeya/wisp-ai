@@ -82,6 +82,11 @@ impl Host {
             .current_dir(&self.payload)
             .env("WISP_DATA_DIR", &self.data)
             .env("WISP_RESOURCE_ROOT", &self.payload)
+            // Debug builds evaluate feature flags as the development channel.
+            .env(
+                "WISP_RELEASE_BUILD",
+                if cfg!(debug_assertions) { "0" } else { "1" },
+            )
             .env(
                 "WISP_TELEMETRY_RELEASE",
                 if telemetry::release_enabled() {
@@ -185,6 +190,7 @@ fn permitted(method: &str, route: &str) -> bool {
                 "/routines/open",
                 "/simulator/character",
                 "/app-update",
+                "/features/set",
             ]
             .contains(&route))
 }
@@ -1194,6 +1200,8 @@ mod tests {
         assert!(permitted("POST", "/routines/open"));
         assert!(permitted("POST", "/app-update"));
         assert!(!permitted("GET", "/app-update"));
+        assert!(permitted("POST", "/features/set"));
+        assert!(!permitted("GET", "/features/set"));
         assert!(!permitted("POST", "/suggestions"));
         assert!(!permitted("GET", "http://example.com"));
         assert!(!permitted("POST", "/model/responses"));

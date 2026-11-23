@@ -38,6 +38,8 @@ export class CapabilitySettings {
     this.catalog = catalog;
   }
   agentFile = '';
+  /** Resolved feature flags, published to the agent next to the capability switches. */
+  features: Record<string, boolean> = {};
   availability = new Map<
     string,
     { available: boolean; status: string; reason?: string; version?: string }
@@ -66,14 +68,15 @@ export class CapabilitySettings {
     const enabled = Object.fromEntries(
       this.catalog.map((entry) => [entry.id, this.enabled(entry.id)]),
     );
-    const content = JSON.stringify({ enabled });
+    const features = this.features;
+    const content = JSON.stringify({ enabled, features });
     const operation = this.queue
       .catch(() => {})
       .then(async () => {
         if (content === this.agentContent) {
           return;
         }
-        await writeJson(this.agentFile, { enabled });
+        await writeJson(this.agentFile, { enabled, features });
         this.agentContent = content;
       });
     this.queue = operation;

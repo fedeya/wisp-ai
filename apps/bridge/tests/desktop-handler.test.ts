@@ -16,6 +16,7 @@ const status: Status = {
   routineRuns: [],
   characters: {},
   appUpdate: null,
+  features: { channel: 'stable', flags: [] },
 };
 function setup() {
   const queue: string[] = [];
@@ -45,6 +46,7 @@ function setup() {
     setCapability: vi.fn(async () => {}),
     setWowTransport: vi.fn(async () => {}),
     setAppUpdate: vi.fn(),
+    setFeature: vi.fn(async () => {}),
     changed: vi.fn(),
   };
   const app = createDesktopApp(deps as never);
@@ -124,6 +126,17 @@ test('the desktop reports the app update the game announces', async () => {
   expect(deps.setAppUpdate).toHaveBeenLastCalledWith(null);
   expect((await post('/app-update', { version: '' })).status).toBe(400);
   expect(deps.setAppUpdate).toHaveBeenCalledTimes(2);
+});
+test('the desktop saves or clears a feature flag override', async () => {
+  const { post, deps } = setup();
+  expect(await (await post('/features/set', { id: 'new_panel', enabled: true })).json()).toEqual({
+    ok: true,
+  });
+  expect(deps.setFeature).toHaveBeenCalledWith('new_panel', true);
+  expect((await post('/features/set', { id: 'new_panel', enabled: null })).status).toBe(200);
+  expect(deps.setFeature).toHaveBeenLastCalledWith('new_panel', null);
+  expect((await post('/features/set', { id: 'New Panel', enabled: true })).status).toBe(400);
+  expect(deps.setFeature).toHaveBeenCalledTimes(2);
 });
 test('unknown routes and methods are refused', async () => {
   const { app } = setup();

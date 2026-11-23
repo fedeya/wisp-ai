@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
+import ExperimentalSettings from '../components/settings/ExperimentalSettings';
 import GameInstallation from '../components/settings/GameInstallation';
 import StartupSettings from '../components/settings/StartupSettings';
 import TelemetrySettings from '../components/settings/TelemetrySettings';
@@ -47,6 +48,7 @@ export default function Settings() {
         <StartupSettings />
         <TelemetrySettings />
       </RowGroup>
+      <ExperimentalSettings />
       <RowGroup label="Troubleshooting">
         <Link
           to={diagnosticsPage.path}

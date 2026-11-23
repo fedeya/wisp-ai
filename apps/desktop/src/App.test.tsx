@@ -47,6 +47,7 @@ beforeEach(() => {
     routineRuns: [],
     characters: {},
     appUpdate: null,
+    features: { channel: 'stable', flags: [] },
   };
   vi.mocked(desktop).mockImplementation(async (command) => {
     if (command === 'detect_game_folders') {

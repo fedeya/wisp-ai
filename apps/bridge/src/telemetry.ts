@@ -28,6 +28,7 @@ const propertyKeys = new Set([
   'depth',
   'provider',
   'result_count',
+  'features',
   '$process_person_profile',
   '$geoip_disable',
   '$lib',
@@ -96,6 +97,8 @@ type Properties = Record<string, string | number | boolean>;
 type TelemetryOptions = {
   release?: boolean;
   isCustomMcpConnection?: (name: string) => boolean;
+  /** Names of the feature flags that are on, attached to every event. */
+  enabledFeatures?: () => string[];
 };
 
 // All outbound fields are constructed here. No prompts, tool inputs/outputs, labels,
@@ -111,11 +114,13 @@ export class UsageTelemetry {
   private version: string;
   private release: boolean;
   private isCustomMcpConnection?: TelemetryOptions['isCustomMcpConnection'];
+  private enabledFeatures?: TelemetryOptions['enabledFeatures'];
   constructor(dataRoot: string, version: string, options: TelemetryOptions = {}) {
     this.dataRoot = dataRoot;
     this.version = version;
     this.release = options.release ?? process.env.WISP_TELEMETRY_RELEASE === '1';
     this.isCustomMcpConnection = options.isCustomMcpConnection;
+    this.enabledFeatures = options.enabledFeatures;
   }
 
   private record(event: string, properties: Properties = {}) {
@@ -163,6 +168,8 @@ export class UsageTelemetry {
         }
       },
     });
+    // Flag names come from the built-in registry, never from user input.
+    const features = this.enabledFeatures?.().join(',');
     await this.client.captureImmediate({
       distinctId: preferences.installationId,
       event,
@@ -180,6 +187,7 @@ export class UsageTelemetry {
           process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : process.arch,
         $process_person_profile: false,
         $geoip_disable: true,
+        ...(features ? { features } : {}),
         ...properties,
       },
     });
