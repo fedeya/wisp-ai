@@ -10,7 +10,7 @@ local function setup(flagOn)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
     do
         ns = helper.namespace({ db = {}, connected = true, chats = {} })
-        timers, submitted, newChats = {}, {}, 0
+        timers, submitted = {}, {}
         combat = false
         flags = { ask_wisp_moments = true }
         featureListeners = {}
@@ -59,13 +59,7 @@ local function setup(flagOn)
         UnitGUID = function()
             return "Player-1"
         end
-        ns.Chat.Current = function()
-            return ns.currentChat
-        end
-        ns.Chat.NewChat = function()
-            newChats = newChats + 1
-        end
-        ns.Chat.Submit = function(prompt)
+        ns.Chat.AskNew = function(prompt)
             submitted[#submitted + 1] = prompt
         end
         ns.UI.SetMinimized = function(value)
@@ -118,10 +112,8 @@ describe("moments", function()
         flush(2)
         assert.is_true(card:IsShown())
         assert.equal("Why did I just die?", card.body:GetText())
-        ns.currentChat = { messages = { { role = "user", text = "hi" } } }
         card.scripts.OnClick(card)
         assert.same({ "Why did I just die?" }, submitted)
-        assert.equal(1, newChats)
         assert.is_false(minimized)
         assert.is_false(card:IsShown())
     end)
@@ -199,6 +191,26 @@ describe("moments", function()
         AuctionHouseFrame:Hide()
         hooks.OnHide()
         assert.is_false(card:IsShown())
+    end)
+
+    it("offers a vendor question only when bags are nearly full", function()
+        local env, card = setup()
+        setfenv(1, env)
+        local free = 20
+        -- Like the game, the call also returns the bag family (0 for a backpack).
+        C_Container = {
+            GetContainerNumFreeSlots = function(bag)
+                return bag == 0 and free or 0, 0
+            end,
+        }
+        fire("MERCHANT_SHOW")
+        assert.is_false(card:IsShown())
+        free = 3
+        fire("MERCHANT_SHOW")
+        assert.equal(
+            "My bags are nearly full and I'm at a vendor. What should I sell?",
+            card.body:GetText()
+        )
     end)
 
     it("offers looted gear only when it beats what is equipped", function()

@@ -126,12 +126,8 @@ local function ask()
     if not question then
         return
     end
-    local chat = ns.Chat.Current()
-    if chat and #(chat.messages or {}) > 0 then
-        ns.Chat.NewChat()
-    end
     ns.UI.SetMinimized(false)
-    ns.Chat.Submit(question)
+    ns.Chat.AskNew(question)
 end
 
 local function place(moment)
@@ -211,7 +207,9 @@ local function bagsNearlyFull()
     end
     local free = 0
     for bag = 0, 4 do
-        free = free + (tonumber(call(C_Container.GetContainerNumFreeSlots, bag)) or 0)
+        -- The call also returns the bag family; keep only the count.
+        local slots = call(C_Container.GetContainerNumFreeSlots, bag)
+        free = free + (tonumber(slots) or 0)
     end
     return free <= MERCHANT_FREE_SLOTS
 end
