@@ -202,6 +202,8 @@ ns.Locales.frFR = {
     -- Settings
     ["settings.title"] = "Paramètres",
     ["settings.general"] = "Général",
+    ["gameOptions.description"] = "Les paramètres de Wisp se trouvent dans la fenêtre de Wisp. Ouvrez-les ici ou tapez /wisp settings.",
+    ["gameOptions.open"] = "Ouvrir les paramètres de Wisp",
     ["settings.completionSound"] = "Son de fin de réponse",
     ["settings.showTools"] = "Afficher l'activité des outils dans les conversations",
     ["settings.inlineChat"] = "Discussion contextuelle",

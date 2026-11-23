@@ -204,6 +204,8 @@ ns.Locales.enUS = {
     -- Settings
     ["settings.title"] = "Settings",
     ["settings.general"] = "General",
+    ["gameOptions.description"] = "Wisp's settings live in the Wisp window. Open them here or type /wisp settings.",
+    ["gameOptions.open"] = "Open Wisp settings",
     ["settings.completionSound"] = "Completion sound",
     ["settings.showTools"] = "Show tool activity in conversations",
     ["settings.inlineChat"] = "Inline chat",

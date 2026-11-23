@@ -202,6 +202,8 @@ ns.Locales.ptBR = {
     -- Settings
     ["settings.title"] = "Configurações",
     ["settings.general"] = "Geral",
+    ["gameOptions.description"] = "As configurações do Wisp ficam na janela do Wisp. Abra-as aqui ou digite /wisp settings.",
+    ["gameOptions.open"] = "Abrir configurações do Wisp",
     ["settings.completionSound"] = "Som ao concluir",
     ["settings.showTools"] = "Mostrar a atividade das ferramentas nas conversas",
     ["settings.inlineChat"] = "Chat embutido",

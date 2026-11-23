@@ -202,6 +202,8 @@ ns.Locales.koKR = {
     -- Settings
     ["settings.title"] = "설정",
     ["settings.general"] = "일반",
+    ["gameOptions.description"] = "Wisp 설정은 Wisp 창에 있습니다. 여기서 열거나 /wisp settings를 입력하세요.",
+    ["gameOptions.open"] = "Wisp 설정 열기",
     ["settings.completionSound"] = "답변 완료 알림음",
     ["settings.showTools"] = "대화에 도구 사용 내역 표시",
     ["settings.inlineChat"] = "인라인 채팅",

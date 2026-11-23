@@ -202,6 +202,8 @@ ns.Locales.ruRU = {
     -- Settings
     ["settings.title"] = "Настройки",
     ["settings.general"] = "Общие",
+    ["gameOptions.description"] = "Настройки Wisp находятся в окне Wisp. Откройте их здесь или введите /wisp settings.",
+    ["gameOptions.open"] = "Открыть настройки Wisp",
     ["settings.completionSound"] = "Звук по готовности ответа",
     ["settings.showTools"] = "Показывать работу инструментов в беседах",
     ["settings.inlineChat"] = "Встроенный чат",

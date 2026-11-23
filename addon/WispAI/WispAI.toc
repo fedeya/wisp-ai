@@ -78,6 +78,7 @@ UI\Transcript.lua
 UI\Composer.lua
 UI\ConversationStatus.lua
 UI\Window.lua
+UI\GameOptions.lua
 Inline\Inline.lua
 Panels\Panels.lua
 Advice\Advice.lua

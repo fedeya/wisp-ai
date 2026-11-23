@@ -202,6 +202,8 @@ ns.Locales.esMX = {
     -- Settings
     ["settings.title"] = "Configuración",
     ["settings.general"] = "General",
+    ["gameOptions.description"] = "La configuración de Wisp está en la ventana de Wisp. Ábrela desde aquí o escribe /wisp settings.",
+    ["gameOptions.open"] = "Abrir configuración de Wisp",
     ["settings.completionSound"] = "Sonido al terminar",
     ["settings.showTools"] = "Mostrar la actividad de herramientas en las conversaciones",
     ["settings.inlineChat"] = "Chat en línea",

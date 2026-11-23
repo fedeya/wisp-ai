@@ -126,6 +126,9 @@ events:SetScript("OnEvent", function(_, event, name)
             end
         end)
         ns.UI.BuildUI()
+        if ns.UI.GameOptions.Register then
+            ns.UI.GameOptions.Register()
+        end
         if ns.Inline.InitInline then
             ns.Inline.InitInline()
         end
@@ -172,6 +175,10 @@ SlashCmdList.WISPAI = function(message)
                 .. ", "
                 .. (ns.connected and "connected" or "waiting for bridge")
         )
+        return
+    end
+    if message == "settings" then
+        ns.UI.ShowSettings("general")
         return
     end
     if message == "reconnect" then

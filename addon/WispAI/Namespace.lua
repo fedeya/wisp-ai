@@ -29,3 +29,4 @@ ns.UI.Activity = ns.UI.Activity or {}
 ns.UI.Transcript = ns.UI.Transcript or {}
 ns.UI.Composer = ns.UI.Composer or {}
 ns.UI.ConversationStatus = ns.UI.ConversationStatus or {}
+ns.UI.GameOptions = ns.UI.GameOptions or {}

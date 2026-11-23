@@ -202,6 +202,8 @@ ns.Locales.deDE = {
     -- Settings
     ["settings.title"] = "Einstellungen",
     ["settings.general"] = "Allgemein",
+    ["gameOptions.description"] = "Die Einstellungen von Wisp befinden sich im Wisp-Fenster. Öffne sie hier oder gib /wisp settings ein.",
+    ["gameOptions.open"] = "Wisp-Einstellungen öffnen",
     ["settings.completionSound"] = "Ton bei fertiger Antwort",
     ["settings.showTools"] = "Werkzeugaktivität in Unterhaltungen anzeigen",
     ["settings.inlineChat"] = "Inline-Chat",

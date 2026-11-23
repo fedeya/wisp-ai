@@ -202,6 +202,8 @@ ns.Locales.itIT = {
     -- Settings
     ["settings.title"] = "Impostazioni",
     ["settings.general"] = "Generali",
+    ["gameOptions.description"] = "Le impostazioni di Wisp si trovano nella finestra di Wisp. Aprile da qui o digita /wisp settings.",
+    ["gameOptions.open"] = "Apri impostazioni di Wisp",
     ["settings.completionSound"] = "Suono di completamento",
     ["settings.showTools"] = "Mostra l'attività degli strumenti nelle conversazioni",
     ["settings.inlineChat"] = "Chat in linea",

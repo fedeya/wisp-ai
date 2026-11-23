@@ -202,6 +202,8 @@ ns.Locales.zhCN = {
     -- Settings
     ["settings.title"] = "设置",
     ["settings.general"] = "常规",
+    ["gameOptions.description"] = "Wisp 的设置位于 Wisp 窗口中。可在此打开，或输入 /wisp settings。",
+    ["gameOptions.open"] = "打开 Wisp 设置",
     ["settings.completionSound"] = "回复完成提示音",
     ["settings.showTools"] = "在对话中显示工具活动",
     ["settings.inlineChat"] = "快捷提问",
