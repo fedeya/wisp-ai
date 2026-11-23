@@ -2,6 +2,7 @@ now = 0
 loads = 0
 packets = {}
 timers = {}
+delayed = {}
 logs = {}
 states, disk = {}, {}
 for index = 1, 128 do
@@ -75,6 +76,9 @@ C_Timer = {
     NewTicker = function(seconds, fn)
         timers[seconds] = fn
         return { Cancel = function() end }
+    end,
+    After = function(seconds, fn)
+        delayed[#delayed + 1] = { seconds = seconds, fn = fn }
     end,
 }
 C_AddOns = {
