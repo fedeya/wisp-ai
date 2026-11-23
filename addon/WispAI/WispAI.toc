@@ -82,3 +82,4 @@ UI\GameOptions.lua
 Inline\Inline.lua
 Panels\Panels.lua
 Advice\Advice.lua
+Moments\Moments.lua

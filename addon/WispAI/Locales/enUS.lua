@@ -245,6 +245,16 @@ ns.Locales.enUS = {
     ["advice.read"] = "Read",
     ["advice.allRoutines"] = "All routines",
     ["advice.reference"] = "Reference",
+    ["moment.ask"] = "Ask Wisp",
+    ["moment.death"] = "Why did I just die?",
+    ["moment.wipe"] = "We just wiped on {boss}. What went wrong and what should we change?",
+    ["moment.auction"] = "I'm at the auction house. What should I sell, and is there anything worth buying?",
+    ["moment.merchant"] = "My bags are nearly full and I'm at a vendor. What should I sell?",
+    ["moment.trainer"] = "I'm at a trainer. What should I learn here first?",
+    ["moment.levelUp"] = "I just reached level {level}. What's new for me and where should I go next?",
+    ["moment.loot"] = "I just looted {item}. Is it an upgrade for me?",
+    ["moment.instance"] = "I just entered {name}. What should I know before we start?",
+    ["moment.quest"] = 'How do I complete the quest "{quest}"?',
 
     -- Memory and integrations
     ["memory.title"] = "Memory",

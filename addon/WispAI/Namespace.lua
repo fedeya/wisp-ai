@@ -19,6 +19,7 @@ ns.UI = ns.UI or {}
 ns.Inline = ns.Inline or {}
 ns.Panels = ns.Panels or {}
 ns.Advice = ns.Advice or {}
+ns.Moments = ns.Moments or {}
 ns.UI.Memory = ns.UI.Memory or {}
 ns.UI.Capabilities = ns.UI.Capabilities or {}
 ns.UI.Sidebar = ns.UI.Sidebar or {}

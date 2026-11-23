@@ -232,6 +232,16 @@ ns.Locales.esMX = {
     ["advice.read"] = "Leer",
     ["advice.allRoutines"] = "Todas las rutinas",
     ["advice.reference"] = "Referencia",
+    ["moment.ask"] = "Pregúntale a Wisp",
+    ["moment.death"] = "¿Por qué me morí?",
+    ["moment.wipe"] = "Acabamos de wipear en {boss}. ¿Qué salió mal y qué deberíamos cambiar?",
+    ["moment.auction"] = "Estoy en la casa de subastas. ¿Qué me conviene vender y hay algo que valga la pena comprar?",
+    ["moment.merchant"] = "Tengo las bolsas casi llenas y estoy en un vendedor. ¿Qué debería vender?",
+    ["moment.trainer"] = "Estoy con un instructor. ¿Qué debería aprender primero?",
+    ["moment.levelUp"] = "Acabo de llegar al nivel {level}. ¿Qué hay de nuevo para mí y a dónde voy ahora?",
+    ["moment.loot"] = "Acabo de conseguir {item}. ¿Es una mejora para mí?",
+    ["moment.instance"] = "Acabo de entrar a {name}. ¿Qué debería saber antes de empezar?",
+    ["moment.quest"] = '¿Cómo completo la misión "{quest}"?',
 
     -- Memory and integrations
     ["memory.title"] = "Memoria",

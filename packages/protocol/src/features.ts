@@ -29,7 +29,14 @@ export type FeatureRegistry = Readonly<Record<string, FeatureDefinition>>;
  * A flag is temporary: when its feature ships to everyone, delete the entry and
  * its checks instead of adding `stable` to `channels`.
  */
-export const featureFlags = {} as const satisfies FeatureRegistry;
+export const featureFlags = {
+  ask_wisp_moments: {
+    name: 'Ask Wisp moments',
+    description:
+      'Offer a one-click question when you die, wipe, level up, loot gear, enter a dungeon or open the auction house, a vendor or a trainer.',
+    channels: ['development', 'nightly'],
+  },
+} as const satisfies FeatureRegistry;
 export type FeatureFlag = keyof typeof featureFlags;
 
 export const featureName = z

@@ -182,6 +182,9 @@ events:SetScript("OnEvent", function(_, event, name)
         if ns.Advice.InitAdvice then
             ns.Advice.InitAdvice()
         end
+        if ns.Moments.InitMoments then
+            ns.Moments.InitMoments()
+        end
         ns.Transport.StartTransport()
         ns.Transport.Send({ type = "hello", chat = ns.active, context = ns.Character.CaptureTurn() })
     end
