@@ -117,7 +117,7 @@ export const toolDescriptions: Record<string, [string, string]> = {
   ],
   query_character: [
     'Character readings',
-    'Read your talents, learned spells, quests, equipment, bags and group.',
+    'Read your talents, learned spells, quests, equipment, bags, group and PvP rank and honor.',
   ],
   inspect_reference: [
     'Inspect references',

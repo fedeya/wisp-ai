@@ -133,6 +133,106 @@ function collectors.group()
     end
     return out
 end
+-- Forever's PvP rank is the renown of this faction (Camelot PVPRankFrame);
+-- Honor Points are a separate currency spent on gear.
+local PVP_RANK_FACTION = 2800
+local HONOR_CURRENCY = 1792
+local function nonNegative(value)
+    return numbers.IsFinite(value) and value >= 0 and value or nil
+end
+-- The character pane's rank title, gendered and per faction.
+local function pvpRankTitle(rank)
+    if rank <= 0 then
+        return PVP_RANK_0_NAME
+    end
+    if not (Enum.PvPRanks and type(GetText) == "function") then
+        return nil
+    end
+    local faction = UnitFactionGroup("player") == "Alliance" and 1 or 0
+    local key = "PVP_RANK_" .. (Enum.PvPRanks.Rank_1 + rank - 1) .. "_" .. faction
+    return optional(GetText, key, UnitSex("player"))
+end
+local function pvpRank()
+    local majors = C_MajorFactions
+    local info = majors and optional(majors.GetMajorFactionProgressionInfo, PVP_RANK_FACTION)
+    if type(info) ~= "table" or not nonNegative(info.renownLevel) then
+        return nil
+    end
+    local function total(level)
+        return nonNegative(
+            optional(majors.GetTotalReputationForRenownLevel, PVP_RANK_FACTION, level)
+        )
+    end
+    local rank = info.renownLevel
+    local out = {
+        rank = rank,
+        title = pvpRankTitle(rank),
+        points = nonNegative(info.renownReputationEarned),
+        nextRankPoints = nonNegative(info.renownLevelThreshold),
+        maxRank = nonNegative(info.maxLevel),
+        weeklyCapRank = nonNegative(info.currentWeekProgressiveMaxLevel),
+    }
+    local atRank, weekCap = total(rank), total(info.currentWeekProgressiveMaxLevel)
+    local lastWeekCap = total(info.previousWeekProgressiveMaxLevel)
+    if atRank and out.points then
+        out.seasonPoints = atRank + out.points
+    end
+    if weekCap and weekCap > 0 then
+        out.weeklyCapPoints = weekCap
+        if lastWeekCap then
+            out.weeklyCapIncrease = weekCap - lastWeekCap
+        end
+    end
+    out.seasonMaxPoints = out.maxRank and total(out.maxRank)
+    for level = rank + 1, out.maxRank or rank do
+        local rewards = optional(majors.GetRenownRewardsForLevel, PVP_RANK_FACTION, level)
+        if type(rewards) == "table" and #rewards > 0 then
+            local descriptions = {}
+            for _, reward in ipairs(rewards) do
+                descriptions[#descriptions + 1] = reward.description or reward.name
+            end
+            out.nextReward = { rank = level, rewards = descriptions }
+            break
+        end
+    end
+    return out
+end
+local function pvpKills(fn)
+    local honorable, dishonorable = optional(fn)
+    if nonNegative(honorable) then
+        return { honorable = honorable, dishonorable = nonNegative(dishonorable) }
+    end
+end
+function collectors.pvp()
+    local out = { rank = pvpRank() }
+    local season = nonNegative(optional(GetCurrentArenaSeason))
+    if season and season > 0 then
+        local endsIn = C_SeasonInfo
+            and nonNegative(optional(C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd))
+        out.season = { number = season, endsInSeconds = endsIn ~= 0 and endsIn or nil }
+    end
+    local currencies = C_CurrencyInfo
+    local id = Constants.CurrencyConsts and Constants.CurrencyConsts.HONOR_CURRENCY_ID
+        or HONOR_CURRENCY
+    local honor = currencies and optional(currencies.GetCurrencyInfo, id)
+    if type(honor) == "table" and nonNegative(honor.quantity) then
+        out.honor = {
+            name = honor.name,
+            amount = honor.quantity,
+            max = nonNegative(honor.maxQuantity) ~= 0 and honor.maxQuantity or nil,
+            earnedThisWeek = nonNegative(honor.quantityEarnedThisWeek),
+            weeklyMax = nonNegative(honor.maxWeeklyQuantity) ~= 0 and honor.maxWeeklyQuantity
+                or nil,
+        }
+    end
+    out.kills = {
+        today = pvpKills(GetPVPSessionStats),
+        yesterday = pvpKills(GetPVPYesterdayStats),
+        lifetime = nonNegative(optional(GetPVPLifetimeStats)),
+    }
+    assert(out.rank or out.honor or out.kills.lifetime, "PvP API is unavailable")
+    return out
+end
 function collectors.spells()
     local out = {}
     assert(C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines, "Spellbook API is unavailable")
