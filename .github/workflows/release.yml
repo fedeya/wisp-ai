@@ -150,6 +150,11 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # A Stable build's source is the promoted Nightly's commit, not the run's head SHA;
+      # installer tests check out the commit named here.
+      - name: Record the built source commit
+        shell: bash
+        run: git rev-parse HEAD > dist/release-source.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -163,6 +168,7 @@ jobs:
             dist/latest.json
             dist/build-metrics.json
             dist/release-notes.md
+            dist/release-source.txt
       - name: Verify installer before publishing
         run: node scripts/verify-installer.ts
   publish:
