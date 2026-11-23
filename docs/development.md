@@ -214,6 +214,18 @@ Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
 Failed and timed-out chats include an allowlisted `error_code`. Codes identify
 a known condition or the stage that failed; `usage_limit` marks a plan quota or
 provider rate limit rather than a Wisp failure. Error messages stay in local logs.
+Chats also report `model_provider`: the provider id of the API connection that
+answers (from `@wisp/protocol/providers`, for example `anthropic` or
+`compatible`) or `chatgpt` for the subscription sign-in, never model ids,
+endpoints or connection names. Failed and timed-out chats add `failure_kind` when
+a model request that the bridge proxied for that chat failed during the turn.
+The agent names its Eve session in an `x-wisp-session` header that the bridge
+does not forward, so concurrent chats on one connection keep their own
+failures (`apps/bridge/src/models/model-failures.ts`). It comes from the provider's
+HTTP status (`bad_request`, `auth`, `not_found`, `rate_limited`, `provider_error`,
+`http_other`) or the kind of thrown error (`network`, `timeout`, or
+`wisp_rejected` when the bridge refused the request), never from the provider's
+message. Errors reported inside a successful stream carry no kind.
 When the turn produces visible streamed text, `first_text_ms` measures the
 elapsed time from turn start to the first text that the bridge projects.
 A connection attempt starts when the bridge accepts a new addon session and

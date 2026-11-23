@@ -3,6 +3,7 @@ import { connectionSetup, connectionDiscovery, discoveredConnectionModel } from 
 import { searchSetup, searchState } from './search.js';
 import { authStateSchema, modelSchema, statusSchema } from './desktop.js';
 import { mcpSetup } from './mcp-setup.js';
+import { featureName } from './features.js';
 // The contract between the desktop webview and the bridge's desktop server.
 // The bridge validates every input and type-checks every output against it;
 // the desktop client derives its typed Hono client from it and parses each
@@ -68,6 +69,8 @@ export const desktopRoutes = {
   '/simulator/character': post(z.unknown()),
   /** The app update the desktop found, or null when it has none to offer. */
   '/app-update': postWith(z.object({ version: z.string().min(1).max(64).nullable() }), ok),
+  /** Save the user's choice for a feature flag; null returns it to the channel default. */
+  '/features/set': postWith(z.object({ id: featureName, enabled: z.boolean().nullable() }), ok),
 };
 export type DesktopRoutes = typeof desktopRoutes;
 export type DesktopRoute = keyof DesktopRoutes;

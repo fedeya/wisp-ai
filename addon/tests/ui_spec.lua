@@ -206,6 +206,48 @@ it("New chat creates its conversation with the first message and keeps its draft
     assert(ns.draft:GetText() == "", "a sent draft does not come back")
 end)
 
+it("AskNew asks in a new conversation and leaves every draft where it was", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    time = os.time
+    ns = helper.namespace({
+        db = { sidebar = true, drafts = { __new = "Plan my route" } },
+        connected = true,
+        session = "test",
+        active = "old",
+        chats = {
+            {
+                id = "old",
+                title = "Old",
+                status = "done",
+                messages = { { id = "m", role = "user", text = "Hi" } },
+                activity = {},
+            },
+        },
+        pendingChats = {},
+        pendingMessages = {},
+        workStarted = {},
+    })
+    local sent = {}
+    function ns.Transport.Send(packet)
+        sent[#sent + 1] = packet
+    end
+    helper.addon("Chat/State.lua", env)
+    helper.addon("UI/Window.lua", env)
+    ns.UI.BuildUI()
+    ns.draft:SetText("Half-typed reply")
+
+    ns.Chat.AskNew("Why did I just die?")
+    assert(ns.active ~= "old" and sent[#sent].type == "say")
+    assert(sent[#sent].chat == ns.active and sent[#sent].text == "Why did I just die?")
+    assert(ns.draft:GetText() == "", "the new conversation starts with an empty composer")
+    ns.Chat.Select("old")
+    assert(ns.draft:GetText() == "Half-typed reply", "the open conversation keeps its draft")
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "Plan my route", "the New chat draft is untouched")
+end)
+
 it("Recents are grouped under day headings that keep rows pooled and in order", function()
     local env = helper.env()
     setfenv(1, env)

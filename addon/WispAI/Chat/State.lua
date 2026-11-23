@@ -189,6 +189,15 @@ function ns.Chat.Submit(prompt)
     end
     ns.UI.Refresh()
 end
+--- Asks `question` in a new conversation, as a suggestion outside the composer
+--- does. The open conversation keeps its draft and the new one starts empty.
+function ns.Chat.AskNew(question)
+    ns.Chat.StartNew()
+    ns.Chat.Submit(question)
+    if ns.draft and ns.active then
+        ns.draft:SetText(ns.db.drafts[ns.active] or "")
+    end
+end
 function ns.Chat.MemoryAction(action, slot, key, text)
     ns.memoryCounter = (ns.memoryCounter or 0) + 1
     ns.memoryPending = ns.session .. "-memory-" .. ns.memoryCounter

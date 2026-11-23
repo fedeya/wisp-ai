@@ -9,6 +9,20 @@
     "core:window:allow-minimize",
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
-    "snap-layout:default"
+    "snap-layout:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://wisp.fedeya.sh/*" },
+        { "url": "https://platform.claude.com/*" },
+        { "url": "https://aistudio.google.com/*" },
+        { "url": "https://platform.openai.com/*" },
+        { "url": "https://openrouter.ai/*" },
+        { "url": "https://www.curseforge.com/wow/addons/*" },
+        { "url": "https://github.com/*" },
+        { "url": "https://thewowdb.com/*" },
+        { "url": "https://everloot.app/*" }
+      ]
+    }
   ]
 }

@@ -312,6 +312,274 @@ it("character sections are read only on demand and every call is fresh", functio
     assert(calls == 2)
 end)
 
+local function setupGroup(env, members, raid)
+    setfenv(1, env)
+    setupFrame(env)
+    do
+        ns = helper.namespace()
+        function time()
+            return 123
+        end
+        local byUnit = {}
+        for index, member in ipairs(members) do
+            byUnit[raid and ("raid" .. index) or member.unit] = member
+        end
+        for _, member in ipairs(members) do
+            if member.player then
+                byUnit.player = member
+            end
+        end
+        local function get(unit)
+            return assert(byUnit[unit], "unexpected unit " .. unit)
+        end
+        function IsInGroup()
+            return #members > 1
+        end
+        function IsInRaid()
+            return raid
+        end
+        function GetNumGroupMembers()
+            return #members
+        end
+        function IsInInstance()
+            return true, "party"
+        end
+        function GetInstanceInfo()
+            return "Wailing Caverns"
+        end
+        function UnitExists(unit)
+            return byUnit[unit] ~= nil
+        end
+        function UnitIsUnit(unit, other)
+            return other == "player" and unit ~= "player" and get(unit).player == true
+                or unit == other
+        end
+        function UnitName(unit)
+            return get(unit).name, get(unit).realm
+        end
+        function UnitClass(unit)
+            return "Class", get(unit).class
+        end
+        function UnitLevel(unit)
+            return get(unit).level
+        end
+        function UnitGroupRolesAssigned(unit)
+            return get(unit).role or "NONE"
+        end
+        function UnitIsGroupLeader(unit)
+            return get(unit).leader
+        end
+        function UnitIsConnected(unit)
+            return get(unit).online ~= false
+        end
+        function UnitIsDeadOrGhost()
+            return false
+        end
+        function UnitIsVisible(unit)
+            return get(unit).visible
+        end
+        function UnitInRange(unit)
+            return get(unit).visible, true
+        end
+        C_Map = {
+            GetBestMapForUnit = function(unit)
+                return unit == "player" and 279 or get(unit).map
+            end,
+            GetMapInfo = function(id)
+                return { name = id == 279 and "Wailing Caverns" or "Ratchet" }
+            end,
+            GetPlayerMapPosition = function(_, unit)
+                local position = get(unit).position
+                return position
+                    and {
+                        GetXY = function()
+                            return position[1], position[2]
+                        end,
+                    }
+            end,
+        }
+    end
+    helper.addon("Character/Capture.lua", env)
+end
+
+it("the group section lists each member and where the game says they are", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setupGroup(env, {
+        { unit = "player", player = true, name = "Fedrath", class = "MAGE", level = 22 },
+        {
+            unit = "party1",
+            name = "Sethra",
+            class = "WARRIOR",
+            level = 23,
+            role = "TANK",
+            leader = true,
+            map = 279,
+            visible = true,
+        },
+        {
+            unit = "party2",
+            name = "Fisherman",
+            realm = "",
+            class = "PRIEST",
+            level = 21,
+            role = "HEALER",
+            map = 1413,
+            position = { 0.62, 0.38 },
+            visible = false,
+        },
+        { unit = "party3", name = "Away", class = "ROGUE", level = 20, online = false },
+    })
+
+    local group = ns.Character.Capture({ "group" }).sections.group
+    assert(group.status == "available")
+    local data = group.data
+    assert(data.inGroup and not data.raid and data.size == 4)
+    assert(data.instance.name == "Wailing Caverns" and data.instance.type == "party")
+    assert(#data.members == 4)
+    local player, tank, healer, away = unpack(data.members)
+    assert(player.isPlayer and player.name == "Fedrath" and player.zone == nil)
+    assert(tank.role == "tank" and tank.leader and tank.sameMap and tank.visible)
+    assert(tank.inRange and tank.x == nil, "no coordinates inside instances")
+    assert(healer.realm == nil and healer.role == "healer" and healer.zone == "Ratchet")
+    assert(healer.sameMap == false and healer.x == 0.62 and healer.y == 0.38)
+    assert(not away.online and away.zone == nil and away.visible == nil)
+
+    UnitIsConnected, UnitIsGroupLeader = nil, nil
+    function UnitIsVisible()
+        error("not ready")
+    end
+    local unknown = ns.Character.Capture({ "group" }).sections.group.data.members[2]
+    assert(unknown.online == nil and unknown.leader == nil and unknown.visible == nil)
+    assert(unknown.zone == "Wailing Caverns", "an unknown connection still reads the place")
+end)
+
+it("raid units already include the player, and a solo character has no members", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setupGroup(env, {
+        { name = "Leader", class = "WARRIOR", level = 60, leader = true, map = 279 },
+        { player = true, name = "Fedrath", class = "MAGE", level = 60 },
+    }, true)
+    local raid = ns.Character.Capture({ "group" }).sections.group.data
+    assert(raid.raid and #raid.members == 2 and raid.members[2].isPlayer)
+    local turn = ns.Character.CaptureTurn().sections.group
+    assert(
+        turn.status == "available",
+        "each turn carries only whether there is a group and its size"
+    )
+    assert(
+        turn.data.inGroup and turn.data.raid and turn.data.size == 2 and turn.data.members == nil
+    )
+
+    setupGroup(env, { { unit = "player", player = true, name = "Fedrath" } })
+    local solo = ns.Character.Capture({ "group" }).sections.group.data
+    assert(not solo.inGroup and not solo.raid and solo.size == 1 and #solo.members == 0)
+end)
+
+local function setupPvp(env)
+    setfenv(1, env)
+    setupFrame(env)
+    do
+        ns = helper.namespace()
+        function time()
+            return 123
+        end
+        function UnitName()
+            return "Fedrath"
+        end
+        function UnitFactionGroup()
+            return "Horde"
+        end
+        function UnitSex()
+            return 2
+        end
+        Enum = { PvPRanks = { Rank_1 = 5 } }
+        PVP_RANK_0_NAME = "Civilian"
+        function GetText(key, sex)
+            assert(sex == 2)
+            return key == "PVP_RANK_6_0" and "Grunt" or nil
+        end
+        Constants = { CurrencyConsts = { HONOR_CURRENCY_ID = 1792 } }
+        totals = { [0] = 0, [1] = 100, [2] = 250, [3] = 450 }
+        progression = {
+            renownLevel = 2,
+            renownReputationEarned = 40,
+            renownLevelThreshold = 200,
+            maxLevel = 14,
+            currentWeekProgressiveMaxLevel = 3,
+            previousWeekProgressiveMaxLevel = 1,
+        }
+        C_MajorFactions = {
+            GetMajorFactionProgressionInfo = function(id)
+                assert(id == 2800)
+                return progression
+            end,
+            GetTotalReputationForRenownLevel = function(_, level)
+                return totals[level] or 9000
+            end,
+            GetRenownRewardsForLevel = function(_, level)
+                return level == 4 and { { description = "Necklace" } } or {}
+            end,
+        }
+        function GetCurrentArenaSeason()
+            return 1
+        end
+        C_SeasonInfo = {
+            GetTimeUntilCurrentPVPSeasonEnd = function()
+                return 0
+            end,
+        }
+        C_CurrencyInfo = {
+            GetCurrencyInfo = function(id)
+                assert(id == 1792)
+                return {
+                    name = "Honor Points",
+                    quantity = 89,
+                    maxQuantity = 25000,
+                    quantityEarnedThisWeek = 89,
+                    maxWeeklyQuantity = 0,
+                }
+            end,
+        }
+        function GetPVPSessionStats()
+            return 3, 0
+        end
+        function GetPVPLifetimeStats()
+            return 15, 0
+        end
+    end
+    helper.addon("Character/Capture.lua", env)
+end
+
+it("the pvp section reads Forever's rank track, honor currency and kills", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setupPvp(env)
+
+    local pvp = ns.Character.Capture({ "pvp" }).sections.pvp
+    assert(pvp.status == "available")
+    local rank, honor = pvp.data.rank, pvp.data.honor
+    assert(rank.rank == 2 and rank.title == "Grunt" and rank.points == 40)
+    assert(rank.nextRankPoints == 200 and rank.seasonPoints == 290 and rank.maxRank == 14)
+    assert(rank.weeklyCapRank == 3 and rank.weeklyCapPoints == 450)
+    assert(rank.weeklyCapIncrease == 350 and rank.seasonMaxPoints == 9000)
+    assert(rank.nextReward.rank == 4 and rank.nextReward.rewards[1] == "Necklace")
+    assert(pvp.data.season.number == 1 and pvp.data.season.endsInSeconds == nil)
+    assert(honor.amount == 89 and honor.max == 25000 and honor.earnedThisWeek == 89)
+    assert(honor.weeklyMax == nil, "no weekly honor cap is not a cap of zero")
+    assert(pvp.data.kills.today.honorable == 3 and pvp.data.kills.lifetime == 15)
+    assert(pvp.data.kills.yesterday == nil, "a missing API stays unknown")
+
+    progression.renownLevel = 0
+    assert(ns.Character.Capture({ "pvp" }).sections.pvp.data.rank.title == "Civilian")
+    C_MajorFactions = nil
+    local unranked = ns.Character.Capture({ "pvp" }).sections.pvp.data
+    assert(unranked.rank == nil and unranked.honor.amount == 89)
+    C_CurrencyInfo, GetPVPLifetimeStats = nil, nil
+    assert(ns.Character.Capture({ "pvp" }).sections.pvp.status == "unavailable")
+end)
+
 it("known spells are returned and missing talent APIs stay unknown, never zero", function()
     local env = helper.env()
     setfenv(1, env)

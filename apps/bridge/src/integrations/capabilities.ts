@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { writeJson } from '../json-file.ts';
 import {
   defaultCapabilities,
+  toolFeatures,
   type Capability,
   type CapabilityView,
 } from '@wisp/protocol/capabilities';
@@ -33,11 +34,25 @@ export class CapabilitySettings {
   catalog: Capability[];
   flags: Record<string, boolean> = {};
   queue: Promise<unknown> = Promise.resolve();
-  constructor(file: string, catalog = defaultCapabilities()) {
+  /** Feature flag of each flagged tool, by `toolDescriptions` name. */
+  toolFlags: Readonly<Record<string, string>>;
+  constructor(
+    file: string,
+    catalog = defaultCapabilities(),
+    toolFlags: Readonly<Record<string, string>> = toolFeatures,
+  ) {
     this.file = file;
     this.catalog = catalog;
+    this.toolFlags = toolFlags;
+  }
+  /** Whether a feature flag that is off removes this capability everywhere. */
+  hidden(id: string): boolean {
+    const tool = id.startsWith('tool:') ? id.slice(5) : '';
+    return Object.hasOwn(this.toolFlags, tool) && this.features[this.toolFlags[tool]] !== true;
   }
   agentFile = '';
+  /** Resolved feature flags, published to the agent next to the capability switches. */
+  features: Record<string, boolean> = {};
   availability = new Map<
     string,
     { available: boolean; status: string; reason?: string; version?: string }
@@ -66,14 +81,15 @@ export class CapabilitySettings {
     const enabled = Object.fromEntries(
       this.catalog.map((entry) => [entry.id, this.enabled(entry.id)]),
     );
-    const content = JSON.stringify({ enabled });
+    const features = this.features;
+    const content = JSON.stringify({ enabled, features });
     const operation = this.queue
       .catch(() => {})
       .then(async () => {
         if (content === this.agentContent) {
           return;
         }
-        await writeJson(this.agentFile, { enabled });
+        await writeJson(this.agentFile, { enabled, features });
         this.agentContent = content;
       });
     this.queue = operation;
@@ -86,22 +102,25 @@ export class CapabilitySettings {
     const entry = this.catalog.find((entry) => entry.id === id);
     return (
       !!entry &&
+      !this.hidden(id) &&
       this.configured(id) &&
       this.state(id).available &&
       (!entry.parent || this.enabled(entry.parent))
     );
   }
   snapshot(): CapabilityView[] {
-    return this.catalog.map((entry) => ({
-      ...entry,
-      ...this.state(entry.id),
-      enabled: this.configured(entry.id),
-      effective: this.enabled(entry.id),
-    }));
+    return this.catalog
+      .filter((entry) => !this.hidden(entry.id))
+      .map((entry) => ({
+        ...entry,
+        ...this.state(entry.id),
+        enabled: this.configured(entry.id),
+        effective: this.enabled(entry.id),
+      }));
   }
   async set(id: string, enabled: boolean) {
     const entry = this.catalog.find((entry) => entry.id === id);
-    if (!entry || entry.group === 'core' || typeof enabled !== 'boolean') {
+    if (!entry || entry.group === 'core' || this.hidden(id) || typeof enabled !== 'boolean') {
       throw new Error('Unknown capability or invalid setting');
     }
     const operation = this.queue

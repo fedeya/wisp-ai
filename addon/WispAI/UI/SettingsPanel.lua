@@ -34,7 +34,12 @@ end
 -- Each language is named in its own language (enUS holds the names), so a
 -- name in another script needs that script's game font on this client.
 local function languageName(choice)
-    return choice == "auto" and L["settings.languageAuto"] or L["language." .. choice]
+    if choice == "auto" then
+        return L["settings.languageAuto"]
+    elseif choice == "interface" then
+        return L["settings.chatLanguageInterface"]
+    end
+    return L["language." .. choice]
 end
 
 local function showLanguage(selector, choice)
@@ -46,19 +51,35 @@ local function showLanguage(selector, choice)
     widgets.UseLanguageFace(text, choice)
 end
 
--- Saves the UI language. Text is read when the window is built, so a change
--- asks to reload the interface instead of half-translating the open window.
-local function chooseLanguage(choice, selector)
-    if (ns.db.language or "auto") == choice then
+-- The two language lines: the UI's, and the chat's for what Wisp writes for the
+-- player to send. Each is a menu of `choices` saved in `ns.db[field]`.
+local LANGUAGE_SETTINGS = {
+    {
+        field = "language",
+        caption = "settings.language",
+        choices = ns.LOCALE_CHOICES,
+        default = "auto",
+    },
+    {
+        field = "chatLanguage",
+        caption = "settings.chatLanguage",
+        choices = ns.CHAT_LOCALE_CHOICES,
+        default = "interface",
+    },
+}
+
+-- Saves a language. Text and fonts are set when the window is built, so a
+-- change asks to reload the interface instead of half-translating the window.
+local function chooseLanguage(setting, choice, selector)
+    if (ns.db[setting.field] or setting.default) == choice then
         return
     end
-    ns.db.language = choice
+    ns.db[setting.field] = choice
     showLanguage(selector, choice)
     StaticPopup_Show("WISPAI_RELOAD_LANGUAGE")
 end
 
--- The Language line: a menu of `ns.LOCALE_CHOICES`, saved in `ns.db.language`.
-local function languageRow(parent, top)
+local function languageRow(parent, top, setting)
     StaticPopupDialogs.WISPAI_RELOAD_LANGUAGE = {
         text = L["settings.reloadForLanguage"],
         button1 = L["settings.reload"],
@@ -74,7 +95,7 @@ local function languageRow(parent, top)
     row:SetPoint("TOPLEFT", PAGE_INSET, top)
     row:SetPoint("RIGHT", -PAGE_INSET, 0)
     row:SetHeight(ROW_HEIGHT)
-    local caption = label(row, L["settings.language"])
+    local caption = label(row, L[setting.caption])
     caption:SetPoint("LEFT", 0, 0)
     caption:SetPoint("RIGHT", -190, 0)
     caption:SetWordWrap(false)
@@ -84,12 +105,12 @@ local function languageRow(parent, top)
             return
         end
         MenuUtil.CreateContextMenu(self, function(_, root)
-            for _, choice in ipairs(ns.LOCALE_CHOICES) do
+            for _, choice in ipairs(setting.choices) do
                 local option = choice
                 local radio = root:CreateRadio(languageName(option), function()
-                    return (ns.db.language or "auto") == option
+                    return (ns.db[setting.field] or setting.default) == option
                 end, function()
-                    chooseLanguage(option, selector)
+                    chooseLanguage(setting, option, selector)
                 end)
                 if radio and radio.AddInitializer then
                     radio:AddInitializer(function(item)
@@ -100,13 +121,13 @@ local function languageRow(parent, top)
         end)
     end)
     selector:SetPoint("RIGHT", 0, 0)
-    showLanguage(selector, ns.db.language or "auto")
+    showLanguage(selector, ns.db[setting.field] or setting.default)
     local rule = row:CreateTexture(nil, "ARTWORK")
     rule:SetPoint("BOTTOMLEFT")
     rule:SetPoint("BOTTOMRIGHT")
     rule:SetHeight(widgets.OnePixel(rule))
     ns.UI.Widgets.Tint(rule, COLORS.line)
-    settings.language = selector
+    settings[setting.field] = selector
     return row
 end
 
@@ -285,12 +306,15 @@ function ns.UI.SettingsPanel.Build(frame, panel)
         ns.UI.Refresh()
     end)
 
-    languageRow(settings, -76 - ROW_HEIGHT * 2)
+    for index, setting in ipairs(LANGUAGE_SETTINGS) do
+        languageRow(settings, -76 - ROW_HEIGHT * (index + 1), setting)
+    end
+    local below = -ROW_HEIGHT * (#LANGUAGE_SETTINGS - 1) -- shift for the extra rows
 
     local inline = widgets.Caption(settings, L["settings.inlineChat"])
-    inline:SetPoint("TOPLEFT", PAGE_INSET, -196)
+    inline:SetPoint("TOPLEFT", PAGE_INSET, -196 + below)
     local bindHint = label(settings, L["settings.inlineHint"], MUTED)
-    bindHint:SetPoint("TOPLEFT", PAGE_INSET, -214)
+    bindHint:SetPoint("TOPLEFT", PAGE_INSET, -214 + below)
     bindHint:SetPoint("RIGHT", -150, 0)
     bindHint:SetWordWrap(true)
     local bind = button(settings, L["settings.bindInline"], 120, function()
@@ -298,10 +322,10 @@ function ns.UI.SettingsPanel.Build(frame, panel)
             ns.Inline.BindInline()
         end
     end)
-    bind:SetPoint("TOPRIGHT", -PAGE_INSET, -210)
+    bind:SetPoint("TOPRIGHT", -PAGE_INSET, -210 + below)
 
     local data = widgets.Caption(settings, L["settings.data"])
-    data:SetPoint("TOPLEFT", PAGE_INSET, -262)
+    data:SetPoint("TOPLEFT", PAGE_INSET, -262 + below)
     local chatSettings = buildChatHistory()
     chatHistoryPage = chatSettings
     local links = {
@@ -337,7 +361,7 @@ function ns.UI.SettingsPanel.Build(frame, panel)
         },
     }
     for index, link in ipairs(links) do
-        linkRow(settings, -278 - (index - 1) * ROW_HEIGHT, link[1], link[2], link[3])
+        linkRow(settings, -278 + below - (index - 1) * ROW_HEIGHT, link[1], link[2], link[3])
     end
     ns.UI.Capabilities.Build(settings)
     ns.UI.Memory.Build(settings)

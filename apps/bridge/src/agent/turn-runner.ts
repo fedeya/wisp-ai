@@ -5,7 +5,7 @@ import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
 import { sendChatTurn } from './agent-session.ts';
 import { beginTurn, settleTurn } from '../chat/chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from '../chat/context.ts';
-import { chooseChatModel } from '../chat/chat-model.ts';
+import { chooseChatModel, resolveDefaultModel } from '../chat/chat-model.ts';
 import { generateConversationTitle } from '../chat/conversation-title.ts';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
@@ -13,6 +13,7 @@ import { errorMessage } from '../errors.ts';
 import type { Logger } from 'pino';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
+import type { ModelFailures } from '../models/model-failures.ts';
 import type { ChatErrorCode, ChatOutcome, UsageTelemetry } from '../telemetry.ts';
 
 function isTimeout(error: unknown): boolean {
@@ -84,6 +85,10 @@ interface TurnDependencies {
   isReady: () => boolean;
   isStopping: () => boolean;
   accountBusy: () => boolean;
+  /** Why this turn's proxied model requests failed, as fixed categories. */
+  modelFailures?: Pick<ModelFailures, 'since'>;
+  /** Who answers a model id (for example `anthropic` or `chatgpt`), never the id itself. */
+  modelProvider?: (model: string) => string | undefined;
   /** Whether any provider could answer. Omitted means yes. */
   hasProvider?: () => boolean;
   isCurrent: (chat: Chat) => boolean;
@@ -165,6 +170,8 @@ export function createTurnRunner(deps: TurnDependencies) {
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
+    // Failure paths clear chat.eveId before telemetry reads which session failed.
+    let eveSession: string | undefined;
     controllers.set(chat, controller);
     usageLimitedChats.delete(chat);
     const generation = Symbol();
@@ -222,16 +229,19 @@ export function createTurnRunner(deps: TurnDependencies) {
         throw new NoProviderError();
       }
       failureCode = 'model_preparation_failed';
-      const chosenModel = chat.modelSettings?.model || defaultModel();
+      let chosenModel = chat.modelSettings?.model || defaultModel();
+      if (!chosenModel) {
+        // The catalog was not loaded yet: start on whatever the providers offer first.
+        failureCode = 'model_catalog_failed';
+        chosenModel = resolveDefaultModel(undefined, await models.models());
+        assertCurrent();
+        failureCode = 'model_preparation_failed';
+      }
       await models.prepare(chosenModel);
       failureCode = 'model_catalog_failed';
       const available = await models.models();
       assertCurrent();
-      chat.modelSettings = chooseChatModel(
-        available,
-        chat.modelSettings?.model || defaultModel(),
-        chat.modelSettings?.effort,
-      );
+      chat.modelSettings = chooseChatModel(available, chosenModel, chat.modelSettings?.effort);
       assertCurrent();
       preparedMs = Math.round(performance.now() - started);
       if (
@@ -249,6 +259,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         turnInput(text, context, chat, capabilitySettings.snapshot()),
         controller.signal,
       );
+      eveSession = chat.eveId;
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
       changed();
@@ -364,6 +375,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         'Turn failed',
       );
     } finally {
+      const model = chat.modelSettings?.model || defaultModel();
       deps.telemetry?.chat(
         chat.routineId ? 'routine' : chat.proactive ? 'tip' : chat.inline ? 'hover' : 'chat',
         outcome,
@@ -371,6 +383,15 @@ export function createTurnRunner(deps: TurnDependencies) {
         outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? failureCode : undefined,
         firstTextMs,
         turnUsage?.usage(),
+        model
+          ? {
+              provider: deps.modelProvider?.(model),
+              failureKind:
+                outcome === 'failed' || outcome === 'timeout'
+                  ? deps.modelFailures?.since(eveSession, started)
+                  : undefined,
+            }
+          : {},
       );
       logger.info(
         {

@@ -32,6 +32,22 @@ test('automatic context contains only fundamental character and location data fr
     character: { status: 'available', data: { name: 'Fedrath', level: 10, class: 'MAGE' } },
     location: { status: 'available', data: { zone: 'Durotar', x: 0.5, y: 0.2 } },
   });
+  const grouped = basicGameContext({
+    ...input,
+    sections: {
+      ...input.sections,
+      group: {
+        status: 'available',
+        data: { inGroup: true, raid: false, size: 3, members: [{ name: 'Sethra' }] },
+      },
+    },
+  });
+  assert.deepEqual(
+    grouped.sections.group,
+    { status: 'available', data: { inGroup: true, raid: false, size: 3 } },
+    'members are read on demand, never attached to every turn',
+  );
+  assert.equal('group' in context.sections, false, 'older addons send no group reading');
   assert.match(
     JSON.stringify(basicGameContext(undefined).sections.character),
     /"status":"unavailable"/,

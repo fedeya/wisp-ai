@@ -3,5 +3,5 @@
   "framework": "nextjs",
   "installCommand": "pnpm --filter @wisp/web... install --frozen-lockfile",
   "buildCommand": "pnpm exec turbo run build --filter=@wisp/web",
-  "ignoreCommand": "npx --yes turbo-ignore@2.11.10 @wisp/web --fallback=HEAD^"
+  "ignoreCommand": "npx --yes turbo@2.11.10 query affected --packages @wisp/web --tasks build --base \"${VERCEL_GIT_PREVIOUS_SHA:-HEAD^}\" --head HEAD --exit-code"
 }

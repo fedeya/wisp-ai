@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { FeatureFlag } from './features.js';
 export const capabilitySchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -117,7 +118,7 @@ export const toolDescriptions: Record<string, [string, string]> = {
   ],
   query_character: [
     'Character readings',
-    'Read your talents, learned spells, quests, equipment and bags.',
+    'Read your talents, learned spells, quests, equipment, bags, group and PvP rank and honor.',
   ],
   inspect_reference: [
     'Inspect references',
@@ -295,6 +296,12 @@ export const capabilityViewSchema = capabilitySchema.extend({
   version: z.string().optional(),
 });
 export type CapabilityView = z.infer<typeof capabilityViewSchema>;
+/**
+ * Tools that exist only while a feature flag is on, keyed by their
+ * `toolDescriptions` name. With the flag off, the bridge leaves the tool out of
+ * every capability list and tells the agent it is disabled.
+ */
+export const toolFeatures: Readonly<Record<string, FeatureFlag>> = {};
 export function defaultCapabilities(): Capability[] {
   const tools = Object.entries(toolDescriptions).map(([name, [label, description]]) => ({
     id: 'tool:' + name,

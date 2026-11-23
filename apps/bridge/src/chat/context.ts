@@ -50,6 +50,15 @@ const characterSummary = z.object({
   }),
 });
 
+const groupSummary = z.object({
+  status: z.literal('available'),
+  data: z.object({
+    inGroup: z.boolean(),
+    raid: z.boolean(),
+    size: z.number().int().min(1).max(40),
+  }),
+});
+
 // A revision is meaningful only within this addon session and character.
 // Missing/mismatched revisions fall back to tools, never the last known log.
 export class TurnContextCache {
@@ -202,6 +211,12 @@ export function basicGameContext(value: unknown) {
             error:
               'No fresh addon reading was supplied for this message. Query this section if needed.',
           };
+  }
+  // Only whether there is a group and its size, so the agent knows to read the
+  // members; older addons send no group reading and the key is left out.
+  const group = groupSummary.safeParse(sections.group);
+  if (group.success) {
+    output.group = group.data;
   }
   return {
     capturedAt: typeof input.capturedAt === 'number' ? input.capturedAt : undefined,

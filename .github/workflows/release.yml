@@ -193,6 +193,19 @@ jobs:
         run: node scripts/release-version.ts "$RELEASE_VERSION"
         env:
           RELEASE_VERSION: ${{ needs.windows.outputs.version }}
+      # A promoted Nightly may predate the verifier, so it comes from this workflow's
+      # revision; it still reads the version and trusted key from the built source.
+      - uses: actions/checkout@v7
+        with:
+          path: .release-tools
+          sparse-checkout: |
+            scripts/package.json
+            scripts/verify-release-assets.ts
+          sparse-checkout-cone-mode: false
+      # The artifact download can stop early without failing and leave a truncated
+      # installer; nothing is published unless it matches its checksum and signature.
+      - name: Verify the downloaded release assets
+        run: node .release-tools/scripts/verify-release-assets.ts
       # A draft creates no tag; publishing it tags the promoted Nightly's commit.
       - uses: softprops/action-gh-release@v2
         with:
@@ -201,6 +214,7 @@ jobs:
           target_commitish: ${{ needs.resolve.outputs.sha }}
           draft: true
           prerelease: ${{ needs.windows.outputs.nightly == 'true' }}
+          fail_on_unmatched_files: true
           body_path: dist/release-notes.md
           files: |
             dist/*-setup.exe

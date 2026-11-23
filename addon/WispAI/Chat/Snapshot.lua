@@ -51,6 +51,7 @@ function ns.Chat.ReceiveSnapshot(data)
     ns.expectedAddonVersion = data.expectedAddonVersion
     ns.Core.NotifyAddonUpdate()
     ns.Core.NotifyAppUpdate(data.appUpdateVersion)
+    ns.Core.SetFeatures(data.features)
     ns.contextPolicy = data.contextPolicy
     ns.modelCatalog = data.modelCatalog or ns.modelCatalog
     if data.capabilities then

@@ -59,7 +59,7 @@ Movement, casting, targeting, training and trading remain with you. Built-in she
 
 ### What leaves your computer
 
-Each message includes available character name/realm, level, class, race, faction, game version/build and location. Other state—such as bags, quests and equipment—is read on demand. Prompts, tool results, conversation context and recalled memory go to the selected AI connection (and its gateway, if any); enabled external sources receive lookup arguments. Built-in knowledge integrations do not upload whole game saves or memory documents. Custom servers have their own behavior and policies.
+Each message includes available character name/realm, level, class, race, faction, game version/build, location, and whether you are in a group and its size. Other state—such as bags, quests, equipment, who is in your group and your PvP rank and honor—is read on demand. Prompts, tool results, conversation context and recalled memory go to the selected AI connection (and its gateway, if any); enabled external sources receive lookup arguments. Built-in knowledge integrations do not upload whole game saves or memory documents. Custom servers have their own behavior and policies.
 
 The bridge holds the ChatGPT grant and proxies model requests with `store: false`; this does not mean the provider receives no data or retains nothing. Neither the agent nor desktop webview receives the ChatGPT credentials. Windows credentials use DPAPI for the current user, so changing Windows users requires signing in again. See [OpenAI’s sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
@@ -72,7 +72,9 @@ Development runs do not send usage analytics.
 
 Events include a random persistent installation ID, app/addon versions, operating
 system and architecture, app activity, desktop sections visited, chat mode
-(chat, hover, routine or tip), tool names, outcomes and durations. Custom MCP tool
+(chat, hover, routine or tip), the kind of AI provider (such as `anthropic` or
+`chatgpt`, never model names or endpoints), tool names, outcomes, failure
+categories and durations. Custom MCP tool
 names are replaced with `external_tool`. Analytics events exclude conversations,
 tool arguments/results, character/account names, credentials, local paths and logs.
 This is pseudonymous installation analytics, not a count of individual people.

@@ -5,6 +5,8 @@ import path from 'node:path';
 import { z } from 'zod';
 import { everlootTools, publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
 import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/protocol/reply-presentation';
+import { providerId } from '@wisp/protocol/providers';
+import { modelFailureKinds } from './models/model-failures.ts';
 
 const token = 'phc_se29yi8DLMmFxhRcqQrzrSs9vGLzAiEGmsaMvjotDdTE';
 const host = 'https://us.i.posthog.com';
@@ -23,11 +25,14 @@ const propertyKeys = new Set([
   'output_tokens',
   'cache_read_tokens',
   'error_code',
+  'model_provider',
+  'failure_kind',
   'addon_version',
   'tool',
   'depth',
   'provider',
   'result_count',
+  'features',
   '$process_person_profile',
   '$geoip_disable',
   '$lib',
@@ -73,6 +78,10 @@ const chatErrorCodeSchema = z.enum([
   'unknown',
 ]);
 export type ChatErrorCode = z.infer<typeof chatErrorCodeSchema>;
+// Provider ids are a fixed list; 'chatgpt' is the subscription sign-in. Never model ids or endpoints.
+const modelProviderSchema = z.union([providerId, z.literal('chatgpt')]);
+const failureKindSchema = z.enum(modelFailureKinds);
+export type ChatDetails = { provider?: string; failureKind?: string };
 const webSearchDepthSchema = z.enum(['quick', 'standard', 'deep']);
 const webSearchProviderSchema = z.enum(['chatgpt', 'exa', 'none']);
 const webSearchOutcomeSchema = z.enum(['available', 'unverified', 'unavailable', 'failed']);
@@ -96,6 +105,8 @@ type Properties = Record<string, string | number | boolean>;
 type TelemetryOptions = {
   release?: boolean;
   isCustomMcpConnection?: (name: string) => boolean;
+  /** Names of the feature flags that are on, attached to every event. */
+  enabledFeatures?: () => string[];
 };
 
 // All outbound fields are constructed here. No prompts, tool inputs/outputs, labels,
@@ -111,11 +122,13 @@ export class UsageTelemetry {
   private version: string;
   private release: boolean;
   private isCustomMcpConnection?: TelemetryOptions['isCustomMcpConnection'];
+  private enabledFeatures?: TelemetryOptions['enabledFeatures'];
   constructor(dataRoot: string, version: string, options: TelemetryOptions = {}) {
     this.dataRoot = dataRoot;
     this.version = version;
     this.release = options.release ?? process.env.WISP_TELEMETRY_RELEASE === '1';
     this.isCustomMcpConnection = options.isCustomMcpConnection;
+    this.enabledFeatures = options.enabledFeatures;
   }
 
   private record(event: string, properties: Properties = {}) {
@@ -163,6 +176,8 @@ export class UsageTelemetry {
         }
       },
     });
+    // Flag names come from the built-in registry, never from user input.
+    const features = this.enabledFeatures?.().join(',');
     await this.client.captureImmediate({
       distinctId: preferences.installationId,
       event,
@@ -180,6 +195,7 @@ export class UsageTelemetry {
           process.arch === 'x64' ? 'x86_64' : process.arch === 'arm64' ? 'aarch64' : process.arch,
         $process_person_profile: false,
         $geoip_disable: true,
+        ...(features ? { features } : {}),
         ...properties,
       },
     });
@@ -200,6 +216,7 @@ export class UsageTelemetry {
     errorCode?: ChatErrorCode,
     firstTextMs?: number,
     usage?: TurnUsage,
+    details: ChatDetails = {},
   ) {
     this.active();
     const failureCode =
@@ -208,9 +225,15 @@ export class UsageTelemetry {
         : outcome === 'failed'
           ? (chatErrorCodeSchema.safeParse(errorCode).data ?? 'unknown')
           : undefined;
+    const provider = modelProviderSchema.safeParse(details.provider).data;
+    const failureKind = failureCode
+      ? failureKindSchema.safeParse(details.failureKind).data
+      : undefined;
     this.record('chat_completed', {
       mode,
       outcome,
+      ...(provider ? { model_provider: provider } : {}),
+      ...(failureKind ? { failure_kind: failureKind } : {}),
       duration_ms: Math.max(0, Math.round(duration)),
       ...(firstTextMs === undefined ? {} : { first_text_ms: firstTextMs }),
       ...(failureCode ? { error_code: failureCode } : {}),

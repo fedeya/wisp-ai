@@ -168,7 +168,7 @@ local function startChat(prompt)
 end
 
 local function editRoutine(routine)
-    startChat(L["routines.promptChange"]:format(routine.title))
+    startChat(ns.ChatL["routines.promptChange"]:format(routine.title))
 end
 
 local function deleteRoutine(routine)
@@ -607,15 +607,16 @@ local function buildTemplates()
         local card = cardButton(content, 14)
         card:SetPoint("TOPLEFT", 0, -y)
         setText(card.title, L[template.title])
-        setText(card.detail, L[template.prompt])
+        -- The request is the player's words to Wisp, so it is in the chat language.
+        widgets.SetContentText(card.detail, ns.ChatL[template.prompt], FONTS.small)
         card:SetScript("OnClick", function()
-            startChat(L["routines.promptCreate"]:format(L[template.prompt]))
+            startChat(ns.ChatL["routines.promptCreate"]:format(ns.ChatL[template.prompt]))
         end)
         templates.cards[index] = card
         y = y + CARD_HEIGHT + CARD_GAP
     end
     local own = button(content, L["routines.writeYourOwn"], 120, function()
-        startChat(L["routines.promptWriteOwn"])
+        startChat(ns.ChatL["routines.promptWriteOwn"])
     end)
     own:SetPoint("TOPLEFT", 0, -y - 8)
     content:SetHeight(y + 48)

@@ -38,6 +38,7 @@ function inputs(overrides: Partial<AddonSnapshotInputs> = {}): AddonSnapshotInpu
     bridgeVersion: '1.2.3',
     expectedAddonVersion: '1.2.3',
     appUpdateVersion: null,
+    features: {},
     contextWindowTokens: 200_000,
     defaultModel: 'default-model',
     panels: [],
@@ -59,6 +60,7 @@ test('keeps the payload key order the snapshot gate signs', () => {
     'bridgeVersion',
     'expectedAddonVersion',
     'appUpdateVersion',
+    'features',
     'contextPolicy',
     'modelCatalog',
     'acks',
@@ -181,4 +183,11 @@ test('shows no character content before a character is known', () => {
   assert.deepEqual(snapshot.routineRuns, []);
   assert.deepEqual(snapshot.routineSubscriptions, []);
   assert.equal(snapshot.routinesEnabled, false);
+});
+test('sends the resolved feature flags to the addon', () => {
+  const snapshot = buildAddonSnapshot({
+    ...inputs(),
+    features: { new_panel: true, dev_only: false },
+  });
+  assert.deepEqual(snapshot.features, { new_panel: true, dev_only: false });
 });

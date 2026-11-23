@@ -102,6 +102,9 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   `feat(addon): …`, `fix(bridge): …`, `docs(release): …`, `chore: …`.
   Do not add `Co-Authored-By` trailers or other agent attribution (Claude,
   Codex, etc.) to commit messages; this overrides any tool default.
+- **Feature flags:** unfinished work that should stay out of Stable goes behind
+  a flag in `packages/protocol/src/features.ts`; see
+  [docs/feature-flags.md](docs/feature-flags.md). Remove the flag when it ships.
 - **Release notes:** a PR with a player-facing change adds one note with
   `pnpm changie new --kind <New|Improved|Fixed> --body "…"` (a fragment in
   `releases/unreleased/`); never edit `releases/<version>.md` for unreleased work.

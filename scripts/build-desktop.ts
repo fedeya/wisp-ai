@@ -1,8 +1,9 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { stageTauri } from './stage-tauri.ts';
+import { stageEngine, stageTauri } from './stage-tauri.ts';
+import { buildEngine } from './build-engine.ts';
 import { createRequire } from 'node:module';
 import { writeUpdateManifest } from './update-manifest.ts';
 import {
@@ -14,18 +15,33 @@ import {
 const desktop = path.resolve('apps/desktop');
 const require = createRequire(path.join(desktop, 'package.json'));
 const cli = require.resolve('@tauri-apps/cli/tauri.js');
+const tauriOptions = {
+  windowsHide: true,
+  stdio: 'inherit',
+  cwd: desktop,
+  env: {
+    ...process.env,
+    PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH || ''),
+  },
+} as const;
 function tauri(args: string[]) {
-  execFileSync(process.execPath, [cli, ...args], {
-    windowsHide: true,
-    stdio: 'inherit',
-    cwd: desktop,
-    env: {
-      ...process.env,
-      PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH || ''),
-    },
+  execFileSync(process.execPath, [cli, ...args], tauriOptions);
+}
+// Runs in the background, so other work can proceed while Tauri compiles.
+function startTauri(args: string[]) {
+  const child = spawn(process.execPath, [cli, ...args], tauriOptions);
+  const finished = new Promise<void>((resolve, reject) => {
+    child.once('error', reject);
+    child.once('exit', (code, signal) =>
+      code === 0
+        ? resolve()
+        : reject(Error('tauri ' + args[0] + ' failed: ' + (signal || 'exit code ' + code))),
+    );
   });
+  return { child, finished };
 }
 const started = performance.now();
+// Stages everything but the engine, which builds while the native executable compiles.
 await stageTauri({ packaged: true });
 const staged = performance.now();
 // Build the frontend first: its actual output, including VITE_* substitutions,
@@ -51,8 +67,20 @@ const reused =
   cacheable &&
   process.env.WISP_FORCE_NATIVE_BUILD !== '1' &&
   (await restoreNativeBinary(cache, key, executable));
-if (!reused) {
-  tauri(['build', '--no-bundle', '--', '--locked']);
+// The native executable does not embed the payload: the bundle step reads it from
+// the source tree, as when a cached executable is reused. So the engine builds
+// while Rust compiles, and joins the payload only after the compiler is done with it.
+const native = reused ? undefined : startTauri(['build', '--no-bundle', '--', '--locked']);
+let engine: string;
+try {
+  engine = await buildEngine();
+} catch (error) {
+  native?.child.kill();
+  throw error;
+}
+const engineBuilt = performance.now();
+if (native) {
+  await native.finished;
   if (cacheable) {
     if (key !== (await nativeBuildKey(process.cwd(), context))) {
       throw Error('Native build inputs changed during compilation. No binary was cached.');
@@ -61,6 +89,7 @@ if (!reused) {
   }
 }
 const nativeBuilt = performance.now();
+await stageEngine(engine);
 const nativeBinarySha256 = createHash('sha256')
   .update(await readFile(executable))
   .digest('hex');
@@ -86,6 +115,8 @@ await writeFile(
       milliseconds: {
         stage: staged - started,
         frontend: frontendBuilt - staged,
+        // The engine and native executable build at the same time.
+        engine: engineBuilt - frontendBuilt,
         native: nativeBuilt - frontendBuilt,
         bundle: bundled - nativeBuilt,
         total: bundled - started,

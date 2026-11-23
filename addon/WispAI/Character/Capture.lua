@@ -31,6 +31,208 @@ function collectors.location()
     end
     return { zone = GetZoneText(), subzone = GetSubZoneText(), mapId = id, x = x, y = y }
 end
+-- Optional per-unit reads: one failing API must not cost the whole roster.
+local function optional(fn, ...)
+    if type(fn) ~= "function" then
+        return nil
+    end
+    local ok, first, second = pcall(fn, ...)
+    if ok then
+        return first, second
+    end
+end
+-- A failed read stays unknown (nil); only a successful one becomes a boolean.
+local function flag(fn, unit)
+    if type(fn) ~= "function" then
+        return nil
+    end
+    local ok, value = pcall(fn, unit)
+    if ok then
+        return value and true or false
+    end
+end
+local GROUP_ROLES = { TANK = "tank", HEALER = "healer", DAMAGER = "damage" }
+local MAX_GROUP = 40
+local function groupState()
+    assert(type(IsInGroup) == "function", "Group API is unavailable")
+    if not IsInGroup() then
+        return { inGroup = false, raid = false, size = 1 }
+    end
+    return {
+        inGroup = true,
+        raid = IsInRaid() and true or false,
+        size = GetNumGroupMembers(),
+    }
+end
+local function groupMember(unit, playerMap)
+    local name, realm = UnitName(unit)
+    local _, class = UnitClass(unit)
+    local member = {
+        name = name,
+        realm = realm ~= "" and realm or nil,
+        level = UnitLevel(unit),
+        class = class,
+        role = GROUP_ROLES[optional(UnitGroupRolesAssigned, unit) or ""],
+        leader = flag(UnitIsGroupLeader, unit),
+        online = flag(UnitIsConnected, unit),
+        dead = flag(UnitIsDeadOrGhost, unit),
+    }
+    if UnitIsUnit(unit, "player") then
+        member.isPlayer = true
+        return member
+    end
+    if member.online == false then
+        return member
+    end
+    local mapId = optional(C_Map.GetBestMapForUnit, unit)
+    if mapId then
+        local info = optional(C_Map.GetMapInfo, mapId)
+        member.mapId, member.zone = mapId, info and info.name
+        local position = optional(C_Map.GetPlayerMapPosition, mapId, unit)
+        if position then
+            member.x, member.y = position:GetXY()
+        end
+    end
+    if playerMap and mapId then
+        member.sameMap = mapId == playerMap
+    end
+    member.visible = flag(UnitIsVisible, unit)
+    local inRange, checked = optional(UnitInRange, unit)
+    if checked then
+        member.inRange = inRange and true or false
+    end
+    return member
+end
+function collectors.group()
+    local out = groupState()
+    out.members = {}
+    if not out.inGroup then
+        return out
+    end
+    local playerMap = optional(C_Map.GetBestMapForUnit, "player")
+    local inInstance, instanceType = optional(IsInInstance)
+    if inInstance then
+        out.instance = { name = optional(GetInstanceInfo), type = instanceType }
+    end
+    -- Raid units include the player; party units are the others, so add the player first.
+    local units = {}
+    if out.raid then
+        for index = 1, math.min(out.size, MAX_GROUP) do
+            units[#units + 1] = "raid" .. index
+        end
+    else
+        units[1] = "player"
+        for index = 1, math.min(out.size - 1, 4) do
+            units[#units + 1] = "party" .. index
+        end
+    end
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            out.members[#out.members + 1] = groupMember(unit, playerMap)
+        end
+    end
+    return out
+end
+-- Forever's PvP rank is the renown of this faction (Camelot PVPRankFrame);
+-- Honor Points are a separate currency spent on gear.
+local PVP_RANK_FACTION = 2800
+local HONOR_CURRENCY = 1792
+local function nonNegative(value)
+    return numbers.IsFinite(value) and value >= 0 and value or nil
+end
+-- The character pane's rank title, gendered and per faction.
+local function pvpRankTitle(rank)
+    if rank <= 0 then
+        return PVP_RANK_0_NAME
+    end
+    if not (Enum.PvPRanks and type(GetText) == "function") then
+        return nil
+    end
+    local faction = UnitFactionGroup("player") == "Alliance" and 1 or 0
+    local key = "PVP_RANK_" .. (Enum.PvPRanks.Rank_1 + rank - 1) .. "_" .. faction
+    return optional(GetText, key, UnitSex("player"))
+end
+local function pvpRank()
+    local majors = C_MajorFactions
+    local info = majors and optional(majors.GetMajorFactionProgressionInfo, PVP_RANK_FACTION)
+    if type(info) ~= "table" or not nonNegative(info.renownLevel) then
+        return nil
+    end
+    local function total(level)
+        return nonNegative(
+            optional(majors.GetTotalReputationForRenownLevel, PVP_RANK_FACTION, level)
+        )
+    end
+    local rank = info.renownLevel
+    local out = {
+        rank = rank,
+        title = pvpRankTitle(rank),
+        points = nonNegative(info.renownReputationEarned),
+        nextRankPoints = nonNegative(info.renownLevelThreshold),
+        maxRank = nonNegative(info.maxLevel),
+        weeklyCapRank = nonNegative(info.currentWeekProgressiveMaxLevel),
+    }
+    local atRank, weekCap = total(rank), total(info.currentWeekProgressiveMaxLevel)
+    local lastWeekCap = total(info.previousWeekProgressiveMaxLevel)
+    if atRank and out.points then
+        out.seasonPoints = atRank + out.points
+    end
+    if weekCap and weekCap > 0 then
+        out.weeklyCapPoints = weekCap
+        if lastWeekCap then
+            out.weeklyCapIncrease = weekCap - lastWeekCap
+        end
+    end
+    out.seasonMaxPoints = out.maxRank and total(out.maxRank)
+    for level = rank + 1, out.maxRank or rank do
+        local rewards = optional(majors.GetRenownRewardsForLevel, PVP_RANK_FACTION, level)
+        if type(rewards) == "table" and #rewards > 0 then
+            local descriptions = {}
+            for _, reward in ipairs(rewards) do
+                descriptions[#descriptions + 1] = reward.description or reward.name
+            end
+            out.nextReward = { rank = level, rewards = descriptions }
+            break
+        end
+    end
+    return out
+end
+local function pvpKills(fn)
+    local honorable, dishonorable = optional(fn)
+    if nonNegative(honorable) then
+        return { honorable = honorable, dishonorable = nonNegative(dishonorable) }
+    end
+end
+function collectors.pvp()
+    local out = { rank = pvpRank() }
+    local season = nonNegative(optional(GetCurrentArenaSeason))
+    if season and season > 0 then
+        local endsIn = C_SeasonInfo
+            and nonNegative(optional(C_SeasonInfo.GetTimeUntilCurrentPVPSeasonEnd))
+        out.season = { number = season, endsInSeconds = endsIn ~= 0 and endsIn or nil }
+    end
+    local currencies = C_CurrencyInfo
+    local id = Constants.CurrencyConsts and Constants.CurrencyConsts.HONOR_CURRENCY_ID
+        or HONOR_CURRENCY
+    local honor = currencies and optional(currencies.GetCurrencyInfo, id)
+    if type(honor) == "table" and nonNegative(honor.quantity) then
+        out.honor = {
+            name = honor.name,
+            amount = honor.quantity,
+            max = nonNegative(honor.maxQuantity) ~= 0 and honor.maxQuantity or nil,
+            earnedThisWeek = nonNegative(honor.quantityEarnedThisWeek),
+            weeklyMax = nonNegative(honor.maxWeeklyQuantity) ~= 0 and honor.maxWeeklyQuantity
+                or nil,
+        }
+    end
+    out.kills = {
+        today = pvpKills(GetPVPSessionStats),
+        yesterday = pvpKills(GetPVPYesterdayStats),
+        lifetime = nonNegative(optional(GetPVPLifetimeStats)),
+    }
+    assert(out.rank or out.honor or out.kills.lifetime, "PvP API is unavailable")
+    return out
+end
 function collectors.spells()
     local out = {}
     assert(C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines, "Spellbook API is unavailable")
@@ -329,6 +531,11 @@ function ns.Character.CaptureTurn()
         if (ns.characterAcknowledged or 0) >= characterRevision then
             snapshot.sections.character = nil
         end
+    end
+    -- Only whether there is a group and its size; members are read on demand.
+    local grouped, group = pcall(groupState)
+    if grouped then
+        snapshot.sections.group = { status = "available", data = group }
     end
     local ok, data = pcall(collectors.quests)
     if not ok then

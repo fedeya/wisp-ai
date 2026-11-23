@@ -1,0 +1,3 @@
+kind: Fixed
+body: New chats now start on a model from the provider you connected, such as Claude or Gemini, instead of a ChatGPT model you may not have. If you remove the connection for your default model, Wisp switches to one that still works.
+time: 2026-11-23T05:11:49.613166-03:00

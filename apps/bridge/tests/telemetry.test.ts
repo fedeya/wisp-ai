@@ -370,3 +370,37 @@ test('network failures never escape to gameplay and shutdown stops future teleme
   await telemetry.drain();
   expect(fetch).toHaveBeenCalledTimes(count);
 });
+
+test('chat telemetry sends only listed providers and failure kinds', async () => {
+  await preference(true);
+  const telemetry = createTelemetry();
+  telemetry.chat('chat', 'failed', 10, 'turn_result_failed', undefined, undefined, {
+    provider: 'google',
+    failureKind: 'not_found',
+  });
+  telemetry.chat('chat', 'failed', 20, 'turn_result_failed', undefined, undefined, {
+    provider: 'connection:private-endpoint:private-model',
+    failureKind: 'PRIVATE PROVIDER ERROR',
+  });
+  telemetry.chat('chat', 'completed', 30, undefined, undefined, undefined, {
+    provider: 'chatgpt',
+    failureKind: 'rate_limited',
+  });
+  telemetry.chat('chat', 'timeout', 40, undefined, undefined, undefined, {
+    provider: 'compatible',
+    failureKind: 'timeout',
+  });
+  await telemetry.drain();
+
+  const chats = events()
+    .filter((event) => event.event === 'chat_completed')
+    .map((event) => event.properties)
+    .sort((a, b) => a.duration_ms - b.duration_ms);
+  expect(chats.map(({ model_provider, failure_kind }) => [model_provider, failure_kind])).toEqual([
+    ['google', 'not_found'],
+    [undefined, undefined],
+    ['chatgpt', undefined],
+    ['compatible', 'timeout'],
+  ]);
+  expect(JSON.stringify(chats)).not.toMatch(/private|PRIVATE/);
+});

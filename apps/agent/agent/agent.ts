@@ -32,6 +32,7 @@ export default defineAgent({
         () => capabilityEnabled('tool:web_search'),
         // A stable per-conversation key keeps the tool loop on one prompt cache.
         'wisp-' + createHash('sha256').update(ctx.session.id).digest('hex').slice(0, 32),
+        ctx.session.id,
       ),
       reasoning: 'provider-default' as const,
       modelContextWindowTokens: selected.contextWindow,

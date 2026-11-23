@@ -54,6 +54,7 @@ names come in its script.
 | `Settings/`                     | Reading and updating game or registered addon settings             |
 | `UI/`                           | Window, widgets, rows, model controls, memory and capability views |
 | `Inline/`, `Panels/`, `Advice/` | Inline questions, saved panels and suggestions                     |
+| `Moments/`                      | One-click questions offered at key moments (death, auction, …)     |
 | `Markdown/`                     | Syntax, parsing, bounded caching and shared text presentation      |
 
 See [the Lua guidelines](../docs/lua-guidelines.md) for naming, API boundaries,

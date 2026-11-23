@@ -48,6 +48,7 @@ beforeEach(() => {
     routineRuns: [],
     characters: {},
     appUpdate: null,
+    features: { channel: 'stable', flags: [] },
   };
   vi.mocked(desktop).mockImplementation(async (command) => {
     if (command === 'detect_game_folders') {
@@ -1215,8 +1216,19 @@ test('integration cards expose availability, master and child switches through t
     document.activeElement,
   );
   expect(screen.getByText('Some service indexes are unavailable.')).toBeTruthy();
-  await fireEvent.click(screen.getByText('Tools & capabilities (1)'));
-  await fireEvent.click(screen.getByLabelText('Questie: Find NPC locations'));
+  expect(screen.getByText('Forever locations')).toBeTruthy();
+  expect(screen.getByText('WoW addon · v4')).toBeTruthy();
+  const tools = screen.getByRole('region', { name: 'What Wisp can do' });
+  expect(within(tools).getByText('1 of 1 on')).toBeTruthy();
+  expect(within(tools).getByText('Read spawn coordinates')).toBeTruthy();
+  const examples = screen.getByRole('region', { name: 'Try asking' });
+  expect(within(examples).getByRole('button', { name: /^Copy “Where do I turn in/ })).toBeTruthy();
+  expect(
+    within(screen.getByRole('region', { name: 'About' }))
+      .getByRole('link', { name: 'QuestieDB on GitHub' })
+      .getAttribute('href'),
+  ).toBe('https://github.com/Questie/QuestieDB');
+  await fireEvent.click(screen.getByRole('switch', { name: 'Questie: Find NPC locations' }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/integrations/set', {
       id: 'tool:find_npc_locations',

@@ -10,9 +10,21 @@ import { providerId } from './providers.js';
 import { replyPresentation } from './reply-presentation.js';
 
 export const characterSections = z
-  .array(z.enum(['character', 'location', 'talents', 'spells', 'quests', 'gear', 'bags']))
+  .array(
+    z.enum([
+      'character',
+      'location',
+      'group',
+      'talents',
+      'spells',
+      'quests',
+      'gear',
+      'bags',
+      'pvp',
+    ]),
+  )
   .min(1)
-  .max(7);
+  .max(9);
 const session = { eveSession: z.string().min(1) };
 export const memoryRequest = z.discriminatedUnion('operation', [
   z.object({
@@ -74,6 +86,8 @@ export const rpcResponses = {
   wowhead: reading,
 };
 export type RpcOutput<K extends RpcEndpoint> = z.output<(typeof rpcResponses)[K]>;
+/** Names the Eve session on model requests, so the bridge can tell which turn a failure belongs to. */
+export const MODEL_SESSION_HEADER = 'x-wisp-session';
 export const selectedModel = z.object({
   model: z.string().min(1),
   effort: z.string().min(1),

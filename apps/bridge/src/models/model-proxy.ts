@@ -5,12 +5,19 @@ import { readCompletedResponse } from './response-stream.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { modelTiming } from './model-timing.ts';
+import {
+  httpFailureKind,
+  requestSession,
+  thrownFailureKind,
+  type ModelFailures,
+} from './model-failures.ts';
 import type { Logger } from 'pino';
 
 export async function proxyConnectionModel(
   req: IncomingMessage,
   res: ServerResponse,
   connections: ModelConnections,
+  failures?: ModelFailures,
 ) {
   const route = /^\/model\/connections\/([0-9a-f-]{36})(\/.*)$/i.exec(req.url || '');
   if (!route) {
@@ -36,13 +43,22 @@ export async function proxyConnectionModel(
       headers.set(key, value);
     }
   }
-  const response = await connections.forward(
-    route[1]!,
-    route[2]!,
-    body,
-    headers,
-    AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
-  );
+  let response: Response;
+  try {
+    response = await connections.forward(
+      route[1]!,
+      route[2]!,
+      body,
+      headers,
+      AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
+    );
+  } catch (error) {
+    failures?.record(requestSession(req.headers), thrownFailureKind(error, abort.signal));
+    throw error;
+  }
+  if (!response.ok) {
+    failures?.record(requestSession(req.headers), httpFailureKind(response.status));
+  }
   res.writeHead(response.status, {
     'content-type': response.headers.get('content-type') || 'application/json',
     'cache-control': 'no-store',
@@ -54,13 +70,16 @@ export async function proxyConnectionModel(
     res.end();
     return;
   }
-  await pipeline(Readable.fromWeb(response.body as never), res);
+  await recordBodyFailure(req, response, failures, () =>
+    pipeline(Readable.fromWeb(response.body as never), res),
+  );
 }
 export async function proxyModel(
   req: IncomingMessage,
   res: ServerResponse,
   auth: ChatGPTAuth,
   logger?: Pick<Logger, 'info'>,
+  failures?: ModelFailures,
 ) {
   const abort = new AbortController();
   res.on('close', () => {
@@ -68,6 +87,68 @@ export async function proxyModel(
       abort.abort();
     }
   });
+  let request: Awaited<ReturnType<typeof sendChatGPTRequest>>;
+  try {
+    request = await sendChatGPTRequest(req, auth, abort.signal);
+  } catch (error) {
+    failures?.record(requestSession(req.headers), thrownFailureKind(error, abort.signal));
+    throw error;
+  }
+  const { response, body, streaming, started } = request;
+  if (!response.ok) {
+    failures?.record(requestSession(req.headers), httpFailureKind(response.status));
+  }
+  await recordBodyFailure(req, response, failures, async () => {
+    if (response.ok && !streaming) {
+      const completed = await readCompletedResponse(response);
+      res
+        .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify(completed));
+      return;
+    }
+    res.writeHead(response.status, {
+      'content-type': response.headers.get('content-type') || 'application/json',
+      'cache-control': 'no-store',
+    });
+    if (!response.body) {
+      res.end();
+      return;
+    }
+    if (logger) {
+      await pipeline(
+        Readable.fromWeb(response.body as never),
+        modelTiming(body, started, logger),
+        res,
+      );
+    } else {
+      await pipeline(Readable.fromWeb(response.body as never), res);
+    }
+  });
+}
+/**
+ * Records a stream that breaks after the provider answered 200: a dropped connection
+ * or the proxy's timeout. A failed status was already recorded. Eve going away ends
+ * in an abort or a premature close, never in these two kinds, so it isn't recorded.
+ * The abort signal can't tell them apart here, because a broken pipeline closes the
+ * response and so fires it too.
+ */
+async function recordBodyFailure(
+  req: IncomingMessage,
+  response: Response,
+  failures: ModelFailures | undefined,
+  send: () => Promise<void>,
+) {
+  try {
+    await send();
+  } catch (error) {
+    const kind = thrownFailureKind(error);
+    if (response.ok && (kind === 'network' || kind === 'timeout')) {
+      failures?.record(requestSession(req.headers), kind);
+    }
+    throw error;
+  }
+}
+async function sendChatGPTRequest(req: IncomingMessage, auth: ChatGPTAuth, signal: AbortSignal) {
   req.setEncoding('utf8');
   let raw = '';
   for await (const chunk of req) {
@@ -91,30 +172,7 @@ export async function proxyModel(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(180000)]),
   });
-  if (response.ok && !streaming) {
-    const completed = await readCompletedResponse(response);
-    res
-      .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      .end(JSON.stringify(completed));
-    return;
-  }
-  res.writeHead(response.status, {
-    'content-type': response.headers.get('content-type') || 'application/json',
-    'cache-control': 'no-store',
-  });
-  if (!response.body) {
-    res.end();
-    return;
-  }
-  if (logger) {
-    await pipeline(
-      Readable.fromWeb(response.body as never),
-      modelTiming(body, started, logger),
-      res,
-    );
-  } else {
-    await pipeline(Readable.fromWeb(response.body as never), res);
-  }
+  return { response, body, streaming, started };
 }

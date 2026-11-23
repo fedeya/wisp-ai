@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DEFAULT_MODEL } from '@wisp/protocol/providers';
+import { featureOverrides } from '@wisp/protocol/features';
 import { readJson, writeJson } from './json-file.ts';
 
 export const bridgeConfigSchema = z.object({
@@ -7,6 +7,8 @@ export const bridgeConfigSchema = z.object({
   // Earlier installers saved an empty string before model selection.
   model: z.preprocess((value) => (value === '' ? undefined : value), z.string().min(1).optional()),
   mcpConfig: z.string().min(1).optional(),
+  // A bad entry drops the saved feature choices instead of the whole file.
+  features: featureOverrides.optional().catch(undefined),
 });
 export type BridgeConfigValues = z.infer<typeof bridgeConfigSchema>;
 
@@ -18,8 +20,6 @@ export interface BridgeConfig {
    * call order; `get()` only reflects a patch once its write has succeeded.
    */
   update(patch: Partial<BridgeConfigValues>): Promise<void>;
-  /** The selected model, or the product default when none is saved. */
-  defaultModel(): string;
 }
 
 export async function loadBridgeConfig(file: string): Promise<BridgeConfig> {
@@ -38,6 +38,5 @@ export async function loadBridgeConfig(file: string): Promise<BridgeConfig> {
       configWrite = write;
       return write;
     },
-    defaultModel: () => config.model || DEFAULT_MODEL,
   };
 }

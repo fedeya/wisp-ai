@@ -3,7 +3,8 @@ local L = ns.L
 local label, setText = ns.UI.Widgets.Label, ns.UI.Widgets.SetText
 local ACCENT, MUTED = ns.UI.Widgets.ACCENT, ns.UI.Widgets.MUTED
 local SETUP_URL = "https://wisp.fedeya.sh/setup?utm_source=wow_addon"
--- Suggestion chips and greetings hold locale keys; text is looked up when shown.
+-- Suggestion chips and greetings hold locale keys; text is looked up when shown,
+-- in the chat language (`ns.ChatL`), since chips are sent as the player's words.
 local SUGGESTION_COUNT = 3
 local CHIP_GAP, CHIPS_TOP = 8, 62
 local TOOL_ICONS = "Interface\\AddOns\\WispAI\\Textures\\ToolIcons.tga"
@@ -138,7 +139,7 @@ local function greeting(name, key)
         end
         greetingFor[key] = pool[math.random(#pool)]
     end
-    return L[greetingFor[key]]:format(name)
+    return ns.ChatL[greetingFor[key]]:format(name)
 end
 
 -- "Mage 20 · Elwynn Forest", or nil outside the game.
@@ -166,7 +167,11 @@ local function pickSuggestions(key)
     local keys = ns.UI.Suggestions.Pick(SUGGESTION_COUNT)
     for index, chip in ipairs(emptyState.suggestions) do
         chip.prompt = keys[index]
-        chip:SetText(keys[index] and L[keys[index]] or "")
+        chip:SetText(keys[index] and ns.ChatL[keys[index]] or "")
+        local font = chip.GetFontString and chip:GetFontString()
+        if font then
+            ns.UI.Widgets.SetContentText(font, chip:GetText(), ns.UI.Widgets.FONTS.button)
+        end
     end
     emptyState.placed = nil -- chip widths changed
 end
@@ -422,7 +427,7 @@ function ns.UI.Activity.Build(windowHeader, transcript, content)
         local suggestion
         suggestion = ns.UI.Widgets.Button(emptyState, "", 210, function()
             if suggestion.prompt then
-                ns.Chat.Submit(L[suggestion.prompt])
+                ns.Chat.Submit(ns.ChatL[suggestion.prompt])
             end
         end)
         suggestion:SetHeight(28)

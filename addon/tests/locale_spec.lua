@@ -1,7 +1,7 @@
 local helper = require("addon.tests.support")
 local LOCALES = helper.LOCALES
 
-local function buildUI(gameLocale, language, prepare)
+local function buildUI(gameLocale, language, prepare, chatLanguage)
     local env = helper.env()
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
@@ -13,7 +13,7 @@ local function buildUI(gameLocale, language, prepare)
     end
     time = os.time
     ns = helper.namespace({
-        db = { sidebar = true, drafts = {}, language = language },
+        db = { sidebar = true, drafts = {}, language = language, chatLanguage = chatLanguage },
         connected = true,
         session = "test",
         chats = {},
@@ -145,6 +145,107 @@ describe("locales", function()
         assert.equal("Fonts\\FRIZQT__.TTF", item.fontString.fontPath)
     end)
 
+    it("offers and sends suggestions in the chat language", function()
+        local env = buildUI("enUS", "enUS", nil, "esES")
+        local ns = env.ns
+        assert.equal("esES", ns.ChatLocale())
+        assert.equal("New chat", ns.L["sidebar.newChat"])
+        assert.equal("Nuevo chat", ns.ChatL["sidebar.newChat"])
+        local starter = env.UI_TEST.frames.WispAIChatPlaceholder.starter
+        assert.equal("¿Qué puedes hacer?", starter:GetText())
+        local sent
+        function ns.Transport.Send(message)
+            sent = message
+        end
+        starter.scripts.OnClick(starter)
+        assert.equal("say", sent.type)
+        assert.equal("¿Qué puedes hacer?", sent.text)
+
+        -- Unset, or "interface", the chat follows the UI language.
+        ns.db.chatLanguage = "interface"
+        assert.equal("enUS", ns.ChatLocale())
+        assert.equal("New chat", ns.ChatL["sidebar.newChat"])
+        env = buildUI("esES")
+        assert.equal("esES", env.ns.ChatLocale())
+        assert.equal("¿Qué puedes hacer?", env.ns.ChatL["suggestion.whatCanYouDo"])
+    end)
+
+    it("lets the Chat language setting differ from the UI and asks to reload", function()
+        local env = buildUI("enUS", "esES")
+        local ns = env.ns
+        local radios = {}
+        env.MenuUtil = {
+            CreateContextMenu = function(owner, generate)
+                generate(owner, {
+                    CreateRadio = function(_, text, checked, select)
+                        local radio = { text = text, checked = checked, select = select }
+                        function radio.AddInitializer() end
+                        radios[#radios + 1] = radio
+                        return radio
+                    end,
+                })
+            end,
+        }
+        local language = env.UI_TEST.frames.WispAISettingsPage.language
+        assert.equal("Español (España)", language:GetText())
+        local selector = env.UI_TEST.frames.WispAISettingsPage.chatLanguage
+        assert.equal("Igual que la interfaz", selector:GetText())
+        selector.scripts.OnClick(selector)
+        assert.equal(#ns.CHAT_LOCALE_CHOICES, #radios)
+        assert.equal(#ns.LOCALE_CHOICES, #ns.CHAT_LOCALE_CHOICES)
+        assert.equal("Igual que la interfaz", radios[1].text)
+        assert.is_true(radios[1].checked())
+        assert.equal("English", radios[2].text)
+        radios[2].select()
+        assert.equal("enUS", ns.db.chatLanguage)
+        assert.equal("esES", ns.db.language)
+        assert.equal("English", selector:GetText())
+        assert.equal("WISPAI_RELOAD_LANGUAGE", env.UI_TEST.popup.id)
+        assert.equal("Nuevo chat", ns.L["sidebar.newChat"])
+        assert.equal("What can you do?", ns.ChatL["suggestion.whatCanYouDo"])
+    end)
+
+    it("draws a CJK chat language in its script face under a Latin UI", function()
+        local env = buildUI("enUS", "enUS", nil, "zhCN")
+        local widgets = env.ns.UI.Widgets
+        -- UI chrome keeps Inter; the draft and Chinese chat text get ARKai.
+        assert.is_nil(widgets.ScriptFace())
+        assert.is_true(widgets.InterSupports(""))
+        local font = env.CreateFrame("Frame"):CreateFontString()
+        widgets.ChatFont(font, "")
+        assert.equal("Fonts\\ARKai_T.ttf", font.fontPath)
+        widgets.ChatFont(font, "升级循环")
+        assert.equal("Fonts\\ARKai_T.ttf", font.fontPath)
+        widgets.ChatFont(font, "Level up")
+        assert.equal("Interface\\AddOns\\WispAI\\Fonts\\Inter-Medium.ttf", font.fontPath)
+
+        -- Under a Chinese UI with Korean chat, each script takes its own face.
+        env = buildUI("enUS", "zhCN", nil, "koKR")
+        widgets = env.ns.UI.Widgets
+        font = env.CreateFrame("Frame"):CreateFontString()
+        widgets.ChatFont(font, "레벨업")
+        assert.equal("Fonts\\2002.TTF", font.fontPath)
+        widgets.ChatFont(font, "升级循环")
+        assert.equal("Fonts\\ARKai_T.ttf", font.fontPath)
+        widgets.ChatFont(font, "")
+        assert.equal("Fonts\\2002.TTF", font.fontPath)
+        -- On a Chinese client the game font keeps Chinese; Hangul gets 2002.
+        env = buildUI("zhCN", "zhCN", nil, "koKR")
+        widgets = env.ns.UI.Widgets
+        font = env.CreateFrame("Frame"):CreateFontString()
+        widgets.ChatFont(font, "升级循环")
+        assert.are_not.equal("Fonts\\2002.TTF", font.fontPath)
+        widgets.ChatFont(font, "레벨업")
+        assert.equal("Fonts\\2002.TTF", font.fontPath)
+
+        -- A Latin chat language under a Chinese UI drafts in Inter.
+        env = buildUI("enUS", "zhCN", nil, "esES")
+        widgets = env.ns.UI.Widgets
+        font = env.CreateFrame("Frame"):CreateFontString()
+        widgets.ChatFont(font, "")
+        assert.equal("Interface\\AddOns\\WispAI\\Fonts\\Inter-Medium.ttf", font.fontPath)
+    end)
+
     it("uses a game font with the chosen language's script", function()
         for language, face in pairs({
             koKR = "Fonts\\2002.TTF",
@@ -253,6 +354,19 @@ describe("locales", function()
                 end
             )
         end
+
+        it("draws Korean chat text in the Korean face", function()
+            local env = buildUI("enUS", "zhCN", withFonts, "koKR")
+            local widgets = env.ns.UI.Widgets
+            local FONTS = widgets.FONTS
+            local host = env.CreateFrame("Frame")
+            local korean = host:CreateFontString()
+            widgets.SetContentText(korean, env.ns.ChatL["suggestion.whatCanYouDo"], FONTS.button)
+            assert.equal("Fonts\\2002.TTF", korean.fontPath)
+            -- Chinese UI text keeps the role's Chinese face.
+            widgets.SetContentText(korean, env.ns.L["sidebar.newChat"], FONTS.button)
+            assert.equal(ARKAI, korean.fontPath)
+        end)
 
         it("shows Latin chat titles and the character line in Inter", function()
             local env = buildUI("esES", "zhCN", function(env)

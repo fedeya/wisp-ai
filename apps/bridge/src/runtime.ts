@@ -1,6 +1,7 @@
 import { characterLabel } from '@wisp/protocol/character-key';
 import { RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
+import { ModelFailures } from './models/model-failures.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './addon/packet-receiver.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
@@ -45,6 +46,7 @@ import { freeLoopbackPort, listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
 import { ModelConnections } from './models/model-connections.ts';
 import { createModelCatalogRefresh } from './models/model-catalog.ts';
+import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
 import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
@@ -52,6 +54,8 @@ import { TheWoWDB } from './integrations/thewowdb.ts';
 import { Simulator } from './integrations/simulation/simulator.ts';
 import { appPaths } from './app-paths.ts';
 import { addonVersionFromToc } from './addon/addon-version.ts';
+import { Features } from './features.ts';
+import { featureChannel } from '@wisp/protocol/features';
 export interface BridgeOptions {
   resourceRoot?: string;
   dataDirectory?: string;
@@ -122,7 +126,12 @@ export async function startBridge(options: BridgeOptions = {}) {
       return { status: 'available', entries: [...preferences, ...character] };
     }
     const config = await loadBridgeConfig(paths.config);
-    const defaultModel = config.defaultModel;
+    const features = await Features.start({
+      channel: featureChannel(bridgeVersion, process.env.WISP_RELEASE_BUILD === '1'),
+      overrides: config.get().features ?? {},
+      saveOverrides: (overrides) => config.update({ features: overrides }),
+      onChange: () => featuresChanged(),
+    });
     const mcpConfig = config.get().mcpConfig;
     const mcpFile = mcpConfig
       ? path.resolve(paths.dataRoot, mcpConfig)
@@ -133,12 +142,14 @@ export async function startBridge(options: BridgeOptions = {}) {
     resources.defer(() => mcpManager.close());
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
       isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
+      enabledFeatures: () => features.enabledNames(),
     });
     resources.defer(() => telemetry.close());
     const auth = new ChatGPTAuth(runtime, vault);
     await auth.load();
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     await connections.load();
+    const modelFailures = new ModelFailures();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     await webSearch.load();
     resources.defer(() => auth.cancel());
@@ -150,6 +161,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
     await capabilitySettings.load();
     capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
+    capabilitySettings.features = features.values();
     const integrationState = new IntegrationState(capabilitySettings);
     const simulatorAvailable = existsSync(paths.simulatorExecutable);
     capabilitySettings.availability.set('integration:wowsims', {
@@ -183,6 +195,9 @@ export async function startBridge(options: BridgeOptions = {}) {
       }
     });
     const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
+    // The default follows the providers the player connected, not one vendor's model.
+    const defaultModel = () => resolveDefaultModel(config.get().model, state.modelCatalog);
+    if (connections.hasProvider()) void refreshModelCatalog();
     const accounts = createAccountOperations({
       isStopping: () => shutdownRequested,
       hasActiveTurn: () => state.chats.some((c) => c.status === 'working'),
@@ -211,6 +226,7 @@ export async function startBridge(options: BridgeOptions = {}) {
             : [],
           routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
           capabilities: capabilitySettings.snapshot(),
+          features: features.values(),
           requests: pending.snapshot(),
         };
       },
@@ -268,8 +284,24 @@ export async function startBridge(options: BridgeOptions = {}) {
         chatStore.schedule(() => state.chats);
       }
     }
+    // A saved override changed a flag: the agent reads it on its next turn, the
+    // addon on its next snapshot and the desktop on its next status poll.
+    function featuresChanged() {
+      capabilitySettings.features = features.values();
+      void capabilitySettings
+        .publish()
+        .catch((error) =>
+          logger.warn(
+            { event: 'features.publish_failed', error: errorMessage(error) },
+            'Feature flags could not reach the agent',
+          ),
+        );
+      changed();
+    }
     const run = createTurnRunner({
       telemetry,
+      modelFailures,
+      modelProvider: (model) => connections.provider(model),
       client,
       models: connections,
       capabilitySettings,
@@ -355,6 +387,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       createAgentHandler({
         logger,
         telemetry,
+        modelFailures,
         token,
         auth,
         connections,
@@ -406,7 +439,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         gameConnected: transport.gameConnected(),
         auth: auth.state(),
         connections: connections.list(),
-        modelConnected: connections.connected(config.get().model || ''),
+        modelConnected: connections.connected(defaultModel()),
         search: webSearch.state(),
         model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
@@ -423,6 +456,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         routineRuns: routineStore.history({ includeSilent: false, limit: 200 }),
         characters,
         appUpdate: appUpdateVersion,
+        features: features.state(),
       };
     }
     const desktopApp = createDesktopApp({
@@ -450,6 +484,7 @@ export async function startBridge(options: BridgeOptions = {}) {
             await transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
           }
         }),
+      setFeature: (id, enabled) => features.set(id, enabled),
       setAppUpdate: (version) => {
         appUpdateVersion = version;
       },
@@ -513,7 +548,10 @@ export async function startBridge(options: BridgeOptions = {}) {
       observeGameConnection();
       publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
-    logger.info({ event: 'bridge.started', version: bridgeVersion }, 'Wisp started');
+    logger.info(
+      { event: 'bridge.started', version: bridgeVersion, channel: features.channel },
+      'Wisp started',
+    );
     resources.defer(() => clearInterval(publish));
     function stop() {
       shutdownRequested = true;

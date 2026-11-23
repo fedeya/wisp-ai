@@ -48,6 +48,7 @@ interface DesktopDependencies {
   setCapability: (id: string, enabled: boolean) => Promise<void>;
   setWowTransport: (input: z.infer<typeof wowTransportInput>) => Promise<void>;
   setAppUpdate: (version: string | null) => void;
+  setFeature: (id: string, enabled: boolean | null) => Promise<void>;
   refreshMcpCatalog: () => void;
   requestStop: () => void;
   changed: () => void;
@@ -194,6 +195,11 @@ export function createDesktopApp(deps: DesktopDependencies) {
     .post('/app-update', json(routes['/app-update'].input), (c) => {
       deps.setAppUpdate(c.req.valid('json').version);
       deps.changed();
+      return c.json(ok);
+    })
+    .post('/features/set', json(routes['/features/set'].input), async (c) => {
+      const { id, enabled } = c.req.valid('json');
+      await deps.setFeature(id, enabled);
       return c.json(ok);
     })
     .post('/addon/transport', json(wowTransportInput), async (c) => {
