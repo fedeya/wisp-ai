@@ -219,6 +219,25 @@ describe("locales", function()
         widgets.ChatFont(font, "Level up")
         assert.equal("Interface\\AddOns\\WispAI\\Fonts\\Inter-Medium.ttf", font.fontPath)
 
+        -- Under a Chinese UI with Korean chat, each script takes its own face.
+        env = buildUI("enUS", "zhCN", nil, "koKR")
+        widgets = env.ns.UI.Widgets
+        font = env.CreateFrame("Frame"):CreateFontString()
+        widgets.ChatFont(font, "레벨업")
+        assert.equal("Fonts\\2002.TTF", font.fontPath)
+        widgets.ChatFont(font, "升级循环")
+        assert.equal("Fonts\\ARKai_T.ttf", font.fontPath)
+        widgets.ChatFont(font, "")
+        assert.equal("Fonts\\2002.TTF", font.fontPath)
+        -- On a Chinese client the game font keeps Chinese; Hangul gets 2002.
+        env = buildUI("zhCN", "zhCN", nil, "koKR")
+        widgets = env.ns.UI.Widgets
+        font = env.CreateFrame("Frame"):CreateFontString()
+        widgets.ChatFont(font, "升级循环")
+        assert.are_not.equal("Fonts\\2002.TTF", font.fontPath)
+        widgets.ChatFont(font, "레벨업")
+        assert.equal("Fonts\\2002.TTF", font.fontPath)
+
         -- A Latin chat language under a Chinese UI drafts in Inter.
         env = buildUI("enUS", "zhCN", nil, "esES")
         widgets = env.ns.UI.Widgets
@@ -335,6 +354,19 @@ describe("locales", function()
                 end
             )
         end
+
+        it("draws Korean chat text in the Korean face", function()
+            local env = buildUI("enUS", "zhCN", withFonts, "koKR")
+            local widgets = env.ns.UI.Widgets
+            local FONTS = widgets.FONTS
+            local host = env.CreateFrame("Frame")
+            local korean = host:CreateFontString()
+            widgets.SetContentText(korean, env.ns.ChatL["suggestion.whatCanYouDo"], FONTS.button)
+            assert.equal("Fonts\\2002.TTF", korean.fontPath)
+            -- Chinese UI text keeps the role's Chinese face.
+            widgets.SetContentText(korean, env.ns.L["sidebar.newChat"], FONTS.button)
+            assert.equal(ARKAI, korean.fontPath)
+        end)
 
         it("shows Latin chat titles and the character line in Inter", function()
             local env = buildUI("esES", "zhCN", function(env)

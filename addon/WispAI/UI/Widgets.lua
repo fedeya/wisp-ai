@@ -148,15 +148,30 @@ local function restoreFace(font, fontObject)
         end
     end
 end
+--- The script face for non-Latin `text`: of the UI's and the chat language's
+--- faces, the one for its script (Korean for Hangul, Chinese for other CJK), the
+--- UI's first, else the UI's. Nil leaves the game font, which covers the
+--- client's own script.
+local function scriptFaceFor(text)
+    -- Hangul syllables are U+AC00–U+D7A3: UTF-8 lead bytes 0xEA–0xED.
+    local korean = (text or ""):find("[\234-\237][\128-\191][\128-\191]") ~= nil
+    for _, face in ipairs({ scriptFont or false, chatScriptFont or false }) do
+        if face and (face == SCRIPT_FONTS.koKR) == korean then
+            return face
+        end
+    end
+    return scriptFont
+end
+
 --- Applies Inter at the player's chat size, or the chat font itself when Inter
 --- cannot render `text` (or, for empty text such as a draft, the chat language
---- is CJK/Hangul). CJK/Hangul text takes the UI's script face, else the chat's.
+--- is CJK/Hangul). CJK/Hangul text takes the face for its script.
 local function chatFont(font, text, strong)
     font:SetFontObject(ChatFontNormal)
     local _, size, flags = ChatFontNormal:GetFont()
     local override = false
     local empty = text == nil or text == ""
-    local face = empty and chatScriptFont or scriptFont or chatScriptFont
+    local face = empty and chatScriptFont or not empty and scriptFaceFor(text)
     if empty and chatInter or not empty and latinScript(text) then
         override = font:SetFont(strong and INTER_STRONG or INTER, interSize(size), flags)
         if override then
@@ -286,13 +301,11 @@ local function setContentText(font, text, fontObject)
             and not useInter
             and interSupports(text)
             and font:SetFont(role.path, role.size, "")
-        -- CJK/Hangul text in the chat language, which the role's face lacks.
-        local script = not inter
-            and role
-            and not scriptFont
-            and chatScriptFont
-            and not latinScript(text)
-            and font:SetFont(chatScriptFont, select(2, fontObject:GetFont()) or role.size, "")
+        -- CJK/Hangul text whose script the role's face (painted for the UI) lacks.
+        local face = not inter and role and not latinScript(text) and scriptFaceFor(text)
+        local script = face
+            and face ~= scriptFont
+            and font:SetFont(face, select(2, fontObject:GetFont()) or role.size, "")
         if inter then
             softShadow(font)
         elseif not script and font._wispOverride then
