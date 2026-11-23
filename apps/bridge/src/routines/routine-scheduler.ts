@@ -82,7 +82,10 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
         !capabilitySettings.enabled('tool:manage_routine') ||
         !routineStore
           .list(presence.identity)
-          .some((r) => r.id === claimed.routine.id && r.updatedAt === claimed.routine.updatedAt)
+          .some(
+            (r) =>
+              r.id === claimed.routine.id && r.enabled && r.updatedAt === claimed.routine.updatedAt,
+          )
       ) {
         state.chats = state.chats.filter((c) => c !== chat);
         await routineStore.defer(chat.id, claimed.event);

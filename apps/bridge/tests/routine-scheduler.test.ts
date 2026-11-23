@@ -17,6 +17,105 @@ function signal() {
   return { promise, resolve };
 }
 
+test('pausing while claim awaits dispatch blocks a run even with the same updatedAt', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
+  const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  const releaseClaim = signal();
+  let stop: (() => Promise<void>) | undefined;
+  try {
+    const start = 1000000;
+    vi.setSystemTime(start);
+    const store = new RoutineStore(database);
+    await store.mutate('mage', {
+      operation: 'save',
+      routine: routineDefinition.parse({
+        id: 'review',
+        title: 'Review',
+        instruction: 'Review current state.',
+        triggers: [{ kind: 'event', event: 'bags_changed' }],
+        cooldownSeconds: 60,
+      }),
+    });
+    await store.observe('mage', { event: 'bags_changed', values: {} });
+    const claim = store.claim.bind(store);
+    const claimed = signal();
+    using claimSpy = vi.spyOn(store, 'claim').mockImplementationOnce(async (...args) => {
+      const result = await claim(...args);
+      expect(result?.routine.updatedAt).toBe(start);
+      expect(result?.routine.enabled).toBe(true);
+      claimed.resolve();
+      await releaseClaim.promise;
+      return result;
+    });
+    const state = createSessionState();
+    state.activeTransport = 'session';
+    state.currentCharacterKey = 'mage';
+    state.routinePresence = {
+      identity: 'mage',
+      session: 'session',
+      ready: true,
+      at: start,
+      context: { character: 'mage' },
+    };
+    const settled = signal();
+    const run = vi.fn(async (chat: (typeof state.chats)[number]) => {
+      chat.status = 'done';
+    });
+    const logger = { error: vi.fn() };
+    // Arm the interval one tick before the mutation timestamp so save, claim,
+    // and pause all happen in the same millisecond without any real-time race.
+    vi.setSystemTime(start - 3000);
+    stop = startRoutineScheduler({
+      state,
+      routineStore: store,
+      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+      isStopping: () => false,
+      isReady: () => true,
+      logger,
+      changed: () => settled.resolve(),
+      run,
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    await claimed.promise;
+    expect(store.history()).toHaveLength(1);
+    expect(store.history()[0].status).toBe('running');
+    await store.mutate('mage', { operation: 'pause', id: 'review' });
+    expect(store.list('mage')[0]).toMatchObject({ enabled: false, updatedAt: start });
+    releaseClaim.resolve();
+    await settled.promise;
+    expect(run).not.toHaveBeenCalled();
+    expect(state.chats).toEqual([]);
+    expect(store.history()).toEqual([]);
+    expect(store.list('mage')[0].enabled).toBe(false);
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(claimSpy).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(run).not.toHaveBeenCalled();
+    expect(store.history()).toEqual([]);
+    expect(state.chats).toEqual([]);
+    expect(store.list('mage')[0].enabled).toBe(false);
+
+    await store.mutate('mage', { operation: 'resume', id: 'review' });
+    await store.observe('mage', { event: 'bags_changed', values: {} });
+    await vi.advanceTimersByTimeAsync(3000);
+    await stop();
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(state.chats).toHaveLength(1);
+    expect(store.history()).toHaveLength(1);
+    expect(store.history()[0].status).toBe('done');
+    expect(store.list('mage')[0].enabled).toBe(true);
+    expect(logger.error).not.toHaveBeenCalled();
+  } finally {
+    releaseClaim.resolve();
+    await stop?.();
+    vi.useRealTimers();
+    await database.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('a 65-second automatic turn yields to the next routine without overlapping turns', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
   const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
