@@ -54,7 +54,7 @@ test('connections persist metadata separately from secrets and work without Chat
   await manager.prepare(slug);
   expect(chatgpt.accessToken).not.toHaveBeenCalled();
   expect(await manager.models()).toEqual([
-    { slug, displayName: 'Claude / claude-test', efforts: [], contextWindow: 200000 },
+    { slug, displayName: 'claude-test', efforts: [], contextWindow: 200000 },
   ]);
   const restored = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth);
   await restored.load();
@@ -330,11 +330,23 @@ test('new connections are named after their provider and models get a known cont
   const models = [{ id: 'claude-sonnet-4-5-20250929' }, { id: 'unknown-model' }];
   const first = await manager.save({ provider: 'anthropic', apiKey: 'key', models });
   const second = await manager.save({ provider: 'anthropic', apiKey: 'key', models });
-  expect(manager.get(first.id).name).toBe('Anthropic / Claude');
-  expect(manager.get(second.id).name).toBe('Anthropic / Claude 2');
+  expect(manager.get(first.id).name).toBe('Claude');
+  expect(manager.get(second.id).name).toBe('Claude 2');
   expect(manager.get(first.id).models.map((m) => m.contextWindow)).toEqual([200_000, 128_000]);
+  // The same model in two connections is told apart by the connection name.
+  expect((await manager.models()).map((m) => m.displayName)).toEqual([
+    'Claude / claude-sonnet-4-5-20250929',
+    'Claude / unknown-model',
+    'Claude 2 / claude-sonnet-4-5-20250929',
+    'Claude 2 / unknown-model',
+  ]);
+  await manager.remove(second.id);
+  expect((await manager.models()).map((m) => m.displayName)).toEqual([
+    'claude-sonnet-4-5-20250929',
+    'unknown-model',
+  ]);
   await manager.save({ id: first.id, provider: 'anthropic', models });
-  expect(manager.get(first.id).name).toBe('Anthropic / Claude');
+  expect(manager.get(first.id).name).toBe('Claude');
   await manager.save({ id: first.id, provider: 'anthropic', name: 'Work', models });
   expect(manager.get(first.id).name).toBe('Work');
 });
