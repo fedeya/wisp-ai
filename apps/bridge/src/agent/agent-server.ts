@@ -490,7 +490,7 @@ export function createAgentApp(deps: AgentDependencies) {
           async (sections) =>
             rpcResponses.state.parse(
               await pending.request(
-                { chat: chat.id, session: currentTransport(), sections },
+                { chat: chat.id, session: currentTransport(), sections, agent: true },
                 abort,
               ),
             ),
@@ -502,6 +502,7 @@ export function createAgentApp(deps: AgentDependencies) {
           {
             chat: chat.id,
             session: currentTransport(),
+            agent: true,
             ...(action
               ? {
                   action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },

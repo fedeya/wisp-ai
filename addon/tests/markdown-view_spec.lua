@@ -534,3 +534,12 @@ it("uses current metadata with a cached view and preserves user native links", f
     assert.is_false(tableWidget:IsShown())
     assert.is_false(row.rich.widgets.action:IsShown())
 end)
+
+it("keeps Inter for a Latin user message that contains an emoji", function()
+    local env, ns = setup()
+    local chat = { id = "chat", status = "done", messages = {} }
+    local row = ns.UI.MakeMessageRow(env.CreateFrame("Frame"))
+    ns.UI.RenderMessageRow(row, chat, { role = "user", text = "Hola 😀 qué tal" }, 600, true)
+    assert.truthy(row.text:GetText():find("|TInterface\\AddOns\\WispAI\\Textures\\Emoji", 1, true))
+    assert.equal("Interface\\AddOns\\WispAI\\Fonts\\Inter-Medium.ttf", row.text.fontPath)
+end)

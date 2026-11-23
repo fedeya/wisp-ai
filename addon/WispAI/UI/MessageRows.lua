@@ -681,7 +681,9 @@ function ns.UI.RenderMessageRow(row, chat, message, width, showAuthor, animateRe
             else
                 text, pending = formatted(message.text, message.references, message.role == "user")
             end
-            ns.UI.Widgets.ChatFont(row.text, message.text)
+            -- Choose the face from the rendered text: emoji are texture tags by
+            -- now, so a Latin message with an emoji keeps Inter.
+            ns.UI.Widgets.ChatFont(row.text, text)
             setText(row.text, text)
             if message.role == "user" and not (message.ui and #message.ui > 0) then
                 local natural = row.text.GetUnboundedStringWidth
