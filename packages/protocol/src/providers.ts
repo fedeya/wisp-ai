@@ -142,6 +142,8 @@ export const connectionConfig = z.object({
 });
 export const connectionSetup = connectionConfig.omit({ id: true }).extend({
   id: z.string().uuid().optional(),
+  // Optional: the bridge names a new connection after its provider.
+  name: connectionConfig.shape.name.optional(),
   apiKey: z.string().trim().max(4096).optional(),
 });
 export const connectionDiscovery = connectionSetup.omit({ models: true });

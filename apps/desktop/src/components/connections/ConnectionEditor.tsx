@@ -17,6 +17,7 @@ import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ModelCatalog from './ModelCatalog';
 import { modelProvider, ProviderLogo } from './provider-directory';
+import { autoAddLimit, suggestedModels } from './suggested-models';
 
 const labelClass = 'text-xs font-medium text-[#bdcccf]';
 const modelFieldsClass =
@@ -39,19 +40,23 @@ type ConnectionFields = {
 
 const contextWindowSchema = connectionModel.shape.contextWindow;
 
+// Empty means automatic: the bridge fills in the model's known context window.
+function validContextWindow(value: number | undefined) {
+  return value === undefined || contextWindowSchema.safeParse(value).success;
+}
+
 function validateContextWindow({ value }: { value: number | undefined }) {
-  if (value === undefined) return 'Enter a context window for this model.';
-  if (!contextWindowSchema.safeParse(value).success) {
+  if (!validContextWindow(value)) {
     return 'Enter a whole number between 1 and 100,000,000.';
   }
 }
 
 function connectionDetails(provider: ProviderId, id: string | undefined, value: ConnectionFields) {
-  const definition = providerDefinitions.find((item) => item.id === provider)!;
   return {
     id,
     provider,
-    name: value.name.trim() || definition.name,
+    // Left blank, the bridge names a new connection after its provider.
+    name: value.name.trim() || undefined,
     apiKey: value.apiKey || undefined,
     baseURL: value.baseURL.trim() || undefined,
   };
@@ -92,40 +97,39 @@ export default function ConnectionEditor({
   };
   const form = useForm({
     defaultValues,
-    onSubmit: async ({ value }) => {
-      const saved = await work(
-        'Saving AI connection',
-        async () => {
-          const saved = await call(
-            bridge.connections.save.$post({
-              json: { ...connectionDetails(provider, connection?.id, value), models: value.models },
-            }),
-          );
-          if (onConnected) onConnected(saved.id);
-          else close();
-        },
-        onConnected ? null : 'Connection saved.',
-        'connection-editor',
-      );
-      if (!saved) onSetupFailed?.('connection_save_failed');
-    },
+    onSubmit: ({ value }) => saveConnection(value.models),
   });
+
+  async function saveConnection(models: ConnectionModel[]) {
+    const saved = await work(
+      'Saving AI connection',
+      async () => {
+        const saved = await call(
+          bridge.connections.save.$post({
+            json: { ...connectionDetails(provider, connection?.id, form.state.values), models },
+          }),
+        );
+        if (onConnected) onConnected(saved.id);
+        else close();
+      },
+      onConnected ? null : 'Connection saved.',
+      'connection-editor',
+    );
+    if (!saved) onSetupFailed?.('connection_save_failed');
+  }
   const { baseURL, apiKey, modelId, models } = useSelector(form.store, (state) => state.values);
   const formCanSubmit = useSelector(form.store, (state) => state.canSubmit);
   const canDiscover =
     !app.locked &&
     (provider === 'compatible' ? !!baseURL.trim() : !!apiKey.trim() || !!connection?.hasKey);
   const hasModels =
-    models.length > 0 &&
-    models.every(
-      ({ contextWindow }) =>
-        contextWindow !== undefined && contextWindowSchema.safeParse(contextWindow).success,
-    );
+    models.length > 0 && models.every(({ contextWindow }) => validContextWindow(contextWindow));
   const canSave = canDiscover && hasModels && !modelId.trim() && formCanSubmit;
   const definition = providerDefinitions.find((item) => item.id === provider)!;
-  const setup = !!onConnected;
-  const pickingModels = setup && showModelSettings;
-  const selectedSettingsVisible = !setup || !hasModels || showSelectedSettings;
+  // Creating a connection, here or in onboarding: key first, then models only if needed.
+  const guided = !!onConnected || !connection;
+  const pickingModels = guided && showModelSettings;
+  const selectedSettingsVisible = !guided || !hasModels || showSelectedSettings;
   const compatible = provider === 'compatible';
   const keyPage = keyPages[provider];
   const modelsHeading = useRef<HTMLHeadingElement>(null);
@@ -133,7 +137,13 @@ export default function ConnectionEditor({
     if (pickingModels) modelsHeading.current?.focus();
   }, [pickingModels]);
 
-  async function discoverModels() {
+  /**
+   * Loads the provider's models. When creating a connection that is all the
+   * player has to do: Wisp saves every usable model and only shows the picker
+   * when there are too many to add (aggregators) or none it can vouch for.
+   */
+  async function discoverModels(autoSave = false) {
+    let found: DiscoveredConnectionModel[] = [];
     const loaded = await work(
       'Loading provider models',
       async () => {
@@ -142,14 +152,23 @@ export default function ConnectionEditor({
             json: connectionDetails(provider, connection?.id, form.state.values),
           }),
         );
+        found = result.models;
         setDiscovered(result.models);
-        setShowModelSettings(true);
       },
       null,
       'connection-editor',
     );
-    if (!loaded) onSetupFailed?.('model_discovery_failed');
-    return loaded;
+    if (!loaded) {
+      onSetupFailed?.('model_discovery_failed');
+      return;
+    }
+    const suggested = suggestedModels(found);
+    if (autoSave && suggested.length > 0 && suggested.length <= autoAddLimit) {
+      // Kept selected if saving fails, so the picker opens ready to retry.
+      form.setFieldValue('models', suggested);
+      await saveConnection(suggested);
+    }
+    setShowModelSettings(true);
   }
 
   function addModel(id: string, contextWindow?: number) {
@@ -231,31 +250,31 @@ export default function ConnectionEditor({
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        if (setup && !pickingModels) {
-          if (canDiscover) void discoverModels();
+        if (guided && !pickingModels) {
+          if (canDiscover) void discoverModels(!connection);
         } else if (canSave && !form.state.isSubmitting) {
           void form.handleSubmit();
         }
       }}
       className={
-        setup
+        onConnected
           ? 'grid gap-4'
           : 'field-section api-connection-form mt-4 grid gap-2.5 border-t [border-top-style:solid] border-t-border pt-4'
       }
     >
       <div hidden={pickingModels} className={pickingModels ? 'hidden' : 'grid gap-2.5'}>
-        {!setup && nameField}
-        {setup && compatible && endpointField}
+        {!guided && nameField}
+        {guided && compatible && endpointField}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className={labelClass} htmlFor="ai-key">
             API key{' '}
-            {connection && (!setup || connection.hasKey)
+            {connection && (!guided || connection.hasKey)
               ? '(leave blank to keep saved key)'
               : compatible
                 ? '(optional for local servers)'
                 : ''}
           </label>
-          {setup && keyPage && !baseURL.trim() && (
+          {guided && keyPage && !baseURL.trim() && (
             <a href={keyPage} target="_blank" rel="noreferrer" className="text-sm text-accent">
               Get API key ↗
             </a>
@@ -268,39 +287,39 @@ export default function ConnectionEditor({
               type="password"
               value={field.state.value}
               onChange={({ currentTarget }) => field.handleChange(currentTarget.value)}
-              placeholder={setup ? 'Paste your API key' : undefined}
+              placeholder={guided ? 'Paste your API key' : undefined}
               autoComplete="off"
               spellCheck={false}
               disabled={app.locked}
             />
           )}
         </form.Field>
-        {!setup && compatible ? (
-          endpointField
+        {compatible ? (
+          !guided && endpointField
         ) : (
           <details>
-            <summary className="text-muted text-sm">
-              {setup ? 'Advanced options' : 'Custom endpoint'}
-            </summary>
-            <div className="mt-2 grid gap-3">
-              {setup && nameField}
-              {!compatible && endpointField}
-            </div>
+            <summary className="text-muted text-sm">Custom endpoint</summary>
+            <div className="mt-2 grid gap-3">{endpointField}</div>
           </details>
         )}
       </div>
-      {(!setup || pickingModels) && (
+      {(!guided || pickingModels) && (
         <>
           <div className="label-row flex flex-wrap items-center justify-between gap-2">
             <h3
               ref={modelsHeading}
-              tabIndex={setup ? -1 : undefined}
+              tabIndex={guided ? -1 : undefined}
               className="m-0 text-base font-semibold outline-none"
             >
-              {setup ? 'Choose models' : 'Models'}
+              {guided ? 'Choose models' : 'Models'}
             </h3>
-            <Button intent="quiet" size="text" disabled={!canDiscover} onClick={discoverModels}>
-              {setup && discovered.length ? 'Refresh models' : 'Discover models'}
+            <Button
+              intent="quiet"
+              size="text"
+              disabled={!canDiscover}
+              onClick={() => void discoverModels()}
+            >
+              {guided && discovered.length ? 'Refresh models' : 'Discover models'}
             </Button>
           </div>
           <p className="m-0 text-sm text-muted">
@@ -308,7 +327,7 @@ export default function ConnectionEditor({
               ? `${models.length} ${models.length === 1 ? 'model' : 'models'} selected for Wisp`
               : 'Discover models and add the ones you want to use.'}
           </p>
-          {!setup && (
+          {!guided && (
             <Button
               intent="quiet"
               size="text"
@@ -337,7 +356,7 @@ export default function ConnectionEditor({
             onAdd={addModel}
           />
         )}
-        {setup && hasModels && (
+        {guided && hasModels && (
           <Button
             intent="quiet"
             size="text"
@@ -393,10 +412,10 @@ export default function ConnectionEditor({
                             max={100000000}
                             value={contextField.state.value}
                             onValueChange={(value) => {
-                              if (setup) setShowSelectedSettings(true);
+                              if (guided) setShowSelectedSettings(true);
                               contextField.handleChange(value);
                             }}
-                            placeholder="Context tokens (required)"
+                            placeholder="Auto"
                             disabled={app.locked}
                           />
                           {error && (
@@ -432,7 +451,8 @@ export default function ConnectionEditor({
           </form.Field>
           {models.length > 0 && (
             <p className="m-0 text-xs text-muted">
-              Each model needs a context window. Testing a model may incur provider charges.
+              Wisp fills in each model&apos;s context window. Change it only if your provider serves
+              a smaller one. Testing a model may incur provider charges.
             </p>
           )}
         </div>
@@ -461,7 +481,7 @@ export default function ConnectionEditor({
                   max={100000000}
                   value={field.state.value}
                   onValueChange={field.handleChange}
-                  placeholder="Context tokens"
+                  placeholder="Context tokens (auto)"
                   disabled={app.locked}
                 />
               )}
@@ -481,7 +501,7 @@ export default function ConnectionEditor({
           </div>
         </details>
       </div>
-      {setup ? (
+      {guided ? (
         <div className="actions flex flex-wrap items-center justify-between gap-2.5">
           {pickingModels ? (
             <Button
@@ -503,10 +523,21 @@ export default function ConnectionEditor({
               Add a model manually
             </Button>
           )}
-          <Button type="submit" intent="primary" disabled={pickingModels ? !canSave : !canDiscover}>
-            {pickingModels ? 'Save connection' : 'Discover models'}
-            <Icon name="arrow" size={16} />
-          </Button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {!onConnected && (
+              <Button intent="quiet" disabled={app.locked} onClick={close}>
+                Cancel
+              </Button>
+            )}
+            <Button
+              type="submit"
+              intent="primary"
+              disabled={pickingModels ? !canSave : !canDiscover}
+            >
+              {pickingModels ? 'Save connection' : 'Connect'}
+              <Icon name="arrow" size={16} />
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="actions mt-2 flex flex-wrap items-center gap-2.5">

@@ -19,7 +19,8 @@
     "./providers": "./dist/providers.js",
     "./connection-model": "./src/connection-model.ts",
     "./reasoning": "./dist/reasoning.js",
-    "./tool-support": "./dist/tool-support.js"
+    "./tool-support": "./dist/tool-support.js",
+    "./context-windows": "./dist/context-windows.js"
   },
   "scripts": {
     "dev": "eve dev",

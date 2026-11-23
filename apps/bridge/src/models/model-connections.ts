@@ -17,6 +17,7 @@ import {
 import { createProviderModel } from '@wisp/agent/providers';
 import { modelReasoningEfforts } from '@wisp/agent/reasoning';
 import { modelToolSupport } from '@wisp/agent/tool-support';
+import { modelContextWindow } from '@wisp/agent/context-windows';
 import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { readCompletedResponse } from './response-stream.ts';
@@ -167,11 +168,6 @@ export class ModelConnections implements ModelCatalog {
       throw Error('Create a new connection to change provider.');
     }
     this.baseURL(input);
-    if (input.models.some((m) => !m.contextWindow)) {
-      throw Error(
-        'Set the context window in tokens for each model so Wisp can compact conversations correctly.',
-      );
-    }
     if (new Set(input.models.map((m) => m.id)).size !== input.models.length) {
       throw Error('Model IDs must be unique.');
     }
@@ -180,8 +176,10 @@ export class ModelConnections implements ModelCatalog {
     const config = connectionConfig.parse({
       ...input,
       id,
+      name: input.name ?? (input.id ? this.get(input.id).name : this.defaultName(input.provider)),
       models: input.models.map((m) => ({
         ...m,
+        contextWindow: m.contextWindow ?? modelContextWindow(input.provider, m.id),
         reasoningEfforts: m.reasoningEfforts ?? modelReasoningEfforts(input.provider, m.id),
       })),
     });
@@ -201,6 +199,16 @@ export class ModelConnections implements ModelCatalog {
       this.keys.delete(id);
     }
     return { id };
+  }
+  /** The provider's name, numbered when another connection already uses it. */
+  private defaultName(provider: ProviderId) {
+    const base = providerDefinitions.find((p) => p.id === provider)!.name;
+    const taken = new Set(this.connections.map((c) => c.name));
+    let name: string = base;
+    for (let n = 2; taken.has(name); n++) {
+      name = `${base} ${n}`;
+    }
+    return name;
   }
   async remove(id: string) {
     this.get(id);
@@ -363,7 +371,9 @@ export class ModelConnections implements ModelCatalog {
             (name): name is string =>
               typeof name === 'string' && name.trim().length > 0 && name.trim().length <= 200,
           ) ?? id,
-        contextWindow: discoveredConnectionModel.shape.contextWindow.safeParse(context).data,
+        contextWindow:
+          discoveredConnectionModel.shape.contextWindow.safeParse(context).data ??
+          modelContextWindow(input.provider, id),
         reasoningEfforts: metadataEfforts?.length
           ? metadataEfforts
           : modelReasoningEfforts(input.provider, id),

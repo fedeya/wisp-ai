@@ -535,13 +535,11 @@ test('the provider directory exposes the registry and preserves manual model set
   await fireEvent.input(providerSearch, { target: { value: 'anthropic' } });
   await openProvider('Claude', 'Claude');
   expect(screen.queryByRole('combobox', { name: 'Provider' })).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: 'Manage models' }));
-  await fireEvent.input(screen.getByLabelText('Connection name'), {
-    target: { value: 'My Claude' },
-  });
+  expect(screen.queryByLabelText('Connection name')).toBeNull();
   const key = screen.getByLabelText('API key');
   expect(key.getAttribute('type')).toBe('password');
   await fireEvent.input(key, { target: { value: 'test-api-key' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Add a model manually' }));
   const draftModel = screen.getByLabelText('Model ID');
   const addModel = screen.getByRole('button', { name: 'Add model' });
   await fireEvent.input(draftModel, { target: { value: 'discarded-model' } });
@@ -553,15 +551,16 @@ test('the provider directory exposes the registry and preserves manual model set
     target: { value: '200000' },
   });
   await fireEvent.click(addModel);
+  await fireEvent.click(screen.getByRole('button', { name: 'Selected model settings' }));
   await fireEvent.click(await screen.findByRole('button', { name: 'Remove discarded-model' }));
   const contextWindow = (await screen.findByLabelText(
     'Context window for claude-test',
   )) as HTMLInputElement;
   expect(contextWindow.value).toBe('200000');
   const save = screen.getByRole('button', { name: 'Save connection' }) as HTMLButtonElement;
+  // Blank means automatic: the bridge fills in the known window.
   await fireEvent.input(contextWindow, { target: { value: '' } });
-  expect(save.disabled).toBe(true);
-  expect(screen.getByText('Enter a context window for this model.')).toBeTruthy();
+  await waitFor(() => expect(save.disabled).toBe(false));
   for (const value of ['-1', '1.5', '100000001']) {
     fireEvent.input(contextWindow, { target: { value } });
     expect(save.disabled).toBe(true);
@@ -576,7 +575,7 @@ test('the provider directory exposes the registry and preserves manual model set
     expect(request).toHaveBeenCalledWith('/connections/save', {
       id: undefined,
       provider: 'anthropic',
-      name: 'My Claude',
+      name: undefined,
       apiKey: 'test-api-key',
       baseURL: undefined,
       models: [{ id: 'claude-test', contextWindow: 200000 }],
@@ -601,31 +600,25 @@ test.each([
     overview: 'Connect your AI account',
   },
 ])(
-  '$name only saves the models the user adds and keeps the default at $selection',
+  '$name saves every usable model on connect and keeps the default at $selection',
   async ({ provider, name, existingDefault, selection, overview }) => {
     if (!existingDefault) {
       status.auth = { status: 'signed_out', revision: 1, profiles: [] };
       status.model = '';
     }
-    const model = { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 };
+    const sonnet = { id: 'anthropic/claude-sonnet', name: 'Claude Sonnet', contextWindow: 200000 };
+    const haiku = { id: 'anthropic/claude-haiku', name: 'Claude Haiku', contextWindow: 200000 };
     const catalog = [
-      { ...model, supportsTools: true },
-      {
-        id: 'anthropic/claude-haiku',
-        name: 'Claude Haiku',
-        contextWindow: 200000,
-        supportsTools: true,
-      },
+      { ...sonnet, supportsTools: true },
+      { ...haiku, supportsTools: true },
       { id: 'example/text-only', supportsTools: false },
       { id: 'example/unknown' },
     ];
-    let discoveryCalls = 0;
     const id = '35302f8c-128a-48fb-98a1-9eb03bb71f72';
     const original = vi.mocked(request).getMockImplementation()!;
     vi.mocked(request).mockImplementation(async (route, body) => {
       if (route === '/connections/discover') {
-        discoveryCalls += 1;
-        return { models: discoveryCalls === 1 ? catalog : catalog.slice(1) } as never;
+        return { models: catalog } as never;
       }
       if (route === '/connections/save') {
         status.connections = [
@@ -634,7 +627,7 @@ test.each([
             provider,
             name,
             hasKey: true,
-            models: (body as { models: (typeof model)[] }).models,
+            models: (body as { models: (typeof sonnet)[] }).models,
           },
         ];
       }
@@ -665,39 +658,18 @@ test.each([
     await openProviderPicker();
     await openProvider(name, name);
     await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
-    const discover = screen.getByRole<HTMLButtonElement>('button', { name: 'Discover models' });
-    await fireEvent.click(discover);
-    const search = await screen.findByRole('searchbox', { name: 'Search provider models' });
-    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save connection' });
-    expect(save.disabled).toBe(true);
-    expect(screen.queryByRole('checkbox', { name: 'Tool calling only' })).toBeNull();
-    expect(screen.getByText('2 models')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Add example/unknown' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Add example/text-only' })).toBeNull();
-    expect(screen.queryByText('Tool calling')).toBeNull();
-    await fireEvent.input(search, { target: { value: 'sonnet' } });
-    expect(screen.queryByRole('button', { name: 'Add anthropic/claude-haiku' })).toBeNull();
-    await fireEvent.click(screen.getByRole('button', { name: 'Add anthropic/claude-sonnet' }));
-    await screen.findByText('1 model selected for Wisp');
-    await fireEvent.click(screen.getByRole('button', { name: 'Test anthropic/claude-sonnet' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await waitFor(() =>
-      expect(request).toHaveBeenCalledWith(
-        '/connections/test',
-        expect.objectContaining({ models: [model] }),
-      ),
+      expect(request).toHaveBeenCalledWith('/connections/save', {
+        id: undefined,
+        provider,
+        name: undefined,
+        apiKey: 'test-api-key',
+        baseURL: undefined,
+        models: [sonnet, haiku],
+      }),
     );
-    await waitFor(() => expect(discover.disabled).toBe(false));
-    await fireEvent.click(discover);
-    await screen.findByText('No models match your search.');
-    expect(screen.getByText('1 model selected for Wisp')).toBeTruthy();
-    await waitFor(() => expect(save.disabled).toBe(false));
-    await fireEvent.click(save);
-    await waitFor(() =>
-      expect(request).toHaveBeenCalledWith(
-        '/connections/save',
-        expect.objectContaining({ models: [model] }),
-      ),
-    );
+    expect(screen.queryByRole('searchbox', { name: 'Search provider models' })).toBeNull();
     expect(request).not.toHaveBeenCalledWith('/auth/model', expect.anything());
     await fireEvent.click(screen.getByRole('link', { name: 'Back to AI Providers' }));
     await screen.findByRole('link', { name: `Manage ${name}` });
@@ -706,9 +678,64 @@ test.each([
     await waitFor(() => expect(selector.textContent).toBe(selection));
     const choices = within(await openSelect(selector));
     expect(choices.getByRole('option', { name: 'Claude Sonnet' })).toBeTruthy();
-    expect(choices.queryByRole('option', { name: 'Claude Haiku' })).toBeNull();
+    expect(choices.getByRole('option', { name: 'Claude Haiku' })).toBeTruthy();
   },
 );
+
+test('a catalog too large to add whole lets the player pick models', async () => {
+  const model = { id: 'lab/model-0', name: 'Model 0', contextWindow: 128000 };
+  const catalog = Array.from({ length: 41 }, (_, index) => ({
+    id: `lab/model-${index}`,
+    name: `Model ${index}`,
+    contextWindow: 128000,
+    supportsTools: true,
+  }));
+  let discoveryCalls = 0;
+  const original = vi.mocked(request).getMockImplementation()!;
+  vi.mocked(request).mockImplementation(async (route, body) => {
+    if (route === '/connections/discover') {
+      discoveryCalls += 1;
+      return { models: discoveryCalls === 1 ? catalog : catalog.slice(1) } as never;
+    }
+    return original(route, body);
+  });
+  renderApp();
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  await openConnections();
+  await openProviderPicker();
+  await openProvider('OpenRouter', 'OpenRouter');
+  await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'test-api-key' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+  const search = await screen.findByRole('searchbox', { name: 'Search provider models' });
+  expect(request).not.toHaveBeenCalledWith('/connections/save', expect.anything());
+  const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save connection' });
+  expect(save.disabled).toBe(true);
+  expect(screen.getByText('41 models')).toBeTruthy();
+  await fireEvent.input(search, { target: { value: 'model 0' } });
+  await fireEvent.click(screen.getByRole('button', { name: `Add ${model.id}` }));
+  await screen.findByText('1 model selected for Wisp');
+  await fireEvent.click(screen.getByRole('button', { name: 'Selected model settings' }));
+  await fireEvent.click(screen.getByRole('button', { name: `Test ${model.id}` }));
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith(
+      '/connections/test',
+      expect.objectContaining({ models: [model] }),
+    ),
+  );
+  const refresh = screen.getByRole<HTMLButtonElement>('button', { name: 'Refresh models' });
+  await waitFor(() => expect(refresh.disabled).toBe(false));
+  await fireEvent.click(refresh);
+  await screen.findByText('No models match your search.');
+  expect(screen.getByText('1 model selected for Wisp')).toBeTruthy();
+  await waitFor(() => expect(save.disabled).toBe(false));
+  await fireEvent.click(save);
+  await waitFor(() =>
+    expect(request).toHaveBeenCalledWith(
+      '/connections/save',
+      expect.objectContaining({ models: [model] }),
+    ),
+  );
+});
 
 test('an API default enables the workspace while ChatGPT stays disconnected', async () => {
   status.auth.status = 'signed_out';
@@ -1579,7 +1606,7 @@ test('onboarding searches the provider catalog and suggests a single saved model
   expect(screen.queryByRole('navigation', { name: 'Main navigation' })).toBeNull();
   expect(screen.queryByRole('heading', { name: 'Default model' })).toBeNull();
   await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'fixture-only' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
   await waitFor(() =>
     expect(desktop).toHaveBeenCalledWith('telemetry_onboarding', {
       event: {
@@ -1591,14 +1618,13 @@ test('onboarding searches the provider catalog and suggests a single saved model
       },
     }),
   );
-  await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
-  await fireEvent.click(await screen.findByRole('button', { name: `Add ${model.id}` }));
-  await fireEvent.click(screen.getByRole('button', { name: 'Back to API key' }));
   expect(screen.getByLabelText<HTMLInputElement>('API key').value).toBe('fixture-only');
-  await fireEvent.click(screen.getByRole('button', { name: 'Discover models' }));
-  expect(await screen.findByRole('button', { name: `Added ${model.id}` })).toBeTruthy();
-  await fireEvent.click(screen.getByRole('button', { name: 'Save connection' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
   expect(await screen.findByRole('heading', { name: 'OpenRouter added' })).toBeTruthy();
+  expect(request).toHaveBeenCalledWith(
+    '/connections/save',
+    expect.objectContaining({ models: [model] }),
+  );
   expect(
     vi
       .mocked(desktop)

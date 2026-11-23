@@ -7,5 +7,10 @@
     "rootDir": "src",
     "rewriteRelativeImportExtensions": true
   },
-  "include": ["src/providers.ts", "src/reasoning.ts", "src/tool-support.ts"]
+  "include": [
+    "src/context-windows.ts",
+    "src/providers.ts",
+    "src/reasoning.ts",
+    "src/tool-support.ts"
+  ]
 }

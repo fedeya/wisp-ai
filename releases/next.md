@@ -4,6 +4,7 @@
 
 ## Improved
 
+- Connecting an AI provider with an API key takes one step: paste your key and select **Connect**. Wisp adds every model you can use and fills in each model's context window for you, so you no longer name the connection, pick models one by one or look up token limits. Providers that list many models, like OpenRouter, still let you choose which ones to add. You can rename a connection or adjust its models later from AI Providers.
 - Upgrade suggestions come from real items for each slot that you can equip at your level, checked against your current gear in one step, instead of guessed item names.
 - Quest, dungeon and map questions need fewer steps, so answers arrive sooner.
 - When Wisp recommends items, it now tells you where each one comes from (drop, vendor, quest or recipe) and its last auction price, checked for all of them at once.
