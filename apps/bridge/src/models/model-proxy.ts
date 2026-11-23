@@ -70,7 +70,9 @@ export async function proxyConnectionModel(
     res.end();
     return;
   }
-  await pipeline(Readable.fromWeb(response.body as never), res);
+  await recordBodyFailure(req, response, failures, () =>
+    pipeline(Readable.fromWeb(response.body as never), res),
+  );
 }
 export async function proxyModel(
   req: IncomingMessage,
@@ -96,29 +98,54 @@ export async function proxyModel(
   if (!response.ok) {
     failures?.record(requestSession(req.headers), httpFailureKind(response.status));
   }
-  if (response.ok && !streaming) {
-    const completed = await readCompletedResponse(response);
-    res
-      .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-      .end(JSON.stringify(completed));
-    return;
-  }
-  res.writeHead(response.status, {
-    'content-type': response.headers.get('content-type') || 'application/json',
-    'cache-control': 'no-store',
+  await recordBodyFailure(req, response, failures, async () => {
+    if (response.ok && !streaming) {
+      const completed = await readCompletedResponse(response);
+      res
+        .writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+        .end(JSON.stringify(completed));
+      return;
+    }
+    res.writeHead(response.status, {
+      'content-type': response.headers.get('content-type') || 'application/json',
+      'cache-control': 'no-store',
+    });
+    if (!response.body) {
+      res.end();
+      return;
+    }
+    if (logger) {
+      await pipeline(
+        Readable.fromWeb(response.body as never),
+        modelTiming(body, started, logger),
+        res,
+      );
+    } else {
+      await pipeline(Readable.fromWeb(response.body as never), res);
+    }
   });
-  if (!response.body) {
-    res.end();
-    return;
-  }
-  if (logger) {
-    await pipeline(
-      Readable.fromWeb(response.body as never),
-      modelTiming(body, started, logger),
-      res,
-    );
-  } else {
-    await pipeline(Readable.fromWeb(response.body as never), res);
+}
+/**
+ * Records a stream that breaks after the provider answered 200: a dropped connection
+ * or the proxy's timeout. A failed status was already recorded. Eve going away ends
+ * in an abort or a premature close, never in these two kinds, so it isn't recorded.
+ * The abort signal can't tell them apart here, because a broken pipeline closes the
+ * response and so fires it too.
+ */
+async function recordBodyFailure(
+  req: IncomingMessage,
+  response: Response,
+  failures: ModelFailures | undefined,
+  send: () => Promise<void>,
+) {
+  try {
+    await send();
+  } catch (error) {
+    const kind = thrownFailureKind(error);
+    if (response.ok && (kind === 'network' || kind === 'timeout')) {
+      failures?.record(requestSession(req.headers), kind);
+    }
+    throw error;
   }
 }
 async function sendChatGPTRequest(req: IncomingMessage, auth: ChatGPTAuth, signal: AbortSignal) {

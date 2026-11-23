@@ -164,3 +164,93 @@ test('connection proxy records the provider status of failed requests by session
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
+
+test('connection proxy records a stream that breaks after a 200', async () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  const connections = {
+    forward: async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {}\n\n'));
+            controller.error(new TypeError('terminated'));
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      ),
+  } as unknown as ModelConnections;
+  const failures = new ModelFailures();
+  const server = createServer((req, res) => {
+    void proxyConnectionModel(req, res, connections, failures).catch(() => res.destroy());
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const url =
+    'http://127.0.0.1:' +
+    (server.address() as { port: number }).port +
+    '/model/connections/' +
+    id +
+    '/chat/completions';
+  try {
+    // The proxy drops the client once the provider's stream breaks.
+    await fetch(url, { method: 'POST', headers: { 'x-wisp-session': 'eve-1' }, body: '{}' })
+      .then((response) => response.text())
+      .catch(() => undefined);
+    assert.equal(failures.since('eve-1', 0), 'network');
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
+
+test('connection proxy records nothing when Eve cancels mid-stream', async () => {
+  const id = '00000000-0000-4000-8000-000000000001';
+  let done!: () => void;
+  const finished = new Promise<void>((r) => (done = r));
+  const connections = {
+    forward: async (
+      _id: string,
+      _path: string,
+      _body: string,
+      _headers: Headers,
+      signal: AbortSignal,
+    ) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {}\n\n'));
+            signal.addEventListener('abort', () => controller.error(signal.reason));
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      ),
+  } as unknown as ModelConnections;
+  const failures = new ModelFailures();
+  const server = createServer((req, res) => {
+    void proxyConnectionModel(req, res, connections, failures)
+      .catch(() => res.destroy())
+      .finally(done);
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  const url =
+    'http://127.0.0.1:' +
+    (server.address() as { port: number }).port +
+    '/model/connections/' +
+    id +
+    '/chat/completions';
+  try {
+    const cancel = new AbortController();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'x-wisp-session': 'eve-1' },
+      body: '{}',
+      signal: cancel.signal,
+    });
+    await response.body!.getReader().read();
+    cancel.abort();
+    await finished;
+    assert.equal(failures.since('eve-1', 0), undefined);
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  }
+});
