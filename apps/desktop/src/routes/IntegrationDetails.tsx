@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Navigate, useLocation, useParams } from 'react-router';
+import { integrationGuide } from '../components/integrations/integration-guides';
 import {
   capabilityStatus,
   IntegrationIcon,
@@ -8,12 +9,18 @@ import {
   mcpTransport,
   needsAddonSetup,
 } from '../components/integrations/integration-presentation';
-import IntegrationCard from '../components/integrations/IntegrationCard';
+import {
+  AboutIntegration,
+  IntegrationTools,
+  TryAsking,
+} from '../components/integrations/IntegrationSections';
 import { McpDialogTrigger } from '../components/integrations/McpDialogTrigger';
 import WebSearchSettings from '../components/integrations/WebSearchSettings';
 import { ActionProgress } from '../components/ui/ActionProgress';
 import { Button, Card } from '../components/ui/Controls';
 import DataState from '../components/ui/DataState';
+import Icon from '../components/ui/Icon';
+import Toggle from '../components/ui/Toggle';
 import { desktopLocked } from '../desktop-controller';
 import { useDesktop, useDesktopActions } from '../use-desktop';
 
@@ -40,33 +47,55 @@ export default function IntegrationDetails() {
     title.current?.focus();
   }, [id, name]);
 
-  if (loading || !status) return <DataState />;
+  if (loading || !status || !id) return <DataState />;
   if (!name || integrationId === 'integration:web') {
     return <Navigate to={{ pathname: '/integrations', search }} replace />;
   }
 
   const { icon, label } = integrationType(entry?.kind);
+  const guide = integrationGuide(id);
   const tools = status.integrations.filter((tool) => tool.parent === id);
   const updating =
     busy === 'Updating integration' &&
     (busyTarget === id || tools.some((tool) => tool.id === busyTarget));
+  const meta = [
+    server ? mcpTransport[server.transport] : label,
+    entry?.version && `v${entry.version}`,
+  ].filter(Boolean);
+  const description = webSearch
+    ? 'Search with ChatGPT or Exa and read public pages.'
+    : entry?.description;
 
   return (
     <div className="max-w-[780px]">
-      <header className="mb-5 flex items-center gap-3">
+      <header className="mb-3 flex items-center gap-3">
         <IntegrationIcon id={id} icon={webSearch ? 'globe' : server ? 'server' : icon} />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h1 className="m-0 outline-none [overflow-wrap:anywhere]" ref={title} tabIndex={-1}>
             {name}
           </h1>
-          {!webSearch && (
-            <p className="m-0 text-[13px] text-muted">
-              {server ? mcpTransport[server.transport] : label}
-            </p>
-          )}
+          <p className="m-0 text-[13px] text-muted">{meta.join(' · ')}</p>
         </div>
-        {entry && !webSearch && <IntegrationStatus {...capabilityStatus(entry)} />}
+        {entry && (
+          <div className="flex shrink-0 items-center gap-3">
+            {updating && <ActionProgress label={busy} />}
+            {!webSearch && <IntegrationStatus {...capabilityStatus(entry)} />}
+            <Toggle
+              label={`Enable ${entry.name}`}
+              checked={entry.enabled}
+              disabled={locked}
+              onChange={(checked) => setIntegration(entry.id, checked)}
+            />
+          </div>
+        )}
       </header>
+      {description && <p className="mt-0 mb-5 text-base text-subtle">{description}</p>}
+      {entry?.reason && (
+        <p className="mt-0 mb-5 flex items-start gap-2 rounded-[6px] bg-warning-dim px-4 py-3 text-sm text-warning">
+          <Icon name="warning" size={15} />
+          <span>{entry.reason}</span>
+        </p>
+      )}
       {entry && needsAddonSetup(entry) && (
         <Card>
           <h2>Set up {entry.name}</h2>
@@ -80,14 +109,14 @@ export default function IntegrationDetails() {
         </Card>
       )}
       {webSearch && <WebSearchSettings />}
+      {guide && <TryAsking examples={guide.examples} />}
       {entry && (
-        <IntegrationCard
+        <IntegrationTools
+          label={webSearch ? 'Web tools' : 'What Wisp can do'}
           entry={entry}
           tools={tools}
           locked={locked}
-          busy={updating ? busy : ''}
           set={setIntegration}
-          title={webSearch ? 'Web tools' : 'Capabilities'}
         />
       )}
       {server && (
@@ -105,6 +134,7 @@ export default function IntegrationDetails() {
           </div>
         </Card>
       )}
+      {guide && <AboutIntegration guide={guide} />}
     </div>
   );
 }
