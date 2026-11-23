@@ -26,7 +26,8 @@ export async function startDesktopServer(
     })
     .use(
       bodyLimit({
-        maxSize: 100000,
+        // A connection can save up to 1000 models (about 60 KB for OpenRouter's 400).
+        maxSize: 512 * 1024,
         onError: (c) => c.json({ error: 'Request is too large' }, 400),
       }),
     )

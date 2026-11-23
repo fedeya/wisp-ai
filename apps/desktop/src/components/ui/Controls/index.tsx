@@ -5,6 +5,7 @@ import type { VariantProps } from 'tailwind-variants';
 import { badge, button, card, checkbox, field, textarea } from './styles';
 
 export { Select } from './Select';
+export { SearchSelect } from './SearchSelect';
 
 type ButtonProps = ComponentProps<'button'> & VariantProps<typeof button>;
 

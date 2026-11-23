@@ -132,7 +132,8 @@ ns.Locales.zhCN = {
     ["model.choose"] = "模型...",
     ["model.effort"] = "推理强度：",
     ["model.effortUnknown"] = "推理强度：--",
-    ["model.title"] = "模型",
+    ["model.search"] = "搜索模型",
+    ["model.noMatches"] = "没有匹配的模型。",
     ["model.reasoningEffort"] = "推理强度",
     ["model.appliesNext"] = "对本对话的下一条消息生效。",
 

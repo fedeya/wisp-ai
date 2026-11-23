@@ -132,7 +132,8 @@ ns.Locales.koKR = {
     ["model.choose"] = "모델...",
     ["model.effort"] = "추론 강도: ",
     ["model.effortUnknown"] = "추론 강도: --",
-    ["model.title"] = "모델",
+    ["model.search"] = "모델 검색",
+    ["model.noMatches"] = "일치하는 모델이 없습니다.",
     ["model.reasoningEffort"] = "추론 강도",
     ["model.appliesNext"] = "이 대화의 다음 메시지부터 적용됩니다.",
 

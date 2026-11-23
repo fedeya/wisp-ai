@@ -114,24 +114,15 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
             ns.Transport.Send({ type = "model_catalog" })
             return
         end
-        if MenuUtil and MenuUtil.CreateContextMenu then
-            MenuUtil.CreateContextMenu(self, function(_, root)
-                root:CreateTitle(L["model.title"])
-                for _, candidate in ipairs(models) do
-                    local option = candidate
-                    root:CreateRadio(option.displayName, function()
-                        local chat = current()
-                        return option.slug
-                            == (
-                                chat and chat.modelSettings and chat.modelSettings.model
-                                or ns.modelCatalog.defaultModel
-                            )
-                    end, function()
-                        choose(option.slug)
-                    end)
-                end
-            end)
-        end
+        local chat = current()
+        ns.UI.ModelPicker.Toggle(self, {
+            models = models,
+            selected = chat and chat.modelSettings and chat.modelSettings.model
+                or ns.modelCatalog.defaultModel,
+            choose = function(slug)
+                choose(slug)
+            end,
+        })
     end)
     controls.model:SetPoint("LEFT")
     controls.effort = selector(L["model.effortUnknown"], 110, function(self)

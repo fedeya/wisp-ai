@@ -94,6 +94,7 @@ read_globals = {
     "MAX_ACCOUNT_MACROS",
     "MAX_CHARACTER_MACROS",
     "MenuUtil",
+    "MouseIsOver",
     "NUM_BAG_SLOTS",
     "NumTaxiNodes",
     "PickupMacro",

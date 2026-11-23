@@ -132,7 +132,8 @@ ns.Locales.ruRU = {
     ["model.choose"] = "Модель...",
     ["model.effort"] = "Усилие: ",
     ["model.effortUnknown"] = "Усилие: --",
-    ["model.title"] = "Модель",
+    ["model.search"] = "Поиск моделей",
+    ["model.noMatches"] = "Нет подходящих моделей.",
     ["model.reasoningEffort"] = "Глубина рассуждений",
     ["model.appliesNext"] = "Применится к следующему сообщению в этой беседе.",
 

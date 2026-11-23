@@ -62,6 +62,7 @@ Markdown\PlainText.lua
 Markdown\InlineRenderer.lua
 Markdown\ReplyView.lua
 Markdown\TextStyle.lua
+UI\ModelPicker.lua
 UI\ModelControls.lua
 UI\Writing.lua
 UI\MessageRows.lua

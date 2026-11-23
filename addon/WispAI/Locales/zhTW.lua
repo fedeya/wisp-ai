@@ -132,7 +132,8 @@ ns.Locales.zhTW = {
     ["model.choose"] = "模型...",
     ["model.effort"] = "推理強度：",
     ["model.effortUnknown"] = "推理強度：--",
-    ["model.title"] = "模型",
+    ["model.search"] = "搜尋模型",
+    ["model.noMatches"] = "沒有符合的模型。",
     ["model.reasoningEffort"] = "推理強度",
     ["model.appliesNext"] = "對此對話的下一則訊息生效。",
 

@@ -8,6 +8,7 @@ import { bridgeRequest as request } from './api/bridge-request';
 import { listen } from '@tauri-apps/api/event';
 import { mockIPC, clearMocks } from '@tauri-apps/api/mocks';
 import { chooseOption, openSelect } from './select-test-helpers';
+import { maxConnectionModels } from '@wisp/protocol/providers';
 vi.mock('./api/desktop', () => ({ native: true, desktop: vi.fn() }));
 vi.mock('./api/bridge-request', () => ({ bridgeRequest: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
@@ -711,9 +712,10 @@ test('connecting keeps models the player already chose instead of saving suggest
   expect(screen.getByRole('button', { name: 'Add claude-suggested' })).toBeTruthy();
 });
 
-test('a catalog too large to add whole lets the player pick models', async () => {
+// Over a thousand catalog rows render slowly in jsdom, so this test gets a longer timeout.
+test('a catalog larger than a connection holds lets the player pick models', async () => {
   const model = { id: 'lab/model-0', name: 'Model 0', contextWindow: 128000 };
-  const catalog = Array.from({ length: 41 }, (_, index) => ({
+  const catalog = Array.from({ length: maxConnectionModels + 1 }, (_, index) => ({
     id: `lab/model-${index}`,
     name: `Model ${index}`,
     contextWindow: 128000,
@@ -739,7 +741,7 @@ test('a catalog too large to add whole lets the player pick models', async () =>
   expect(request).not.toHaveBeenCalledWith('/connections/save', expect.anything());
   const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save connection' });
   expect(save.disabled).toBe(true);
-  expect(screen.getByText('41 models')).toBeTruthy();
+  expect(screen.getByText(`${maxConnectionModels + 1} models`)).toBeTruthy();
   await fireEvent.input(search, { target: { value: 'model 0' } });
   await fireEvent.click(screen.getByRole('button', { name: `Add ${model.id}` }));
   await screen.findByText('1 model selected for Wisp');
@@ -764,7 +766,7 @@ test('a catalog too large to add whole lets the player pick models', async () =>
       expect.objectContaining({ models: [model] }),
     ),
   );
-});
+}, 30_000);
 
 test('an API default enables the workspace while ChatGPT stays disconnected', async () => {
   status.auth.status = 'signed_out';

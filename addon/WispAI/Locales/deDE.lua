@@ -132,7 +132,8 @@ ns.Locales.deDE = {
     ["model.choose"] = "Modell...",
     ["model.effort"] = "Aufwand: ",
     ["model.effortUnknown"] = "Aufwand: --",
-    ["model.title"] = "Modell",
+    ["model.search"] = "Modelle suchen",
+    ["model.noMatches"] = "Keine passenden Modelle.",
     ["model.reasoningEffort"] = "Denkaufwand",
     ["model.appliesNext"] = "Gilt für die nächste Nachricht in dieser Unterhaltung.",
 

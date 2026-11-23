@@ -132,7 +132,8 @@ ns.Locales.itIT = {
     ["model.choose"] = "Modello...",
     ["model.effort"] = "Impegno: ",
     ["model.effortUnknown"] = "Impegno: --",
-    ["model.title"] = "Modello",
+    ["model.search"] = "Cerca modelli",
+    ["model.noMatches"] = "Nessun modello corrisponde.",
     ["model.reasoningEffort"] = "Impegno di ragionamento",
     ["model.appliesNext"] = "Vale per il prossimo messaggio di questa conversazione.",
 

@@ -20,6 +20,8 @@ export const modelSchema = z.object({
   slug: z.string(),
   displayName: z.string(),
   efforts: z.array(z.string()),
+  /** Where the model comes from (a connection name or ChatGPT); pickers group by it. */
+  group: z.string().optional(),
 });
 export const mcpSchema = z.object({
   name: z.string(),

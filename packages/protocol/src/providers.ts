@@ -131,7 +131,8 @@ export const connectionModel = z.object({
 export const discoveredConnectionModel = connectionModel.extend({
   supportsTools: z.boolean().optional(),
 });
-export const maxConnectionModels = 200;
+/** Room for an aggregator's whole tool-capable catalog (OpenRouter lists about 400). */
+export const maxConnectionModels = 1000;
 
 export const connectionConfig = z.object({
   id: z.string().uuid(),

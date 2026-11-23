@@ -28,7 +28,7 @@ test('desktop controls require the session token and reject browser origins', as
     const oversized = await fetch(url, {
       method: 'POST',
       headers: { authorization: 'Bearer ' + identity.token, 'content-type': 'application/json' },
-      body: JSON.stringify({ padding: 'x'.repeat(100001) }),
+      body: JSON.stringify({ padding: 'x'.repeat(512 * 1024 + 1) }),
     });
     assert.equal(oversized.status, 400);
     assert.deepEqual(await oversized.json(), { error: 'Request is too large' });

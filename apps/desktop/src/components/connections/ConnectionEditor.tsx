@@ -17,7 +17,7 @@ import { desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import ModelCatalog from './ModelCatalog';
 import { modelProvider, ProviderLogo } from './provider-directory';
-import { autoAddLimit, suggestedModels } from './suggested-models';
+import { suggestedModels } from './suggested-models';
 
 const labelClass = 'text-xs font-medium text-[#bdcccf]';
 const modelFieldsClass =
@@ -139,8 +139,9 @@ export default function ConnectionEditor({
 
   /**
    * Loads the provider's models. When creating a connection that is all the
-   * player has to do: Wisp saves every usable model and only shows the picker
-   * when there are too many to add (aggregators) or none it can vouch for.
+   * player has to do: Wisp saves every usable model (the in-game and desktop
+   * pickers search and group them) and only shows the picker when there are
+   * more than a connection holds or none it can vouch for.
    */
   async function discoverModels(autoSave = false) {
     let found: DiscoveredConnectionModel[] = [];
@@ -166,7 +167,7 @@ export default function ConnectionEditor({
     // Models the player already chose (manually, then back to the key) are
     // theirs: keep them and show the picker instead of replacing them.
     const untouched = form.state.values.models.length === 0;
-    if (autoSave && untouched && suggested.length > 0 && suggested.length <= autoAddLimit) {
+    if (autoSave && untouched && suggested.length > 0 && suggested.length <= maxConnectionModels) {
       // Kept selected if saving fails, so the picker opens ready to retry.
       form.setFieldValue('models', suggested);
       await saveConnection(suggested);
