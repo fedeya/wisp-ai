@@ -438,6 +438,35 @@ local function proficiency(item, playerClass, known)
     end
     return "trainable", math.max(minLevel, 1)
 end
+-- Class sets and some other gear name their classes in the tooltip
+-- ("Classes: Priest"); the client tables do not carry that for classic items.
+-- false when the line names other classes only, nil when it cannot be read.
+local function classAllowed(link, classNames)
+    if not link or not ITEM_CLASSES_ALLOWED then
+        return nil
+    end
+    local lines = tooltip(link)
+    if not lines then
+        return nil
+    end
+    local pattern = "^"
+        .. ITEM_CLASSES_ALLOWED:gsub("%%s", "\001")
+            :gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+            :gsub("\001", "(.+)")
+        .. "$"
+    for _, line in ipairs(lines) do
+        local classes = line.left and line.left:match(pattern)
+        if classes then
+            for name in classes:gmatch("[^,]+") do
+                if classNames[name:match("^%s*(.-)%s*$")] then
+                    return true
+                end
+            end
+            return false
+        end
+    end
+    return true
+end
 -- An occupied slot whose item is not cached yet is unknown, not empty: the
 -- comparison waits for it instead of treating it as item level zero.
 local function weakestSlot(slots)
@@ -471,7 +500,22 @@ function inspectors.gear_candidates(args)
     local ranked, other, loadingIds, equippedLoading = {}, {}, {}, {}
     local counts =
         { requested = #args.itemIds, tooHighLevel = 0, tooLowLevel = 0, notEquipment = 0 }
-    local playerClass = UnitClass and select(2, UnitClass("player"))
+    local className, playerClass
+    if UnitClass then
+        className, playerClass = UnitClass("player")
+    end
+    local classNames = {}
+    for _, name in ipairs({
+        className or false,
+        LOCALIZED_CLASS_NAMES_MALE and playerClass and LOCALIZED_CLASS_NAMES_MALE[playerClass]
+            or false,
+        LOCALIZED_CLASS_NAMES_FEMALE and playerClass and LOCALIZED_CLASS_NAMES_FEMALE[playerClass]
+            or false,
+    }) do
+        if name then
+            classNames[name] = true
+        end
+    end
     local known = knownSkills()
     for _, id in ipairs(args.itemIds) do
         local item = itemSummary(id)
@@ -489,6 +533,7 @@ function inspectors.gear_candidates(args)
             counts.tooLowLevel = counts.tooLowLevel + 1
         else
             local target, uncachedID = weakestSlot(slots)
+            local link = item.link
             item.link = nil
             if target then
                 local equipped = target.equipped
@@ -506,6 +551,12 @@ function inspectors.gear_candidates(args)
                 equippedLoading[uncachedID] = true
             end
             item.proficiency, item.trainableAtLevel = proficiency(item, playerClass, known)
+            if
+                item.proficiency ~= "class_cannot_use"
+                and classAllowed(link, classNames) == false
+            then
+                item.proficiency, item.trainableAtLevel = "class_cannot_use", nil
+            end
             item.classID, item.subclassID = nil, nil
             ranked[#ranked + 1] = item
         end

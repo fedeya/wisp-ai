@@ -50,7 +50,9 @@ skill, or belongs to a class that never can. It comes from Forever's own
 tables: each weapon and armor skill line's proficiency spells (SkillLineAbility)
 name the item subclasses they allow (SpellEquippedItems), and
 SkillRaceClassInfo lists the classes that get the skill. Skills every class has
-(Defense, Unarmed, Cloth) gate nothing and are left out.
+(Defense, Unarmed, Cloth) gate nothing and are left out. Class-only items
+such as tier sets are not in these tables for classic items, so the addon reads
+their "Classes:" tooltip line in game.
 
 ## After a Forever patch
 

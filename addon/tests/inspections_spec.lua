@@ -848,6 +848,17 @@ it("gear candidates tell usable, trainable and class-forbidden weapons and armor
         [22] = { "Breastplate", 4, 4, "INVTYPE_CHEST" },
         [23] = { "Wand", 2, 19, "INVTYPE_RANGEDRIGHT" },
         [24] = { "Robe", 4, 1, "INVTYPE_ROBE" },
+        [25] = { "Robes of Prophecy", 4, 1, "INVTYPE_ROBE" },
+        [26] = { "Battle Robe", 4, 1, "INVTYPE_ROBE" },
+    }
+    -- Class sets name their classes in the tooltip.
+    local classLines = { [25] = "Classes: Priest", [26] = "Classes: Priest, Warrior" }
+    ITEM_CLASSES_ALLOWED = "Classes: %s"
+    C_TooltipInfo = {
+        GetHyperlink = function(link)
+            local line = classLines[tonumber(link:match(":(%d+)"))]
+            return { lines = { { leftText = "Item" }, line and { leftText = line } or nil } }
+        end,
     }
     C_Item = {
         GetItemInfo = function(id)
@@ -896,7 +907,7 @@ it("gear candidates tell usable, trainable and class-forbidden weapons and armor
         local byId = {}
         local d = ns.Character.Inspect({
             kind = "gear_candidates",
-            args = { itemIds = { 20, 21, 22, 23, 24 } },
+            args = { itemIds = { 20, 21, 22, 23, 24, 25, 26 } },
         }).data
         for _, item in ipairs(d.items) do
             byId[item.id] = item
@@ -909,6 +920,7 @@ it("gear candidates tell usable, trainable and class-forbidden weapons and armor
     assert(byId[22].proficiency == "trainable" and byId[22].trainableAtLevel == 40)
     assert(byId[23].proficiency == "class_cannot_use" and byId[23].trainableAtLevel == nil)
     assert(byId[20].classID == nil and byId[20].subclassID == nil)
+    assert(byId[25].proficiency == "class_cannot_use" and byId[26].proficiency == "usable")
 
     -- A collapsed header hides skills: only what the class can never use is certain.
     lines[1].isCollapsed = true
