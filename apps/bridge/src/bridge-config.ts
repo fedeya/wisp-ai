@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { DEFAULT_MODEL } from '@wisp/protocol/providers';
 import { readJson, writeJson } from './json-file.ts';
 
 export const bridgeConfigSchema = z.object({
@@ -18,8 +17,6 @@ export interface BridgeConfig {
    * call order; `get()` only reflects a patch once its write has succeeded.
    */
   update(patch: Partial<BridgeConfigValues>): Promise<void>;
-  /** The selected model, or the product default when none is saved. */
-  defaultModel(): string;
 }
 
 export async function loadBridgeConfig(file: string): Promise<BridgeConfig> {
@@ -38,6 +35,5 @@ export async function loadBridgeConfig(file: string): Promise<BridgeConfig> {
       configWrite = write;
       return write;
     },
-    defaultModel: () => config.model || DEFAULT_MODEL,
   };
 }

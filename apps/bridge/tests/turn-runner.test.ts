@@ -17,6 +17,7 @@ function fixture(
   titlesEnabled = true,
   telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>,
   idleTimeoutMs?: number,
+  defaultModel = 'model',
 ) {
   const chat = newChat('chat', 'one');
   let transport = 'one';
@@ -58,7 +59,7 @@ function fixture(
     },
     currentTransport: () => transport,
     activeChat: () => 'chat',
-    defaultModel: () => 'model',
+    defaultModel: () => defaultModel,
     isReady,
     isStopping: () => false,
     accountBusy,
@@ -109,6 +110,15 @@ test('a complete turn projects streamed content and settles once', async () => {
     ([fields]) => fields?.event === 'chat.turn_timing',
   )?.[0];
   expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
+  await f.run.drain();
+});
+
+test('a chat starts on the first available model when no default is known yet', async () => {
+  const f = fixture(false, undefined, undefined, '');
+  await f.run(f.chat, 'Question');
+  expect(f.chat.status).toBe('done');
+  expect(f.prepare).toHaveBeenCalledWith('model');
+  expect(f.chat.modelSettings).toEqual({ model: 'model', effort: 'medium' });
   await f.run.drain();
 });
 

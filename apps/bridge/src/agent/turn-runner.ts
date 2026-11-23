@@ -5,7 +5,7 @@ import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
 import { sendChatTurn } from './agent-session.ts';
 import { beginTurn, settleTurn } from '../chat/chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from '../chat/context.ts';
-import { chooseChatModel } from '../chat/chat-model.ts';
+import { chooseChatModel, resolveDefaultModel } from '../chat/chat-model.ts';
 import { generateConversationTitle } from '../chat/conversation-title.ts';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
@@ -222,16 +222,19 @@ export function createTurnRunner(deps: TurnDependencies) {
         throw new NoProviderError();
       }
       failureCode = 'model_preparation_failed';
-      const chosenModel = chat.modelSettings?.model || defaultModel();
+      let chosenModel = chat.modelSettings?.model || defaultModel();
+      if (!chosenModel) {
+        // The catalog was not loaded yet: start on whatever the providers offer first.
+        failureCode = 'model_catalog_failed';
+        chosenModel = resolveDefaultModel(undefined, await models.models());
+        assertCurrent();
+        failureCode = 'model_preparation_failed';
+      }
       await models.prepare(chosenModel);
       failureCode = 'model_catalog_failed';
       const available = await models.models();
       assertCurrent();
-      chat.modelSettings = chooseChatModel(
-        available,
-        chat.modelSettings?.model || defaultModel(),
-        chat.modelSettings?.effort,
-      );
+      chat.modelSettings = chooseChatModel(available, chosenModel, chat.modelSettings?.effort);
       assertCurrent();
       preparedMs = Math.round(performance.now() - started);
       if (

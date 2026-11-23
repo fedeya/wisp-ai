@@ -161,5 +161,3 @@ export function parseConnectionModel(slug: string) {
   const match = /^connection:([0-9a-f-]{36}):(.+)$/i.exec(slug);
   return match ? { connection: match[1]!, model: match[2]! } : undefined;
 }
-
-export const DEFAULT_MODEL = 'gpt-6.1-sol';

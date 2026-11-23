@@ -60,3 +60,13 @@ export function chooseChatModel(models: AccountModel[], model: string, effort?: 
   }
   return { model, effort: chosen };
 }
+/**
+ * The model for new chats: the saved choice while the catalog offers it, else
+ * the first model the player's providers offer (ChatGPT first, then API
+ * connections). An empty catalog says nothing yet, so the saved choice stands.
+ * Returns '' when nothing is saved and nothing is available.
+ */
+export function resolveDefaultModel(saved: string | undefined, models: AccountModel[]): string {
+  if (!models.length || models.some((m) => m.slug === saved)) return saved || '';
+  return models[0]!.slug;
+}

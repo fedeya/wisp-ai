@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { accountModel, chooseChatModel } from '../src/chat/chat-model.ts';
+import { accountModel, chooseChatModel, resolveDefaultModel } from '../src/chat/chat-model.ts';
 
 test('account metadata controls models and supported efforts without inventing levels', () => {
   const model = accountModel({
@@ -31,4 +31,16 @@ test('account metadata controls models and supported efforts without inventing l
   const unknown = accountModel({ slug: 'unknown' });
   assert.equal(chooseChatModel([unknown], 'unknown').effort, 'provider-default');
   assert.throws(() => chooseChatModel([unknown], 'unknown', 'high'), /supported effort/);
+});
+
+test('the default model follows the connected providers instead of one vendor', () => {
+  const claude = { slug: 'connection:c:claude-sonnet', displayName: 'Claude', efforts: [] };
+  const gemini = { slug: 'connection:g:gemini-flash', displayName: 'Gemini', efforts: [] };
+  assert.equal(resolveDefaultModel(undefined, [claude, gemini]), claude.slug);
+  assert.equal(resolveDefaultModel(gemini.slug, [claude, gemini]), gemini.slug);
+  // A saved model whose connection was removed gives way to one that works.
+  assert.equal(resolveDefaultModel('gpt-6.1-sol', [claude]), claude.slug);
+  // Before the catalog loads, the saved choice stands; with nothing saved there is none.
+  assert.equal(resolveDefaultModel('gpt-6.1-sol', []), 'gpt-6.1-sol');
+  assert.equal(resolveDefaultModel(undefined, []), '');
 });
