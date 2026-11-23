@@ -44,6 +44,10 @@ function fold(text: string) {
     .trim();
 }
 
+function compact(text: string) {
+  return text.replaceAll(' ', '');
+}
+
 type GameItem = Record<string, unknown> & { id: number };
 
 // The instances and bosses that match, each item joined with the game's
@@ -60,7 +64,11 @@ export async function dungeonLoot(
     .filter((instance) =>
       args.instanceMapId !== undefined
         ? instance.instanceMapId === args.instanceMapId
-        : fold(instance.name).includes(wanted!) || fold(instance.key).includes(wanted!),
+        : // Word breaks are ignored: AtlasLoot keys run words together
+          // ("TheTempleOfAtal'Hakkar").
+          [instance.name, instance.key].some((name) =>
+            compact(fold(name)).includes(compact(wanted!)),
+          ),
     )
     .map((instance) => ({
       ...instance,

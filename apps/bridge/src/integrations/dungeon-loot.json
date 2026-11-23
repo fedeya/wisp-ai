@@ -2109,7 +2109,7 @@
         "instanceMapId": 469,
         "key": "BlackwingLair",
         "kind": "raid",
-        "name": "BlackwingLair"
+        "name": "Blackwing Lair"
       },
       {
         "bosses": [
@@ -5188,7 +5188,7 @@
         "instanceMapId": 409,
         "key": "MoltenCore",
         "kind": "raid",
-        "name": "MoltenCore"
+        "name": "Molten Core"
       },
       {
         "bosses": [],
@@ -11995,7 +11995,7 @@
         "instanceMapId": 509,
         "key": "TheRuinsofAhnQiraj",
         "kind": "raid",
-        "name": "TheRuinsofAhnQiraj"
+        "name": "Ruins of Ahn'Qiraj"
       },
       {
         "bosses": [
@@ -13085,7 +13085,7 @@
         "instanceMapId": 531,
         "key": "TheTempleofAhnQiraj",
         "kind": "raid",
-        "name": "TheTempleofAhnQiraj"
+        "name": "Ahn'Qiraj Temple"
       },
       {
         "bosses": [
@@ -13515,7 +13515,7 @@
           "min": 35,
           "recommended": 50
         },
-        "name": "TheTempleOfAtal'Hakkar"
+        "name": "Sunken Temple"
       },
       {
         "bosses": [

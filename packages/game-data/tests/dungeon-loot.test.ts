@@ -16,6 +16,7 @@ local GetForVersion = AtlasLoot.ReturnForGameVersion
 local NORMAL_DIFF = data:AddDifficulty("NORMAL", nil, nil, nil, true)
 local SET_ITTYPE = data:AddItemTableType("Set", "Item")
 local DUNGEON_CONTENT = data:AddContentType(AL["Dungeons"], ATLASLOOT_DUNGEON_COLOR)
+local RAID40_CONTENT = data:AddContentType(AL["Raids"], ATLASLOOT_RAID40_COLOR)
 local FOREVER_DUNGEON_CONTENT = data:AddContentType("Forever Dungeons", { 0.30, 0.50, 0.70, 1 })
 local LTNX = "|cffffffff|TInterface\\\\AddOns\\\\AtlasLootClassic\\\\ltn4.tga:18:18:2:0|t|r"
 data["Ragefire"] = {
@@ -34,6 +35,12 @@ data["Ragefire"] = {
     { name = AL["Keys"], IgnoreAsSource = true, [NORMAL_DIFF] = { { 1, 16309 } } },
     { name = "Sets", TableType = SET_ITTYPE, [NORMAL_DIFF] = { { 1, 203 } } },
   },
+}
+data["MoltenCore"] = {
+  name = AL["MoltenCore"],
+  InstanceID = 409,
+  ContentType = RAID40_CONTENT,
+  items = { { name = AL["Lucifron"], npcID = 12118, [NORMAL_DIFF] = { { 1, 16800 } } } },
 }
 data["TheAlcazPrison"] = {
   name = "Alcaz Prison" .. LTNX,
@@ -61,7 +68,7 @@ const FILES = new Map([
 const TABLES = memoryTables({
   AreaTable: parseCsv('ID,AreaName_lang\n2437,"Ragefire Chasm"'),
   Map: parseCsv(
-    'ID,MapName_lang,InstanceType\n389,"Ragefire Chasm",1\n2994,"Alcaz Prison",1\n1,Kalimdor,0',
+    'ID,MapName_lang,InstanceType\n389,"Ragefire Chasm",1\n409,"Molten Core",2\n2994,"Alcaz Prison",1\n1,Kalimdor,0',
   ),
 });
 
@@ -127,6 +134,15 @@ describe('dungeon loot dataset', () => {
         ],
       },
     ]);
+  });
+
+  it('names classic tables keyed by an AtlasLoot locale key after their map', async () => {
+    const { instances } = await build();
+    expect(instances.find((instance) => instance.key === 'MoltenCore')).toMatchObject({
+      name: 'Molten Core',
+      instanceMapId: 409,
+      kind: 'raid',
+    });
   });
 
   it('places Forever instances by name and keeps bosses without drops', async () => {

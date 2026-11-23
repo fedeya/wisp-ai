@@ -32,6 +32,8 @@ function plain(text: string) {
     .replace(/\|c[0-9a-fA-F]{8}|\|r/g, '')
     .trim();
 }
+// A single camel-cased word: an AtlasLoot locale key, not a display name.
+const LOCALE_KEY = /^[^\s]*[a-z][A-Z][^\s]*$/;
 function fold(text: string) {
   return text
     .normalize('NFD')
@@ -137,9 +139,11 @@ export function dungeonLoot(
       const [areaRows, maps] = await Promise.all([tables.read('AreaTable'), tables.read('Map')]);
       const areas = new Map(areaRows.map((row) => [num(row, 'ID'), str(row, 'AreaName_lang')]));
       const instanceIds = new Map<string, number>();
+      const mapNames = new Map<number, string>();
       for (const map of maps) {
         if (INSTANCE_TYPES.has(str(map, 'InstanceType'))) {
           instanceIds.set(fold(str(map, 'MapName_lang')), num(map, 'ID'));
+          mapNames.set(num(map, 'ID'), str(map, 'MapName_lang'));
         }
       }
       const { instanceMapIds } = curation ?? (await readLootCuration());
@@ -149,13 +153,20 @@ export function dungeonLoot(
       for (const [key, table] of Object.entries(atlas.tables).sort(([a], [b]) =>
         a.localeCompare(b),
       )) {
-        const name = plain(String(table.name ?? key));
+        const atlasName = plain(String(table.name ?? key));
         const content = String(table.ContentType ?? '');
         const kind = key === 'WorldBosses' ? 'world' : /raid/i.test(content) ? 'raid' : 'dungeon';
         const curated = instanceMapIds[key];
         const instanceMapId = Number.isInteger(table.InstanceID)
           ? (table.InstanceID as number)
-          : (instanceIds.get(fold(name)) ?? curated?.value ?? undefined);
+          : (instanceIds.get(fold(atlasName)) ?? curated?.value ?? undefined);
+        // Some classic tables are named by an AtlasLoot locale key such as
+        // "MoltenCore", which the stubbed locale returns as is; the game's
+        // Map name is the real one.
+        const name =
+          LOCALE_KEY.test(atlasName) && instanceMapId !== undefined
+            ? (mapNames.get(instanceMapId) ?? atlasName)
+            : atlasName;
         if (kind !== 'world' && instanceMapId === undefined && !curated) {
           unplaced.push(`${key} (${name})`);
         }

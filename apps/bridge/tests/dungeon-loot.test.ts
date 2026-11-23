@@ -88,6 +88,19 @@ describe('dungeon loot', () => {
       data,
     );
     expect(read).toBe(false);
+    const temple = await dungeonLoot(
+      { dungeon: "Temple of Atal'Hakkar" },
+      async () => ({ status: 'available', data: {} }),
+      {
+        ...data,
+        data: {
+          instances: [
+            { key: "TheTempleOfAtal'Hakkar", name: 'Sunken Temple', kind: 'dungeon', bosses: [] },
+          ],
+        },
+      },
+    );
+    expect(temple.instances?.map((instance) => instance.name)).toEqual(['Sunken Temple']);
     expect(result.instances![0]!.bosses[0]).toMatchObject({ name: 'Zarla Ober', noDropsYet: true });
     expect((await dungeonLoot({ dungeon: 'nowhere' }, async () => ({}), data)).status).toBe(
       'unavailable',
@@ -111,6 +124,7 @@ describe('dungeon loot', () => {
     const byMap = new Map(instances.map((instance) => [instance.instanceMapId, instance]));
     expect(byMap.get(389)?.name).toBe('Ragefire Chasm');
     expect(byMap.get(2994)?.name).toBe('Alcaz Prison');
+    expect(byMap.get(409)?.name).toBe('Molten Core');
     expect(instances.reduce((sum, instance) => sum + instance.bosses.length, 0)).toBeGreaterThan(
       300,
     );
