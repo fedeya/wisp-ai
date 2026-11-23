@@ -31,6 +31,98 @@ function collectors.location()
     end
     return { zone = GetZoneText(), subzone = GetSubZoneText(), mapId = id, x = x, y = y }
 end
+-- Optional per-unit reads: one failing API must not cost the whole roster.
+local function optional(fn, ...)
+    if type(fn) ~= "function" then
+        return nil
+    end
+    local ok, first, second = pcall(fn, ...)
+    if ok then
+        return first, second
+    end
+end
+local GROUP_ROLES = { TANK = "tank", HEALER = "healer", DAMAGER = "damage" }
+local MAX_GROUP = 40
+local function groupState()
+    assert(type(IsInGroup) == "function", "Group API is unavailable")
+    if not IsInGroup() then
+        return { inGroup = false, raid = false, size = 1 }
+    end
+    return {
+        inGroup = true,
+        raid = optional(IsInRaid) and true or false,
+        size = GetNumGroupMembers(),
+    }
+end
+local function groupMember(unit, playerMap)
+    local name, realm = UnitName(unit)
+    local _, class = UnitClass(unit)
+    local member = {
+        name = name,
+        realm = realm ~= "" and realm or nil,
+        level = UnitLevel(unit),
+        class = class,
+        role = GROUP_ROLES[optional(UnitGroupRolesAssigned, unit) or ""],
+        leader = optional(UnitIsGroupLeader, unit) and true or false,
+        online = optional(UnitIsConnected, unit) ~= false,
+        dead = optional(UnitIsDeadOrGhost, unit) and true or false,
+    }
+    if UnitIsUnit(unit, "player") then
+        member.isPlayer = true
+        return member
+    end
+    if not member.online then
+        return member
+    end
+    local mapId = optional(C_Map.GetBestMapForUnit, unit)
+    if mapId then
+        local info = optional(C_Map.GetMapInfo, mapId)
+        member.mapId, member.zone = mapId, info and info.name
+        local position = optional(C_Map.GetPlayerMapPosition, mapId, unit)
+        if position then
+            member.x, member.y = position:GetXY()
+        end
+    end
+    if playerMap and mapId then
+        member.sameMap = mapId == playerMap
+    end
+    member.visible = optional(UnitIsVisible, unit) and true or false
+    local inRange, checked = optional(UnitInRange, unit)
+    if checked then
+        member.inRange = inRange and true or false
+    end
+    return member
+end
+function collectors.group()
+    local out = groupState()
+    out.members = {}
+    if not out.inGroup then
+        return out
+    end
+    local playerMap = optional(C_Map.GetBestMapForUnit, "player")
+    local inInstance, instanceType = optional(IsInInstance)
+    if inInstance then
+        out.instance = { name = optional(GetInstanceInfo), type = instanceType }
+    end
+    -- Raid units include the player; party units are the others, so add the player first.
+    local units = {}
+    if out.raid then
+        for index = 1, math.min(out.size, MAX_GROUP) do
+            units[#units + 1] = "raid" .. index
+        end
+    else
+        units[1] = "player"
+        for index = 1, math.min(out.size - 1, 4) do
+            units[#units + 1] = "party" .. index
+        end
+    end
+    for _, unit in ipairs(units) do
+        if UnitExists(unit) then
+            out.members[#out.members + 1] = groupMember(unit, playerMap)
+        end
+    end
+    return out
+end
 function collectors.spells()
     local out = {}
     assert(C_SpellBook and C_SpellBook.GetNumSpellBookSkillLines, "Spellbook API is unavailable")
@@ -329,6 +421,11 @@ function ns.Character.CaptureTurn()
         if (ns.characterAcknowledged or 0) >= characterRevision then
             snapshot.sections.character = nil
         end
+    end
+    -- Only whether there is a group and its size; members are read on demand.
+    local grouped, group = pcall(groupState)
+    if grouped then
+        snapshot.sections.group = { status = "available", data = group }
     end
     local ok, data = pcall(collectors.quests)
     if not ok then

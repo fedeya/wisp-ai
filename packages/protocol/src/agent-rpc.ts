@@ -10,9 +10,9 @@ import { providerId } from './providers.js';
 import { replyPresentation } from './reply-presentation.js';
 
 export const characterSections = z
-  .array(z.enum(['character', 'location', 'talents', 'spells', 'quests', 'gear', 'bags']))
+  .array(z.enum(['character', 'location', 'group', 'talents', 'spells', 'quests', 'gear', 'bags']))
   .min(1)
-  .max(7);
+  .max(8);
 const session = { eveSession: z.string().min(1) };
 export const memoryRequest = z.discriminatedUnion('operation', [
   z.object({
