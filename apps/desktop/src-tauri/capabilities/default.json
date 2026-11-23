@@ -19,8 +19,7 @@
         { "url": "https://platform.openai.com/*" },
         { "url": "https://openrouter.ai/*" },
         { "url": "https://www.curseforge.com/wow/addons/*" },
-        { "url": "https://github.com/Questie/*" },
-        { "url": "https://github.com/wowsims/*" },
+        { "url": "https://github.com/*" },
         { "url": "https://thewowdb.com/*" },
         { "url": "https://everloot.app/*" }
       ]
