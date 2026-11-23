@@ -4,8 +4,9 @@ import type { SessionState } from '../session-state.ts';
 
 /**
  * Returns a function that reloads the account model catalog into `state`.
- * Calls made while a reload is running share it. Never rejects: a failure
- * empties the catalog and records the error for the addon.
+ * Calls made while a reload is running share its promise and request a trailing
+ * reload. Never rejects: a failure empties the catalog and records the error for
+ * the addon; the shared promise settles after all requested reloads finish.
  */
 export function createModelCatalogRefresh({
   state,
@@ -17,17 +18,22 @@ export function createModelCatalogRefresh({
   changed: () => void;
 }): () => Promise<void> {
   let load: Promise<void> | undefined;
-  return () =>
-    (load ??= (async () => {
-      try {
-        state.modelCatalog = await connections.models();
-        state.modelCatalogError = undefined;
-      } catch (error) {
-        state.modelCatalog = [];
-        state.modelCatalogError = errorMessage(error);
-      } finally {
-        load = undefined;
+  let requested = false;
+  return () => {
+    requested = true;
+    return (load ??= Promise.resolve().then(async () => {
+      do {
+        requested = false;
+        try {
+          state.modelCatalog = await connections.models();
+          state.modelCatalogError = undefined;
+        } catch (error) {
+          state.modelCatalog = [];
+          state.modelCatalogError = errorMessage(error);
+        }
         changed();
-      }
-    })());
+      } while (requested);
+      load = undefined;
+    }));
+  };
 }

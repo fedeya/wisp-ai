@@ -1,0 +1,3 @@
+kind: Fixed
+body: Connecting or removing an AI provider while models are loading now updates the available models and default selection correctly.
+time: 2026-11-24T00:47:07.137798363+01:00
