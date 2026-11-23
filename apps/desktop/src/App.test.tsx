@@ -682,6 +682,35 @@ test.each([
   },
 );
 
+test('connecting keeps models the player already chose instead of saving suggestions', async () => {
+  const original = vi.mocked(request).getMockImplementation()!;
+  vi.mocked(request).mockImplementation(async (route, body) => {
+    if (route === '/connections/discover') {
+      return {
+        models: [{ id: 'claude-suggested', contextWindow: 200000, supportsTools: true }],
+      } as never;
+    }
+    return original(route, body);
+  });
+  renderApp();
+  await screen.findByRole('heading', { name: 'Wisp is ready' });
+  await openConnections();
+  await openProviderPicker();
+  await openProvider('Claude', 'Claude');
+  await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'wrong-key' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Add a model manually' }));
+  await fireEvent.input(screen.getByLabelText('Model ID'), { target: { value: 'claude-mine' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Add model' }));
+  await screen.findByText('1 model selected for Wisp');
+  await fireEvent.click(screen.getByRole('button', { name: 'Back to API key' }));
+  await fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'right-key' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+  await screen.findByRole('searchbox', { name: 'Search provider models' });
+  expect(request).not.toHaveBeenCalledWith('/connections/save', expect.anything());
+  expect(screen.getByText('1 model selected for Wisp')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Add claude-suggested' })).toBeTruthy();
+});
+
 test('a catalog too large to add whole lets the player pick models', async () => {
   const model = { id: 'lab/model-0', name: 'Model 0', contextWindow: 128000 };
   const catalog = Array.from({ length: 41 }, (_, index) => ({

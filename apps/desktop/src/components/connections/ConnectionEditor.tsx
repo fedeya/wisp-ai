@@ -163,7 +163,10 @@ export default function ConnectionEditor({
       return;
     }
     const suggested = suggestedModels(found);
-    if (autoSave && suggested.length > 0 && suggested.length <= autoAddLimit) {
+    // Models the player already chose (manually, then back to the key) are
+    // theirs: keep them and show the picker instead of replacing them.
+    const untouched = form.state.values.models.length === 0;
+    if (autoSave && untouched && suggested.length > 0 && suggested.length <= autoAddLimit) {
       // Kept selected if saving fails, so the picker opens ready to retry.
       form.setFieldValue('models', suggested);
       await saveConnection(suggested);
