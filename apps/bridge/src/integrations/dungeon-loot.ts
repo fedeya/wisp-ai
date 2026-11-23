@@ -35,11 +35,12 @@ interface LootData {
 const MAX_ITEMS = 500;
 // Full detail larger than this (about 10k tokens) falls back to the summary.
 const MAX_FULL_CHARS = 40_000;
-// Upgrades a summary lists per boss.
-const SUMMARY_UPGRADES = 3;
+function positive(value: unknown): value is number {
+  return typeof value === 'number' && value > 0;
+}
 
 const NOTE =
-  'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot. proficiency: usable now, trainable (the class learns that weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; hiddenUnusable counts items this class can never use (includeUnusable lists them). summary lists per boss the item count and the best upgrades; ask with boss or detail full for every item. unread items were not read from the game (too many, or not cached yet).';
+  'Bosses list their drops in AtlasLoot order. source: boss (a boss table), trash (trash mobs), shared (drops from several bosses, kept when filtering by boss; its name says which), other (rare or summoned bosses, chests, quest rewards and similar). statDelta and itemLevelGain compare equipment with the weakest equipped item for its slot. proficiency: usable now, trainable (the class learns that weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; hiddenUnusable counts items this class can never use (includeUnusable lists them). summary lists every drop with its name, drop chance, required level and, when it beats current gear, itemLevelGain (proficiency only when not usable); full adds stats, statDelta and the equipped item, for one boss or a few items. unread items were not read from the game (too many, or not cached yet).';
 
 function fold(text: string) {
   return text
@@ -73,9 +74,7 @@ export interface LootBossResult {
   // full
   items?: GameItem[];
   // summary
-  itemCount?: number;
   upgradeCount?: number;
-  bestUpgrades?: Record<string, unknown>[];
 }
 export interface LootResult {
   status: string;
@@ -213,21 +212,21 @@ export async function dungeonLoot(
       if (level === 'full') {
         return { ...heading, items: shown };
       }
-      const upgrades = shown
-        .filter((item) => typeof item.itemLevelGain === 'number' && item.itemLevelGain > 0)
-        .sort((a, b) => (b.itemLevelGain as number) - (a.itemLevelGain as number));
+      // Every drop in a few fields: enough to name what each boss drops and
+      // spot upgrades, without stats and comparisons.
       return {
         ...heading,
-        itemCount: shown.length,
-        upgradeCount: upgrades.length,
-        bestUpgrades: upgrades.slice(0, SUMMARY_UPGRADES).map((item) => ({
+        upgradeCount: shown.filter((item) => positive(item.itemLevelGain)).length,
+        items: shown.map((item) => ({
           id: item.id,
           name: item.name,
-          slot: item.slot,
-          itemLevelGain: item.itemLevelGain,
-          proficiency: item.proficiency,
-          trainableAtLevel: item.trainableAtLevel,
           chance: item.chance,
+          requiredLevel: item.requiredLevel,
+          itemLevelGain: positive(item.itemLevelGain) ? item.itemLevelGain : undefined,
+          proficiency: item.proficiency === 'usable' ? undefined : item.proficiency,
+          trainableAtLevel: item.trainableAtLevel,
+          addedInForever: item.addedInForever,
+          unread: item.unread,
         })),
       };
     });

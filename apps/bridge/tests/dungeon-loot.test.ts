@@ -151,23 +151,26 @@ describe('dungeon loot', () => {
     };
     const summary = await dungeonLoot({ instanceMapId: 1 }, async () => reading, loot);
     expect(summary.detail).toBe('summary');
-    expect(summary.instances![0]!.bosses[0]).toMatchObject({
-      itemCount: 4,
-      upgradeCount: 2,
+    // Every usable drop in a few fields; the plate helm is only counted.
+    expect(summary.instances![0]!.bosses[0]).toEqual({
+      name: 'Boss',
+      source: 'boss',
       hiddenUnusable: 1,
-      bestUpgrades: [
+      upgradeCount: 2,
+      items: [
         {
           id: 1,
           name: 'Bow',
+          chance: 1,
           itemLevelGain: 12,
           proficiency: 'trainable',
           trainableAtLevel: 1,
-          chance: 1,
         },
-        { id: 3, name: 'Cloth Gloves', itemLevelGain: 4, proficiency: 'usable', chance: 3 },
+        { id: 3, name: 'Cloth Gloves', chance: 3, itemLevelGain: 4 },
+        { id: 4, name: 'Old Boots', chance: 4 },
+        { id: 5, name: 'Recipe', chance: 5 },
       ],
     });
-    expect(summary.instances![0]!.bosses[0]!.items).toBeUndefined();
 
     const full = await dungeonLoot(
       { instanceMapId: 1, detail: 'full', includeUnusable: true },
@@ -211,7 +214,8 @@ describe('dungeon loot', () => {
     );
     expect(result.detail).toBe('summary');
     expect(result.truncated).toContain('boss');
-    expect(result.instances![0]!.bosses[0]!.itemCount).toBe(300);
+    expect(result.instances![0]!.bosses[0]!.items).toHaveLength(300);
+    expect(result.instances![0]!.bosses[0]!.items![0]).toEqual({ id: 1, name: 'Item 1' });
   });
 
   it('reads the populated table when a name matches only an empty one of the same map', async () => {

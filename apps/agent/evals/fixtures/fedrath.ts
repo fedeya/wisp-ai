@@ -7,7 +7,7 @@ const json = (value: unknown) => JSON.parse(JSON.stringify(value));
 // head, neck, shoulder and one ring slot, a few weak pieces and a Spanish
 // client. Item data is illustrative; IDs only need to be consistent here.
 type Stats = Record<string, number>;
-interface Item {
+export interface Item {
   id: number;
   name: string;
   quality: number;
@@ -23,7 +23,7 @@ const AGI = 'ITEM_MOD_AGILITY_SHORT';
 const SP = 'ITEM_MOD_SPELL_POWER_SHORT';
 const ARMOR = 'RESISTANCE0_NAME';
 
-const item = (
+export const item = (
   id: number,
   name: string,
   quality: number,
@@ -187,12 +187,18 @@ const slots: Record<string, number[]> = {
   INVTYPE_WRIST: [9],
   INVTYPE_HAND: [10],
   INVTYPE_FINGER: [11, 12],
+  INVTYPE_TRINKET: [13, 14],
   INVTYPE_CLOAK: [15],
   INVTYPE_2HWEAPON: [16],
+  INVTYPE_WEAPON: [16, 17],
+  INVTYPE_WEAPONMAINHAND: [16],
+  INVTYPE_HOLDABLE: [17],
+  INVTYPE_SHIELD: [17],
+  INVTYPE_RANGED: [18],
   INVTYPE_RANGEDRIGHT: [18],
 };
 // Mirrors the addon's gear_candidates reading against the fixture's gear.
-function candidate(entry: Item) {
+export function candidate(entry: Item) {
   const options = (slots[entry.equipLocation] || []).map((slot) => ({
     slot,
     current: equipped[slot],

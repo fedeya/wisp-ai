@@ -211,13 +211,13 @@ export const dungeonLootInput = z
       .enum(['summary', 'full'])
       .optional()
       .describe(
-        'summary: per boss, counts and the best upgrades for this character; full: every item with stats. Default: full with boss, summary without.',
+        'summary: every drop per boss with name, drop chance, required level and item level gain; full: also stats and the comparison with equipped gear. Default: full with boss, summary without. A full answer too large for one read comes back as the summary.',
       ),
     includeUnusable: z
       .boolean()
       .optional()
       .describe(
-        'Also list weapons and armor this class can never use (default false: only counted). Set it when asking for another character.',
+        "Also list weapons and armor this character's class can never use. Leave it unset for the player's own gear; set it only for loot for another class.",
       ),
   })
   .refine(
