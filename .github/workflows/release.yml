@@ -2,14 +2,62 @@ name: Windows release
 on:
   push:
     branches: [main]
-    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Nightly builds main; Stable promotes a published Nightly
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      nightly:
+        description: 'Stable only: Nightly tag to promote (default: the latest one from main)'
+        type: string
+        required: false
+      version:
+        description: "Stable only: version, e.g. 0.4.0 (default: the Nightly's own X.Y.Z)"
+        type: string
+        required: false
 permissions:
   contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  # A Stable promotion never waits behind (or blocks) Nightly builds of main.
+  group: release-${{ inputs.channel == 'stable' && 'stable' || github.ref }}
   cancel-in-progress: false
 jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      channel: ${{ steps.resolve.outputs.channel }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-workspace
+        if: inputs.channel == 'stable'
+      - name: Resolve the Nightly to promote
+        id: stable
+        if: inputs.channel == 'stable'
+        run: node scripts/resolve-stable-release.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIGHTLY_TAG: ${{ inputs.nightly }}
+          RELEASE_VERSION: ${{ inputs.version }}
+      - name: Resolve the release source
+        id: resolve
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel == 'stable' && 'stable' || 'nightly' }}
+          STABLE_SHA: ${{ steps.stable.outputs.sha }}
+          STABLE_VERSION: ${{ steps.stable.outputs.version }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then echo 'Releases are built from main.' >&2; exit 1; fi
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "sha=${STABLE_SHA:-$GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=$STABLE_VERSION" >> "$GITHUB_OUTPUT"
   release-inputs:
     runs-on: ubuntu-latest
     permissions:
@@ -28,25 +76,21 @@ jobs:
         run: node scripts/release-inputs.ts
         env:
           RELEASE_BASE_SHA: ${{ github.event.before }}
+  # A promoted Nightly was validated when its own release run built it.
   validate:
-    if: github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/check.yml
-  validate-before-build:
-    if: github.ref != 'refs/heads/main'
+    needs: resolve
+    if: needs.resolve.outputs.channel == 'nightly'
     permissions:
       contents: read
       actions: read
     uses: ./.github/workflows/check.yml
   windows:
-    needs: [release-inputs, validate-before-build]
+    needs: [resolve, release-inputs]
     if: >-
       !cancelled() &&
+      needs.resolve.result == 'success' &&
       needs.release-inputs.result == 'success' &&
-      needs.release-inputs.outputs.app == 'true' &&
-      (github.ref == 'refs/heads/main' || needs.validate-before-build.result == 'success')
+      needs.release-inputs.outputs.app == 'true'
     runs-on: windows-latest
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -57,17 +101,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ needs.resolve.outputs.sha }}
           fetch-depth: 0
       - uses: ./.github/actions/setup-workspace
+      # Stamps the version into this checkout only and writes dist/release-notes.md:
+      # Changie fragments for Stable, the commit list since the last Nightly otherwise.
       - name: Prepare version and shared release notes
         id: release
         run: node scripts/prepare-release.ts
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
       - name: Validate release version and signing configuration
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           if (!$env:TAURI_SIGNING_PRIVATE_KEY) { throw 'Configure TAURI_SIGNING_PRIVATE_KEY before building a release.' }
           $version = (Get-Content package.json | ConvertFrom-Json).version
@@ -76,7 +127,8 @@ jobs:
           $cargoVersion = (Select-String -Path apps/desktop/src-tauri/Cargo.toml -Pattern '^version = "([^"]+)"' | Select-Object -First 1).Matches.Groups[1].Value
           if ($version -notmatch '^\d+\.\d+\.\d+(-nightly\.\d+\.\d+)?$') { throw 'Expected a stable or nightly release version.' }
           if ($version -ne $desktopVersion -or $version -ne $tauriVersion -or $version -ne $cargoVersion) { throw 'App versions must match.' }
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Release tag must match app version.' }
+          # A Nightly built before Stable promotion existed would build itself as a Nightly again.
+          if ($env:RELEASE_CHANNEL -eq 'stable' -and $version -ne $env:RELEASE_VERSION) { throw 'This Nightly predates Stable promotion; promote a newer one.' }
       - uses: dtolnay/rust-toolchain@stable
       - run: pnpm ui:build
       - name: Fingerprint native executable inputs
@@ -98,6 +150,11 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      # A Stable build's source is the promoted Nightly's commit, not the run's head SHA;
+      # installer tests check out the commit named here.
+      - name: Record the built source commit
+        shell: bash
+        run: git rev-parse HEAD > dist/release-source.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -111,35 +168,37 @@ jobs:
             dist/latest.json
             dist/build-metrics.json
             dist/release-notes.md
+            dist/release-source.txt
       - name: Verify installer before publishing
         run: node scripts/verify-installer.ts
   publish:
-    needs: [validate, windows]
+    needs: [resolve, validate, windows]
     if: >-
       !cancelled() &&
       needs.windows.result == 'success' &&
-      (startsWith(github.ref, 'refs/tags/v') ||
-      (github.ref == 'refs/heads/main' && needs.validate.result == 'success'))
+      (needs.resolve.outputs.channel == 'stable' || needs.validate.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
       - uses: ./.github/actions/setup-workspace
       - uses: actions/download-artifact@v4
         with:
           name: Wisp-windows-x64
           path: dist
-      - name: Restore the built nightly version
-        if: needs.windows.outputs.nightly == 'true'
+      - name: Restore the built version
         run: node scripts/release-version.ts "$RELEASE_VERSION"
         env:
           RELEASE_VERSION: ${{ needs.windows.outputs.version }}
+      # A draft creates no tag; publishing it tags the promoted Nightly's commit.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.windows.outputs.tag }}
           name: ${{ needs.windows.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.resolve.outputs.sha }}
           draft: true
           prerelease: ${{ needs.windows.outputs.nightly == 'true' }}
           body_path: dist/release-notes.md

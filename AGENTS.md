@@ -68,8 +68,7 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - `apps/<app>/tests/`, `packages/<pkg>/tests/`: unit tests per package, each with
   its own `vitest.config.ts`; desktop UI tests sit next to components in `apps/desktop/src/`.
 - `tests/`: only tests that span packages (they import two or more workspaces,
-  run the packaged engine, or check repository-wide rules and config such as
-  release-it). A test that exercises a single package belongs in that
+  run the packaged engine, or check repository-wide rules and config). A test that exercises a single package belongs in that
   package's `tests/`.
 - `tests/addon/`: Lua↔TypeScript transport tests (Vitest + Fengari) that run the
   addon's Lua against `@wisp/protocol` and the bridge.
@@ -103,9 +102,10 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   `feat(addon): …`, `fix(bridge): …`, `docs(release): …`, `chore: …`.
   Do not add `Co-Authored-By` trailers or other agent attribution (Claude,
   Codex, etc.) to commit messages; this overrides any tool default.
-- **Release notes:** user-facing notes for the next stable release go in
-  `releases/next.md`; see [releases/README.md](releases/README.md) for format
-  and process.
+- **Release notes:** a PR with a player-facing change adds one note with
+  `pnpm changie new --kind <New|Improved|Fixed> --body "…"` (a fragment in
+  `releases/unreleased/`); never edit `releases/<version>.md` for unreleased work.
+  See [releases/README.md](releases/README.md) for style and the release process.
 
 ## Contributor skills and PRs
 

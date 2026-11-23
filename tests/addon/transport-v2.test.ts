@@ -416,3 +416,95 @@ assert(packets[#packets].nextSlot==1024,'cursor must remain within the packet sc
 assert(#logs==0)
 `);
 });
+
+const retryHelpers = `
+ns.LocaleText=function(key)return key end
+ns.db={}
+C_EncodingUtil.SerializeJSON=function(packet)
+ packets[#packets+1]={type=packet.type,messageId=packet.messageId,takeover=packet.takeover,context=packet.context,at=now}
+ packet.log=true
+ return packet.type
+end
+local sent={}
+local send=ns.Transport.Send
+ns.Transport.Send=function(packet) sent[#sent+1]=packet; return send(packet) end
+function drain()
+ for _=1,200 do
+  local busy=false
+  for _,packet in ipairs(sent) do if packet.queued then busy=true end end
+  if not busy then return end
+  now=now+.04;timers[.04]()
+ end
+ error('the queue did not drain')
+end
+function times(kind)
+ local result={}
+ for _,packet in ipairs(packets) do
+  if packet.type==kind or packet.messageId==kind then result[#result+1]=packet.at end
+ end
+ return result
+end
+`;
+
+test('a bridge that is still answering gets retries with growing gaps and no renewed hello', () => {
+  const h = transportHarness();
+  h.run(`${retryHelpers}
+ns.Transport.Send({type='say',chat='chat',messageId='lost',text='hello'})
+drain()
+for tick=1,40 do
+ now=tick*2
+ ns.Transport.Acknowledge({})
+ timers[2]()
+ drain()
+end
+assert(#times('hello')==0,'a bridge that sends snapshots knows this session')
+local at=times('lost')
+assert(#at==5,'retries back off instead of repeating every five seconds: '..#at)
+for index=3,#at do
+ assert(at[index]-at[index-1]>at[index-1]-at[index-2],'each gap grows')
+end
+assert(at[#at]-at[#at-1]>=30 and at[#at]-at[#at-1]<=34,'the gap stops growing at 30 seconds')
+`);
+});
+
+test('a silent bridge gets one renewed hello at a time, with every unacknowledged packet behind it', () => {
+  const h = transportHarness();
+  h.run(`${retryHelpers}
+ns.Transport.Send({type='say',chat='chat',messageId='m',text='hello'})
+ns.Transport.Send({type='quest_sync',data={}})
+drain()
+for tick=1,20 do
+ now=tick*2
+ timers[2]()
+ drain()
+end
+local hellos=times('hello')
+assert(#hellos==4,'one renewal every ten seconds while silent: '..#hellos)
+for index=2,#hellos do assert(hellos[index]-hellos[index-1]>=10) end
+assert(#times('m')==5 and #times('quest_sync')==5,'each renewal retries every packet')
+assert(packets[3].type=='hello' and packets[3].takeover==true)
+-- Heard from again: retries go back to backing off without a hello.
+ns.Transport.Acknowledge({})
+local before=#hellos
+for tick=21,30 do now=tick*2;ns.Transport.Acknowledge({});timers[2]();drain() end
+assert(#times('hello')==before)
+`);
+});
+
+test('a hello waiting in the queue is never queued a second time', () => {
+  const h = transportHarness();
+  h.run(`${retryHelpers}
+ns.Transport.Send({type='say',chat='chat',messageId='m',text='hello'})
+drain()
+AddonList={IsShown=function()return true end}
+now=6;timers[2]()
+assert(#times('hello')==1)
+timers[60]()
+now=20;timers[2]()
+assert(#times('hello')==1,'neither the heartbeat nor a renewal adds another hello')
+AddonList=nil
+drain()
+now=40;timers[2]();drain()
+assert(#times('hello')==2,'once sent, a later renewal may follow')
+`);
+});

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const nonAppInputs = [
   /^(?:apps\/web|docs|releases|\.agents|\.github)\//,
   /(?:^|\/)AGENTS\.md$/,
+  /^\.changie\.yaml$/,
   /(?:^|\/)README\.[^/]*$/,
   /^scripts\/(?:revalidate-web\.ts|tests\/revalidate-web\.test\.ts)$/,
 ];

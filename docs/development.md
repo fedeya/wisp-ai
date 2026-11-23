@@ -91,8 +91,9 @@ file against the pinned simulator, so engine tests do not silently skip on Linux
 On `main`, Windows release runs the validation workflow in parallel with packaging
 and installer verification. Nightly publication waits for both to pass. The release
 input check gates only packaging, so web/docs-only pushes still receive all checks
-without building or publishing an installer. Tag builds and manual builds outside
-`main` wait for validation before packaging. Manual builds always request packaging.
+without building or publishing an installer. Releases build only from `main`; a
+Stable promotion skips validation because it rebuilds a Nightly whose own run passed
+it. Manual builds always request packaging.
 
 The shared `setup-simulator` action caches the executable, manifest, class/item
 metadata and license for both validation and packaging. Its key includes the Go
@@ -165,7 +166,7 @@ To build an installer after the simulator is ready:
 pnpm build:desktop
 ```
 
-`pnpm package:windows` is an alias. Output in `dist/` includes the unsigned per-user installer, SHA-256 checksum and build metrics. Packaged resources include Node/npm, the bridge, agent, protocol, addon and simulator; updates preserve user data. See [packaging code](../scripts/build-desktop.ts), [staging](../scripts/stage-desktop.ts) and the [release workflow](../.github/workflows/release.yml) for resource verification and cache details. Tag builds create draft releases for review before publication.
+`pnpm package:windows` is an alias. Output in `dist/` includes the unsigned per-user installer, SHA-256 checksum and build metrics. Packaged resources include Node/npm, the bridge, agent, protocol, addon and simulator; updates preserve user data. See [packaging code](../scripts/build-desktop.ts), [staging](../scripts/stage-desktop.ts) and the [release workflow](../.github/workflows/release.yml) for resource verification and cache details. Stable promotions create draft releases for review before publication.
 
 Windows installers package the bridge, addon installation/migration commands,
 Eve's production server and npm into `payload/wisp-engine.exe`. Dependencies are
@@ -271,7 +272,7 @@ Installed Windows x64 release builds check `https://github.com/fedeya/wisp-ai/re
 
 The updater public key is checked into `apps/desktop/src-tauri/tauri.conf.json`. Its private key is stored outside the repository at `%USERPROFILE%\.tauri\wisp-ai.key` on the machine where it was generated and in the repository's `TAURI_SIGNING_PRIVATE_KEY` Actions secret. Keep a secure backup: changing the public key breaks updates for existing installations. The generated key has no password; if using a password-protected replacement before the first public release, also configure `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
-To prepare a stable release, write user-facing notes in `releases/next.md`, commit your work and run `pnpm release patch` (or `minor` / an explicit version) from clean `main`. release-it synchronizes all workspace, Tauri and Cargo versions and pushes the release commit/tag. Actions builds, signs and verifies the installer, then creates a **draft** with the shared notes and updater manifest. Review and publish it as latest. Every successful app release build from `main` also publishes a separate Nightly prerelease; changes limited to the website, documentation or GitHub workflows run validation and skip app packaging. Users opt into Nightly in App updates. Stable never receives nightly builds. See [the release guide](../releases/README.md) for notes, squash merges, channel switching and feeds. The repository and release assets must be public for distributed apps to download them.
+Pull requests with a player-facing change add a release note with `pnpm changie new`. To ship a stable release, install and check a Nightly, then run **Windows release** from GitHub Actions with **channel** `stable`: it promotes the latest published Nightly from `main` (or the one you pick) with its own version, collects the notes from that commit, and builds, signs and verifies the installer into a **draft**. Review and publish it as latest; a follow-up pull request archives the notes and moves `main`'s version. Every successful app release build from `main` also publishes a separate Nightly prerelease; changes limited to the website, documentation or GitHub workflows run validation and skip app packaging. Users opt into Nightly in App updates. Stable never receives nightly builds. See [the release guide](../releases/README.md) for notes, squash merges, channel switching and feeds. The repository and release assets must be public for distributed apps to download them.
 
 Local `pnpm build:desktop` builds remain unsigned unless `TAURI_SIGNING_PRIVATE_KEY` is set to the private key path or contents. Signed builds additionally emit `.sig` and `latest.json`. These updater signatures are independent of Windows Authenticode signing; they do not remove SmartScreen prompts.
 
