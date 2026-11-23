@@ -4,7 +4,7 @@ import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
-const prompt = 'que tira el nucleo de magma? quiero saber los jefes y lo que sueltan';
+const prompt = 'what drops in Molten Core? I want to know the bosses and what each one drops';
 
 export default defineEval({
   description:

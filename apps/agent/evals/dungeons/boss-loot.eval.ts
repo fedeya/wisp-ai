@@ -4,7 +4,7 @@ import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
-const prompt = 'que tira el baron silverlaine? algo para mi?';
+const prompt = 'what does Baron Silverlaine drop? anything for me?';
 
 export default defineEval({
   description:
@@ -39,8 +39,7 @@ export default defineEval({
     t.check(
       reply,
       satisfies(
-        (text: string) =>
-          !/Spellblade/i.test(text) || /entren|aprend|espad|sword|train/i.test(text),
+        (text: string) => !/Spellblade/i.test(text) || /train|weapon master|learn/i.test(text),
         'says the sword needs training before he can use it',
       ),
     ).soft();

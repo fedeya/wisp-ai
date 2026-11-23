@@ -4,7 +4,7 @@ import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
-const prompt = 'deberia hacer WC? me tiran algo que me sirva ahi?';
+const prompt = 'should I run WC? does anything in there drop that I could use?';
 
 export default defineEval({
   description:
@@ -47,9 +47,7 @@ export default defineEval({
       reply,
       satisfies(
         (text: string) =>
-          /(^|[^\p{L}])s[ií]([^\p{L}]|$)|vale la pena|te conviene|recomiend|yo (la )?har[ií]a/iu.test(
-            text,
-          ),
+          /\b(yes|worth|recommend|skip it|not worth)|I'?d (go|run|do|skip)/i.test(text),
         'answers whether to go',
       ),
     ).soft();

@@ -4,7 +4,7 @@ import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
-const prompt = 'que me puede tirar castillo colmillo oscuro que me sirva?';
+const prompt = 'what could Shadowfang Keep drop that would actually help me?';
 
 export default defineEval({
   description:

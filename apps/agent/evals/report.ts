@@ -64,6 +64,14 @@ export async function saveTurn(name: string, prompt: string, turn: ReportedTurn,
       tools: calls.map((call) => call.tool),
       outputChars: calls.map((call) => call.outputChars ?? null),
       presented,
+      // What the agent read, so the grader judges against the same data.
+      results: turn.toolCalls
+        .filter((call) => (call.toolName ?? call.name) !== 'wisp__present_ui')
+        .map((call) => ({
+          tool: call.toolName ?? call.name,
+          input: call.input,
+          output: call.output,
+        })),
       reply: turn.reply ?? '',
     }) + '\n',
   );

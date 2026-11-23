@@ -4,8 +4,8 @@ import type { ToolStub } from 'eve/evals';
 const json = (value: unknown) => JSON.parse(JSON.stringify(value));
 
 // A level 21 Horde mage modelled on a real player's gear questions: empty
-// head, neck, shoulder and one ring slot, a few weak pieces and a Spanish
-// client. Item data is illustrative; IDs only need to be consistent here.
+// head, neck, shoulder and one ring slot, a few weak pieces and an English
+// client, the language most players use. Item data is illustrative; IDs only need to be consistent here.
 type Stats = Record<string, number>;
 export interface Item {
   id: number;
@@ -34,28 +34,28 @@ export const item = (
 ): Item => ({ id, name, quality, itemLevel, requiredLevel, equipLocation, stats });
 
 export const equipped: Record<number, Item> = {
-  5: item(6503, 'Togas de arlequín', 2, 22, 0, 'INVTYPE_ROBE', { [INT]: 2, [SPI]: 6, [ARMOR]: 36 }),
-  6: item(3587, 'Cinturón de lino reforzado', 1, 12, 7, 'INVTYPE_WAIST', { [STA]: 1, [ARMOR]: 8 }),
-  7: item(270011, 'Leotardos bordados', 2, 21, 0, 'INVTYPE_LEGS', {
+  5: item(6503, 'Harlequin Robes', 2, 22, 0, 'INVTYPE_ROBE', { [INT]: 2, [SPI]: 6, [ARMOR]: 36 }),
+  6: item(3587, 'Reinforced Linen Belt', 1, 12, 7, 'INVTYPE_WAIST', { [STA]: 1, [ARMOR]: 8 }),
+  7: item(270011, 'Embroidered Pants', 2, 21, 0, 'INVTYPE_LEGS', {
     [SP]: 4,
     [STA]: 5,
     [ARMOR]: 30,
   }),
-  8: item(2583, 'Botas de lana', 1, 13, 8, 'INVTYPE_FEET', { [STA]: 1, [INT]: 1, [ARMOR]: 12 }),
-  9: item(3607, 'Brazales de lino tejido', 1, 10, 5, 'INVTYPE_WRIST', { [INT]: 1, [ARMOR]: 6 }),
-  10: item(4310, 'Guantes de seda ligera', 2, 18, 13, 'INVTYPE_HAND', { [INT]: 3, [ARMOR]: 14 }),
-  11: item(2834, 'Anillo de cobre tosco', 1, 12, 7, 'INVTYPE_FINGER', { [STA]: 1 }),
-  15: item(281268, 'Capa de hechicero', 2, 20, 15, 'INVTYPE_CLOAK', {
+  8: item(2583, 'Woolen Boots', 1, 13, 8, 'INVTYPE_FEET', { [STA]: 1, [INT]: 1, [ARMOR]: 12 }),
+  9: item(3607, 'Woven Linen Bracers', 1, 10, 5, 'INVTYPE_WRIST', { [INT]: 1, [ARMOR]: 6 }),
+  10: item(4310, 'Light Silk Gloves', 2, 18, 13, 'INVTYPE_HAND', { [INT]: 3, [ARMOR]: 14 }),
+  11: item(2834, 'Rough Copper Ring', 1, 12, 7, 'INVTYPE_FINGER', { [STA]: 1 }),
+  15: item(281268, "Sorcerer's Cloak", 2, 20, 15, 'INVTYPE_CLOAK', {
     [INT]: 3,
     [SP]: 2,
     [ARMOR]: 12,
   }),
-  16: item(281274, 'Bastón de aprendiz', 2, 20, 15, 'INVTYPE_2HWEAPON', {
+  16: item(281274, "Apprentice's Staff", 2, 20, 15, 'INVTYPE_2HWEAPON', {
     [INT]: 5,
     [STA]: 4,
     [SPI]: 3,
   }),
-  18: item(5210, 'Varita ardiente', 2, 18, 13, 'INVTYPE_RANGEDRIGHT', {}),
+  18: item(5210, 'Smoldering Wand', 2, 18, 13, 'INVTYPE_RANGEDRIGHT', {}),
 };
 
 const character = {
@@ -63,7 +63,7 @@ const character = {
   realm: 'Vorn',
   level: 21,
   class: 'MAGE',
-  race: 'Orco',
+  race: 'Orc',
   raceToken: 'Orc',
   faction: 'Horde',
   moneyCopper: 21_450,
@@ -76,7 +76,7 @@ const character = {
 };
 const location = {
   zone: 'Orgrimmar',
-  subzone: 'Valle de la Fuerza',
+  subzone: 'Valley of Strength',
   mapId: 1454,
   x: 0.52,
   y: 0.48,
@@ -126,9 +126,9 @@ const gearReading = {
       status: 'available',
       data: {
         items: [
-          { bag: 0, slot: 1, id: 2589, count: 14, link: '[Paño de lino]' },
-          { bag: 0, slot: 2, id: 2592, count: 6, link: '[Paño de lana]' },
-          { bag: 0, slot: 3, id: 858, count: 4, link: '[Poción de sanación inferior]' },
+          { bag: 0, slot: 1, id: 2589, count: 14, link: '[Linen Cloth]' },
+          { bag: 0, slot: 2, id: 2592, count: 6, link: '[Wool Cloth]' },
+          { bag: 0, slot: 3, id: 858, count: 4, link: '[Lesser Healing Potion]' },
         ],
       },
     },
@@ -139,15 +139,15 @@ const gearReading = {
         quests: [
           {
             id: 875,
-            title: 'Destripadoras alabruja',
+            title: 'Witchwing Slayers',
             level: 16,
             rewardXP: 1150,
             complete: false,
-            objectives: [{ text: 'Anillo de destripadora: 4/8', type: 'item', finished: false }],
+            objectives: [{ text: 'Witchwing Talon: 4/8', type: 'item', finished: false }],
           },
           {
             id: 1061,
-            title: 'El espíritu de los vientos',
+            title: 'Spirit of the Wind',
             level: 21,
             rewardXP: 1850,
             complete: true,
@@ -159,15 +159,15 @@ const gearReading = {
             level: 24,
             rewardXP: 2400,
             complete: false,
-            objectives: [{ text: 'Entrega el aviso', type: 'event', finished: false }],
+            objectives: [{ text: 'Deliver the notice', type: 'event', finished: false }],
           },
           {
             id: 1489,
-            title: 'Caverna de la Tormenta',
+            title: 'The Storm Cavern',
             level: 27,
             rewardXP: 2900,
             complete: false,
-            objectives: [{ text: 'Mata a Hamuul Runatótem 0/1', type: 'monster', finished: false }],
+            objectives: [{ text: 'Hamuul Runetotem slain: 0/1', type: 'monster', finished: false }],
           },
         ],
       },
@@ -255,65 +255,63 @@ function searchResult(category: Record<string, string>, items: Item[], tooHighLe
 // 20442 is an agility neck a mage should not want.
 const armor: Record<string, Item[]> = {
   head: [
-    item(7048, 'Capucha de seda azur', 2, 24, 19, 'INVTYPE_HEAD', {
+    item(7048, 'Azure Silk Hood', 2, 24, 19, 'INVTYPE_HEAD', {
       [INT]: 5,
       [SPI]: 2,
       [ARMOR]: 22,
     }),
-    item(4321, 'Capucha de tela de araña', 2, 19, 14, 'INVTYPE_HEAD', {
+    item(4321, 'Spider Silk Hood', 2, 19, 14, 'INVTYPE_HEAD', {
       [INT]: 3,
       [STA]: 2,
       [ARMOR]: 18,
     }),
   ],
   neck: [
-    item(20442, 'Medallón de explorador', 3, 23, 18, 'INVTYPE_NECK', { [AGI]: 6, [STA]: 2 }),
-    item(12047, 'Colgante de luz espectral', 2, 22, 17, 'INVTYPE_NECK', { [INT]: 3, [SPI]: 3 }),
+    item(20442, "Explorer's Medallion", 3, 23, 18, 'INVTYPE_NECK', { [AGI]: 6, [STA]: 2 }),
+    item(12047, 'Spectral Light Pendant', 2, 22, 17, 'INVTYPE_NECK', { [INT]: 3, [SPI]: 3 }),
   ],
   shoulder: [
-    item(4314, 'Sobrehombros de lana con doble pespunte', 2, 22, 17, 'INVTYPE_SHOULDER', {
+    item(4314, 'Double-stitched Woolen Shoulders', 2, 22, 17, 'INVTYPE_SHOULDER', {
       [STA]: 4,
       [SP]: 4,
       [ARMOR]: 27,
     }),
-    item(14112, 'Sobrehombros de seda tejida', 2, 26, 21, 'INVTYPE_SHOULDER', {
+    item(14112, 'Woven Silk Shoulders', 2, 26, 21, 'INVTYPE_SHOULDER', {
       [INT]: 4,
       [SPI]: 4,
       [ARMOR]: 29,
     }),
   ],
   feet: [
-    item(4320, 'Botas de seda de araña', 3, 25, 20, 'INVTYPE_FEET', {
+    item(4320, 'Spidersilk Boots', 3, 25, 20, 'INVTYPE_FEET', {
       [INT]: 4,
       [STA]: 2,
       [SP]: 5,
       [ARMOR]: 25,
     }),
-    item(210990, 'Sandalias del eclipse', 3, 24, 21, 'INVTYPE_FEET', {
+    item(210990, 'Eclipse Sandals', 3, 24, 21, 'INVTYPE_FEET', {
       [INT]: 5,
       [SPI]: 4,
       [ARMOR]: 24,
     }),
-    item(3065, 'Botas de aprendiz bendecidas', 2, 20, 15, 'INVTYPE_FEET', {
+    item(3065, 'Blessed Apprentice Boots', 2, 20, 15, 'INVTYPE_FEET', {
       [INT]: 3,
       [SPI]: 3,
       [ARMOR]: 18,
     }),
   ],
   finger: [
-    item(11288, 'Anillo de perla tallada', 2, 20, 15, 'INVTYPE_FINGER', { [INT]: 2, [SPI]: 2 }),
-    item(15700, 'Sello de los Renegados', 3, 25, 21, 'INVTYPE_FINGER', { [STA]: 3, [SP]: 4 }),
+    item(11288, 'Carved Pearl Ring', 2, 20, 15, 'INVTYPE_FINGER', { [INT]: 2, [SPI]: 2 }),
+    item(15700, 'Seal of the Forsaken', 3, 25, 21, 'INVTYPE_FINGER', { [STA]: 3, [SP]: 4 }),
   ],
   waist: [
-    item(7055, 'Faja de seda azur', 2, 21, 16, 'INVTYPE_WAIST', {
+    item(7055, 'Azure Silk Belt', 2, 21, 16, 'INVTYPE_WAIST', {
       [INT]: 3,
       [SPI]: 2,
       [ARMOR]: 15,
     }),
   ],
-  wrist: [
-    item(3647, 'Brazales de tela fina', 2, 17, 12, 'INVTYPE_WRIST', { [INT]: 2, [ARMOR]: 10 }),
-  ],
+  wrist: [item(3647, 'Fine Cloth Bracers', 2, 17, 12, 'INVTYPE_WRIST', { [INT]: 2, [ARMOR]: 10 })],
   hands: [],
   chest: [],
   legs: [],
@@ -322,71 +320,71 @@ const armor: Record<string, Item[]> = {
 };
 const weapons: Record<string, Item[]> = {
   wands: [
-    item(5240, 'Varita de llamas', 2, 22, 17, 'INVTYPE_RANGEDRIGHT', { [INT]: 1 }),
-    item(5214, 'Varita de las sombras', 3, 26, 21, 'INVTYPE_RANGEDRIGHT', { [INT]: 2, [SPI]: 1 }),
+    item(5240, 'Flame Wand', 2, 22, 17, 'INVTYPE_RANGEDRIGHT', { [INT]: 1 }),
+    item(5214, 'Shadow Wand', 3, 26, 21, 'INVTYPE_RANGEDRIGHT', { [INT]: 2, [SPI]: 1 }),
   ],
   staves: [
-    item(5291, 'Bastón del sabio', 2, 24, 19, 'INVTYPE_2HWEAPON', { [INT]: 6, [SPI]: 5, [STA]: 2 }),
+    item(5291, "Sage's Staff", 2, 24, 19, 'INVTYPE_2HWEAPON', { [INT]: 6, [SPI]: 5, [STA]: 2 }),
   ],
 };
 
 // Observed sources (Everloot relations) for the candidates that have one.
 const sources: Record<number, unknown[]> = {
   7048: [
-    { rel: 'created_by', kind: 'spell', name: 'Capucha de seda azur', profession: 'Sastrería 145' },
+    { rel: 'created_by', kind: 'spell', name: 'Azure Silk Hood', profession: 'Tailoring 145' },
   ],
   4321: [
     {
       rel: 'created_by',
       kind: 'spell',
-      name: 'Capucha de tela de araña',
-      profession: 'Sastrería 125',
+      name: 'Spider Silk Hood',
+      profession: 'Tailoring 125',
     },
   ],
-  20442: [{ rel: 'reward_from', kind: 'quest', name: 'Explorador de los Baldíos', level: 18 }],
+  20442: [{ rel: 'reward_from', kind: 'quest', name: 'Barrens Explorer', level: 18 }],
   12047: [
     {
       rel: 'drops_from',
       kind: 'npc',
-      name: 'Señor de las sombras Fardel',
-      zone: 'Bosque de Argénteos',
+      name: 'Shadowlord Fardel',
+      zone: 'Silverpine Forest',
     },
   ],
   4314: [
     {
       rel: 'created_by',
       kind: 'spell',
-      name: 'Sobrehombros de lana con doble pespunte',
-      profession: 'Sastrería 110',
+      name: 'Double-stitched Woolen Shoulders',
+      profession: 'Tailoring 110',
     },
   ],
   14112: [
     {
       rel: 'drops_from',
       kind: 'npc',
-      name: 'Mago oscuro Velagrado',
-      zone: 'Cavernas de los Lamentos',
+      name: 'Darkcaster Velagrado',
+      zone: 'Wailing Caverns',
     },
   ],
   4320: [
     {
       rel: 'created_by',
       kind: 'spell',
-      name: 'Botas de seda de araña',
-      profession: 'Sastrería 125',
+      name: 'Spidersilk Boots',
+      profession: 'Tailoring 125',
     },
   ],
   3065: [{ rel: 'sold_by', kind: 'npc', name: 'Zurzna', zone: 'Orgrimmar' }],
-  11288: [{ rel: 'drops_from', kind: 'npc', name: 'world drop', zone: 'Baldíos' }],
-  15700: [{ rel: 'reward_from', kind: 'quest', name: 'Pruebas de la Ciudad Sombría', level: 21 }],
+  11288: [{ rel: 'drops_from', kind: 'npc', name: 'world drop', zone: 'The Barrens' }],
+  15700: [{ rel: 'reward_from', kind: 'quest', name: 'Trials of the Undercity', level: 21 }],
   7055: [
-    { rel: 'created_by', kind: 'spell', name: 'Faja de seda azur', profession: 'Sastrería 140' },
+    { rel: 'created_by', kind: 'spell', name: 'Azure Silk Belt', profession: 'Tailoring 140' },
   ],
   3647: [{ rel: 'sold_by', kind: 'npc', name: 'Magda', zone: 'Orgrimmar' }],
-  5240: [
-    { rel: 'created_by', kind: 'spell', name: 'Varita de llamas', profession: 'Encantamiento 110' },
+  5240: [{ rel: 'created_by', kind: 'spell', name: 'Flame Wand', profession: 'Enchanting 110' }],
+  5214: [
+    { rel: 'drops_from', kind: 'npc', name: 'Taragaman the Hungerer', zone: 'Ragefire Chasm' },
   ],
-  5214: [{ rel: 'drops_from', kind: 'npc', name: 'Taragaman el Hambriento', zone: 'Sima Ígnea' }],
   5291: [{ rel: 'sold_by', kind: 'npc', name: 'Kaelystia', zone: 'Orgrimmar' }],
 };
 const prices: Record<number, number> = {
