@@ -82,14 +82,28 @@ export async function dungeonLoot(
     ...new Set(instances.flatMap((i) => i.bosses.flatMap((b) => b.items.map((item) => item.id)))),
   ];
   const read = ids.slice(0, MAX_ITEMS);
-  const reading = (
+  // The addon answers { status, data, error }; data holds the gear reading.
+  const envelope = (
     read.length
       ? await readGame({
           kind: 'gear_candidates',
           args: { itemIds: read, minRequiredLevel: 0, maxRequiredLevel: 100, includeOther: true },
         })
-      : {}
-  ) as { status?: string; items?: GameItem[]; other?: GameItem[]; loadingIds?: number[] };
+      : { status: 'available', data: {} }
+  ) as { status?: string; error?: string; data?: unknown };
+  if (envelope.status !== 'available' || !envelope.data) {
+    return {
+      status: envelope.status ?? 'unavailable',
+      error: envelope.error ?? 'The game did not read the items.',
+      source,
+    };
+  }
+  const reading = envelope.data as {
+    status?: string;
+    items?: GameItem[];
+    other?: GameItem[];
+    loadingIds?: number[];
+  };
   const known = new Map<number, GameItem>();
   for (const item of [...(reading.items ?? []), ...(reading.other ?? [])]) {
     known.set(item.id, item);

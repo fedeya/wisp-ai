@@ -46,8 +46,12 @@ describe('dungeon loot', () => {
         reads.push(inspection);
         return {
           status: 'available',
-          items: [{ id: 14150, name: 'Robe of Evocation', itemLevelGain: 4 }],
-          other: [],
+          data: {
+            status: 'loading',
+            items: [{ id: 14150, name: 'Robe of Evocation', itemLevelGain: 4 }],
+            other: [],
+            loadingIds: [253906],
+          },
         };
       },
       data,
@@ -63,7 +67,8 @@ describe('dungeon loot', () => {
         },
       },
     ]);
-    expect(result.status).toBe('available');
+    expect(result.status).toBe('loading');
+    expect(result.loadingIds).toEqual([253906]);
     const instance = result.instances![0]!;
     expect(instance.bosses.map((boss) => boss.name)).toEqual(['Jergosh the Invoker']);
     expect(instance.bosses[0]!.items).toEqual([
@@ -87,6 +92,13 @@ describe('dungeon loot', () => {
     expect((await dungeonLoot({ dungeon: 'nowhere' }, async () => ({}), data)).status).toBe(
       'unavailable',
     );
+    expect(
+      await dungeonLoot(
+        { instanceMapId: 389 },
+        async () => ({ status: 'unavailable', error: 'Item API is unavailable' }),
+        data,
+      ),
+    ).toMatchObject({ status: 'unavailable', error: 'Item API is unavailable' });
     expect(dungeonLootInput.safeParse({ boss: 'Jergosh' }).success).toBe(false);
   });
 
