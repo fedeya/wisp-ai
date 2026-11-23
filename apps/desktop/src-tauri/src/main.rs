@@ -206,7 +206,8 @@ async fn bridge_request(
         return Err("Unsupported desktop operation.".into());
     }
     let body = body.unwrap_or(json!({}));
-    if body.to_string().len() > 100000 {
+    // Matches the bridge's body limit: a connection can save up to 1000 models.
+    if body.to_string().len() > 512 * 1024 {
         return Err("Request is too large.".into());
     }
     host.request(&method, &route, body).await
