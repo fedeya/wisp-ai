@@ -41,6 +41,16 @@ local function optional(fn, ...)
         return first, second
     end
 end
+-- A failed read stays unknown (nil); only a successful one becomes a boolean.
+local function flag(fn, unit)
+    if type(fn) ~= "function" then
+        return nil
+    end
+    local ok, value = pcall(fn, unit)
+    if ok then
+        return value and true or false
+    end
+end
 local GROUP_ROLES = { TANK = "tank", HEALER = "healer", DAMAGER = "damage" }
 local MAX_GROUP = 40
 local function groupState()
@@ -50,7 +60,7 @@ local function groupState()
     end
     return {
         inGroup = true,
-        raid = optional(IsInRaid) and true or false,
+        raid = IsInRaid() and true or false,
         size = GetNumGroupMembers(),
     }
 end
@@ -63,15 +73,15 @@ local function groupMember(unit, playerMap)
         level = UnitLevel(unit),
         class = class,
         role = GROUP_ROLES[optional(UnitGroupRolesAssigned, unit) or ""],
-        leader = optional(UnitIsGroupLeader, unit) and true or false,
-        online = optional(UnitIsConnected, unit) ~= false,
-        dead = optional(UnitIsDeadOrGhost, unit) and true or false,
+        leader = flag(UnitIsGroupLeader, unit),
+        online = flag(UnitIsConnected, unit),
+        dead = flag(UnitIsDeadOrGhost, unit),
     }
     if UnitIsUnit(unit, "player") then
         member.isPlayer = true
         return member
     end
-    if not member.online then
+    if member.online == false then
         return member
     end
     local mapId = optional(C_Map.GetBestMapForUnit, unit)
@@ -86,7 +96,7 @@ local function groupMember(unit, playerMap)
     if playerMap and mapId then
         member.sameMap = mapId == playerMap
     end
-    member.visible = optional(UnitIsVisible, unit) and true or false
+    member.visible = flag(UnitIsVisible, unit)
     local inRange, checked = optional(UnitInRange, unit)
     if checked then
         member.inRange = inRange and true or false

@@ -444,6 +444,14 @@ it("the group section lists each member and where the game says they are", funct
     assert(healer.realm == nil and healer.role == "healer" and healer.zone == "Ratchet")
     assert(healer.sameMap == false and healer.x == 0.62 and healer.y == 0.38)
     assert(not away.online and away.zone == nil and away.visible == nil)
+
+    UnitIsConnected, UnitIsGroupLeader = nil, nil
+    function UnitIsVisible()
+        error("not ready")
+    end
+    local unknown = ns.Character.Capture({ "group" }).sections.group.data.members[2]
+    assert(unknown.online == nil and unknown.leader == nil and unknown.visible == nil)
+    assert(unknown.zone == "Wailing Caverns", "an unknown connection still reads the place")
 end)
 
 it("raid units already include the player, and a solo character has no members", function()

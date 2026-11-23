@@ -5,7 +5,7 @@ description: Read the character's party or raid, who is in it and where each mem
 
 Read wow__query_character with sections=["group", "location"] before answering; do not assume who is in the group or where they are. <game_context> only says whether there is a group and its size.
 
-The group section lists each member with name, level, class, assigned role, leader, online and dead. The member with isPlayer=true is the character. For other online members it adds:
+The group section lists each member with name, level, class, assigned role, leader, online and dead. The member with isPlayer=true is the character. A missing field means the game did not report it, not false: do not call a member offline, alive or not the leader without the field. For other members not reported offline it adds:
 
 - mapId and zone: the map the member is on. sameMap=true means the same map as the character, for example the same dungeon.
 - x and y (0–1): only where the game shares positions. They are missing inside instances and for some distant members; missing coordinates do not mean the member is offline or away.
