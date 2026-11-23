@@ -40,6 +40,10 @@ export class NativeVault implements SecretVault {
           reject(Error('Native credential storage failed'));
         }
       });
+      // A helper that exits without reading its input closes the pipe under
+      // the write. Its exit code already fails the call; without a listener
+      // the write error would be uncaught and stop the bridge.
+      child.stdin.on('error', () => {});
       child.stdin.end(input);
     });
   }
