@@ -26,6 +26,7 @@
     "**/src-tauri/resources/**",
     "**/src-tauri/gen/**",
     "**/dist/**",
-    "**/.output/**"
+    "**/.output/**",
+    "apps/bridge/src/integrations/dungeon-loot.json"
   ]
 }

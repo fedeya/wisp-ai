@@ -426,7 +426,7 @@ function inspectors.gear_candidates(args)
     assert(C_Item and C_Item.GetItemInfo, "Item API is unavailable")
     local maxLevel = args.maxRequiredLevel or UnitLevel("player")
     local minLevel = args.minRequiredLevel or 0
-    local ranked, loadingIds, equippedLoading = {}, {}, {}
+    local ranked, other, loadingIds, equippedLoading = {}, {}, {}, {}
     local counts =
         { requested = #args.itemIds, tooHighLevel = 0, tooLowLevel = 0, notEquipment = 0 }
     for _, id in ipairs(args.itemIds) do
@@ -436,6 +436,9 @@ function inspectors.gear_candidates(args)
             loadingIds[#loadingIds + 1] = id
         elseif not slots then
             counts.notEquipment = counts.notEquipment + 1
+            if args.includeOther then
+                other[#other + 1] = { id = id, name = item.name, quality = item.quality }
+            end
         elseif (item.requiredLevel or 0) > maxLevel then
             counts.tooHighLevel = counts.tooHighLevel + 1
         elseif (item.requiredLevel or 0) < minLevel then
@@ -476,6 +479,7 @@ function inspectors.gear_candidates(args)
     return {
         status = #loadingIds > 0 and "loading" or "available",
         items = ranked,
+        other = args.includeOther and other or nil,
         counts = counts,
         loadingIds = #loadingIds > 0 and loadingIds or nil,
         note = "Every match, ordered by item level gain over the weakest matching equipped slot; the order is not a recommendation or stat weighting. Armor/weapon proficiency is not checked. loadingIds were not in the client cache yet.",

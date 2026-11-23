@@ -32,6 +32,7 @@ import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
 import { readLoadedItems, retriesItemLoading } from '../addon/item-loading.ts';
 import { searchGear } from '../integrations/gear-search.ts';
+import { dungeonLoot } from '../integrations/dungeon-loot.ts';
 import { itemSources } from '../integrations/item-sources.ts';
 import { characterIdentity, conversationTitle, queryCharacterSections } from '../chat/context.ts';
 export interface MemoryView {
@@ -106,6 +107,7 @@ const inspectionTools = {
   search_armor: 'search_armor',
   search_weapons: 'search_weapons',
   item_sources: 'item_sources',
+  dungeon_loot: 'dungeon_loot',
   auctions: 'inspect_auctions',
   macros: 'inspect_macros',
   map: 'inspect_map',
@@ -527,6 +529,11 @@ export function createAgentApp(deps: AgentDependencies) {
           inspection,
           (candidates) => readLoadedItems(() => request(candidates), abort),
           { signal: abort },
+        );
+      }
+      if (inspection?.kind === 'dungeon_loot') {
+        return dungeonLoot(inspection.args, (candidates) =>
+          readLoadedItems(() => request(candidates), abort),
         );
       }
       if (inspection?.kind === 'item_sources') {

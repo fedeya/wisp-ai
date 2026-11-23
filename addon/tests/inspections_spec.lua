@@ -732,6 +732,14 @@ it(
         assert(best.id == 10 and best.slot == 12 and best.itemLevelGain == 16)
         assert(best.equipped.id == 2 and best.statDelta.ITEM_MOD_INTELLECT_SHORT == 4)
         assert(best.link == nil and d.items[2].id == 12 and #d.items == 2)
+        assert(d.other == nil, "only dungeon loot asks for the items that are not equipment")
+
+        d = ns.Character.Inspect({
+            kind = "gear_candidates",
+            args = { itemIds = { 13 }, includeOther = true },
+        }).data
+        assert(#d.other == 1 and d.other[1].id == 13 and d.other[1].name == "Linen")
+        assert(d.other[1].quality == 1 and #d.items == 0)
 
         d = ns.Character.Inspect({
             kind = "gear_candidates",
