@@ -152,6 +152,23 @@ assert(next(timers)==nil and saves==0 and resets==0 and loads==0)
   expect(decodeFrame(h.saved())?.kind).toBe(UPLINK_KIND);
 });
 
+test('a start that waits for the character GUID retries on its own', () => {
+  const h = transportHarness(false);
+  h.run(`
+ns.Transport.Send({type='hello'})
+assert(ns.Transport.StartTransport()==false and ns.Transport.StartTransport()==false)
+assert(#delayed==1 and delayed[1].seconds==1,'one pending retry at a time')
+local retry=table.remove(delayed,1)
+retry.fn()
+assert(#delayed==1 and next(timers)==nil,'still waiting reschedules the retry')
+playerGuid='Player-Test-GUID'
+table.remove(delayed,1).fn()
+assert(#delayed==0 and timers[.04],'the retry starts the transport')
+now=.04;timers[.04]();assert(saves==1 and ns.transportStats.error==nil and #logs==1)
+`);
+  expect(decodeFrame(h.saved())?.kind).toBe(UPLINK_KIND);
+});
+
 test('missing helper files require desktop setup even before the character is ready', () => {
   const h = transportHarness(false);
   h.run(`
