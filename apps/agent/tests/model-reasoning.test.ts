@@ -179,3 +179,31 @@ test.each([
   ).rejects.toThrow('Captured request');
   expect(body?.prompt_cache_key).toBe('wisp-conversation');
 });
+test('model requests name their Eve session for the bridge, not the provider', async () => {
+  const sessions: (string | null)[] = [];
+  vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+    sessions.push(new Headers(init.headers).get('x-wisp-session'));
+    throw Error('Captured native request');
+  });
+  const options = {
+    prompt: [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'Hello' }] }],
+  };
+  for (const sessionId of ['eve-session-test', undefined]) {
+    const model = connectionModel(
+      {
+        model: 'test',
+        modelId: 'claude-sonnet-4-6',
+        provider: 'anthropic',
+        connectionId: '35302f8c-128a-48fb-98a1-9eb03bb71f72',
+        effort: 'provider-default',
+      },
+      'http://127.0.0.1:43187',
+      'local',
+      async () => false,
+      undefined,
+      sessionId,
+    );
+    await expect(model.doGenerate(options)).rejects.toThrow('Captured native request');
+  }
+  expect(sessions).toEqual(['eve-session-test', null]);
+});

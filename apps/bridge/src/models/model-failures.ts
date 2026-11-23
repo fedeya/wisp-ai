@@ -1,8 +1,9 @@
-import { parseConnectionModel } from '@wisp/protocol/providers';
+import type { IncomingHttpHeaders } from 'node:http';
+import { MODEL_SESSION_HEADER } from '@wisp/protocol/agent-rpc';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
 
 /**
- * Why the latest model request of a connection failed, as a fixed category.
+ * Why a model request failed, as a fixed category.
  * Taken from the provider's HTTP status or the kind of error the proxy threw,
  * never from the provider's message.
  */
@@ -43,19 +44,31 @@ export function thrownFailureKind(
   return 'wisp_rejected';
 }
 
-/** Model requests are keyed by connection; the ChatGPT subscription is one source. */
-export function modelSource(model: string) {
-  return parseConnectionModel(model)?.connection ?? 'chatgpt';
+/** The Eve session a proxied model request belongs to, when the agent named it. */
+export function requestSession(headers: IncomingHttpHeaders) {
+  const value = headers[MODEL_SESSION_HEADER];
+  return typeof value === 'string' && /^[\w-]{1,128}$/.test(value) ? value : undefined;
 }
 
+const keptSessions = 256;
+
+/**
+ * The latest model failure of each Eve session. A chat runs one turn at a time on
+ * its own session, so a failure seen since the turn started is that turn's.
+ */
 export class ModelFailures {
   private latest = new Map<string, { kind: ModelFailureKind; at: number }>();
-  record(source: string, kind: ModelFailureKind | undefined) {
-    if (kind) this.latest.set(source, { kind, at: performance.now() });
+  record(session: string | undefined, kind: ModelFailureKind | undefined) {
+    if (!session || !kind) return;
+    this.latest.delete(session);
+    this.latest.set(session, { kind, at: performance.now() });
+    if (this.latest.size > keptSessions) {
+      this.latest.delete(this.latest.keys().next().value!);
+    }
   }
-  /** The latest failure of the source's requests at or after `since` (performance.now()). */
-  since(source: string, since: number) {
-    const failure = this.latest.get(source);
+  /** The session's latest failure at or after `since` (performance.now()). */
+  since(session: string | undefined, since: number) {
+    const failure = session ? this.latest.get(session) : undefined;
     return failure && failure.at >= since ? failure.kind : undefined;
   }
 }

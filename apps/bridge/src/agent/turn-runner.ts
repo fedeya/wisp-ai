@@ -13,7 +13,7 @@ import { errorMessage } from '../errors.ts';
 import type { Logger } from 'pino';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
-import { modelSource, type ModelFailures } from '../models/model-failures.ts';
+import type { ModelFailures } from '../models/model-failures.ts';
 import type { ChatErrorCode, ChatOutcome, UsageTelemetry } from '../telemetry.ts';
 
 function isTimeout(error: unknown): boolean {
@@ -170,6 +170,8 @@ export function createTurnRunner(deps: TurnDependencies) {
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
+    // Failure paths clear chat.eveId before telemetry reads which session failed.
+    let eveSession: string | undefined;
     controllers.set(chat, controller);
     usageLimitedChats.delete(chat);
     const generation = Symbol();
@@ -257,6 +259,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         turnInput(text, context, chat, capabilitySettings.snapshot()),
         controller.signal,
       );
+      eveSession = chat.eveId;
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
       changed();
@@ -385,7 +388,7 @@ export function createTurnRunner(deps: TurnDependencies) {
               provider: deps.modelProvider?.(model),
               failureKind:
                 outcome === 'failed' || outcome === 'timeout'
-                  ? deps.modelFailures?.since(modelSource(model), started)
+                  ? deps.modelFailures?.since(eveSession, started)
                   : undefined,
             }
           : {},

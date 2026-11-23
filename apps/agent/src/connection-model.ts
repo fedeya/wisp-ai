@@ -2,7 +2,7 @@ import { createProviderModel } from './providers.ts';
 import { createOpenAI } from '@ai-sdk/openai';
 import { wrapLanguageModel } from 'ai';
 import { normalizeModelError } from '@wisp/protocol/model-errors';
-import { selectedModel } from '@wisp/protocol/agent-rpc';
+import { MODEL_SESSION_HEADER, selectedModel } from '@wisp/protocol/agent-rpc';
 import type { z } from 'zod';
 import { subscriptionCallOptions, filterWebSearch } from './model-tools.ts';
 import { applyModelReasoning } from './reasoning.ts';
@@ -13,6 +13,7 @@ export function connectionModel(
   token: string,
   webSearchEnabled: () => Promise<boolean>,
   cacheKey?: string,
+  sessionId?: string,
 ) {
   const native = !!selected.connectionId;
   const baseURL = native
@@ -31,6 +32,9 @@ export function connectionModel(
     headers.delete('x-api-key');
     headers.delete('x-goog-api-key');
     headers.set('authorization', 'Bearer ' + token);
+    if (sessionId) {
+      headers.set(MODEL_SESSION_HEADER, sessionId);
+    }
     const response = await fetch(input, { ...init, headers });
     if (response.headers.has('x-wisp-model-error')) {
       const error = (await response.json()) as { error: { message: string } };

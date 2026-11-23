@@ -5,7 +5,12 @@ import { readCompletedResponse } from './response-stream.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { modelTiming } from './model-timing.ts';
-import { httpFailureKind, thrownFailureKind, type ModelFailures } from './model-failures.ts';
+import {
+  httpFailureKind,
+  requestSession,
+  thrownFailureKind,
+  type ModelFailures,
+} from './model-failures.ts';
 import type { Logger } from 'pino';
 
 export async function proxyConnectionModel(
@@ -48,11 +53,11 @@ export async function proxyConnectionModel(
       AbortSignal.any([abort.signal, AbortSignal.timeout(180000)]),
     );
   } catch (error) {
-    failures?.record(route[1]!, thrownFailureKind(error, abort.signal));
+    failures?.record(requestSession(req.headers), thrownFailureKind(error, abort.signal));
     throw error;
   }
   if (!response.ok) {
-    failures?.record(route[1]!, httpFailureKind(response.status));
+    failures?.record(requestSession(req.headers), httpFailureKind(response.status));
   }
   res.writeHead(response.status, {
     'content-type': response.headers.get('content-type') || 'application/json',
@@ -84,12 +89,12 @@ export async function proxyModel(
   try {
     request = await sendChatGPTRequest(req, auth, abort.signal);
   } catch (error) {
-    failures?.record('chatgpt', thrownFailureKind(error, abort.signal));
+    failures?.record(requestSession(req.headers), thrownFailureKind(error, abort.signal));
     throw error;
   }
   const { response, body, streaming, started } = request;
   if (!response.ok) {
-    failures?.record('chatgpt', httpFailureKind(response.status));
+    failures?.record(requestSession(req.headers), httpFailureKind(response.status));
   }
   if (response.ok && !streaming) {
     const completed = await readCompletedResponse(response);

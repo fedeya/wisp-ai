@@ -104,14 +104,22 @@ test('SDK streams via bridge, forces private responses, and preserves terminal f
     });
     assert.equal(bad.status, 400);
     // Rejected before reaching OpenAI; the streamed failures above were HTTP 200.
-    assert.equal(failures.since('chatgpt', 0), 'wisp_rejected');
+    // Unnamed requests (as from the SDK above) are not attributed to a session.
+    assert.equal(failures.since('chatgpt', 0), undefined);
+    const named = await fetch('http://127.0.0.1:' + (server.address() as { port: number }).port, {
+      method: 'POST',
+      headers: { 'x-wisp-session': 'eve-1' },
+      body: JSON.stringify({ model: 'hidden-model' }),
+    });
+    assert.equal(named.status, 400);
+    assert.equal(failures.since('eve-1', 0), 'wisp_rejected');
   } finally {
     server.closeAllConnections();
     await new Promise<void>((r) => server.close(() => r()));
   }
 });
 
-test('connection proxy records the provider status of failed requests by connection', async () => {
+test('connection proxy records the provider status of failed requests by session', async () => {
   const id = '00000000-0000-4000-8000-000000000001';
   let status = 404;
   const connections = {
@@ -134,15 +142,23 @@ test('connection proxy records the provider status of failed requests by connect
     id +
     '/chat/completions';
   try {
-    assert.equal((await fetch(url, { method: 'POST', body: '{}' })).status, 404);
-    assert.equal(failures.since(id, 0), 'not_found');
+    assert.equal(
+      (await fetch(url, { method: 'POST', headers: { 'x-wisp-session': 'eve-1' }, body: '{}' }))
+        .status,
+      404,
+    );
+    assert.equal(failures.since('eve-1', 0), 'not_found');
     status = 429;
-    await fetch(url, { method: 'POST', body: '{}' });
-    assert.equal(failures.since(id, 0), 'rate_limited');
+    await fetch(url, { method: 'POST', headers: { 'x-wisp-session': 'eve-1' }, body: '{}' });
+    assert.equal(failures.since('eve-1', 0), 'rate_limited');
     status = 0;
-    assert.equal((await fetch(url, { method: 'POST', body: '{}' })).status, 503);
-    assert.equal(failures.since(id, 0), 'network');
-    assert.equal(failures.since('chatgpt', 0), undefined);
+    assert.equal(
+      (await fetch(url, { method: 'POST', headers: { 'x-wisp-session': 'eve-1' }, body: '{}' }))
+        .status,
+      503,
+    );
+    assert.equal(failures.since('eve-1', 0), 'network');
+    assert.equal(failures.since('eve-2', 0), undefined);
   } finally {
     server.closeAllConnections();
     await new Promise<void>((r) => server.close(() => r()));

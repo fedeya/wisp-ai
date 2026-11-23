@@ -86,6 +86,8 @@ export const rpcResponses = {
   wowhead: reading,
 };
 export type RpcOutput<K extends RpcEndpoint> = z.output<(typeof rpcResponses)[K]>;
+/** Names the Eve session on model requests, so the bridge can tell which turn a failure belongs to. */
+export const MODEL_SESSION_HEADER = 'x-wisp-session';
 export const selectedModel = z.object({
   model: z.string().min(1),
   effort: z.string().min(1),

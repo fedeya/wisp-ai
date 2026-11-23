@@ -787,7 +787,7 @@ test('steady engine activity keeps a long turn alive past the idle timeout', asy
   expect(f.cancel).not.toHaveBeenCalled();
 });
 
-test('chat telemetry names the provider and why its model requests failed during the turn', async () => {
+test('chat telemetry names the provider and why its own model requests failed during the turn', async () => {
   const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
   const failures = new ModelFailures();
   const connection = '00000000-0000-4000-8000-000000000001';
@@ -807,7 +807,7 @@ test('chat telemetry names the provider and why its model requests failed during
   });
 
   // A failure from an earlier turn is not this turn's cause.
-  failures.record(connection, 'rate_limited');
+  failures.record('eve', 'rate_limited');
   f.send.mockImplementationOnce(failedTurn);
   await f.run(f.chat, 'Private question');
   expect(telemetry.chat).toHaveBeenLastCalledWith(
@@ -821,7 +821,9 @@ test('chat telemetry names the provider and why its model requests failed during
   );
 
   f.send.mockImplementationOnce(async () => {
-    failures.record(connection, httpFailureKind(404));
+    failures.record('eve', httpFailureKind(404));
+    // Another chat's failure on the same connection is not this turn's.
+    failures.record('other-eve-session', 'rate_limited');
     return failedTurn();
   });
   await f.run(f.chat, 'Private question');
@@ -837,7 +839,7 @@ test('chat telemetry names the provider and why its model requests failed during
 
   // A retried request that later succeeded does not mark a completed turn.
   f.send.mockImplementationOnce(async () => {
-    failures.record(connection, 'provider_error');
+    failures.record('eve', 'provider_error');
     return {
       stream: async function* () {},
       result: async () => ({ status: 'completed', sessionEnded: false }),
