@@ -24,6 +24,7 @@ function show(features: FeaturesState) {
 }
 const flag = {
   id: 'new_panel',
+  name: 'New panel',
   description: 'A new panel.',
   enabled: true,
   channelDefault: true,
@@ -40,8 +41,8 @@ test('a flag shows its channel default and can be turned off', async () => {
   const setFeature = show({ channel: 'nightly', flags: [flag] });
   render(<ExperimentalSettings />);
   expect(screen.getByText('On by default in Nightly')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Use the default for new_panel' })).toBeNull();
-  const toggle = screen.getByRole('switch', { name: 'Enable new_panel' });
+  expect(screen.queryByRole('button', { name: 'Use the default for New panel' })).toBeNull();
+  const toggle = screen.getByRole('switch', { name: 'Enable New panel' });
   expect(toggle.getAttribute('aria-checked')).toBe('true');
   await fireEvent.click(toggle);
   expect(setFeature).toHaveBeenCalledWith('new_panel', false);
@@ -54,7 +55,7 @@ test('an overridden flag says so and can return to its default', async () => {
   });
   render(<ExperimentalSettings />);
   expect(screen.getByText('Changed by you · off by default in Stable')).toBeTruthy();
-  await fireEvent.click(screen.getByRole('button', { name: 'Use the default for new_panel' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Use the default for New panel' }));
   expect(setFeature).toHaveBeenCalledWith('new_panel', null);
 });
 

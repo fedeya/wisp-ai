@@ -42,6 +42,7 @@ Register it in `packages/protocol/src/features.ts`:
 ```ts
 export const featureFlags = {
   combat_coach: {
+    name: 'Combat coach',
     description: 'Coaching tips during combat.',
     channels: ['development', 'nightly'],
   },
@@ -52,15 +53,21 @@ Then check it where the feature lives. The name is typed from the registry,
 so removing the flag makes every TypeScript check fail to compile; search the
 addon for the name by hand.
 
-| Surface | Check                                                                                             |
-| ------- | ------------------------------------------------------------------------------------------------- |
-| Bridge  | `features.enabled('combat_coach')`                                                                |
-| Desktop | `useFeature('combat_coach')` (from `apps/desktop/src/features.tsx`)                               |
-| Agent   | `await featureEnabled('combat_coach')`, or `enabledTool(name, tool, { feature: 'combat_coach' })` |
-| Addon   | `ns.Core.FeatureEnabled("combat_coach")`                                                          |
+| Surface | Check                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------- |
+| Bridge  | `features.enabled('combat_coach')`                                                                      |
+| Desktop | `useFeature('combat_coach')` (from `apps/desktop/src/features.tsx`)                                     |
+| Agent   | `await featureEnabled('combat_coach')`                                                                  |
+| Addon   | `ns.Core.FeatureEnabled("combat_coach")`, and `ns.Core.OnFeaturesChanged(listener)` to react to changes |
 
-Every flag is off until the bridge answers, so code behind a flag must work
-when it is off.
+A tool that belongs to the feature goes in `toolFeatures` in
+`packages/protocol/src/capabilities.ts` (`coach: 'combat_coach'`). While the flag
+is off, the bridge leaves the tool out of the desktop and addon capability
+lists and publishes it as disabled, so the agent never offers it.
+
+Every flag is off until the bridge answers. In the addon that means at login:
+code that decides at startup should also register `ns.Core.OnFeaturesChanged`
+and check again, and everything behind a flag must work while it is off.
 
 ## Ship or remove a flag
 

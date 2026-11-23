@@ -84,10 +84,45 @@ function ns.Core.NotifyAppUpdate(version)
     appUpdateNoticed = version
     ns.Core.Log(ns.LocaleText("notice.appUpdateAvailable", { version = version }))
 end
+-- Names of the feature flags that are on, and who wants to hear when they change.
 local features = {}
+local featureListeners = {}
+local function sameFeatures(left, right)
+    for name in pairs(left) do
+        if not right[name] then
+            return false
+        end
+    end
+    for name in pairs(right) do
+        if not left[name] then
+            return false
+        end
+    end
+    return true
+end
+-- Calls `listener()` after a snapshot turns any feature flag on or off. Every flag
+-- is off before the first snapshot, so code that decides at login should also
+-- listen, then read ns.Core.FeatureEnabled again.
+function ns.Core.OnFeaturesChanged(listener)
+    featureListeners[#featureListeners + 1] = listener
+end
 -- Keeps the feature flags the bridge resolved, by name; a snapshot replaces them all.
 function ns.Core.SetFeatures(values)
-    features = type(values) == "table" and values or {}
+    local enabled = {}
+    if type(values) == "table" then
+        for name, value in pairs(values) do
+            if value == true then
+                enabled[name] = true
+            end
+        end
+    end
+    if sameFeatures(features, enabled) then
+        return
+    end
+    features = enabled
+    for _, listener in ipairs(featureListeners) do
+        listener()
+    end
 end
 -- Whether the bridge turned a feature flag on. Every flag is off until the first snapshot.
 function ns.Core.FeatureEnabled(name)

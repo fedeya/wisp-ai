@@ -2,9 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { dynamicEvaluate } from '../node_modules/eve/dist/src/dynamic/definition.js';
 import { featureEnabled } from '../src/capabilities.ts';
-import { enabledTool } from '../src/enabled-tool.ts';
 
 let directory = '';
 afterEach(async () => {
@@ -34,17 +32,4 @@ test('every flag is off without a published file or features', async () => {
   expect(await featureEnabled(flag('new_panel'))).toBe(false);
   await capabilities({ enabled: {} });
   expect(await featureEnabled(flag('new_panel'))).toBe(false);
-});
-
-test('a tool behind a feature flag is offered only while the flag is on', async () => {
-  const file = await capabilities({ enabled: {}, features: { new_panel: false } });
-  const tool = enabledTool('web_fetch', { name: 'definition' }, { feature: flag('new_panel') });
-  expect(await dynamicEvaluate(tool)({} as never)).toBeNull();
-  await writeFile(file, JSON.stringify({ enabled: {}, features: { new_panel: true } }));
-  expect(await dynamicEvaluate(tool)({} as never)).toEqual({ name: 'definition' });
-  await writeFile(
-    file,
-    JSON.stringify({ enabled: { 'tool:web_fetch': false }, features: { new_panel: true } }),
-  );
-  expect(await dynamicEvaluate(tool)({} as never)).toBeNull();
 });

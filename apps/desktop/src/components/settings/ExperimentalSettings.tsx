@@ -33,7 +33,7 @@ export default function ExperimentalSettings() {
       {features.flags.map((flag) => (
         <Row
           key={flag.id}
-          title={flag.id}
+          title={flag.name}
           detail={
             <>
               {flag.description}
@@ -46,14 +46,14 @@ export default function ExperimentalSettings() {
                 <Button
                   size="text"
                   disabled={locked}
-                  aria-label={`Use the default for ${flag.id}`}
+                  aria-label={`Use the default for ${flag.name}`}
                   onClick={() => void setFeature(flag.id, null)}
                 >
                   Reset
                 </Button>
               )}
               <Toggle
-                label={`Enable ${flag.id}`}
+                label={`Enable ${flag.name}`}
                 checked={flag.enabled}
                 disabled={locked}
                 onChange={(checked) => void setFeature(flag.id, checked)}

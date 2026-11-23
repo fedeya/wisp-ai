@@ -4,8 +4,12 @@ import type { FeatureOverrides, FeatureRegistry } from '@wisp/protocol/features'
 import { ChannelFeatureProvider, Features, OVERRIDE_REASON } from '../src/features.ts';
 
 const registry: FeatureRegistry = {
-  new_panel: { description: 'A new panel.', channels: ['development', 'nightly'] },
-  dev_only: { description: 'Only while building it.', channels: ['development'] },
+  new_panel: {
+    name: 'New panel',
+    description: 'A new panel.',
+    channels: ['development', 'nightly'],
+  },
+  dev_only: { name: 'Dev only', description: 'Only while building it.', channels: ['development'] },
 };
 
 async function start(
@@ -80,6 +84,7 @@ describe('Features', () => {
       flags: [
         {
           id: 'new_panel',
+          name: 'New panel',
           description: 'A new panel.',
           enabled: false,
           channelDefault: true,
@@ -87,6 +92,7 @@ describe('Features', () => {
         },
         {
           id: 'dev_only',
+          name: 'Dev only',
           description: 'Only while building it.',
           enabled: false,
           channelDefault: false,

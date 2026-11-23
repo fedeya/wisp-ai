@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { toolDescriptions, toolFeatures } from '../src/capabilities.ts';
 import {
   channelDefault,
   featureChannel,
@@ -25,7 +26,11 @@ describe('featureChannel', () => {
 });
 
 test('a flag is on by default only in its channels', () => {
-  const flag = { description: 'Try it', channels: ['development', 'nightly'] } as const;
+  const flag = {
+    name: 'Try it',
+    description: 'Try it',
+    channels: ['development', 'nightly'],
+  } as const;
   expect(channelDefault(flag, 'development')).toBe(true);
   expect(channelDefault(flag, 'nightly')).toBe(true);
   expect(channelDefault(flag, 'stable')).toBe(false);
@@ -41,6 +46,7 @@ test('every registered flag is named, described and not yet shipped', () => {
   const registry: FeatureRegistry = featureFlags;
   for (const [id, flag] of Object.entries(registry)) {
     expect(featureName.safeParse(id).success, id).toBe(true);
+    expect(flag.name.trim(), id).not.toBe('');
     expect(flag.description.trim(), id).not.toBe('');
     expect(
       flag.channels.every((channel) => featureChannels.includes(channel)),
@@ -48,5 +54,12 @@ test('every registered flag is named, described and not yet shipped', () => {
     ).toBe(true);
     // A flag that reaches Stable has shipped: delete it and its checks instead.
     expect(flag.channels, id).not.toContain('stable');
+  }
+});
+
+test('every flagged tool is a registered tool behind a registered flag', () => {
+  for (const [tool, flag] of Object.entries(toolFeatures)) {
+    expect(Object.hasOwn(toolDescriptions, tool), tool).toBe(true);
+    expect(Object.hasOwn(featureFlags, flag), tool).toBe(true);
   }
 });

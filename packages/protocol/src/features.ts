@@ -8,6 +8,8 @@ export const featureChannels = ['development', 'nightly', 'stable'] as const;
 export type FeatureChannel = (typeof featureChannels)[number];
 
 export interface FeatureDefinition {
+  /** Short name shown under Settings → Experimental. */
+  name: string;
   /** What turning the flag on changes, shown under Settings → Experimental. */
   description: string;
   /** Channels where the flag is on unless the user overrides it. */
@@ -18,10 +20,11 @@ export type FeatureRegistry = Readonly<Record<string, FeatureDefinition>>;
 /**
  * Unfinished features that can merge to `main` without reaching Stable.
  *
- * Add one as `my_feature: { description: '…', channels: ['development', 'nightly'] }`,
+ * Add one as `my_feature: { name: 'My feature', description: '…', channels: ['development', 'nightly'] }`,
  * then check it with `features.enabled('my_feature')` in the bridge,
  * `useFeature('my_feature')` in the desktop, `featureEnabled('my_feature')` in
- * the agent or `ns.Core.FeatureEnabled("my_feature")` in the addon.
+ * the agent or `ns.Core.FeatureEnabled("my_feature")` in the addon. A tool that
+ * belongs to the feature goes in `toolFeatures` (`@wisp/protocol/capabilities`).
  *
  * A flag is temporary: when its feature ships to everyone, delete the entry and
  * its checks instead of adding `stable` to `channels`.
@@ -38,6 +41,7 @@ export type FeatureOverrides = z.infer<typeof featureOverrides>;
 
 export const featureViewSchema = z.object({
   id: featureName,
+  name: z.string(),
   description: z.string(),
   /** The value every surface uses. */
   enabled: z.boolean(),

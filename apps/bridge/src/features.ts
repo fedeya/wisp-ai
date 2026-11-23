@@ -169,6 +169,7 @@ export class Features {
         const override = Object.hasOwn(this.overrides, id) ? this.overrides[id] : null;
         return {
           id,
+          name: definition.name,
           description: definition.description,
           enabled: this.client.getBooleanValue(id, false),
           channelDefault: channelDefault(definition, this.channel),

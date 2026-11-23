@@ -27,3 +27,31 @@ test('the agent file carries the resolved feature flags next to the capability s
     new_panel: false,
   });
 });
+
+test('a tool behind a feature flag that is off is left out everywhere', async () => {
+  directory = await mkdtemp(path.join(tmpdir(), 'wisp-capabilities-'));
+  const settings = new CapabilitySettings(
+    path.join(directory, 'capabilities.json'),
+    [
+      { id: 'tool:query_character', name: 'Character', group: 'integrations', description: '' },
+      { id: 'tool:coach', name: 'Coach', group: 'integrations', description: '' },
+    ],
+    { coach: 'combat_coach' },
+  );
+  settings.agentFile = path.join(directory, 'agent-capabilities.json');
+  settings.features = { combat_coach: false };
+  expect(settings.snapshot().map((entry) => entry.id)).toEqual(['tool:query_character']);
+  expect(settings.enabled('tool:coach')).toBe(false);
+  await expect(settings.set('tool:coach', true)).rejects.toThrow('Unknown capability');
+  await settings.publish();
+  expect(JSON.parse(await readFile(settings.agentFile, 'utf8')).enabled['tool:coach']).toBe(false);
+
+  settings.features = { combat_coach: true };
+  expect(settings.snapshot().map((entry) => entry.id)).toEqual([
+    'tool:query_character',
+    'tool:coach',
+  ]);
+  expect(settings.enabled('tool:coach')).toBe(true);
+  await settings.publish();
+  expect(JSON.parse(await readFile(settings.agentFile, 'utf8')).enabled['tool:coach']).toBe(true);
+});
