@@ -22,7 +22,7 @@ import { autoAddLimit, suggestedModels } from './suggested-models';
 const labelClass = 'text-xs font-medium text-[#bdcccf]';
 const modelFieldsClass =
   'api-model-fields gap-[10px] grid grid-cols-[minmax(0,_1fr)_minmax(160px,_0.7fr)_auto] items-center max-sm:grid-cols-[1fr]';
-const keyPages: Partial<Record<ProviderId, string>> = {
+export const keyPages: Partial<Record<ProviderId, string>> = {
   anthropic: 'https://platform.claude.com/settings/keys',
   google: 'https://aistudio.google.com/apikey',
   openai: 'https://platform.openai.com/api-keys',
