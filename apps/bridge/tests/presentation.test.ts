@@ -217,7 +217,7 @@ test('invalid or failed presentations leave prose available without tool rows', 
   expect(f.chat.activity).toEqual([]);
   expect(f.chat.messages).toHaveLength(1);
   expect(f.chat.messages[0].ui).toEqual([]);
-  expect(replyContent(f.chat.messages[0])?.text).toBe('Antes.Después.');
+  expect(replyContent(f.chat.messages[0])?.text).toBe('Antes.\n\nDespués.');
 });
 
 test('updating a component preserves its first inline position and rejects identity changes', () => {
