@@ -1,21 +1,12 @@
 import { defineEval } from '../harness.ts';
-import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
+import { calledTool, replied } from '../checks.ts';
+import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs, mapStubs } from '../fixtures/world.ts';
-import { saveTurn } from '../report.ts';
-
-const prompt = 'can you mark the Ragefire Chasm entrance on my map?';
 
 export default defineEval({
   description: 'A map request resolves the destination and places one waypoint.',
   tags: ['tiers'],
-  async test(t) {
-    const session = await t.session({
-      stubs: [...mapStubs(), ...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
-    });
-    const started = performance.now();
-    const turn = await session.send(playerMessage(prompt));
-    await saveTurn('mark-rfc', prompt, turn, performance.now() - started);
-    turn.expectOk();
-    t.calledTool('wow__set_map_waypoint', { count: 1 });
-  },
+  question: 'can you mark the Ragefire Chasm entrance on my map?',
+  stubs: [...mapStubs(), ...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
+  gates: [replied(), calledTool('wow__set_map_waypoint', { count: 1 })],
 });

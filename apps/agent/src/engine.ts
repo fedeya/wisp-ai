@@ -360,50 +360,17 @@ export function createAgentEngine(options: EngineOptions) {
     return compacted;
   }
 
-  async function* run(
+  // The Mastra agent for one turn and the options its run uses. Evals build the
+  // same agent, so they test exactly what players get.
+  function buildAgent(
     session: string,
-    input: string,
     signal: AbortSignal,
-    settle: (result: EngineResult) => void,
-  ): AsyncGenerator<EngineEvent> {
-    const { instructions, skills } = await load();
-    const selected = await modelSettings(session, signal);
-    const tools = await turnTools(session, signal);
-    const model = connectionModel(
-      selected,
-      origin(),
-      token,
-      () => capabilityEnabled('tool:web_search'),
-      // A stable per-conversation key keeps the tool loop on one prompt cache.
-      'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32),
-      session,
-    );
-    yield { type: 'turn.started', data: {} };
-    // The player's input, as replayable history consumes it (rebuildHistory).
-    yield { type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } };
-
-    let messages = await history.load(session);
-    if (
-      selected.contextWindow &&
-      estimateTokens(messages) + estimateTokens(input) >
-        selected.contextWindow * COMPACTION_THRESHOLD
-    ) {
-      yield { type: 'context.started', data: { kind: 'compaction' } };
-      const compacted = await compact(session, messages, model, signal);
-      yield {
-        type: 'context.settled',
-        data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
-      };
-      messages = compacted ?? (await history.load(session));
-    }
-    const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
-    const user: ModelMessage = {
-      role: 'user',
-      content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
-    };
-    const stored = messages.length;
-    await history.append(session, stored, [user]);
-
+    tools: Awaited<ReturnType<typeof turnTools>>,
+    model: ReturnType<typeof connectionModel>,
+    selected: { provider?: string; effort: string },
+    instructions: string,
+    skills: ReturnType<typeof createSkill>[],
+  ) {
     const labels = new Map<string, ToolDefinition['label']>();
     const deferred = new Map(tools.deferred.map((tool) => [tool.name, tool]));
     // tool_call also reaches direct tools, for a model that routes every call through it.
@@ -479,6 +446,83 @@ export function createAgentEngine(options: EngineOptions) {
         ? {}
         : { reasoningEffort: selected.effort };
 
+    const endsTurn = new Set(
+      Object.entries(tools.direct)
+        .filter(([, tool]) => tool.endsTurn)
+        .map(([name]) => name),
+    );
+    const options = {
+      maxSteps: MAX_STEPS,
+      stopWhen: [
+        stepCountIs(MAX_STEPS),
+        ({
+          steps,
+        }: {
+          steps: { toolCalls?: { toolName?: string; payload?: { toolName?: string } }[] }[];
+        }) =>
+          (steps.at(-1)?.toolCalls ?? []).some((call) =>
+            endsTurn.has(call.toolName ?? call.payload?.toolName ?? ''),
+          ),
+      ] as never,
+      providerOptions: { openai },
+    };
+    return { agent, labels, deferred, options };
+  }
+
+  async function* run(
+    session: string,
+    input: string,
+    signal: AbortSignal,
+    settle: (result: EngineResult) => void,
+  ): AsyncGenerator<EngineEvent> {
+    const { instructions, skills } = await load();
+    const selected = await modelSettings(session, signal);
+    const tools = await turnTools(session, signal);
+    const model = connectionModel(
+      selected,
+      origin(),
+      token,
+      () => capabilityEnabled('tool:web_search'),
+      // A stable per-conversation key keeps the tool loop on one prompt cache.
+      'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32),
+      session,
+    );
+    yield { type: 'turn.started', data: {} };
+    // The player's input, as replayable history consumes it (rebuildHistory).
+    yield { type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } };
+
+    let messages = await history.load(session);
+    if (
+      selected.contextWindow &&
+      estimateTokens(messages) + estimateTokens(input) >
+        selected.contextWindow * COMPACTION_THRESHOLD
+    ) {
+      yield { type: 'context.started', data: { kind: 'compaction' } };
+      const compacted = await compact(session, messages, model, signal);
+      yield {
+        type: 'context.settled',
+        data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
+      };
+      messages = compacted ?? (await history.load(session));
+    }
+    const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
+    const user: ModelMessage = {
+      role: 'user',
+      content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
+    };
+    const stored = messages.length;
+    await history.append(session, stored, [user]);
+
+    const { agent, labels, deferred, options } = buildAgent(
+      session,
+      signal,
+      tools,
+      model,
+      selected,
+      instructions,
+      skills,
+    );
+
     // A deferred call is shown as the tool it runs, not as tool_call.
     const shown = (toolName: string, args: any) =>
       toolName === TOOL_CALL && args && typeof args.name === 'string'
@@ -489,26 +533,9 @@ export function createAgentEngine(options: EngineOptions) {
     let failure: unknown;
     let response: ModelMessage[] | undefined;
     try {
-      const endsTurn = new Set(
-        Object.entries(tools.direct)
-          .filter(([, tool]) => tool.endsTurn)
-          .map(([name]) => name),
-      );
       const output = await agent.stream([...messages, user] as never, {
         abortSignal: signal,
-        maxSteps: MAX_STEPS,
-        stopWhen: [
-          stepCountIs(MAX_STEPS),
-          ({
-            steps,
-          }: {
-            steps: { toolCalls?: { toolName?: string; payload?: { toolName?: string } }[] }[];
-          }) =>
-            (steps.at(-1)?.toolCalls ?? []).some((call) =>
-              endsTurn.has(call.toolName ?? call.payload?.toolName ?? ''),
-            ),
-        ] as never,
-        providerOptions: { openai },
+        ...options,
       });
       for await (const chunk of output.fullStream as AsyncIterable<{
         type: string;
@@ -625,6 +652,30 @@ export function createAgentEngine(options: EngineOptions) {
 
   return {
     newSessionId: (): string => randomUUID(),
+    /** The agent a turn of this session would run, with its run options (for evals). */
+    async agent(session: string, signal: AbortSignal) {
+      const { instructions, skills } = await load();
+      const selected = await modelSettings(session, signal);
+      const tools = await turnTools(session, signal);
+      const model = connectionModel(
+        selected,
+        origin(),
+        token,
+        () => capabilityEnabled('tool:web_search'),
+        'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32),
+        session,
+      );
+      const { agent, options } = buildAgent(
+        session,
+        signal,
+        tools,
+        model,
+        selected,
+        instructions,
+        skills,
+      );
+      return { agent, options: { abortSignal: signal, ...options } };
+    },
     /** Loads instructions and skills ahead of the first turn. */
     preload: () => load().then(() => undefined),
     /** Starts a turn; events stream once and the result settles when they end. */

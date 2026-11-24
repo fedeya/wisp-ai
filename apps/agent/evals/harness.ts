@@ -1,14 +1,13 @@
-// A small eval harness for the agent engine: each eval sends real player
-// messages to the real model through the eval bridge, while fixtures answer the
-// game and integration tools. Run with `pnpm --filter @wisp/agent eval`.
+// Runs one eval with Mastra's runEvals: the real turn agent from the engine,
+// fixture stubs for game and integration tools, gates that must pass and
+// scorers that are tracked against a threshold of 1.
 import { isDeepStrictEqual } from 'node:util';
-import {
-  createAgentEngine,
-  type EngineEvent,
-  type ModelMessage,
-  type ToolStubOutcome,
-} from '../src/engine.ts';
+import { runEvals } from '@mastra/core/evals';
+import type { MastraScorer } from '@mastra/core/evals';
+import { createAgentEngine, type ToolStubOutcome } from '../src/engine.ts';
 import { agentHost } from '../src/agent-host.ts';
+import { resultView, type TurnView } from './checks.ts';
+import { playerMessage } from './fixtures/fedrath.ts';
 
 /** Answers a tool from a fixture; the first stub whose tool and `match` fit wins. */
 export interface ToolStub {
@@ -19,52 +18,18 @@ export interface ToolStub {
   outcome: ToolStubOutcome;
 }
 
-export interface ToolCall {
-  name: string;
-  input: unknown;
-  status?: string;
-  output?: unknown;
-}
-
-export interface Turn {
-  ok: boolean;
-  error?: string;
-  reply?: string;
-  events: EngineEvent[];
-  toolCalls: ToolCall[];
-  expectOk(): void;
-}
-
-interface Assertion {
-  label: string;
-  passed: boolean;
-  soft: boolean;
-}
-export interface Soft {
-  soft(): void;
-}
-
-export interface EvalContext {
-  session(options: { stubs: ToolStub[] }): { send(message: string): Promise<Turn> };
-  calledTool(name: string, options?: { input?: Record<string, unknown>; count?: number }): Soft;
-  notCalledTool(name: string): Soft;
-  maxToolCalls(count: number): Soft;
-  check<T>(value: T, predicate: Predicate<T>): Soft;
-}
-
-export interface Predicate<T> {
-  label: string;
-  test: (value: T) => boolean;
-}
-export const satisfies = <T>(test: (value: T) => boolean, label: string): Predicate<T> => ({
-  label,
-  test,
-});
+type Scorer = MastraScorer<any, any, any, any>;
 
 export interface EvalDefinition {
   description: string;
   tags?: string[];
-  test: (t: EvalContext) => Promise<void>;
+  /** What the player asks; it is sent with the fixture character's game context. */
+  question: string;
+  stubs: ToolStub[];
+  /** Hard requirements: the eval fails when one scores below 1. */
+  gates: Scorer[];
+  /** Soft requirements: reported when one scores below 1. */
+  scorers?: Scorer[];
 }
 export const defineEval = (definition: EvalDefinition) => definition;
 
@@ -78,115 +43,73 @@ function matches(stub: ToolStub, tool: string, input: unknown) {
   );
 }
 
-// Whether every field of `expected` appears, recursively, in `actual`.
-function includes(actual: unknown, expected: unknown): boolean {
-  if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
-    return (
-      !!actual &&
-      typeof actual === 'object' &&
-      Object.entries(expected).every(([key, value]) =>
-        includes((actual as Record<string, unknown>)[key], value),
-      )
-    );
-  }
-  return isDeepStrictEqual(actual, expected);
+export interface EvalOutcome {
+  verdict: 'passed' | 'scored' | 'failed';
+  failed: string[];
+  soft: string[];
+  turn?: TurnView;
+  steps: number;
+  error?: string;
 }
 
-export async function runEval(definition: EvalDefinition) {
+export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> {
   const host = agentHost();
   if (!host) {
     throw Error('Start the eval bridge before running evals.');
   }
-  const assertions: Assertion[] = [];
-  const calls: ToolCall[] = [];
-  const assert = (label: string, passed: boolean): Soft => {
-    const assertion = { label, passed, soft: false };
-    assertions.push(assertion);
-    return { soft: () => void (assertion.soft = true) };
-  };
-  const context: EvalContext = {
-    session({ stubs }) {
-      const histories = new Map<string, ModelMessage[]>();
-      const engine = createAgentEngine({
-        origin: () => host.origin,
-        token: host.token,
-        history: {
-          load: async (session) => [...(histories.get(session) ?? [])],
-          append: async (session, from, messages) => {
-            histories.set(session, [...(histories.get(session) ?? []).slice(0, from), ...messages]);
-          },
-          replace: async (session, messages) => void histories.set(session, [...messages]),
-          delete: async (session) => void histories.delete(session),
-        },
-        logger: { info: () => {}, warn: () => {} },
-        stub: (tool, input) => stubs.find((stub) => matches(stub, tool, input))?.outcome,
-      });
-      const session = engine.newSessionId();
-      return {
-        async send(message) {
-          const turn = engine.send(session, message, AbortSignal.timeout(300_000));
-          const events: EngineEvent[] = [];
-          const turnCalls = new Map<string, ToolCall>();
-          const texts = new Map<string, string>();
-          for await (const event of turn.events) {
-            events.push(event);
-            const data = event.data;
-            if (event.type === 'call.requested') {
-              const capability = data.capability as { name: string };
-              const call = { name: capability.name, input: data.input };
-              turnCalls.set(String(data.callId), call);
-              calls.push(call);
-            } else if (event.type === 'call.settled') {
-              const call = turnCalls.get(String(data.callId));
-              if (call) {
-                call.status = String(data.outcome);
-                call.output = data.output;
-              }
-            } else if (event.type === 'content.completed') {
-              texts.set(String(data.partId), String(data.value));
-            }
-          }
-          const result = await turn.result;
-          const reply = [...texts.values()].join('\n\n') || undefined;
-          return {
-            ok: result.status === 'completed',
-            error: result.error?.message,
-            reply,
-            events,
-            toolCalls: [...turnCalls.values()],
-            expectOk() {
-              assert(
-                'turn completed' + (result.error ? ': ' + result.error.message : ''),
-                result.status === 'completed',
-              );
-            },
-          };
-        },
-      };
+  const engine = createAgentEngine({
+    origin: () => host.origin,
+    token: host.token,
+    // Each eval is a single new turn; nothing is resumed.
+    history: {
+      load: async () => [],
+      append: async () => {},
+      replace: async () => {},
+      delete: async () => {},
     },
-    calledTool: (name, options) => {
-      const found = calls.filter(
-        (call) => call.name === name && (!options?.input || includes(call.input, options.input)),
-      ).length;
-      return assert(
-        'called ' +
-          name +
-          (options?.input ? ' with ' + JSON.stringify(options.input) : '') +
-          (options?.count !== undefined ? ' ' + options.count + ' time(s) (' + found + ')' : ''),
-        options?.count !== undefined ? found === options.count : found > 0,
-      );
-    },
-    notCalledTool: (name) =>
-      assert('did not call ' + name, !calls.some((call) => call.name === name)),
-    maxToolCalls: (count) =>
-      assert(`at most ${count} tool calls (${calls.length})`, calls.length <= count),
-    check: (value, predicate) => assert(predicate.label, predicate.test(value)),
-  };
-  let error: unknown;
+    logger: { info: () => {}, warn: () => {} },
+    stub: (tool, input) => definition.stubs.find((stub) => matches(stub, tool, input))?.outcome,
+  });
   try {
-    await definition.test(context);
-  } catch (caught) {
-    error = caught;
+    const { agent, options } = await engine.agent(
+      engine.newSessionId(),
+      AbortSignal.timeout(300_000),
+    );
+    let turn: TurnView | undefined;
+    let steps = 0;
+    let error: string | undefined;
+    const result = await runEvals({
+      target: agent,
+      data: [{ input: playerMessage(definition.question) }],
+      gates: definition.gates,
+      scorers: (definition.scorers ?? []).map((scorer) => ({ scorer, threshold: 1 })),
+      targetOptions: options as never,
+      onItemComplete: ({ targetResult }) => {
+        const output = targetResult as Parameters<typeof resultView>[0] & {
+          steps?: unknown[];
+          error?: { message?: string };
+        };
+        turn = resultView(output);
+        steps = output.steps?.length ?? 0;
+        error = output.error?.message;
+      },
+    });
+    const name = (id: string) =>
+      [...definition.gates, ...(definition.scorers ?? [])].find((scorer) => scorer.id === id)
+        ?.name ?? id;
+    return {
+      verdict: result.verdict ?? 'passed',
+      failed: (result.gateResults ?? [])
+        .filter((gate) => !gate.passed)
+        .map((gate) => name(gate.id)),
+      soft: (result.thresholdResults ?? [])
+        .filter((entry) => !entry.passed)
+        .map((entry) => name(entry.id)),
+      turn,
+      steps,
+      error,
+    };
+  } finally {
+    await engine.close();
   }
-  return { assertions, error };
 }

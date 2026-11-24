@@ -56,7 +56,7 @@
     "@ai-sdk/xai": "5.0.40",
     "@ai-sdk/zai": "3.0.49",
     "@mastra/core": "1.82.0",
-    "@modelcontextprotocol/sdk": "1.32.2",
+    "@mastra/mcp": "2.8.0",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "@wisp/protocol": "workspace:*",
     "ai": "7.0.164",
@@ -67,6 +67,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@types/node": "24.19.2",
     "@types/turndown": "5.0.6",
     "typescript": "5.9.3",

@@ -323,7 +323,8 @@ nears the model's context window, older turns are summarized into one message.
 Tools are listed in [tools.ts](../apps/agent/src/tools.ts). Specialized ones are
 `deferred: true`: `tool_search` returns their names, descriptions and input
 schemas, and `tool_call({ name, input })` runs them, so the request's tool list
-never changes. MCP tools are reached the same way.
+never changes. MCP tools, connected through Mastra's `MCPClient`, are reached
+the same way.
 Character reads, reference/target inspection, conversation naming and reply
 presentation stay directly listed. Skills and tool discovery do not change permissions: dynamic capability
 definitions and bridge checks remain authoritative. Keep parameter details in tool
@@ -332,7 +333,9 @@ schemas and enforceable constraints in code.
 `tests/agent-integration.test.ts` exercises skill activation, tool discovery and
 execution, permission denial and follow-up turns with the real agent and an
 offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals against a
-real model through the eval bridge. Prompt edits still need gameplay evaluation
+real model through the eval bridge with Mastra's `runEvals`: each case's gates
+must pass and its scorers are tracked. `apps/agent/evals/grade.ts` grades saved
+answers with a Mastra judge scorer. Prompt edits still need gameplay evaluation
 before claiming better answers.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.

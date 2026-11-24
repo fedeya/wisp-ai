@@ -1,7 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { MCPClient } from '@mastra/mcp';
 import { everlootTools } from '@wisp/protocol/capabilities';
 import { agentHost } from './agent-host.ts';
 import { bridgeOrigin } from './agent-rpc.ts';
@@ -127,79 +125,122 @@ export async function mcpConnections(configFile?: string): Promise<Record<string
   return { ...(await everlootConnections()), ...(await externalConnections(configFile)) };
 }
 
+type McpToolset = Awaited<ReturnType<MCPClient['listToolsetsWithErrors']>>['toolsets'];
+interface MastraMcpTool {
+  description?: string;
+  inputSchema?: {
+    '~standard'?: { jsonSchema?: { input?: (options: { target: string }) => unknown } };
+  };
+  execute?: (
+    input: Record<string, unknown>,
+    context: { abortSignal: AbortSignal },
+  ) => Promise<unknown>;
+}
+
+function jsonSchemaOf(tool: MastraMcpTool) {
+  try {
+    return tool.inputSchema?.['~standard']?.jsonSchema?.input?.({ target: 'draft-2020-12' }) ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /**
- * MCP clients shared across turns. A connection's tool list is cached for a
- * few minutes; a failed call drops the client so the next turn reconnects.
+ * Mastra MCP clients shared across turns. A client is kept while the enabled
+ * connections stay the same, and its tool lists for a few minutes; a failed
+ * listing or call drops it so the next turn reconnects.
  */
 export class McpTools {
-  private clients = new Map<string, { client: Client; tools: Tool[]; at: number }>();
+  private current?: { key: string; client: MCPClient; toolsets?: McpToolset; at: number };
   private configFile: () => string | undefined;
   constructor(configFile: () => string | undefined) {
     this.configFile = configFile;
   }
 
-  private async client(key: string, connection: McpConnection) {
-    const cached = this.clients.get(key);
-    if (cached && Date.now() - cached.at < CACHE_MS) {
-      return cached;
-    }
-    await cached?.client.close().catch(() => {});
-    const client = new Client({ name: 'wisp', version: '1.0.0' });
-    await client.connect(
-      new StreamableHTTPClientTransport(new URL(connection.url), {
-        requestInit: { headers: connection.headers },
-      }),
-    );
-    const entry = { client, tools: (await client.listTools()).tools, at: Date.now() };
-    this.clients.set(key, entry);
-    return entry;
+  private async drop() {
+    const current = this.current;
+    this.current = undefined;
+    await current?.client.disconnect().catch(() => {});
   }
 
-  /** The enabled MCP tools; an unreachable connection is skipped and logged by the caller. */
+  /** The enabled MCP tools; an unreachable connection is skipped and reported to onError. */
   async tools(onError: (connection: string, error: unknown) => void): Promise<McpTool[]> {
     const connections = await mcpConnections(this.configFile());
-    const lists = await Promise.all(
-      Object.entries(connections).map(async ([name, connection]) => {
-        const key = name + ' ' + connection.url;
-        try {
-          const { client, tools } = await this.client(key, connection);
-          return tools
-            .filter(
-              (tool) =>
-                (!connection.allow || connection.allow.includes(tool.name)) &&
-                !connection.block?.includes(tool.name),
-            )
-            .map((tool): McpTool => ({
-              name: name + '__' + tool.name,
-              description: [connection.description, tool.description].filter(Boolean).join('\n'),
-              inputSchema: withoutProvided(tool.inputSchema, connection.provided),
-              call: async (input, signal) => {
-                try {
-                  return await client.callTool(
-                    { name: tool.name, arguments: { ...input, ...connection.provided } },
-                    undefined,
-                    { signal },
-                  );
-                } catch (error) {
-                  this.clients.delete(key);
-                  throw error;
-                }
-              },
-            }));
-        } catch (error) {
-          this.clients.delete(key);
-          onError(name, error);
-          return [];
+    if (!Object.keys(connections).length) {
+      await this.drop();
+      return [];
+    }
+    const key = JSON.stringify(connections);
+    if (this.current?.key !== key) {
+      await this.drop();
+      this.current = {
+        key,
+        at: 0,
+        client: new MCPClient({
+          id: 'wisp-' + Date.now(),
+          // The bridge disconnects on shutdown; Mastra must not end the process.
+          registerProcessHooks: false,
+          clientInfo: { name: 'wisp', version: '1.0.0' },
+          servers: Object.fromEntries(
+            Object.entries(connections).map(([name, connection]) => {
+              const url = new URL(connection.url);
+              return [
+                name,
+                {
+                  url,
+                  requestInit: { headers: connection.headers },
+                  // Each connection may reach only its own host.
+                  allowedHosts: [url.host],
+                },
+              ];
+            }),
+          ),
+        }),
+      };
+    }
+    const current = this.current!;
+    if (!current.toolsets || Date.now() - current.at > CACHE_MS) {
+      const listed = await current.client.listToolsetsWithErrors();
+      for (const [name, error] of Object.entries(listed.errors)) {
+        onError(name, error);
+      }
+      // Retry failed connections on the next turn instead of caching their absence.
+      current.toolsets = listed.toolsets;
+      current.at = Object.keys(listed.errors).length ? 0 : Date.now();
+    }
+    const tools: McpTool[] = [];
+    for (const [name, connection] of Object.entries(connections)) {
+      for (const [toolName, raw] of Object.entries(current.toolsets?.[name] ?? {})) {
+        const tool = raw as MastraMcpTool;
+        if (
+          (connection.allow && !connection.allow.includes(toolName)) ||
+          connection.block?.includes(toolName) ||
+          !tool.execute
+        ) {
+          continue;
         }
-      }),
-    );
-    return lists.flat();
+        tools.push({
+          name: name + '__' + toolName,
+          description: [connection.description, tool.description].filter(Boolean).join('\n'),
+          inputSchema: withoutProvided(jsonSchemaOf(tool), connection.provided),
+          call: async (input, signal) => {
+            try {
+              return await tool.execute!(
+                { ...input, ...connection.provided },
+                { abortSignal: signal },
+              );
+            } catch (error) {
+              current.at = 0;
+              throw error;
+            }
+          },
+        });
+      }
+    }
+    return tools;
   }
 
   async close() {
-    await Promise.all(
-      [...this.clients.values()].map(({ client }) => client.close().catch(() => {})),
-    );
-    this.clients.clear();
+    await this.drop();
   }
 }

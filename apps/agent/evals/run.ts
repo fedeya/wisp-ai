@@ -3,13 +3,15 @@
 //   node apps/bridge/src/evals/eval-bridge.ts sign-in   (once)
 //   pnpm --filter @wisp/agent eval [name-or-tag ...]
 //
-// Hard assertion failures fail the run; soft ones are reported as warnings.
+// Each eval runs through Mastra's runEvals. A failed gate fails the run; a
+// scorer below its threshold is reported as a warning.
 import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setAgentHost } from '../src/agent-host.ts';
 import { runEval, type EvalDefinition } from './harness.ts';
+import { saveTurn } from './report.ts';
 import { startModelBridge } from './model-bridge.ts';
 import { itemSourcesFixture } from './fixtures/fedrath.ts';
 import { gameItemReadings } from './fixtures/dungeon-loot.ts';
@@ -50,17 +52,27 @@ const queue = [...evals];
 async function worker() {
   for (let next = queue.shift(); next; next = queue.shift()) {
     const started = performance.now();
-    const { assertions, error } = await runEval(next.definition);
-    const hard = assertions.filter((a) => !a.passed && !a.soft);
-    const soft = assertions.filter((a) => !a.passed && a.soft);
-    const ok = !error && !hard.length;
-    failed += ok ? 0 : 1;
-    const lines = [
-      `${ok ? 'PASS' : 'FAIL'} ${next.name} (${((performance.now() - started) / 1000).toFixed(1)} s): ${next.definition.description}`,
-      ...hard.map((a) => '  ✗ ' + a.label),
-      ...soft.map((a) => '  ! ' + a.label + ' (soft)'),
-      ...(error ? ['  ✗ ' + (error instanceof Error ? error.message : String(error))] : []),
-    ];
+    let lines: string[];
+    try {
+      const outcome = await runEval(next.definition);
+      const ms = performance.now() - started;
+      if (outcome.turn) {
+        await saveTurn(next.name, next.definition.question, outcome.turn, outcome.steps, ms);
+      }
+      const ok = outcome.verdict !== 'failed';
+      failed += ok ? 0 : 1;
+      lines = [
+        `${ok ? 'PASS' : 'FAIL'} ${next.name} (${(ms / 1000).toFixed(1)} s): ${next.definition.description}`,
+        ...outcome.failed.map((label) => '  ✗ ' + label),
+        ...outcome.soft.map((label) => '  ! ' + label + ' (soft)'),
+        ...(outcome.error ? ['  ✗ ' + outcome.error] : []),
+      ];
+    } catch (error) {
+      failed++;
+      lines = [
+        'FAIL ' + next.name + ': ' + (error instanceof Error ? error.message : String(error)),
+      ];
+    }
     console.log(lines.join('\n'));
   }
 }
