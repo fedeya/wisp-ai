@@ -72,7 +72,7 @@ test('usage limits pause routines with growing backoff until a run succeeds', ()
 test('the scheduler skips unchanged quiet intervals and stops after a usage limit', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-gate-'));
   const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
-  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   let stop: (() => Promise<void>) | undefined;
   try {
     vi.setSystemTime(1_000_000);
