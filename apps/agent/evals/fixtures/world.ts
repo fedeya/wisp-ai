@@ -245,8 +245,58 @@ export function dungeonStubs(): ToolStub[] {
   ]);
 }
 
-// The game's Death Recap for the character's latest death, modelled on a real
+// The game's Death Recap for the character's latest death, in the shape
+// addon/WispAI/Combat/Combat.lua returns (view=deaths), modelled on a real
 // chat: two Venture Co. enemies at Windshear Crag, a Fireball finished it.
+const recapEvents = [
+  {
+    event: 'SPELL_DAMAGE',
+    spell: 'Fireball',
+    source: 'Venture Co. Deforester',
+    amount: 107,
+    health: 24,
+    healthPercent: 8,
+    secondsBeforeDeath: 0,
+    overkill: 83,
+    causedDeath: true,
+  },
+  {
+    event: 'SPELL_DAMAGE',
+    spell: 'Throw',
+    source: 'Venture Co. Logger',
+    amount: 58,
+    health: 82,
+    healthPercent: 29,
+    secondsBeforeDeath: 1,
+  },
+  {
+    event: 'SWING_DAMAGE',
+    spell: 'Melee',
+    source: 'Venture Co. Logger',
+    amount: 31,
+    health: 113,
+    healthPercent: 40,
+    secondsBeforeDeath: 3,
+  },
+  {
+    event: 'SPELL_DAMAGE',
+    spell: 'Fireball',
+    source: 'Venture Co. Deforester',
+    amount: 64,
+    health: 177,
+    healthPercent: 63,
+    secondsBeforeDeath: 5,
+  },
+  {
+    event: 'SWING_DAMAGE',
+    spell: 'Melee',
+    source: 'Venture Co. Logger',
+    amount: 42,
+    health: 219,
+    healthPercent: 78,
+    secondsBeforeDeath: 7,
+  },
+];
 export function combatStubs(): ToolStub[] {
   return json([
     {
@@ -256,37 +306,31 @@ export function combatStubs(): ToolStub[] {
         response: {
           status: 'available',
           data: {
+            inCombat: false,
+            dead: true,
             view: 'deaths',
+            deathCount: 1,
             deaths: [
               {
                 diedAt: 1_795_318_990,
+                secondsAgo: 40,
                 zone: 'Stonetalon Mountains',
                 subzone: 'Windshear Crag',
-                recap: {
-                  events: [
-                    {
-                      source: 'Venture Co. Deforester',
-                      ability: 'Fireball',
-                      amount: 107,
-                      overkill: 83,
-                      health: 24,
-                    },
-                    { source: 'Venture Co. Logger', ability: 'Throw', amount: 58, health: 82 },
-                    { source: 'Venture Co. Logger', ability: 'Melee', amount: 31, health: 113 },
-                    {
-                      source: 'Venture Co. Deforester',
-                      ability: 'Fireball',
-                      amount: 64,
-                      health: 177,
-                    },
-                  ],
-                  totals: [
-                    { source: 'Venture Co. Logger', amount: 248 },
-                    { source: 'Venture Co. Deforester', amount: 171 },
-                  ],
-                },
+                level: 21,
+                recapAvailable: true,
+                maxHealth: 279,
+                killingBlow: recapEvents[0],
+                damageTaken: 302,
+                damageBySource: [
+                  { source: 'Venture Co. Deforester', ability: 'Fireball', amount: 171, hits: 2 },
+                  { source: 'Venture Co. Logger', ability: 'Melee', amount: 73, hits: 2 },
+                  { source: 'Venture Co. Logger', ability: 'Throw', amount: 58, hits: 1 },
+                ],
+                secondsCovered: 7,
+                events: recapEvents,
               },
             ],
+            note: "Newest death first, from the game's Death Recap. Events are newest first; the first caused the death.",
           },
         },
       },

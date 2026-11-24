@@ -6,8 +6,11 @@ import { saveTurn } from '../report.ts';
 
 const prompt =
   "I don't have Tailoring and the auction house has none of the crafted gear. What upgrades can I actually get?";
-// Crafted-only candidates in the fixture (Tailoring or Enchanting recipes).
+// Crafted-only candidates in the fixture (Tailoring or Enchanting recipes),
+// by ID for item references and by name for plain-text recommendations.
 const CRAFTED = [7048, 4321, 4314, 4320, 7055, 5240];
+const CRAFTED_NAMES =
+  /Azure Silk Hood|Spider Silk Hood|Double-stitched Woolen Shoulders|Spidersilk Boots|Azure Silk Belt|Flame Wand/i;
 
 export default defineEval({
   description:
@@ -26,6 +29,10 @@ export default defineEval({
         (ids: number[]) => !ids.some((id) => CRAFTED.includes(id)),
         'presents no crafted-only item',
       ),
+    );
+    t.check(
+      turn.reply ?? '',
+      satisfies((text: string) => !CRAFTED_NAMES.test(text), 'names no crafted-only item'),
     );
     t.check(
       turn.reply ?? '',

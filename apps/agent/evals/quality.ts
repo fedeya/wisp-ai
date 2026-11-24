@@ -119,9 +119,9 @@ The player has no Tailoring and says the auction house has none of the crafted g
     facts:
       character +
       `
-wow__read_combat (Death Recap) returned the latest death at Windshear Crag, Stonetalon Mountains: a Venture Co. Deforester's Fireball for 107 (83 overkill) at 24 health; just before, a Venture Co. Logger's Throw took 58 from 82. Totals: Logger 248 damage, Deforester 171 (two Fireballs).`,
+wow__read_combat (Death Recap) returned the latest death at Windshear Crag, Stonetalon Mountains, 40 seconds ago: a Venture Co. Deforester's Fireball for 107 (83 overkill) at 24 of 279 health; just before, a Venture Co. Logger's Throw took 58 at 82 health. Over the last 7 seconds the character took 302 damage: Deforester 171 (two Fireballs), Logger 131 (Melee 73 in two hits, Throw 58).`,
     goodAnswer:
-      'Names the Deforester’s Fireball as the killing blow and the Logger’s damage before it, from the recap, and gives one or two concrete tips (pull one at a time, Polymorph the caster, break line of sight). Does not ask the player for the log.',
+      'Names the Deforester’s Fireball as the killing blow and that both enemies were hitting (the Deforester did the most damage), from the recap, and gives one or two concrete tips (pull one at a time, Polymorph the caster, break line of sight). Does not ask the player for the log.',
   },
   'world-pvp-rank': {
     judges: ['unsupported-claim', 'uses-available-data'],
