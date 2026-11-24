@@ -1,3 +1,4 @@
+import { Cause, Effect, Exit, Schedule, Schema, Stream } from 'effect';
 import { applyEvent, type Chat } from '../chat/events.ts';
 import { ReplyProjection } from '../reply/reply-stream.ts';
 import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
@@ -27,16 +28,6 @@ function isTimeout(error: unknown): boolean {
   );
 }
 
-/** Nothing can answer: the player skipped connecting an AI provider. */
-class NoProviderError extends Error {
-  constructor() {
-    super(
-      'No AI is connected to Wisp yet. Open the Wisp app and connect ChatGPT or an API key, then send your message again.',
-    );
-    this.name = 'NoProviderError';
-  }
-}
-
 /**
  * How long an admitted turn may receive nothing from the engine before it
  * fails. Tools are bounded well below this (simulations 45 s, page reads
@@ -45,14 +36,101 @@ class NoProviderError extends Error {
  */
 export const TURN_IDLE_TIMEOUT_MS = 10 * 60_000;
 
+// Why a turn did not complete. Each failure names the stage it stopped at, so
+// telemetry reads its code from the error instead of from a variable tracking
+// the stage.
+
+/** Wisp itself cannot take a turn yet. */
+class TurnRefused extends Schema.TaggedError<TurnRefused>()('TurnRefused', {
+  code: Schema.Literals(['engine_not_ready', 'account_busy']),
+  message: Schema.String,
+}) {}
+
+/** Nothing can answer: the player skipped connecting an AI provider. */
+class NoProvider extends Schema.TaggedError<NoProvider>()('NoProvider', {
+  message: Schema.String,
+}) {}
+
+/** A stage threw; `cause` is what it threw, shown to the player as is. */
+class StageFailed extends Schema.TaggedError<StageFailed>()('StageFailed', {
+  code: Schema.Literals([
+    'capability_sync_failed',
+    'model_preparation_failed',
+    'model_catalog_failed',
+    'turn_start_failed',
+    'turn_stream_failed',
+  ]),
+  cause: Schema.Defect(),
+}) {}
+
+/** The engine finished the turn as failed. */
+class TurnResultFailed extends Schema.TaggedError<TurnResultFailed>()('TurnResultFailed', {
+  error: Schema.Defect(),
+}) {}
+
 /** The engine stopped sending events for a running turn. */
-class TurnStalledError extends Error {
-  constructor(idleMs: number) {
-    super(
-      `Wisp received nothing from the AI for ${Math.round(idleMs / 60_000) || 1} minutes and stopped waiting. Please try again.`,
-    );
-    // Classified as a timeout by isTimeout() and in telemetry.
-    this.name = 'TimeoutError';
+class TurnStalled extends Schema.TaggedError<TurnStalled>()('TurnStalled', {
+  idleMs: Schema.Number,
+}) {}
+
+/** The chat was deleted or its character changed while the turn ran. */
+class NoLongerCurrent extends Schema.TaggedError<NoLongerCurrent>()('NoLongerCurrent', {}) {}
+
+type TurnFailure =
+  | TurnRefused
+  | NoProvider
+  | StageFailed
+  | TurnResultFailed
+  | TurnStalled
+  | NoLongerCurrent;
+
+const NO_PROVIDER_MESSAGE =
+  'No AI is connected to Wisp yet. Open the Wisp app and connect ChatGPT or an API key, then send your message again.';
+
+/** What the player reads, and what failed underneath, for one failure. */
+function describe(failure: TurnFailure): { text: string; underlying: unknown } {
+  switch (failure._tag) {
+    case 'TurnRefused':
+    case 'NoProvider':
+      return { text: failure.message, underlying: failure };
+    case 'StageFailed':
+      return {
+        text: failure.cause instanceof Error ? failure.cause.message : String(failure.cause),
+        underlying: failure.cause,
+      };
+    case 'TurnResultFailed': {
+      const error = failure.error as { message?: string } | undefined;
+      return {
+        text: safeErrorMessage(error?.message || 'The response failed. Please try again.'),
+        underlying: failure.error,
+      };
+    }
+    case 'TurnStalled':
+      return {
+        text: `Wisp received nothing from the AI for ${Math.round(failure.idleMs / 60_000) || 1} minutes and stopped waiting. Please try again.`,
+        underlying: failure,
+      };
+    case 'NoLongerCurrent':
+      return {
+        text: 'The conversation was deleted or the character changed.',
+        underlying: failure,
+      };
+  }
+}
+
+function failureCode(failure: TurnFailure): ChatErrorCode {
+  switch (failure._tag) {
+    case 'TurnRefused':
+    case 'StageFailed':
+      return failure.code;
+    case 'NoProvider':
+      return 'no_provider';
+    case 'TurnResultFailed':
+      return 'turn_result_failed';
+    case 'TurnStalled':
+      return 'timeout';
+    case 'NoLongerCurrent':
+      return 'unknown';
   }
 }
 
@@ -72,6 +150,7 @@ function isUsageLimit(error: unknown): boolean {
     /usage limit|rate limit|quota/i.test(message)
   );
 }
+const causeOf = (error: unknown) => (error instanceof Error ? error.cause : undefined);
 
 interface TurnDependencies {
   telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>;
@@ -114,7 +193,7 @@ export function createTurnRunner(deps: TurnDependencies) {
   } = deps;
   const idleTimeoutMs = deps.idleTimeoutMs ?? TURN_IDLE_TIMEOUT_MS;
   const generations = new WeakMap<Chat, symbol>();
-  const running = new Set<Promise<void>>();
+  const running = new Set<Promise<unknown>>();
   const controllers = new WeakMap<Chat, AbortController>();
   const cancelled = new WeakSet<Chat>();
   const projections = new WeakMap<
@@ -122,6 +201,13 @@ export function createTurnRunner(deps: TurnDependencies) {
     { parts: ReplyProjection; assertCurrent: () => void; signal: AbortSignal; touch: () => void }
   >();
   const naming = new WeakSet<Chat>();
+
+  function track(work: Promise<unknown>) {
+    running.add(work);
+    void work.finally(() => running.delete(work));
+    return work;
+  }
+
   // Runs beside the turn: a slow or failed title never delays or fails the reply.
   function nameConversation(chat: Chat, text: string, model: string) {
     if (naming.has(chat)) {
@@ -129,13 +215,16 @@ export function createTurnRunner(deps: TurnDependencies) {
     }
     naming.add(chat);
     const untitled = chat.title;
-    const work = generateConversationTitle(
-      (instructions, input, signal) => models.complete(model, instructions, input, signal),
-      text,
-      AbortSignal.timeout(20000),
-    )
-      .then(
-        (title) => {
+    const naming$ = Effect.tryPromise((signal) =>
+      generateConversationTitle(
+        (instructions, input, signal) => models.complete(model, instructions, input, signal),
+        text,
+        signal,
+      ),
+    ).pipe(
+      Effect.timeout('20 seconds'),
+      Effect.match({
+        onSuccess: (title) => {
           // Keep a name the user or agent chose meanwhile, and skip deleted chats.
           if (!title || chat.titleGenerated || chat.title !== untitled || !isCurrent(chat)) {
             return;
@@ -144,29 +233,30 @@ export function createTurnRunner(deps: TurnDependencies) {
           chat.titleGenerated = true;
           changed();
         },
-        (error) => {
+        onFailure: (error) => {
           logger.info(
-            { event: 'chat.title_failed', chat: chat.id, error: errorMessage(error) },
+            {
+              event: 'chat.title_failed',
+              chat: chat.id,
+              error: errorMessage(error._tag === 'UnknownError' ? error.cause : error),
+            },
             'Conversation title failed',
           );
         },
-      )
-      .finally(() => naming.delete(chat));
-    running.add(work);
-    void work.finally(() => running.delete(work));
+      }),
+      Effect.ensuring(Effect.sync(() => naming.delete(chat))),
+    );
+    track(Effect.runPromise(naming$));
   }
-  async function execute(chat: Chat, text: string, messageId?: string, context?: unknown) {
+
+  function execute(chat: Chat, text: string, messageId?: string, context?: unknown) {
     if (isStopping() || chat.status === 'working') {
-      return;
+      return Promise.resolve();
     }
     const controller = new AbortController();
     const started = performance.now();
     const observeTool = deps.telemetry?.toolObserver();
     const turnUsage = deps.telemetry?.usageObserver();
-    let outcome: ChatOutcome = 'cancelled';
-    let failureCode: ChatErrorCode = 'capability_sync_failed';
-    let timedOut = false;
-    let usageLimited = false;
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
@@ -181,69 +271,119 @@ export function createTurnRunner(deps: TurnDependencies) {
     const owner = currentTransport();
     beginTurn(chat, owner, characterIdentity(context), text, messageId);
     rememberTurnQuests(chat, context);
-    const assertCurrent = () => {
-      controller.signal.throwIfAborted();
-      if (!ownsTurn() || !isCurrent(chat) || currentTransport() !== owner) {
-        throw Error('The conversation was deleted or the character changed.');
-      }
-    };
-    // Once the engine admits the turn, every stream event or presentation call
-    // restarts this watchdog. If the engine goes silent without closing the
-    // stream, the turn fails as a timeout instead of staying "working" until
-    // the player cancels it.
-    let stalled: TurnStalledError | undefined;
-    let idle: ReturnType<typeof setTimeout> | undefined;
+    const current = () => ownsTurn() && isCurrent(chat) && currentTransport() === owner;
+    // The engine's signal: aborted by a player interrupt, and when the turn's
+    // scope closes for any other reason (a stall, a failure).
+    const ended = new AbortController();
+    const signal = AbortSignal.any([controller.signal, ended.signal]);
+    // The last engine event or presentation call. Once the engine admits the
+    // turn, a watchdog fails the turn as a timeout when this grows older than
+    // the idle timeout, instead of leaving it "working" until the player cancels.
+    let lastActivity = Date.now();
     const touch = () => {
-      clearTimeout(idle);
-      idle = setTimeout(() => {
-        stalled = new TurnStalledError(idleTimeoutMs);
-        controller.abort(stalled);
-      }, idleTimeoutMs);
-      idle.unref?.();
+      lastActivity = Date.now();
+    };
+    const assertCurrent = () => {
+      signal.throwIfAborted();
+      if (!current()) {
+        throw Error(describe(new NoLongerCurrent()).text);
+      }
     };
     changed();
     const parts = new ReplyProjection();
-    projections.set(chat, { parts, assertCurrent, signal: controller.signal, touch });
-    const streaming = setInterval(() => {
-      if (
-        ownsTurn() &&
-        isCurrent(chat) &&
-        currentTransport() === owner &&
-        parts.flush(chat) &&
-        !chat.proactive
-      ) {
+    projections.set(chat, { parts, assertCurrent, signal, touch });
+
+    const ensureCurrent = Effect.suspend(() =>
+      current() ? Effect.void : Effect.fail(new NoLongerCurrent()),
+    );
+    const attempt = <A>(code: StageFailed['code'], run: () => PromiseLike<A>) =>
+      Effect.tryPromise({ try: run, catch: (cause) => new StageFailed({ code, cause }) });
+    const attemptSync = <A>(code: StageFailed['code'], run: () => A) =>
+      Effect.try({ try: run, catch: (cause) => new StageFailed({ code, cause }) });
+
+    const flushPreview = Effect.sync(() => {
+      if (current() && parts.flush(chat) && !chat.proactive) {
         changed();
       }
-    }, 400);
-    try {
-      await capabilitySettings.publish();
+    });
+    const watchdog = Effect.gen(function* () {
+      for (;;) {
+        const remaining = lastActivity + idleTimeoutMs - Date.now();
+        if (remaining <= 0) {
+          return yield* new TurnStalled({ idleMs: idleTimeoutMs });
+        }
+        yield* Effect.sleep(remaining);
+      }
+    });
+
+    const project = (event: Parameters<typeof applyEvent>[1]) =>
+      Effect.gen(function* () {
+        touch();
+        yield* ensureCurrent;
+        yield* attemptSync('turn_stream_failed', () => {
+          const sourceRevision = parts.sourceRevision;
+          const progressRevision = parts.presentationProgressRevision;
+          const visibleChanged = applyEvent(chat, event, parts);
+          observeTool?.(event);
+          turnUsage?.observe(event);
+          if (visibleChanged && !chat.proactive) {
+            const firstText =
+              firstTextMs === undefined &&
+              [...parts.streams.values()].some((state) => state.reply.view().text);
+            if (firstText) {
+              firstTextMs = Math.round(performance.now() - started);
+            }
+            if (firstText || progressRevision !== parts.presentationProgressRevision) {
+              deps.flushSnapshot?.();
+            }
+          }
+          if (visibleChanged || parts.sourceRevision !== sourceRevision) {
+            if (visibleChanged) {
+              chat.lastActivityAt = Date.now();
+            }
+            // Source-only deltas need persistence without changing the published view.
+            changed();
+          }
+        });
+      });
+
+    const turn = Effect.gen(function* () {
+      yield* Effect.addFinalizer(() => Effect.sync(() => ended.abort()));
+      yield* Effect.forkScoped(Effect.repeat(flushPreview, Schedule.spaced('400 millis')));
+      yield* attempt('capability_sync_failed', () => capabilitySettings.publish());
       if (!isReady()) {
-        failureCode = 'engine_not_ready';
-        throw new Error('Wisp is still starting. Please try again in a few seconds.');
+        return yield* new TurnRefused({
+          code: 'engine_not_ready',
+          message: 'Wisp is still starting. Please try again in a few seconds.',
+        });
       }
       if (accountBusy()) {
-        failureCode = 'account_busy';
-        throw Error('Finish the connection operation first.');
+        return yield* new TurnRefused({
+          code: 'account_busy',
+          message: 'Finish the connection operation first.',
+        });
       }
       if (deps.hasProvider && !deps.hasProvider()) {
-        failureCode = 'no_provider';
-        throw new NoProviderError();
+        return yield* new NoProvider({ message: NO_PROVIDER_MESSAGE });
       }
-      failureCode = 'model_preparation_failed';
       let chosenModel = chat.modelSettings?.model || defaultModel();
       if (!chosenModel) {
         // The catalog was not loaded yet: start on whatever the providers offer first.
-        failureCode = 'model_catalog_failed';
-        chosenModel = resolveDefaultModel(undefined, await models.models());
-        assertCurrent();
-        failureCode = 'model_preparation_failed';
+        const offered = yield* attempt('model_catalog_failed', () => models.models());
+        yield* ensureCurrent;
+        chosenModel = yield* attemptSync('model_catalog_failed', () =>
+          resolveDefaultModel(undefined, offered),
+        );
       }
-      await models.prepare(chosenModel);
-      failureCode = 'model_catalog_failed';
-      const available = await models.models();
-      assertCurrent();
-      chat.modelSettings = chooseChatModel(available, chosenModel, chat.modelSettings?.effort);
-      assertCurrent();
+      const model = chosenModel;
+      yield* attempt('model_preparation_failed', () => models.prepare(model));
+      const available = yield* attempt('model_catalog_failed', () => models.models());
+      yield* ensureCurrent;
+      const settings = yield* attemptSync('model_catalog_failed', () =>
+        chooseChatModel(available, model, chat.modelSettings?.effort),
+      );
+      chat.modelSettings = settings;
+      yield* ensureCurrent;
       preparedMs = Math.round(performance.now() - started);
       if (
         !chat.titleGenerated &&
@@ -251,101 +391,80 @@ export function createTurnRunner(deps: TurnDependencies) {
         !chat.inline &&
         capabilitySettings.enabled('tool:set_conversation_title')
       ) {
-        nameConversation(chat, text, chat.modelSettings.model);
+        nameConversation(chat, text, settings.model);
       }
-      failureCode = 'turn_start_failed';
-      const response = sendChatTurn(
-        engine,
-        chat,
-        turnInput(text, context, chat, capabilitySettings.snapshot()),
-        controller.signal,
+      const response = yield* attemptSync('turn_start_failed', () =>
+        sendChatTurn(
+          engine,
+          chat,
+          turnInput(text, context, chat, capabilitySettings.snapshot()),
+          signal,
+        ),
       );
       agentSession = chat.agentSession;
-      assertCurrent();
+      yield* ensureCurrent;
       admittedMs = Math.round(performance.now() - started);
       changed();
       touch();
-      for await (const event of response.events) {
-        // The engine prepares the turn before its first event.
-        failureCode = 'turn_stream_failed';
-        touch();
-        assertCurrent();
-        const sourceRevision = parts.sourceRevision;
-        const progressRevision = parts.presentationProgressRevision;
-        const visibleChanged = applyEvent(chat, event, parts);
-        observeTool?.(event);
-        turnUsage?.observe(event);
-        if (visibleChanged && !chat.proactive) {
-          const firstText =
-            firstTextMs === undefined &&
-            [...parts.streams.values()].some((state) => state.reply.view().text);
-          if (firstText) {
-            firstTextMs = Math.round(performance.now() - started);
-          }
-          if (firstText || progressRevision !== parts.presentationProgressRevision) {
-            deps.flushSnapshot?.();
-          }
-        }
-        if (visibleChanged || parts.sourceRevision !== sourceRevision) {
-          if (visibleChanged) {
-            chat.lastActivityAt = Date.now();
-          }
-          // Source-only deltas need persistence without changing the published view.
-          changed();
-        }
-      }
-      failureCode = 'turn_result_failed';
-      const result = await response.result;
-      assertCurrent();
+      // The engine prepares the turn before its first event: a stream that
+      // fails before any event failed to start.
+      let started$ = false;
+      const result = yield* Stream.fromAsyncIterable(
+        response.events,
+        (cause) =>
+          new StageFailed({ code: started$ ? 'turn_stream_failed' : 'turn_start_failed', cause }),
+      ).pipe(
+        Stream.tap(() => Effect.sync(() => (started$ = true))),
+        Stream.runForEach(project),
+        Effect.andThen(Effect.promise(() => response.result)),
+        Effect.raceFirst(watchdog),
+      );
+      yield* ensureCurrent;
       if (chat.proactive) {
         chat.tipSkipped = parts.noTip;
       }
       if (result.status === 'failed') {
-        timedOut = isTimeout(result.error);
-        usageLimited = isUsageLimit(result.error);
-        throw new Error(
-          safeErrorMessage(result.error?.message || 'The response failed. Please try again.'),
-        );
+        return yield* new TurnResultFailed({ error: result.error });
       }
       const status = result.status === 'cancelled' ? 'cancelled' : 'done';
       settleTurn(chat, status);
-      outcome = status === 'done' ? 'completed' : status;
       chat.unread = chat.id !== activeChat();
       if (!parts.hasContent && chat.status === 'done' && !chat.proactive) {
         chat.messages.push({ role: 'system', text: 'The turn completed without a text response.' });
       }
-    } catch (error) {
-      if (!ownsTurn()) {
-        return;
-      }
-      if (cancelled.has(chat) && controller.signal.aborted && stalled === undefined) {
+      return status === 'done' ? ('completed' as const) : status;
+    });
+
+    // Settles a turn that did not complete and says how it ended.
+    function settleFailure(cause: Cause.Cause<TurnFailure>): {
+      outcome: ChatOutcome;
+      code?: ChatErrorCode;
+    } {
+      const failure = Cause.findErrorOption(cause);
+      const stalled = failure._tag === 'Some' && failure.value._tag === 'TurnStalled';
+      if (cancelled.has(chat) && controller.signal.aborted && !stalled) {
         settleTurn(chat, 'cancelled');
-        outcome = 'cancelled';
         parts.flush(chat, Date.now(), true);
-        return;
+        return { outcome: 'cancelled' };
       }
-      // A stalled turn is aborted by its watchdog; report the stall, not the
-      // abort it caused, and count it as a failure rather than an interruption.
-      const failure = stalled ?? error;
-      const failed =
-        (stalled !== undefined || !controller.signal.aborted) &&
-        isCurrent(chat) &&
-        currentTransport() === owner;
+      const failed = !controller.signal.aborted && isCurrent(chat) && currentTransport() === owner;
+      const { text: notice, underlying } =
+        failure._tag === 'Some'
+          ? describe(failure.value)
+          : Cause.hasInterrupts(cause)
+            ? { text: errorMessage(controller.signal.reason), underlying: controller.signal.reason }
+            : { text: errorMessage(Cause.squash(cause)), underlying: Cause.squash(cause) };
       settleTurn(chat, failed ? 'error' : 'interrupted');
+      let outcome: ChatOutcome = 'cancelled';
+      let code: ChatErrorCode = failure._tag === 'Some' ? failureCode(failure.value) : 'unknown';
       if (failed) {
         outcome =
-          timedOut || isTimeout(failure) || (failure instanceof Error && isTimeout(failure.cause))
-            ? 'timeout'
-            : 'failed';
-        if (failure instanceof ChatGPTAuthError && failureCode === 'model_preparation_failed') {
-          failureCode = 'model_auth_failed';
+          stalled || isTimeout(underlying) || isTimeout(causeOf(underlying)) ? 'timeout' : 'failed';
+        if (underlying instanceof ChatGPTAuthError && code === 'model_preparation_failed') {
+          code = 'model_auth_failed';
         }
-        if (
-          usageLimited ||
-          isUsageLimit(failure) ||
-          (failure instanceof Error && isUsageLimit(failure.cause))
-        ) {
-          failureCode = 'usage_limit';
+        if (isUsageLimit(underlying) || isUsageLimit(causeOf(underlying))) {
+          code = 'usage_limit';
           usageLimitedChats.add(chat);
         }
       }
@@ -355,9 +474,11 @@ export function createTurnRunner(deps: TurnDependencies) {
       chat.agentSession = undefined;
       chat.messages.push({
         role: 'system',
-        text: failure instanceof Error ? failure.message : String(failure),
+        text: notice,
         // The addon shows this notice in the game's language; `text` is the fallback.
-        ...(failure instanceof NoProviderError ? { notice: 'noProvider' as const } : {}),
+        ...(failure._tag === 'Some' && failure.value._tag === 'NoProvider'
+          ? { notice: 'noProvider' as const }
+          : {}),
       });
       logger[failed ? 'error' : 'info'](
         {
@@ -365,17 +486,25 @@ export function createTurnRunner(deps: TurnDependencies) {
           chat: chat.id,
           messageId,
           outcome,
-          error: errorMessage(failure),
+          error: errorMessage(underlying),
         },
         'Turn failed',
       );
-    } finally {
+      return { outcome, code };
+    }
+
+    function finish(exit: Exit.Exit<ChatOutcome, TurnFailure>) {
+      const { outcome, code } = Exit.isSuccess(exit)
+        ? { outcome: exit.value, code: undefined }
+        : ownsTurn()
+          ? settleFailure(exit.cause)
+          : { outcome: 'cancelled' as const, code: undefined };
       const model = chat.modelSettings?.model || defaultModel();
       deps.telemetry?.chat(
         chat.routineId ? 'routine' : chat.proactive ? 'tip' : chat.inline ? 'hover' : 'chat',
         outcome,
         performance.now() - started,
-        outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? failureCode : undefined,
+        outcome === 'timeout' ? 'timeout' : outcome === 'failed' ? code : undefined,
         firstTextMs,
         turnUsage?.usage(),
         model
@@ -401,8 +530,6 @@ export function createTurnRunner(deps: TurnDependencies) {
         },
         'Turn timing',
       );
-      clearInterval(streaming);
-      clearTimeout(idle);
       if (projections.get(chat)?.parts === parts) {
         projections.delete(chat);
       }
@@ -412,7 +539,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           chat.usage.compacting = false;
         }
         parts.finish();
-        if (isCurrent(chat) && currentTransport() === owner) {
+        if (current()) {
           parts.flush(chat, Date.now(), true);
         }
         if (chat.proactive && chat.status === 'done') {
@@ -423,15 +550,15 @@ export function createTurnRunner(deps: TurnDependencies) {
         changed();
       }
     }
+
+    return Effect.runPromiseExit(
+      Effect.scoped(turn).pipe(Effect.onExit((exit) => Effect.sync(() => finish(exit)))),
+      { signal: controller.signal },
+    ).then(() => undefined);
   }
+
   function run(chat: Chat, text: string, messageId?: string, context?: unknown) {
-    const work = execute(chat, text, messageId, context);
-    running.add(work);
-    void work.then(
-      () => running.delete(work),
-      () => running.delete(work),
-    );
-    return work;
+    return track(execute(chat, text, messageId, context)) as Promise<void>;
   }
   return Object.assign(run, {
     present: async (chat: Chat, callId: string, input: ReplyPresentation, signal: AbortSignal) => {

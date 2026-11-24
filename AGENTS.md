@@ -96,6 +96,10 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   `{ event: 'bridge.startup_failed', error: errorMessage(error) }`.
 - **Errors:** convert unknown errors with `errorMessage` from
   `apps/bridge/src/errors.ts`, which sanitizes via `safeErrorMessage`.
+- **Effect:** the agent runs on Effect AI (`effect/ai`), and bridge code that
+  coordinates timers, retries, cancellation or races uses Effect 4
+  (`agent/turn-runner.ts`, `addon/game-requests.ts`) behind a Promise API.
+  Plain request/response I/O stays as ordinary async code.
 - **Addon Lua:** follow [docs/lua-guidelines.md](docs/lua-guidelines.md) and
   [addon/AGENTS.md](addon/AGENTS.md).
 - **Commits:** history uses Conventional Commits with scopes, e.g.
