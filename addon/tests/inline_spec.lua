@@ -45,6 +45,169 @@ local function setup(env)
     end
 end
 
+local function completeInline(env)
+    setfenv(1, env)
+    ns.Inline.OpenInline()
+    local input = UI_TEST.frames.WispAIInlineInput
+    input:SetText("Is this good?")
+    ns.Inline.SendInline()
+    local packet = packets[#packets]
+    local main = ns.Chat.Current()
+    WispAI_Receive({
+        v = ns.VERSION,
+        session = ns.session,
+        rev = 1,
+        connected = true,
+        chats = {
+            main,
+            {
+                id = packet.chat,
+                title = "Quick question",
+                inline = true,
+                status = "done",
+                messages = {
+                    { id = packet.messageId, role = "user", text = packet.text },
+                    { id = "answer", role = "assistant", text = "Yes" },
+                },
+                activity = {},
+            },
+        },
+    })
+    assert(not ns.pendingChats[packet.chat] and not ns.pendingMessages[packet.messageId])
+    assert(ns.Inline.InlineCurrent().status == "done")
+    return packet.chat, main
+end
+
+for _, scenario in ipairs({ "present", "omitted while open", "omitted then reopened" }) do
+    it("inline follow-up after a confirmed snapshot: " .. scenario, function()
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
+        ns.draft:SetText("Main draft")
+        ns.db.drafts.main = "Saved main draft"
+        local oldId, main = completeInline(env)
+        local panel = UI_TEST.frames.WispAIInline
+        local reference = panel.reference
+        local input = UI_TEST.frames.WispAIInlineInput
+        input:SetText("What about upgrades?")
+        if scenario ~= "present" then
+            -- After restart the bridge projection omits completed inline chats.
+            -- Confirm first: pendingChats would otherwise retain the optimistic chat.
+            WispAI_Receive({
+                v = ns.VERSION,
+                session = ns.session,
+                rev = 2,
+                connected = true,
+                chats = { main },
+            })
+            assert(ns.inlineId == oldId and not ns.Inline.InlineCurrent())
+            assert(panel:IsShown())
+            if scenario == "omitted then reopened" then
+                ns.Inline.CloseInline()
+                ns.Inline.OpenInline()
+            end
+        end
+        assert(input:GetText() == "What about upgrades?" and panel.reference == reference)
+        local count = #packets
+        input.scripts.OnEnterPressed()
+        local packet = packets[#packets]
+        local chat = ns.Inline.InlineCurrent()
+        assert(#packets == count + 1 and packet.type == "inline_say" and packet.chat == chat.id)
+        assert(packet.text == "What about upgrades?\n\n" .. reference and packet.context.fresh)
+        assert(chat.inline and chat.status == "working" and input:GetText() == "")
+        assert(ns.pendingMessages[packet.messageId].chat == chat.id)
+        if scenario == "present" then
+            assert(chat.id == oldId and #chat.messages == 3 and not ns.pendingChats[oldId])
+        else
+            assert(chat.id ~= oldId and #chat.messages == 1 and ns.pendingChats[chat.id] == chat)
+            assert(not ns.pendingChats[oldId] and #ns.chats == 2)
+            assert(ns.Inline.EnsureInlineChat() == chat, "recovery must create only one chat")
+            WispAI_Receive({
+                v = ns.VERSION,
+                session = ns.session,
+                rev = 3,
+                connected = true,
+                chats = { main },
+            })
+            assert(
+                ns.Inline.InlineCurrent() == chat,
+                "keep the new optimistic chat until confirmed"
+            )
+        end
+        assert(ns.active == "main" and ns.Chat.Current() == main and ns.db.minimized)
+        assert(ns.draft:GetText() == "Main draft" and ns.db.drafts.main == "Saved main draft")
+    end)
+end
+
+it("inline model selection recovers a missing confirmed chat and waits for confirmation", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setup(env)
+    local oldId, main = completeInline(env)
+    WispAI_Receive({
+        v = ns.VERSION,
+        session = ns.session,
+        rev = 2,
+        connected = true,
+        chats = { main },
+    })
+    ns.modelCatalog = {
+        defaultModel = "luna",
+        models = {
+            { slug = "luna", displayName = "Luna", efforts = { "medium" } },
+            { slug = "sol", displayName = "Sol", efforts = { "medium" } },
+        },
+    }
+    local options = {}
+    MenuUtil = {
+        CreateContextMenu = function(_, build)
+            build(nil, {
+                CreateTitle = function() end,
+                CreateRadio = function(_, label, _, choose)
+                    options[label] = choose
+                end,
+            })
+        end,
+    }
+    local input = UI_TEST.frames.WispAIInlineInput
+    input:SetText("Use this model")
+    ns.UI.Refresh()
+    local controls = UI_TEST.frames.WispAIInlineModelControls
+    controls.model.scripts.OnClick(controls.model)
+    options.Sol()
+    local packet = packets[#packets]
+    local chat = ns.Inline.InlineCurrent()
+    assert(chat and chat.id ~= oldId and ns.pendingChats[chat.id] == chat)
+    assert(packet.type == "chat_model_set" and packet.chat == chat.id and packet.data.inline)
+    assert(packet.data.model == "sol" and not controls.model.enabled)
+    local count = #packets
+    ns.Inline.SendInline()
+    assert(#packets == count and input:GetText() == "Use this model")
+    WispAI_Receive({
+        v = ns.VERSION,
+        session = ns.session,
+        rev = 3,
+        connected = true,
+        chats = {
+            main,
+            {
+                id = chat.id,
+                title = chat.title,
+                inline = true,
+                status = "idle",
+                messages = {},
+                activity = {},
+                modelSettings = { model = "sol", effort = "medium" },
+                modelRequestId = packet.requestId,
+            },
+        },
+    })
+    assert(not ns.modelPending[chat.id] and controls.model.enabled)
+    ns.Inline.SendInline()
+    assert(packets[#packets].type == "inline_say" and packets[#packets].chat == chat.id)
+    assert(ns.active == "main" and not main.modelSettings)
+end)
+
 it(
     "chat model controls select account options, wait for confirmation and isolate conversations",
     function()
