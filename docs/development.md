@@ -300,20 +300,35 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 
 ## Source map
 
-| Area                          | Entry points                                                                            |
-| ----------------------------- | --------------------------------------------------------------------------------------- |
-| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)   |
-| Bridge and agent engine       | [main.ts](../apps/bridge/src/main.ts), [engine.ts](../apps/agent/src/engine.ts)         |
-| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md) |
-| Shared contracts              | [protocol](../packages/protocol/src)                                                    |
-| Game UI, readings and actions | [addon](../addon/WispAI)                                                                |
+| Area                          | Entry points                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
+| Bridge and agent engine       | [main.ts](../apps/bridge/src/main.ts), [engine.ts](../apps/agent/src/engine.ts)               |
+| Agent tools and behavior      | [definitions](../apps/agent/src/wisp), [instructions](../apps/agent/src/wisp/instructions.md) |
+| Shared contracts              | [protocol](../packages/protocol/src)                                                          |
+| Game UI, readings and actions | [addon](../addon/WispAI)                                                                      |
 
 The bridge owns accounts, persistence and tool execution, and runs the agent in process. It prefers loopback **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
-The agent runs on [Mastra](https://mastra.ai) inside the bridge
-([engine](../apps/agent/src/engine.ts)). Shared agent rules live in
-`apps/agent/agent/instructions.md`. Task procedures live in Agent Skills at
-`apps/agent/agent/skills/<name>/SKILL.md`, with a short frontmatter description
+The agent runs on [Mastra](https://mastra.ai) inside the bridge. `apps/agent`
+follows Mastra's code-registered layout:
+
+```text
+src/mastra/index.ts         the Mastra instance (agents: { wisp })
+src/mastra/agents/wisp.ts   the registered agent; each turn supplies its model and tools
+src/wisp/                   instructions.md, skills/ and tools/ the agent reads
+src/engine.ts               runs a turn: history, compaction, tools, stream events
+```
+
+The agent's content stays out of `src/mastra/agents/<id>/`: Mastra's file-based
+agents there need a fixed model and `createTool` tools, while Wisp chooses the
+model and tools per conversation. `pnpm --filter @wisp/agent studio` serves the
+agent in Mastra Studio at http://localhost:4111; without a Wisp turn it offers
+every tool and uses `WISP_STUDIO_MODEL` (default `openai/gpt-6.1-sol`, with
+its API key in the environment). Tool calls from Studio still need a running
+bridge and game. Shared agent rules live in
+`apps/agent/src/wisp/instructions.md`. Task procedures live in Agent Skills at
+`apps/agent/src/wisp/skills/<name>/SKILL.md`, with a short frontmatter description
 stating when to use each skill. The system prompt lists those descriptions and the
 `skill` tool returns the full instructions. Each session's model history, tool
 calls and results included, is stored in `agent_messages` in `runtime/wisp.sqlite`

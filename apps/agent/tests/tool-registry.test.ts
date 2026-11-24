@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { authoredTools } from '../src/tools.ts';
 
 test('the static tool registry lists every authored tool', async () => {
-  const files = await readdir(fileURLToPath(new URL('../agent/tools/', import.meta.url)));
+  const files = await readdir(fileURLToPath(new URL('../src/wisp/tools/', import.meta.url)));
   const names = files
     .filter((file) => file.endsWith('.ts'))
     .map((file) => file.slice(0, -3))

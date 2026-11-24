@@ -28,6 +28,7 @@ apps/desktop/src-tauri/gen/
 **/dist/
 **/.eve/
 apps/agent/eval-replies/
+apps/agent/.mastra/
 
 apps/desktop/src-tauri/icons/*
 !apps/desktop/src-tauri/icons/32x32.png

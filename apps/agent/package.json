@@ -4,7 +4,6 @@
   "private": true,
   "license": "GPL-3.0-only",
   "files": [
-    "agent",
     "src",
     "dist"
   ],
@@ -26,13 +25,15 @@
     "./tools": "./src/tools.ts",
     "./engine": "./src/engine.ts",
     "./content": "./src/content.ts",
-    "./mcp-tools": "./src/mcp-tools.ts"
+    "./mcp-tools": "./src/mcp-tools.ts",
+    "./mastra": "./src/mastra/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "cd ../.. && vitest run --config apps/agent/vitest.config.ts",
-    "eval": "node evals/run.ts"
+    "eval": "node evals/run.ts",
+    "studio": "mastra dev"
   },
   "dependencies": {
     "@ai-sdk/alibaba": "2.0.85",
@@ -70,6 +71,7 @@
     "@modelcontextprotocol/sdk": "1.32.2",
     "@types/node": "24.19.2",
     "@types/turndown": "5.0.6",
+    "mastra": "1.38.0",
     "typescript": "5.9.3",
     "vitest": "5.1.0"
   }

@@ -4,7 +4,7 @@
 
 ## Game tools and knowledge sources
 
-Wisp reads character state on demand and can inspect references, compare item stats, check progress/resources and create saved panels. See [action controls](usage.md#actions-you-control) for pins, macros and settings; the [agent definitions](../apps/agent/agent) and [protocol schemas](../packages/protocol/src) are the exhaustive tool and UI reference.
+Wisp reads character state on demand and can inspect references, compare item stats, check progress/resources and create saved panels. See [action controls](usage.md#actions-you-control) for pins, macros and settings; the [agent definitions](../apps/agent/src/wisp) and [protocol schemas](../packages/protocol/src) are the exhaustive tool and UI reference.
 
 | Source                                            | Useful for                                                                                                                                                    |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -13,7 +13,7 @@ Wisp reads character state on demand and can inspect references, compare item st
 | [Everloot](https://everloot.app/docs/mcp/clients) | Read-only Forever references, recipes, locations, talent plans and market estimates/history. No API key, uploader or extra addon required.                    |
 | Wowhead search                                    | Forever-only fallback via ChatGPT or Exa, independently of the model. Public Exa needs no key and has free rate limits; an optional key uses account credits. |
 
-Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/bridge/src/integrations/thewowdb.ts), [Everloot’s allowlist](../apps/agent/agent/connections/everloot.ts), [Wowhead search](../apps/bridge/src/integrations/search/wowhead-search.ts) and the agent instructions.
+Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/bridge/src/integrations/thewowdb.ts), [Everloot’s allowlist](../apps/agent/src/mcp-tools.ts), [Wowhead search](../apps/bridge/src/integrations/search/wowhead-search.ts) and the agent instructions.
 
 ## Custom MCP connections
 

@@ -80,7 +80,8 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     let error: string | undefined;
     const result = await runEvals({
       target: agent,
-      data: [{ input: playerMessage(definition.question) }],
+      // The turn's model and tools travel in the request context, per item.
+      data: [{ input: playerMessage(definition.question), requestContext: options.requestContext }],
       gates: definition.gates,
       scorers: (definition.scorers ?? []).map((scorer) => ({ scorer, threshold: 1 })),
       targetOptions: options as never,

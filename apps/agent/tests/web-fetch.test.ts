@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import definition from '../agent/tools/web_fetch.ts';
+import definition from '../src/wisp/tools/web_fetch.ts';
 import type { WebFetchInput } from '../src/web-fetch.ts';
 import { WebFetchPages } from '../src/web-fetch-pages.ts';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';

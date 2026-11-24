@@ -20,10 +20,10 @@ export async function buildEngine() {
   await mkdir(directory, { recursive: true });
   // The agent's authored instructions and skills ship as assets; its tools are bundled.
   await cp(
-    path.join(root, 'apps/agent/agent/instructions.md'),
+    path.join(root, 'apps/agent/src/wisp/instructions.md'),
     path.join(directory, 'agent/instructions.md'),
   );
-  await cp(path.join(root, 'apps/agent/agent/skills'), path.join(directory, 'agent/skills'), {
+  await cp(path.join(root, 'apps/agent/src/wisp/skills'), path.join(directory, 'agent/skills'), {
     recursive: true,
   });
   await cp(await findNpmDirectory(), path.join(directory, 'npm'), { recursive: true });

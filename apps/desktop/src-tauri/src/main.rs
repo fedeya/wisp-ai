@@ -901,7 +901,7 @@ fn main() {
             } else {
                 &[
                     "src/main.ts",
-                    "node_modules/@wisp/agent/agent/instructions.md",
+                    "node_modules/@wisp/agent/src/wisp/instructions.md",
                     "scripts/install.ts",
                     "addon/WispAI/WispAI.toc",
                     "node_modules/@mastra/core/package.json",

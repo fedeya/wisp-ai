@@ -44,6 +44,7 @@ Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 | `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                                                |
 | `pnpm start`                                    | Run the bridge                                                                              |
 | `pnpm --filter @wisp/agent eval`                | Agent evals against a real model (sign in once with `apps/bridge/src/evals/eval-bridge.ts`) |
+| `pnpm --filter @wisp/agent studio`              | Mastra Studio for the agent on localhost:4111 (`WISP_STUDIO_MODEL` and its API key)         |
 | `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
 | `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
 | `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |
