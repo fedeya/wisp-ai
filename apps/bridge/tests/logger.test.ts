@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { Effect } from 'effect';
-import { bridgeLogger, bridgeRuntime, logLine } from '../src/logger.ts';
+import { LoggerLive, bridgeLogger, logLine } from '../src/logger.ts';
 
 test('log lines keep the JSON shape and drop credentials', () => {
   const line = JSON.parse(
@@ -32,8 +32,11 @@ test('Effect logs and bridgeLogger calls write the same lines', async () => {
     bridgeLogger.info({ event: 'bridge.started', version: '1.0.0' }, 'Wisp started');
     bridgeLogger.warn('Plain message');
     bridgeLogger.debug({ event: 'hidden' }, 'Below the default level');
-    await bridgeRuntime.runPromise(
-      Effect.logError('Tick failed').pipe(Effect.annotateLogs({ event: 'bridge.tick_failed' })),
+    await Effect.runPromise(
+      Effect.logError('Tick failed').pipe(
+        Effect.annotateLogs({ event: 'bridge.tick_failed' }),
+        Effect.provide(LoggerLive),
+      ),
     );
     const lines = write.mock.calls.map(([chunk]) => JSON.parse(String(chunk)));
     expect(lines).toEqual([

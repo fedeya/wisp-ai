@@ -1,10 +1,10 @@
-import { Effect, Layer, Logger, ManagedRuntime, References } from 'effect';
+import { Effect, Logger, ManagedRuntime, References } from 'effect';
 import type * as LogLevel from 'effect/LogLevel';
 
 /**
  * The bridge logs through Effect's Logger. Effect code logs with
- * `Effect.log*` and `Effect.annotateLogs({ event, ... })`; other code uses
- * `bridgeLogger`, which runs the same logger. Each entry is one JSON line on
+ * `Effect.log*` and `Effect.annotateLogs({ event, ... })` and gets the logger
+ * from AppLayer; other code uses `bridgeLogger`, which writes the same lines. Each entry is one JSON line on
  * stdout (the desktop app writes it to runtime/bridge.log):
  *
  *   {"level":"INFO","timestamp":"…","component":"bridge","event":"bridge.started",…,"msg":"Wisp started"}
@@ -92,14 +92,14 @@ export const jsonLineLogger = Logger.make((options) => {
 /** Replaces Effect's default console logger with the bridge's JSON lines. */
 export const LoggerLive = Logger.layer([jsonLineLogger]);
 
-/** The bridge's Effect runtime: Effect programs run here, with the bridge logger. */
-export const bridgeRuntime = ManagedRuntime.make(Layer.mergeAll(LoggerLive));
+/** Runs bridgeLogger calls from code that is not Effect yet. */
+const loggerRuntime = ManagedRuntime.make(LoggerLive);
 
 function logWith(log: (message: string) => Effect.Effect<void>): LogCall {
   return (fieldsOrMessage, message) => {
     const fields = typeof fieldsOrMessage === 'string' ? {} : fieldsOrMessage;
     const text = typeof fieldsOrMessage === 'string' ? fieldsOrMessage : (message ?? '');
-    bridgeRuntime.runSync(log(text).pipe(Effect.annotateLogs(fields as Record<string, unknown>)));
+    loggerRuntime.runSync(log(text).pipe(Effect.annotateLogs(fields as Record<string, unknown>)));
   };
 }
 

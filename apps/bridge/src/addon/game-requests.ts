@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Cause, Deferred, Effect, Exit } from 'effect';
+import { Cause, Deferred, Effect, Exit, Schema } from 'effect';
 
 export interface GameRequest {
   chat: string;
@@ -15,11 +15,26 @@ interface PendingRequest extends GameRequest {
   reject: (error: Error) => void;
 }
 
+/**
+ * A game request that WoW did not answer. The message is what the agent or the
+ * player reads, so it says what to do next.
+ */
+export class GameRequestFailed extends Schema.TaggedError<GameRequestFailed>()(
+  'GameRequestFailed',
+  {
+    reason: Schema.Literals(['cancelled', 'timeout', 'unresponsive']),
+    message: Schema.String,
+  },
+) {}
+
+const CANCELLED = () =>
+  new GameRequestFailed({ reason: 'cancelled', message: 'Game request cancelled' });
+
 /** Fails when the caller cancels the request. */
 const cancelled = (signal?: AbortSignal) =>
   signal
-    ? Effect.callback<never, Error>((resume) => {
-        const abort = () => resume(Effect.fail(new Error('Game request cancelled')));
+    ? Effect.callback<never, GameRequestFailed>((resume) => {
+        const abort = () => resume(Effect.fail(CANCELLED()));
         signal.addEventListener('abort', abort, { once: true });
         return Effect.sync(() => signal.removeEventListener('abort', abort));
       })
@@ -68,7 +83,7 @@ export class GameRequests {
 
   request(input: GameRequest, signal?: AbortSignal, timeout = 30_000): Promise<unknown> {
     if (signal?.aborted) {
-      return Promise.reject(new Error('Game request cancelled'));
+      return Promise.reject(CANCELLED());
     }
     // One timeout means the whole game channel is stuck: every game tool waits on it.
     // Fail the agent's next ones at once instead of making the player wait 30 seconds each.
@@ -78,7 +93,9 @@ export class GameRequests {
       this.unresponsiveSince !== undefined &&
       this.now() - this.unresponsiveSince < UNRESPONSIVE_MS
     ) {
-      return Promise.reject(new Error(UNRESPONSIVE_MESSAGE));
+      return Promise.reject(
+        new GameRequestFailed({ reason: 'unresponsive', message: UNRESPONSIVE_MESSAGE }),
+      );
     }
     const startedAt = this.now();
     const answer = Deferred.makeUnsafe<unknown, Error>();
@@ -148,7 +165,12 @@ export class GameRequests {
         if (this.timedOut.size <= 64) break;
         this.timedOut.delete(oldest);
       }
-      return Effect.fail(new Error(input.agent ? AGENT_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE));
+      return Effect.fail(
+        new GameRequestFailed({
+          reason: 'timeout',
+          message: input.agent ? AGENT_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE,
+        }),
+      );
     });
 
     const waiting = Effect.gen(function* () {
