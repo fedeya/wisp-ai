@@ -21,7 +21,7 @@ import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../addon/panels.ts';
 import type { MemoryStore } from './memory-store.ts';
 import type { GameRequests } from '../addon/game-requests.ts';
-import type { TheWoWDB } from '../integrations/thewowdb.ts';
+import type { DatabaseResult } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
@@ -57,7 +57,10 @@ interface AgentDependencies {
   panelStore: PanelStore;
   memoryStore: MemoryStore;
   pending: GameRequests;
-  database: TheWoWDB;
+  /** TheWoWDB catalog requests, run on the app runtime. */
+  database: {
+    query(input: z.input<typeof databaseRequest>, signal?: AbortSignal): Promise<DatabaseResult>;
+  };
   simulator: Simulator;
   getChats: () => Chat[];
   currentTransport: () => string;

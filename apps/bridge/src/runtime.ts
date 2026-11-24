@@ -152,10 +152,16 @@ export async function startBridge(options: BridgeOptions = {}) {
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     await connections.load();
     const modelFailures = new ModelFailures();
-    const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
+    const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth, appRuntime);
     await webSearch.load();
     resources.defer(() => auth.cancel());
-    const database = new TheWoWDB();
+    const database = {
+      query: (input: Parameters<TheWoWDB['Service']['query']>[0], signal?: AbortSignal) =>
+        appRuntime.runPromise(
+          TheWoWDB.use((db) => db.query(input)),
+          signal ? { signal } : undefined,
+        ),
+    };
     const panelStore = new PanelStore(applicationDatabase);
     await panelStore.load();
     const routineStore = new RoutineStore(applicationDatabase);

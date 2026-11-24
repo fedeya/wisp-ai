@@ -2,7 +2,11 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Layer, ManagedRuntime } from 'effect';
+import { FetchHttpClient } from 'effect/http';
 import { WebSearch } from '@wisp/bridge/web-search';
+import { Exa } from '@wisp/bridge/exa';
+import { HttpClientLive } from '@wisp/bridge/http-client';
 import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
 import { connectionModel } from '@wisp/agent/connection-model';
 
@@ -15,6 +19,16 @@ afterEach(async () => {
     temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
+// The Exa service on a fake fetch, as the bridge's app runtime provides it.
+function exaRuntime(fetcher: typeof fetch) {
+  return ManagedRuntime.make(
+    Exa.layer.pipe(
+      Layer.provide(HttpClientLive),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetcher)),
+    ),
+  );
+}
+
 async function fixture(fetcher: typeof fetch = vi.fn()) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'wisp-search-'));
   temporary.push(directory);
@@ -51,7 +65,7 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
     ),
   };
   const file = path.join(directory, 'search.json');
-  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, fetcher);
+  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, exaRuntime(fetcher));
   await search.load();
   return {
     search,
@@ -65,6 +79,12 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
   };
 }
 
+// The request body as text, whether it was sent as a string or as bytes.
+function bodyText(init?: RequestInit) {
+  const body = init?.body;
+  return typeof body === 'string' ? body : new TextDecoder().decode(body as Uint8Array);
+}
+
 test('Exa credentials are separate from language models, protected, persistent, and removable', async () => {
   const f = await fixture();
   expect(f.search.available(apiModel)).toBe(true);
@@ -72,7 +92,12 @@ test('Exa credentials are separate from language models, protected, persistent, 
   expect(await readFile(f.file, 'utf8')).not.toContain('exa-secret');
   expect(JSON.stringify(f.search.state())).not.toContain('exa-secret');
   expect(f.search.available(apiModel)).toBe(true);
-  const restored = new WebSearch(f.file, f.vault, f.auth as unknown as ChatGPTAuth);
+  const restored = new WebSearch(
+    f.file,
+    f.vault,
+    f.auth as unknown as ChatGPTAuth,
+    exaRuntime(vi.fn()),
+  );
   await restored.load();
   expect(restored.state()).toEqual({ provider: 'auto', hasExaKey: true });
   await restored.save({ provider: 'exa' });
@@ -94,10 +119,10 @@ test.each(['json', 'sse'])(
   'public Exa works without a key with %s responses and the same source restrictions',
   async (format) => {
     const fetcher = vi.fn(async (endpoint: string | URL | Request, init?: RequestInit) => {
-      expect(endpoint).toBe('https://mcp.exa.ai/mcp?tools=web_search_advanced_exa');
+      expect(String(endpoint)).toBe('https://mcp.exa.ai/mcp?tools=web_search_advanced_exa');
       expect(new Headers(init?.headers).has('x-api-key')).toBe(false);
       expect(init?.redirect).toBe('error');
-      expect(JSON.parse(String(init?.body))).toEqual({
+      expect(JSON.parse(bodyText(init))).toEqual({
         jsonrpc: '2.0',
         id: 1,
         method: 'tools/call',
@@ -175,11 +200,14 @@ test.each([
 test('Exa searches globally, retains version comparisons and bounds attributable excerpts', async () => {
   let request: Record<string, any> = {};
   const fetcher = vi.fn(async (endpoint: string | URL | Request, init?: RequestInit) => {
-    expect(endpoint).toBe('https://api.exa.ai/search');
+    expect(String(endpoint)).toBe('https://api.exa.ai/search');
     expect(new Headers(init?.headers).get('x-api-key')).toBe('exa-secret');
+    // No trace headers reach the search provider.
+    expect(new Headers(init?.headers).has('traceparent')).toBe(false);
+    expect(new Headers(init?.headers).has('b3')).toBe(false);
     expect(init?.redirect).toBe('error');
     expect(init?.signal).toBeInstanceOf(AbortSignal);
-    request = JSON.parse(String(init?.body));
+    request = JSON.parse(bodyText(init));
     return Response.json({
       results: [
         { url: 'https://www.wowhead.com/classic/spell=122', text: 'Wrong game version' },
@@ -319,7 +347,7 @@ test.each([true, false])(
       for (const enabled of [true, false]) {
         let body = '';
         vi.stubGlobal('fetch', async (_input: unknown, init?: RequestInit) => {
-          body = String(init?.body);
+          body = bodyText(init);
           throw Error('Captured search tool');
         });
         const model = connectionModel(
@@ -366,7 +394,7 @@ test.each([
   async ({ depth, count, characters, seconds }) => {
     let request: any;
     const fetcher = vi.fn(async (_endpoint: unknown, init?: RequestInit) => {
-      request = JSON.parse(String(init?.body));
+      request = JSON.parse(bodyText(init));
       return Response.json({
         results: Array.from({ length: 15 }, (_, i) => ({
           url: `https://example.com/source-${i}`,
@@ -389,7 +417,7 @@ test('Exa executes explicit query variants within one shared deadline and retain
   const queries: string[] = [];
   const signals: AbortSignal[] = [];
   const fetcher = vi.fn(async (_endpoint: unknown, init?: RequestInit) => {
-    const request = JSON.parse(String(init?.body));
+    const request = JSON.parse(bodyText(init));
     queries.push(request.query);
     signals.push(init!.signal!);
     if (request.query === 'Unavailable variant') {

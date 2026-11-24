@@ -62,7 +62,9 @@
     "./runtime-resources": "./src/runtime-resources.ts",
     "./chat": "./src/chat/chat.ts",
     "./model-connections": "./src/models/model-connections.ts",
-    "./web-search": "./src/integrations/search/web-search.ts"
+    "./web-search": "./src/integrations/search/web-search.ts",
+    "./exa": "./src/integrations/search/exa.ts",
+    "./http-client": "./src/integrations/http-client.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",
@@ -88,6 +90,7 @@
   },
   "devDependencies": {
     "@ai-sdk/openai": "4.0.110",
+    "@effect/vitest": "4.1.3",
     "@types/node": "26.6.6",
     "drizzle-kit": "1.0.0-rc.5",
     "typescript": "5.9.3",
