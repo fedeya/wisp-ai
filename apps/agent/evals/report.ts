@@ -4,7 +4,13 @@ import path from 'node:path';
 interface ReportedTurn {
   reply?: string;
   events: ReadonlyArray<{ type?: string }>;
-  toolCalls: ReadonlyArray<{ name?: string; toolName?: string; input?: unknown; status?: string }>;
+  toolCalls: ReadonlyArray<{
+    name?: string;
+    toolName?: string;
+    input?: unknown;
+    output?: unknown;
+    status?: string;
+  }>;
 }
 // Saves what the agent said and did, so a person can read the answers, and
 // appends one summary line per run so configurations can be compared.
@@ -15,6 +21,8 @@ export async function saveTurn(name: string, prompt: string, turn: ReportedTurn,
     tool: call.toolName ?? call.name,
     status: call.status,
     input: call.input,
+    // Characters of the result the model read; about 4 per token.
+    outputChars: call.output === undefined ? undefined : JSON.stringify(call.output).length,
   }));
   const steps = turn.events.filter((event) => event.type === 'model.started').length;
   const label = process.env.WISP_EVAL_LABEL || 'run';
@@ -29,7 +37,11 @@ export async function saveTurn(name: string, prompt: string, turn: ReportedTurn,
       '',
       '## Tool calls',
       '',
-      ...calls.map((call) => `- \`${call.tool}\` ${JSON.stringify(call.input)} (${call.status})`),
+      ...calls.map(
+        (call) =>
+          `- \`${call.tool}\` ${JSON.stringify(call.input)} (${call.status}` +
+          (call.outputChars === undefined ? ')' : `, ${call.outputChars} chars)`),
+      ),
       '',
       '## Reply',
       '',
@@ -50,7 +62,16 @@ export async function saveTurn(name: string, prompt: string, turn: ReportedTurn,
       seconds: Math.round(ms / 100) / 10,
       steps,
       tools: calls.map((call) => call.tool),
+      outputChars: calls.map((call) => call.outputChars ?? null),
       presented,
+      // What the agent read, so the grader judges against the same data.
+      results: turn.toolCalls
+        .filter((call) => (call.toolName ?? call.name) !== 'wisp__present_ui')
+        .map((call) => ({
+          tool: call.toolName ?? call.name,
+          input: call.input,
+          output: call.output,
+        })),
       reply: turn.reply ?? '',
     }) + '\n',
   );

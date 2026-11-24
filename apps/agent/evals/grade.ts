@@ -15,13 +15,21 @@ interface Run {
   steps: number;
   reply: string;
   presented: unknown[];
+  results?: unknown[];
 }
 type Scores = Record<keyof typeof criteria, number>;
 
 const GRADER = `You grade answers from Wisp, an in-game World of Warcraft assistant.
-Judge only against the FACTS and the GOOD ANSWER description provided, not your own game knowledge: anything the facts do not support counts as unsupported.
+Judge only against the FACTS, the TOOL RESULTS the agent read and the GOOD ANSWER description, not your own game knowledge: a detail is supported when the facts or a tool result state it, and anything else counts as unsupported.
 Item names may appear as [[ref:key]] placeholders; the PRESENTED references map those keys to items.
 Score each criterion 0, 1 or 2 using its definition. Be strict and consistent. In notes, give the one or two most important reasons for lost points, in English, under 50 words.`;
+
+// Tool results the grader reads, trimmed so a long run fits its context.
+const RESULT_CHARS = 60_000;
+function toolResults(run: Run) {
+  const text = JSON.stringify(run.results ?? []);
+  return text.length > RESULT_CHARS ? text.slice(0, RESULT_CHARS) + '…(truncated)' : text;
+}
 
 const keys = Object.keys(criteria) as Array<keyof typeof criteria>;
 const schema = {
@@ -59,6 +67,7 @@ async function grade(run: Run, model: string): Promise<Scores & { notes: string 
                 GOOD_ANSWER: scenario.goodAnswer,
                 CRITERIA: criteria,
                 QUESTION: run.prompt,
+                TOOL_RESULTS: toolResults(run),
                 PRESENTED: run.presented,
                 ANSWER: run.reply,
               }),

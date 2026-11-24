@@ -182,7 +182,48 @@ export const gearCandidatesInput = z.strictObject({
   itemIds: z.array(z.number().int().positive()).min(1).max(500),
   minRequiredLevel: z.number().int().min(0).max(100).optional(),
   maxRequiredLevel: z.number().int().min(1).max(100).optional(),
+  // Also name the items that are not equipment (recipes, quest items).
+  includeOther: z.boolean().optional(),
 });
+export const dungeonLootInput = z
+  .strictObject({
+    instanceMapId: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('instanceMapId from wow__query_dungeons; preferred.'),
+    dungeon: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe('Part of the English instance name, when no instanceMapId is known.'),
+    boss: z
+      .string()
+      .trim()
+      .min(1)
+      .max(80)
+      .optional()
+      .describe('Part of an English boss name, to read one boss.'),
+    detail: z
+      .enum(['summary', 'full'])
+      .optional()
+      .describe(
+        'summary: every drop per boss with name, drop chance and required level, plus item level gain and stat changes for upgrades; full: also the stats of every item and the equipped item. Default: full with boss, summary without. A full answer too large for one read comes back as the summary.',
+      ),
+    includeUnusable: z
+      .boolean()
+      .optional()
+      .describe(
+        "Also list weapons and armor this character's class can never use. Leave it unset for the player's own gear; set it only for loot for another class.",
+      ),
+  })
+  .refine(
+    (args) => args.instanceMapId !== undefined || args.dungeon !== undefined,
+    'Give instanceMapId or dungeon',
+  );
 export const auctionInput = z.object({
   itemId: z.number().int().positive().optional(),
   limit: z.number().int().min(1).max(50).default(20),
@@ -268,6 +309,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
   z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
   z.object({ kind: z.literal('item_sources'), args: itemSourcesInput }),
+  z.object({ kind: z.literal('dungeon_loot'), args: dungeonLootInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
   z.object({ kind: z.literal('dungeons'), args: dungeonsInput }),
