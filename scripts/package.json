@@ -9,7 +9,7 @@
   },
   "devDependencies": {
     "@mastra/core": "1.82.0",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@wisp/agent": "workspace:*",
     "@wisp/bridge": "workspace:*",
     "@wisp/protocol": "workspace:*",

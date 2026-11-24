@@ -4,7 +4,7 @@
 
 ## Prerequisites and checks
 
-Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json).
+Use **Node 26.13.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json).
 [mise](https://mise.jdx.dev) installs the same versions CI uses from [mise.toml](../mise.toml),
 along with Rust, Go, protoc and PowerShell 7 (`pwsh`) for the native host, the simulator and the
 `scripts/*.ps1` helpers.
