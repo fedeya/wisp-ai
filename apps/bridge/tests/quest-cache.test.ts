@@ -24,7 +24,7 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
   const chat = {
     ...newChat('chat', 'addon'),
     status: 'working' as const,
-    eveId: 'eve',
+    agentSession: 'eve',
     characterKey: characterIdentity(snapshot),
   };
   rememberTurnQuests(chat, snapshot);
@@ -51,7 +51,7 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
     fetch(url, {
       method: 'POST',
       headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify({ eveSession: 'eve', sections, refresh }),
+      body: JSON.stringify({ agentSession: 'eve', sections, refresh }),
     });
   try {
     const quests = await read(['quests']);

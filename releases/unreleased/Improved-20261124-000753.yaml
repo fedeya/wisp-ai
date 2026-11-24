@@ -1,0 +1,3 @@
+kind: Improved
+body: Wisp's assistant now runs inside the app instead of a separate background engine, so there is one less process to start, stop and keep in sync. After updating, ongoing conversations continue from their visible history.
+time: 2026-11-24T00:07:53.9938052-03:00

@@ -1,5 +1,7 @@
 import type { FeatureFlag } from '@wisp/protocol/features';
 import { readFile } from 'node:fs/promises';
+import { agentHost } from './agent-host.ts';
+const capabilitiesFile = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE;
 export async function readCapabilityFlags(file?: string): Promise<Record<string, boolean>> {
   if (!file) {
     return {};
@@ -24,11 +26,11 @@ export async function readCapabilityFlags(file?: string): Promise<Record<string,
   }
 }
 export async function capabilityEnabled(id: string, defaultEnabled = true): Promise<boolean> {
-  const flags = await readCapabilityFlags(process.env.WOW_CAPABILITIES_FILE);
+  const flags = await readCapabilityFlags(capabilitiesFile());
   return flags[id] ?? defaultEnabled;
 }
 export async function connectionTools(name: string, tools: readonly string[]): Promise<string[]> {
-  const flags = await readCapabilityFlags(process.env.WOW_CAPABILITIES_FILE);
+  const flags = await readCapabilityFlags(capabilitiesFile());
   return tools.filter((tool) => flags['mcp_tool:' + name + ':' + tool] !== false);
 }
 /**
@@ -36,7 +38,7 @@ export async function connectionTools(name: string, tools: readonly string[]): P
  * publishes them next to the capability switches; unknown flags are off.
  */
 export async function featureEnabled(name: FeatureFlag): Promise<boolean> {
-  return (await readFeatureFlags(process.env.WOW_CAPABILITIES_FILE))[name] === true;
+  return (await readFeatureFlags(capabilitiesFile()))[name] === true;
 }
 async function readFeatureFlags(file?: string): Promise<Record<string, boolean>> {
   if (!file) {

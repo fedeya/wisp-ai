@@ -18,24 +18,32 @@ export async function buildEngine() {
   }
   await rm(directory, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });
-  execFileSync(
-    process.execPath,
-    [require.resolve('eve/package.json').replace(/package\.json$/, 'bin/eve.js'), 'build'],
-    {
-      cwd: path.join(root, 'apps/agent'),
-      windowsHide: true,
-      stdio: 'inherit',
-    },
+  // The agent's authored instructions and skills ship as assets; its tools are bundled.
+  await cp(
+    path.join(root, 'apps/agent/src/wisp/instructions.md'),
+    path.join(directory, 'agent/instructions.md'),
   );
-  await cp(path.join(root, 'apps/agent/.output/server'), path.join(directory, 'eve'), {
+  await cp(path.join(root, 'apps/agent/src/wisp/skills'), path.join(directory, 'agent/skills'), {
     recursive: true,
   });
-  await cp(
-    path.join(directory, 'eve/node_modules/undici'),
-    path.join(directory, 'node_modules/undici'),
-    { recursive: true },
-  );
   await cp(await findNpmDirectory(), path.join(directory, 'npm'), { recursive: true });
+  // impit (web_fetch's TLS client) loads a native addon, so it ships beside the
+  // bundle instead of inside it.
+  const impit = path.dirname(
+    createRequire(path.join(root, 'apps/agent/package.json')).resolve('impit/package.json'),
+  );
+  const impitNative = path.dirname(
+    createRequire(path.join(impit, 'package.json')).resolve('impit-win32-x64-msvc/package.json'),
+  );
+  for (const [source, name] of [
+    [impit, 'impit'],
+    [impitNative, 'impit-win32-x64-msvc'],
+  ]) {
+    await cp(source, path.join(directory, 'node_modules', name), {
+      recursive: true,
+      dereference: true,
+    });
+  }
   await build({
     absWorkingDir: root,
     entryPoints: {
@@ -49,6 +57,7 @@ export async function buildEngine() {
     target: 'node24',
     format: 'esm',
     bundle: true,
+    external: ['impit'],
     banner: {
       js: "import { createRequire as __wispCreateRequire } from 'node:module'; const require = __wispCreateRequire(import.meta.url);",
     },
@@ -67,7 +76,7 @@ export async function buildEngine() {
         type: 'module',
         bin: 'engine.mjs',
         pkg: {
-          assets: ['*.mjs', 'migrations/**/*', 'eve/**/*', 'node_modules/**/*', 'npm/**/*'],
+          assets: ['*.mjs', 'migrations/**/*', 'agent/**/*', 'node_modules/**/*', 'npm/**/*'],
           sea: true,
           compress: 'GZip',
           targets: [`node${process.versions.node}-win-x64`],

@@ -23,7 +23,7 @@ test('startup reads messages, private state and revisions from one snapshot duri
     const original = {
       ...newChat('chat', 'game'),
       title: 'Original',
-      eveId: 'old-session',
+      agentSession: 'old-session',
       messages: [{ role: 'user' as const, text: 'Original message' }],
     };
     await seed.flush([original]);
@@ -52,7 +52,7 @@ test('startup reads messages, private state and revisions from one snapshot duri
               .run();
             writer!
               .prepare(
-                "UPDATE chat_instance_state SET eve_id='new-session', history_revision=1, revision=revision+1 WHERE chat_id='chat'",
+                "UPDATE chat_instance_state SET agent_session='new-session', history_revision=1, revision=revision+1 WHERE chat_id='chat'",
               )
               .run();
             writer!.exec('COMMIT');
@@ -66,14 +66,14 @@ test('startup reads messages, private state and revisions from one snapshot duri
     intercepted.mockRestore();
     expect(committed).toBe(true);
     expect(loaded[0].title).toBe('Original');
-    expect(loaded[0].eveId).toBe('old-session');
+    expect(loaded[0].agentSession).toBe('old-session');
     expect(loaded[0].messages[0].text).toBe('Original message');
     loaded[0].messages[0].text = 'Edit based on the old snapshot';
     await expect(reader.flush(loaded)).rejects.toThrow('another process');
     expect(writer.prepare('SELECT text FROM messages').get()!.text).toBe('Concurrent message');
-    expect(writer.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id).toBe(
-      'new-session',
-    );
+    expect(
+      writer.prepare('SELECT agent_session FROM chat_instance_state').get()!.agent_session,
+    ).toBe('new-session');
   } finally {
     intercepted?.mockRestore();
     vi.restoreAllMocks();

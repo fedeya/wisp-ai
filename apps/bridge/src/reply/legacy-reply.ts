@@ -1,4 +1,4 @@
-// Historical NDJSON replies only. New Eve replies use text and presentation tools.
+// Historical NDJSON replies only. New replies use text and presentation tools.
 import { z } from 'zod';
 import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
 import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';

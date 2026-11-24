@@ -80,7 +80,6 @@
     "@wisp/agent": "workspace:*",
     "@wisp/protocol": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5",
-    "eve": "1.0.0-rc.6",
     "hono": "4.13.15",
     "jose": "6.2.15",
     "pino": "10.4.0",

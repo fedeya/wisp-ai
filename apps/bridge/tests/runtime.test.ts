@@ -2,13 +2,13 @@ import { test, expect, vi } from 'vitest';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:http';
 import { startBridge, type BridgeOptions } from '../src/runtime.ts';
 import { packetSchema } from '@wisp/protocol/protocol';
 import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/protocol/mailbox';
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { agentHost } from '@wisp/agent/agent-host';
 
 async function fixture(configured = true) {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
@@ -18,38 +18,18 @@ async function fixture(configured = true) {
       JSON.stringify({ wow: path.join(dataDirectory, 'wow') }),
     );
   }
-  let child: ChildProcess | undefined;
   const options: BridgeOptions = {
     dataDirectory,
     agentPort: 0,
     desktopPort: 0,
     vault: { read: async () => '', write: async () => {} },
-    client: {
-      health: async () => {},
-      info: async () => ({ agent: {} }),
-      sessions: {},
-    } as unknown as BridgeOptions['client'],
-    startAgent: () => {
-      child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
-        windowsHide: true,
-        stdio: 'ignore',
-      });
-      return child;
-    },
   };
-  return {
-    dataDirectory,
-    options,
-    agentStopped: () =>
-      child !== undefined && (child.exitCode !== null || child.signalCode !== null),
-  };
+  return { dataDirectory, options };
 }
 
-test('addon maintenance switches WoW folders without stopping Eve or the desktop API', async () => {
+test('addon maintenance switches WoW folders without stopping the agent or the desktop API', async () => {
   const f = await fixture(false);
   f.options.deferWowTransport = true;
-  const startAgent = vi.fn(f.options.startAgent!);
-  f.options.startAgent = startAgent;
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   async function game(name: string) {
     const folder = path.join(f.dataDirectory, name);
@@ -91,7 +71,6 @@ test('addon maintenance switches WoW folders without stopping Eve or the desktop
 
     await first.hello('cached', 1);
     expect(state.activeTransport).toBe('');
-    expect(startAgent).toHaveBeenCalledTimes(1);
     expect((await request('/status')).status).toBe(200);
 
     // The upgrade path resumes the configured folder once the addon is ready.
@@ -120,8 +99,7 @@ test('addon maintenance switches WoW folders without stopping Eve or the desktop
     await vi.waitFor(() => expect(state.activeTransport).toBe('second'), { timeout: 3000 });
     expect(JSON.parse(await readFile(config, 'utf8')).wow).toBe(second.folder);
     expect((await request('/status')).status).toBe(200);
-    expect(startAgent).toHaveBeenCalledTimes(1);
-    expect(f.agentStopped()).toBe(false);
+    expect((await request('/status')).data.ready).toBe(true);
   } finally {
     await bridge?.stop();
     await rm(f.dataDirectory, { recursive: true, force: true });
@@ -162,14 +140,6 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
       secrets.set(key, value);
     },
   };
-  let origin = '',
-    agentToken = '';
-  const start = f.options.startAgent!;
-  f.options.startAgent = (options) => {
-    origin = options.environment.WOW_BRIDGE_URL!;
-    agentToken = options.environment.WOW_BRIDGE_TOKEN!;
-    return start(options);
-  };
   const actualFetch = globalThis.fetch;
   const exaRequests: Record<string, unknown>[] = [];
   const exa = vi.fn(async () =>
@@ -200,6 +170,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
     bridge = await startBridge(f.options);
+    const { origin, token: agentToken } = agentHost()!;
     const identity = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
@@ -220,7 +191,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     });
     bridge.receive(packetSchema.parse({ type: 'hello', session: 'live', seq: 1, at: 1 }));
     const chat = newChat('search-chat', 'live');
-    chat.eveId = 'eve-search';
+    chat.agentSession = 'eve-search';
     chat.status = 'working';
     chat.modelSettings = { model: `connection:${id}:local`, effort: 'provider-default' };
     bridge.state.chats.push(chat);
@@ -235,14 +206,14 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     };
     expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
     expect(
-      await agent('/wowhead', { eveSession: 'eve-search', query: 'Frost Nova' }),
+      await agent('/wowhead', { agentSession: 'eve-search', query: 'Frost Nova' }),
     ).toMatchObject({ status: 'available', provider: 'Exa' });
     chat.status = 'done';
     await desktop('/search/save', { provider: 'auto', apiKey: 'private-exa-key' });
     chat.status = 'working';
     expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
     const result = await agent('/wowhead', {
-      eveSession: 'eve-search',
+      agentSession: 'eve-search',
       query: 'Frost Nova',
       depth: 'deep',
       maxResults: 7,
@@ -320,7 +291,6 @@ test('the assembled runtime serves validated status, receives packets, persists 
       { role: 'user', text: 'Hello' },
     ]);
     expect(saved.map((chat: { id: string }) => chat.id)).not.toContain('draft');
-    await vi.waitFor(() => expect(f.agentStopped()).toBe(true));
     await bridge.stop();
   } finally {
     await bridge?.stop();
@@ -328,29 +298,19 @@ test('the assembled runtime serves validated status, receives packets, persists 
   }
 });
 
-test('occupied bridge and Eve ports fall back to free ones that the clients can reach', async () => {
+test('occupied bridge ports fall back to free ones that the clients can reach', async () => {
   const f = await fixture();
   const occupied = createServer();
   await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
   const port = (occupied.address() as { port: number }).port;
-  const startAgent = vi.fn(f.options.startAgent!);
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
-    bridge = await startBridge({
-      ...f.options,
-      agentPort: port,
-      desktopPort: port,
-      evePort: port,
-      startAgent,
-    });
-    const { environment, port: evePort } = startAgent.mock.calls[0][0];
-    const { WOW_BRIDGE_URL, WOW_BRIDGE_TOKEN } = environment;
+    bridge = await startBridge({ ...f.options, agentPort: port, desktopPort: port });
+    const { origin: WOW_BRIDGE_URL, token: WOW_BRIDGE_TOKEN } = agentHost()!;
     const agentPort = Number(new URL(WOW_BRIDGE_URL!).port);
     const desktop = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
-    expect(evePort).toBeGreaterThan(0);
-    expect(evePort).not.toBe(port);
     expect(new Set([port, agentPort, desktop.port]).size).toBe(3);
 
     const agentResponse = await fetch(WOW_BRIDGE_URL + '/session-model?session=missing', {
@@ -377,18 +337,13 @@ test('a late startup failure closes the agent and already-started runtime resour
     await expect(startBridge({ ...f.options, desktopPort: -1 })).rejects.toMatchObject({
       code: 'ERR_SOCKET_BAD_PORT',
     });
-    await vi.waitFor(() => expect(f.agentStopped()).toBe(true));
   } finally {
     await rm(f.dataDirectory, { recursive: true, force: true });
   }
 });
 
-test('desktop API saves a provider and model without WoW or a working Eve process', async () => {
+test('desktop API saves a provider and model without WoW', async () => {
   const f = await fixture(false);
-  const startAgent = vi.fn(() => {
-    throw Error('Agent unavailable');
-  });
-  f.options.startAgent = startAgent;
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
     bridge = await startBridge(f.options);
@@ -414,8 +369,7 @@ test('desktop API saves a provider and model without WoW or a working Eve proces
     expect(models).toMatchObject([{ slug: `connection:${id}:local-test`, efforts: [] }]);
     await request('/auth/model', { model: models[0].slug });
     const status = statusSchema.parse(await request('/status'));
-    expect(startAgent).toHaveBeenCalled();
-    expect(status).toMatchObject({ ready: false, gameConnected: false, modelConnected: true });
+    expect(status).toMatchObject({ ready: true, gameConnected: false, modelConnected: true });
     expect(status.auth.status).toBe('signed_out');
     expect(
       JSON.parse(await readFile(path.join(f.dataDirectory, 'config.local.json'), 'utf8')),

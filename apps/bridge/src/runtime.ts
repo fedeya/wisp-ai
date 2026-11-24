@@ -16,12 +16,9 @@ import { createAgentHandler } from './agent/agent-server.ts';
 import { GameRequests } from './addon/game-requests.ts';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import type { startEveProcess } from './agent/agent-process.ts';
-import { createEveLifecycle } from './agent/eve-lifecycle.ts';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Client } from 'eve/client';
 import { createTransportConnection } from './addon/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
@@ -42,7 +39,7 @@ import { McpManager } from './integrations/mcp/mcp-manager.ts';
 import { McpRelay } from './integrations/mcp/mcp-relay.ts';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
 import { startDesktopServer } from './desktop/desktop-server.ts';
-import { freeLoopbackPort, listenOnLoopback } from './loopback-server.ts';
+import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
 import { ModelConnections } from './models/model-connections.ts';
 import { createModelCatalogRefresh } from './models/model-catalog.ts';
@@ -52,33 +49,33 @@ import { WebSearch } from './integrations/search/web-search.ts';
 import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
 import { TheWoWDB } from './integrations/thewowdb.ts';
 import { Simulator } from './integrations/simulation/simulator.ts';
-import { appPaths } from './app-paths.ts';
+import { appPaths, retireLegacyEngine } from './app-paths.ts';
 import { addonVersionFromToc } from './addon/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
+import { setAgentHost } from '@wisp/agent/agent-host';
+import { createAgentEngine } from '@wisp/agent/engine';
+import { AgentHistory } from './agent/agent-history.ts';
 export interface BridgeOptions {
   resourceRoot?: string;
   dataDirectory?: string;
   agentPort?: number;
   desktopPort?: number;
-  evePort?: number;
   vault?: SecretVault;
-  client?: Pick<Client, 'sessions' | 'health' | 'info'>;
-  startAgent?: typeof startEveProcess;
   deferWowTransport?: boolean;
 }
 /**
- * Composition root of the bridge: loads stores and settings, wires the Eve
- * process, the addon transport, the agent and desktop servers, and returns
+ * Composition root of the bridge: loads stores and settings, wires the
+ * in-process agent engine, the addon transport, the agent and desktop servers, and returns
  * `{ state, receive, stop }`.
  *
  * Cleanup is registered with `resources.defer` and runs in reverse (LIFO), so
  * the registration order below is the shutdown order read bottom-up. Orderings
  * that matter:
  * - The publish and integration timers and the desktop server stop first,
- *   then Eve's health checks, so nothing new starts.
- * - Pending account work settles before Eve stops; Eve is stopped (after its
- *   engine preparation settles) before its log file closes.
+ *   so nothing new starts.
+ * - Pending account work settles before the agent engine closes its MCP
+ *   connections.
  * - The agent server closes and the transport disconnects before turns
  *   drain, and turns drain before the publisher stops, chats are flushed and
  *   the database closes (last).
@@ -213,11 +210,12 @@ export async function startBridge(options: BridgeOptions = {}) {
       inputs: () => {
         const character = state.currentCharacterKey;
         return {
-          connected: eve.isReady(),
+          connected: engineReady,
           bridgeVersion,
           expectedAddonVersion,
           appUpdateVersion,
-          contextWindowTokens: eve.contextWindowTokens(),
+          contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
+            ?.contextWindow,
           defaultModel: defaultModel(),
           panels: character ? panelStore.list(character) : [],
           routines: character ? routineStore.list(character) : [],
@@ -239,32 +237,14 @@ export async function startBridge(options: BridgeOptions = {}) {
     });
     resources.defer(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
-    // Eve binds its port itself, so choose it here: another Wisp may hold 43186.
-    const evePort = await freeLoopbackPort(options.evePort ?? 43186);
-    const client =
-      options.client ||
-      new Client({
-        baseUrl: 'http://127.0.0.1:' + evePort,
-        auth: { bearer: () => token },
-      });
-    const eve = createEveLifecycle({
-      agentRoot: paths.agent,
-      engineRoot: paths.engine,
-      port: evePort,
-      logPath: path.join(runtime, 'eve.log'),
-      environment: () => ({
-        ...process.env,
-        WOW_BRIDGE_TOKEN: token,
-        WOW_BRIDGE_URL: agentOrigin,
-        WOW_CAPABILITIES_FILE: capabilitySettings.agentFile,
-        WOW_MCP_CONFIG: mcpFile,
-        ...(config.get().model ? { WOW_MODEL: config.get().model } : {}),
-        DO_NOT_TRACK: '1',
-      }),
-      client,
-      startAgent: options.startAgent,
-      changed,
-      isStopping: () => shutdownRequested,
+    // The agent runs in process; its model history lives next to the chats.
+    const agentHistory = new AgentHistory(applicationDatabase);
+    let engineReady = false;
+    const engine = createAgentEngine({
+      origin: () => agentOrigin,
+      token,
+      history: agentHistory,
+      mcpConfigFile: () => mcpFile,
       logger,
     });
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
@@ -302,7 +282,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       telemetry,
       modelFailures,
       modelProvider: (model) => connections.provider(model),
-      client,
+      engine,
       models: connections,
       capabilitySettings,
       changed,
@@ -310,7 +290,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
       defaultModel,
-      isReady: () => eve.isReady(),
+      isReady: () => engineReady,
       isStopping: () => shutdownRequested,
       accountBusy: accounts.busy,
       hasProvider: () => connections.hasProvider(),
@@ -329,7 +309,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       changed,
       logger,
       isStopping: () => shutdownRequested,
-      isReady: () => eve.isReady(),
+      isReady: () => engineReady,
     });
     resources.defer(stopRoutineScheduler);
     const adoptCharacter = createCharacterAdoption({
@@ -342,7 +322,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const receivePacket = createPacketReceiver({
       telemetry,
       state,
-      client,
+      engine,
       pending,
       integrationState,
       capabilitySettings,
@@ -358,6 +338,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       flushAcknowledgment: publisher.flush,
       adoptCharacter,
       interrupt: run.interrupt,
+      cancel: run.cancel,
       runtime,
       changed,
       logger,
@@ -416,16 +397,38 @@ export async function startBridge(options: BridgeOptions = {}) {
     const agentPort = await listenOnLoopback(server, options.agentPort ?? 43187);
     const agentOrigin = 'http://127.0.0.1:' + agentPort;
     await writeFile(path.join(runtime, 'bridge.pid'), String(process.pid));
-    eve.openLog();
-    resources.defer(() => eve.closeLog());
-    const engineStartup = eve.prepare();
-    // Registered after closeLog, so it runs first: Eve is stopped before its log closes.
-    resources.defer(async () => {
-      await engineStartup;
-      await eve.stop();
-    });
+    setAgentHost({ origin: agentOrigin, token, capabilitiesFile: capabilitySettings.agentFile });
+    resources.defer(() => engine.close());
     resources.defer(() => accounts.drain());
-    resources.defer(eve.startHealthChecks());
+    void Promise.all([
+      retireLegacyEngine(paths.legacyEngine),
+      rm(path.join(runtime, 'eve.log'), { force: true }),
+    ]).catch((error) =>
+      logger.warn(
+        { event: 'agent.legacy_engine_cleanup_failed', error: errorMessage(error) },
+        'Could not remove the old Eve engine folder',
+      ),
+    );
+    // Histories no conversation refers to belong to deleted chats or reset sessions.
+    await agentHistory
+      .prune()
+      .catch((error) =>
+        logger.warn(
+          { event: 'agent.history_prune_failed', error: errorMessage(error) },
+          'Could not prune agent history',
+        ),
+      );
+    const engineStartup = engine.preload().then(
+      () => {
+        engineReady = true;
+        changed();
+      },
+      (error) =>
+        logger.error(
+          { event: 'agent.preload_failed', error: errorMessage(error) },
+          'Agent failed to load',
+        ),
+    );
     function observeGameConnection() {
       telemetry.gameConnectionProgress(
         transport.gameConnected(),
@@ -435,7 +438,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     function desktopStatus(): Status {
       const characters = readCharacterNames(applicationDatabase.orm);
       return {
-        ready: eve.isReady(),
+        ready: engineReady,
         gameConnected: transport.gameConnected(),
         auth: auth.state(),
         connections: connections.list(),
@@ -503,7 +506,6 @@ export async function startBridge(options: BridgeOptions = {}) {
           throw Error('Wisp is stopping.');
         }
         await config.update({ model });
-        await eve.restart();
       },
       requestStop: () => {
         shutdownRequested = true;

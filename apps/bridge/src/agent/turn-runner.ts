@@ -1,8 +1,7 @@
-import type { Client } from 'eve/client';
 import { applyEvent, type Chat } from '../chat/events.ts';
 import { ReplyProjection } from '../reply/reply-stream.ts';
 import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
-import { sendChatTurn } from './agent-session.ts';
+import { endSession, sendChatTurn, type AgentEngine } from './agent-session.ts';
 import { beginTurn, settleTurn } from '../chat/chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from '../chat/context.ts';
 import { chooseChatModel, resolveDefaultModel } from '../chat/chat-model.ts';
@@ -76,7 +75,7 @@ function isUsageLimit(error: unknown): boolean {
 
 interface TurnDependencies {
   telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>;
-  client: Pick<Client, 'sessions'>;
+  engine: AgentEngine;
   models: ModelCatalog;
   capabilitySettings: Pick<CapabilitySettings, 'publish' | 'enabled' | 'snapshot'>;
   currentTransport: () => string;
@@ -100,7 +99,7 @@ interface TurnDependencies {
 }
 export function createTurnRunner(deps: TurnDependencies) {
   const {
-    client,
+    engine,
     models,
     capabilitySettings,
     currentTransport,
@@ -117,6 +116,7 @@ export function createTurnRunner(deps: TurnDependencies) {
   const generations = new WeakMap<Chat, symbol>();
   const running = new Set<Promise<void>>();
   const controllers = new WeakMap<Chat, AbortController>();
+  const cancelled = new WeakSet<Chat>();
   const projections = new WeakMap<
     Chat,
     { parts: ReplyProjection; assertCurrent: () => void; signal: AbortSignal; touch: () => void }
@@ -170,10 +170,11 @@ export function createTurnRunner(deps: TurnDependencies) {
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
-    // Failure paths clear chat.eveId before telemetry reads which session failed.
-    let eveSession: string | undefined;
+    // Failure paths clear chat.agentSession before telemetry reads which session failed.
+    let agentSession: string | undefined;
     controllers.set(chat, controller);
     usageLimitedChats.delete(chat);
+    cancelled.delete(chat);
     const generation = Symbol();
     generations.set(chat, generation);
     const ownsTurn = () => generations.get(chat) === generation;
@@ -218,7 +219,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       await capabilitySettings.publish();
       if (!isReady()) {
         failureCode = 'engine_not_ready';
-        throw new Error('Eve is still starting. Please try again in a few seconds.');
+        throw new Error('Wisp is still starting. Please try again in a few seconds.');
       }
       if (accountBusy()) {
         failureCode = 'account_busy';
@@ -253,19 +254,20 @@ export function createTurnRunner(deps: TurnDependencies) {
         nameConversation(chat, text, chat.modelSettings.model);
       }
       failureCode = 'turn_start_failed';
-      const response = await sendChatTurn(
-        client,
+      const response = sendChatTurn(
+        engine,
         chat,
         turnInput(text, context, chat, capabilitySettings.snapshot()),
         controller.signal,
       );
-      eveSession = chat.eveId;
+      agentSession = chat.agentSession;
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
       changed();
-      failureCode = 'turn_stream_failed';
       touch();
-      for await (const event of response.stream({ signal: controller.signal })) {
+      for await (const event of response.events) {
+        // The engine prepares the turn before its first event.
+        failureCode = 'turn_stream_failed';
         touch();
         assertCurrent();
         const sourceRevision = parts.sourceRevision;
@@ -293,11 +295,8 @@ export function createTurnRunner(deps: TurnDependencies) {
         }
       }
       failureCode = 'turn_result_failed';
-      const result = await response.result({ signal: controller.signal });
+      const result = await response.result;
       assertCurrent();
-      if (result.sessionEnded) {
-        chat.eveId = undefined;
-      }
       if (chat.proactive) {
         chat.tipSkipped = parts.noTip;
       }
@@ -305,15 +304,10 @@ export function createTurnRunner(deps: TurnDependencies) {
         timedOut = isTimeout(result.error);
         usageLimited = isUsageLimit(result.error);
         throw new Error(
-          safeErrorMessage(result.error.message || 'The response failed. Please try again.'),
+          safeErrorMessage(result.error?.message || 'The response failed. Please try again.'),
         );
       }
-      const status =
-        result.status === 'awaiting-input'
-          ? 'needs_input'
-          : result.status === 'cancelled'
-            ? 'cancelled'
-            : 'done';
+      const status = result.status === 'cancelled' ? 'cancelled' : 'done';
       settleTurn(chat, status);
       outcome = status === 'done' ? 'completed' : status;
       chat.unread = chat.id !== activeChat();
@@ -322,6 +316,12 @@ export function createTurnRunner(deps: TurnDependencies) {
       }
     } catch (error) {
       if (!ownsTurn()) {
+        return;
+      }
+      if (cancelled.has(chat) && controller.signal.aborted && stalled === undefined) {
+        settleTurn(chat, 'cancelled');
+        outcome = 'cancelled';
+        parts.flush(chat, Date.now(), true);
         return;
       }
       // A stalled turn is aborted by its watchdog; report the stall, not the
@@ -350,14 +350,9 @@ export function createTurnRunner(deps: TurnDependencies) {
         }
       }
       parts.flush(chat, Date.now(), true);
-      if (stalled && chat.eveId) {
-        // Free the engine session the stalled turn may still be holding.
-        void client.sessions
-          .attach(chat.eveId)
-          .cancel()
-          .catch(() => {});
-      }
-      chat.eveId = undefined;
+      // A failed turn can leave its history unanswerable; continue in a new session.
+      endSession(engine, chat.agentSession);
+      chat.agentSession = undefined;
       chat.messages.push({
         role: 'system',
         text: failure instanceof Error ? failure.message : String(failure),
@@ -388,7 +383,7 @@ export function createTurnRunner(deps: TurnDependencies) {
               provider: deps.modelProvider?.(model),
               failureKind:
                 outcome === 'failed' || outcome === 'timeout'
-                  ? deps.modelFailures?.since(eveSession, started)
+                  ? deps.modelFailures?.since(agentSession, started)
                   : undefined,
             }
           : {},
@@ -457,5 +452,13 @@ export function createTurnRunner(deps: TurnDependencies) {
     },
     drain: () => Promise.allSettled(running),
     interrupt: (chat: Chat) => controllers.get(chat)?.abort(),
+    /** Stops a turn the player cancelled; it settles as cancelled, not interrupted. */
+    cancel: (chat: Chat) => {
+      const controller = controllers.get(chat);
+      if (controller && !controller.signal.aborted) {
+        cancelled.add(chat);
+        controller.abort();
+      }
+    },
   });
 }

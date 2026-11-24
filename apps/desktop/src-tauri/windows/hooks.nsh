@@ -1,5 +1,5 @@
 ; Only installed, read-only application resources are replaced. Conversations,
-; memory, credentials and the Eve workspace live outside $INSTDIR in AppData.
+; memory and credentials live outside $INSTDIR in AppData.
 ; tauri.conf.json uses zlib to reduce the time spent extracting these resources.
 !define MUI_CUSTOMFUNCTION_GUIINIT WispUpdateWindowInit
 !include "${__FILEDIR__}\update-window.nsh"
