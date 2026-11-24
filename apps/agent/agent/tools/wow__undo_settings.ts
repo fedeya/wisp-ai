@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { settingsUndo } from '@wisp/protocol/settings';
@@ -19,7 +19,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'undo_settings', args } },
+        { agentSession: ctx.session.id, action: { kind: 'undo_settings', args } },
         ctx.abortSignal,
       ),
   }),

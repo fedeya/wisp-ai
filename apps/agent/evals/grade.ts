@@ -1,9 +1,10 @@
-// Grades saved eval answers (.eve/eval-replies/runs.jsonl) for quality with the
+// Grades saved eval answers (apps/agent/eval-replies/runs.jsonl) for quality with the
 // eval model bridge, against each scenario's facts and a fixed rubric.
 //
 //   node apps/agent/evals/grade.ts [label ...]
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startModelBridge } from './model-bridge.ts';
 import { criteria, scenarios } from './quality.ts';
 
@@ -87,7 +88,9 @@ async function grade(run: Run, model: string): Promise<Scores & { notes: string 
 }
 
 async function main() {
-  const dir = path.resolve(process.env.WISP_EVAL_OUT || 'apps/agent/.eve/eval-replies');
+  const dir = path.resolve(
+    process.env.WISP_EVAL_OUT || fileURLToPath(new URL('../eval-replies/', import.meta.url)),
+  );
   const labels = process.argv.slice(2);
   const runs = (await readFile(path.join(dir, 'runs.jsonl'), 'utf8'))
     .trim()

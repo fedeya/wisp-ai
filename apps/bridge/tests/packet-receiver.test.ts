@@ -1,5 +1,4 @@
 import { test, expect, vi } from 'vitest';
-import type { Client } from 'eve/client';
 import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { GameRequests } from '../src/addon/game-requests.ts';
@@ -15,7 +14,7 @@ import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
   const database = new ApplicationDatabase('unused');
-  const chat = { ...newChat('old', 'one'), eveId: 'eve', status: 'working' as const };
+  const chat = { ...newChat('old', 'one'), agentSession: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
   state.activeTransport = 'one';
   state.currentCharacterKey = 'old-character';
@@ -23,8 +22,8 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   state.panelCommand = { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' };
   const pending = new GameRequests(() => {});
   const capabilitySettings = new CapabilitySettings('unused');
-  const cancel = vi.fn(async () => {});
-  const end = vi.fn(async () => {});
+  const cancel = vi.fn();
+  const end = vi.fn(async (_session: string) => {});
   const interrupt = vi.fn();
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
@@ -34,10 +33,8 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
     pending,
     capabilitySettings,
     integrationState: new IntegrationState(capabilitySettings),
-    client: { sessions: { attach: () => ({ cancel, end }) } } as unknown as Pick<
-      Client,
-      'sessions'
-    >,
+    engine: { end },
+    cancel,
     models: { models },
     routineStore: new RoutineStore(database),
     panelStore: new PanelStore(database),
@@ -160,9 +157,9 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(first));
-  expect(chat.eveId).toBeUndefined();
+  expect(chat.agentSession).toBeUndefined();
   expect(chat.messages[0]?.text).toBe('Keep this conversation');
-  chat.eveId = 'native-session';
+  chat.agentSession = 'native-session';
   f.receive(
     packetSchema.parse({
       type: 'chat_model_set',
@@ -175,7 +172,7 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(second));
-  expect(chat.eveId).toBeUndefined();
+  expect(chat.agentSession).toBeUndefined();
   expect(f.end).toHaveBeenCalledTimes(2);
 });
 
@@ -186,7 +183,7 @@ test('reload interrupts old turns, rejects outstanding reads and clears characte
   f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 1 }));
   await rejection;
   expect(f.state.chats[0].status).toBe('interrupted');
-  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(f.cancel).not.toHaveBeenCalled();
   expect(f.interrupt).toHaveBeenCalledTimes(1);
   expect(f.state.currentCharacterKey).toBeUndefined();
   expect(f.state.panelCommand).toBeUndefined();
@@ -210,6 +207,13 @@ test('deleting an active conversation cancels its requests and prevents delayed 
   expect(f.state.chats).toEqual([]);
   expect(f.end).toHaveBeenCalledTimes(1);
   expect(f.run).not.toHaveBeenCalled();
+});
+
+test('a cancel packet stops the turn as cancelled and keeps its session', () => {
+  const f = fixture();
+  f.receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: 'old', seq: 2, at: 2 }));
+  expect(f.cancel).toHaveBeenCalledWith(f.state.chats[0]);
+  expect(f.end).not.toHaveBeenCalled();
 });
 
 test('retry reuses the failed question and ignores retries while working', () => {

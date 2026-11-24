@@ -1,5 +1,4 @@
-import { defineTool } from 'eve/tools';
-import webFetch from 'eve/tools/web_fetch';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { fetchWebPage, webFetchInput, webFetchOutput } from '../../src/web-fetch.ts';
 
@@ -7,7 +6,6 @@ export default enabledTool(
   'web_fetch',
   defineTool({
     deferred: false,
-    ...webFetch,
     inputSchema: webFetchInput,
     outputSchema: webFetchOutput,
     label: {

@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { flightPathsInput } from '@wisp/protocol/game-inspection';
@@ -14,7 +14,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'flight_paths', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'flight_paths', args } },
         ctx.abortSignal,
       ),
   }),

@@ -1,4 +1,4 @@
-import type { ToolStub } from 'eve/evals';
+import type { ToolStub } from '../harness.ts';
 
 // Quest, dungeon and map fixtures for non-gear questions. Put these before
 // fedrathStubs(): the first matching stub wins.

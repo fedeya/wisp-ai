@@ -47,7 +47,7 @@ interface Component {
   node: NonNullable<Message['ui']>[number];
 }
 
-// Project Eve's ordered text/tool events into native message parts. Presentation
+// Project the agent's ordered text/tool events into native message parts. Presentation
 // calls occupy a stable position but never become visible tool/activity rows.
 export class ReplyProjection {
   sourceRevision = 0;

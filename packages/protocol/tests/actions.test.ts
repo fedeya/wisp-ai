@@ -75,6 +75,6 @@ test('Polestar guides fit the agent action request body', () => {
   while (!actionSchema.safeParse(guide(steps)).success) {
     steps -= 1;
   }
-  const body = JSON.stringify({ eveSession: 'e'.repeat(64), action: guide(steps) });
+  const body = JSON.stringify({ agentSession: 'e'.repeat(64), action: guide(steps) });
   assert.ok(Buffer.byteLength(body) < 32768, `${steps} steps: ${Buffer.byteLength(body)} bytes`);
 });

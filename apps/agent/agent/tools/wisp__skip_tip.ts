@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 
 export default defineTool({

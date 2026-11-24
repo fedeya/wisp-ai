@@ -1,0 +1,1 @@
+ALTER TABLE `chat_instance_state` ADD `agent_session` text;

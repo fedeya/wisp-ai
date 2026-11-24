@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { panelInput } from '@wisp/protocol/panels';
@@ -11,6 +11,6 @@ export default enabledTool(
     inputSchema: panelInput,
     label: { start: () => 'Managing panels', complete: () => 'Managed panels' },
     execute: (input, ctx) =>
-      agentRPC('panels', { eveSession: ctx.session.id, input }, ctx.abortSignal),
+      agentRPC('panels', { agentSession: ctx.session.id, input }, ctx.abortSignal),
   }),
 );

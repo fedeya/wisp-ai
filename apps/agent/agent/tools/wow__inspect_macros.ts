@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
@@ -16,7 +16,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'macros', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'macros', args } },
         ctx.abortSignal,
       ),
   }),

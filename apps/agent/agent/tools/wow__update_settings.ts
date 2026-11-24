@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { settingsUpdate } from '@wisp/protocol/settings';
@@ -23,7 +23,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'update_settings', args } },
+        { agentSession: ctx.session.id, action: { kind: 'update_settings', args } },
         ctx.abortSignal,
       ),
   }),

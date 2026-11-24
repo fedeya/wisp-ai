@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { characterSections } from '@wisp/protocol/agent-rpc';
 import { agentRPC } from '@wisp/agent/agent-rpc';
@@ -20,6 +20,6 @@ export default enabledTool(
       complete: ({ sections }) => 'Read ' + sections.join(', '),
     },
     execute: ({ sections, refresh }, ctx) =>
-      agentRPC('state', { eveSession: ctx.session.id, sections, refresh }, ctx.abortSignal),
+      agentRPC('state', { agentSession: ctx.session.id, sections, refresh }, ctx.abortSignal),
   }),
 );

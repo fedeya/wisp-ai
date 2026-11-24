@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { routineInput } from '@wisp/protocol/routines';
@@ -11,6 +11,6 @@ export default enabledTool(
     inputSchema: routineInput,
     label: { start: () => 'Managing routines', complete: () => 'Processed a routine request' },
     execute: (input, ctx) =>
-      agentRPC('routines', { eveSession: ctx.session.id, input }, ctx.abortSignal),
+      agentRPC('routines', { agentSession: ctx.session.id, input }, ctx.abortSignal),
   }),
 );

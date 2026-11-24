@@ -1,4 +1,4 @@
-import { defineTool, toolOutput } from 'eve/tools';
+import { defineTool, toolOutput } from '@wisp/agent/tool';
 import { replyPresentation } from '@wisp/protocol/reply-presentation';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 
@@ -12,7 +12,7 @@ export default defineTool({
     agentRPC(
       'present',
       {
-        eveSession: ctx.session.id,
+        agentSession: ctx.session.id,
         callId: ctx.callId,
         presentation: input,
       },

@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { questInput } from '@wisp/protocol/game-inspection';
@@ -34,7 +34,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'questie_quest', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'questie_quest', args } },
         ctx.abortSignal,
       ),
   }),

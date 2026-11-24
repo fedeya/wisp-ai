@@ -1,4 +1,4 @@
-import type { ToolStub } from 'eve/evals';
+import type { ToolStub } from '../harness.ts';
 
 // Stub responses must be plain JSON values.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value));

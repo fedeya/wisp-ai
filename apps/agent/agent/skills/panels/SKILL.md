@@ -9,4 +9,4 @@ Saved panels use the ui components. Persistent buttons support only ask actions.
 
 Bindings update locally: item_count uses a verified itemId and counts bags only; money uses copper; level is current level; quest_completed uses a verified questId. Targets represent the user's goal or required quantity. Show missing readings as unavailable, initially “Loading”. For materials, verify the chosen recipe, item IDs and quantities before saving reference/stat nodes with bindings and targets. Live bindings need no memory writes.
 
-Load the ui skill with eve__skill when building native components for this workflow.
+Load the ui skill with the skill tool when building native components for this workflow.

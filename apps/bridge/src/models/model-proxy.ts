@@ -127,7 +127,7 @@ export async function proxyModel(
 }
 /**
  * Records a stream that breaks after the provider answered 200: a dropped connection
- * or the proxy's timeout. A failed status was already recorded. Eve going away ends
+ * or the proxy's timeout. A failed status was already recorded. The agent going away ends
  * in an abort or a premature close, never in these two kinds, so it isn't recorded.
  * The abort signal can't tell them apart here, because a broken pipeline closes the
  * response and so fires it too.

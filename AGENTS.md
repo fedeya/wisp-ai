@@ -13,7 +13,7 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 | Path                 | Package           | What it is                                                                                        |
 | -------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
 | `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging |
-| `apps/agent`         | `@wisp/agent`     | Eve agent runtime: model connections, tools, skills and instructions in `agent/`                  |
+| `apps/agent`         | `@wisp/agent`     | Agent runtime on Mastra, run in the bridge: model connections, tools, skills and instructions     |
 | `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                     |
 | `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                     |
 | `packages/protocol`  | `@wisp/protocol`  | Shared zod schemas and types for the wire protocol, desktop, settings and addon helpers           |
@@ -43,7 +43,7 @@ Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 | `pnpm test:ui`                                  | Desktop React tests (CI runs `pnpm ui:build` first)                                         |
 | `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                                                |
 | `pnpm start`                                    | Run the bridge                                                                              |
-| `pnpm agent`                                    | Agent dev server (`eve dev`)                                                                |
+| `pnpm --filter @wisp/agent eval`                | Agent evals against a real model (sign in once with `apps/bridge/src/evals/eval-bridge.ts`) |
 | `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
 | `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
 | `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |
@@ -78,7 +78,7 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 ## Conventions observed in the code
 
 - **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
-  (transport, snapshots, panels), `agent/` (Eve process, agent server, turns),
+  (transport, snapshots, panels), `agent/` (engine wiring, agent server, turns, model history),
   `auth/`, `chat/`, `reply/`, `models/`, `integrations/` (search, MCP,
   simulation, TheWoWDB), `desktop/`, `routines/`, `db/` and `migrations/`.
   Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,

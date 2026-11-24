@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
@@ -19,7 +19,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'clear_waypoint', args } },
+        { agentSession: ctx.session.id, action: { kind: 'clear_waypoint', args } },
         ctx.abortSignal,
       ),
   }),

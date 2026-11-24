@@ -82,7 +82,7 @@ test('keeps the payload key order the snapshot gate signs', () => {
   ]);
 });
 
-test('prefers the active chat model window over the Eve-reported window', () => {
+test('prefers the active chat model window over the default model window', () => {
   const base = inputs();
   base.state.modelCatalog = [{ slug: 'big', contextWindow: 400_000 } as AccountModel];
   base.state.chats = [

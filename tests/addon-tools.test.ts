@@ -5,7 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '../apps/bridge/src/integrations/integration-state.ts';
-import { dynamicEvaluate } from './node_modules/eve/dist/src/dynamic/definition.js';
+import { toolOffered } from '@wisp/agent/enabled-tool';
 import flightPaths from '../apps/agent/agent/tools/wow__inspect_flight_paths.ts';
 import quest from '../apps/agent/agent/tools/questie__get_quest.ts';
 import chain from '../apps/agent/agent/tools/questie__get_quest_chain.ts';
@@ -42,7 +42,7 @@ test('item and spell references can opt into cooldown readings', () => {
   }
 });
 
-test('actual new Eve definitions follow per-API readiness, parent switches and expiration', async () => {
+test('actual tool definitions follow per-API readiness, parent switches and expiration', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-addon-tools-'));
   const previous = process.env.WOW_CAPABILITIES_FILE;
   try {
@@ -50,8 +50,9 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     settings.agentFile = path.join(directory, 'agent.json');
     process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
     const state = new IntegrationState(settings);
-    const resolve = async (definition: unknown) =>
-      dynamicEvaluate(definition as never)({} as never);
+    // A tool as the agent offers it this turn, or null while its capability is off.
+    const resolve = async <T extends { capability?: string }>(definition: T) =>
+      (await toolOffered(definition)) ? definition : null;
     const report = {
       version: '1.60',
       questie: {

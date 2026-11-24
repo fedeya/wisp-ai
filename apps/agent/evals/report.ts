@@ -1,5 +1,6 @@
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 interface ReportedTurn {
   reply?: string;
@@ -9,14 +10,16 @@ interface ReportedTurn {
 // Saves what the agent said and did, so a person can read the answers, and
 // appends one summary line per run so configurations can be compared.
 export async function saveTurn(name: string, prompt: string, turn: ReportedTurn, ms: number) {
-  const dir = path.resolve(process.env.WISP_EVAL_OUT || '.eve/eval-replies');
+  const dir = path.resolve(
+    process.env.WISP_EVAL_OUT || fileURLToPath(new URL('../eval-replies/', import.meta.url)),
+  );
   await mkdir(dir, { recursive: true });
   const calls = turn.toolCalls.map((call) => ({
     tool: call.toolName ?? call.name,
     status: call.status,
     input: call.input,
   }));
-  const steps = turn.events.filter((event) => event.type === 'model.started').length;
+  const steps = turn.events.filter((event) => event.type === 'usage.recorded').length;
   const label = process.env.WISP_EVAL_LABEL || 'run';
   await writeFile(
     path.join(dir, `${name}.${label}.md`),
@@ -62,13 +65,8 @@ export async function saveTurn(name: string, prompt: string, turn: ReportedTurn,
       seconds: Math.round(ms / 100) / 10,
       steps,
       calls: calls.length,
-      searches: calls.filter((call) => call.tool === 'eve__search').length,
-      skills: turn.events.filter(
-        (event) =>
-          event.type === 'call.requested' &&
-          (event as { data?: { capability?: { kind?: string } } }).data?.capability?.kind ===
-            'skill',
-      ).length,
+      searches: calls.filter((call) => call.tool === 'tool_search').length,
+      skills: calls.filter((call) => call.tool === 'skill').length,
     }) + '\n',
   );
 }

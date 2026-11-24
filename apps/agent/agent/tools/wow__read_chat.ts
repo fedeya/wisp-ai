@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { chatHistoryInput } from '@wisp/protocol/game-inspection';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
@@ -14,7 +14,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'chat', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'chat', args } },
         ctx.abortSignal,
       ),
   }),

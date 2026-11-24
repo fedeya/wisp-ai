@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { wowheadQuery, resolveWebSearch } from '@wisp/protocol/search';
@@ -23,7 +23,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'wowhead',
-        { eveSession: ctx.session.id, ...args },
+        { agentSession: ctx.session.id, ...args },
         ctx.abortSignal,
         resolveWebSearch(args).timeoutSeconds * 1000 + 15000,
       ),

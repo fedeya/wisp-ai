@@ -2,7 +2,6 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { dynamicEvaluate } from '../node_modules/eve/dist/src/dynamic/definition.js';
 import definition from '../agent/tools/web_fetch.ts';
 import type { WebFetchInput } from '../src/web-fetch.ts';
 import { WebFetchPages } from '../src/web-fetch-pages.ts';
@@ -10,6 +9,11 @@ import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities
 import { publicWebAddresses } from '../src/public-web-tunnel.ts';
 import { publicWebTunnel } from '../src/public-web-tunnel.ts';
 import { request } from 'node:http';
+import { capabilityEnabled } from '../src/capabilities.ts';
+
+// The tool as the engine offers it: absent while its capability is off.
+const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) =>
+  !tool.capability || (await capabilityEnabled(tool.capability)) ? tool : null;
 
 const { impitFetch, impitOptions, dnsLookup } = vi.hoisted(() => ({
   impitFetch: vi.fn(),

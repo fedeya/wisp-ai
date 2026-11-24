@@ -33,7 +33,7 @@ export function encodeChat(
     lastActivityAt,
     messages: entries,
     owner,
-    eveId,
+    agentSession,
     unread,
     modelSettings,
     modelRequestId,
@@ -116,7 +116,7 @@ export function encodeChat(
       revision: previous?.state?.revision ?? 0,
       historyRevision: previous?.row.revision ?? 0,
       owner,
-      eveId: eveId ?? null,
+      agentSession: agentSession ?? null,
       unread: unread ?? null,
       modelSettings: json(modelSettings),
       modelRequestId: modelRequestId ?? null,
@@ -174,8 +174,8 @@ export function decodeChat(record: StoredChat, identities: MessageIdentities): C
     chat.lastActivityAt = row.lastActivityAt;
   }
   if (state) {
-    if (state.eveId !== null && state.historyRevision === row.revision) {
-      chat.eveId = state.eveId;
+    if (state.agentSession !== null && state.historyRevision === row.revision) {
+      chat.agentSession = state.agentSession;
     }
     if (state.unread !== null) {
       chat.unread = state.unread;

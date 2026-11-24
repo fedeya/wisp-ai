@@ -36,8 +36,7 @@ builds hash the declared build variables. GitHub Actions persists `.turbo` by OS
 The repository uses one pnpm lockfile. Root dependencies are shared development
 tools. Core tests, addon tests and build scripts declare their own dependencies in
 `tests`, `addon` and `scripts`. Optional native archive codecs from just-bash are
-excluded explicitly, following Eve's own optional-engine setup; installs do not
-need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
+excluded explicitly; installs do not need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
 `turbo prune @wisp/web` can export an isolated web workspace from the same lockfile.
 
 ### Contributor skills
@@ -144,9 +143,9 @@ Run these commands from the repository root; `.busted` selects `addon/tests/`.
 cover TypeScript suites. Tests exchanging frames between Lua and TypeScript live
 in `tests/addon/` and still use Fengari.
 
-Root integration tests also launch the real Eve agent against a local model fixture. This checks
-agent compilation, dependency resolution, model middleware and streamed replies without
-credentials or external inference. Runtime tests exercise startup, shutdown, persistence
+Root integration tests also run the in-process agent against a local model fixture. This checks
+tool registration, skills, model middleware and streamed replies without credentials or
+external inference. Runtime tests exercise startup, shutdown, persistence
 and partial-startup cleanup in temporary data directories.
 
 ## Build and run on Windows
@@ -168,18 +167,19 @@ pnpm build:desktop
 
 `pnpm package:windows` is an alias. Output in `dist/` includes the unsigned per-user installer, SHA-256 checksum and build metrics. Packaged resources include Node/npm, the bridge, agent, protocol, addon and simulator; updates preserve user data. See [packaging code](../scripts/build-desktop.ts), [staging](../scripts/stage-desktop.ts) and the [release workflow](../.github/workflows/release.yml) for resource verification and cache details. Stable promotions create draft releases for review before publication.
 
-Windows installers package the bridge, addon installation/migration commands,
-Eve's production server and npm into `payload/wisp-engine.exe`. Dependencies are
-read from its embedded virtual filesystem; the installer does not extract an
-application `node_modules` tree. `payload/runtime/node.exe` remains bundled for
-user-configured external MCP programs. Development staging keeps the source-based
-layout and Eve development server.
+Windows installers package the bridge (with the in-process agent and its
+tools), addon installation/migration commands, the agent's instructions and
+skills, the native TLS addon used by `web_fetch` and npm into
+`payload/wisp-engine.exe`. Dependencies are read from its embedded virtual
+filesystem; the installer does not extract an application `node_modules` tree.
+`payload/runtime/node.exe` remains bundled for user-configured external MCP
+programs. Development staging keeps the source-based layout.
 
 `pnpm package:engine` builds just `dist/wisp-engine.exe` and runs the packaged
 integration checks. Those tests relocate the executable to a temporary directory,
-remove Node from the child process PATH, complete a streamed model turn and a
-real tool call against local fixtures, restart Eve to verify session persistence,
-and run a local npm executable offline. They reject loose dependency extraction.
+remove Node from the child process PATH, check that the agent's instructions
+and skills are bundled, import committed database history and run a local npm
+executable offline. They reject loose dependency extraction.
 The installer CI additionally checks the native host, installation, upgrades and
 preservation of user data.
 
@@ -203,8 +203,7 @@ The public PostHog ingestion token and US endpoint match the website project.
 
 The native host sets `WISP_TELEMETRY_RELEASE=1` only in release builds without
 `WISP_PAYLOAD_ROOT` or an external `DO_NOT_TRACK=1`. Source bridge runs default to
-disabled. Eve's own analytics remain disabled with `DO_NOT_TRACK=1` in child
-processes; this does not override Wisp's separately managed user preference.
+disabled.
 
 `apps/bridge/src/telemetry.ts` reads the native preference before each send and
 reports `chat_completed`, `tool_executed`, `web_search_finished`, `game_connected`,
@@ -219,7 +218,7 @@ answers (from `@wisp/protocol/providers`, for example `anthropic` or
 `compatible`) or `chatgpt` for the subscription sign-in, never model ids,
 endpoints or connection names. Failed and timed-out chats add `failure_kind` when
 a model request that the bridge proxied for that chat failed during the turn.
-The agent names its Eve session in an `x-wisp-session` header that the bridge
+The agent names its session in an `x-wisp-session` header that the bridge
 does not forward, so concurrent chats on one connection keep their own
 failures (`apps/bridge/src/models/model-failures.ts`). It comes from the provider's
 HTTP status (`bad_request`, `auth`, `not_found`, `rate_limited`, `provider_error`,
@@ -301,32 +300,39 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 
 ## Source map
 
-| Area                          | Entry points                                                                                         |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)                |
-| Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent/agent-process.ts) |
-| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)              |
-| Shared contracts              | [protocol](../packages/protocol/src)                                                                 |
-| Game UI, readings and actions | [addon](../addon/WispAI)                                                                             |
+| Area                          | Entry points                                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)   |
+| Bridge and agent engine       | [main.ts](../apps/bridge/src/main.ts), [engine.ts](../apps/agent/src/engine.ts)         |
+| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md) |
+| Shared contracts              | [protocol](../packages/protocol/src)                                                    |
+| Game UI, readings and actions | [addon](../addon/WispAI)                                                                |
 
-The bridge owns accounts, persistence and tool execution. Eve prefers loopback **43186**, the bridge prefers **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+The bridge owns accounts, persistence and tool execution, and runs the agent in process. It prefers loopback **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
-Shared agent rules live in `apps/agent/agent/instructions.md`. Task procedures
-live in native Eve skills at `apps/agent/agent/skills/<name>/SKILL.md`, with a
-short frontmatter description stating when to use each skill. Eve advertises those
-descriptions and returns the full instructions through `eve__skill`. Eve owns
-how loaded skill results are retained in history and compacted.
+The agent runs on [Mastra](https://mastra.ai) inside the bridge
+([engine](../apps/agent/src/engine.ts)). Shared agent rules live in
+`apps/agent/agent/instructions.md`. Task procedures live in Agent Skills at
+`apps/agent/agent/skills/<name>/SKILL.md`, with a short frontmatter description
+stating when to use each skill. The system prompt lists those descriptions and the
+`skill` tool returns the full instructions. Each session's model history, tool
+calls and results included, is stored in `agent_messages` in `runtime/wisp.sqlite`
+and sent in full every turn, so providers can reuse their prompt cache. When it
+nears the model's context window, older turns are summarized into one message.
 
-Specialized tools use Eve's native `deferred: true` definitions. `eve__search`
-returns their names and signatures; `eve__tool({ name, input })` executes them.
+Tools are listed in [tools.ts](../apps/agent/src/tools.ts). Specialized ones are
+`deferred: true`: `tool_search` returns their names, descriptions and input
+schemas, and `tool_call({ name, input })` runs them, so the request's tool list
+never changes. MCP tools are reached the same way.
 Character reads, reference/target inspection, conversation naming and reply
 presentation stay directly listed. Skills and tool discovery do not change permissions: dynamic capability
 definitions and bridge checks remain authoritative. Keep parameter details in tool
 schemas and enforceable constraints in code.
 
-`tests/agent-integration.test.ts` exercises native skill discovery/activation,
-native tool discovery/execution, permission denial and follow-up turns with the
-real Eve agent and an offline model. Prompt edits still need gameplay evaluation
+`tests/agent-integration.test.ts` exercises skill activation, tool discovery and
+execution, permission denial and follow-up turns with the real agent and an
+offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals against a
+real model through the eval bridge. Prompt edits still need gameplay evaluation
 before claiming better answers.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
@@ -356,21 +362,20 @@ serves quests from a private turn-verified reading without a game round trip; mi
 requests fetch only other sections live. Missing/partial readings or `refresh=true`
 fall back to the addon. Automatic conversation titles
 are assigned from the first message before model preparation, without waiting for a response.
-Specialized tools stay in Eve's catalog until found with `eve__search` and
-called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
-history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
+Specialized tools stay out of the request until found with `tool_search` and
+called through `tool_call`; task skills load with `skill`. Capability flags still control tool availability. Bridge logs record `Message delivery`
 and structured `chat.turn_timing` entries for preparation, admission and the first text received by the bridge.
 
 ### Runtime boundaries
 
-Replies stream as ordinary Markdown text. The Eve tool `wisp__present_ui`
+Replies stream as ordinary Markdown text. The agent tool `wisp__present_ui`
 inserts a complete, schema-validated native panel or declares inline entity
 references. Its authenticated `/present` RPC reserves component IDs, immutable
 reference keys and aggregate payload budgets in the active turn before returning
 `{ accepted: true }` to the model. Rejections return actionable tool errors.
 Successful `call.settled` events publish the reserved payload, so cancelled calls
 remain invisible. The bridge projects text and panels into ordered message parts;
-presentation calls stay in Eve diagnostics but never create tool/activity rows.
+presentation calls stay in the model history but never create tool/activity rows.
 Markdown and reference tokens travel unchanged, including in historical NDJSON
 replies. Lua's shared Markdown parser and `ReplyView` own formatting, reference
 resolution and table layout for every text part; the bridge only bounds previews.

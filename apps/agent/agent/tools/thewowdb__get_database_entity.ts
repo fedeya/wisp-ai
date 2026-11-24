@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { databaseEntity } from '@wisp/protocol/database';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
@@ -17,7 +17,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'database',
-        { eveSession: ctx.session.id, operation: 'get', ...args },
+        { agentSession: ctx.session.id, operation: 'get', ...args },
         ctx.abortSignal,
       ),
   }),

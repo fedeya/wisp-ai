@@ -1,5 +1,5 @@
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
@@ -11,6 +11,6 @@ export default enabledTool(
     }),
     label: { start: () => 'Naming conversation' },
     execute: ({ title }, ctx) =>
-      agentRPC('title', { eveSession: ctx.session.id, title }, ctx.abortSignal, 5000),
+      agentRPC('title', { agentSession: ctx.session.id, title }, ctx.abortSignal, 5000),
   }),
 );

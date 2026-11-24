@@ -3,8 +3,8 @@ Wisp AI
 This project is distributed under GPL-3.0-only. See LICENSE.
 The WoW bridge uses Wisp's checked-frame and reusable-mailbox protocol.
 
-Eve and its dependencies retain their own licenses. Packaged Windows builds
-include EVE-LICENSE.txt and EVE-NOTICE.txt; dependency licenses remain embedded
+Mastra (Apache-2.0) and other dependencies retain their own licenses. Packaged
+Windows builds include MASTRA-LICENSE.txt; dependency licenses remain embedded
 with their packages in wisp-engine.exe (node_modules in development builds).
 
 Emoji artwork: Twemoji 17.0.3, copyright Twitter, Inc. and other contributors.

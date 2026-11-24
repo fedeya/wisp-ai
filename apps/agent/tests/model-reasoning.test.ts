@@ -179,7 +179,7 @@ test.each([
   ).rejects.toThrow('Captured request');
   expect(body?.prompt_cache_key).toBe('wisp-conversation');
 });
-test('model requests name their Eve session for the bridge, not the provider', async () => {
+test('model requests name their agent session for the bridge, not the provider', async () => {
   const sessions: (string | null)[] = [];
   vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
     sessions.push(new Headers(init.headers).get('x-wisp-session'));

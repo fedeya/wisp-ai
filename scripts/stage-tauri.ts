@@ -95,9 +95,9 @@ export async function stageEngine(executable: string) {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const stage = payloadDirectory(root);
   await copyFile(executable, path.join(stage, 'wisp-engine.exe'));
-  const eve = path.dirname(fileURLToPath(import.meta.resolve('eve/package.json')));
-  await copyFile(path.join(eve, 'LICENSE'), path.join(stage, 'EVE-LICENSE.txt'));
-  await copyFile(path.join(eve, 'NOTICE'), path.join(stage, 'EVE-NOTICE.txt'));
+  // The engine bundles Mastra's agent runtime; ship its license beside it.
+  const mastra = path.dirname(fileURLToPath(import.meta.resolve('@mastra/core/package.json')));
+  await copyFile(path.join(mastra, 'LICENSE.md'), path.join(stage, 'MASTRA-LICENSE.txt'));
   await writeFile(
     path.join(stage, 'package.json'),
     JSON.stringify({

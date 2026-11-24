@@ -1,4 +1,4 @@
-import { defineTool } from 'eve/tools';
+import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { simulationInput } from '@wisp/protocol/simulation';
@@ -17,6 +17,6 @@ export default enabledTool(
           : 'Requested a WoWSims DPS simulation',
     },
     execute: (args, ctx) =>
-      agentRPC('simulate', { eveSession: ctx.session.id, ...args }, ctx.abortSignal, 85000),
+      agentRPC('simulate', { agentSession: ctx.session.id, ...args }, ctx.abortSignal, 85000),
   }),
 );

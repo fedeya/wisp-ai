@@ -1,5 +1,4 @@
-import { defineEval } from 'eve/evals';
-import { satisfies } from 'eve/evals/expect';
+import { defineEval, satisfies } from '../harness.ts';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';

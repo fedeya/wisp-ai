@@ -190,7 +190,7 @@ export const chatInstanceState = sqliteTable(
     revision: integer().notNull(),
     historyRevision: integer('history_revision').notNull(),
     owner: text().notNull(),
-    eveId: text('eve_id'),
+    agentSession: text('agent_session'),
     unread: integer({ mode: 'boolean' }),
     modelSettings: text('model_settings'),
     modelRequestId: text('model_request_id'),
@@ -205,5 +205,25 @@ export const chatInstanceState = sqliteTable(
     check('instance_model', sql`${t.modelSettings} IS NULL OR json_valid(${t.modelSettings})`),
     check('instance_usage', sql`${t.usage} IS NULL OR json_valid(${t.usage})`),
     check('instance_ui', sql`${t.lastUIResult} IS NULL OR json_valid(${t.lastUIResult})`),
+  ],
+);
+
+/**
+ * The model-facing history of each agent session: user, assistant and tool
+ * messages in AI SDK form, tool calls and results included. A new session
+ * starts when the model or connection changes, since provider-native history
+ * (reasoning signatures, response IDs) is not portable.
+ */
+export const agentMessages = sqliteTable(
+  'agent_messages',
+  {
+    session: text().notNull(),
+    position: integer().notNull(),
+    message: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.session, t.position] }),
+    check('agent_message_position', sql`${t.position} >= 0`),
+    check('agent_message_json', sql`json_valid(${t.message})`),
   ],
 );

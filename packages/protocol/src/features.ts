@@ -36,12 +36,6 @@ export const featureFlags = {
       'Offer a one-click question when you die, wipe, level up, loot gear, enter a dungeon or open the auction house, a vendor or a trainer.',
     channels: ['development', 'nightly'],
   },
-  mastra_engine: {
-    name: 'Mastra engine',
-    description:
-      'Answer new conversations with the in-process Mastra agent instead of Eve. Existing conversations switch on their next message and keep their visible history.',
-    channels: [],
-  },
 } as const satisfies FeatureRegistry;
 export type FeatureFlag = keyof typeof featureFlags;
 

@@ -13,4 +13,4 @@ To change a setting:
 
 Panel buttons can apply/undo too; <last_ui_result> reports their actual result. Values may become stale. Action bars and keybindings are read-only. Reset, delete, profile switching and arbitrary execution are unsupported.
 
-Load the ui skill with eve__skill when building native components for this workflow.
+Load the ui skill with the skill tool when building native components for this workflow.
