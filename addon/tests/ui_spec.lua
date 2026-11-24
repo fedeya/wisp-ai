@@ -206,6 +206,242 @@ it("New chat creates its conversation with the first message and keeps its draft
     assert(ns.draft:GetText() == "", "a sent draft does not come back")
 end)
 
+local function setupModelDraft(env)
+    setfenv(1, env)
+    setup(env)
+    time = os.time
+    ns = helper.namespace({
+        db = { sidebar = true, drafts = { __new = "Older question" } },
+        connected = true,
+        session = "test",
+        chats = {},
+        pendingChats = {},
+        pendingMessages = {},
+        workStarted = {},
+        deletedChats = {},
+        rev = 0,
+    })
+    local sent, options = {}, {}
+    function ns.Transport.Send(packet)
+        sent[#sent + 1] = packet
+    end
+    function ns.Transport.Acknowledge() end
+    function ns.Core.NotifyAddonUpdate() end
+    function ns.Core.NotifyAppUpdate() end
+    function ns.Core.SetFeatures() end
+    MenuUtil = {
+        CreateContextMenu = function(_, build)
+            build(nil, {
+                CreateTitle = function() end,
+                CreateRadio = function(_, label, _, choose)
+                    options[label] = choose
+                end,
+            })
+        end,
+    }
+    helper.addon("Chat/State.lua", env)
+    helper.addon("Chat/Snapshot.lua", env)
+    helper.addon("UI/Window.lua", env)
+    ns.modelCatalog = {
+        defaultModel = "luna",
+        models = { { slug = "luna", displayName = "Luna", efforts = { "medium" } } },
+    }
+    ns.UI.BuildUI()
+    local controls = UI_TEST.frames.WispAIChatModelControls
+    local function choose(kind)
+        local control = controls[kind or "model"]
+        control.scripts.OnClick(control)
+        options[kind == "effort" and "medium" or "Luna"]()
+        return sent[#sent]
+    end
+    local function acknowledge(title)
+        local packet = sent[#sent]
+        ns.Chat.ReceiveSnapshot({
+            v = ns.VERSION,
+            session = ns.session,
+            rev = ns.rev + 1,
+            connected = true,
+            activeChat = ns.active,
+            chats = {
+                {
+                    id = ns.active,
+                    title = title or "New conversation",
+                    status = "idle",
+                    messages = {},
+                    activity = {},
+                    modelSettings = { model = "luna", effort = "medium" },
+                    modelRequestId = packet.requestId,
+                },
+            },
+        })
+        assert(not ns.modelPending[ns.active], "the snapshot acknowledges the real model request")
+    end
+    return sent, choose, acknowledge
+end
+
+it("keeps the latest New chat draft after model selection and navigation", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local sent, choose = setupModelDraft(env)
+    ns.Chat.StartNew()
+    local text = "  Plan my route\nKeep the exact spacing  "
+    ns.draft:SetText(text)
+    ns.draft.scripts.OnTextChanged(ns.draft, true)
+    choose()
+    local id = ns.active
+    assert(id and sent[#sent].type == "chat_model_set", "the real menu creates a model-only chat")
+    assert(ns.draft:GetText() == text, "model selection leaves the editor intact")
+    ns.Chat.StartNew()
+    assert(ns.deletedChats[id] and #ns.chats == 0, "empty conversation cleanup still runs")
+    require("luassert").equal(
+        text,
+        ns.draft:GetText(),
+        "navigation must restore the latest unsent draft"
+    )
+end)
+
+for _, kind in ipairs({ "model", "effort" }) do
+    for _, confirmed in ipairs({ false, true }) do
+        it(
+            "preserves edited New chat drafts after "
+                .. kind
+                .. (confirmed and " ack" or " before ack"),
+            function()
+                local env = helper.env()
+                setfenv(1, env)
+                local _, choose, acknowledge = setupModelDraft(env)
+                ns.chats =
+                    { { id = "old", title = "Old", status = "done", messages = {}, activity = {} } }
+                ns.Chat.Select("old")
+                ns.draft:SetText("Existing reply")
+                ns.Chat.StartNew()
+                ns.draft:SetText("Stale New chat text")
+                ns.Chat.Select("old")
+                ns.Chat.StartNew()
+                ns.draft:SetText("Latest question")
+                choose(kind)
+                local id = ns.active
+                assert(ns.db.drafts[id] == "Latest question" and ns.db.drafts.__new == nil)
+                if confirmed then
+                    acknowledge()
+                end
+                ns.draft:SetText("  Edited after selection\nsecond line  ")
+                ns.draft.scripts.OnTextChanged(ns.draft, true)
+                ns.Chat.Select("old")
+                assert(ns.draft:GetText() == "Existing reply", "existing drafts stay isolated")
+                assert(
+                    ns.deletedChats[id] and not ns.db.drafts[id],
+                    "empty model-only chat is removed"
+                )
+                ns.Chat.StartNew()
+                require("luassert").equal(
+                    "  Edited after selection\nsecond line  ",
+                    ns.draft:GetText()
+                )
+                ns.Chat.StartNew()
+                assert(ns.draft:GetText() == "  Edited after selection\nsecond line  ")
+            end
+        )
+    end
+end
+
+it("keeps a blank picker draft blank instead of restoring older New chat text", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local _, choose = setupModelDraft(env)
+    ns.Chat.StartNew()
+    ns.db.drafts.__new = "Stale question"
+    ns.draft:SetText("")
+    choose("effort")
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "" and #ns.chats == 0)
+end)
+
+it("does not resurrect an explicitly deleted picker conversation or its draft", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local _, choose, acknowledge = setupModelDraft(env)
+    ns.Chat.StartNew()
+    ns.draft:SetText("Discard this question")
+    choose()
+    acknowledge()
+    local id = ns.active
+    ns.Chat.DeleteChat(id)
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "" and not ns.db.drafts[id] and ns.deletedChats[id])
+end)
+
+it("sends a picker draft once and never restores stale New chat text", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local sent, choose, acknowledge = setupModelDraft(env)
+    ns.Chat.StartNew()
+    ns.db.drafts.__new = "Stale question"
+    ns.draft:SetText("Question before selection")
+    choose()
+    local count = #sent
+    UI_TEST.frames.WispAISendButton.scripts.OnClick()
+    assert(#sent == count, "Send waits for model confirmation")
+    acknowledge()
+    ns.draft:SetText("Edited question to send")
+    UI_TEST.frames.WispAISendButton.scripts.OnClick()
+    assert(#sent == count + 1 and sent[#sent].type == "say")
+    assert(sent[#sent].text == "Edited question to send")
+    assert(#ns.Chat.Current().messages == 1 and ns.draft:GetText() == "")
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "", "neither sent text nor stale text returns")
+end)
+
+it("keeps renamed picker conversation drafts separate from New chat", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local _, choose, acknowledge = setupModelDraft(env)
+    ns.Chat.StartNew()
+    ns.draft:SetText("Renamed conversation question")
+    choose()
+    local id = ns.active
+    acknowledge("Named conversation")
+    ns.Chat.StartNew()
+    assert(not ns.deletedChats[id] and ns.draft:GetText() == "")
+    ns.Chat.Select(id)
+    assert(ns.draft:GetText() == "Renamed conversation question")
+end)
+
+it("does not recover an unrelated empty conversation draft into New chat", function()
+    local env = helper.env()
+    setfenv(1, env)
+    setupModelDraft(env)
+    ns.chats = {
+        { id = "empty", title = "New conversation", status = "idle", messages = {}, activity = {} },
+    }
+    ns.Chat.StartNew()
+    ns.draft:SetText("Independent New chat question")
+    ns.Chat.Select("empty")
+    ns.draft:SetText("Unrelated empty chat draft")
+    ns.Chat.StartNew()
+    assert(ns.deletedChats.empty and not ns.db.drafts.empty)
+    assert(ns.draft:GetText() == "Independent New chat question")
+end)
+
+it("AskNew preserves picker-owned text and existing conversation drafts", function()
+    local env = helper.env()
+    setfenv(1, env)
+    local sent, choose = setupModelDraft(env)
+    ns.chats = { { id = "old", title = "Old", status = "done", messages = {}, activity = {} } }
+    ns.db.drafts.old = "Existing reply"
+    ns.Chat.StartNew()
+    ns.draft:SetText("Picker question")
+    choose()
+    ns.draft:SetText("Edited picker question")
+    ns.Chat.AskNew("Why did I just die?")
+    assert(sent[#sent].type == "say" and sent[#sent].text == "Why did I just die?")
+    assert(ns.draft:GetText() == "")
+    ns.Chat.Select("old")
+    assert(ns.draft:GetText() == "Existing reply")
+    ns.Chat.StartNew()
+    assert(ns.draft:GetText() == "Edited picker question")
+end)
+
 it("AskNew asks in a new conversation and leaves every draft where it was", function()
     local env = helper.env()
     setfenv(1, env)
