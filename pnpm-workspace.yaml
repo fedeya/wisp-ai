@@ -15,7 +15,6 @@ allowBuilds:
 hoist: false
 
 # Optional native archive codecs from just-bash are not used by Wisp.
-# Eve also excludes these when installing its optional just-bash engine.
 ignoredOptionalDependencies:
   - '@mongodb-js/zstd'
   - node-liblzma

@@ -5,7 +5,6 @@ import path from 'node:path';
 
 // Starts the bridge's eval model server (apps/bridge/src/evals/eval-bridge.ts),
 // which uses a separate ChatGPT sign-in, and points the agent at it.
-// Eve bundles eval config, so find the repository from the working directory.
 function bridgeScript() {
   for (let dir = process.cwd(); ; dir = path.dirname(dir)) {
     if (existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
@@ -32,9 +31,12 @@ export async function startModelBridge() {
     );
   });
   const { url, token, model } = JSON.parse(first) as { url: string; token: string; model: string };
+  // grade.ts sends model requests to the eval bridge directly.
   process.env.WOW_BRIDGE_URL = url;
   process.env.WOW_BRIDGE_TOKEN = token;
   return {
+    url,
+    token,
     model,
     close: async () => {
       if (child.exitCode === null) {

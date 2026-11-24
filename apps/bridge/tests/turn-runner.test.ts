@@ -1,5 +1,4 @@
 import { test, expect, vi } from 'vitest';
-import type { Client } from 'eve/client';
 import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
@@ -33,11 +32,30 @@ function fixture(
     },
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
-  const cancel = vi.fn(async () => {});
-  const session = { id: 'eve', send, cancel };
-  const client = {
-    sessions: { create: vi.fn(async () => ({ session })), attach: () => session },
-  } as unknown as Pick<Client, 'sessions'>;
+  // Tests script deliveries as { stream, result } like an engine response;
+  // the engine adapts them to its events and result.
+  const end = vi.fn(async (_session: string) => {});
+  const newSessionId = vi.fn(() => 'eve');
+  const engine = {
+    newSessionId,
+    end,
+    send: (_session: string, input: string, signal: AbortSignal) => {
+      const delivery = send(input) as Promise<{
+        stream: (options?: {
+          signal?: AbortSignal;
+        }) => AsyncIterable<{ type: string; data: Record<string, unknown> }>;
+        result: (options?: { signal?: AbortSignal }) => Promise<any>;
+      }>;
+      const result = delivery.then((d) => d.result({ signal }));
+      result.catch(() => {});
+      return {
+        events: (async function* () {
+          yield* (await delivery).stream({ signal });
+        })(),
+        result,
+      };
+    },
+  };
   const models = vi.fn(async () => [{ slug: 'model', displayName: 'Model', efforts: ['medium'] }]);
   const prepare = vi.fn(async (_model: string) => {});
   const complete = vi.fn(
@@ -52,7 +70,7 @@ function fixture(
   const changed = vi.fn();
   const run = createTurnRunner({
     telemetry,
-    client,
+    engine,
     models: { models, prepare, complete },
     capabilitySettings: {
       publish: async () => {},
@@ -77,8 +95,8 @@ function fixture(
     chat,
     run,
     send,
-    cancel,
-    client,
+    end,
+    newSessionId,
     models,
     prepare,
     complete,
@@ -381,7 +399,8 @@ test.each([
     vi.useFakeTimers();
     vi.setSystemTime(0);
     try {
-      const f = fixture();
+      // Titles would publish mid-stream; this test measures reply previews only.
+      const f = fixture(false);
       const state = createSessionState([f.chat]);
       state.activeChat = f.chat.id;
       const gate = new SnapshotGate();
@@ -611,14 +630,14 @@ test('retry after failure restores history without duplicating the user message'
   f.send.mockRejectedValueOnce(new Error('Provider unavailable'));
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('error');
-  expect(f.chat.eveId).toBeUndefined();
+  expect(f.chat.agentSession).toBeUndefined();
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('done');
   expect(f.chat.messages.filter((m) => m.id === 'failed')).toHaveLength(1);
   const input = f.send.mock.calls.at(-1)![0];
   expect(input).toContain('Earlier question');
   expect(input).toContain('Explain that quest');
-  expect(f.client.sessions.create).toHaveBeenCalledTimes(2);
+  expect(f.newSessionId).toHaveBeenCalledTimes(2);
 });
 
 test('a follow-up after failure includes the failed question in restored history', async () => {
@@ -765,8 +784,8 @@ test('a turn whose engine goes silent fails as a timeout and frees the engine se
   await f.run.drain();
   expect(f.chat.status).toBe('error');
   expect(f.chat.messages.at(-1)?.text).toMatch(/received nothing from the AI/);
-  expect(f.cancel).toHaveBeenCalledTimes(1);
-  expect(f.chat.eveId).toBeUndefined();
+  expect(f.end).toHaveBeenCalledWith('eve');
+  expect(f.chat.agentSession).toBeUndefined();
   expect(chats.at(-1)?.outcome).toBe('timeout');
 });
 
@@ -784,7 +803,7 @@ test('steady engine activity keeps a long turn alive past the idle timeout', asy
   await f.run(f.chat, 'Question');
   await f.run.drain();
   expect(f.chat.status).toBe('done');
-  expect(f.cancel).not.toHaveBeenCalled();
+  expect(f.end).not.toHaveBeenCalled();
 });
 
 test('chat telemetry names the provider and why its own model requests failed during the turn', async () => {

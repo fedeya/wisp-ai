@@ -97,7 +97,6 @@ Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from applicati
 | Usage analytics preference and installation ID  | `telemetry.json`                                 |
 | Chats, routines, run history, memory and panels | `runtime/wisp.sqlite`                            |
 | Tool choices / custom MCP metadata              | `runtime/capabilities.json` / `runtime/mcp.json` |
-| Agent log                                       | `runtime/eve.log`                                |
 
 On the first launch after upgrading, Wisp validates the complete legacy `runtime/chats.json`, creates a byte-for-byte `runtime/chats.pre-sqlite-<sha256>.json` backup and imports conversations and messages in one transaction. The original JSON is preserved. After a successful import, SQLite is authoritative: the old JSON is no longer updated or reimported, including after deleting every conversation. Invalid legacy data or an unsupported/corrupt database stops startup rather than replacing history with an empty store. Retain the original and backup until the imported history has been checked.
 
@@ -155,7 +154,7 @@ WoW character readings, inventory, progression, references, settings, maps and m
 Desktop **Integrations** groups tools by category and shows which addons WoW has detected. Open **Manage** for tool controls, **Setup instructions** for an addon you need to install or update, or **Add MCP** to connect a server.
 Desktop and WoW **Settings > Integrations** share the same optional capability controls. Each capability group has a master switch and individual tools. Disabling a parent
 preserves child preferences. Enabled and available capabilities are projected into
-Eve's dynamic definitions; the bridge enforces the same checks on game/RPC calls.
+the agent's tools each turn; the bridge enforces the same checks on game/RPC calls.
 
 - **Questie:** installed QuestieDB Forever NPC locations, with optional Questie trainer/service indexes. Missing, incompatible and partial providers are distinguished. No addon source is modified.
 - **TheWoWDB / Wowhead / Everloot:** primary Forever catalog, scoped fallback search, and complementary MCP observations respectively. Configured network sources are not claimed to be online until a request succeeds.

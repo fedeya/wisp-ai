@@ -9,7 +9,7 @@ const key = z
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
   .refine((value) => !['__proto__', 'constructor', 'prototype'].includes(value));
 
-// The same contract validates the Eve tool and its projection/replayed output.
+// The same contract validates the agent tool and its projection/replayed output.
 export const replyPresentation = z
   .object({
     nodes: z

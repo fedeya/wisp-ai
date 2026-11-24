@@ -202,7 +202,7 @@ test('connection proxy records a stream that breaks after a 200', async () => {
   }
 });
 
-test('connection proxy records nothing when Eve cancels mid-stream', async () => {
+test('connection proxy records nothing when the agent cancels mid-stream', async () => {
   const id = '00000000-0000-4000-8000-000000000001';
   let done!: () => void;
   const finished = new Promise<void>((r) => (done = r));

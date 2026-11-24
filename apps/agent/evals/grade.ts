@@ -1,102 +1,21 @@
-// Grades saved eval answers (.eve/eval-replies/runs.jsonl) for quality with the
-// eval model bridge, against each scenario's facts and a fixed rubric.
+// Grades saved eval answers (apps/agent/eval-replies/runs.jsonl) for quality with the
+// eval model bridge, against each scenario's facts and a fixed rubric. The judge
+// is the eval model, asked for structured grades.
 //
 //   node apps/agent/evals/grade.ts [label ...]
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startModelBridge } from './model-bridge.ts';
-import { criteria, scenarios } from './quality.ts';
-
-interface Run {
-  label: string;
-  name: string;
-  prompt: string;
-  seconds: number;
-  steps: number;
-  reply: string;
-  presented: unknown[];
-  results?: unknown[];
-}
-type Scores = Record<keyof typeof criteria, number>;
-
-const GRADER = `You grade answers from Wisp, an in-game World of Warcraft assistant.
-Judge only against the FACTS, the TOOL RESULTS the agent read and the GOOD ANSWER description, not your own game knowledge: a detail is supported when the facts or a tool result state it, and anything else counts as unsupported.
-Item names may appear as [[ref:key]] placeholders; the PRESENTED references map those keys to items.
-Score each criterion 0, 1 or 2 using its definition. Be strict and consistent. In notes, give the one or two most important reasons for lost points, in English, under 50 words.`;
-
-// Tool results the grader reads, trimmed so a long run fits its context.
-const RESULT_CHARS = 60_000;
-function toolResults(run: Run) {
-  const text = JSON.stringify(run.results ?? []);
-  return text.length > RESULT_CHARS ? text.slice(0, RESULT_CHARS) + '…(truncated)' : text;
-}
+import { criteria } from './quality.ts';
+import { grade, judgeModel, qualityScorer, type Run, type Scores } from './quality-scorer.ts';
 
 const keys = Object.keys(criteria) as Array<keyof typeof criteria>;
-const schema = {
-  type: 'object',
-  additionalProperties: false,
-  required: [...keys, 'notes'],
-  properties: {
-    ...Object.fromEntries(keys.map((key) => [key, { type: 'integer', enum: [0, 1, 2] }])),
-    notes: { type: 'string' },
-  },
-};
-
-async function grade(run: Run, model: string): Promise<Scores & { notes: string }> {
-  const scenario = scenarios[run.name];
-  if (!scenario) {
-    throw new Error('No quality facts for scenario ' + run.name);
-  }
-  const response = await fetch(process.env.WOW_BRIDGE_URL + '/model/responses', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + process.env.WOW_BRIDGE_TOKEN,
-    },
-    body: JSON.stringify({
-      model,
-      instructions: GRADER,
-      input: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: JSON.stringify({
-                FACTS: scenario.facts,
-                GOOD_ANSWER: scenario.goodAnswer,
-                CRITERIA: criteria,
-                QUESTION: run.prompt,
-                TOOL_RESULTS: toolResults(run),
-                PRESENTED: run.presented,
-                ANSWER: run.reply,
-              }),
-            },
-          ],
-        },
-      ],
-      text: { format: { type: 'json_schema', name: 'grade', strict: true, schema } },
-      reasoning: { effort: process.env.WISP_GRADE_EFFORT || 'medium' },
-      stream: false,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error('Grader request failed: ' + response.status + ' ' + (await response.text()));
-  }
-  const body = (await response.json()) as {
-    output?: Array<{ type: string; content?: Array<{ type: string; text?: string }> }>;
-  };
-  const text = body.output
-    ?.find((item) => item.type === 'message')
-    ?.content?.find((part) => part.type === 'output_text')?.text;
-  if (!text) {
-    throw new Error('Grader returned no answer');
-  }
-  return JSON.parse(text);
-}
 
 async function main() {
-  const dir = path.resolve(process.env.WISP_EVAL_OUT || 'apps/agent/.eve/eval-replies');
+  const dir = path.resolve(
+    process.env.WISP_EVAL_OUT || fileURLToPath(new URL('../eval-replies/', import.meta.url)),
+  );
   const labels = process.argv.slice(2);
   const runs = (await readFile(path.join(dir, 'runs.jsonl'), 'utf8'))
     .trim()
@@ -104,15 +23,16 @@ async function main() {
     .map((line) => JSON.parse(line) as Run)
     .filter((run) => !labels.length || labels.includes(run.label));
   const bridge = await startModelBridge();
+  const scorer = qualityScorer(
+    judgeModel(bridge.url, bridge.token, process.env.WISP_GRADE_MODEL || bridge.model),
+  );
   const graded: Array<Run & Scores & { notes: string; quality: number }> = [];
   try {
     const queue = [...runs];
     await Promise.all(
       Array.from({ length: 4 }, async () => {
         for (let run = queue.shift(); run; run = queue.shift()) {
-          const scores = await grade(run, process.env.WISP_GRADE_MODEL || bridge.model);
-          const quality = keys.reduce((sum, key) => sum + scores[key], 0) / (keys.length * 2);
-          graded.push({ ...run, ...scores, quality });
+          graded.push({ ...run, ...(await grade(scorer, run)) });
         }
       }),
     );

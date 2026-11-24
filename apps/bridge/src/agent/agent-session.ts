@@ -1,42 +1,34 @@
-import { SessionNotActiveError, type Client } from 'eve/client';
+import type { createAgentEngine } from '@wisp/agent/engine';
 import type { Chat } from '../chat/events.ts';
 import { withConversationHistory } from '../chat/context.ts';
 import { resetContextUsage } from '@wisp/protocol/context-usage';
 
-export function isInactiveSession(error: unknown): boolean {
-  return SessionNotActiveError.is(error) && error.code === 'session_not_active';
-}
+export type AgentEngine = Pick<
+  ReturnType<typeof createAgentEngine>,
+  'newSessionId' | 'send' | 'end'
+>;
 
-// Retry only an explicit admission rejection. Never replay an accepted turn,
-// which might already have performed a tool action before failing.
-export async function sendChatTurn(
-  client: Pick<Client, 'sessions'>,
-  chat: Chat,
-  input: string,
-  signal?: AbortSignal,
-) {
-  const resumed = Boolean(chat.eveId);
+/**
+ * Starts a turn on the chat's agent session. A chat without one (new, or reset
+ * after a model change or failure) starts a session whose first message carries
+ * the recent visible conversation.
+ */
+export function sendChatTurn(engine: AgentEngine, chat: Chat, input: string, signal: AbortSignal) {
+  const resumed = Boolean(chat.agentSession);
   if (!resumed) {
     resetContextUsage(chat);
+    chat.agentSession = engine.newSessionId();
   }
-  let session = chat.eveId
-    ? client.sessions.attach(chat.eveId)
-    : (await client.sessions.create({ signal })).session;
-  signal?.throwIfAborted();
-  chat.eveId = session.id;
-  try {
-    return await session.send(resumed ? input : withConversationHistory(input, chat.messages), {
-      signal,
-    });
-  } catch (error) {
-    if (!resumed || !isInactiveSession(error)) {
-      throw error;
-    }
-    signal?.throwIfAborted();
-    session = (await client.sessions.create({ signal })).session;
-    signal?.throwIfAborted();
-    resetContextUsage(chat);
-    chat.eveId = session.id;
-    return session.send(withConversationHistory(input, chat.messages), { signal });
+  return engine.send(
+    chat.agentSession!,
+    resumed ? input : withConversationHistory(input, chat.messages),
+    signal,
+  );
+}
+
+/** Forgets a session's model history; failures only leave unused rows behind. */
+export function endSession(engine: Pick<AgentEngine, 'end'>, session: string | undefined) {
+  if (session) {
+    void engine.end(session).catch(() => {});
   }
 }

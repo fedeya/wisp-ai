@@ -3,7 +3,6 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, access, mkdir, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Client } from 'eve/client';
 import { installerBuildVersion } from './installer-version.ts';
 import { addonVersionFromToc } from '../apps/bridge/src/addon/addon-version.ts';
 import { addonReleaseVersion } from './addon-release-version.ts';
@@ -126,13 +125,20 @@ try {
   child.stderr?.on('data', (bytes) => {
     log = (log + bytes).slice(-8000);
   });
-  const client = new Client({ baseUrl: 'http://127.0.0.1:43186' });
+  // The bridge reports ready once the in-process agent has loaded its tools and skills.
   let ready = false;
   for (let attempt = 0; attempt < 150; attempt++) {
     try {
-      await client.health();
-      ready = true;
-      break;
+      const running = JSON.parse(await readFile(path.join(data, 'runtime/desktop.json'), 'utf8'));
+      if (running.pid === child.pid) {
+        const response = await fetch('http://127.0.0.1:' + running.port + '/status', {
+          headers: { authorization: 'Bearer ' + running.token },
+        });
+        if (((await response.json()) as { ready?: boolean }).ready === true) {
+          ready = true;
+          break;
+        }
+      }
     } catch {}
     if (child.exitCode !== null) {
       throw Error('Installed bridge exited: ' + log);
@@ -141,9 +147,6 @@ try {
   }
   if (!ready) {
     throw Error('Installed agent did not become ready: ' + log);
-  }
-  if (!JSON.stringify(await client.health()).includes('ready')) {
-    throw Error('Installed agent did not discover its tools.');
   }
   const identity = JSON.parse(await readFile(path.join(data, 'runtime/desktop.json'), 'utf8'));
   if (identity.pid !== child.pid) {

@@ -12,7 +12,7 @@ function history(): Chat {
     ...newChat('rich', 'old-game'),
     title: 'Preserve 🧙 世界',
     characterKey: 'character',
-    eveId: 'private-session',
+    agentSession: 'private-session',
     unread: false,
     lastUsedAt: 123.25,
     modelSettings: { model: 'connection:old:model', effort: 'high' },
@@ -159,15 +159,15 @@ test('engine sessions and connection settings are private to each instance', asy
     const remote = await b.load();
     expect(remote[0].messages).toEqual(chat.messages);
     expect(remote[0].owner).toBe('');
-    expect(remote[0].eveId).toBeUndefined();
+    expect(remote[0].agentSession).toBeUndefined();
     expect(remote[0].modelSettings).toBeUndefined();
     expect(remote[0].lastUIResult).toBeUndefined();
-    remote[0].eveId = 'b-session';
+    remote[0].agentSession = 'b-session';
     remote[0].owner = 'b-game';
     remote[0].modelSettings = { model: 'b-model', effort: 'low' };
     await b.flush(remote);
     const again = await f.store('a').load();
-    expect(again[0].eveId).toBe('private-session');
+    expect(again[0].agentSession).toBe('private-session');
     expect(again[0].modelSettings).toEqual(chat.modelSettings);
     expect(
       inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM chat_instance_state').get()!.n),
@@ -177,7 +177,7 @@ test('engine sessions and connection settings are private to each instance', asy
     chat.messages.push({ role: 'assistant', text: 'New shared history' });
     await a.flush([chat]);
     const refreshed = await f.store('b').load();
-    expect(refreshed[0].eveId).toBeUndefined();
+    expect(refreshed[0].agentSession).toBeUndefined();
     expect(refreshed[0].modelSettings).toEqual(remote[0].modelSettings);
     expect(refreshed[0].messages).toEqual(chat.messages);
     await a.flush([]);

@@ -1,4 +1,4 @@
-// Model bridge for Eve evals (apps/agent/evals). It uses Wisp's own ChatGPT
+// Model bridge for agent evals (apps/agent/evals). It uses Wisp's own ChatGPT
 // sign-in and model proxy with a separate data folder, so eval sessions never
 // share or refresh the installed app's tokens. Game tools are eval stubs.
 //

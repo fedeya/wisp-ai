@@ -25,7 +25,7 @@ export const characterSections = z
   )
   .min(1)
   .max(9);
-const session = { eveSession: z.string().min(1) };
+const session = { agentSession: z.string().min(1) };
 export const memoryRequest = z.discriminatedUnion('operation', [
   z.object({
     ...session,
@@ -86,7 +86,7 @@ export const rpcResponses = {
   wowhead: reading,
 };
 export type RpcOutput<K extends RpcEndpoint> = z.output<(typeof rpcResponses)[K]>;
-/** Names the Eve session on model requests, so the bridge can tell which turn a failure belongs to. */
+/** Names the agent session on model requests, so the bridge can tell which turn a failure belongs to. */
 export const MODEL_SESSION_HEADER = 'x-wisp-session';
 export const selectedModel = z.object({
   model: z.string().min(1),
