@@ -5,7 +5,8 @@ import { saveTurn } from '../report.ts';
 const prompt = 'hay alguna varita mejor que la mía que pueda conseguir?';
 
 export default defineEval({
-  description: 'A Spanish wand question uses the weapon search instead of guessing names.',
+  description:
+    'A wand question in Spanish on an English client uses the weapon search instead of guessing names; it keeps one non-English case in the suite.',
   tags: ['gear', 'tiers'],
   async test(t) {
     const session = await t.session({ stubs: fedrathStubs() });

@@ -4,10 +4,11 @@ import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt =
-  'cuando voy a empezar a poder hacer mazmorras? cual es el nivel adecuado y en que niveles hay dungeons?';
+  'when can I start doing dungeons? what level should I be and what levels are the dungeons for?';
 
 export default defineEval({
-  description: 'A dungeon-level question answers from the dungeon journal.',
+  description:
+    'A dungeon-level question answers from the dungeon list and does not read loot it was not asked for.',
   tags: ['tiers'],
   async test(t) {
     const session = await t.session({
@@ -19,7 +20,9 @@ export default defineEval({
     turn.expectOk();
     t.check(
       turn.reply ?? '',
-      satisfies((text: string) => /Sima Ígnea|Ragefire|RFC/i.test(text), 'names the first dungeon'),
+      satisfies((text: string) => /Ragefire|RFC/i.test(text), 'names the first dungeon'),
     );
+    // The other side of the loot evals: a level question needs no drops.
+    t.notCalledTool('wow__dungeon_loot');
   },
 });

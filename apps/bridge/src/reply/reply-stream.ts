@@ -393,9 +393,14 @@ export class ReplyProjection {
     }
     // Canonical prose is kept verbatim, including beyond display limits. The
     // display layer bounds text and resolves references without rewriting history.
-    group.message.text = parts
-      .flatMap((part) => (part.type === 'text' ? [part.text] : []))
-      .join('');
+    // Separate text parts (around a UI block, or two streamed texts) are
+    // separate paragraphs: joined bare, a heading or list after the first
+    // would run into its last sentence ("15 seconds.### What I'd use").
+    group.message.text = parts.reduce((text, part) => {
+      if (part.type !== 'text' || !part.text) return text;
+      const gap = text && !/\s$/.test(text) && !/^\s/.test(part.text) ? '\n\n' : '';
+      return text + gap + part.text;
+    }, '');
     group.message.parts = parts;
     group.message.references = { ...this.references };
     group.message.streaming =

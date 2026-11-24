@@ -263,3 +263,26 @@ test('migration preserves user links and tools, converts verified references, an
   assert.deepEqual(migrateReplies([c]), { messages: 0, references: 0 });
   assert.equal(JSON.stringify(c), saved);
 });
+
+test('separate text parts of one reply stay separate paragraphs in its text', () => {
+  const chat: Chat = {
+    id: 'chat',
+    owner: 'game',
+    title: 'Test',
+    status: 'working',
+    activity: [],
+    messages: [],
+  };
+  const projection = new ReplyProjection();
+  projection.beginTurn();
+  projection.text(chat, 'first', 'One target for 15 seconds.', true);
+  projection.text(chat, 'first', undefined, false);
+  projection.text(chat, 'second', '### What I’d use\n- Frostbolt', true);
+  projection.text(chat, 'second', undefined, false);
+  projection.text(chat, 'third', '\nAlready on its own line.', true);
+  projection.text(chat, 'third', undefined, false);
+  assert.equal(
+    chat.messages.at(-1)?.text,
+    'One target for 15 seconds.\n\n### What I’d use\n- Frostbolt\nAlready on its own line.',
+  );
+});

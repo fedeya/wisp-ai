@@ -3,7 +3,7 @@ import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { questStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
-const prompt = 'que misiones deberia hacer ahora?';
+const prompt = 'what quests should I do now?';
 
 export default defineEval({
   description: 'Next-quest advice reads the quest log and recommends one suitable quest.',

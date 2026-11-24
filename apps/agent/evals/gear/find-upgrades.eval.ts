@@ -24,14 +24,15 @@ export default defineEval({
     t.check(
       reply + presented,
       satisfies(
-        (text: string) => /"id":(4320|4314|7048)|Botas de seda de araña|Sobrehombros/i.test(text),
+        (text: string) =>
+          /"id":(4320|4314|7048)|Spidersilk Boots|Shoulders|Azure Silk Hood/i.test(text),
         'recommends searched candidates',
       ),
     );
     t.check(
       reply,
       satisfies(
-        (text: string) => !/Medallón de explorador/i.test(text) || /agilidad|agility/i.test(text),
+        (text: string) => !/Explorer's Medallion/i.test(text) || /agility/i.test(text),
         'does not push the agility neck to a mage',
       ),
     ).soft();

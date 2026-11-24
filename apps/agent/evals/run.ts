@@ -12,6 +12,7 @@ import { setAgentHost } from '../src/agent-host.ts';
 import { runEval, type EvalDefinition } from './harness.ts';
 import { startModelBridge } from './model-bridge.ts';
 import { itemSourcesFixture } from './fixtures/fedrath.ts';
+import { gameItemReadings } from './fixtures/dungeon-loot.ts';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const filters = process.argv.slice(2);
@@ -36,6 +37,11 @@ for (const file of files.sort()) {
 const sources = path.join(await mkdtemp(path.join(tmpdir(), 'wisp-evals-')), 'item-sources.json');
 await writeFile(sources, JSON.stringify(itemSourcesFixture()));
 process.env.WISP_EVAL_ITEM_SOURCES = sources;
+// The game's item reading for wow__dungeon_loot, which the eval bridge joins with
+// the shipped AtlasLoot data.
+const items = path.join(path.dirname(sources), 'game-items.json');
+await writeFile(items, JSON.stringify(gameItemReadings()));
+process.env.WISP_EVAL_GAME_ITEMS = items;
 const bridge = await startModelBridge();
 setAgentHost({ origin: bridge.url, token: bridge.token });
 

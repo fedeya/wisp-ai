@@ -3,7 +3,7 @@ import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs, mapStubs } from '../fixtures/world.ts';
 import { saveTurn } from '../report.ts';
 
-const prompt = 'me marcas la entrada de Sima Ígnea en el mapa?';
+const prompt = 'can you mark the Ragefire Chasm entrance on my map?';
 
 export default defineEval({
   description: 'A map request resolves the destination and places one waypoint.',

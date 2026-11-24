@@ -1,4 +1,10 @@
 {
   "product": "wowf",
-  "build": "1.60.1.71037"
+  "build": "1.60.1.71037",
+  "atlasloot": {
+    "project": 1422985,
+    "file": 9763940,
+    "name": "AtlasLoot-Classic-Forever-1.4.8-231126-16001.zip",
+    "sha256": "0f030548e361ff4cb8179113171ddb28c4a202a0e700c87aa4e62cafb45f9a3f"
+  }
 }

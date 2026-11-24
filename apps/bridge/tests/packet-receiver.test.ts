@@ -1,5 +1,6 @@
 import { test, expect, vi } from 'vitest';
 import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
+import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { GameRequests } from '../src/addon/game-requests.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
@@ -53,6 +54,91 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   });
   return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
 }
+
+test('Stop during first-turn model preparation prevents engine dispatch', async () => {
+  const chat = newChat('chat', 'one');
+  const state = createSessionState([chat]);
+  state.activeTransport = 'one';
+  state.activeChat = chat.id;
+  let releasePreparation!: () => void;
+  const preparation = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  const prepare = vi.fn(() => preparation);
+  const send = vi.fn(() => ({
+    events: (async function* () {})(),
+    result: Promise.resolve({ status: 'completed' as const }),
+  }));
+  const newSessionId = vi.fn(() => 'session');
+  const engine = { newSessionId, send, end: vi.fn(async () => {}) };
+  const capabilitySettings = new CapabilitySettings('unused');
+  const run = createTurnRunner({
+    engine,
+    models: {
+      prepare,
+      models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
+      complete: vi.fn(async () => 'Unused title'),
+    },
+    capabilitySettings,
+    currentTransport: () => state.activeTransport,
+    activeChat: () => state.activeChat,
+    defaultModel: () => 'model',
+    isReady: () => true,
+    isStopping: () => false,
+    accountBusy: () => false,
+    isCurrent: (candidate) => state.chats.includes(candidate),
+    changed: () => {},
+    logger: { info: vi.fn(), error: vi.fn() },
+  });
+  const { receive } = fixture({
+    state,
+    engine,
+    capabilitySettings,
+    run,
+    interrupt: run.interrupt,
+    cancel: run.cancel,
+  });
+  try {
+    receive(
+      packetSchema.parse({
+        type: 'say',
+        session: 'one',
+        chat: chat.id,
+        text: 'Question',
+        seq: 1,
+        at: 1,
+      }),
+    );
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledWith('model'));
+    expect(chat.status).toBe('working');
+    expect(chat.agentSession).toBeUndefined();
+    expect(newSessionId).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
+  } finally {
+    releasePreparation();
+    await run.drain();
+  }
+  expect(send).not.toHaveBeenCalled();
+  expect(newSessionId).not.toHaveBeenCalled();
+  expect(chat.status).toBe('cancelled');
+});
+
+test('Stop cancels the turn in the bridge and keeps its session', () => {
+  const f = fixture();
+  f.receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: 'old', seq: 1, at: 1 }));
+  expect(f.cancel).toHaveBeenCalledExactlyOnceWith(f.state.chats[0]);
+  expect(f.interrupt).not.toHaveBeenCalled();
+  expect(f.end).not.toHaveBeenCalled();
+});
+
+test('a stale-session cancel cannot interrupt or cancel the current chat', () => {
+  const f = fixture();
+  f.receive(packetSchema.parse({ type: 'cancel', session: 'stale', chat: 'old', seq: 1, at: 1 }));
+  expect(f.interrupt).not.toHaveBeenCalled();
+  expect(f.cancel).not.toHaveBeenCalled();
+  expect(f.state.chats[0].status).toBe('working');
+});
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
   const f = fixture();
@@ -207,13 +293,6 @@ test('deleting an active conversation cancels its requests and prevents delayed 
   expect(f.state.chats).toEqual([]);
   expect(f.end).toHaveBeenCalledTimes(1);
   expect(f.run).not.toHaveBeenCalled();
-});
-
-test('a cancel packet stops the turn as cancelled and keeps its session', () => {
-  const f = fixture();
-  f.receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: 'old', seq: 2, at: 2 }));
-  expect(f.cancel).toHaveBeenCalledWith(f.state.chats[0]);
-  expect(f.end).not.toHaveBeenCalled();
 });
 
 test('retry reuses the failed question and ignores retries while working', () => {

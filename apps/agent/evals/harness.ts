@@ -23,6 +23,7 @@ export interface ToolCall {
   name: string;
   input: unknown;
   status?: string;
+  output?: unknown;
 }
 
 export interface Turn {
@@ -139,6 +140,7 @@ export async function runEval(definition: EvalDefinition) {
               const call = turnCalls.get(String(data.callId));
               if (call) {
                 call.status = String(data.outcome);
+                call.output = data.output;
               }
             } else if (event.type === 'content.completed') {
               texts.set(String(data.partId), String(data.value));

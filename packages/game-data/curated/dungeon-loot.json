@@ -1,0 +1,35 @@
+{
+  "$comment": "Instance map IDs for AtlasLoot loot tables whose name matches no instance in Map.db2. null keeps a table whose instance the pinned build's Map.db2 does not have yet; it is listed without instanceMapId.",
+  "instanceMapIds": {
+    "DireMaulEast": {
+      "value": 429,
+      "source": "Map.db2 429 Dire Maul",
+      "note": "AtlasLoot splits the wings"
+    },
+    "DireMaulNorth": {
+      "value": 429,
+      "source": "Map.db2 429 Dire Maul",
+      "note": "AtlasLoot splits the wings"
+    },
+    "DireMaulWest": {
+      "value": 429,
+      "source": "Map.db2 429 Dire Maul",
+      "note": "AtlasLoot splits the wings"
+    },
+    "OnyxiasLairNew": {
+      "value": 249,
+      "source": "Map.db2 249 Onyxia's Lair",
+      "note": "AtlasLoot's Forever version of the raid"
+    },
+    "MountHyjal": {
+      "value": null,
+      "source": "Map.db2 build 1.60.1.71037",
+      "note": "No Mount Hyjal raid instance yet"
+    },
+    "BarrowDeepsRaid": {
+      "value": null,
+      "source": "Map.db2 build 1.60.1.71037",
+      "note": "No Barrow Deeps raid instance yet"
+    }
+  }
+}

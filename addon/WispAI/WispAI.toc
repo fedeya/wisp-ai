@@ -42,6 +42,7 @@ ChatHistory\ChatHistory.lua
 Combat\Combat.lua
 Data\DungeonEntrances.lua
 Data\GroupFinderNames.lua
+Data\ItemProficiencies.lua
 Character\TrainingData.lua
 Character\Training.lua
 Character\Capture.lua
