@@ -11,7 +11,7 @@ import {
   thrownFailureKind,
   type ModelFailures,
 } from './model-failures.ts';
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 
 export async function proxyConnectionModel(
   req: IncomingMessage,

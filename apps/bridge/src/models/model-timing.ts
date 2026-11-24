@@ -1,7 +1,7 @@
 import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { createHash } from 'node:crypto';
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 
 // Forward original chunks immediately; observe metadata without logging content.
 export function modelTiming(

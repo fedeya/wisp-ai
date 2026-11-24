@@ -1,4 +1,4 @@
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { adoptCharacterKey, saveCharacterName } from '../db/character-keys.ts';
 import { errorMessage } from '../errors.ts';

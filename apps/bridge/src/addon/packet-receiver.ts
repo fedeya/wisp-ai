@@ -30,7 +30,7 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/c
 import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;

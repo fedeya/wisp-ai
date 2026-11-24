@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 import type { Packet } from '@wisp/protocol/protocol';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';

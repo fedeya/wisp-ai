@@ -1,4 +1,4 @@
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { errorMessage } from '../errors.ts';
 import { createPublishScheduler } from './publish-scheduler.ts';

@@ -91,9 +91,15 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   workspace to declare each package it imports in its own `package.json`
   (nothing is hoisted). Unit tests import their package's source; integration
   tests use package exports.
-- **Logging:** the bridge logs with pino (`apps/bridge/src/logger.ts`) using
-  structured objects with a dotted `event` key, e.g.
-  `{ event: 'bridge.startup_failed', error: errorMessage(error) }`.
+- **Logging:** the bridge logs through Effect's `Logger` (`apps/bridge/src/logger.ts`),
+  one JSON line per entry with a dotted `event` key. Effect code uses
+  `Effect.logInfo(...)` with `Effect.annotateLogs({ event: 'bridge.tick_failed', ... })`;
+  other code calls `bridgeLogger.info({ event: 'bridge.startup_failed', error: errorMessage(error) }, '...')`.
+- **Effect:** the bridge is moving to Effect 4. Effect programs run on `bridgeRuntime`
+  (`logger.ts`), and long-lived resources and background fibers live in the bridge
+  scope (`RuntimeResources.acquire` / `defer`). Coordination code (timers, retries,
+  cancellation, races) uses Effect behind its existing Promise API, as in
+  `agent/turn-runner.ts` and `addon/game-requests.ts`.
 - **Errors:** convert unknown errors with `errorMessage` from
   `apps/bridge/src/errors.ts`, which sanitizes via `safeErrorMessage`.
 - **Addon Lua:** follow [docs/lua-guidelines.md](docs/lua-guidelines.md) and

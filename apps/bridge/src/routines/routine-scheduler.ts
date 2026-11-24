@@ -6,7 +6,7 @@ import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
-import type { Logger } from 'pino';
+import type { Logger } from '../logger.ts';
 interface SchedulerDependencies {
   state: SessionState;
   routineStore: RoutineStore;
