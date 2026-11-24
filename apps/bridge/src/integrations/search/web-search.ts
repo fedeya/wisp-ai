@@ -5,10 +5,8 @@ import {
   type WebSearchInput,
 } from '@wisp/protocol/search';
 import { parseConnectionModel } from '@wisp/protocol/providers';
-import { Cause, Duration, Effect, Exit, Stream } from 'effect';
-import { HttpBody, HttpClient } from 'effect/http';
-import { withHttpClient } from '../http-client.ts';
-import { bridgeRuntime } from '../../logger.ts';
+import { Cause, Exit, type ManagedRuntime } from 'effect';
+import { Exa, ExaSearchError } from './exa.ts';
 import type { z } from 'zod';
 import type { SecretVault } from '../../auth/secret-vault.ts';
 import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
@@ -16,10 +14,6 @@ import { readJson, writeJson } from '../../json-file.ts';
 import { isPublicSourceUrl, searchPublicWeb } from './public-web-search.ts';
 
 const secretKey = 'search:exa';
-const exaEndpoint = 'https://api.exa.ai/search';
-const exaPublicEndpoint = 'https://mcp.exa.ai/mcp?tools=web_search_advanced_exa';
-
-class ExaSearchError extends Error {}
 export interface WowheadSearchResult {
   status: string;
   source: string;
@@ -54,12 +48,18 @@ export class WebSearch implements WowheadSearch {
   private file: string;
   private vault: SecretVault;
   private auth: ChatGPTAuth;
-  private fetcher: typeof fetch;
-  constructor(file: string, vault: SecretVault, auth: ChatGPTAuth, fetcher: typeof fetch = fetch) {
+  private runtime: ManagedRuntime.ManagedRuntime<Exa, never>;
+  /** `runtime` provides the Exa service the searches run on. */
+  constructor(
+    file: string,
+    vault: SecretVault,
+    auth: ChatGPTAuth,
+    runtime: ManagedRuntime.ManagedRuntime<Exa, never>,
+  ) {
     this.file = file;
     this.vault = vault;
     this.auth = auth;
-    this.fetcher = fetcher;
+    this.runtime = runtime;
   }
   async load() {
     this.config = await readJson(this.file, searchConfig, () => ({ provider: 'auto' }));
@@ -129,140 +129,14 @@ export class WebSearch implements WowheadSearch {
     signal?: AbortSignal,
     budget = resolveWebSearch(query),
   ) {
-    const search = {
-      query,
-      type: 'auto',
-      numResults: budget.maxResults,
-    };
-    // Exa's hosted MCP offers limited public search without a credential.
-    // A saved key explicitly opts into the account's REST quota and billing.
-    const request = Effect.gen({ self: this }, function* () {
-      // A dropped connection is retried once; an answer (even a failure) is final.
-      const client = (yield* HttpClient.HttpClient).pipe(
-        HttpClient.retryTransient({ retryOn: 'errors-only', times: 1 }),
-        HttpClient.timeout(Duration.seconds(budget.timeoutSeconds)),
-      );
-      const response = yield* client.post(key ? exaEndpoint : exaPublicEndpoint, {
-        headers: key
-          ? { 'content-type': 'application/json', 'x-api-key': key }
-          : { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-        body: HttpBody.text(
-          JSON.stringify(
-            key
-              ? { ...search, contents: { text: { maxCharacters: budget.excerptCharacters } } }
-              : {
-                  jsonrpc: '2.0',
-                  id: 1,
-                  method: 'tools/call',
-                  params: {
-                    name: 'web_search_advanced_exa',
-                    arguments: { ...search, textMaxCharacters: budget.excerptCharacters },
-                  },
-                },
-          ),
-          'application/json',
-        ),
-      });
-      if (response.status < 200 || response.status >= 300) {
-        // Do not propagate upstream bodies which might echo credentials/queries.
-        return yield* Effect.fail(
-          new ExaSearchError(
-            response.status === 401 || response.status === 403
-              ? key
-                ? 'Exa rejected the API key. Check it in Connections.'
-                : 'Exa public access was rejected. Try a direct IPv4 connection or configure an optional API key in Connections.'
-              : response.status === 402
-                ? 'Exa credits are exhausted. Check your Exa account.'
-                : response.status === 429
-                  ? 'Exa rate limit reached. Try again later or configure an optional API key in Connections.'
-                  : `Exa search failed (HTTP ${response.status}). Try again later.`,
-          ),
-        );
-      }
-      // Bound the complete response, including metadata, before JSON parsing.
-      const chunks = yield* response.stream.pipe(
-        Stream.runFold(
-          () => ({ size: 0, chunks: [] as Uint8Array[] }),
-          (read, chunk) => {
-            read.size += chunk.byteLength;
-            if (read.size > 1024 * 1024) {
-              throw new Error('Exa search response was too large.');
-            }
-            read.chunks.push(chunk);
-            return read;
-          },
-        ),
-      );
-      return {
-        body: Buffer.concat(chunks.chunks).toString('utf8'),
-        contentType: response.headers['content-type'],
-      };
-    }).pipe(withHttpClient(this.fetcher));
-    const exit = await bridgeRuntime.runPromiseExit(request, signal ? { signal } : undefined);
+    const exit = await this.runtime.runPromiseExit(
+      Exa.use((exa) => exa.search(query, key, budget)),
+      signal ? { signal } : undefined,
+    );
     if (Exit.isFailure(exit)) {
       throw Cause.squash(exit.cause);
     }
-    const { body, contentType } = exit.value;
-    let data: unknown;
-    if (key) {
-      data = JSON.parse(body);
-    } else {
-      const messages: unknown[] = contentType?.includes('text/event-stream')
-        ? body
-            .replace(/\r\n/g, '\n')
-            .split('\n\n')
-            .flatMap((event) => {
-              const text = event
-                .split('\n')
-                .filter((line) => line.startsWith('data:'))
-                .map((line) => line.slice(5).trimStart())
-                .join('\n');
-              return text ? [JSON.parse(text)] : [];
-            })
-        : [JSON.parse(body)];
-      for (const message of messages) {
-        if (!message || typeof message !== 'object' || !('id' in message) || message.id !== 1) {
-          continue;
-        }
-        if ('error' in message) {
-          throw new ExaSearchError(
-            'Exa public search is unavailable or rate limited. Try again later or configure an optional API key in Connections.',
-          );
-        }
-        if (!('result' in message) || !message.result || typeof message.result !== 'object') {
-          continue;
-        }
-        const result = message.result;
-        if ('isError' in result && result.isError) {
-          throw new ExaSearchError(
-            'Exa public search is unavailable or rate limited. Try again later or configure an optional API key in Connections.',
-          );
-        }
-        if ('structuredContent' in result) {
-          data = result.structuredContent;
-        }
-        if (!data && 'content' in result && Array.isArray(result.content)) {
-          for (const part of result.content) {
-            if (part?.type !== 'text' || typeof part.text !== 'string') {
-              continue;
-            }
-            try {
-              const parsed: unknown = JSON.parse(part.text);
-              if (parsed && typeof parsed === 'object' && 'results' in parsed) {
-                data = parsed;
-                break;
-              }
-            } catch {
-              /* Ignore non-JSON text; never use unattributed prose. */
-            }
-          }
-        }
-      }
-    }
-    if (!data || typeof data !== 'object' || !('results' in data) || !Array.isArray(data.results)) {
-      throw Error('Exa returned an invalid search response.');
-    }
-    return data.results;
+    return exit.value;
   }
   async search(
     rawQuery: WebSearchInput,

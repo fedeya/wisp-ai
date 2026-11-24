@@ -1,4 +1,7 @@
-import { type Layer, ManagedRuntime } from 'effect';
+import { Layer, ManagedRuntime } from 'effect';
+import { HttpClientLive } from './integrations/http-client.ts';
+import { Exa } from './integrations/search/exa.ts';
+import { TheWoWDB } from './integrations/thewowdb.ts';
 import { LoggerLive } from './logger.ts';
 
 /**
@@ -7,7 +10,10 @@ import { LoggerLive } from './logger.ts';
  * ManagedRuntime once and runs Effect code through it; services join the layer
  * as their modules move to Effect.
  */
-export const AppLayer = LoggerLive;
+export const AppLayer = Layer.mergeAll(
+  LoggerLive,
+  Layer.mergeAll(TheWoWDB.layer, Exa.layer).pipe(Layer.provide(HttpClientLive)),
+);
 
 /** The services AppLayer provides. */
 export type AppServices = Layer.Success<typeof AppLayer>;
