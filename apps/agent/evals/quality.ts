@@ -128,7 +128,7 @@ wow__read_combat (Death Recap) returned the latest death at Windshear Crag, Ston
     facts:
       character +
       `
-wow__query_character pvp: rank 0 (Civilian), 0 of 2000 rank points to the next rank, weekly cap 7500; Honor Points 89 of 25000, all earned this week (a currency for PvP gear); honorable kills 3 today, 12 lifetime. The reading notes that rank points come from battlegrounds and PvP quests, and open-world honorable kills give Honor, not rank points. Wisp's PvP instructions add that the season's weekly PvP tasks also grant rank points.`,
+wow__query_character pvp: rank 0 (Civilian), 0 of 2000 rank points to the next rank, weekly cap 7500; Honor Points 89 of 25000, all earned this week; honorable kills 3 today, 12 lifetime. The reading has counters only. Wisp's PvP skill instructions say rank points come from battlegrounds, PvP quests that grant them and the season's weekly PvP tasks; Honor is a currency for PvP gear; open-world honorable kills give Honor, not rank points, so they alone do not leave Civilian.`,
     goodAnswer:
       'Says no: open-world kills give Honor (89 so far), not rank points, so they do not lift Civilian; rank points come from battlegrounds and PvP quests. Uses the reading instead of asking the player.',
   },

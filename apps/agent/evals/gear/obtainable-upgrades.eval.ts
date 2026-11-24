@@ -1,7 +1,7 @@
 import { defineEval } from 'eve/evals';
 import { satisfies } from 'eve/evals/expect';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
-import { commonChecks, presentedItemIds } from '../checks.ts';
+import { commonChecks, presentedItemIds, recommendedByName } from '../checks.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt =
@@ -32,7 +32,10 @@ export default defineEval({
     );
     t.check(
       turn.reply ?? '',
-      satisfies((text: string) => !CRAFTED_NAMES.test(text), 'names no crafted-only item'),
+      satisfies(
+        (text: string) => recommendedByName(text, CRAFTED_NAMES).length === 0,
+        'recommends no crafted-only item by name',
+      ),
     );
     t.check(
       turn.reply ?? '',

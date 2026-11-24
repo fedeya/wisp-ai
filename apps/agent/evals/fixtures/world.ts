@@ -339,7 +339,9 @@ export function combatStubs(): ToolStub[] {
 }
 
 // Forever PvP progression for a level 21 character that has fought in the
-// open world but never queued a battleground: Civilian, some Honor.
+// open world but never queued a battleground, in the shape the addon's pvp
+// collector (Character/Capture.lua) returns: counters only, no rules, so the
+// agent has to apply what its PvP instructions say.
 export function pvpStubs(): ToolStub[] {
   return json([
     {
@@ -355,19 +357,17 @@ export function pvpStubs(): ToolStub[] {
               data: {
                 rank: {
                   rank: 0,
-                  title: 'Civilian',
                   points: 0,
                   nextRankPoints: 2000,
+                  maxRank: 14,
+                  weeklyCapRank: 3,
+                  seasonPoints: 0,
                   weeklyCapPoints: 7500,
-                  note: 'Rank points come from battlegrounds and PvP quests; honorable kills in the open world give Honor, not rank points.',
+                  weeklyCapIncrease: 2500,
+                  seasonMaxPoints: 60000,
                 },
-                honor: {
-                  name: 'Honor Points',
-                  amount: 89,
-                  max: 25000,
-                  earnedThisWeek: 89,
-                  note: 'A currency for PvP gear.',
-                },
+                season: { number: 1 },
+                honor: { name: 'Honor Points', amount: 89, max: 25000, earnedThisWeek: 89 },
                 kills: { today: 3, yesterday: 0, lifetime: 12 },
               },
             },

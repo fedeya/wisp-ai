@@ -52,6 +52,16 @@ export function craftOnlyItems(turn: Turn): Set<number> {
   return craftOnly;
 }
 
+// Sentences or table rows that name an item without turning it down, so
+// "Skip Azure Silk Hood, you can't get it" does not count as recommending it.
+const TURNED_DOWN =
+  /\b(skip|avoid|don['’]?t|do not|can['’]?t|cannot|won['’]?t|unavailable|out of reach|not available|without|needs? Tailoring|requires? Tailoring|instead of)\b/i;
+export function recommendedByName(reply: string, names: RegExp): string[] {
+  return reply
+    .split(/\n|(?<=[.!?])\s+/)
+    .filter((sentence) => names.test(sentence) && !TURNED_DOWN.test(sentence));
+}
+
 // Checks every eval shares.
 export function commonChecks(t: Checks, turn: Turn) {
   t.check(
