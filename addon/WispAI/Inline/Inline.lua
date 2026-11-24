@@ -219,7 +219,7 @@ local function inputReference(link)
 end
 function ns.Inline.EnsureInlineChat()
     local chat = ns.Inline.InlineCurrent()
-    if not ns.inlineId then
+    if not chat then
         ns.inlineCounter = (ns.inlineCounter or 0) + 1
         ns.inlineId = ns.session .. "-inline-" .. ns.inlineCounter
         chat = {
