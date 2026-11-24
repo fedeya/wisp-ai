@@ -190,6 +190,9 @@ export const chatInstanceState = sqliteTable(
     revision: integer().notNull(),
     historyRevision: integer('history_revision').notNull(),
     owner: text().notNull(),
+    // Written by versions that ran Eve. Kept, always null now, so an older version
+    // can still read this database after a downgrade and start fresh sessions.
+    eveId: text('eve_id'),
     agentSession: text('agent_session'),
     unread: integer({ mode: 'boolean' }),
     modelSettings: text('model_settings'),

@@ -117,6 +117,7 @@ export function encodeChat(
       historyRevision: previous?.row.revision ?? 0,
       owner,
       agentSession: agentSession ?? null,
+      eveId: null,
       unread: unread ?? null,
       modelSettings: json(modelSettings),
       modelRequestId: modelRequestId ?? null,

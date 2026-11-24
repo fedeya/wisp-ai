@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "4a263605-5018-4405-9771-6d6d31cc57fb",
+  "id": "b8560b14-690f-449a-8a50-802d4d106168",
   "prevIds": ["b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea"],
   "ddl": [
     {
@@ -119,6 +119,26 @@
       "name": "owner",
       "type": "text",
       "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "chat_instance_state",
+      "name": "eve_id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "chat_instance_state",
+      "name": "agent_session",
+      "type": "text",
+      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,

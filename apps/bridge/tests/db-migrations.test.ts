@@ -234,3 +234,34 @@ test('three processes can migrate and import the same database simultaneously', 
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
+
+test('the agent session migration keeps the Eve column so an older version can still read chats', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-agent-session-migration-'));
+  const database = new DatabaseSync(path.join(root, 'wisp.sqlite'));
+  try {
+    // The database as the last version with Eve left it.
+    const initial = path.join(root, 'initial');
+    await mkdir(initial);
+    const [first] = (await readdir(migrationsFolder)).sort();
+    await cp(path.join(migrationsFolder, first!), path.join(initial, first!), { recursive: true });
+    migrateDatabase(database, initial);
+    database.exec(
+      `INSERT INTO chats (id, sort_index, title, status, revision, extras)
+       VALUES ('chat', 0, 'Quest help', 'done', 1, '{}');
+       INSERT INTO chat_instance_state (instance_id, chat_id, revision, history_revision, owner, eve_id)
+       VALUES ('instance', 'chat', 1, 1, 'game', 'eve-session');`,
+    );
+    migrateDatabase(database);
+    // The query an Eve version runs still works; its session ids are gone with its store.
+    expect(
+      database.prepare('SELECT chat_id, eve_id, agent_session FROM chat_instance_state').get(),
+    ).toEqual({ chat_id: 'chat', eve_id: null, agent_session: null });
+    const history = database
+      .prepare("SELECT strict FROM pragma_table_list WHERE name = 'agent_messages'")
+      .get();
+    expect(history).toEqual({ strict: 1 });
+  } finally {
+    database.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
