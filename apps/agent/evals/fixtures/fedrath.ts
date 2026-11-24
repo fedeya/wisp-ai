@@ -381,6 +381,8 @@ const sources: Record<number, unknown[]> = {
     { rel: 'created_by', kind: 'spell', name: 'Azure Silk Belt', profession: 'Tailoring 140' },
   ],
   3647: [{ rel: 'sold_by', kind: 'npc', name: 'Magda', zone: 'Orgrimmar' }],
+  // Rune of Teleportation, a reagent for the mage's teleports.
+  17031: [{ rel: 'sold_by', kind: 'npc', name: 'Horthus', zone: 'Orgrimmar' }],
   5240: [{ rel: 'created_by', kind: 'spell', name: 'Flame Wand', profession: 'Enchanting 110' }],
   5214: [
     { rel: 'drops_from', kind: 'npc', name: 'Taragaman the Hungerer', zone: 'Ragefire Chasm' },
@@ -411,7 +413,10 @@ const relationKinds: Record<string, string> = {
   created_by: 'crafted',
 };
 export function itemSourcesFixture() {
-  const ids = [...Object.values(armor), ...Object.values(weapons)].flat().map((entry) => entry.id);
+  const ids = [
+    ...[...Object.values(armor), ...Object.values(weapons)].flat().map((entry) => entry.id),
+    17031,
+  ];
   return Object.fromEntries(
     ids.map((itemId) => {
       const found: Record<string, unknown[]> = {};

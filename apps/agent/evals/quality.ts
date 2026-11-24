@@ -1,6 +1,8 @@
-// Ground truth for grading answers. Each scenario states what is true in its
-// fixtures and what a strong answer does, so the grader judges against data
-// the agent could see, not against its own game knowledge.
+// Ground truth for judging answers. Each scenario states what is true in its
+// fixtures, what a strong answer does (for people reading the runs) and which
+// binary judges apply, so judges compare against data the agent could see,
+// not against their own game knowledge.
+import type { JudgeName } from './judges.ts';
 
 const character =
   'Fedrath, level 21 Orc Mage (Horde) on realm Vorn, in Orgrimmar (Valley of Strength), 2g 14s 50c. ' +
@@ -21,22 +23,26 @@ Candidates the tools returned (name, item level / required level, stats, source,
 Any item not in this list does not exist in the data and must not be recommended.`;
 
 export interface Scenario {
+  judges: JudgeName[];
   facts: string;
   goodAnswer: string;
 }
 
 export const scenarios: Record<string, Scenario> = {
   'find-upgrades': {
+    judges: ['unsupported-claim', 'unobtainable-gear'],
     facts: character + gearFacts,
     goodAnswer:
       'Prioritizes cheap upgrades for empty or weak slots that suit a mage (intellect, spell power, spirit, stamina), such as the 10s shoulders, the boots, the hood and the quest ring, within the 2g 14s budget. Never recommends the agility neck or the source-less sandals as things to get. Says where each pick comes from or what it costs, and that auction prices are cached. Short, ordered, actionable.',
   },
   'better-wand': {
+    judges: ['unsupported-claim', 'unobtainable-gear'],
     facts: character + gearFacts,
     goodAnswer:
       'Answers in Spanish, since the player wrote in Spanish, keeping the English client item names. Names real better wands from the data (Shadow Wand as the better stats from a Ragefire Chasm drop, Flame Wand as a cheap auction option at about 33s), with their stat gains and how to get them. Says that wand damage per second could not be compared. Does not invent other wands.',
   },
   'dungeon-level': {
+    judges: ['unsupported-claim', 'ignores-context'],
     facts:
       character +
       `
@@ -45,6 +51,7 @@ wow__query_dungeons returned, from the game's group finder with entrances from W
       'Answers that a level 21 mage can already do dungeons, recommends Wailing Caverns or Ruins of Lordaeron as the right fit now, notes Ragefire Chasm is easy and close, gives the returned ranges for the dungeons around this level (including the Forever-only ones), and flags dungeons whose entrance is in Alliance territory or cities. Inventing an automatic dungeon finder, dungeons or ranges not returned lowers correctness.',
   },
   'mark-rfc': {
+    judges: ['unsupported-claim'],
     facts:
       character +
       `
@@ -53,6 +60,7 @@ Sources the tools returned: wow__query_dungeons gives the Ragefire Chasm entranc
       'Places one waypoint on Orgrimmar (1454) at the wow__query_dungeons entrance 53, 48.9 and says so briefly. Does not invent other coordinates and does not refuse when a source gave them.',
   },
   'next-quest': {
+    judges: ['unsupported-claim', 'ignores-context'],
     facts:
       character +
       `
@@ -61,6 +69,7 @@ Quest log: Witchwing Slayers 875 (level 16, 4/8 Witchwing Talons, 1150 XP, The B
       'Gives one clear recommendation (finish the Barrens quest, or turn in the completed level 21 quest), explains it with the verified progress, XP and where to go, accounts for travel from Orgrimmar, and does not recommend the level 27 quest now.',
   },
   'shadowfang-loot': {
+    judges: ['unsupported-claim', 'unobtainable-gear'],
     facts:
       character +
       `
@@ -69,6 +78,7 @@ wow__dungeon_loot for Shadowfang Keep (20-30) returned AtlasLoot drops read by t
       'Recommends the caster pieces that fill empty slots first (hood, amulet, shoulders, ring), mentions the staff or level 22 pieces with their level, names the bosses that drop them, and gives drop chances only where the data has them. Never recommends mail, leather or strength gear.',
   },
   'boss-loot': {
+    judges: ['unsupported-claim', 'unobtainable-gear'],
     facts:
       character +
       `
@@ -77,6 +87,7 @@ wow__dungeon_loot for Baron Silverlaine (Shadowfang Keep) returned: Silverlaine'
       'Says the ring fills the empty ring slot and is the best pick now, mentions the Spellblade with its level 22 requirement and that swords need training, and does not recommend the mace or the strength sabre.',
   },
   'raid-loot': {
+    judges: ['unsupported-claim', 'unobtainable-gear'],
     facts:
       character +
       `
@@ -85,6 +96,7 @@ wow__dungeon_loot for Molten Core returned all 10 bosses (Lucifron, Magmadar, Ge
       'Lists each boss with its notable drops and chances from the data, notes that the gear requires level 60 so it is not for the character now, and does not invent bosses or drops.',
   },
   'wailing-caverns': {
+    judges: ['unsupported-claim', 'unobtainable-gear', 'ignores-context'],
     facts:
       character +
       `
@@ -92,16 +104,41 @@ Wailing Caverns is a 15-24 dungeon (The Barrens 47.7, 35). wow__dungeon_loot ret
     goodAnswer:
       'Says yes, the dungeon fits level 21 and has upgrades for the empty neck, shoulder and ring slots plus the belt, names the bosses that drop them, suggests going through Mutanus, and does not recommend leather or weapons a mage cannot use.',
   },
+  'obtainable-upgrades': {
+    judges: ['unsupported-claim', 'unobtainable-gear'],
+    facts:
+      character +
+      gearFacts +
+      `
+The player has no Tailoring and says the auction house has none of the crafted gear, so every Tailoring or Enchanting item above (Azure Silk Hood, Spider Silk Hood, Double-stitched Woolen Shoulders, Spidersilk Boots, Azure Silk Belt, Flame Wand) is out of reach now. Obtainable: Seal of the Forsaken (quest), Blessed Apprentice Boots and Fine Cloth Bracers (Orgrimmar vendors), Woven Silk Shoulders (Wailing Caverns drop), Spectral Light Pendant (Silverpine Forest drop), Shadow Wand (Ragefire Chasm drop), Carved Pearl Ring (world drop, 30s at auction).`,
+    goodAnswer:
+      'Recommends only obtainable upgrades for the empty and weak slots (quest ring, vendor boots and bracers, the dungeon shoulders or wand), says where each comes from, and leaves out every crafted item.',
+  },
+  'why-did-i-die': {
+    judges: ['unsupported-claim', 'uses-available-data'],
+    facts:
+      character +
+      `
+wow__read_combat (Death Recap) returned the latest death at Windshear Crag, Stonetalon Mountains: a Venture Co. Deforester's Fireball for 107 (83 overkill) at 24 health; just before, a Venture Co. Logger's Throw took 58 from 82. Totals: Logger 248 damage, Deforester 171 (two Fireballs).`,
+    goodAnswer:
+      'Names the Deforester’s Fireball as the killing blow and the Logger’s damage before it, from the recap, and gives one or two concrete tips (pull one at a time, Polymorph the caster, break line of sight). Does not ask the player for the log.',
+  },
+  'world-pvp-rank': {
+    judges: ['unsupported-claim', 'uses-available-data'],
+    facts:
+      character +
+      `
+wow__query_character pvp: rank 0 (Civilian), 0 of 2000 rank points to the next rank, weekly cap 7500; Honor Points 89 of 25000, all earned this week (a currency for PvP gear); honorable kills 3 today, 12 lifetime. The reading notes that rank points come from battlegrounds and PvP quests, and open-world honorable kills give Honor, not rank points.`,
+    goodAnswer:
+      'Says no: open-world kills give Honor (89 so far), not rank points, so they do not lift Civilian; rank points come from battlegrounds and PvP quests. Uses the reading instead of asking the player.',
+  },
+  'teleport-runes': {
+    judges: ['unsupported-claim'],
+    facts:
+      character +
+      `
+Rune of Teleportation (item 17031) is sold by Horthus, the reagent vendor in Orgrimmar; QuestieDB Forever places him at 45.4, 56.6. The character is in Orgrimmar (Valley of Strength). No other vendor or district was returned.`,
+    goodAnswer:
+      'Sends the player to Horthus in Orgrimmar at 45.4, 56.6 from the data, and offers a waypoint. Does not guess a district or another vendor.',
+  },
 };
-
-export const criteria = {
-  correctness:
-    'Every fact, item, stat, price, source, level and coordinate in the answer matches the facts. 2 = nothing invented or wrong; 1 = a minor unsupported detail; 0 = an invented item or a wrong key fact.',
-  fit: 'The recommendation is right for this character: class, level, budget, location and goal. 2 = the best or a clearly sensible choice; 1 = acceptable but misses a clearly better option or includes a poor pick; 0 = a poor or harmful recommendation.',
-  usefulness:
-    'The player can act on it: what to do first, where to get it or go, how. 2 = immediately actionable; 1 = partly; 0 = vague.',
-  honesty:
-    'Uncertainty is stated where the data is uncertain (cached prices, unconfirmed sources, unknown DPS, guidance ranges) without hedging what is verified. 2 = well calibrated; 1 = misses one; 0 = presents unknowns as fact.',
-  clarity:
-    'Concise, well ordered, in the user language, no filler. 2 = clear and brief; 1 = somewhat long or messy; 0 = hard to follow.',
-} as const;

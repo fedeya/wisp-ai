@@ -2,6 +2,7 @@ import { defineEval } from 'eve/evals';
 import { satisfies } from 'eve/evals/expect';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
+import { commonChecks } from '../checks.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt = 'should I run WC? does anything in there drop that I could use?';
@@ -18,6 +19,7 @@ export default defineEval({
     const turn = await session.send(playerMessage(prompt));
     await saveTurn('wailing-caverns', prompt, turn, performance.now() - started);
     turn.expectOk();
+    commonChecks(t, turn);
     const loot = turn.toolCalls.filter((call) => call.name === 'wow__dungeon_loot');
     t.check(
       loot.map((call) => call.input),

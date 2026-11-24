@@ -1,11 +1,16 @@
-// Grades saved eval answers (.eve/eval-replies/runs.jsonl) for quality with the
-// eval model bridge, against each scenario's facts and a fixed rubric.
+// Grades saved eval answers (.eve/eval-replies/runs.jsonl) with binary LLM
+// judges (judges.ts), one verdict per judge each scenario lists, against the
+// scenario's facts and the tool results the agent read.
 //
 //   node apps/agent/evals/grade.ts [label ...]
+//
+// The judges are not yet calibrated against human labels (validate-evaluator):
+// read the critiques, not only the pass rates.
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { startModelBridge } from './model-bridge.ts';
-import { criteria, scenarios } from './quality.ts';
+import { judges, type Judge, type JudgeName } from './judges.ts';
+import { scenarios } from './quality.ts';
 
 interface Run {
   label: string;
@@ -17,36 +22,48 @@ interface Run {
   presented: unknown[];
   results?: unknown[];
 }
-type Scores = Record<keyof typeof criteria, number>;
+interface Verdict {
+  label: string;
+  name: string;
+  judge: JudgeName;
+  critique: string;
+  result: 'Pass' | 'Fail';
+}
 
-const GRADER = `You grade answers from Wisp, an in-game World of Warcraft assistant.
-Judge only against the FACTS, the TOOL RESULTS the agent read and the GOOD ANSWER description, not your own game knowledge: a detail is supported when the facts or a tool result state it, and anything else counts as unsupported.
+const INSTRUCTIONS = `You are an evaluator for Wisp, an in-game World of Warcraft: Forever assistant.
+Judge only against the FACTS, the TOOL RESULTS the agent read and the QUESTION, not your own game knowledge. A detail is supported when the facts or a tool result state it.
 Item names may appear as [[ref:key]] placeholders; the PRESENTED references map those keys to items.
-Score each criterion 0, 1 or 2 using its definition. Be strict and consistent. In notes, give the one or two most important reasons for lost points, in English, under 50 words.`;
+Answer the single criterion below with Pass or Fail. Write a detailed critique that cites the answer before giving the result.`;
 
-// Tool results the grader reads, trimmed so a long run fits its context.
+// Tool results the judge reads, trimmed so a long run fits its context.
 const RESULT_CHARS = 60_000;
 function toolResults(run: Run) {
   const text = JSON.stringify(run.results ?? []);
   return text.length > RESULT_CHARS ? text.slice(0, RESULT_CHARS) + '…(truncated)' : text;
 }
 
-const keys = Object.keys(criteria) as Array<keyof typeof criteria>;
+function prompt(judge: Judge) {
+  return [
+    INSTRUCTIONS,
+    `## Criterion\n${judge.task}`,
+    `## Definitions\nPASS: ${judge.pass}\nFAIL: ${judge.fail}`,
+    '## Examples',
+    ...judge.examples.map(
+      (example, index) =>
+        `### Example ${index + 1}\nAnswer: ${example.answer}\nCritique: ${example.critique}\nResult: ${example.result}`,
+    ),
+  ].join('\n\n');
+}
+
 const schema = {
   type: 'object',
   additionalProperties: false,
-  required: [...keys, 'notes'],
-  properties: {
-    ...Object.fromEntries(keys.map((key) => [key, { type: 'integer', enum: [0, 1, 2] }])),
-    notes: { type: 'string' },
-  },
+  required: ['critique', 'result'],
+  properties: { critique: { type: 'string' }, result: { type: 'string', enum: ['Pass', 'Fail'] } },
 };
 
-async function grade(run: Run, model: string): Promise<Scores & { notes: string }> {
-  const scenario = scenarios[run.name];
-  if (!scenario) {
-    throw new Error('No quality facts for scenario ' + run.name);
-  }
+async function judge(run: Run, name: JudgeName, model: string): Promise<Verdict> {
+  const scenario = scenarios[run.name]!;
   const response = await fetch(process.env.WOW_BRIDGE_URL + '/model/responses', {
     method: 'POST',
     headers: {
@@ -55,7 +72,7 @@ async function grade(run: Run, model: string): Promise<Scores & { notes: string 
     },
     body: JSON.stringify({
       model,
-      instructions: GRADER,
+      instructions: prompt(judges[name]),
       input: [
         {
           role: 'user',
@@ -64,8 +81,6 @@ async function grade(run: Run, model: string): Promise<Scores & { notes: string 
               type: 'input_text',
               text: JSON.stringify({
                 FACTS: scenario.facts,
-                GOOD_ANSWER: scenario.goodAnswer,
-                CRITERIA: criteria,
                 QUESTION: run.prompt,
                 TOOL_RESULTS: toolResults(run),
                 PRESENTED: run.presented,
@@ -75,13 +90,13 @@ async function grade(run: Run, model: string): Promise<Scores & { notes: string 
           ],
         },
       ],
-      text: { format: { type: 'json_schema', name: 'grade', strict: true, schema } },
+      text: { format: { type: 'json_schema', name: 'verdict', strict: true, schema } },
       reasoning: { effort: process.env.WISP_GRADE_EFFORT || 'medium' },
       stream: false,
     }),
   });
   if (!response.ok) {
-    throw new Error('Grader request failed: ' + response.status + ' ' + (await response.text()));
+    throw new Error('Judge request failed: ' + response.status + ' ' + (await response.text()));
   }
   const body = (await response.json()) as {
     output?: Array<{ type: string; content?: Array<{ type: string; text?: string }> }>;
@@ -90,9 +105,9 @@ async function grade(run: Run, model: string): Promise<Scores & { notes: string 
     ?.find((item) => item.type === 'message')
     ?.content?.find((part) => part.type === 'output_text')?.text;
   if (!text) {
-    throw new Error('Grader returned no answer');
+    throw new Error('Judge returned no answer');
   }
-  return JSON.parse(text);
+  return { label: run.label, name: run.name, judge: name, ...JSON.parse(text) };
 }
 
 async function main() {
@@ -103,16 +118,18 @@ async function main() {
     .split('\n')
     .map((line) => JSON.parse(line) as Run)
     .filter((run) => !labels.length || labels.includes(run.label));
+  for (const run of runs) {
+    if (!scenarios[run.name]) throw new Error('No facts for scenario ' + run.name);
+  }
   const bridge = await startModelBridge();
-  const graded: Array<Run & Scores & { notes: string; quality: number }> = [];
+  const model = process.env.WISP_GRADE_MODEL || bridge.model;
+  const queue = runs.flatMap((run) => scenarios[run.name]!.judges.map((name) => ({ run, name })));
+  const verdicts: Verdict[] = [];
   try {
-    const queue = [...runs];
     await Promise.all(
       Array.from({ length: 4 }, async () => {
-        for (let run = queue.shift(); run; run = queue.shift()) {
-          const scores = await grade(run, process.env.WISP_GRADE_MODEL || bridge.model);
-          const quality = keys.reduce((sum, key) => sum + scores[key], 0) / (keys.length * 2);
-          graded.push({ ...run, ...scores, quality });
+        for (let job = queue.shift(); job; job = queue.shift()) {
+          verdicts.push(await judge(job.run, job.name, model));
         }
       }),
     );
@@ -120,36 +137,30 @@ async function main() {
     await bridge.close();
   }
   await writeFile(
-    path.join(dir, 'graded.jsonl'),
-    graded.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+    path.join(dir, 'verdicts.jsonl'),
+    verdicts.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
   );
-  const average = (list: Array<Record<string, any>>, key: string) =>
-    (list.reduce((sum, entry) => sum + entry[key], 0) / list.length).toFixed(2);
-  const groups = new Map<string, typeof graded>();
-  for (const entry of graded) {
-    const key = entry.name + '\t' + entry.label;
-    groups.set(key, [...(groups.get(key) ?? []), entry]);
+  console.log(`Judge model: ${model}\n`);
+  console.log(['scenario', 'label', 'judge', 'passed'].join('\t'));
+  const groups = new Map<string, Verdict[]>();
+  for (const verdict of verdicts) {
+    const key = [verdict.name, verdict.label, verdict.judge].join('\t');
+    groups.set(key, [...(groups.get(key) ?? []), verdict]);
   }
-  console.log(['scenario', 'label', 'n', 'quality', ...keys, 'steps', 'seconds'].join('\t'));
   for (const [key, list] of [...groups].sort()) {
-    console.log(
-      [
-        key,
-        list.length,
-        average(list, 'quality'),
-        ...keys.map((name) => average(list, name)),
-        average(list, 'steps'),
-        average(list, 'seconds'),
-      ].join('\t'),
-    );
+    console.log(`${key}\t${list.filter((v) => v.result === 'Pass').length}/${list.length}`);
   }
-  for (const label of new Set(graded.map((entry) => entry.label))) {
-    const list = graded.filter((entry) => entry.label === label);
-    console.log(['ALL', label, list.length, average(list, 'quality')].join('\t'));
+  for (const name of Object.keys(judges) as JudgeName[]) {
+    const list = verdicts.filter((v) => v.judge === name);
+    if (list.length) {
+      console.log(
+        `ALL\t\t${name}\t${list.filter((v) => v.result === 'Pass').length}/${list.length}`,
+      );
+    }
   }
-  console.log('\nLowest scores:');
-  for (const entry of [...graded].sort((a, b) => a.quality - b.quality).slice(0, 8)) {
-    console.log(`${entry.quality.toFixed(2)} ${entry.name} (${entry.label}): ${entry.notes}`);
+  console.log('\nFailures:');
+  for (const verdict of verdicts.filter((v) => v.result === 'Fail')) {
+    console.log(`- ${verdict.name} (${verdict.label}) ${verdict.judge}: ${verdict.critique}`);
   }
 }
 

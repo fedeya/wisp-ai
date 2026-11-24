@@ -1,6 +1,7 @@
 import { defineEval } from 'eve/evals';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { questStubs } from '../fixtures/world.ts';
+import { commonChecks } from '../checks.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt = 'what quests should I do now?';
@@ -14,6 +15,7 @@ export default defineEval({
     const turn = await session.send(playerMessage(prompt));
     await saveTurn('next-quest', prompt, turn, performance.now() - started);
     turn.expectOk();
+    commonChecks(t, turn);
     t.calledTool('wow__query_character');
     t.notCalledTool('web__web_search').soft();
   },

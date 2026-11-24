@@ -2,6 +2,7 @@ import { defineEval } from 'eve/evals';
 import { satisfies } from 'eve/evals/expect';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
+import { commonChecks } from '../checks.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt = 'what could Shadowfang Keep drop that would actually help me?';
@@ -18,6 +19,7 @@ export default defineEval({
     const turn = await session.send(playerMessage(prompt));
     await saveTurn('shadowfang-loot', prompt, turn, performance.now() - started);
     turn.expectOk();
+    commonChecks(t, turn);
     t.calledTool('wow__dungeon_loot');
     t.notCalledTool('web__web_search').soft();
     t.maxToolCalls(8).soft();

@@ -2,6 +2,7 @@ import { defineEval } from 'eve/evals';
 import { satisfies } from 'eve/evals/expect';
 import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
+import { commonChecks } from '../checks.ts';
 import { saveTurn } from '../report.ts';
 
 const prompt =
@@ -19,6 +20,7 @@ export default defineEval({
     const turn = await session.send(playerMessage(prompt));
     await saveTurn('dungeon-level', prompt, turn, performance.now() - started);
     turn.expectOk();
+    commonChecks(t, turn);
     t.check(
       turn.reply ?? '',
       satisfies((text: string) => /Ragefire|RFC/i.test(text), 'names the first dungeon'),

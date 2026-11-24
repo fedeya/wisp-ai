@@ -244,3 +244,129 @@ export function dungeonStubs(): ToolStub[] {
     },
   ]);
 }
+
+// The game's Death Recap for the character's latest death, modelled on a real
+// chat: two Venture Co. enemies at Windshear Crag, a Fireball finished it.
+export function combatStubs(): ToolStub[] {
+  return json([
+    {
+      id: 'combat',
+      tool: 'wow__read_combat',
+      outcome: {
+        response: {
+          status: 'available',
+          data: {
+            view: 'deaths',
+            deaths: [
+              {
+                diedAt: 1_795_318_990,
+                zone: 'Stonetalon Mountains',
+                subzone: 'Windshear Crag',
+                recap: {
+                  events: [
+                    {
+                      source: 'Venture Co. Deforester',
+                      ability: 'Fireball',
+                      amount: 107,
+                      overkill: 83,
+                      health: 24,
+                    },
+                    { source: 'Venture Co. Logger', ability: 'Throw', amount: 58, health: 82 },
+                    { source: 'Venture Co. Logger', ability: 'Melee', amount: 31, health: 113 },
+                    {
+                      source: 'Venture Co. Deforester',
+                      ability: 'Fireball',
+                      amount: 64,
+                      health: 177,
+                    },
+                  ],
+                  totals: [
+                    { source: 'Venture Co. Logger', amount: 248 },
+                    { source: 'Venture Co. Deforester', amount: 171 },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+  ]);
+}
+
+// Forever PvP progression for a level 21 character that has fought in the
+// open world but never queued a battleground: Civilian, some Honor.
+export function pvpStubs(): ToolStub[] {
+  return json([
+    {
+      id: 'character-pvp',
+      tool: 'wow__query_character',
+      match: { sections: { contains: { const: 'pvp' } } },
+      outcome: {
+        response: {
+          status: 'available',
+          sections: {
+            pvp: {
+              status: 'available',
+              data: {
+                rank: {
+                  rank: 0,
+                  title: 'Civilian',
+                  points: 0,
+                  nextRankPoints: 2000,
+                  weeklyCapPoints: 7500,
+                  note: 'Rank points come from battlegrounds and PvP quests; honorable kills in the open world give Honor, not rank points.',
+                },
+                honor: {
+                  name: 'Honor Points',
+                  amount: 89,
+                  max: 25000,
+                  earnedThisWeek: 89,
+                  note: 'A currency for PvP gear.',
+                },
+                kills: { today: 3, yesterday: 0, lifetime: 12 },
+              },
+            },
+          },
+        },
+      },
+    },
+  ]);
+}
+
+// Rune of Teleportation: the catalog finds the item and Questie places its
+// vendor, Horthus, in Orgrimmar (the item's vendor comes from item sources).
+export function runeStubs(): ToolStub[] {
+  return json([
+    {
+      id: 'rune-search',
+      tool: 'thewowdb__search_database',
+      match: { query: { pattern: '[Rr]une|[Rr]una' } },
+      outcome: {
+        response: {
+          status: 'available',
+          source: { name: 'TheWoWDB', version: 'forever' },
+          results: [{ kind: 'item', id: 17031, name: 'Rune of Teleportation' }],
+        },
+      },
+    },
+    {
+      id: 'horthus',
+      tool: 'questie__find_npc_locations',
+      match: { name: { pattern: '[Hh]orthus' } },
+      outcome: {
+        response: {
+          provider: 'QuestieDB Forever',
+          npcs: [
+            {
+              id: 3335,
+              name: 'Horthus',
+              subName: 'Reagents',
+              locations: [{ mapId: 1454, map: 'Orgrimmar', x: 45.4, y: 56.6 }],
+            },
+          ],
+        },
+      },
+    },
+  ]);
+}
