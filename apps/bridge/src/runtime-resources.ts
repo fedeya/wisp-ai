@@ -1,11 +1,11 @@
 import { Effect, Exit, Scope } from 'effect';
-import { bridgeRuntime } from './logger.ts';
+import type { AppRuntime, AppServices } from './app-runtime.ts';
 
 /**
  * The bridge's lifetime as an Effect scope. Cleanup registered with `defer`
- * (or `acquire` for Effect resources) runs in reverse order when the scope
- * closes; a failing cleanup does not stop the rest, and the failures are
- * reported together once everything has run.
+ * runs in reverse order when the scope closes, and fibers started with `fork`
+ * are interrupted then; a failing cleanup does not stop the rest, and the
+ * failures are reported together once everything has run.
  */
 export class RuntimeResources {
   readonly scope = Scope.makeUnsafe('sequential');
@@ -23,9 +23,9 @@ export class RuntimeResources {
     );
   }
 
-  /** Runs an Effect resource in the bridge scope; its release runs on close. */
-  acquire<A, E>(resource: Effect.Effect<A, E, Scope.Scope>): Promise<A> {
-    return bridgeRuntime.runPromise(Scope.provide(resource, this.scope));
+  /** Runs a long-lived Effect on the app runtime until the bridge scope closes. */
+  fork<E>(runtime: AppRuntime, effect: Effect.Effect<unknown, E, AppServices>) {
+    runtime.runSync(Effect.forkIn(effect, this.scope));
   }
 
   close(): Promise<void> {
