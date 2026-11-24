@@ -7,7 +7,7 @@ import {
   type TextStreamPart,
   type ToolSet,
 } from 'ai';
-import { Cause, Effect, Exit, Queue, Stream } from 'effect';
+import { Cause, Effect, Exit, Queue, Schema, Stream } from 'effect';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { capabilityEnabled } from './capabilities.ts';
@@ -69,9 +69,24 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error ?? 'The response failed.');
 }
 
-/** A promise as an Effect that fails with the promise's own error. */
-const attempt = <A>(run: () => Promise<A>) =>
-  Effect.tryPromise({ try: run, catch: (error) => error });
+/**
+ * A step of a turn failed. `cause` is the original error, which reaches the
+ * bridge unchanged so it can classify usage limits and timeouts.
+ */
+export class AgentTurnError extends Schema.TaggedError<AgentTurnError>()('AgentTurnError', {
+  stage: Schema.Literals(['setup', 'history', 'model']),
+  cause: Schema.Defect(),
+}) {}
+
+/** Compacting a history on request did not produce a summary. */
+export class CompactionFailed extends Schema.TaggedError<CompactionFailed>()(
+  'CompactionFailed',
+  {},
+) {}
+
+/** A promise as an Effect that fails with an AgentTurnError for its stage. */
+const attempt = <A>(stage: AgentTurnError['stage'], run: () => Promise<A>) =>
+  Effect.tryPromise({ try: run, catch: (cause) => new AgentTurnError({ stage, cause }) });
 
 function safeLabel(label: () => string | undefined) {
   try {
@@ -288,14 +303,6 @@ class TurnEvents {
   }
 }
 
-/** A turn whose model stream reported an error. */
-class StreamFailed {
-  readonly error: unknown;
-  constructor(error: unknown) {
-    this.error = error;
-  }
-}
-
 /** Resolves when the signal aborts, as an interruption. */
 const aborted = (signal: AbortSignal) =>
   Effect.callback<never>((resume) => {
@@ -403,117 +410,120 @@ export function createAgentEngine(options: EngineOptions) {
 
   // Summarizes the older part of a history and stores the shorter one; null
   // when summarizing failed and only the recent turns were kept.
-  const compact = (session: string, messages: ModelMessage[], model: LanguageModel) =>
-    Effect.gen(function* () {
-      const { older, recent } = compactionSplit(messages);
-      if (!older.length) {
-        return messages;
-      }
-      const abortSignal = yield* callSignal(new AbortController().signal);
-      const summary = yield* attempt(() =>
-        generateText({
-          model,
-          instructions: SUMMARY_PROMPT,
-          prompt: transcript(older),
-          abortSignal,
+  const compact = Effect.fn('AgentEngine.compact')(function* (
+    session: string,
+    messages: ModelMessage[],
+    model: LanguageModel,
+  ) {
+    const { older, recent } = compactionSplit(messages);
+    if (!older.length) {
+      return messages;
+    }
+    const abortSignal = yield* callSignal(new AbortController().signal);
+    const summary = yield* attempt('model', () =>
+      generateText({
+        model,
+        instructions: SUMMARY_PROMPT,
+        prompt: transcript(older),
+        abortSignal,
+      }),
+    ).pipe(
+      Effect.map((response) => response.text),
+      Effect.catchTag('AgentTurnError', (error) =>
+        Effect.sync(() => {
+          logger.warn(
+            { event: 'agent.compaction_failed', error: errorText(error.cause) },
+            'Compaction failed',
+          );
+          return undefined;
         }),
-      ).pipe(
-        Effect.map((response) => response.text),
-        Effect.catch((error) =>
-          Effect.sync(() => {
-            logger.warn(
-              { event: 'agent.compaction_failed', error: errorText(error) },
-              'Compaction failed',
-            );
-            return undefined;
-          }),
-        ),
-      );
-      if (summary === undefined) {
-        // Keep the turn answerable: drop the older part rather than overflow the context.
-        yield* attempt(() => history.replace(session, recent));
-        return null;
-      }
-      const compacted: ModelMessage[] = [
-        {
-          role: 'user',
-          content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
-        },
-        { role: 'assistant', content: 'Understood; I will continue from that summary.' },
-        ...recent,
-      ];
-      yield* attempt(() => history.replace(session, compacted));
-      return compacted;
-    }).pipe(Effect.scoped);
+      ),
+    );
+    if (summary === undefined) {
+      // Keep the turn answerable: drop the older part rather than overflow the context.
+      yield* attempt('history', () => history.replace(session, recent));
+      return null;
+    }
+    const compacted: ModelMessage[] = [
+      {
+        role: 'user',
+        content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
+      },
+      { role: 'assistant', content: 'Understood; I will continue from that summary.' },
+      ...recent,
+    ];
+    yield* attempt('history', () => history.replace(session, compacted));
+    return compacted;
+  }, Effect.scoped);
 
   // One turn: prepare, maybe compact, then the AI SDK tool loop until the model
   // stops calling tools, a tool ends the turn, or the step budget runs out.
-  const turn = (
+  const turn = Effect.fn('AgentEngine.turn')(function* (
     session: string,
     input: string,
     signal: AbortSignal,
     emit: (event: EngineEvent) => Effect.Effect<unknown>,
-  ) =>
-    Effect.gen(function* () {
-      const content = yield* attempt(() => wispContent());
-      const selected = yield* attempt(() => modelSettings(session, signal));
-      const tools = yield* attempt(() => turnTools(session, signal));
-      const model = turnModel(session, selected, true);
-      yield* emit({ type: 'turn.started', data: {} });
-      // The player's input, as replayable history consumes it (rebuildHistory).
-      yield* emit({ type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } });
+  ) {
+    const content = yield* attempt('setup', () => wispContent());
+    const selected = yield* attempt('setup', () => modelSettings(session, signal));
+    const tools = yield* attempt('setup', () => turnTools(session, signal));
+    const model = turnModel(session, selected, true);
+    yield* emit({ type: 'turn.started', data: {} });
+    // The player's input, as replayable history consumes it (rebuildHistory).
+    yield* emit({ type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } });
 
-      let messages = yield* attempt(() => history.load(session));
-      if (
-        selected.contextWindow &&
-        estimateTokens(messages) + estimateTokens(input) >
-          selected.contextWindow * COMPACTION_THRESHOLD
-      ) {
-        yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
-        const compacted = yield* compact(session, messages, model);
-        yield* emit({
-          type: 'context.settled',
-          data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
-        });
-        messages = compacted ?? (yield* attempt(() => history.load(session)));
-      }
-      const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
-      const user: ModelMessage = {
-        role: 'user',
-        content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
-      };
-      const stored = messages.length;
-      yield* attempt(() => history.append(session, stored, [user]));
+    let messages = yield* attempt('history', () => history.load(session));
+    if (
+      selected.contextWindow &&
+      estimateTokens(messages) + estimateTokens(input) >
+        selected.contextWindow * COMPACTION_THRESHOLD
+    ) {
+      yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
+      const compacted = yield* compact(session, messages, model);
+      yield* emit({
+        type: 'context.settled',
+        data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
+      });
+      messages = compacted ?? (yield* attempt('history', () => history.load(session)));
+    }
+    const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
+    const user: ModelMessage = {
+      role: 'user',
+      content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
+    };
+    const stored = messages.length;
+    yield* attempt('history', () => history.append(session, stored, [user]));
 
-      const assembled = assembleTools({
-        session,
-        signal,
-        direct: tools.direct,
-        deferred: tools.deferred,
-        skills: content.skills,
-        stub,
-      });
-      const result = streamText({
-        model,
-        instructions: content.system,
-        messages: [...messages, user],
-        tools: assembled.tools,
-        abortSignal: yield* callSignal(signal),
-        ...turnOptions(tools.direct, selected),
-      });
-      const events = new TurnEvents(assembled);
-      yield* Stream.fromAsyncIterable(result.fullStream, (error) => new StreamFailed(error)).pipe(
-        Stream.runForEach((part) => Effect.forEach(events.read(part), emit)),
-      );
-      if (events.failure !== undefined) {
-        return yield* Effect.fail(new StreamFailed(events.failure));
-      }
-      // Every step's messages, tool calls and results included.
-      const response = yield* attempt(() => Promise.resolve(result.responseMessages));
-      if (response.length) {
-        yield* attempt(() => history.append(session, stored + 1, response));
-      }
-    }).pipe(Effect.scoped);
+    const assembled = assembleTools({
+      session,
+      signal,
+      direct: tools.direct,
+      deferred: tools.deferred,
+      skills: content.skills,
+      stub,
+    });
+    const result = streamText({
+      model,
+      instructions: content.system,
+      messages: [...messages, user],
+      tools: assembled.tools,
+      abortSignal: yield* callSignal(signal),
+      ...turnOptions(tools.direct, selected),
+    });
+    const events = new TurnEvents(assembled);
+    yield* Stream.fromAsyncIterable(
+      result.fullStream,
+      (cause) => new AgentTurnError({ stage: 'model', cause }),
+    ).pipe(Stream.runForEach((part) => Effect.forEach(events.read(part), emit)));
+    if (events.failure !== undefined) {
+      return yield* new AgentTurnError({ stage: 'model', cause: events.failure });
+    }
+    // Every step's messages, tool calls and results included.
+    const response = yield* attempt('model', () => Promise.resolve(result.responseMessages));
+    if (response.length) {
+      yield* attempt('history', () => history.append(session, stored + 1, response));
+    }
+  }, Effect.scoped);
 
   function settled(exit: Exit.Exit<unknown, unknown>, signal: AbortSignal): EngineResult {
     if (signal.aborted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))) {
@@ -523,7 +533,12 @@ export function createAgentEngine(options: EngineOptions) {
       return { status: 'completed' };
     }
     const squashed = Cause.squash(exit.cause);
-    const error = squashed instanceof StreamFailed ? squashed.error : squashed;
+    const error =
+      squashed instanceof AgentTurnError
+        ? squashed.cause
+        : squashed instanceof CompactionFailed
+          ? new Error('Compaction failed.')
+          : squashed;
     logger.warn({ event: 'agent.turn_failed', error: errorText(error) }, 'Agent turn failed');
     return {
       status: 'failed',
@@ -563,12 +578,12 @@ export function createAgentEngine(options: EngineOptions) {
     compact(session: string, signal: AbortSignal) {
       return events(signal, (emit) =>
         Effect.gen(function* () {
-          const selected = yield* attempt(() => modelSettings(session, signal));
+          const selected = yield* attempt('setup', () => modelSettings(session, signal));
           const model = turnModel(session, selected, false);
           yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
           const compacted = yield* compact(
             session,
-            yield* attempt(() => history.load(session)),
+            yield* attempt('history', () => history.load(session)),
             model,
           );
           yield* emit({
@@ -576,7 +591,7 @@ export function createAgentEngine(options: EngineOptions) {
             data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
           });
           if (!compacted) {
-            return yield* Effect.fail(Error('Compaction failed.'));
+            return yield* new CompactionFailed();
           }
         }),
       );
