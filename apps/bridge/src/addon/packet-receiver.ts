@@ -653,6 +653,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     }
     if (packet.type === 'cancel') {
       const chat = chatFor(packet.chat);
+      if (chat) {
+        interrupt(chat);
+      }
       if (chat?.eveId) {
         void client.sessions
           .attach(chat.eveId)

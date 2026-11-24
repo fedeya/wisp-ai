@@ -1,6 +1,7 @@
 import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
 import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
+import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { GameRequests } from '../src/addon/game-requests.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
@@ -56,6 +57,86 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   });
   return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
 }
+
+test('Stop during first-turn model preparation prevents engine dispatch', async () => {
+  const chat = newChat('chat', 'one');
+  const state = createSessionState([chat]);
+  state.activeTransport = 'one';
+  state.activeChat = chat.id;
+  let releasePreparation!: () => void;
+  const preparation = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  const prepare = vi.fn(() => preparation);
+  const send = vi.fn(async () => ({
+    stream: async function* () {},
+    result: async () => ({ status: 'completed', sessionEnded: false }),
+  }));
+  const session = { id: 'eve', send, cancel: vi.fn(async () => {}) };
+  const create = vi.fn(async () => ({ session }));
+  const client = {
+    sessions: { create, attach: vi.fn(() => session) },
+  } as unknown as Pick<Client, 'sessions'>;
+  const capabilitySettings = new CapabilitySettings('unused');
+  const run = createTurnRunner({
+    client,
+    models: {
+      prepare,
+      models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
+      complete: vi.fn(async () => 'Unused title'),
+    },
+    capabilitySettings,
+    currentTransport: () => state.activeTransport,
+    activeChat: () => state.activeChat,
+    defaultModel: () => 'model',
+    isReady: () => true,
+    isStopping: () => false,
+    accountBusy: () => false,
+    isCurrent: (candidate) => state.chats.includes(candidate),
+    changed: () => {},
+    logger: { info: vi.fn(), error: vi.fn() },
+  });
+  const { receive } = fixture({ state, client, capabilitySettings, run, interrupt: run.interrupt });
+  try {
+    receive(
+      packetSchema.parse({
+        type: 'say',
+        session: 'one',
+        chat: chat.id,
+        text: 'Question',
+        seq: 1,
+        at: 1,
+      }),
+    );
+    await vi.waitFor(() => expect(prepare).toHaveBeenCalledWith('model'));
+    expect(chat.status).toBe('working');
+    expect(chat.eveId).toBeUndefined();
+    expect(create).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
+  } finally {
+    releasePreparation();
+    await run.drain();
+  }
+  expect(send).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+  expect(chat.status).toBe('interrupted');
+});
+
+test('Stop interrupts locally and still cancels an existing Eve session', () => {
+  const f = fixture();
+  f.receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: 'old', seq: 1, at: 1 }));
+  expect(f.interrupt).toHaveBeenCalledExactlyOnceWith(f.state.chats[0]);
+  expect(f.cancel).toHaveBeenCalledTimes(1);
+});
+
+test('a stale-session cancel cannot interrupt or cancel the current chat', () => {
+  const f = fixture();
+  f.receive(packetSchema.parse({ type: 'cancel', session: 'stale', chat: 'old', seq: 1, at: 1 }));
+  expect(f.interrupt).not.toHaveBeenCalled();
+  expect(f.cancel).not.toHaveBeenCalled();
+  expect(f.state.chats[0].status).toBe('working');
+});
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
   const f = fixture();
