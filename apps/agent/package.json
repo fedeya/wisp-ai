@@ -12,6 +12,7 @@
   "exports": {
     "./package.json": "./package.json",
     "./agent-rpc": "./src/agent-rpc.ts",
+    "./agent-host": "./src/agent-host.ts",
     "./agent-memory": "./src/agent-memory.ts",
     "./enabled-tool": "./src/enabled-tool.ts",
     "./model-tools": "./src/model-tools.ts",

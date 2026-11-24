@@ -5,8 +5,13 @@ import {
   type RpcInput,
   type RpcOutput,
 } from '@wisp/protocol/agent-rpc';
+import { agentHost } from './agent-host.ts';
 export function bridgeOrigin() {
-  return new URL(process.env.WOW_BRIDGE_URL || 'http://127.0.0.1:43187').origin;
+  return new URL(agentHost()?.origin || process.env.WOW_BRIDGE_URL || 'http://127.0.0.1:43187')
+    .origin;
+}
+function bridgeToken() {
+  return agentHost()?.token ?? process.env.WOW_BRIDGE_TOKEN;
 }
 export async function agentRPC<K extends RpcEndpoint>(
   endpoint: K,
@@ -18,7 +23,7 @@ export async function agentRPC<K extends RpcEndpoint>(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: 'Bearer ' + process.env.WOW_BRIDGE_TOKEN,
+      authorization: 'Bearer ' + bridgeToken(),
     },
     body: JSON.stringify(rpcRequests[endpoint].parse(data)),
     signal: signal

@@ -56,6 +56,9 @@ import { appPaths } from './app-paths.ts';
 import { addonVersionFromToc } from './addon/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
+import { setAgentHost } from '@wisp/agent/agent-host';
+import { createMastraEngine } from './agent/mastra-engine.ts';
+import { createEngineClient } from './agent/engine-client.ts';
 export interface BridgeOptions {
   resourceRoot?: string;
   dataDirectory?: string;
@@ -298,11 +301,34 @@ export async function startBridge(options: BridgeOptions = {}) {
         );
       changed();
     }
+    // Spike: the mastra_engine flag answers new sessions in process instead of Eve.
+    let mastraEngine: ReturnType<typeof createMastraEngine> | undefined;
+    const engineClient = createEngineClient(
+      client,
+      () => {
+        if (!mastraEngine) {
+          setAgentHost({
+            origin: agentOrigin,
+            token,
+            capabilitiesFile: capabilitySettings.agentFile,
+          });
+          mastraEngine = createMastraEngine({
+            agentRoot: paths.agent,
+            runtimeDir: runtime,
+            origin: () => agentOrigin,
+            token,
+            logger,
+          });
+        }
+        return mastraEngine;
+      },
+      () => features.enabled('mastra_engine'),
+    );
     const run = createTurnRunner({
       telemetry,
       modelFailures,
       modelProvider: (model) => connections.provider(model),
-      client,
+      client: engineClient,
       models: connections,
       capabilitySettings,
       changed,
@@ -342,7 +368,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     const receivePacket = createPacketReceiver({
       telemetry,
       state,
-      client,
+      client: engineClient,
       pending,
       integrationState,
       capabilitySettings,
