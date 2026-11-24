@@ -51,6 +51,10 @@ export class McpRelay {
           throw Error('MCP tool disabled');
         }
         const c = await this.manager.connect(name);
+        // Permissions may change while the initial connection discovers tools.
+        if (!this.allowed(name, request.params.name) || !this.manager.servers[name]?.enabled) {
+          throw Error('MCP tool disabled');
+        }
         const tool = c.tools.find((t) => t.name === request.params.name);
         if (!tool) {
           throw Error('Unknown MCP tool');
