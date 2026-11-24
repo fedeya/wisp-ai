@@ -20,7 +20,7 @@ function signal() {
 test('pausing while claim awaits dispatch blocks a run even with the same updatedAt', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
   const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
-  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   const releaseClaim = signal();
   let stop: (() => Promise<void>) | undefined;
   try {
@@ -119,7 +119,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
 test('a 65-second automatic turn yields to the next routine without overlapping turns', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
   const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
-  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   const releaseA = signal();
   const releaseB = signal();
   let stop: (() => Promise<void>) | undefined;
@@ -195,7 +195,8 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     await settledA.promise;
     expect(store.history()[0].finishedAt).toBe(start + 125000);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    // The next check comes one interval after A finished.
+    await vi.advanceTimersByTimeAsync(3000);
     await startedB.promise;
     expect(selected).toEqual(['a', 'b']);
     expect(active).toBe(1);
