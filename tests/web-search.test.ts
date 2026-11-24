@@ -2,7 +2,11 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Layer, ManagedRuntime } from 'effect';
+import { FetchHttpClient } from 'effect/http';
 import { WebSearch } from '@wisp/bridge/web-search';
+import { Exa } from '@wisp/bridge/exa';
+import { HttpClientLive } from '@wisp/bridge/http-client';
 import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
 import { connectionModel } from '@wisp/agent/connection-model';
 
@@ -15,6 +19,16 @@ afterEach(async () => {
     temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
+// The Exa service on a fake fetch, as the bridge's app runtime provides it.
+function exaRuntime(fetcher: typeof fetch) {
+  return ManagedRuntime.make(
+    Exa.layer.pipe(
+      Layer.provide(HttpClientLive),
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetcher)),
+    ),
+  );
+}
+
 async function fixture(fetcher: typeof fetch = vi.fn()) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'wisp-search-'));
   temporary.push(directory);
@@ -51,7 +65,7 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
     ),
   };
   const file = path.join(directory, 'search.json');
-  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, fetcher);
+  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, exaRuntime(fetcher));
   await search.load();
   return {
     search,
@@ -78,7 +92,12 @@ test('Exa credentials are separate from language models, protected, persistent, 
   expect(await readFile(f.file, 'utf8')).not.toContain('exa-secret');
   expect(JSON.stringify(f.search.state())).not.toContain('exa-secret');
   expect(f.search.available(apiModel)).toBe(true);
-  const restored = new WebSearch(f.file, f.vault, f.auth as unknown as ChatGPTAuth);
+  const restored = new WebSearch(
+    f.file,
+    f.vault,
+    f.auth as unknown as ChatGPTAuth,
+    exaRuntime(vi.fn()),
+  );
   await restored.load();
   expect(restored.state()).toEqual({ provider: 'auto', hasExaKey: true });
   await restored.save({ provider: 'exa' });
