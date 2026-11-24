@@ -5,6 +5,10 @@ import {
   type WebSearchInput,
 } from '@wisp/protocol/search';
 import { parseConnectionModel } from '@wisp/protocol/providers';
+import { Cause, Duration, Effect, Exit, Stream } from 'effect';
+import { HttpBody, HttpClient } from 'effect/http';
+import { withHttpClient } from '../http-client.ts';
+import { bridgeRuntime } from '../../logger.ts';
 import type { z } from 'zod';
 import type { SecretVault } from '../../auth/secret-vault.ts';
 import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
@@ -125,7 +129,6 @@ export class WebSearch implements WowheadSearch {
     signal?: AbortSignal,
     budget = resolveWebSearch(query),
   ) {
-    const timeout = AbortSignal.timeout(budget.timeoutSeconds * 1000);
     const search = {
       query,
       type: 'auto',
@@ -133,72 +136,78 @@ export class WebSearch implements WowheadSearch {
     };
     // Exa's hosted MCP offers limited public search without a credential.
     // A saved key explicitly opts into the account's REST quota and billing.
-    const response = await this.fetcher(key ? exaEndpoint : exaPublicEndpoint, {
-      method: 'POST',
-      headers: key
-        ? { 'content-type': 'application/json', 'x-api-key': key }
-        : { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify(
-        key
-          ? { ...search, contents: { text: { maxCharacters: budget.excerptCharacters } } }
-          : {
-              jsonrpc: '2.0',
-              id: 1,
-              method: 'tools/call',
-              params: {
-                name: 'web_search_advanced_exa',
-                arguments: { ...search, textMaxCharacters: budget.excerptCharacters },
-              },
-            },
-      ),
-      redirect: 'error',
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    });
-    if (!response.ok) {
-      // Do not propagate upstream bodies which might echo credentials/queries.
-      const message =
-        response.status === 401 || response.status === 403
-          ? key
-            ? 'Exa rejected the API key. Check it in Connections.'
-            : 'Exa public access was rejected. Try a direct IPv4 connection or configure an optional API key in Connections.'
-          : response.status === 402
-            ? 'Exa credits are exhausted. Check your Exa account.'
-            : response.status === 429
-              ? 'Exa rate limit reached. Try again later or configure an optional API key in Connections.'
-              : `Exa search failed (HTTP ${response.status}). Try again later.`;
-      await response.body?.cancel();
-      throw new ExaSearchError(message);
-    }
-    // Bound the complete response, including metadata, before JSON parsing.
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw Error('Exa returned no search response.');
-    }
-    const chunks: Uint8Array[] = [];
-    let size = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        size += value.byteLength;
-        if (size > 1024 * 1024) {
-          throw Error('Exa search response was too large.');
-        }
-        chunks.push(value);
+    const request = Effect.gen({ self: this }, function* () {
+      // A dropped connection is retried once; an answer (even a failure) is final.
+      const client = (yield* HttpClient.HttpClient).pipe(
+        HttpClient.retryTransient({ retryOn: 'errors-only', times: 1 }),
+        HttpClient.timeout(Duration.seconds(budget.timeoutSeconds)),
+      );
+      const response = yield* client.post(key ? exaEndpoint : exaPublicEndpoint, {
+        headers: key
+          ? { 'content-type': 'application/json', 'x-api-key': key }
+          : { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: HttpBody.text(
+          JSON.stringify(
+            key
+              ? { ...search, contents: { text: { maxCharacters: budget.excerptCharacters } } }
+              : {
+                  jsonrpc: '2.0',
+                  id: 1,
+                  method: 'tools/call',
+                  params: {
+                    name: 'web_search_advanced_exa',
+                    arguments: { ...search, textMaxCharacters: budget.excerptCharacters },
+                  },
+                },
+          ),
+          'application/json',
+        ),
+      });
+      if (response.status < 200 || response.status >= 300) {
+        // Do not propagate upstream bodies which might echo credentials/queries.
+        return yield* Effect.fail(
+          new ExaSearchError(
+            response.status === 401 || response.status === 403
+              ? key
+                ? 'Exa rejected the API key. Check it in Connections.'
+                : 'Exa public access was rejected. Try a direct IPv4 connection or configure an optional API key in Connections.'
+              : response.status === 402
+                ? 'Exa credits are exhausted. Check your Exa account.'
+                : response.status === 429
+                  ? 'Exa rate limit reached. Try again later or configure an optional API key in Connections.'
+                  : `Exa search failed (HTTP ${response.status}). Try again later.`,
+          ),
+        );
       }
-    } finally {
-      await reader.cancel().catch(() => {});
+      // Bound the complete response, including metadata, before JSON parsing.
+      const chunks = yield* response.stream.pipe(
+        Stream.runFold(
+          () => ({ size: 0, chunks: [] as Uint8Array[] }),
+          (read, chunk) => {
+            read.size += chunk.byteLength;
+            if (read.size > 1024 * 1024) {
+              throw new Error('Exa search response was too large.');
+            }
+            read.chunks.push(chunk);
+            return read;
+          },
+        ),
+      );
+      return {
+        body: Buffer.concat(chunks.chunks).toString('utf8'),
+        contentType: response.headers['content-type'],
+      };
+    }).pipe(withHttpClient(this.fetcher));
+    const exit = await bridgeRuntime.runPromiseExit(request, signal ? { signal } : undefined);
+    if (Exit.isFailure(exit)) {
+      throw Cause.squash(exit.cause);
     }
-    const body = Buffer.concat(chunks).toString('utf8');
+    const { body, contentType } = exit.value;
     let data: unknown;
     if (key) {
       data = JSON.parse(body);
     } else {
-      const messages: unknown[] = response.headers
-        .get('content-type')
-        ?.includes('text/event-stream')
+      const messages: unknown[] = contentType?.includes('text/event-stream')
         ? body
             .replace(/\r\n/g, '\n')
             .split('\n\n')

@@ -1,4 +1,8 @@
+import { Effect, Schedule } from 'effect';
+import { HttpClient } from 'effect/http';
+import { withHttpClient } from './http-client.ts';
 import { z } from 'zod';
+import { bridgeRuntime } from '../logger.ts';
 
 const API = 'https://thewowdb.com/api/v1/forever/';
 import { databaseRequest } from '@wisp/protocol/database';
@@ -36,16 +40,21 @@ export class TheWoWDB {
     if (cached && cached.expiresAt > this.now()) {
       return this.result(source, cached, true);
     }
-    try {
-      const response = await this.fetcher(url, {
+    const lookup = Effect.gen({ self: this }, function* () {
+      // A dropped connection is retried; an answer (even a failed status) is final.
+      const client = (yield* HttpClient.HttpClient).pipe(
+        HttpClient.retryTransient({
+          retryOn: 'errors-only',
+          times: 2,
+          schedule: Schedule.exponential('200 millis'),
+        }),
+        HttpClient.timeout('20 seconds'),
+      );
+      const response = yield* client.get(url, {
         headers: {
           accept: 'application/json',
           ...(cached?.etag ? { 'if-none-match': cached.etag } : {}),
         },
-        redirect: 'error',
-        signal: signal
-          ? AbortSignal.any([signal, AbortSignal.timeout(20000)])
-          : AbortSignal.timeout(20000),
       });
       if (response.status === 304 && cached) {
         cached.expiresAt = this.now() + 3600000;
@@ -58,41 +67,28 @@ export class TheWoWDB {
           note: 'Not found in this source; this does not prove the entity is absent from Forever.',
         };
       }
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
         return {
           status: 'unavailable',
           source,
           httpStatus: response.status,
-          retryAfter: response.headers.get('retry-after'),
+          retryAfter: response.headers['retry-after'] ?? null,
           note: 'Source unavailable. Use a permitted Forever fallback; do not treat this as no matches.',
         };
       }
-      const text = await response.text();
+      const text = yield* response.text;
       if (text.length > 2 * 1024 * 1024) {
-        throw new Error('Database response is too large');
+        return yield* Effect.fail(new Error('Database response is too large'));
       }
-      const data: unknown = JSON.parse(text);
-      if (!object(data) || data.version !== 'forever' || data.kind !== request.kind) {
-        throw new Error('Database response did not confirm the requested Forever version and kind');
+      const data = yield* Effect.try(() => JSON.parse(text) as unknown);
+      const invalid = this.invalid(request, data);
+      if (invalid) {
+        return yield* Effect.fail(new Error(invalid));
       }
-      if (request.operation === 'search') {
-        if (
-          !Array.isArray(data.results) ||
-          data.results.some(
-            (row) => !object(row) || row.version !== 'forever' || row.kind !== request.kind,
-          )
-        ) {
-          throw new Error('Database search contained unverified or other-version records');
-        }
-      } else if (data.id !== request.id) {
-        throw new Error('Database returned a different entity');
-      }
-      const ttl = Number(
-        response.headers.get('cache-control')?.match(/max-age=(\d+)/)?.[1] ?? 3600,
-      );
+      const ttl = Number(response.headers['cache-control']?.match(/max-age=(\d+)/)?.[1] ?? 3600);
       const entry = {
-        data,
-        etag: response.headers.get('etag') ?? undefined,
+        data: data as JsonRecord,
+        etag: response.headers.etag,
         expiresAt: this.now() + Math.min(ttl, 3600) * 1000,
         fetchedAt: new Date(this.now()).toISOString(),
       };
@@ -101,14 +97,38 @@ export class TheWoWDB {
       }
       this.cache.set(url.href, entry);
       return this.result(source, entry, false);
-    } catch (error) {
-      return {
-        status: 'unavailable',
-        source,
-        error: error instanceof Error ? error.message : 'Database request failed',
-        note: 'No verified data was returned. Use a permitted Forever fallback.',
-      };
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.succeed({
+          status: 'unavailable',
+          source,
+          error: error instanceof Error ? error.message : 'Database request failed',
+          note: 'No verified data was returned. Use a permitted Forever fallback.',
+        }),
+      ),
+      withHttpClient(this.fetcher),
+    );
+    return bridgeRuntime.runPromise(lookup, signal ? { signal } : undefined);
+  }
+
+  // Why a response cannot be used: another version, kind or entity.
+  private invalid(request: z.infer<typeof databaseRequest>, data: unknown) {
+    if (!object(data) || data.version !== 'forever' || data.kind !== request.kind) {
+      return 'Database response did not confirm the requested Forever version and kind';
     }
+    if (request.operation === 'search') {
+      if (
+        !Array.isArray(data.results) ||
+        data.results.some(
+          (row) => !object(row) || row.version !== 'forever' || row.kind !== request.kind,
+        )
+      ) {
+        return 'Database search contained unverified or other-version records';
+      }
+    } else if (data.id !== request.id) {
+      return 'Database returned a different entity';
+    }
+    return undefined;
   }
 
   private result(

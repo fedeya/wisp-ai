@@ -131,3 +131,32 @@ test('source errors and rate limits stay distinct from empty searches', async ()
     'no_matches',
   );
 });
+
+test('a dropped connection is retried, while an answered failure is not', async () => {
+  let calls = 0;
+  const database = new TheWoWDB({
+    fetch: (async () => {
+      calls++;
+      if (calls === 1) {
+        throw new TypeError('fetch failed');
+      }
+      return Response.json(spell);
+    }) as typeof fetch,
+  });
+  const result = await database.query({ operation: 'get', kind: 'spell', id: 122 });
+  assert.equal(result.status, 'available');
+  assert.equal(calls, 2);
+
+  let failures = 0;
+  const unavailable = new TheWoWDB({
+    fetch: (async () => {
+      failures++;
+      return new Response(null, { status: 503 });
+    }) as typeof fetch,
+  });
+  assert.equal(
+    (await unavailable.query({ operation: 'get', kind: 'spell', id: 122 })).status,
+    'unavailable',
+  );
+  assert.equal(failures, 1);
+});
