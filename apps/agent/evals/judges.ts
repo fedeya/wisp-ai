@@ -13,8 +13,8 @@ export interface Judge {
 export const judges = {
   'unsupported-claim': {
     task: 'Does the answer state a game fact (a location, coordinate, number, mechanic, source, or "what players usually do") that neither the FACTS nor the TOOL RESULTS support, without saying it is unverified?',
-    pass: 'Every concrete game fact is backed by the facts or a tool result, or is clearly marked as unverified or as the assistant’s own suggestion. General advice that states no game fact (pull one enemy at a time) is fine.',
-    fail: 'At least one concrete game fact is stated as true without support: an invented location or coordinate, a made-up price or drop rate, a mechanic stated with certainty that no source gave, or the assistant’s own idea presented as common practice.',
+    pass: 'Every concrete game fact is backed by the facts or a tool result, or is clearly marked as unverified or as the assistant’s own suggestion. General gameplay advice that names no Forever-specific place, number or mechanic (pull one enemy at a time, break line of sight behind cover, drink between pulls) is fine.',
+    fail: 'At least one concrete game fact is stated as true without support: an invented location or coordinate, a made-up price or drop rate, a mechanic stated with certainty that no source gave, or the assistant’s own idea presented as common practice. Calling a wand an upgrade from its stats while its damage per second is unknown, without saying so, also fails: for a wand the damage matters most.',
     examples: [
       {
         answer:
@@ -28,6 +28,20 @@ export const judges = {
         critique:
           'Presents a keybinding as what players usually use, but no source supports it; it is the assistant’s own idea stated as common practice.',
         result: 'Fail',
+      },
+      {
+        answer:
+          'Run Ragefire Chasm for a wand upgrade: the Shadow Wand gives +2 Intellect and +1 Spirit.',
+        critique:
+          'The stats match the data, but no source gives either wand’s damage per second; calling it an upgrade without saying the damage is unknown overstates it.',
+        result: 'Fail',
+      },
+      {
+        answer:
+          'Next time, pull one at a time; if both join, duck behind cover to break the caster’s line of sight.',
+        critique:
+          'General gameplay advice that names no Forever-specific fact; the killer and damage it builds on come from the combat reading.',
+        result: 'Pass',
       },
       {
         answer:

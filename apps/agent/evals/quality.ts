@@ -5,7 +5,7 @@
 import type { JudgeName } from './judges.ts';
 
 const character =
-  'Fedrath, level 21 Orc Mage (Horde) on realm Vorn, in Orgrimmar (Valley of Strength), 2g 14s 50c. ' +
+  'Fedrath, level 21 Orc Mage (Horde) on realm Vorn, in Orgrimmar (Valley of Strength, at 52, 48 on the Orgrimmar map), 2g 14s 50c. ' +
   'Empty slots: head, neck, shoulder, second ring. Weak: feet (Woolen Boots, ilvl 13, +1 sta +1 int), ' +
   'wrist (ilvl 10, +1 int), waist (ilvl 12, +1 sta), first ring (Rough Copper Ring, +1 sta). ' +
   'Wand: Smoldering Wand (ilvl 18, no stats listed; ranged DPS unknown). English game client.';
@@ -46,7 +46,7 @@ export const scenarios: Record<string, Scenario> = {
     facts:
       character +
       `
-wow__query_dungeons returned, from the game's group finder with entrances from Wisp's table of the game's map data (5-player dungeons, name range; entrance zone x, y): Ragefire Chasm 13-18 (Orgrimmar 53, 48.9); Hall of Thanes 13-20 (Ironforge, an Alliance city); Wailing Caverns 15-24 (The Barrens 47.7, 35); Ruins of Lordaeron 15-22 (Undercity 72.5, 11.4); The Deadmines 17-26 (Westfall, Alliance territory); Shadowfang Keep 20-30 (Silverpine Forest 44.7, 67.8); Blackfathom Deeps 24-32 (Ashenvale); Excavation Site: Wetlands 26-33; City of Dalaran 28-35 (Alterac Mountains); Gnomeregan 29-38 (Dun Morogh, Alliance territory); Razorfen Kraul 29-38 (The Barrens); Scarlet Monastery - Graveyard 30-38 (Tirisfal Glades); The Drowned City 35-42; Krol'dok Stronghold 40-47. Ruins of Lordaeron, Hall of Thanes, the Excavation Site, Dalaran, The Drowned City and Krol'dok are new in Forever (the reading does not say so; saying it is fine). No best level, quest counts or drops were returned. Forever has no automatic Dungeon Finder.`,
+wow__query_dungeons returned, from the game's group finder with entrances from Wisp's table of the game's map data (5-player dungeons, name range; entrance zone x, y): Ragefire Chasm 13-18 (Orgrimmar 53, 48.9); Hall of Thanes 13-20 (Ironforge, an Alliance city); Wailing Caverns 15-24 (The Barrens 47.7, 35); Ruins of Lordaeron 15-22 (Undercity 72.5, 11.4); The Deadmines 17-26 (Westfall, Alliance territory); Shadowfang Keep 20-30 (Silverpine Forest 44.7, 67.8); Blackfathom Deeps 24-32 (Ashenvale); Excavation Site: Wetlands 26-33; City of Dalaran 28-35 (Alterac Mountains); Gnomeregan 29-38 (Dun Morogh, Alliance territory); Razorfen Kraul 29-38 (The Barrens); Scarlet Monastery - Graveyard 30-38 (Tirisfal Glades); The Drowned City 35-42; Krol'dok Stronghold 40-47. Ruins of Lordaeron, Hall of Thanes, the Excavation Site, Dalaran, The Drowned City and Krol'dok are new in Forever (the reading does not say so; saying it is fine). No best level, quest counts or drops were returned. Forever has no automatic Dungeon Finder. The tool describes the ranges as the group finder's suggested levels, so they are suggestions, not entry requirements.`,
     goodAnswer:
       'Answers that a level 21 mage can already do dungeons, recommends Wailing Caverns or Ruins of Lordaeron as the right fit now, notes Ragefire Chasm is easy and close, gives the returned ranges for the dungeons around this level (including the Forever-only ones), and flags dungeons whose entrance is in Alliance territory or cities. Inventing an automatic dungeon finder, dungeons or ranges not returned lowers correctness.',
   },
@@ -100,7 +100,7 @@ wow__dungeon_loot for Molten Core returned all 10 bosses (Lucifron, Magmadar, Ge
     facts:
       character +
       `
-Wailing Caverns is a 15-24 dungeon (The Barrens 47.7, 35). wow__dungeon_loot returned, among others: Snake Eye Kaleidoscope (Lady Anacondra, neck, +4 int +3 spi), Slither Cord (Lord Pythas, waist, +3 int +3 sp), Slime-encrusted Pads (Mutanus, shoulders, +4 int +3 sta, 29.6%), Deep Fathom Ring (Mutanus, ring, +3 sta +3 spi, 30.55%), Living Root (Verdan, staff, +4 int +9 spi: loses int and stamina against the equipped staff). Fang set pieces are leather and were hidden for a mage.`,
+Wailing Caverns is a 5-player dungeon with a suggested range of 15-24 in the group finder (The Barrens 47.7, 35). wow__dungeon_loot returned, among others: Snake Eye Kaleidoscope (Lady Anacondra, neck, +4 int +3 spi), Slither Cord (Lord Pythas, waist, +3 int +3 sp), Slime-encrusted Pads (Mutanus, shoulders, +4 int +3 sta, 29.6%), Deep Fathom Ring (Mutanus, ring, +3 sta +3 spi, 30.55%), Living Root (Verdan, staff, +4 int +9 spi: loses int and stamina against the equipped staff). Fang set pieces are leather and were hidden for a mage.`,
     goodAnswer:
       'Says yes, the dungeon fits level 21 and has upgrades for the empty neck, shoulder and ring slots plus the belt, names the bosses that drop them, suggests going through Mutanus, and does not recommend leather or weapons a mage cannot use.',
   },
@@ -128,7 +128,7 @@ wow__read_combat (Death Recap) returned the latest death at Windshear Crag, Ston
     facts:
       character +
       `
-wow__query_character pvp: rank 0 (Civilian), 0 of 2000 rank points to the next rank, weekly cap 7500; Honor Points 89 of 25000, all earned this week (a currency for PvP gear); honorable kills 3 today, 12 lifetime. The reading notes that rank points come from battlegrounds and PvP quests, and open-world honorable kills give Honor, not rank points.`,
+wow__query_character pvp: rank 0 (Civilian), 0 of 2000 rank points to the next rank, weekly cap 7500; Honor Points 89 of 25000, all earned this week (a currency for PvP gear); honorable kills 3 today, 12 lifetime. The reading notes that rank points come from battlegrounds and PvP quests, and open-world honorable kills give Honor, not rank points. Wisp's PvP instructions add that the season's weekly PvP tasks also grant rank points.`,
     goodAnswer:
       'Says no: open-world kills give Honor (89 so far), not rank points, so they do not lift Civilian; rank points come from battlegrounds and PvP quests. Uses the reading instead of asking the player.',
   },

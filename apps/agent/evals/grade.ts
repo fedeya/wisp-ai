@@ -4,8 +4,11 @@
 //
 //   node apps/agent/evals/grade.ts [label ...]
 //
-// The judges are not yet calibrated against human labels (validate-evaluator):
-// read the critiques, not only the pass rates.
+// Calibration (2026-11-23): 50 verdicts on the 26 English eval runs, labeled
+// by Claude with the player deciding the ambiguous patterns. Agreement on
+// Pass / Fail labels: unsupported-claim 20/22 and 4/4, the other judges 24/24
+// Pass (no Fail examples yet). The set is small: read the critiques, and
+// relabel after changing a judge, its examples or the model.
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { startModelBridge } from './model-bridge.ts';
@@ -23,6 +26,7 @@ interface Run {
   results?: unknown[];
 }
 interface Verdict {
+  run: number;
   label: string;
   name: string;
   judge: JudgeName;
@@ -33,6 +37,7 @@ interface Verdict {
 const INSTRUCTIONS = `You are an evaluator for Wisp, an in-game World of Warcraft: Forever assistant.
 Judge only against the FACTS, the TOOL RESULTS the agent read and the QUESTION, not your own game knowledge. A detail is supported when the facts or a tool result state it.
 Item names may appear as [[ref:key]] placeholders; the PRESENTED references map those keys to items.
+Stat keys use the game's own names: ITEM_MOD_INTELLECT_SHORT is Intellect, ITEM_MOD_SPELL_POWER_SHORT spell power, RESISTANCE0_NAME armor, and so on.
 Answer the single criterion below with Pass or Fail. Write a detailed critique that cites the answer before giving the result.`;
 
 // Tool results the judge reads, trimmed so a long run fits its context.
@@ -62,39 +67,46 @@ const schema = {
   properties: { critique: { type: 'string' }, result: { type: 'string', enum: ['Pass', 'Fail'] } },
 };
 
-async function judge(run: Run, name: JudgeName, model: string): Promise<Verdict> {
+async function judge(run: Run, index: number, name: JudgeName, model: string): Promise<Verdict> {
   const scenario = scenarios[run.name]!;
-  const response = await fetch(process.env.WOW_BRIDGE_URL + '/model/responses', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ' + process.env.WOW_BRIDGE_TOKEN,
-    },
-    body: JSON.stringify({
-      model,
-      instructions: prompt(judges[name]),
-      input: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: JSON.stringify({
-                FACTS: scenario.facts,
-                QUESTION: run.prompt,
-                TOOL_RESULTS: toolResults(run),
-                PRESENTED: run.presented,
-                ANSWER: run.reply,
-              }),
-            },
-          ],
-        },
-      ],
-      text: { format: { type: 'json_schema', name: 'verdict', strict: true, schema } },
-      reasoning: { effort: process.env.WISP_GRADE_EFFORT || 'medium' },
-      stream: false,
-    }),
-  });
+  // The model proxy sometimes answers 5xx for one request; retry those.
+  const request = () =>
+    fetch(process.env.WOW_BRIDGE_URL + '/model/responses', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer ' + process.env.WOW_BRIDGE_TOKEN,
+      },
+      body: JSON.stringify({
+        model,
+        instructions: prompt(judges[name]),
+        input: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: JSON.stringify({
+                  FACTS: scenario.facts,
+                  QUESTION: run.prompt,
+                  TOOL_RESULTS: toolResults(run),
+                  PRESENTED: run.presented,
+                  ANSWER: run.reply,
+                }),
+              },
+            ],
+          },
+        ],
+        text: { format: { type: 'json_schema', name: 'verdict', strict: true, schema } },
+        reasoning: { effort: process.env.WISP_GRADE_EFFORT || 'medium' },
+        stream: false,
+      }),
+    });
+  let response = await request();
+  for (let attempt = 1; attempt < 3 && response.status >= 500; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    response = await request();
+  }
   if (!response.ok) {
     throw new Error('Judge request failed: ' + response.status + ' ' + (await response.text()));
   }
@@ -107,7 +119,7 @@ async function judge(run: Run, name: JudgeName, model: string): Promise<Verdict>
   if (!text) {
     throw new Error('Judge returned no answer');
   }
-  return { label: run.label, name: run.name, judge: name, ...JSON.parse(text) };
+  return { run: index, label: run.label, name: run.name, judge: name, ...JSON.parse(text) };
 }
 
 async function main() {
@@ -123,13 +135,15 @@ async function main() {
   }
   const bridge = await startModelBridge();
   const model = process.env.WISP_GRADE_MODEL || bridge.model;
-  const queue = runs.flatMap((run) => scenarios[run.name]!.judges.map((name) => ({ run, name })));
+  const queue = runs.flatMap((run, index) =>
+    scenarios[run.name]!.judges.map((name) => ({ run, index, name })),
+  );
   const verdicts: Verdict[] = [];
   try {
     await Promise.all(
       Array.from({ length: 4 }, async () => {
         for (let job = queue.shift(); job; job = queue.shift()) {
-          verdicts.push(await judge(job.run, job.name, model));
+          verdicts.push(await judge(job.run, job.index, job.name, model));
         }
       }),
     );
@@ -160,7 +174,9 @@ async function main() {
   }
   console.log('\nFailures:');
   for (const verdict of verdicts.filter((v) => v.result === 'Fail')) {
-    console.log(`- ${verdict.name} (${verdict.label}) ${verdict.judge}: ${verdict.critique}`);
+    console.log(
+      `- run ${verdict.run} ${verdict.name} (${verdict.label}) ${verdict.judge}: ${verdict.critique}`,
+    );
   }
 }
 
