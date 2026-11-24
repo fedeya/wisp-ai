@@ -4,7 +4,7 @@ import { RuntimeResources } from './runtime-resources.ts';
 import { makeAppRuntime } from './app-runtime.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
-import { startRoutineScheduler } from './routines/routine-scheduler.ts';
+import { routineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './addon/packet-receiver.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
 import { readCharacterNames } from './db/character-keys.ts';
@@ -312,17 +312,20 @@ export async function startBridge(options: BridgeOptions = {}) {
       state.chats.forEach(run.interrupt);
       await run.drain();
     });
-    const stopRoutineScheduler = startRoutineScheduler({
-      state,
-      routineStore,
-      capabilitySettings,
-      run,
-      changed,
-      logger,
-      isStopping: () => shutdownRequested,
-      isReady: () => engineReady,
-    });
-    resources.defer(stopRoutineScheduler);
+    // Forked into the bridge scope: stopping waits for a running routine.
+    resources.fork(
+      appRuntime,
+      routineScheduler({
+        state,
+        routineStore,
+        capabilitySettings,
+        run,
+        changed,
+        logger,
+        isStopping: () => shutdownRequested,
+        isReady: () => engineReady,
+      }),
+    );
     const adoptCharacter = createCharacterAdoption({
       database: applicationDatabase,
       panelStore,

@@ -6,7 +6,7 @@ import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
-import { bridgeRuntime, type Logger } from '../logger.ts';
+import type { Logger } from '../logger.ts';
 import { Effect, Fiber } from 'effect';
 
 /** How often the scheduler checks for a due routine. */
@@ -23,7 +23,12 @@ interface SchedulerDependencies {
   /** Whether a finished routine chat failed on a usage limit; tests replace it. */
   usageLimited?: (chat: Chat) => boolean;
 }
-export function startRoutineScheduler(deps: SchedulerDependencies) {
+/**
+ * Checks for a due routine every few seconds and runs it, forever. The
+ * composition root forks it into the bridge scope; interrupting it waits for a
+ * routine that is running.
+ */
+export function routineScheduler(deps: SchedulerDependencies): Effect.Effect<never> {
   const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed, logger } =
     deps;
   const createChat = (id: string) => {
@@ -132,22 +137,29 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
   const check = Effect.suspend(() => {
     const presence = due();
     return presence
-      ? Effect.promise(() =>
-          dispatch(presence).catch((error) =>
-            logger.error(
-              { event: 'routine.dispatch_failed', error: errorMessage(error) },
-              'Routine dispatch failed',
+      ? Effect.tryPromise(() => dispatch(presence)).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() =>
+              logger.error(
+                { event: 'routine.dispatch_failed', error: errorMessage(error.cause) },
+                'Routine dispatch failed',
+              ),
             ),
           ),
-        ).pipe(Effect.ensuring(Effect.sync(changed)), Effect.uninterruptible)
+          Effect.ensuring(Effect.sync(changed)),
+          Effect.uninterruptible,
+        )
       : Effect.void;
   });
   // The next check comes one interval after the previous one, or after the
   // routine it dispatched finished.
-  const fiber = bridgeRuntime.runFork(
-    Effect.forever(Effect.sleep(CHECK_INTERVAL).pipe(Effect.andThen(check))),
-  );
+  return Effect.forever(Effect.sleep(CHECK_INTERVAL).pipe(Effect.andThen(check)));
+}
+
+/** Runs the scheduler on its own; the returned function stops it (for tests). */
+export function startRoutineScheduler(deps: SchedulerDependencies) {
+  const fiber = Effect.runFork(routineScheduler(deps));
   return async () => {
-    await bridgeRuntime.runPromise(Fiber.interrupt(fiber));
+    await Effect.runPromise(Fiber.interrupt(fiber));
   };
 }
