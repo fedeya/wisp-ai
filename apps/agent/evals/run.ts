@@ -3,8 +3,8 @@
 //   node apps/bridge/src/evals/eval-bridge.ts sign-in   (once)
 //   pnpm --filter @wisp/agent eval [name-or-tag ...]
 //
-// Each eval runs through Mastra's runEvals. A failed gate fails the run; a
-// scorer below its threshold is reported as a warning.
+// Each eval is one real engine turn. A failed gate fails the run; a missed
+// scorer is reported as a warning.
 import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';

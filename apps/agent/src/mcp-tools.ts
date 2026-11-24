@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
-import { MCPClient } from '@mastra/mcp';
+import { Effect, Exit, Scope } from 'effect';
+import { McpClient, McpProtocol, type McpSchema } from 'effect/ai';
+import { FetchHttpClient } from 'effect/http';
 import { everlootTools } from '@wisp/protocol/capabilities';
 import { agentHost } from './agent-host.ts';
 import { bridgeOrigin } from './agent-rpc.ts';
@@ -125,42 +127,95 @@ export async function mcpConnections(configFile?: string): Promise<Record<string
   return { ...(await everlootConnections()), ...(await externalConnections(configFile)) };
 }
 
-type McpToolset = Awaited<ReturnType<MCPClient['listToolsetsWithErrors']>>['toolsets'];
-interface MastraMcpTool {
-  description?: string;
-  inputSchema?: {
-    '~standard'?: { jsonSchema?: { input?: (options: { target: string }) => unknown } };
-  };
-  execute?: (
-    input: Record<string, unknown>,
-    context: { abortSignal: AbortSignal },
-  ) => Promise<unknown>;
+interface Connected {
+  scope: Scope.Closeable;
+  client: McpClient.McpClient;
+  tools?: readonly McpSchema.Tool[];
+  at: number;
 }
 
-function jsonSchemaOf(tool: MastraMcpTool) {
+// Discovery and calls each have a deadline, so a stalled server cannot hold a turn.
+const LIST_TIMEOUT = '30 seconds';
+const CALL_TIMEOUT = '120 seconds';
+
+/** Connects to one server over Streamable HTTP; the scope owns the session. */
+async function connect(connection: McpConnection): Promise<Connected> {
+  const scope = await Effect.runPromise(Scope.make());
   try {
-    return tool.inputSchema?.['~standard']?.jsonSchema?.input?.({ target: 'draft-2020-12' }) ?? {};
-  } catch {
-    return {};
+    const client = await Effect.runPromise(
+      McpClient.make({ name: 'wisp', version: '1.0.0', timeout: LIST_TIMEOUT }).pipe(
+        Effect.provideServiceEffect(
+          McpClient.Transport,
+          McpClient.http({
+            url: connection.url,
+            protocol: McpProtocol.v2025_11_25,
+            headers: connection.headers,
+          }),
+        ),
+        Effect.provide(FetchHttpClient.layer),
+        Scope.provide(scope),
+      ),
+    );
+    return { scope, client, at: 0 };
+  } catch (error) {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    throw error;
   }
 }
 
 /**
- * Mastra MCP clients shared across turns. A client is kept while the enabled
- * connections stay the same, and its tool lists for a few minutes; a failed
- * listing or call drops it so the next turn reconnects.
+ * Effect MCP clients shared across turns, one per connection. Clients are kept
+ * while the enabled connections stay the same, and their tool lists for a few
+ * minutes; a failed listing or call drops that client so the next turn
+ * reconnects.
  */
 export class McpTools {
-  private current?: { key: string; client: MCPClient; toolsets?: McpToolset; at: number };
+  private current?: { key: string; clients: Map<string, Connected> };
   private configFile: () => string | undefined;
   constructor(configFile: () => string | undefined) {
     this.configFile = configFile;
   }
 
+  private async disconnect(clients: Map<string, Connected>, name?: string) {
+    const names = name ? [name] : [...clients.keys()];
+    await Promise.all(
+      names.map(async (entry) => {
+        const connected = clients.get(entry);
+        clients.delete(entry);
+        await Effect.runPromise(Scope.close(connected!.scope, Exit.void)).catch(() => {});
+      }),
+    );
+  }
+
   private async drop() {
     const current = this.current;
     this.current = undefined;
-    await current?.client.disconnect().catch(() => {});
+    if (current) {
+      await this.disconnect(current.clients);
+    }
+  }
+
+  // The connection's tools, connecting and listing again when needed.
+  private async listed(
+    clients: Map<string, Connected>,
+    name: string,
+    connection: McpConnection,
+  ): Promise<Connected> {
+    let connected = clients.get(name);
+    if (!connected) {
+      connected = await connect(connection);
+      clients.set(name, connected);
+    }
+    if (!connected.tools || Date.now() - connected.at > CACHE_MS) {
+      try {
+        connected.tools = await Effect.runPromise(connected.client.listTools());
+        connected.at = Date.now();
+      } catch (error) {
+        await this.disconnect(clients, name);
+        throw error;
+      }
+    }
+    return connected;
   }
 
   /** The enabled MCP tools; an unreachable connection is skipped and reported to onError. */
@@ -173,64 +228,43 @@ export class McpTools {
     const key = JSON.stringify(connections);
     if (this.current?.key !== key) {
       await this.drop();
-      this.current = {
-        key,
-        at: 0,
-        client: new MCPClient({
-          id: 'wisp-' + Date.now(),
-          // The bridge disconnects on shutdown; Mastra must not end the process.
-          registerProcessHooks: false,
-          clientInfo: { name: 'wisp', version: '1.0.0' },
-          servers: Object.fromEntries(
-            Object.entries(connections).map(([name, connection]) => {
-              const url = new URL(connection.url);
-              return [
-                name,
-                {
-                  url,
-                  requestInit: { headers: connection.headers },
-                  // Each connection may reach only its own host.
-                  allowedHosts: [url.host],
-                },
-              ];
-            }),
-          ),
-        }),
-      };
+      this.current = { key, clients: new Map() };
     }
-    const current = this.current!;
-    if (!current.toolsets || Date.now() - current.at > CACHE_MS) {
-      const listed = await current.client.listToolsetsWithErrors();
-      for (const [name, error] of Object.entries(listed.errors)) {
-        onError(name, error);
-      }
-      // Retry failed connections on the next turn instead of caching their absence.
-      current.toolsets = listed.toolsets;
-      current.at = Object.keys(listed.errors).length ? 0 : Date.now();
-    }
+    const { clients } = this.current!;
     const tools: McpTool[] = [];
     for (const [name, connection] of Object.entries(connections)) {
-      for (const [toolName, raw] of Object.entries(current.toolsets?.[name] ?? {})) {
-        const tool = raw as MastraMcpTool;
+      let connected: Connected;
+      try {
+        connected = await this.listed(clients, name, connection);
+      } catch (error) {
+        // Retried on the next turn instead of caching its absence.
+        onError(name, error);
+        continue;
+      }
+      for (const tool of connected.tools ?? []) {
         if (
-          (connection.allow && !connection.allow.includes(toolName)) ||
-          connection.block?.includes(toolName) ||
-          !tool.execute
+          (connection.allow && !connection.allow.includes(tool.name)) ||
+          connection.block?.includes(tool.name)
         ) {
           continue;
         }
         tools.push({
-          name: name + '__' + toolName,
+          name: name + '__' + tool.name,
           description: [connection.description, tool.description].filter(Boolean).join('\n'),
-          inputSchema: withoutProvided(jsonSchemaOf(tool), connection.provided),
+          inputSchema: withoutProvided(tool.inputSchema, connection.provided),
           call: async (input, signal) => {
             try {
-              return await tool.execute!(
-                { ...input, ...connection.provided },
-                { abortSignal: signal },
+              return await Effect.runPromise(
+                connected.client.callTool(
+                  { tool, arguments: { ...input, ...connection.provided } },
+                  { timeout: CALL_TIMEOUT },
+                ),
+                { signal },
               );
             } catch (error) {
-              current.at = 0;
+              if (!signal.aborted && clients.get(name) === connected) {
+                await this.disconnect(clients, name);
+              }
               throw error;
             }
           },

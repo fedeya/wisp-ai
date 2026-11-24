@@ -1,9 +1,9 @@
-// The answer-quality grader as a Mastra scorer: an LLM judge scores each rubric
-// criterion against the scenario's facts and the tool results the agent read.
-import { createScorer } from '@mastra/core/evals';
-import { wrapLanguageModel } from 'ai';
-import { z } from 'zod';
+// The answer-quality grader: an LLM judge scores each rubric criterion against
+// the scenario's facts and the tool results the agent read.
+import { Effect, Schema } from 'effect';
+import { LanguageModel } from 'effect/ai';
 import { connectionModel } from '../src/connection-model.ts';
+import { aiSdkLanguageModel, providerCause } from '../src/effect-model.ts';
 import { criteria, scenarios } from './quality.ts';
 
 export interface Run {
@@ -31,67 +31,61 @@ function toolResults(run: Run) {
 }
 
 const keys = Object.keys(criteria) as Array<keyof typeof criteria>;
-const grades = z.object({
-  ...(Object.fromEntries(keys.map((key) => [key, z.number().int().min(0).max(2)])) as Record<
+const score = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 2 }));
+const Grades = Schema.Struct({
+  ...(Object.fromEntries(keys.map((key) => [key, score])) as Record<
     keyof typeof criteria,
-    z.ZodNumber
+    typeof score
   >),
-  notes: z.string(),
+  notes: Schema.String,
 });
 
-// The judge: the eval model through the eval bridge, at the grading effort.
+/** The judge: the eval model through the eval bridge, at the grading effort. */
 export function judgeModel(origin: string, token: string, model: string) {
   const effort = process.env.WISP_GRADE_EFFORT || 'medium';
-  return wrapLanguageModel({
-    model: connectionModel({ model, effort }, origin, token, async () => false),
-    middleware: {
-      specificationVersion: 'v4',
-      transformParams: async ({ params }) => ({
-        ...params,
-        providerOptions: {
-          ...params.providerOptions,
-          openai: { ...params.providerOptions?.openai, reasoningEffort: effort },
-        },
-      }),
-    },
-  });
+  return aiSdkLanguageModel(
+    connectionModel({ model, effort }, origin, token, async () => false),
+    { openai: { reasoningEffort: effort } },
+  );
 }
 
+/** Grades one saved answer; quality is the share of rubric points it earned. */
 export function qualityScorer(model: ReturnType<typeof judgeModel>) {
-  return createScorer<Run, Run>({
-    id: 'answer-quality',
-    description: "Grades a saved answer against its scenario's facts and the rubric.",
-    judge: { model: model as never, instructions: GRADER },
-  })
-    .analyze({
-      description: 'Score each criterion 0, 1 or 2 and note the main reasons for lost points.',
-      outputSchema: grades,
-      createPrompt: ({ run }) => {
-        const scenario = scenarios[run.input!.name];
-        if (!scenario) {
-          throw new Error('No quality facts for scenario ' + run.input!.name);
-        }
-        return JSON.stringify({
-          FACTS: scenario.facts,
-          GOOD_ANSWER: scenario.goodAnswer,
-          CRITERIA: criteria,
-          QUESTION: run.input!.prompt,
-          TOOL_RESULTS: toolResults(run.input!),
-          PRESENTED: run.input!.presented,
-          ANSWER: run.input!.reply,
-        });
-      },
-    })
-    .generateScore(({ results }) => {
-      const scores = results.analyzeStepResult as z.infer<typeof grades>;
-      return keys.reduce((sum, key) => sum + scores[key], 0) / (keys.length * 2);
+  return (run: Run) =>
+    Effect.gen(function* () {
+      const scenario = scenarios[run.name];
+      if (!scenario) {
+        return yield* Effect.fail(Error('No quality facts for scenario ' + run.name));
+      }
+      const response = yield* LanguageModel.generateObject({
+        objectName: 'grades',
+        schema: Grades,
+        prompt: [
+          { role: 'system', content: GRADER },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              FACTS: scenario.facts,
+              GOOD_ANSWER: scenario.goodAnswer,
+              CRITERIA: criteria,
+              QUESTION: run.prompt,
+              TOOL_RESULTS: toolResults(run),
+              PRESENTED: run.presented,
+              ANSWER: run.reply,
+            }),
+          },
+        ],
+      }).pipe(Effect.provideServiceEffect(LanguageModel.LanguageModel, model));
+      const scores = response.value;
+      return {
+        ...scores,
+        quality: keys.reduce((sum, key) => sum + scores[key], 0) / (keys.length * 2),
+      };
     });
 }
 
-export async function grade(scorer: ReturnType<typeof qualityScorer>, run: Run) {
-  const result = await scorer.run({ input: run, output: run });
-  return {
-    ...(result.analyzeStepResult as z.infer<typeof grades>),
-    quality: result.score ?? 0,
-  };
+export function grade(scorer: ReturnType<typeof qualityScorer>, run: Run) {
+  return Effect.runPromise(
+    scorer(run).pipe(Effect.mapError((error) => providerCause(error))),
+  ) as Promise<Scores & { notes: string; quality: number }>;
 }

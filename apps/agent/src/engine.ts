@@ -1,26 +1,29 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { RequestContext } from '@mastra/core/request-context';
-import { generateText, type ModelMessage } from 'ai';
+import type { ModelMessage } from 'ai';
+import { Cause, Effect, Exit, Queue, Stream } from 'effect';
+import { type AiError, LanguageModel, type Response } from 'effect/ai';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { capabilityEnabled } from './capabilities.ts';
 import { connectionModel } from './connection-model.ts';
+import { aiSdkLanguageModel, providerCause, toEffectPrompt } from './effect-model.ts';
 import { localMemory, memorySlots } from './agent-memory.ts';
 import { McpTools } from './mcp-tools.ts';
 import { authoredTools } from './tools.ts';
 import { toolOffered } from './enabled-tool.ts';
 import type { ToolDefinition } from './tool.ts';
-import { mastra } from './mastra/index.ts';
-import { WISP_TURN, wispContent, type WispTurn } from './mastra/agents/wisp.ts';
+import { wispContent } from './wisp-agent.ts';
 import {
   CONTROL_TOOLS,
+  MAX_STEPS,
   TOOL_CALL,
   assembleTools,
   authored,
+  providerOptions,
   stubbed,
-  turnOptions,
   type DeferredTool,
   type ToolStub,
+  type TurnToolkit,
 } from './turn-tools.ts';
 
 export type { ModelMessage } from 'ai';
@@ -71,7 +74,7 @@ function safeLabel(label: () => string | undefined) {
   }
 }
 
-// AI SDK 7 reports token counts either as numbers or as { total, cacheRead } objects.
+// Token counts arrive either as numbers or as { total, cacheRead } objects.
 export function stepUsage(raw: unknown) {
   if (!raw || typeof raw !== 'object') {
     return undefined;
@@ -160,6 +163,235 @@ function lastMemory(history: ModelMessage[]) {
   return undefined;
 }
 
+type Metadata = Record<string, Record<string, unknown> | null> | undefined;
+const options = (metadata: Metadata) =>
+  metadata && Object.keys(metadata).length
+    ? { providerOptions: metadata as Record<string, Record<string, never>> }
+    : {};
+
+/**
+ * One model step as the bridge sees it (events) and as history stores it
+ * (AI SDK messages): text, reasoning and tool calls in the order they began,
+ * then the tool results.
+ */
+class Step {
+  private parts = new Map<string, { type: 'text' | 'reasoning'; text: string; meta: Metadata }>();
+  private order: Array<{ kind: 'part'; id: string } | { kind: 'call'; index: number }> = [];
+  private calls: Array<{ id: string; name: string; input: unknown; meta: Metadata }> = [];
+  private results: Array<{ id: string; name: string; output: unknown }> = [];
+  private inputs = new Map<string, string>();
+  private shownCalls = new Map<string, { name: string; input: unknown }>();
+  /** Tool calls this step made; the loop continues while it made some. */
+  called: string[] = [];
+  failure: unknown;
+
+  private tools: TurnToolkit;
+  constructor(tools: TurnToolkit) {
+    this.tools = tools;
+  }
+
+  private label(name: string) {
+    return this.tools.labels.get(name) ?? this.tools.deferred.get(name)?.label;
+  }
+
+  // A deferred call is shown as the tool it runs, not as tool_call.
+  private shown(name: string, input: any) {
+    return name === TOOL_CALL && input && typeof input.name === 'string'
+      ? { name: input.name as string, input: input.input ?? {} }
+      : { name, input };
+  }
+
+  private text(type: 'text' | 'reasoning', id: string, meta: Metadata) {
+    let part = this.parts.get(type + id);
+    if (!part) {
+      part = { type, text: '', meta: undefined };
+      this.parts.set(type + id, part);
+      this.order.push({ kind: 'part', id: type + id });
+    }
+    if (meta && Object.keys(meta).length) {
+      part.meta = { ...part.meta, ...meta };
+    }
+    return part;
+  }
+
+  /** Records a stream part and returns the events it produces. */
+  read(part: Response.StreamPart<any>): EngineEvent[] {
+    const meta = (part as { metadata?: Metadata }).metadata;
+    switch (part.type) {
+      case 'text-start':
+        this.text('text', part.id, meta);
+        return [];
+      case 'text-delta': {
+        this.text('text', part.id, meta).text += part.delta;
+        return [
+          { type: 'content.delta', data: { partId: part.id, kind: 'text', delta: part.delta } },
+        ];
+      }
+      case 'text-end': {
+        const text = this.text('text', part.id, meta);
+        return [
+          { type: 'content.completed', data: { partId: part.id, kind: 'text', value: text.text } },
+        ];
+      }
+      case 'reasoning-start':
+      case 'reasoning-end':
+        this.text('reasoning', part.id, meta);
+        return [];
+      case 'reasoning-delta':
+        this.text('reasoning', part.id, meta).text += part.delta;
+        return [];
+      case 'tool-params-start':
+        this.inputs.set(part.id, part.name);
+        return [];
+      case 'tool-params-delta':
+        return [
+          {
+            type: 'call.input',
+            data: { callId: part.id, delta: part.delta, name: this.inputs.get(part.id) },
+          },
+        ];
+      case 'tool-call': {
+        this.order.push({ kind: 'call', index: this.calls.length });
+        this.calls.push({ id: part.id, name: part.name, input: part.params, meta });
+        this.called.push(part.name);
+        const call = this.shown(part.name, part.params);
+        this.shownCalls.set(part.id, call);
+        const label = safeLabel(() => this.label(call.name)?.start?.(call.input as never));
+        return [
+          {
+            type: 'call.requested',
+            data: {
+              callId: part.id,
+              input: call.input,
+              capability: {
+                name: call.name,
+                label,
+                kind: CONTROL_TOOLS.has(call.name) ? 'control' : 'tool',
+              },
+            },
+          },
+        ];
+      }
+      case 'tool-result': {
+        if (part.preliminary) {
+          return [];
+        }
+        this.results.push({
+          id: part.id,
+          name: part.name,
+          output: part.isFailure
+            ? { type: 'error-text', value: String(part.result) }
+            : (this.tools.modelOutput.get(part.name)?.(part.result) ?? {
+                type: 'json',
+                value: part.result ?? null,
+              }),
+        });
+        if (part.isFailure) {
+          return [
+            {
+              type: 'call.settled',
+              data: {
+                callId: part.id,
+                outcome: 'failed',
+                error: { message: String(part.result) },
+              },
+            },
+          ];
+        }
+        const call = this.shownCalls.get(part.id);
+        const label =
+          call &&
+          safeLabel(() =>
+            this.label(call.name)?.complete?.(call.input as never, part.result as never),
+          );
+        return [
+          {
+            type: 'call.settled',
+            data: {
+              callId: part.id,
+              outcome: 'completed',
+              output: part.result,
+              ...(label ? { label } : {}),
+            },
+          },
+        ];
+      }
+      case 'finish': {
+        const usage = stepUsage(part.usage);
+        return usage ? [{ type: 'usage.recorded', data: { kind: 'model', usage } }] : [];
+      }
+      case 'error':
+        this.failure = part.error;
+        return [];
+      default:
+        return [];
+    }
+  }
+
+  /** Whether a tool that ends the turn ran in this step. */
+  get endsTurn() {
+    return this.called.some((name) => this.tools.endsTurn.has(name));
+  }
+
+  /** The step as history stores it. */
+  messages(): ModelMessage[] {
+    const content = this.order.flatMap((entry): object[] => {
+      if (entry.kind === 'call') {
+        const call = this.calls[entry.index]!;
+        return [
+          {
+            type: 'tool-call' as const,
+            toolCallId: call.id,
+            toolName: call.name,
+            input: call.input,
+            ...options(call.meta),
+          },
+        ];
+      }
+      const part = this.parts.get(entry.id)!;
+      return part.type === 'text' && !part.text
+        ? []
+        : [{ type: part.type, text: part.text, ...options(part.meta) }];
+    });
+    const messages: ModelMessage[] = [];
+    if (content.length) {
+      messages.push({ role: 'assistant', content } as ModelMessage);
+    }
+    if (this.results.length) {
+      messages.push({
+        role: 'tool',
+        content: this.results.map((result) => ({
+          type: 'tool-result' as const,
+          toolCallId: result.id,
+          toolName: result.name,
+          output: result.output as never,
+        })),
+      });
+    }
+    return messages;
+  }
+}
+
+/** A step whose model stream reported an error part. */
+class StepFailed {
+  readonly error: unknown;
+  constructor(error: unknown) {
+    this.error = error;
+  }
+}
+
+/** Resolves when the signal aborts, as an interruption. */
+const aborted = (signal: AbortSignal) =>
+  Effect.callback<never>((resume) => {
+    const abort = () => resume(Effect.interrupt);
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    signal.addEventListener('abort', abort, { once: true });
+    return Effect.sync(() => signal.removeEventListener('abort', abort));
+  });
+
 export function createAgentEngine(options: EngineOptions) {
   const { origin, token, history, logger, stub } = options;
   const mcp = new McpTools(options.mcpConfigFile ?? (() => undefined));
@@ -229,312 +461,205 @@ export function createAgentEngine(options: EngineOptions) {
     return { direct, deferred, memory: memory.join('\n\n') };
   }
 
-  async function compact(
+  function turnModel(
     session: string,
-    messages: ModelMessage[],
-    model: Parameters<typeof generateText>[0]['model'],
-    signal: AbortSignal,
+    selected: Awaited<ReturnType<typeof modelSettings>>,
+    cache: boolean,
   ) {
-    const { older, recent } = compactionSplit(messages);
-    if (!older.length) {
-      return messages;
-    }
-    let summary: string;
-    try {
-      summary = (
-        await generateText({
-          model,
-          system: SUMMARY_PROMPT,
-          prompt: transcript(older),
-          abortSignal: signal,
-        })
-      ).text;
-    } catch (error) {
-      logger.warn(
-        { event: 'agent.compaction_failed', error: errorText(error) },
-        'Compaction failed',
-      );
-      // Keep the turn answerable: drop the older part rather than overflow the context.
-      await history.replace(session, recent);
-      return null;
-    }
-    const compacted: ModelMessage[] = [
-      {
-        role: 'user',
-        content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
-      },
-      { role: 'assistant', content: 'Understood; I will continue from that summary.' },
-      ...recent,
-    ];
-    await history.replace(session, compacted);
-    return compacted;
-  }
-
-  // The registered Wisp agent and the run options of one turn: the turn's model
-  // and tools travel in the request context. Evals run the same agent.
-  function prepareTurn(
-    session: string,
-    signal: AbortSignal,
-    tools: Awaited<ReturnType<typeof turnTools>>,
-    model: ReturnType<typeof connectionModel>,
-    selected: { provider?: string; effort: string },
-  ) {
-    const assembled = assembleTools({
-      session,
-      signal,
-      direct: tools.direct,
-      deferred: tools.deferred,
-      stub,
-    });
-    const requestContext = new RequestContext();
-    requestContext.set(WISP_TURN, { model, tools: assembled.tools } satisfies WispTurn);
-    return {
-      agent: mastra.getAgent('wisp'),
-      labels: assembled.labels,
-      deferred: assembled.deferred,
-      options: { requestContext, ...turnOptions(tools.direct, selected) },
-    };
-  }
-
-  async function* run(
-    session: string,
-    input: string,
-    signal: AbortSignal,
-    settle: (result: EngineResult) => void,
-  ): AsyncGenerator<EngineEvent> {
-    await wispContent();
-    const selected = await modelSettings(session, signal);
-    const tools = await turnTools(session, signal);
-    const model = connectionModel(
+    return connectionModel(
       selected,
       origin(),
       token,
       () => capabilityEnabled('tool:web_search'),
       // A stable per-conversation key keeps the tool loop on one prompt cache.
-      'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32),
+      cache ? 'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32) : undefined,
       session,
     );
-    yield { type: 'turn.started', data: {} };
-    // The player's input, as replayable history consumes it (rebuildHistory).
-    yield { type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } };
+  }
 
-    let messages = await history.load(session);
-    if (
-      selected.contextWindow &&
-      estimateTokens(messages) + estimateTokens(input) >
-        selected.contextWindow * COMPACTION_THRESHOLD
-    ) {
-      yield { type: 'context.started', data: { kind: 'compaction' } };
-      const compacted = await compact(session, messages, model, signal);
-      yield {
-        type: 'context.settled',
-        data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
+  // Summarizes the older part of a history and stores the shorter one; null
+  // when summarizing failed and only the recent turns were kept.
+  const compact = (session: string, messages: ModelMessage[]) =>
+    Effect.gen(function* () {
+      const { older, recent } = compactionSplit(messages);
+      if (!older.length) {
+        return messages;
+      }
+      const summary = yield* LanguageModel.generateText({
+        prompt: [
+          { role: 'system', content: SUMMARY_PROMPT },
+          { role: 'user', content: transcript(older) },
+        ],
+      }).pipe(
+        Effect.map((response) => response.text),
+        Effect.catch((error) =>
+          Effect.sync(() => {
+            logger.warn(
+              { event: 'agent.compaction_failed', error: errorText(providerCause(error)) },
+              'Compaction failed',
+            );
+            return undefined;
+          }),
+        ),
+      );
+      if (summary === undefined) {
+        // Keep the turn answerable: drop the older part rather than overflow the context.
+        yield* Effect.promise(() => history.replace(session, recent));
+        return null;
+      }
+      const compacted: ModelMessage[] = [
+        {
+          role: 'user',
+          content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
+        },
+        { role: 'assistant', content: 'Understood; I will continue from that summary.' },
+        ...recent,
+      ];
+      yield* Effect.promise(() => history.replace(session, compacted));
+      return compacted;
+    });
+
+  // One turn: prepare, maybe compact, then model steps until the model stops
+  // calling tools, a tool ends the turn, or the step budget runs out.
+  const turn = (
+    session: string,
+    input: string,
+    signal: AbortSignal,
+    emit: (event: EngineEvent) => Effect.Effect<unknown>,
+  ) =>
+    Effect.gen(function* () {
+      const content = yield* Effect.tryPromise(() => wispContent());
+      const selected = yield* Effect.tryPromise(() => modelSettings(session, signal));
+      const tools = yield* Effect.tryPromise(() => turnTools(session, signal));
+      const model = yield* aiSdkLanguageModel(
+        turnModel(session, selected, true),
+        providerOptions(selected),
+      );
+      yield* emit({ type: 'turn.started', data: {} });
+      // The player's input, as replayable history consumes it (rebuildHistory).
+      yield* emit({ type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } });
+
+      let messages = yield* Effect.promise(() => history.load(session));
+      if (
+        selected.contextWindow &&
+        estimateTokens(messages) + estimateTokens(input) >
+          selected.contextWindow * COMPACTION_THRESHOLD
+      ) {
+        yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
+        const compacted = yield* compact(session, messages).pipe(
+          Effect.provideService(LanguageModel.LanguageModel, model),
+        );
+        yield* emit({
+          type: 'context.settled',
+          data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
+        });
+        messages = compacted ?? (yield* Effect.promise(() => history.load(session)));
+      }
+      const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
+      const user: ModelMessage = {
+        role: 'user',
+        content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
       };
-      messages = compacted ?? (await history.load(session));
-    }
-    const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
-    const user: ModelMessage = {
-      role: 'user',
-      content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
-    };
-    const stored = messages.length;
-    await history.append(session, stored, [user]);
+      const stored = messages.length;
+      yield* Effect.promise(() => history.append(session, stored, [user]));
 
-    const { agent, labels, deferred, options } = prepareTurn(
-      session,
-      signal,
-      tools,
-      model,
-      selected,
-    );
-
-    // A deferred call is shown as the tool it runs, not as tool_call.
-    const shown = (toolName: string, args: any) =>
-      toolName === TOOL_CALL && args && typeof args.name === 'string'
-        ? { name: args.name as string, input: args.input ?? {} }
-        : { name: toolName, input: args };
-    const inputs = new Map<string, { name: string; input: unknown }>();
-    const texts = new Map<string, string>();
-    let failure: unknown;
-    let response: ModelMessage[] | undefined;
-    try {
-      const output = await agent.stream([...messages, user] as never, {
-        abortSignal: signal,
-        ...options,
+      const toolkit = yield* assembleTools({
+        session,
+        signal,
+        direct: tools.direct,
+        deferred: tools.deferred,
+        skills: content.skills,
+        stub,
       });
-      for await (const chunk of output.fullStream as AsyncIterable<{
-        type: string;
-        payload?: Record<string, any>;
-      }>) {
-        const p = chunk.payload ?? {};
-        switch (chunk.type) {
-          case 'text-start':
-            texts.set(p.id, '');
-            break;
-          case 'text-delta':
-            texts.set(p.id, (texts.get(p.id) ?? '') + p.text);
-            yield { type: 'content.delta', data: { partId: p.id, kind: 'text', delta: p.text } };
-            break;
-          case 'text-end':
-            yield {
-              type: 'content.completed',
-              data: { partId: p.id, kind: 'text', value: texts.get(p.id) ?? '' },
-            };
-            break;
-          case 'tool-call-delta':
-            yield {
-              type: 'call.input',
-              data: { callId: p.toolCallId, delta: p.argsTextDelta, name: p.toolName },
-            };
-            break;
-          case 'tool-call': {
-            const call = shown(p.toolName, p.args);
-            inputs.set(p.toolCallId, call);
-            const label =
-              safeLabel(() =>
-                (labels.get(call.name) ?? deferred.get(call.name)?.label)?.start?.(
-                  call.input as never,
-                ),
-              ) ?? undefined;
-            yield {
-              type: 'call.requested',
-              data: {
-                callId: p.toolCallId,
-                input: call.input,
-                capability: {
-                  name: call.name,
-                  label,
-                  kind: CONTROL_TOOLS.has(call.name) ? 'control' : 'tool',
-                },
-              },
-            };
-            break;
-          }
-          case 'tool-result': {
-            const call = inputs.get(p.toolCallId);
-            const label =
-              call &&
-              safeLabel(() =>
-                (labels.get(call.name) ?? deferred.get(call.name)?.label)?.complete?.(
-                  call.input as never,
-                  p.result as never,
-                ),
-              );
-            yield {
-              type: 'call.settled',
-              data: {
-                callId: p.toolCallId,
-                outcome: p.isError ? 'failed' : 'completed',
-                output: p.result,
-                ...(label ? { label } : {}),
-              },
-            };
-            break;
-          }
-          case 'tool-error':
-            yield {
-              type: 'call.settled',
-              data: {
-                callId: p.toolCallId,
-                outcome: 'failed',
-                error: { message: errorText(p.error) },
-              },
-            };
-            break;
-          case 'step-finish': {
-            const usage = stepUsage(p.output?.usage);
-            if (usage) {
-              yield { type: 'usage.recorded', data: { kind: 'model', usage } };
-            }
-            break;
-          }
-          case 'error':
-            failure = p.error;
-            break;
+      const system: ModelMessage = { role: 'system', content: content.system };
+      const response: ModelMessage[] = [];
+      for (let index = 0; index < MAX_STEPS; index++) {
+        const step = new Step(toolkit);
+        const parts = LanguageModel.streamText({
+          prompt: toEffectPrompt([system, ...messages, user, ...response]),
+          toolkit: toolkit.toolkit,
+        }) as Stream.Stream<Response.StreamPart<any>, AiError.AiError, LanguageModel.LanguageModel>;
+        yield* parts.pipe(
+          Stream.runForEach((part) => Effect.forEach(step.read(part), emit)),
+          Effect.provideService(LanguageModel.LanguageModel, model),
+        );
+        if (step.failure !== undefined) {
+          return yield* Effect.fail(new StepFailed(step.failure));
+        }
+        response.push(...step.messages());
+        if (!step.called.length || step.endsTurn) {
+          break;
         }
       }
-      if (failure === undefined && !signal.aborted) {
-        response = ((await output.response) as { messages?: ModelMessage[] }).messages;
+      if (response.length) {
+        yield* Effect.promise(() => history.append(session, stored + 1, response));
       }
-    } catch (error) {
-      failure = error;
+    });
+
+  function settled(exit: Exit.Exit<unknown, unknown>, signal: AbortSignal): EngineResult {
+    if (signal.aborted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))) {
+      return { status: 'cancelled' };
     }
-    if (response?.length) {
-      await history.append(session, stored + 1, response);
+    if (Exit.isSuccess(exit)) {
+      return { status: 'completed' };
     }
-    if (signal.aborted) {
-      settle({ status: 'cancelled' });
-    } else if (failure !== undefined) {
-      logger.warn({ event: 'agent.turn_failed', error: errorText(failure) }, 'Agent turn failed');
-      settle({
-        status: 'failed',
-        error: failure instanceof Error ? failure : { message: errorText(failure) },
-      });
-    } else {
-      settle({ status: 'completed' });
-    }
+    const squashed = Cause.squash(exit.cause);
+    const error = providerCause(squashed instanceof StepFailed ? squashed.error : squashed);
+    logger.warn({ event: 'agent.turn_failed', error: errorText(error) }, 'Agent turn failed');
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error : { message: errorText(error) },
+    };
+  }
+
+  /** Runs a turn program as an event stream; the result settles when it ends. */
+  function events(
+    signal: AbortSignal,
+    program: (
+      emit: (event: EngineEvent) => Effect.Effect<unknown>,
+    ) => Effect.Effect<unknown, unknown>,
+  ) {
+    let settle!: (result: EngineResult) => void;
+    const result = new Promise<EngineResult>((resolve) => (settle = resolve));
+    const stream = Stream.callback<EngineEvent>((queue) =>
+      program((event) => Queue.offer(queue, event)).pipe(
+        Effect.raceFirst(aborted(signal)),
+        Effect.onExit((exit) => Effect.sync(() => settle(settled(exit, signal)))),
+        Effect.exit,
+        Effect.andThen(Queue.end(queue)),
+      ),
+    );
+    return { events: Stream.toAsyncIterable(stream), result };
   }
 
   return {
     newSessionId: (): string => randomUUID(),
-    /** The agent a turn of this session would run, with its run options (for evals). */
-    async agent(session: string, signal: AbortSignal) {
-      await wispContent();
-      const selected = await modelSettings(session, signal);
-      const tools = await turnTools(session, signal);
-      const model = connectionModel(
-        selected,
-        origin(),
-        token,
-        () => capabilityEnabled('tool:web_search'),
-        'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32),
-        session,
-      );
-      const { agent, options } = prepareTurn(session, signal, tools, model, selected);
-      return { agent, options: { abortSignal: signal, ...options } };
-    },
     /** Loads instructions and skills ahead of the first turn. */
     preload: () => wispContent().then(() => undefined),
     /** Starts a turn; events stream once and the result settles when they end. */
     send(session: string, input: string, signal: AbortSignal) {
-      let settle!: (result: EngineResult) => void;
-      const result = new Promise<EngineResult>((resolve) => (settle = resolve));
-      return { events: run(session, input, signal, settle), result };
+      return events(signal, (emit) => turn(session, input, signal, emit));
     },
     /** Summarizes a session's older history now, as a long one would be before its next turn. */
     compact(session: string, signal: AbortSignal) {
-      let settle!: (result: EngineResult) => void;
-      const result = new Promise<EngineResult>((resolve) => (settle = resolve));
-      const events = (async function* (): AsyncGenerator<EngineEvent> {
-        try {
-          const selected = await modelSettings(session, signal);
-          const model = connectionModel(
-            selected,
-            origin(),
-            token,
-            () => capabilityEnabled('tool:web_search'),
-            undefined,
+      return events(signal, (emit) =>
+        Effect.gen(function* () {
+          const selected = yield* Effect.tryPromise(() => modelSettings(session, signal));
+          const model = yield* aiSdkLanguageModel(turnModel(session, selected, false));
+          yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
+          const compacted = yield* compact(
             session,
-          );
-          yield { type: 'context.started', data: { kind: 'compaction' } };
-          const compacted = await compact(session, await history.load(session), model, signal);
-          yield {
+            yield* Effect.promise(() => history.load(session)),
+          ).pipe(Effect.provideService(LanguageModel.LanguageModel, model));
+          yield* emit({
             type: 'context.settled',
             data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
-          };
-          settle(
-            compacted
-              ? { status: 'completed' }
-              : { status: 'failed', error: { message: 'Compaction failed.' } },
-          );
-        } catch (error) {
-          settle({
-            status: 'failed',
-            error: error instanceof Error ? error : { message: errorText(error) },
           });
-        }
-      })();
-      return { events, result };
+          if (!compacted) {
+            return yield* Effect.fail(Error('Compaction failed.'));
+          }
+        }),
+      );
     },
     end: (session: string) => history.delete(session),
     close: () => mcp.close(),

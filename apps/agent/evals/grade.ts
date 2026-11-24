@@ -1,6 +1,6 @@
 // Grades saved eval answers (apps/agent/eval-replies/runs.jsonl) for quality with the
-// eval model bridge, against each scenario's facts and a fixed rubric. The grader
-// is a Mastra scorer whose judge is the eval model.
+// eval model bridge, against each scenario's facts and a fixed rubric. The judge
+// is the eval model, asked for structured grades.
 //
 //   node apps/agent/evals/grade.ts [label ...]
 import { readFile, writeFile } from 'node:fs/promises';

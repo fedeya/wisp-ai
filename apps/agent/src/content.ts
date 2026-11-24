@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,18 +10,7 @@ export function agentContentRoot() {
   if (process.env.WISP_AGENT_CONTENT) {
     return process.env.WISP_AGENT_CONTENT;
   }
-  const beside = fileURLToPath(new URL('./wisp/', import.meta.url));
-  if (existsSync(path.join(beside, 'instructions.md'))) {
-    return beside;
-  }
-  // Mastra Studio runs a bundle from .mastra/output; find the package's src/wisp.
-  for (let dir = path.dirname(beside); path.dirname(dir) !== dir; dir = path.dirname(dir)) {
-    const source = path.join(dir, 'src', 'wisp');
-    if (existsSync(path.join(source, 'instructions.md'))) {
-      return source;
-    }
-  }
-  return beside;
+  return fileURLToPath(new URL('./wisp/', import.meta.url));
 }
 
 export interface AuthoredSkill {

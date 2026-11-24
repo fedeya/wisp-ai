@@ -13,7 +13,7 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 | Path                 | Package           | What it is                                                                                        |
 | -------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
 | `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging |
-| `apps/agent`         | `@wisp/agent`     | Agent runtime on Mastra, run in the bridge: model connections, tools, skills and instructions     |
+| `apps/agent`         | `@wisp/agent`     | Agent runtime on Effect AI, run in the bridge: model connections, tools, skills and instructions  |
 | `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                     |
 | `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                     |
 | `packages/protocol`  | `@wisp/protocol`  | Shared zod schemas and types for the wire protocol, desktop, settings and addon helpers           |
@@ -44,7 +44,6 @@ Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 | `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                                                |
 | `pnpm start`                                    | Run the bridge                                                                              |
 | `pnpm --filter @wisp/agent eval`                | Agent evals against a real model (sign in once with `apps/bridge/src/evals/eval-bridge.ts`) |
-| `pnpm --filter @wisp/agent studio`              | Mastra Studio for the agent on localhost:4111 (`WISP_STUDIO_MODEL` and its API key)         |
 | `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
 | `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
 | `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |

@@ -50,7 +50,22 @@ async function fakeModel() {
     }
     const events = [
       { type: 'response.created', response },
-      { type: 'response.output_item.added', output_index: 0, item },
+      // A message streams its text as deltas, as the Responses API does.
+      ...(item.type === 'message'
+        ? [
+            {
+              type: 'response.output_item.added',
+              output_index: 0,
+              item: { ...item, content: [] },
+            },
+            {
+              type: 'response.output_text.delta',
+              item_id: item.id,
+              output_index: 0,
+              delta: 'Nameplates are on.',
+            },
+          ]
+        : [{ type: 'response.output_item.added', output_index: 0, item }]),
       { type: 'response.output_item.done', output_index: 0, item },
       { type: 'response.completed', response: completed },
     ];
@@ -63,7 +78,7 @@ async function fakeModel() {
 }
 
 test(
-  'evals run the engine agent through runEvals with gates, soft scorers and stubs',
+  'evals run a real engine turn with gates, soft scorers and stubs',
   {
     timeout: 60_000,
   },

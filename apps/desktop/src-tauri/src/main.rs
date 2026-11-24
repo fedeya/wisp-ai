@@ -904,7 +904,7 @@ fn main() {
                     "node_modules/@wisp/agent/src/wisp/instructions.md",
                     "scripts/install.ts",
                     "addon/WispAI/WispAI.toc",
-                    "node_modules/@mastra/core/package.json",
+                    "node_modules/effect/package.json",
                 ]
             };
             for name in required {

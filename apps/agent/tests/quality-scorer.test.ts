@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
 import { grade, judgeModel, qualityScorer, type Run } from '../evals/quality-scorer.ts';
 
-test('the quality grader is a Mastra judge scorer over the eval bridge', async () => {
+test('the quality grader asks the eval model for structured grades over the eval bridge', async () => {
   const requests: Record<string, any>[] = [];
   const grades = { correctness: 2, fit: 1, usefulness: 2, honesty: 2, clarity: 1, notes: 'Brief.' };
   const server = createServer(async (req, res) => {

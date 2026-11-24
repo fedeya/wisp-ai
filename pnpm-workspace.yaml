@@ -19,12 +19,6 @@ ignoredOptionalDependencies:
   - '@mongodb-js/zstd'
   - node-liblzma
 
-# The Mastra CLI accepts newer server packages than the pinned @mastra/core
-# supports; keep the whole Mastra runtime on one release.
-overrides:
-  '@mastra/deployer': 1.82.0
-  '@mastra/server': 1.82.0
-
 minimumReleaseAgeExclude:
   - '@posthog/browser-common@0.10.8'
   - '@posthog/core@1.67.1'

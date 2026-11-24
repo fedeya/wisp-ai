@@ -11,7 +11,7 @@ import { McpTools } from '../src/mcp-tools.ts';
 
 afterEach(() => setAgentHost(undefined));
 
-test('relayed MCP servers become namespaced, filtered tools through Mastra MCPClient', async () => {
+test('relayed MCP servers become namespaced, filtered tools through Effect McpClient', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-mcp-tools-'));
   const authorizations: (string | undefined)[] = [];
   const calls: unknown[] = [];

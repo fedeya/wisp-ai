@@ -1,12 +1,9 @@
-// Runs one eval with Mastra's runEvals: the real turn agent from the engine,
-// fixture stubs for game and integration tools, gates that must pass and
-// scorers that are tracked against a threshold of 1.
+// Runs one eval as a real engine turn: fixture stubs answer game and
+// integration tools, gates must pass and scorers are tracked as warnings.
 import { isDeepStrictEqual } from 'node:util';
-import { runEvals } from '@mastra/core/evals';
-import type { MastraScorer } from '@mastra/core/evals';
-import { createAgentEngine, type ToolStubOutcome } from '../src/engine.ts';
+import { createAgentEngine, type EngineEvent, type ToolStubOutcome } from '../src/engine.ts';
 import { agentHost } from '../src/agent-host.ts';
-import { resultView, type TurnView } from './checks.ts';
+import { eventsView, type Check, type TurnView } from './checks.ts';
 import { playerMessage } from './fixtures/fedrath.ts';
 
 /** Answers a tool from a fixture; the first stub whose tool and `match` fit wins. */
@@ -18,18 +15,16 @@ export interface ToolStub {
   outcome: ToolStubOutcome;
 }
 
-type Scorer = MastraScorer<any, any, any, any>;
-
 export interface EvalDefinition {
   description: string;
   tags?: string[];
   /** What the player asks; it is sent with the fixture character's game context. */
   question: string;
   stubs: ToolStub[];
-  /** Hard requirements: the eval fails when one scores below 1. */
-  gates: Scorer[];
-  /** Soft requirements: reported when one scores below 1. */
-  scorers?: Scorer[];
+  /** Hard requirements: the eval fails when one does not hold. */
+  gates: Check[];
+  /** Soft requirements: reported when one does not hold. */
+  scorers?: Check[];
 }
 export const defineEval = (definition: EvalDefinition) => definition;
 
@@ -44,6 +39,7 @@ function matches(stub: ToolStub, tool: string, input: unknown) {
 }
 
 export interface EvalOutcome {
+  /** failed: a gate or the turn failed; scored: only scorers missed. */
   verdict: 'passed' | 'scored' | 'failed';
   failed: string[];
   soft: string[];
@@ -71,43 +67,30 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     stub: (tool, input) => definition.stubs.find((stub) => matches(stub, tool, input))?.outcome,
   });
   try {
-    const { agent, options } = await engine.agent(
+    const run = engine.send(
       engine.newSessionId(),
+      playerMessage(definition.question),
       AbortSignal.timeout(300_000),
     );
-    let turn: TurnView | undefined;
-    let steps = 0;
-    let error: string | undefined;
-    const result = await runEvals({
-      target: agent,
-      // The turn's model and tools travel in the request context, per item.
-      data: [{ input: playerMessage(definition.question), requestContext: options.requestContext }],
-      gates: definition.gates,
-      scorers: (definition.scorers ?? []).map((scorer) => ({ scorer, threshold: 1 })),
-      targetOptions: options as never,
-      onItemComplete: ({ targetResult }) => {
-        const output = targetResult as Parameters<typeof resultView>[0] & {
-          steps?: unknown[];
-          error?: { message?: string };
-        };
-        turn = resultView(output);
-        steps = output.steps?.length ?? 0;
-        error = output.error?.message;
-      },
-    });
-    const name = (id: string) =>
-      [...definition.gates, ...(definition.scorers ?? [])].find((scorer) => scorer.id === id)
-        ?.name ?? id;
+    const events: EngineEvent[] = [];
+    for await (const event of run.events) {
+      events.push(event);
+    }
+    const result = await run.result;
+    const turn = eventsView(events);
+    const failed = definition.gates.filter((check) => !check.test(turn)).map(({ name }) => name);
+    const soft = (definition.scorers ?? [])
+      .filter((check) => !check.test(turn))
+      .map(({ name }) => name);
+    const error =
+      result.status === 'completed' ? undefined : (result.error?.message ?? 'cancelled');
     return {
-      verdict: result.verdict ?? 'passed',
-      failed: (result.gateResults ?? [])
-        .filter((gate) => !gate.passed)
-        .map((gate) => name(gate.id)),
-      soft: (result.thresholdResults ?? [])
-        .filter((entry) => !entry.passed)
-        .map((entry) => name(entry.id)),
+      verdict: failed.length || error ? 'failed' : soft.length ? 'scored' : 'passed',
+      failed,
+      soft,
       turn,
-      steps,
+      // The engine records usage once per model step.
+      steps: events.filter((event) => event.type === 'usage.recorded').length,
       error,
     };
   } finally {

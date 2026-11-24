@@ -1,9 +1,8 @@
-// Deterministic checks as Mastra scorers. Each scores a turn 1 or 0 from the
-// agent's output messages. Deferred tools run through tool_call, so checks see
-// the tool it ran, not the proxy.
+// Deterministic checks of one agent turn, read from the engine's own events.
+// Deferred tools run through tool_call, and the engine reports each call as the
+// tool it ran, so checks see that tool, not the proxy.
 import { isDeepStrictEqual } from 'node:util';
-import { createScorer } from '@mastra/core/evals';
-import { TOOL_CALL } from '../src/engine.ts';
+import type { EngineEvent } from '../src/engine.ts';
 
 export interface ToolCall {
   name: string;
@@ -19,61 +18,34 @@ export interface TurnView {
   presented: string;
 }
 
-interface Invocation {
-  toolName?: string;
-  args?: unknown;
-  result?: unknown;
+/** A named expectation about a turn. */
+export interface Check {
+  name: string;
+  test: (turn: TurnView) => boolean;
 }
 
-function unwrap(name: string, input: unknown, output?: unknown): ToolCall {
-  const proxy = input as { name?: unknown; input?: unknown } | undefined;
-  return name === TOOL_CALL && typeof proxy?.name === 'string'
-    ? { name: proxy.name, input: proxy.input ?? {}, output }
-    : { name, input, output };
-}
-
-function view(reply: string, toolCalls: ToolCall[]): TurnView {
-  const panels = toolCalls.filter((call) => call.name === 'wisp__present_ui');
-  return { reply, toolCalls, presented: reply + JSON.stringify(panels.map((call) => call.input)) };
-}
-
-/** The view of a scorer run: Mastra's stored assistant messages. */
-export function messagesView(messages: unknown): TurnView {
+/** The view of a turn from the events the bridge would receive. */
+export function eventsView(events: EngineEvent[]): TurnView {
   const texts: string[] = [];
   const toolCalls: ToolCall[] = [];
-  for (const message of Array.isArray(messages) ? messages : []) {
-    const parts = (message as { content?: { parts?: Record<string, unknown>[] } }).content?.parts;
-    for (const part of parts ?? []) {
-      if (part.type === 'text' && typeof part.text === 'string') {
-        texts.push(part.text);
-      } else if (part.type === 'tool-invocation') {
-        const call = part.toolInvocation as Invocation;
-        toolCalls.push(unwrap(String(call.toolName), call.args, call.result));
+  const calls = new Map<string, ToolCall>();
+  for (const { type, data } of events) {
+    if (type === 'content.completed' && data.kind === 'text') {
+      texts.push(String(data.value));
+    } else if (type === 'call.requested') {
+      const call = { name: String((data.capability as { name: string }).name), input: data.input };
+      calls.set(String(data.callId), call);
+      toolCalls.push(call);
+    } else if (type === 'call.settled' && data.outcome === 'completed') {
+      const call = calls.get(String(data.callId));
+      if (call) {
+        call.output = data.output;
       }
     }
   }
-  return view(texts.join('\n\n'), toolCalls);
-}
-
-/** The view of an agent result, as runEvals reports each item. */
-export function resultView(result: {
-  text?: string;
-  toolCalls?: { payload?: { toolCallId?: string; toolName?: string; args?: unknown } }[];
-  toolResults?: { payload?: { toolCallId?: string; result?: unknown } }[];
-}): TurnView {
-  const outputs = new Map(
-    (result.toolResults ?? []).map((entry) => [entry.payload?.toolCallId, entry.payload?.result]),
-  );
-  return view(
-    result.text ?? '',
-    (result.toolCalls ?? []).map((entry) =>
-      unwrap(
-        String(entry.payload?.toolName),
-        entry.payload?.args,
-        outputs.get(entry.payload?.toolCallId),
-      ),
-    ),
-  );
+  const reply = texts.join('\n\n');
+  const panels = toolCalls.filter((call) => call.name === 'wisp__present_ui');
+  return { reply, toolCalls, presented: reply + JSON.stringify(panels.map((call) => call.input)) };
 }
 
 // Whether every field of `expected` appears, recursively, in `actual`.
@@ -90,22 +62,9 @@ function includes(actual: unknown, expected: unknown): boolean {
   return isDeepStrictEqual(actual, expected);
 }
 
-let checks = 0;
-/** A check named by what it expects; scores 1 when `test` holds. */
-export function expects(label: string, test: (turn: TurnView) => boolean) {
-  return createScorer({
-    id:
-      'check-' +
-      ++checks +
-      '-' +
-      label
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .slice(0, 40),
-    name: label,
-    description: label,
-    type: 'agent',
-  }).generateScore(({ run }) => (test(messagesView(run.output)) ? 1 : 0));
+/** A check named by what it expects; it passes when `test` holds. */
+export function expects(name: string, test: (turn: TurnView) => boolean): Check {
+  return { name, test };
 }
 
 export const replied = () =>
