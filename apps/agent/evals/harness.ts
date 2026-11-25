@@ -59,7 +59,7 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     // Each eval is a single new turn; nothing is resumed.
     history: {
       begin: async () => {},
-      load: async () => ({ messages: [], start: 0 }),
+      load: async () => ({ messages: [], next: 0 }),
       append: async () => {},
       compact: async () => {},
       addUsage: async () => {},

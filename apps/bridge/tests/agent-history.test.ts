@@ -7,7 +7,7 @@ import { databaseScope } from './database-fixture.ts';
 import { AGENT_MESSAGE_FORMAT, AgentHistory } from '../src/agent/agent-history.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { agentCompactions, agentMessages, agentSessions } from '../src/db/schema.ts';
+import { agentEntries, agentSessions } from '../src/db/schema.ts';
 import type { ApplicationDatabase } from '../src/db/application-database.ts';
 
 async function fixture() {
@@ -24,8 +24,19 @@ async function fixture() {
     tick: (ms: number) => void (clock += ms),
     session: (id: string) =>
       database.orm.select().from(agentSessions).where(eq(agentSessions.id, id)).get(),
-    messages: () => database.orm.select().from(agentMessages).all(),
-    compactions: () => database.orm.select().from(agentCompactions).all(),
+    entries: () => database.orm.select().from(agentEntries).orderBy(agentEntries.seq).all(),
+    messages: () =>
+      database.orm
+        .select()
+        .from(agentEntries)
+        .all()
+        .filter((row) => row.type === 'message'),
+    compactions: () =>
+      database.orm
+        .select()
+        .from(agentEntries)
+        .all()
+        .filter((row) => row.type === 'compaction'),
     async close() {
       await scope.close();
       await rm(directory, { recursive: true, force: true });
@@ -64,13 +75,13 @@ test('agent history appends turns with their model and replaces a retried turn',
     await f.history.append('s', 1, [{ role: 'assistant', content: 'Answer' }], 'claude');
     expect(await new AgentHistory(f.scope.open(f.file)).load('s')).toEqual({
       summary: undefined,
-      start: 0,
+      next: 2,
       messages: [
-        { message: { role: 'user', content: 'Question' }, model: 'gpt' },
-        { message: { role: 'assistant', content: 'Answer' }, model: 'claude' },
+        { seq: 0, message: { role: 'user', content: 'Question' }, model: 'gpt' },
+        { seq: 1, message: { role: 'assistant', content: 'Answer' }, model: 'claude' },
       ],
     });
-    expect(f.messages().map((row) => [row.position, row.role, row.model])).toEqual([
+    expect(f.entries().map((row) => [row.seq, row.role, row.model])).toEqual([
       [0, 'user', 'gpt'],
       [1, 'assistant', 'claude'],
     ]);
@@ -79,7 +90,7 @@ test('agent history appends turns with their model and replaces a retried turn',
   }
 });
 
-test('compaction records a summary and where reading starts, and deletes nothing', async () => {
+test('compaction is a log entry with a summary and where reading starts; nothing is deleted', async () => {
   const f = await fixture();
   try {
     await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
@@ -93,15 +104,26 @@ test('compaction records a summary and where reading starts, and deletes nothing
     // The latest compaction wins; one without a summary just starts reading later.
     expect(await f.history.load('s')).toEqual({
       summary: undefined,
-      start: 4,
-      messages: turns.slice(4).map((message) => ({ message, model: 'gpt' })),
+      next: 8,
+      messages: turns.slice(4).map((message, index) => ({ seq: 4 + index, message, model: 'gpt' })),
     });
-    await f.history.compact('s', { keptFrom: 4, summary: 'Retried summary', model: 'gpt' });
-    expect((await f.history.load('s')).summary).toBe('Retried summary');
-    // A turn after compaction appends after every stored message.
-    await f.history.append('s', 6, [{ role: 'user', content: 'Next' }], 'gpt');
-    expect(f.messages()).toHaveLength(7);
-    expect(f.compactions()).toHaveLength(2);
+    // The next turn logs after the compactions; reading skips them.
+    await f.history.append('s', 8, [{ role: 'user', content: 'Next' }], 'gpt');
+    await f.history.compact('s', { keptFrom: 8, summary: 'Latest summary', model: 'claude' });
+    const loaded = await f.history.load('s');
+    expect(loaded.summary).toBe('Latest summary');
+    expect(loaded.messages.map((entry) => entry.seq)).toEqual([8]);
+    expect(f.entries().map((row) => [row.seq, row.type, row.role])).toEqual([
+      ...turns.map((turn, index) => [index, 'message', turn.role]),
+      [6, 'compaction', null],
+      [7, 'compaction', null],
+      [8, 'message', 'user'],
+      [9, 'compaction', null],
+    ]);
+    expect(JSON.parse(f.compactions().at(-1)!.data)).toEqual({
+      keptFrom: 8,
+      summary: 'Latest summary',
+    });
   } finally {
     await f.close();
   }

@@ -126,9 +126,13 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
-  // An in-memory history with the bridge store's rules: rows stay, compactions are records.
-  const histories = new Map<string, StoredMessage[]>();
-  const compactions = new Map<string, Compaction[]>();
+  // An in-memory log with the bridge store's rules: entries stay, compactions are entries.
+  type Entry = (StoredMessage & { type: 'message' }) | (Compaction & { type: 'compaction' });
+  const logs = new Map<string, Entry[]>();
+  const messagesOf = (session: string) =>
+    (logs.get(session) ?? []).filter((entry) => entry.type === 'message');
+  const compactionsOf = (session: string) =>
+    (logs.get(session) ?? []).filter((entry) => entry.type === 'compaction');
   const sessions = new Map<
     string,
     { chatId: string; model: string; inputTokens: number; outputTokens: number }
@@ -148,25 +152,29 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
         totals.outputTokens += usage.outputTokens;
       },
       load: async (session) => {
-        const latest = compactions.get(session)?.at(-1);
-        const start = latest?.keptFrom ?? 0;
+        const log = logs.get(session) ?? [];
+        const latest = compactionsOf(session).at(-1);
         return {
           summary: latest?.summary,
-          messages: (histories.get(session) ?? []).slice(start),
-          start,
+          messages: log.flatMap((entry, seq) =>
+            entry.type === 'message' && seq >= (latest?.keptFrom ?? 0)
+              ? [{ seq, message: entry.message, model: entry.model }]
+              : [],
+          ),
+          next: log.length,
         };
       },
       append: async (session, from, messages, model) =>
-        void histories.set(session, [
-          ...(histories.get(session) ?? []).slice(0, from),
-          ...messages.map((message) => ({ message, model })),
+        void logs.set(session, [
+          ...(logs.get(session) ?? []).slice(0, from),
+          ...messages.map((message) => ({ type: 'message' as const, message, model })),
         ]),
       compact: async (session, compaction) =>
-        void compactions.set(session, [...(compactions.get(session) ?? []), compaction]),
-      delete: async (session) => {
-        histories.delete(session);
-        compactions.delete(session);
-      },
+        void logs.set(session, [
+          ...(logs.get(session) ?? []),
+          { type: 'compaction', ...compaction },
+        ]),
+      delete: async (session) => void logs.delete(session),
     },
     logger: { info: () => {}, warn: () => {} },
   });
@@ -183,8 +191,9 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
     send,
     requests,
     inspections,
-    histories,
-    compactions,
+    logs,
+    messagesOf,
+    compactionsOf,
     sessions,
     close: async () => {
       server.close();
@@ -275,10 +284,10 @@ test(
       expect(history).toContain('Which addons do I have?');
       expect(history).toContain('tool-call-3');
       expect(history).toContain('Offline integration passed.');
-      expect(f.histories.get(session)!.at(-1)!.message).toMatchObject({ role: 'tool' });
+      expect(f.messagesOf(session).at(-1)!.message).toMatchObject({ role: 'tool' });
 
       await f.engine.end(session);
-      expect(f.histories.has(session)).toBe(false);
+      expect(f.logs.has(session)).toBe(false);
     } finally {
       await f.close();
     }
@@ -301,9 +310,9 @@ test(
         turns.push({ role: 'user', content: 'Question ' + index + ' ' + 'x'.repeat(1500) });
         turns.push({ role: 'assistant', content: 'Answer ' + index });
       }
-      f.histories.set(
+      f.logs.set(
         session,
-        turns.map((message) => ({ message, model: 'gpt-test' })),
+        turns.map((message) => ({ type: 'message', message, model: 'gpt-test' })),
       );
       const { events, result } = await f.send(session, 'Next question');
       expect(result).toEqual({ status: 'completed' });
@@ -314,12 +323,18 @@ test(
         kind: 'compaction',
         outcome: 'completed',
       });
-      // The compaction is a record: every message stays stored, this turn's included.
-      expect(f.compactions.get(session)).toEqual([
-        { keptFrom: 4, summary: 'Summary of the quest plan.', model: expect.any(String) },
+      // The compaction is a log entry: every message stays, this turn's included.
+      expect(f.compactionsOf(session)).toEqual([
+        {
+          type: 'compaction',
+          keptFrom: 4,
+          summary: 'Summary of the quest plan.',
+          model: expect.any(String),
+        },
       ]);
-      const stored = f.histories.get(session)!;
+      const stored = f.messagesOf(session);
       expect(stored).toHaveLength(14);
+      expect(f.logs.get(session)![12]!.type).toBe('compaction');
       expect(JSON.stringify(stored)).toContain('Question 1 ');
       expect(JSON.stringify(stored.at(-1))).toContain('Answer after compaction.');
       // The model reads the summary, then the four most recent turns.

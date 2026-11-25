@@ -59,13 +59,18 @@ export interface TokenUsage {
   cacheWriteTokens?: number;
 }
 
-/** What the model reads of a session: the latest compaction's summary and the messages after it. */
+/** A stored message and its place in the session's log. */
+export interface LoggedMessage extends StoredMessage {
+  seq: number;
+}
+
+/** What the model reads of a session: the latest compaction's summary and the messages it keeps. */
 export interface SessionHistory {
   summary?: string;
-  /** The messages from `start` on, oldest first. */
-  messages: StoredMessage[];
-  /** The position of the first message; the next one appended takes `start + messages.length`. */
-  start: number;
+  /** The messages from the latest compaction's `keptFrom` on, oldest first. */
+  messages: LoggedMessage[];
+  /** The position the next log entry takes. */
+  next: number;
 }
 
 /** A compaction: messages before `keptFrom` are summarized; no summary when summarizing failed. */
@@ -80,8 +85,9 @@ export interface EngineHistory {
   /** Called at the start of every turn; the first one starts the session. */
   begin(session: string, start: SessionStart): Promise<void>;
   load(session: string): Promise<SessionHistory>;
-  /** Stores messages from position `from` on, replacing any a retried turn left there. */
+  /** Logs messages from position `from` on, replacing any entries a retried turn left there. */
   append(session: string, from: number, messages: ModelMessage[], model: string): Promise<void>;
+  /** Logs a compaction after the last entry. */
   compact(session: string, compaction: Compaction): Promise<void>;
   addUsage(session: string, usage: TokenUsage): Promise<void>;
   delete(session: string): Promise<void>;
@@ -514,7 +520,7 @@ export function createAgentEngine(options: EngineOptions) {
     // Without a summary the turn stays answerable by reading only the recent part.
     yield* attempt('history', () =>
       history.compact(session, {
-        keptFrom: loaded.start + older.length,
+        keptFrom: loaded.messages[older.length]!.seq,
         summary,
         model: modelSlug,
       }),
@@ -565,7 +571,7 @@ export function createAgentEngine(options: EngineOptions) {
       role: 'user',
       content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
     };
-    const next = loaded.start + loaded.messages.length;
+    const next = loaded.next;
     yield* attempt('history', () => history.append(session, next, [user], selected.model));
 
     const assembled = assembleTools({

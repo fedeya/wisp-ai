@@ -213,7 +213,10 @@ test(
       history: {
         begin: async () => {},
         addUsage: async () => {},
-        load: async (id) => ({ messages: [...(histories.get(id) ?? [])], start: 0 }),
+        load: async (id) => {
+          const log = histories.get(id) ?? [];
+          return { messages: log.map((entry, seq) => ({ ...entry, seq })), next: log.length };
+        },
         append: async (id, from, messages, model) =>
           void histories.set(id, [
             ...(histories.get(id) ?? []).slice(0, from),

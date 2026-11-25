@@ -253,53 +253,42 @@ export const agentSessions = sqliteTable(
 );
 
 /**
- * A session's history: user, assistant and tool messages in AI SDK form
- * (`agent_sessions.format`), tool calls and results with their call IDs
- * included. Rows are only appended, or replaced from a position when a turn is
- * retried; compaction never deletes them.
+ * A session's log, in order: the messages the agent exchanged with the model
+ * and the compactions of that history.
+ *
+ * - `message`: a user, assistant or tool message in AI SDK form
+ *   (`agent_sessions.format`), tool calls and results with their call IDs
+ *   included; `model` is the model of the turn that wrote it.
+ * - `compaction`: `{ keptFrom, summary? }`. The model reads the latest one's
+ *   summary, then the messages from `keptFrom` on; no summary means
+ *   summarizing failed and the turn went on with the recent messages only.
+ *
+ * Entries are only appended, or replaced from a position when a turn is
+ * retried; compaction never deletes messages.
  */
-export const agentMessages = sqliteTable(
-  'agent_messages',
+export const agentEntries = sqliteTable(
+  'agent_entries',
   {
     sessionId: text('session_id')
       .notNull()
       .references(() => agentSessions.id, { onDelete: 'cascade' }),
-    position: integer().notNull(),
-    role: text().$type<'user' | 'assistant' | 'tool' | 'system'>().notNull(),
-    /** The model of the turn that wrote the message. */
+    seq: integer().notNull(),
+    type: text().$type<'message' | 'compaction'>().notNull(),
+    /** The message's role; null for compactions. */
+    role: text().$type<'user' | 'assistant' | 'tool' | 'system'>(),
+    /** The model that wrote the message or the summary. */
     model: text().notNull(),
     createdAt: integer('created_at').notNull(),
-    message: text().notNull(),
+    data: text().notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.sessionId, t.position] }),
-    check('agent_message_position', sql`${t.position} >= 0`),
-    check('agent_message_role', sql`${t.role} IN ('user','assistant','tool','system')`),
-    check('agent_message_json', sql`json_valid(${t.message})`),
-  ],
-);
-
-/**
- * A compaction of a session's history. The model reads the latest one's
- * summary, then the messages from `kept_from` on; earlier messages stay
- * stored. A null summary means summarizing failed and the turn went on with
- * the recent messages only.
- */
-export const agentCompactions = sqliteTable(
-  'agent_compactions',
-  {
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => agentSessions.id, { onDelete: 'cascade' }),
-    /** Messages before this position are summarized; the rest are kept as they are. */
-    keptFrom: integer('kept_from').notNull(),
-    summary: text(),
-    /** The model that wrote the summary. */
-    model: text().notNull(),
-    createdAt: integer('created_at').notNull(),
-  },
-  (t) => [
-    primaryKey({ columns: [t.sessionId, t.keptFrom] }),
-    check('agent_compaction_kept_from', sql`${t.keptFrom} >= 0`),
+    primaryKey({ columns: [t.sessionId, t.seq] }),
+    index('agent_entries_type').on(t.sessionId, t.type, t.seq),
+    check('agent_entry_seq', sql`${t.seq} >= 0`),
+    check(
+      'agent_entry_type',
+      sql`(${t.type} = 'message' AND ${t.role} IN ('user','assistant','tool','system')) OR (${t.type} = 'compaction' AND ${t.role} IS NULL)`,
+    ),
+    check('agent_entry_json', sql`json_valid(${t.data}) AND json_type(${t.data}) = 'object'`),
   ],
 );
