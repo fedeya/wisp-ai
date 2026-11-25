@@ -67,6 +67,8 @@ export type Synthetic = typeof Synthetic.Type;
 export const ToolOutput = Schema.Union([
   Schema.Struct({ type: Schema.tag('text'), text: Schema.String }),
   Schema.Struct({ type: Schema.tag('json'), value: Schema.Unknown }),
+  /** Multimodal parts (text, images, files), as the AI SDK's content output carries them. */
+  Schema.Struct({ type: Schema.tag('content'), value: Schema.Array(Schema.Unknown) }),
 ]);
 export type ToolOutput = typeof ToolOutput.Type;
 

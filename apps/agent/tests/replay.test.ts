@@ -79,6 +79,7 @@ test('a step logged from the AI SDK replays as the messages it came from', () =>
         { type: 'text', text: 'Reading your bags' },
         { type: 'tool-call', toolCallId: 'c1', toolName: 'bags', input: { slot: 1 } },
         { type: 'tool-call', toolCallId: 'c2', toolName: 'quests', input: {} },
+        { type: 'tool-call', toolCallId: 'c3', toolName: 'map', input: {} },
       ],
     },
     {
@@ -96,11 +97,29 @@ test('a step logged from the AI SDK replays as the messages it came from', () =>
           toolName: 'quests',
           output: { type: 'error-text', value: 'Not connected' },
         },
+        {
+          type: 'tool-result',
+          toolCallId: 'c3',
+          toolName: 'map',
+          output: {
+            type: 'content',
+            value: [
+              { type: 'text', text: 'Elwynn Forest' },
+              { type: 'image-data', data: 'iVBORw0KGgo=', mediaType: 'image/png' },
+            ],
+          },
+        },
       ],
     },
   ];
   const logged = stepMessage(response, { finish: 'tool-calls', created: 1, completed: 2 });
-  expect(logged.content.map((part) => part.type)).toEqual(['reasoning', 'text', 'tool', 'tool']);
+  expect(logged.content.map((part) => part.type)).toEqual([
+    'reasoning',
+    'text',
+    'tool',
+    'tool',
+    'tool',
+  ]);
   expect(logged.content[3]).toMatchObject({ state: { status: 'error', error: 'Not connected' } });
   // The log is plain JSON that does not depend on the AI SDK's shapes.
   const stored = JSON.parse(JSON.stringify(logged)) as Assistant;
