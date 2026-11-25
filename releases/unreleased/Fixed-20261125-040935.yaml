@@ -1,0 +1,3 @@
+kind: Fixed
+body: Failed edits to custom MCP connections now preserve the previously saved credentials.
+time: 2026-11-25T04:09:35Z
