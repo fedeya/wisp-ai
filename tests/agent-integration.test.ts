@@ -215,11 +215,11 @@ test(
         addUsage: async () => {},
         load: async (id) => {
           const log = histories.get(id) ?? [];
-          return { messages: log.map((entry, seq) => ({ ...entry, seq })), next: log.length };
+          return { messages: log.map((entry, seq) => ({ ...entry, seq })) };
         },
-        append: async (id, from, messages, model) =>
+        append: async (id, messages, model) =>
           void histories.set(id, [
-            ...(histories.get(id) ?? []).slice(0, from),
+            ...(histories.get(id) ?? []),
             ...messages.map((message) => ({ message, model })),
           ]),
         compact: async () => {},

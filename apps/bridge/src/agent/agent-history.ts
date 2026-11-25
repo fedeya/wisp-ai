@@ -87,16 +87,18 @@ export class AgentHistory {
         message: JSON.parse(row.data) as ModelMessage,
         model: row.model,
       }));
-    return { summary: compaction?.summary, messages, next: this.next(orm, session) };
+    return { summary: compaction?.summary, messages };
   }
 
-  /** Logs a turn's messages from position `from` on, replacing what a retried turn left there. */
-  async append(session: string, from: number, messages: ModelMessage[], model: string) {
+  /**
+   * Logs messages after the last entry. The log only grows: a compaction or
+   * another write that lands in between keeps its place instead of being
+   * overwritten.
+   */
+  async append(session: string, messages: ModelMessage[], model: string) {
+    if (!messages.length) return;
     await this.database.transaction((db) => {
-      db.delete(agentEntries)
-        .where(and(eq(agentEntries.sessionId, session), gte(agentEntries.seq, from)))
-        .run();
-      if (!messages.length) return;
+      const from = this.next(db, session);
       const createdAt = this.now();
       db.insert(agentEntries)
         .values(

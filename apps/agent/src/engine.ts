@@ -71,8 +71,6 @@ export interface SessionHistory {
   summary?: string;
   /** The messages from the latest compaction's `keptFrom` on, oldest first. */
   messages: LoggedMessage[];
-  /** The position the next log entry takes. */
-  next: number;
 }
 
 /** A compaction: messages before `keptFrom` are summarized; no summary when summarizing failed. */
@@ -87,8 +85,8 @@ export interface EngineHistory {
   /** Called at the start of every turn; the first one starts the session. */
   begin(session: string, start: SessionStart): Promise<void>;
   load(session: string): Promise<SessionHistory>;
-  /** Logs messages from position `from` on, replacing any entries a retried turn left there. */
-  append(session: string, from: number, messages: ModelMessage[], model: string): Promise<void>;
+  /** Logs messages after the last entry; entries are never replaced or deleted. */
+  append(session: string, messages: ModelMessage[], model: string): Promise<void>;
   /** Logs a compaction after the last entry. */
   compact(session: string, compaction: Compaction): Promise<void>;
   addUsage(session: string, usage: TokenUsage): Promise<void>;
@@ -602,8 +600,7 @@ export function createAgentEngine(options: EngineOptions) {
       role: 'user',
       content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
     };
-    const next = loaded.next;
-    yield* attempt('history', () => history.append(session, next, [user], selected.model));
+    yield* attempt('history', () => history.append(session, [user], selected.model));
 
     const assembled = assembleTools({
       session,
@@ -640,7 +637,7 @@ export function createAgentEngine(options: EngineOptions) {
     // Every step's messages, tool calls and results included.
     const response = yield* attempt('model', () => Promise.resolve(result.responseMessages));
     if (response.length) {
-      yield* attempt('history', () => history.append(session, next + 1, response, selected.model));
+      yield* attempt('history', () => history.append(session, response, selected.model));
     }
   }, Effect.scoped);
 

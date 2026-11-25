@@ -45,14 +45,13 @@ async function fixture() {
   };
 }
 
-test('agent history appends turns with their model and replaces a retried turn', async () => {
+test('agent history appends turns with their model and never replaces an entry', async () => {
   const f = await fixture();
   try {
     await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
-    await f.history.append('s', 0, [{ role: 'user', content: 'Question' }], 'gpt');
+    await f.history.append('s', [{ role: 'user', content: 'Question' }], 'gpt');
     await f.history.append(
       's',
-      1,
       [
         {
           role: 'assistant',
@@ -72,26 +71,21 @@ test('agent history appends turns with their model and replaces a retried turn',
       ],
       'gpt',
     );
-    // A retried turn overwrites what followed its start.
-    await f.history.append('s', 1, [{ role: 'assistant', content: 'Answer' }], 'claude');
-    expect(await new AgentHistory(f.scope.open(f.file)).load('s')).toEqual({
-      summary: undefined,
-      next: 2,
-      messages: [
-        { seq: 0, message: { role: 'user', content: 'Question' }, model: 'gpt' },
-        { seq: 1, message: { role: 'assistant', content: 'Answer' }, model: 'claude' },
-      ],
-    });
+    await f.history.append('s', [{ role: 'assistant', content: 'Answer' }], 'claude');
+    const loaded = await new AgentHistory(f.scope.open(f.file)).load('s');
+    expect(loaded.summary).toBeUndefined();
+    expect(loaded.messages.map((entry) => [entry.seq, entry.message.role, entry.model])).toEqual([
+      [0, 'user', 'gpt'],
+      [1, 'assistant', 'gpt'],
+      [2, 'tool', 'gpt'],
+      [3, 'assistant', 'claude'],
+    ]);
     // Every entry has its own UUID v7, stamped with its creation time.
     for (const row of f.entries()) {
       expect(row.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7/);
       expect(uuidv7Time(row.id)).toBe(row.createdAt);
     }
-    expect(new Set(f.entries().map((row) => row.id)).size).toBe(2);
-    expect(f.entries().map((row) => [row.seq, row.role, row.model])).toEqual([
-      [0, 'user', 'gpt'],
-      [1, 'assistant', 'claude'],
-    ]);
+    expect(new Set(f.entries().map((row) => row.id)).size).toBe(4);
   } finally {
     await f.close();
   }
@@ -105,17 +99,16 @@ test('compaction is a log entry with a summary and where reading starts; nothing
       role: index % 2 ? ('assistant' as const) : ('user' as const),
       content: 'Message ' + index,
     }));
-    await f.history.append('s', 0, turns, 'gpt');
+    await f.history.append('s', turns, 'gpt');
     await f.history.compact('s', { keptFrom: 2, summary: 'First summary', model: 'gpt' });
     await f.history.compact('s', { keptFrom: 4, model: 'gpt' });
     // The latest compaction wins; one without a summary just starts reading later.
     expect(await f.history.load('s')).toEqual({
       summary: undefined,
-      next: 8,
       messages: turns.slice(4).map((message, index) => ({ seq: 4 + index, message, model: 'gpt' })),
     });
     // The next turn logs after the compactions; reading skips them.
-    await f.history.append('s', 8, [{ role: 'user', content: 'Next' }], 'gpt');
+    await f.history.append('s', [{ role: 'user', content: 'Next' }], 'gpt');
     await f.history.compact('s', { keptFrom: 8, summary: 'Latest summary', model: 'claude' });
     const loaded = await f.history.load('s');
     expect(loaded.summary).toBe('Latest summary');
@@ -178,7 +171,7 @@ test('ending a session or deleting its chat removes its history; prune drops the
       ['orphan', 'never-saved'],
     ]) {
       await f.history.begin(session, { chatId, model: 'm' });
-      await f.history.append(session, 0, [{ role: 'user', content: session }], 'm');
+      await f.history.append(session, [{ role: 'user', content: session }], 'm');
       await f.history.compact(session, { keptFrom: 0, summary: 'S', model: 'm' });
     }
     await f.history.delete('ended');
@@ -199,6 +192,26 @@ test('ending a session or deleting its chat removes its history; prune drops the
     expect(f.session('orphan')).toBeUndefined();
     expect(f.messages()).toHaveLength(1);
     expect(f.compactions()).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a compaction logged during a turn keeps its place when the turn ends', async () => {
+  const f = await fixture();
+  try {
+    await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
+    await f.history.append('s', [{ role: 'user', content: 'Question' }], 'gpt');
+    await f.history.compact('s', { keptFrom: 0, summary: 'Summary', model: 'gpt' });
+    await f.history.append('s', [{ role: 'assistant', content: 'Answer' }], 'gpt');
+    expect(f.entries().map((row) => [row.seq, row.type, row.role])).toEqual([
+      [0, 'message', 'user'],
+      [1, 'compaction', null],
+      [2, 'message', 'assistant'],
+    ]);
+    const loaded = await f.history.load('s');
+    expect(loaded.summary).toBe('Summary');
+    expect(loaded.messages.map((entry) => entry.seq)).toEqual([0, 2]);
   } finally {
     await f.close();
   }
