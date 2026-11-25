@@ -1,15 +1,58 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { setAgentHost } from '../src/agent-host.ts';
 import { McpTools } from '../src/mcp-tools.ts';
+import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));
+
+test('closing MCP tools also closes a client whose connection completes after shutdown', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'wisp-mcp-tools-'));
+  const flags = path.join(directory, 'capabilities.json');
+  const config = path.join(directory, 'mcp.json');
+  const connecting = gate();
+  const connected = gate();
+  const connect = vi.spyOn(Client.prototype, 'connect').mockImplementation(() => {
+    connecting.open();
+    return connected.promise;
+  });
+  const close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
+  const list = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
+  const mcp = new McpTools(() => config);
+  try {
+    await writeFile(flags, JSON.stringify({ enabled: { 'mcp:everloot': false } }));
+    await writeFile(config, JSON.stringify({ servers: { my_tools: { enabled: true } } }));
+    setAgentHost({ origin: 'http://127.0.0.1:1', token: 'relay-token', capabilitiesFile: flags });
+    const listing = mcp.tools(() => {});
+    await Promise.race([
+      connecting.promise,
+      listing.then(() => {
+        throw Error('MCP listing finished before opening a connection.');
+      }),
+    ]);
+    await mcp.close();
+    connected.open();
+    expect(await listing).toEqual([]);
+    expect(close.mock.contexts).toContain(connect.mock.contexts[0]);
+    expect(list).not.toHaveBeenCalled();
+    expect(await mcp.tools(() => {})).toEqual([]);
+    expect(connect).toHaveBeenCalledTimes(1);
+  } finally {
+    connected.open();
+    await mcp.close();
+    connect.mockRestore();
+    close.mockRestore();
+    list.mockRestore();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test('relayed MCP servers become namespaced, filtered tools through the MCP SDK client', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-mcp-tools-'));
