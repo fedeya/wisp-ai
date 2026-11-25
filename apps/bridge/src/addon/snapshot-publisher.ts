@@ -1,7 +1,8 @@
+import { Effect } from 'effect';
 import type { Logger } from '../logger.ts';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { errorMessage } from '../errors.ts';
-import { createPublishScheduler } from './publish-scheduler.ts';
+import { makePublishScheduler } from './publish-scheduler.ts';
 import type { SessionState } from '../session-state.ts';
 import type { SnapshotGate } from './snapshots.ts';
 import type { DiskTransport } from './transport.ts';
@@ -22,14 +23,18 @@ export interface SnapshotPublisher {
   flush(): void;
   /** Re-schedule a publish that is still stale (no transport, or a failed write). */
   retry(): void;
-  stop(): void;
 }
 
-/** Publishes the addon snapshot to the current transport whenever it changes. */
-export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): SnapshotPublisher {
+/**
+ * Publishes the addon snapshot to the current transport whenever it changes,
+ * until the caller's scope closes.
+ */
+export const makeSnapshotPublisher = Effect.fn('SnapshotPublisher.make')(function* (
+  deps: SnapshotPublisherDependencies,
+) {
   const { state, snapshots, logger } = deps;
   let dirty = true;
-  const scheduler = createPublishScheduler(() => publish());
+  const scheduler = yield* makePublishScheduler(() => publish());
 
   function publish() {
     const transport = deps.transport();
@@ -68,6 +73,5 @@ export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): Sn
     retry() {
       if (dirty) scheduler.schedule();
     },
-    stop: () => scheduler.stop(),
-  };
-}
+  } satisfies SnapshotPublisher;
+});

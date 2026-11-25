@@ -35,7 +35,7 @@ import { CapabilitySettings } from './integrations/capabilities.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { SnapshotGate } from './addon/snapshots.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './addon/publish-scheduler.ts';
-import { createSnapshotPublisher } from './addon/snapshot-publisher.ts';
+import { makeSnapshotPublisher } from './addon/snapshot-publisher.ts';
 import { PanelStore } from './addon/panels.ts';
 import { McpManager } from './integrations/mcp/mcp-manager.ts';
 import { McpRelay } from './integrations/mcp/mcp-relay.ts';
@@ -267,37 +267,34 @@ export const makeBridge = Effect.fn('Bridge.make')(function* (options: BridgeOpt
   // The app update the desktop last reported; the desktop resends it after a restart.
   let appUpdateVersion: string | null = null;
   const snapshots = new SnapshotGate();
-  const publisher = yield* acquire(
-    () =>
-      createSnapshotPublisher({
-        state,
-        snapshots,
-        transport: () => transport.current(),
-        inputs: () => {
-          const character = state.currentCharacterKey;
-          return {
-            connected: engineReady,
-            bridgeVersion,
-            expectedAddonVersion,
-            appUpdateVersion,
-            contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
-              ?.contextWindow,
-            defaultModel: defaultModel(),
-            panels: character ? panelStore.list(character) : [],
-            routines: character ? routineStore.list(character) : [],
-            routineRuns: character
-              ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
-              : [],
-            routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
-            capabilities: capabilitySettings.snapshot(),
-            features: features.values(),
-            requests: pending.snapshot(),
-          };
-        },
-        logger,
-      }),
-    (snapshotPublisher) => snapshotPublisher.stop(),
-  );
+  // Its pending publish is a fiber in the bridge scope.
+  const publisher = yield* makeSnapshotPublisher({
+    state,
+    snapshots,
+    transport: () => transport.current(),
+    inputs: () => {
+      const character = state.currentCharacterKey;
+      return {
+        connected: engineReady,
+        bridgeVersion,
+        expectedAddonVersion,
+        appUpdateVersion,
+        contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
+          ?.contextWindow,
+        defaultModel: defaultModel(),
+        panels: character ? panelStore.list(character) : [],
+        routines: character ? routineStore.list(character) : [],
+        routineRuns: character
+          ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
+          : [],
+        routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
+        capabilities: capabilitySettings.snapshot(),
+        features: features.values(),
+        requests: pending.snapshot(),
+      };
+    },
+    logger,
+  });
   const pending = yield* acquire(
     () =>
       new GameRequests(changed, {

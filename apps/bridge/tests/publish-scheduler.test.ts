@@ -1,90 +1,92 @@
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { assert, it } from '@effect/vitest';
+import { Clock, Effect, Exit, Scope } from 'effect';
+import { TestClock } from 'effect/testing';
 import {
-  createPublishScheduler,
+  makePublishScheduler,
   PUBLISH_COALESCE_MS,
   PUBLISH_MIN_INTERVAL_MS,
 } from '../src/addon/publish-scheduler.ts';
 
-beforeEach(() => {
-  vi.useFakeTimers({ now: 0 });
-});
-afterEach(() => {
-  vi.useRealTimers();
-});
-
-test('a single change publishes after the short coalescing window', () => {
-  const publish = vi.fn();
-  const scheduler = createPublishScheduler(publish);
-  scheduler.schedule();
-  vi.advanceTimersByTime(PUBLISH_COALESCE_MS - 1);
-  expect(publish).not.toHaveBeenCalled();
-  vi.advanceTimersByTime(1);
-  expect(publish).toHaveBeenCalledTimes(1);
-  scheduler.stop();
-});
-
-test('a burst of changes coalesces into one publish', () => {
-  const publish = vi.fn();
-  const scheduler = createPublishScheduler(publish);
-  for (let i = 0; i < 20; i++) {
-    scheduler.schedule();
-    vi.advanceTimersByTime(1);
-  }
-  vi.advanceTimersByTime(PUBLISH_COALESCE_MS);
-  expect(publish).toHaveBeenCalledTimes(1);
-  scheduler.stop();
-});
-
-test('publishes keep the minimum interval and never wait longer than it', () => {
+/** A scheduler whose publishes are recorded at the test clock's time. */
+const recorded = Effect.gen(function* () {
+  const clock = yield* Clock.Clock;
   const at: number[] = [];
-  const scheduler = createPublishScheduler(() => at.push(Date.now()));
-  // A change every 10ms for two seconds, like a streaming reply.
-  for (let t = 0; t < 2000; t += 10) {
+  const scheduler = yield* makePublishScheduler(() => at.push(clock.currentTimeMillisUnsafe()));
+  return { at, scheduler };
+});
+
+it.effect('a single change publishes after the short coalescing window', () =>
+  Effect.gen(function* () {
+    const { at, scheduler } = yield* recorded;
     scheduler.schedule();
-    vi.advanceTimersByTime(10);
-  }
-  vi.advanceTimersByTime(PUBLISH_MIN_INTERVAL_MS);
-  expect(at[0]).toBe(PUBLISH_COALESCE_MS);
-  for (let i = 1; i < at.length; i++) {
-    expect(at[i] - at[i - 1]).toBe(PUBLISH_MIN_INTERVAL_MS);
-  }
-  expect(at.length).toBe(6);
-  scheduler.stop();
-});
+    yield* TestClock.adjust(PUBLISH_COALESCE_MS - 1);
+    assert.equal(at.length, 0);
+    yield* TestClock.adjust(1);
+    assert.equal(at.length, 1);
+  }),
+);
 
-test('a change right after a publish waits out the interval, not longer', () => {
-  const publish = vi.fn();
-  const scheduler = createPublishScheduler(publish);
-  scheduler.schedule();
-  vi.advanceTimersByTime(PUBLISH_COALESCE_MS);
-  scheduler.schedule();
-  vi.advanceTimersByTime(PUBLISH_MIN_INTERVAL_MS - 1);
-  expect(publish).toHaveBeenCalledTimes(1);
-  vi.advanceTimersByTime(1);
-  expect(publish).toHaveBeenCalledTimes(2);
-  scheduler.stop();
-});
+it.effect('a burst of changes coalesces into one publish', () =>
+  Effect.gen(function* () {
+    const { at, scheduler } = yield* recorded;
+    for (let i = 0; i < 20; i++) {
+      scheduler.schedule();
+      yield* TestClock.adjust(1);
+    }
+    yield* TestClock.adjust(PUBLISH_COALESCE_MS);
+    assert.equal(at.length, 1);
+  }),
+);
 
-test('an idle change after a quiet period publishes after the coalescing window', () => {
-  const publish = vi.fn();
-  const scheduler = createPublishScheduler(publish);
-  scheduler.schedule();
-  vi.advanceTimersByTime(5000);
-  scheduler.schedule();
-  vi.advanceTimersByTime(PUBLISH_COALESCE_MS);
-  expect(publish).toHaveBeenCalledTimes(2);
-  scheduler.stop();
-});
+it.effect('publishes keep the minimum interval and never wait longer than it', () =>
+  Effect.gen(function* () {
+    const { at, scheduler } = yield* recorded;
+    // A change every 10ms for two seconds, like a streaming reply.
+    for (let t = 0; t < 2000; t += 10) {
+      scheduler.schedule();
+      yield* TestClock.adjust(10);
+    }
+    yield* TestClock.adjust(PUBLISH_MIN_INTERVAL_MS);
+    assert.equal(at[0], PUBLISH_COALESCE_MS);
+    for (let i = 1; i < at.length; i++) {
+      assert.equal(at[i] - at[i - 1], PUBLISH_MIN_INTERVAL_MS);
+    }
+    assert.equal(at.length, 6);
+  }),
+);
 
-test('stop cancels a pending publish and leaves no timers behind', () => {
-  const publish = vi.fn();
-  const scheduler = createPublishScheduler(publish);
-  scheduler.schedule();
-  expect(vi.getTimerCount()).toBe(1);
-  scheduler.stop();
-  expect(vi.getTimerCount()).toBe(0);
-  scheduler.schedule();
-  expect(vi.getTimerCount()).toBe(0);
-  vi.runAllTimers();
-  expect(publish).not.toHaveBeenCalled();
-});
+it.effect('a change right after a publish waits out the interval, not longer', () =>
+  Effect.gen(function* () {
+    const { at, scheduler } = yield* recorded;
+    scheduler.schedule();
+    yield* TestClock.adjust(PUBLISH_COALESCE_MS);
+    scheduler.schedule();
+    yield* TestClock.adjust(PUBLISH_MIN_INTERVAL_MS - 1);
+    assert.equal(at.length, 1);
+    yield* TestClock.adjust(1);
+    assert.equal(at.length, 2);
+  }),
+);
+
+it.effect('an idle change after a quiet period publishes after the coalescing window', () =>
+  Effect.gen(function* () {
+    const { at, scheduler } = yield* recorded;
+    scheduler.schedule();
+    yield* TestClock.adjust(5000);
+    scheduler.schedule();
+    yield* TestClock.adjust(PUBLISH_COALESCE_MS);
+    assert.equal(at.length, 2);
+  }),
+);
+
+it.effect('closing the scope cancels a pending publish and ignores later requests', () =>
+  Effect.gen(function* () {
+    const scope = yield* Scope.make();
+    const { at, scheduler } = yield* recorded.pipe(Scope.provide(scope));
+    scheduler.schedule();
+    yield* Scope.close(scope, Exit.void);
+    scheduler.schedule();
+    yield* TestClock.adjust(PUBLISH_MIN_INTERVAL_MS * 10);
+    assert.equal(at.length, 0);
+  }),
+);
