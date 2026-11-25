@@ -23,6 +23,36 @@ function release(version = '0.1.0', prerelease = false) {
     ],
   };
 }
+test('published Linux packages are offered beside the Windows installer', () => {
+  const value = release();
+  expect(publishedRelease(value)?.downloads).toEqual([
+    {
+      label: 'Windows (x64)',
+      url: 'https://github.com/fedeya/wisp-ai/releases/download/v0.1.0/WispAI-0.1.0-windows-x64-setup.exe',
+    },
+  ]);
+  const appImage = {
+    name: 'WispAI-0.1.0-linux-x64.AppImage',
+    browser_download_url:
+      'https://github.com/fedeya/wisp-ai/releases/download/v0.1.0/WispAI-0.1.0-linux-x64.AppImage',
+  };
+  const deb = {
+    name: 'WispAI-0.1.0-linux-x64.deb',
+    browser_download_url:
+      'https://github.com/fedeya/wisp-ai/releases/download/v0.1.0/WispAI-0.1.0-linux-x64.deb',
+  };
+  expect(
+    publishedRelease({ ...value, assets: [...value.assets, appImage, deb] })?.downloads,
+  ).toEqual([
+    {
+      label: 'Windows (x64)',
+      url: 'https://github.com/fedeya/wisp-ai/releases/download/v0.1.0/WispAI-0.1.0-windows-x64-setup.exe',
+    },
+    { label: 'Linux (x64) AppImage', url: appImage.browser_download_url },
+    { label: 'Linux (x64) .deb', url: deb.browser_download_url },
+  ]);
+});
+
 test('Nightly links identify the GitHub release independently of links in its notes', () => {
   const value = release('0.1.1-nightly.123.1', true);
   expect(

@@ -9,8 +9,18 @@ import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { ChatStore, conversationInstanceId } from '@wisp/bridge/chat-store';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { resolveStdioCommand } from '@wisp/bridge/mcp-manager';
+import { runtimeNodeName } from '@wisp/bridge/runtime-node';
 
 const exec = promisify(execFile);
+const engineName = process.platform === 'win32' ? 'wisp-engine.exe' : 'wisp-engine';
+const nodeName = runtimeNodeName();
+function packagedPath(root: string) {
+  const runtime = path.join(root, 'runtime');
+  return process.platform === 'win32'
+    ? runtime + path.delimiter + path.join(process.env.WINDIR || 'C:/Windows', 'System32')
+    : runtime + path.delimiter + '/usr/bin' + path.delimiter + '/bin';
+}
 test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
   'packaged engine supports SQLite and imports committed database history',
   { timeout: 60_000 },
@@ -155,7 +165,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'wisp-cli-args-'));
     try {
-      const engine = path.join(root, 'wisp-engine.exe');
+      const engine = path.join(root, engineName);
       await copyFile(process.env.WISP_TEST_ENGINE_EXECUTABLE!, engine);
       const wow = path.join(root, 'fake WoW client');
       const data = path.join(root, 'installed data');
@@ -219,10 +229,10 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'wisp-npx-test-'));
     try {
-      const engine = path.join(root, 'wisp-engine.exe');
+      const engine = path.join(root, engineName);
       await copyFile(process.env.WISP_TEST_ENGINE_EXECUTABLE!, engine);
       await mkdir(path.join(root, 'runtime'));
-      await copyFile(process.execPath, path.join(root, 'runtime/node.exe'));
+      await copyFile(process.execPath, path.join(root, 'runtime', nodeName));
       const fixture = path.join(root, 'fixture');
       await mkdir(fixture);
       await writeFile(
@@ -244,10 +254,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         npm_config_offline: 'true',
         npm_config_audit: 'false',
         npm_config_fund: 'false',
-        PATH:
-          path.join(root, 'runtime') +
-          path.delimiter +
-          path.join(process.env.WINDIR || 'C:/Windows', 'System32'),
+        PATH: packagedPath(root),
       };
       const result = await exec(
         engine,
@@ -262,7 +269,23 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         timeout: 10_000,
       });
       expect(nodeCompatibility.stdout).toContain('wisp-node-shim-ok');
-      expect(await readdir(path.join(root, 'runtime'))).toEqual(['node.exe']);
+      expect(await readdir(path.join(root, 'runtime'))).toEqual([nodeName]);
+      const previousEngine = process.env.WISP_ENGINE_EXECUTABLE;
+      process.env.WISP_ENGINE_EXECUTABLE = engine;
+      try {
+        const launch = resolveStdioCommand('node', ['-e', 'console.log("wisp-mcp-node-ok")'], root);
+        expect(launch.command).toBe(path.join(root, 'runtime', nodeName));
+        const mcpNode = await exec(launch.command, launch.args, {
+          cwd: root,
+          env,
+          windowsHide: true,
+          timeout: 10_000,
+        });
+        expect(mcpNode.stdout).toContain('wisp-mcp-node-ok');
+      } finally {
+        if (previousEngine === undefined) delete process.env.WISP_ENGINE_EXECUTABLE;
+        else process.env.WISP_ENGINE_EXECUTABLE = previousEngine;
+      }
     } finally {
       await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }

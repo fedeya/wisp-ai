@@ -1,4 +1,4 @@
-name: Windows release
+name: Release
 on:
   push:
     branches: [main]
@@ -171,11 +171,92 @@ jobs:
             dist/release-source.txt
       - name: Verify installer before publishing
         run: node scripts/verify-installer.ts
+  linux:
+    needs: [resolve, release-inputs]
+    if: >-
+      !cancelled() &&
+      needs.resolve.result == 'success' &&
+      needs.release-inputs.result == 'success' &&
+      needs.release-inputs.outputs.app == 'true'
+    runs-on: ubuntu-latest
+    env:
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            file \
+            libxdo-dev
+      - uses: ./.github/actions/setup-workspace
+      # Same version stamp as the Windows job, in this checkout only.
+      - name: Prepare version and shared release notes
+        run: node scripts/prepare-release.ts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      - name: Validate release version and signing configuration
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo 'Configure TAURI_SIGNING_PRIVATE_KEY before building a release.' >&2
+            exit 1
+          fi
+          node --input-type=module -e 'import { readFileSync } from "node:fs"; const version = JSON.parse(readFileSync("package.json", "utf8")).version; const desktopVersion = JSON.parse(readFileSync("apps/desktop/package.json", "utf8")).version; const tauriVersion = JSON.parse(readFileSync("apps/desktop/src-tauri/tauri.conf.json", "utf8")).version; const cargo = readFileSync("apps/desktop/src-tauri/Cargo.toml", "utf8"); const cargoVersion = cargo.match(/^version = "([^"]+)"/m)?.[1]; if (!/^\d+\.\d+\.\d+(-nightly\.\d+\.\d+)?$/.test(version)) throw Error("Expected a stable or nightly release version."); if (version !== desktopVersion || version !== tauriVersion || version !== cargoVersion) throw Error("App versions must match."); if (process.env.RELEASE_CHANNEL === "stable" && version !== process.env.RELEASE_VERSION) throw Error("This Nightly predates Stable promotion; promote a newer one.");'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm ui:build
+      - name: Fingerprint native executable inputs
+        id: native-key
+        run: node scripts/native-cache-key.ts
+      - name: Restore optimized native executable
+        id: native-binary
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/wisp-native
+          key: wisp-native-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-key.outputs.key }}
+      - uses: Swatinem/rust-cache@v2
+        if: steps.native-binary.outputs.cache-hit != 'true'
+        with:
+          workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
+      - run: pnpm package:linux
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Wisp-linux-x64
+          if-no-files-found: ignore
+          overwrite: true
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.sha256
+            dist/*.sig
+            dist/build-metrics-linux.json
   publish:
-    needs: [resolve, validate, windows]
+    needs: [resolve, validate, windows, linux]
     if: >-
       !cancelled() &&
       needs.windows.result == 'success' &&
+      needs.linux.result == 'success' &&
       (needs.resolve.outputs.channel == 'stable' || needs.validate.result == 'success')
     runs-on: ubuntu-latest
     permissions:
@@ -188,6 +269,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: Wisp-windows-x64
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: Wisp-linux-x64
           path: dist
       - name: Restore the built version
         run: node scripts/release-version.ts "$RELEASE_VERSION"
@@ -218,6 +303,8 @@ jobs:
           body_path: dist/release-notes.md
           files: |
             dist/*-setup.exe
+            dist/*.AppImage
+            dist/*.deb
             dist/*.sha256
             dist/*.sig
       - name: Attach updater manifest with release notes

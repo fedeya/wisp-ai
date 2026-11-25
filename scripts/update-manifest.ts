@@ -26,6 +26,17 @@ export function updateManifest(
   };
 }
 
+export function linuxAppImagePlatform(version: string, arch: 'x64' | 'arm64', signature: string) {
+  if (!signature.trim()) {
+    throw Error('The update signature is missing.');
+  }
+  return {
+    platform: arch === 'x64' ? 'linux-x86_64' : 'linux-aarch64',
+    signature: signature.trim(),
+    url: `https://github.com/fedeya/wisp-ai/releases/download/v${version}/WispAI-${version}-linux-${arch}.AppImage`,
+  };
+}
+
 export async function writeUpdateManifest(version: string, installer: string) {
   const signature = await readFile(installer + '.sig', 'utf8');
   const notes = await readFile('dist/release-notes.md', 'utf8').catch(

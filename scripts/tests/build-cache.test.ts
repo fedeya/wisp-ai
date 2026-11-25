@@ -159,6 +159,9 @@ test('production packaging refuses a simulator that does not match its pinned me
       ),
     );
     await verifySimulator(root);
+    await rm(path.join(root, 'simulator/wowsimcli.exe'));
+    await assert.rejects(verifySimulator(root, { requireBinary: true }), /ENOENT|pinned manifest/);
+    await verifySimulator(root, { requireBinary: false });
     await put(root, 'simulator/wowsimcli.exe', 'different binary');
     await assert.rejects(verifySimulator(root), /pinned manifest/);
     await put(root, 'simulator/wowsimcli.exe', binary);

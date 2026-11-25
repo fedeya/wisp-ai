@@ -113,7 +113,7 @@ edited or deleted, and can also be run manually. It expires the shared GitHub da
 cache and rendered pages through a single authenticated POST, with bounded retries
 for transient failures. CI does not request public pages. Immediate expiration with
 `{ expire: 0 }` makes the next visit wait for fresh data instead of serving the old
-release while refreshing in the background. The Windows release workflow calls the same
+release while refreshing in the background. The release workflow calls the same
 script directly after publishing a Nightly: events produced by `GITHUB_TOKEN` do
 not start another release-event workflow. Stable drafts wait until publication.
 

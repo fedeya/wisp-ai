@@ -47,6 +47,22 @@ fn hidden(command: &mut Command) {
     let _ = command;
 }
 
+fn engine_filename() -> &'static str {
+    if cfg!(windows) {
+        "wisp-engine.exe"
+    } else {
+        "wisp-engine"
+    }
+}
+
+fn node_filename() -> &'static str {
+    if cfg!(windows) {
+        "node.exe"
+    } else {
+        "node"
+    }
+}
+
 impl Host {
     fn child_running(&self) -> Result<bool, String> {
         let mut child = self
@@ -63,18 +79,16 @@ impl Host {
     }
 
     fn node(&self) -> PathBuf {
-        let engine = self.payload.join("wisp-engine.exe");
+        let engine = self.payload.join(engine_filename());
         if engine.is_file() {
             return engine;
         }
-        self.payload
-            .join("runtime")
-            .join(if cfg!(windows) { "node.exe" } else { "node" })
+        self.payload.join("runtime").join(node_filename())
     }
     fn command(&self, script: &str) -> Result<Command, String> {
         let mut command = Command::new(self.node());
         command
-            .arg(if self.payload.join("wisp-engine.exe").is_file() {
+            .arg(if self.payload.join(engine_filename()).is_file() {
                 PathBuf::from(script)
             } else {
                 self.payload.join(script)
@@ -240,8 +254,8 @@ async fn desktop_info(
 ) -> Result<Value, String> {
     let (wow, addon_outdated) = addon_installation(&host).await?;
     let addon_notice = *host.addon_notice.lock().await;
-    let addon_update_pending = cfg!(all(windows, not(debug_assertions)))
-        && host.data.join(addon_update::PENDING_FILE).is_file();
+    let addon_update_pending =
+        addon_update::packaged_desktop() && host.data.join(addon_update::PENDING_FILE).is_file();
     Ok(json!({
         "wow": wow,
         "configured": wow.is_some(),
@@ -260,7 +274,7 @@ async fn auto_update_addon(
     app: tauri::AppHandle,
     host: tauri::State<'_, Host>,
 ) -> Result<Option<Value>, String> {
-    if !cfg!(all(windows, not(debug_assertions))) {
+    if !addon_update::packaged_desktop() {
         return Ok(None);
     }
     let _operation = host.lifecycle.lock().await;
@@ -329,9 +343,7 @@ async fn start_host(host: &Host) -> Result<(), String> {
         .open(host.data.join("runtime/bridge.log"))
         .map_err(|e| e.to_string())?;
     let mut command = host.command("src/main.ts")?;
-    if cfg!(all(windows, not(debug_assertions)))
-        && host.data.join(addon_update::PENDING_FILE).is_file()
-    {
+    if addon_update::packaged_desktop() && host.data.join(addon_update::PENDING_FILE).is_file() {
         command.env("WISP_DEFER_WOW_TRANSPORT", "1");
     }
     command
@@ -609,9 +621,7 @@ async fn run_addon_installer(
 ) -> Result<String, (telemetry::AddonInstallError, String)> {
     use telemetry::AddonInstallError;
 
-    if !Path::new(&wow).join("Wow.exe").is_file()
-        && !Path::new(&wow).join("World of Warcraft.app").exists()
-    {
+    if !game_detection::contains_game_client(Path::new(&wow)) {
         return Err((
             AddonInstallError::InvalidGameFolder,
             "Choose the WoW client folder containing Wow.exe or World of Warcraft.app.".into(),
@@ -834,7 +844,18 @@ fn prepare_update() -> Result<(), String> {
             }
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    if let Some(pid) = pid.filter(|id| running && *id > 0 && *id <= i32::MAX as u64) {
+        let started = std::time::Instant::now();
+        let proc_path = PathBuf::from(format!("/proc/{pid}"));
+        while proc_path.exists() {
+            if started.elapsed() >= Duration::from_secs(20) {
+                return Err("The previous Wisp bridge is still stopping.".into());
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     let _ = (pid, running);
     Ok(())
 }
@@ -895,7 +916,7 @@ fn main() {
                         .ok_or("Missing executable directory")?
                         .join("payload"),
                 );
-            let engine = payload.join("wisp-engine.exe");
+            let engine = payload.join(engine_filename());
             let required: &[&str] = if engine.is_file() {
                 &["addon/WispAI/WispAI.toc", "BUILD.json", "package.json"]
             } else {
@@ -915,9 +936,7 @@ fn main() {
             let mut command = Command::new(if engine.is_file() {
                 engine.clone()
             } else {
-                payload
-                    .join("runtime")
-                    .join(if cfg!(windows) { "node.exe" } else { "node" })
+                payload.join("runtime").join(node_filename())
             });
             hidden(&mut command);
             if !command

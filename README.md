@@ -19,7 +19,7 @@ These are example prompts, not recorded results:
 
 ## Get started on Windows
 
-Download the [Windows x64 installer](https://wisp.fedeya.sh/download) from [Releases](https://github.com/fedeya/wisp-ai/releases), or [build from source](docs/development.md#build-and-run-on-windows).
+Download the [Windows x64 installer](https://wisp.fedeya.sh/download) from [Releases](https://github.com/fedeya/wisp-ai/releases), or [build from source](docs/development.md#build-and-run-on-windows). Linux builds are the AppImage and Debian package on the same release. See [build and run on Linux](docs/development.md#build-and-run-on-linux).
 
 Wisp starts automatically when you open the desktop app. You can choose **Set up WoW later** to manage your AI providers and saved data before installing the addon.
 
@@ -43,7 +43,7 @@ feature use, outcomes and durations with a random installation ID. Analytics eve
 exclude conversations, character names, tool arguments/results and credentials.
 Turn it off in desktop **Settings > Usage analytics**.
 
-Windows is the tested distribution target. Other WoW versions and macOS distribution are not established as supported. Game communication uses addon files; large replies can take several seconds, and `/reload` renews the finite receive channels.
+Windows and Linux x64 are the tested desktop targets. macOS distribution and other WoW versions are not established as supported. On Linux, point Wisp at the Wine or Proton folder that contains `Wow.exe`. Gear simulation still uses the pinned Windows simulator and does not run there. Game communication uses addon files; large replies can take several seconds, and `/reload` renews the finite receive channels.
 
 ## Explore
 

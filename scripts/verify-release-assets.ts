@@ -51,28 +51,42 @@ export function verifyUpdaterSignature(data: Buffer, signature: string, publicKe
   }
 }
 
+async function readAsset(file: string) {
+  return readFile(file).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') {
+      throw Error(`Missing release asset ${path.basename(file)}.`);
+    }
+    throw error;
+  });
+}
+
+async function verifyChecksum(file: string, name: string) {
+  const data = await readAsset(file);
+  const checksum = (await readAsset(file + '.sha256')).toString('utf8').trim().split(/\s+/);
+  if (checksum[1] !== name) {
+    throw Error('The checksum file names a different file.');
+  }
+  if (createHash('sha256').update(data).digest('hex') !== checksum[0]) {
+    throw Error(`${name} does not match its SHA-256 checksum.`);
+  }
+  return data;
+}
+
 export async function verifyReleaseAssets(folder: string, version: string, publicKey: string) {
   const name = `WispAI-${version}-windows-x64-setup.exe`;
   const installer = path.join(folder, name);
-  const read = (file: string) =>
-    readFile(file).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') {
-        throw Error(`Missing release asset ${path.basename(file)}.`);
-      }
-      throw error;
-    });
-  const text = async (file: string) => (await read(file)).toString('utf8');
-  const data = await read(installer);
-  const checksum = (await text(installer + '.sha256')).trim().split(/\s+/);
-  if (checksum[1] !== name) {
-    throw Error('The checksum file names a different installer.');
-  }
-  if (createHash('sha256').update(data).digest('hex') !== checksum[0]) {
-    throw Error('The installer does not match its SHA-256 checksum.');
-  }
-  const signature = (await text(installer + '.sig')).trim();
+  const data = await verifyChecksum(installer, name).catch((error: Error) => {
+    if (error.message === 'The checksum file names a different file.') {
+      throw Error('The checksum file names a different installer.');
+    }
+    if (error.message === `${name} does not match its SHA-256 checksum.`) {
+      throw Error('The installer does not match its SHA-256 checksum.');
+    }
+    throw error;
+  });
+  const signature = (await readAsset(installer + '.sig')).toString('utf8').trim();
   verifyUpdaterSignature(data, signature, publicKey);
-  const manifest = JSON.parse(await text(path.join(folder, 'latest.json')));
+  const manifest = JSON.parse((await readAsset(path.join(folder, 'latest.json'))).toString('utf8'));
   const platform = manifest.platforms?.['windows-x86_64'];
   if (manifest.version !== version) {
     throw Error('The update manifest names a different version.');
@@ -85,9 +99,21 @@ export async function verifyReleaseAssets(folder: string, version: string, publi
   }
 }
 
+/** Checks the Linux AppImage signature and the Debian checksum. The .deb is not an updater target. */
+export async function verifyLinuxReleaseAssets(folder: string, version: string, publicKey: string) {
+  const appImage = `WispAI-${version}-linux-x64.AppImage`;
+  const deb = `WispAI-${version}-linux-x64.deb`;
+  const appImagePath = path.join(folder, appImage);
+  const data = await verifyChecksum(appImagePath, appImage);
+  const signature = (await readAsset(appImagePath + '.sig')).toString('utf8').trim();
+  verifyUpdaterSignature(data, signature, publicKey);
+  await verifyChecksum(path.join(folder, deb), deb);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const version = JSON.parse(await readFile('package.json', 'utf8')).version;
   const config = JSON.parse(await readFile('apps/desktop/src-tauri/tauri.conf.json', 'utf8'));
   await verifyReleaseAssets('dist', version, config.plugins.updater.pubkey);
+  await verifyLinuxReleaseAssets('dist', version, config.plugins.updater.pubkey);
   console.log(`Release assets for ${version} are complete and signed.`);
 }

@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { newerNightly } from '@wisp/releases';
+import { linuxAppImagePlatform } from './update-manifest.ts';
 
 // Publish the manifest last, after the draft contains every referenced artifact.
 const tag = process.env.RELEASE_TAG || process.env.GITHUB_REF_NAME;
@@ -21,6 +22,9 @@ const manifest = JSON.parse(await readFile('dist/latest.json', 'utf8'));
 if (manifest.version !== version) {
   throw Error('Update manifest version does not match.');
 }
+const linuxSignature = await readFile(`dist/WispAI-${version}-linux-x64.AppImage.sig`, 'utf8');
+const linux = linuxAppImagePlatform(version, 'x64', linuxSignature);
+manifest.platforms[linux.platform] = { signature: linux.signature, url: linux.url };
 manifest.notes = release.body || manifest.notes;
 await writeFile('dist/latest.json', JSON.stringify(manifest, null, 2) + '\n');
 execFileSync('gh', ['release', 'upload', tag, 'dist/latest.json', '--clobber'], {

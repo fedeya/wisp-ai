@@ -61,7 +61,7 @@ Movement, casting, targeting, training and trading remain with you. Built-in she
 
 Each message includes available character name/realm, level, class, race, faction, game version/build, location, and whether you are in a group and its size. Other state—such as bags, quests, equipment, who is in your group and your PvP rank and honor—is read on demand. Prompts, tool results, conversation context and recalled memory go to the selected AI connection (and its gateway, if any); enabled external sources receive lookup arguments. Built-in knowledge integrations do not upload whole game saves or memory documents. Custom servers have their own behavior and policies.
 
-The bridge holds the ChatGPT grant and proxies model requests with `store: false`; this does not mean the provider receives no data or retains nothing. Neither the agent nor desktop webview receives the ChatGPT credentials. Windows credentials use DPAPI for the current user, so changing Windows users requires signing in again. See [OpenAI’s sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
+The bridge holds the ChatGPT grant and proxies model requests with `store: false`; this does not mean the provider receives no data or retains nothing. Neither the agent nor desktop webview receives the ChatGPT credentials. Windows credentials use DPAPI for the current user. Linux credentials use the desktop secret service (GNOME Keyring or KWallet) for the current user. Changing users requires signing in again. See [OpenAI’s sign-in flow](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
 ### Usage analytics
 
@@ -89,7 +89,7 @@ events. Deleting `telemetry.json` resets the preference and installation ID.
 
 ### Local data and deletion
 
-Installed Windows data lives in `%APPDATA%/com.wisp.ai`, separate from application resources. Source runs default to the repository root; `WISP_DATA_DIR` overrides it.
+Installed Windows data lives in `%APPDATA%/com.wisp.ai`. Installed Linux data lives in `$XDG_DATA_HOME/com.wisp.ai`, usually `~/.local/share/com.wisp.ai`. Both are separate from application resources. Source runs default to the repository root; `WISP_DATA_DIR` overrides it.
 
 | Data                                            | Path relative to the data root                   |
 | ----------------------------------------------- | ------------------------------------------------ |

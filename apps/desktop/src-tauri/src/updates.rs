@@ -62,10 +62,28 @@ const AUTOMATIC_BUSY: &str = "Wisp is busy; the update will install later.";
 const AUTOMATIC_DOWNGRADE: &str = "Wisp does not install an older version by itself.";
 
 /// Whether a WoW client is running. The bridge's `gameConnected` stays set after
-/// the game exits, so automatic updates ask Windows for the process instead.
+/// the game exits, so automatic updates ask the operating system for the process.
 #[tauri::command]
 pub fn game_running() -> bool {
     super::addon_update::wow_running()
+}
+
+/// An AppImage sets this to the path of the file it was launched from.
+fn appimage_runtime(value: Option<&std::ffi::OsStr>) -> bool {
+    value.is_some_and(|value| !value.is_empty())
+}
+
+/// Windows x64 installers and signed Linux AppImages can replace themselves.
+/// Development builds and Debian packages cannot.
+fn updates_supported() -> bool {
+    if cfg!(debug_assertions) {
+        return false;
+    }
+    if cfg!(all(windows, target_arch = "x86_64")) {
+        return true;
+    }
+    cfg!(all(target_os = "linux", target_arch = "x86_64"))
+        && appimage_runtime(std::env::var_os("APPIMAGE").as_deref())
 }
 
 fn read_auto_install(data: &std::path::Path) -> Result<bool, String> {
@@ -218,8 +236,8 @@ pub async fn check_update(
     app: tauri::AppHandle,
     updates: tauri::State<'_, Updates>,
 ) -> Result<Value, String> {
-    // Source builds and unsupported platforms must not replace themselves with a Windows release.
-    if cfg!(debug_assertions) || !cfg!(all(windows, target_arch = "x86_64")) {
+    // Source builds, Debian packages and other targets must not replace themselves.
+    if !updates_supported() {
         return Ok(json!({"supported": false, "update": null}));
     }
     let _operation = updates.begin()?;
@@ -265,6 +283,11 @@ pub async fn download_update(
     host: tauri::State<'_, Host>,
     updates: tauri::State<'_, Updates>,
 ) -> Result<String, String> {
+    if !updates_supported() {
+        return Err(
+            "Updates are available for the Windows installer and the Linux AppImage.".into(),
+        );
+    }
     let _downloading = updates.downloading.lock().await;
     // Read the update only after any earlier download finished, so a request that
     // waited reuses that installer or downloads what the last check found.
@@ -322,6 +345,11 @@ pub async fn install_update(
     updates: tauri::State<'_, Updates>,
     automatic: Option<bool>,
 ) -> Result<(), String> {
+    if !updates_supported() {
+        return Err(
+            "Updates are available for the Windows installer and the Linux AppImage.".into(),
+        );
+    }
     let automatic = automatic.unwrap_or(false);
     let _operation = updates.begin()?;
     let mut update = updates.pending_update()?;
@@ -368,6 +396,16 @@ pub async fn install_update(
     }
     super::update_trace::append(&host.data, "bridge-stopped-before-install");
     let _ = app.emit("update-progress", json!({"phase": "installing"}));
+    // Windows writes this from the NSIS hook after the files are in place.
+    // The AppImage has no installer hook, so record it before the file is replaced.
+    #[cfg(target_os = "linux")]
+    {
+        let pending = host.data.join(super::addon_update::PENDING_FILE);
+        if let Some(parent) = pending.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&pending, []).map_err(|e| e.to_string())?;
+    }
     // An update that installs itself while Wisp sits in the tray goes back there;
     // any other update reopens on screen, even after a launch with Windows.
     super::native_shell::set_after_update(
@@ -380,6 +418,8 @@ pub async fn install_update(
     );
     // The NSIS hook also waits for the bridge process to finish releasing its files.
     if let Err(error) = update.install(bytes) {
+        #[cfg(target_os = "linux")]
+        let _ = std::fs::remove_file(host.data.join(super::addon_update::PENDING_FILE));
         super::native_shell::cancel_after_update(&host.data);
         super::update_trace::append(&host.data, "installer-launch-failed");
         let _ = super::start_host(&host).await;
@@ -391,6 +431,15 @@ pub async fn install_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_an_appimage_path_marks_the_linux_runtime() {
+        assert!(!appimage_runtime(None));
+        assert!(!appimage_runtime(Some(std::ffi::OsStr::new(""))));
+        assert!(appimage_runtime(Some(std::ffi::OsStr::new(
+            "/tmp/WispAI.AppImage"
+        ))));
+    }
 
     #[test]
     fn channels_are_isolated_and_only_returning_to_stable_allows_downgrades() {

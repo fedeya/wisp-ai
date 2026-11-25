@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { updateManifest } from '../update-manifest.ts';
+import { linuxAppImagePlatform, updateManifest } from '../update-manifest.ts';
 
 test('the update manifest references the exact versioned release artifact and embeds its signature', () => {
   const manifest = updateManifest('0.3.0', 'signed-data\n', 'Fixed connections.');
@@ -10,6 +10,16 @@ test('the update manifest references the exact versioned release artifact and em
     url: 'https://github.com/fedeya/wisp-ai/releases/download/v0.3.0/WispAI-0.3.0-windows-x64-setup.exe',
   });
   expect(Number.isNaN(Date.parse(manifest.pub_date))).toBe(false);
+});
+
+test('the linux AppImage joins the signed update feed for its architecture', () => {
+  expect(linuxAppImagePlatform('0.3.2', 'x64', 'linux-signature\n')).toEqual({
+    platform: 'linux-x86_64',
+    signature: 'linux-signature',
+    url: 'https://github.com/fedeya/wisp-ai/releases/download/v0.3.2/WispAI-0.3.2-linux-x64.AppImage',
+  });
+  expect(linuxAppImagePlatform('0.3.2', 'arm64', 'arm-signature').platform).toBe('linux-aarch64');
+  expect(() => linuxAppImagePlatform('0.3.2', 'x64', ' ')).toThrow('signature');
 });
 
 test('unsigned and prerelease manifests cannot enter the stable update feed', () => {

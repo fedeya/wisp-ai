@@ -66,6 +66,11 @@
       "cache": false,
       "passThroughEnv": ["*"]
     },
+    "package:linux": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "passThroughEnv": ["*"]
+    },
     "//#typecheck:root": { "outputs": [] },
     "//#lint": { "cache": false },
     "//#format:check": { "cache": false }

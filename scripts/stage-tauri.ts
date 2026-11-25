@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { verifySimulator } from './verify-simulator.ts';
 import { findNpmDirectory } from './node-runtime.ts';
 import { addonReleaseVersion, stampAddonReleaseVersion } from './addon-release-version.ts';
+import { engineExecutableName } from './build-engine.ts';
+import { runtimeNodeName } from '../apps/bridge/src/runtime-node.mjs';
 
 function payloadDirectory(root: string) {
   const stage = path.resolve(root, 'apps/desktop/src-tauri/resources/payload');
@@ -55,10 +57,7 @@ export async function stageTauri({ packaged = false } = {}) {
     await copyFile(path.join(root, name), path.join(stage, name));
   }
   await mkdir(path.join(stage, 'runtime'), { recursive: true });
-  await copyFile(
-    process.execPath,
-    path.join(stage, 'runtime', process.platform === 'win32' ? 'node.exe' : 'node'),
-  );
+  await copyFile(process.execPath, path.join(stage, 'runtime', runtimeNodeName()));
   // npm remains available for user-configured npx MCP servers. It is not used
   // to install Wisp or to assemble its dependency graph.
   if (!packaged) {
@@ -94,7 +93,7 @@ export async function stageTauri({ packaged = false } = {}) {
 export async function stageEngine(executable: string) {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const stage = payloadDirectory(root);
-  await copyFile(executable, path.join(stage, 'wisp-engine.exe'));
+  await copyFile(executable, path.join(stage, engineExecutableName()));
   const eve = path.dirname(fileURLToPath(import.meta.resolve('eve/package.json')));
   await copyFile(path.join(eve, 'LICENSE'), path.join(stage, 'EVE-LICENSE.txt'));
   await copyFile(path.join(eve, 'NOTICE'), path.join(stage, 'EVE-NOTICE.txt'));

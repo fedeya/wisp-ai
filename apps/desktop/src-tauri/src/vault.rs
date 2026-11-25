@@ -1,6 +1,7 @@
 use sha2::{Digest, Sha256};
+#[cfg(windows)]
+use std::fs;
 use std::{
-    fs,
     io::{self, Read, Write},
     path::PathBuf,
 };
@@ -161,7 +162,37 @@ fn platform(operation: &str, key: &str, input: &[u8]) -> Result<Vec<u8>, String>
     }
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+fn platform(operation: &str, key: &str, input: &[u8]) -> Result<Vec<u8>, String> {
+    use keyring::{Entry, Error};
+    // The account is a hash so secret-service attribute limits never see the raw key.
+    let account = format!("{:x}", Sha256::digest(key.as_bytes()));
+    let entry = Entry::new("com.wisp.ai", &account)
+        .map_err(|_| "Cannot open the desktop secret service".to_string())?;
+    match operation {
+        "read" => match entry.get_secret() {
+            Ok(bytes) => Ok(bytes),
+            Err(Error::NoEntry) => Ok(vec![]),
+            Err(_) => Err("Cannot unlock the desktop secret service".into()),
+        },
+        "write" if input.is_empty() => {
+            match entry.delete_credential() {
+                Ok(()) | Err(Error::NoEntry) => {}
+                Err(_) => return Err("Cannot remove the secret".into()),
+            }
+            Ok(vec![])
+        }
+        "write" => {
+            entry
+                .set_secret(input)
+                .map_err(|_| "Cannot save the secret in the desktop secret service")?;
+            Ok(vec![])
+        }
+        _ => Err("Invalid secret operation".into()),
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 fn platform(_: &str, _: &str, _: &[u8]) -> Result<Vec<u8>, String> {
     Err("Credential storage is not available on this platform yet".into())
 }

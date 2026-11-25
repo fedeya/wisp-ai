@@ -2,9 +2,13 @@ import path from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { packagedRuntimeNode } from './runtime-node.mjs';
 
 process.env.WISP_ENGINE_EXECUTABLE = process.execPath;
 process.env.WISP_RESOURCE_ROOT ||= path.dirname(process.execPath);
+function runtimeNode() {
+  return packagedRuntimeNode(process.env.WISP_RESOURCE_ROOT);
+}
 const mode = process.argv[2] || 'src/main.ts';
 if (mode === '--version') {
   console.log(`Wisp engine (Node ${process.versions.node})`);
@@ -31,7 +35,7 @@ if (mode === '--version') {
   await import('./eve/index.mjs');
 } else if (mode === '--npx') {
   process.argv.splice(1, 2, fileURLToPath(new URL('./npm/bin/npx-cli.js', import.meta.url)));
-  process.execPath = path.join(process.env.WISP_RESOURCE_ROOT, 'runtime/node.exe');
+  process.execPath = runtimeNode();
   await import('./npm/bin/npx-cli.js');
 } else {
   const commands = {
@@ -45,14 +49,10 @@ if (mode === '--version') {
   } else {
     // npm lifecycle commands may re-enter this executable through pkg's Node
     // compatibility shim. External MCP programs run in the bundled stock runtime.
-    const child = spawn(
-      path.join(process.env.WISP_RESOURCE_ROOT, 'runtime/node.exe'),
-      process.argv.slice(2),
-      {
-        stdio: 'inherit',
-        windowsHide: true,
-      },
-    );
+    const child = spawn(runtimeNode(), process.argv.slice(2), {
+      stdio: 'inherit',
+      windowsHide: true,
+    });
     child.on('error', (error) => {
       console.error(error.message);
       process.exitCode = 1;

@@ -2,7 +2,7 @@
 
 Wisp is an AI assistant for World of Warcraft: Forever: a Lua addon talks to a
 local Node bridge, which runs an agent runtime and is shipped inside a Tauri
-desktop app for Windows. It is a pnpm + Turborepo monorepo (one lockfile,
+desktop app for Windows and Linux. It is a pnpm + Turborepo monorepo (one lockfile,
 `hoist: false`). Human-facing setup lives in [docs/development.md](docs/development.md).
 
 Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and

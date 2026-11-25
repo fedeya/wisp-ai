@@ -1,15 +1,26 @@
 import { execFileSync } from 'node:child_process';
-import { cp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
+import { chmod, cp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import { findNpmDirectory } from './node-runtime.ts';
 
-export async function buildEngine() {
-  if (process.platform !== 'win32' || process.arch !== 'x64') {
-    throw Error('Engine packaging currently supports Windows x64.');
+export function engineExecutableName() {
+  return process.platform === 'win32' ? 'wisp-engine.exe' : 'wisp-engine';
+}
+
+function pkgTarget() {
+  const os = process.platform === 'win32' ? 'win' : process.platform === 'linux' ? 'linux' : '';
+  const arch = process.arch === 'x64' || process.arch === 'arm64' ? process.arch : '';
+  if (!os || !arch || (process.platform === 'win32' && arch !== 'x64')) {
+    throw Error('Engine packaging supports Windows x64 and Linux x64 or arm64.');
   }
+  return `node${process.versions.node}-${os}-${arch}`;
+}
+
+export async function buildEngine() {
+  const target = pkgTarget();
   const root = fileURLToPath(new URL('../', import.meta.url));
   const require = createRequire(import.meta.url);
   const directory = path.join(root, 'dist/engine-build');
@@ -54,6 +65,10 @@ export async function buildEngine() {
     },
   });
   await cp(path.join(root, 'scripts/engine-entry.mjs'), path.join(directory, 'engine.mjs'));
+  await cp(
+    path.join(root, 'apps/bridge/src/runtime-node.mjs'),
+    path.join(directory, 'runtime-node.mjs'),
+  );
   await cp(path.join(root, 'apps/bridge/src/db/migrations'), path.join(directory, 'migrations'), {
     recursive: true,
   });
@@ -70,21 +85,17 @@ export async function buildEngine() {
           assets: ['*.mjs', 'migrations/**/*', 'eve/**/*', 'node_modules/**/*', 'npm/**/*'],
           sea: true,
           compress: 'GZip',
-          targets: [`node${process.versions.node}-win-x64`],
+          targets: [target],
         },
       },
       null,
       2,
     ),
   );
+  const executable = path.join(root, 'dist', engineExecutableName());
   execFileSync(
     process.execPath,
-    [
-      require.resolve('@yao-pkg/pkg/lib-es5/bin.js'),
-      '.',
-      '--output',
-      path.join(root, 'dist/wisp-engine.exe'),
-    ],
+    [require.resolve('@yao-pkg/pkg/lib-es5/bin.js'), '.', '--output', executable],
     {
       // pkg embeds absolute asset paths; use the physical directory when dist
       // is a Windows junction so the entry point and assets share one root.
@@ -93,6 +104,9 @@ export async function buildEngine() {
       stdio: 'inherit',
     },
   );
+  if (process.platform !== 'win32') {
+    await chmod(executable, 0o755);
+  }
   execFileSync(
     process.execPath,
     [
@@ -107,10 +121,10 @@ export async function buildEngine() {
       cwd: root,
       windowsHide: true,
       stdio: 'inherit',
-      env: { ...process.env, WISP_TEST_ENGINE_EXECUTABLE: path.join(root, 'dist/wisp-engine.exe') },
+      env: { ...process.env, WISP_TEST_ENGINE_EXECUTABLE: executable },
     },
   );
-  return path.join(root, 'dist/wisp-engine.exe');
+  return executable;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -1,0 +1,3 @@
+kind: New
+body: Wisp on Linux installs as an AppImage or a Debian package. Choose the Wine or Proton folder that contains `Wow.exe`. Provider credentials are stored in the desktop secret service. Gear simulation remains Windows-only.
+time: 2026-11-23T06:03:20Z

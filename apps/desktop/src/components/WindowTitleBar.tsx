@@ -1,18 +1,27 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import logo from '../../../../assets/wisp.png';
 import { native } from '../api';
 
-/** Windows caption glyphs, from the system icon font (Windows 11, then 10). */
-const glyphs = {
-  minimize: '',
-  maximize: '',
-  restore: '',
-  close: '',
-};
+/** Caption marks drawn as SVG so Linux builds do not depend on Segoe fonts. */
+function CaptionIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 10 10"
+      width="10"
+      height="10"
+      aria-hidden="true"
+      className="pointer-events-none stroke-current"
+      fill="none"
+      strokeWidth="1"
+    >
+      {children}
+    </svg>
+  );
+}
 
 const captionButton =
-  'inline-grid h-full w-[46px] place-items-center border-0 bg-transparent p-0 [font-family:"Segoe_Fluent_Icons","Segoe_MDL2_Assets"] text-[10px] text-muted outline-none focus-visible:bg-hover';
+  'inline-grid h-full w-[46px] place-items-center border-0 bg-transparent p-0 text-muted outline-none focus-visible:bg-hover';
 
 function useMaximized() {
   const [maximized, setMaximized] = useState(false);
@@ -62,7 +71,9 @@ export function WindowControls() {
         className={`${captionButton} hover:bg-hover active:bg-pressed`}
         onClick={() => run((window) => window.minimize())}
       >
-        {glyphs.minimize}
+        <CaptionIcon>
+          <path d="M1 5h8" />
+        </CaptionIcon>
       </button>
       {/* On Windows 11, tauri-plugin-snap-layout lays a native hit-test zone over
           this id: hovering opens snap layouts and clicks maximize natively, and
@@ -75,7 +86,15 @@ export function WindowControls() {
         className={`${captionButton} hover:bg-hover active:bg-pressed [&.is-hovered]:bg-hover`}
         onClick={() => run((window) => window.toggleMaximize())}
       >
-        {maximized ? glyphs.restore : glyphs.maximize}
+        {maximized ? (
+          <CaptionIcon>
+            <path d="M3 1.5h5.5V7M1.5 3.5h5.5V9H1.5z" />
+          </CaptionIcon>
+        ) : (
+          <CaptionIcon>
+            <rect x="1.5" y="1.5" width="7" height="7" />
+          </CaptionIcon>
+        )}
       </button>
       <button
         type="button"
@@ -85,7 +104,9 @@ export function WindowControls() {
         className={`${captionButton} hover:bg-[#c42b1c] hover:text-white active:bg-[#b22a1b]`}
         onClick={() => run((window) => window.close())}
       >
-        {glyphs.close}
+        <CaptionIcon>
+          <path d="M2 2l6 6M8 2L2 8" />
+        </CaptionIcon>
       </button>
     </div>
   );

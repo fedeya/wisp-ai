@@ -73,7 +73,7 @@ function downloadPercent(progress: Progress) {
 function progressMessage(progress: Progress) {
   if (progress.phase === 'waiting') return 'Waiting for the active reply to finish…';
   if (progress.phase === 'installing') {
-    return 'Opening the Windows updater. Wisp will close and reopen automatically…';
+    return 'Installing the update. Wisp will close and reopen automatically…';
   }
   return 'Downloading update';
 }
@@ -234,7 +234,7 @@ export default function Updates({
     if (!release || operation) return;
     setState({
       // The installer is already downloaded and nothing is running, so the next
-      // step is the Windows updater: never "waiting for the active reply".
+      // step installs it: never "waiting for the active reply".
       operation: { kind: 'installing', progress: { phase: 'installing' } },
       error: '',
     });

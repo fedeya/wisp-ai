@@ -26,15 +26,15 @@ A Stable release promotes a Nightly that was already published from `main`, so i
 ships exactly the source you tested on the Nightly channel, never newer commits.
 
 1. Install and check the Nightly you want to ship.
-2. Run **Windows release** from GitHub Actions on `main` with **channel** `stable`.
+2. Run **Release** from GitHub Actions on `main` with **channel** `stable`.
    By default it promotes the latest published Nightly from `main` as its own `X.Y.Z`
    (`0.3.3-nightly.214.1` becomes `0.3.3`). **nightly** picks an older one by tag and
    **version** overrides the number, for example `0.4.0`. It must be newer than the
    last Stable. From a terminal:
    `gh workflow run release.yml -f channel=stable [-f nightly=v0.3.3-nightly.214.1] [-f version=0.4.0]`.
 3. The run checks out the Nightly's commit, stamps the version into that build only,
-   collects the Changie fragments of that commit into the notes, then builds, signs
-   and verifies the installer. It skips validation because the Nightly's own run
+   collects the Changie fragments of that commit into the notes, then builds and
+   signs the Windows installer and the Linux packages, and verifies the installer. It skips validation because the Nightly's own run
    validated that commit. It creates a draft with the notes and `latest.json`.
 4. Review the draft and publish it as latest. Publishing creates the `vX.Y.Z` tag on
    the Nightly's commit. To correct notes first, edit the draft and run

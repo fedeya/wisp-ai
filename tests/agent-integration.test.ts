@@ -22,7 +22,9 @@ test(
     const engine = path.join(root, 'engine');
     const flags = path.join(root, 'capabilities.json');
     const sourceExecutable = process.env.WISP_TEST_ENGINE_EXECUTABLE;
-    const executable = sourceExecutable ? path.join(root, 'wisp-engine.exe') : undefined;
+    const executable = sourceExecutable
+      ? path.join(root, process.platform === 'win32' ? 'wisp-engine.exe' : 'wisp-engine')
+      : undefined;
     if (executable) {
       await copyFile(sourceExecutable!, executable);
       await mkdir(engine, { recursive: true });
@@ -238,7 +240,10 @@ test(
           ...(executable
             ? {
                 WISP_ENGINE_EXECUTABLE: executable,
-                PATH: path.join(process.env.WINDIR || 'C:/Windows', 'System32'),
+                PATH:
+                  process.platform === 'win32'
+                    ? path.join(process.env.WINDIR || 'C:/Windows', 'System32')
+                    : '/usr/bin' + path.delimiter + '/bin',
               }
             : {}),
           NODE_ENV: 'development',

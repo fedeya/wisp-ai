@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export interface NativeBuildContext {
@@ -142,6 +142,9 @@ export async function restoreNativeBinary(
     }
     await mkdir(path.dirname(destination), { recursive: true });
     await writeFile(destination, binary);
+    if (process.platform !== 'win32') {
+      await chmod(destination, 0o755);
+    }
     console.log('Native binary reused; SHA-256: ' + manifest.sha256);
     return true;
   } catch (error) {

@@ -9,6 +9,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { SecretVault } from '../../auth/secret-vault.ts';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
+import { packagedRuntimeNode } from '../../runtime-node.mjs';
 export { mcpDefinition, mcpSetup };
 export type MCPDefinition = z.infer<typeof mcpDefinition> & {
   tools?: { name: string; description?: string }[];
@@ -16,6 +17,28 @@ export type MCPDefinition = z.infer<typeof mcpDefinition> & {
   envKeys?: string[];
 };
 type Connected = { client: Client; tools: Tool[] };
+
+/** Launch path for a user-configured stdio MCP command inside a packaged app. */
+export function resolveStdioCommand(command: string, args: readonly string[], root: string) {
+  if (/^node(?:\.exe)?$/i.test(command)) {
+    return {
+      command: process.env.WISP_ENGINE_EXECUTABLE ? packagedRuntimeNode(root) : process.execPath,
+      args: [...args],
+    };
+  }
+  if (/^npx(?:\.cmd)?$/i.test(command)) {
+    return {
+      command: process.execPath,
+      args: [
+        process.env.WISP_ENGINE_EXECUTABLE
+          ? '--npx'
+          : path.join(root, 'runtime', 'npm', 'bin', 'npx-cli.js'),
+        ...args,
+      ],
+    };
+  }
+  return { command, args: [...args] };
+}
 export class McpManager {
   file: string;
   root: string;
@@ -69,22 +92,9 @@ export class McpManager {
         : {});
     let transport;
     if (server.transport === 'stdio') {
-      let command = server.command!,
-        args = [...server.args];
-      if (/^node(?:\.exe)?$/i.test(command)) {
-        command = process.env.WISP_ENGINE_EXECUTABLE
-          ? path.join(this.root, 'runtime/node.exe')
-          : process.execPath;
-      }
-      if (/^npx(?:\.cmd)?$/i.test(command)) {
-        command = process.execPath;
-        args = [
-          process.env.WISP_ENGINE_EXECUTABLE
-            ? '--npx'
-            : path.join(this.root, 'runtime', 'npm', 'bin', 'npx-cli.js'),
-          ...args,
-        ];
-      }
+      const launch = resolveStdioCommand(server.command!, server.args, this.root);
+      const command = launch.command;
+      const args = launch.args;
       const allowedEnv = Object.fromEntries(
         [
           'SystemRoot',

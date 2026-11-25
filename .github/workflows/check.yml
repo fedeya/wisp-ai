@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       release_run_id:
-        description: Successful Windows release run to verify
+        description: Successful release run to verify
         required: true
         type: string
-  # Pushes to main are validated once by Windows release's reusable-workflow job.
+  # Pushes to main are validated once by the release workflow's reusable-workflow job.
   pull_request:
   workflow_run:
-    workflows: ['Windows release']
+    workflows: ['Release']
     types: [completed]
 permissions:
   contents: read
@@ -98,6 +98,37 @@ jobs:
         run: New-Item -ItemType Directory -Path apps/desktop/src-tauri/resources/payload -Force | Out-Null
       - run: cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
       - run: cargo test --locked --features tauri/custom-protocol --manifest-path apps/desktop/src-tauri/Cargo.toml
+  native-tests-linux:
+    if: github.event_name != 'workflow_run' && !inputs.release_run_id
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-workspace
+      - name: Install Linux desktop build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            file
+      - run: pnpm ui:build
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
+      - name: Prepare native unit-test resource directory
+        run: mkdir -p apps/desktop/src-tauri/resources/payload
+      - run: cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - run: cargo test --locked --features tauri/custom-protocol --manifest-path apps/desktop/src-tauri/Cargo.toml
   release-build:
     # A successful validation-only release has no installer to consume.
     if: >-
@@ -147,7 +178,7 @@ jobs:
           if ($env:RELEASE_RUN_ID -notmatch '^\d+$') { throw 'Expected a numeric release run ID.' }
           $run = gh api "repos/$env:GH_REPO/actions/runs/$env:RELEASE_RUN_ID" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Could not read release build.' }
-          if ($run.name -ne 'Windows release' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GH_REPO -or $run.event -notin @('push', 'workflow_dispatch')) { throw 'Expected a successful release build from this repository.' }
+          if ($run.name -ne 'Release' -or $run.conclusion -ne 'success' -or $run.head_repository.full_name -ne $env:GH_REPO -or $run.event -notin @('push', 'workflow_dispatch')) { throw 'Expected a successful release build from this repository.' }
           "sha=$($run.head_sha)" >> $env:GITHUB_OUTPUT
       - uses: actions/download-artifact@v4
         with:

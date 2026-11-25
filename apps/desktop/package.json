@@ -12,7 +12,8 @@
     "tauri": "tauri",
     "stage": "cd ../.. && node scripts/stage-desktop.ts",
     "dev:native": "tauri dev",
-    "package:windows": "cd ../.. && node scripts/build-desktop.ts"
+    "package:windows": "cd ../.. && node scripts/build-desktop.ts",
+    "package:linux": "cd ../.. && node scripts/build-desktop.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",

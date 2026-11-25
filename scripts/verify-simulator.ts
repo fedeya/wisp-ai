@@ -3,15 +3,26 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { adapters } from '../apps/bridge/src/integrations/simulation/adapters/index.ts';
 
-export async function verifySimulator(root: string) {
+export async function verifySimulator(root: string, options: { requireBinary?: boolean } = {}) {
+  const requireBinary = options.requireBinary ?? process.platform === 'win32';
   const directory = path.join(root, 'simulator');
   const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
-  const binary = await readFile(path.join(directory, 'wowsimcli.exe'));
+  let binary: Buffer | undefined;
+  try {
+    binary = await readFile(path.join(directory, 'wowsimcli.exe'));
+  } catch (error) {
+    if (requireBinary || (error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+  }
   if (
-    !binary.length ||
     !/^[a-f0-9]{40}$/.test(manifest.commit) ||
-    createHash('sha256').update(binary).digest('hex') !== manifest.sha256
+    (binary &&
+      (!binary.length || createHash('sha256').update(binary).digest('hex') !== manifest.sha256))
   ) {
+    throw Error('Simulator binary does not match its pinned manifest.');
+  }
+  if (requireBinary && !binary) {
     throw Error('Simulator binary does not match its pinned manifest.');
   }
   if (!Array.isArray(JSON.parse(await readFile(path.join(directory, 'items.json'), 'utf8')))) {

@@ -46,6 +46,17 @@ export function publishedRelease(value: GitHubRelease): PublishedRelease | null 
     ) {
       return null;
     }
+    const downloads = [{ label: 'Windows (x64)', url: download }];
+    for (const [label, suffix] of [
+      ['Linux (x64) AppImage', 'linux-x64.AppImage'],
+      ['Linux (x64) .deb', 'linux-x64.deb'],
+    ] as const) {
+      const name = `WispAI-${version}-${suffix}`;
+      const url = `${site.repository}/releases/download/v${version}/${name}`;
+      if (value.assets.some((asset) => asset.name === name && asset.browser_download_url === url)) {
+        downloads.push({ label, url });
+      }
+    }
     return {
       version,
       channel,
@@ -54,7 +65,7 @@ export function publishedRelease(value: GitHubRelease): PublishedRelease | null 
       date: value.published_at,
       url: `${site.repository}/releases/tag/v${version}`,
       download,
-      downloads: [{ label: 'Windows (x64)', url: download }],
+      downloads,
     };
   } catch {
     return null;

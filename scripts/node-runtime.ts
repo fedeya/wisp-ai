@@ -13,7 +13,10 @@ export async function findNpmDirectory() {
       await access(path.join(candidate, 'bin/npx-cli.js'));
       return candidate;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      const code = (error as NodeJS.ErrnoException).code;
+      // Official Linux builds keep a `npm` launcher next to `node`. Looking inside
+      // that file is not a missing directory of the same name.
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') {
         throw error;
       }
     }

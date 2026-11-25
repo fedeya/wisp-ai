@@ -30,18 +30,166 @@ struct InstalledClient {
     folder: String,
 }
 
-fn database_candidates(roots: &[PathBuf]) -> Vec<PathBuf> {
-    let mut bases = Vec::new();
-    if let Some(program_data) = std::env::var_os("ProgramData") {
-        bases.push(PathBuf::from(program_data));
+fn product_databases(drive: &Path) -> [PathBuf; 2] {
+    [
+        drive.join("ProgramData/Battle.net/Agent/product.db"),
+        drive.join("programdata/Battle.net/Agent/product.db"),
+    ]
+}
+
+fn dedup_key(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    // Linux prefixes can keep both ProgramData and programdata. Windows paths
+    // that differ only by case are the same file.
+    if cfg!(target_os = "linux") {
+        text.into_owned()
+    } else {
+        text.to_lowercase()
     }
-    bases.extend(roots.iter().map(|r| r.join("ProgramData")));
+}
+
+fn deduped(paths: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
     let mut seen = HashSet::new();
-    bases
+    paths
         .into_iter()
-        .map(|p| p.join("Battle.net/Agent/product.db"))
-        .filter(|p| seen.insert(p.to_string_lossy().to_lowercase()))
+        .filter(|path| seen.insert(dedup_key(path)))
         .collect()
+}
+
+/// Wine, Proton, Bottles and Lutris prefixes keep Battle.net's database under `drive_c`.
+pub fn linux_drive_roots(home: &Path, data: &Path, wineprefix: Option<&Path>) -> Vec<PathBuf> {
+    let mut drives = Vec::new();
+    let mut push = |drive: PathBuf| {
+        if drive.is_dir() && !drives.iter().any(|existing| existing == &drive) {
+            drives.push(drive);
+        }
+    };
+    push(home.join(".wine/drive_c"));
+    if let Some(prefix) = wineprefix {
+        push(prefix.join("drive_c"));
+    }
+    let mut children = |directory: PathBuf, nested: &[&str]| {
+        let Ok(entries) = fs::read_dir(&directory) else {
+            return;
+        };
+        for entry in entries.flatten().take(512) {
+            let mut drive = entry.path();
+            for part in nested {
+                drive.push(part);
+            }
+            push(drive);
+        }
+    };
+    children(data.join("bottles/bottles"), &["drive_c"]);
+    // A native Wisp install does not share the Flatpak's XDG_DATA_HOME.
+    children(
+        home.join(".var/app/com.usebottles.bottles/data/bottles/bottles"),
+        &["drive_c"],
+    );
+    children(data.join("lutris/prefixes"), &["drive_c"]);
+    children(home.join("Games"), &["drive_c"]);
+    for steam in [
+        home.join(".steam/steam/steamapps/compatdata"),
+        home.join(".steam/root/steamapps/compatdata"),
+        home.join(".local/share/Steam/steamapps/compatdata"),
+        data.join("Steam/steamapps/compatdata"),
+        home.join(".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata"),
+    ] {
+        children(steam, &["pfx", "drive_c"]);
+    }
+    drives
+}
+
+fn database_candidates(roots: &[PathBuf]) -> Vec<PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".local/share"));
+        let wineprefix = std::env::var_os("WINEPREFIX").map(PathBuf::from);
+        let mut drives = linux_drive_roots(&home, &data, wineprefix.as_deref());
+        drives.extend(roots.iter().cloned());
+        return deduped(drives.iter().flat_map(|drive| product_databases(drive)));
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut bases = Vec::new();
+        if let Some(program_data) = std::env::var_os("ProgramData") {
+            bases.push(PathBuf::from(program_data));
+        }
+        bases.extend(roots.iter().map(|root| root.join("ProgramData")));
+        deduped(
+            bases
+                .into_iter()
+                .map(|base| base.join("Battle.net/Agent/product.db")),
+        )
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn wine_prefix(database: &Path) -> Option<&Path> {
+    database
+        .ancestors()
+        .find(|path| path.file_name().is_some_and(|name| name == "drive_c"))?
+        .parent()
+}
+
+/// Battle.net records a Windows path (`C:\...`). Map it through the prefix that
+/// owns this database before Linux checks whether the path is absolute.
+#[cfg(target_os = "linux")]
+fn wine_native_path(database: &Path, location: &str) -> Option<PathBuf> {
+    let location = location.trim().trim_start_matches(r"\\?\");
+    let mut chars = location.chars();
+    let letter = chars.next()?;
+    if !letter.is_ascii_alphabetic() || chars.next() != Some(':') {
+        return None;
+    }
+    let tail = chars.as_str();
+    let prefix = wine_prefix(database)?;
+    let device = prefix
+        .join("dosdevices")
+        .join(format!("{}:", letter.to_ascii_lowercase()));
+    let root = if device.exists() {
+        fs::canonicalize(&device).unwrap_or(device)
+    } else if letter.eq_ignore_ascii_case(&'c') {
+        prefix.join("drive_c")
+    } else {
+        return None;
+    };
+    let mut native = root;
+    for part in tail.split(['\\', '/']) {
+        if part.is_empty() || part == "." {
+            continue;
+        }
+        if part == ".." {
+            native.pop();
+            continue;
+        }
+        native.push(part);
+    }
+    native.is_absolute().then_some(native)
+}
+
+fn installed_location(database: &Path, location: &str) -> Option<PathBuf> {
+    #[cfg(target_os = "linux")]
+    if let Some(native) = wine_native_path(database, location) {
+        return Some(native);
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = database;
+    let path = PathBuf::from(location);
+    path.is_absolute().then_some(path)
+}
+
+pub fn contains_game_client(folder: &Path) -> bool {
+    wow_executable(folder) || folder.join("World of Warcraft.app").exists()
+}
+
+fn wow_executable(folder: &Path) -> bool {
+    folder.join("Wow.exe").is_file() || folder.join("wow.exe").is_file()
 }
 
 fn registered_clients(path: &Path) -> Vec<PathBuf> {
@@ -67,11 +215,10 @@ fn registered_clients(path: &Path) -> Vec<PathBuf> {
         .filter(|p| p.family == "wow")
         .filter_map(|p| p.client)
         .flat_map(|c| {
-            let location = PathBuf::from(c.location);
             // Registrations can identify either the shared container or the client itself.
-            if !location.is_absolute() {
+            let Some(location) = installed_location(path, &c.location) else {
                 return Vec::new();
-            }
+            };
             let mut candidates = vec![location.join("_forever_"), location.clone()];
             if c.folder == "_forever_" {
                 candidates.push(location.join(c.folder));
@@ -91,7 +238,8 @@ fn small_text(path: &Path) -> String {
 }
 
 fn forever(path: &Path) -> bool {
-    if !path.join("Wow.exe").is_file() {
+    // Wine prefixes are case-sensitive, so accept the client under either name.
+    if !wow_executable(path) {
         return false;
     }
     let flavor = small_text(&path.join(".flavor.info"));
@@ -337,6 +485,74 @@ mod tests {
         .unwrap();
         assert!(!forever(&game));
         assert!(scan(vec![], Duration::ZERO, |_| {}).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn linux_prefixes_expose_battle_net_databases() {
+        let root = std::env::temp_dir().join(format!("wisp-linux-prefixes-{}", std::process::id()));
+        let home = root.join("home");
+        let data = home.join(".local/share");
+        let wineprefix = home.join("custom-prefix");
+        for drive in [
+            home.join(".wine/drive_c"),
+            data.join("bottles/bottles/wow/drive_c"),
+            home.join(".var/app/com.usebottles.bottles/data/bottles/bottles/wow/drive_c"),
+            home.join(".steam/steam/steamapps/compatdata/123/pfx/drive_c"),
+            wineprefix.join("drive_c"),
+        ] {
+            fs::create_dir_all(&drive).unwrap();
+        }
+        let drives = linux_drive_roots(&home, &data, Some(&wineprefix));
+        for expected in [
+            home.join(".wine/drive_c"),
+            data.join("bottles/bottles/wow/drive_c"),
+            home.join(".var/app/com.usebottles.bottles/data/bottles/bottles/wow/drive_c"),
+            home.join(".steam/steam/steamapps/compatdata/123/pfx/drive_c"),
+            wineprefix.join("drive_c"),
+        ] {
+            assert!(
+                drives.iter().any(|drive| drive == &expected),
+                "{expected:?}"
+            );
+        }
+        assert!(product_databases(&home.join(".wine/drive_c"))
+            .into_iter()
+            .any(|path| path.ends_with("ProgramData/Battle.net/Agent/product.db")));
+        let databases = deduped(product_databases(&home.join(".wine/drive_c")));
+        if cfg!(target_os = "linux") {
+            assert_eq!(databases.len(), 2);
+        } else {
+            assert_eq!(databases.len(), 1);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wine_drive_letters_become_paths_inside_the_prefix() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("wisp-wine-paths-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let drive = root.join("prefix/drive_c");
+        let game = drive.join("Games/Wow");
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("wow.exe"), "").unwrap();
+        fs::create_dir_all(root.join("prefix/dosdevices")).unwrap();
+        symlink("../drive_c", root.join("prefix/dosdevices/c:")).unwrap();
+        symlink(root.join("outside"), root.join("prefix/dosdevices/z:")).unwrap();
+        fs::create_dir_all(root.join("outside/WoW")).unwrap();
+        let database = drive.join("ProgramData/Battle.net/Agent/product.db");
+        fs::create_dir_all(database.parent().unwrap()).unwrap();
+        let client = wine_native_path(&database, r"C:\Games\Wow").unwrap();
+        assert_eq!(client, fs::canonicalize(&game).unwrap());
+        assert!(contains_game_client(&client));
+        assert_eq!(
+            wine_native_path(&database, "Z:/WoW").unwrap(),
+            fs::canonicalize(root.join("outside/WoW")).unwrap()
+        );
+        assert!(wine_native_path(&database, "D:\\Games").is_none());
         fs::remove_dir_all(root).unwrap();
     }
 }

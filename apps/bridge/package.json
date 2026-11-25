@@ -41,6 +41,7 @@
     "./public-web-search": "./src/integrations/search/public-web-search.ts",
     "./wowhead-search": "./src/integrations/search/wowhead-search.ts",
     "./runtime": "./src/runtime.ts",
+    "./runtime-node": "./src/runtime-node.mjs",
     "./agent-server": "./src/agent/agent-server.ts",
     "./desktop-handler": "./src/desktop/desktop-handler.ts",
     "./chat-store": "./src/chat/chat-store.ts",

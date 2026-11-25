@@ -116,7 +116,7 @@ test('installation locks app operations, reports waiting, and can retry after fa
   await screen.findByText('Waiting for the active reply to finish…');
   expect(screen.queryByRole('progressbar')).toBeNull();
   callback({ event: 'update-progress', id: 0, payload: { phase: 'installing' } });
-  await screen.findByText('Opening the Windows updater. Wisp will close and reopen automatically…');
+  await screen.findByText('Installing the update. Wisp will close and reopen automatically…');
   reject(Error('signature verification failed'));
   await screen.findByRole('alert');
   expect(options.onBusy).toHaveBeenLastCalledWith('');
@@ -221,7 +221,7 @@ test('an automatic install says it is opening the updater, not waiting for a rep
   await act(() => vi.advanceTimersByTimeAsync(0));
   await act(() => vi.advanceTimersByTimeAsync(AUTO_INSTALL_IDLE_MS));
   expect(
-    screen.getByText('Opening the Windows updater. Wisp will close and reopen automatically…'),
+    screen.getByText('Installing the update. Wisp will close and reopen automatically…'),
   ).toBeTruthy();
   expect(screen.queryByText('Waiting for the active reply to finish…')).toBeNull();
 });

@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test } from 'vitest';
 import { updateManifest } from '../update-manifest.ts';
-import { verifyReleaseAssets, verifyUpdaterSignature } from '../verify-release-assets.ts';
+import {
+  verifyLinuxReleaseAssets,
+  verifyReleaseAssets,
+  verifyUpdaterSignature,
+} from '../verify-release-assets.ts';
 
 const version = '0.3.3-nightly.217.1';
 const name = `WispAI-${version}-windows-x64-setup.exe`;
@@ -123,5 +127,32 @@ test('a manifest with another signature or version is rejected', async () => {
   );
   await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
     'different version',
+  );
+});
+
+test('linux release checks the AppImage signature and the Debian checksum only', async () => {
+  const folder = await mkdtemp(path.join(tmpdir(), 'wisp-linux-assets-'));
+  folders.push(folder);
+  const key = minisignKey();
+  const appName = `WispAI-${version}-linux-x64.AppImage`;
+  const debName = `WispAI-${version}-linux-x64.deb`;
+  const appImage = Buffer.from('appimage payload');
+  const deb = Buffer.from('deb payload');
+  const signature = tauriSignature(appImage, key.privateKey, key.keyId);
+  await writeFile(path.join(folder, appName), appImage);
+  await writeFile(path.join(folder, appName + '.sig'), signature);
+  await writeFile(
+    path.join(folder, appName + '.sha256'),
+    `${createHash('sha256').update(appImage).digest('hex')}  ${appName}\n`,
+  );
+  await writeFile(path.join(folder, debName), deb);
+  await writeFile(
+    path.join(folder, debName + '.sha256'),
+    `${createHash('sha256').update(deb).digest('hex')}  ${debName}\n`,
+  );
+  await expect(verifyLinuxReleaseAssets(folder, version, key.publicKey)).resolves.toBeUndefined();
+  await unlink(path.join(folder, appName + '.sig'));
+  await expect(verifyLinuxReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
+    `Missing release asset ${appName}.sig`,
   );
 });

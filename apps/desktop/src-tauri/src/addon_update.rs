@@ -1,7 +1,13 @@
 use std::{fs, io, path::Path};
 
-// Written by the NSIS post-install hook after a Desktop update completes.
+// Written after a packaged Desktop update: the NSIS hook on Windows, and the
+// AppImage updater just before it replaces itself on Linux.
 pub const PENDING_FILE: &str = "runtime/addon-update-pending";
+
+/// Release builds on Windows and Linux refresh an existing addon after an update.
+pub fn packaged_desktop() -> bool {
+    !cfg!(debug_assertions) && cfg!(any(windows, target_os = "linux"))
+}
 
 #[derive(Clone, Copy, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,7 +74,47 @@ pub fn wow_running() -> bool {
     }
 }
 
-#[cfg(not(windows))]
+pub fn process_is_wow(comm: &str, cmdline: &[u8]) -> bool {
+    if comm
+        .trim_end_matches(['\0', '\n', '\r'])
+        .trim()
+        .eq_ignore_ascii_case("Wow.exe")
+    {
+        return true;
+    }
+    cmdline.split(|byte| *byte == 0).any(|arg| {
+        let text = String::from_utf8_lossy(arg);
+        // Wine command lines keep Windows separators even when read on Linux.
+        text.rsplit(['/', '\\'])
+            .next()
+            .is_some_and(|name| name.eq_ignore_ascii_case("Wow.exe"))
+    })
+}
+
+#[cfg(target_os = "linux")]
+pub fn wow_running() -> bool {
+    let Ok(entries) = fs::read_dir("/proc") else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .chars()
+            .all(|c| c.is_ascii_digit())
+        {
+            continue;
+        }
+        let comm = fs::read_to_string(entry.path().join("comm")).unwrap_or_default();
+        let cmdline = fs::read(entry.path().join("cmdline")).unwrap_or_default();
+        if process_is_wow(&comm, &cmdline) {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn wow_running() -> bool {
     false
 }
@@ -100,5 +146,17 @@ mod tests {
         fs::write(bundled.join("Core.lua"), "new code\n").unwrap();
         assert!(candidate(&wow, differs(&bundled, &installed).ok()));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn wow_is_recognized_from_the_process_name_or_a_wine_command_line() {
+        assert!(process_is_wow("Wow.exe\n", b""));
+        assert!(process_is_wow("wow.exe", b""));
+        assert!(!process_is_wow("wine\n", b"wine\0notepad.exe\0"));
+        assert!(process_is_wow(
+            "wine64\n",
+            b"wine64\0Z:\\Games\\World of Warcraft\\_forever_\\Wow.exe\0"
+        ));
+        assert!(!process_is_wow("Wow.exe.bak\n", b"Wow.exe.bak\0"));
     }
 }

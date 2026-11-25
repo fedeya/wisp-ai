@@ -24,6 +24,8 @@ test('the caption buttons control the window and close sends Wisp to the tray', 
   expect(appWindow.minimize).toHaveBeenCalledOnce();
   expect(appWindow.toggleMaximize).toHaveBeenCalledOnce();
   expect(appWindow.close).toHaveBeenCalledOnce();
+  expect(screen.getByRole('button', { name: 'Minimize' }).querySelector('svg')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Close to tray' }).querySelector('svg')).toBeTruthy();
 });
 
 test('the maximize button turns into restore when the window is maximized', async () => {
