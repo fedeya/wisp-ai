@@ -35,6 +35,14 @@ export const desktopRoutes = {
     z.object({ model: z.string().min(1).max(300) }),
     z.object({ ok: z.literal(true), model: z.string() }),
   ),
+  '/grok/start': post(
+    z.object({
+      authorizationUrl: z.string().url(),
+      userCode: z.string().regex(/^[A-Za-z0-9-]{4,32}$/),
+    }),
+  ),
+  '/grok/cancel': post(authStateSchema),
+  '/grok/disconnect': post(authStateSchema),
   '/connections/save': postWith(connectionSetup, z.object({ id: z.string() })),
   '/connections/test': postWith(connectionSetup, ok),
   '/connections/discover': postWith(

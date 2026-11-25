@@ -58,9 +58,12 @@ export default function Connections() {
   }, []);
 
   const auth = status?.auth;
+  const grok = status?.grok;
   const hasSubscription = auth && (auth.profiles.length > 0 || auth.status !== 'signed_out');
+  const hasGrok = grok && (grok.profiles.length > 0 || grok.status !== 'signed_out');
   const configured = new Map<ProviderId, ConnectionView[]>();
   if (hasSubscription) configured.set('openai', []);
+  if (hasGrok) configured.set('xai', []);
   for (const connection of status?.connections ?? []) {
     const group = configured.get(connection.provider);
     if (group) group.push(connection);
@@ -93,7 +96,7 @@ export default function Connections() {
               Connect your first provider
             </h2>
             <p className="mx-auto max-w-[44ch] text-sm text-muted">
-              Use a ChatGPT subscription or add an API key to make models available in Wisp.
+              Use a ChatGPT or Grok account, or add an API key, to make models available in Wisp.
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-3 text-sm">
@@ -117,7 +120,12 @@ export default function Connections() {
               <ul className="m-0 list-none divide-y [--tw-divide-style:solid] divide-border p-0">
                 {[...configured].map(([provider, connections]) => {
                   const { name } = providerPresentation(provider);
-                  const subscription = provider === 'openai' && hasSubscription ? auth : undefined;
+                  const subscription =
+                    provider === 'openai' && hasSubscription
+                      ? auth
+                      : provider === 'xai' && hasGrok
+                        ? grok
+                        : undefined;
                   const {
                     label,
                     tone,

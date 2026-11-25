@@ -14,12 +14,14 @@ export type SignInTracking = {
  * because the bridge keeps authorizing after the user navigates back to the list.
  */
 export function useSignInTracking(): SignInTracking {
-  const status = useDesktop((state) => state.status?.auth?.status);
+  const chatgpt = useDesktop((state) => state.status?.auth?.status);
+  const grok = useDesktop((state) => state.status?.grok?.status);
   const attempt = useRef<{ provider: ProviderId; cancelling: boolean }>(undefined);
-  const lastStatus = useRef(status);
+  const lastStatus = useRef(chatgpt);
 
   // A browser sign-in ends when the bridge leaves `authorizing`.
   useEffect(() => {
+    const status = attempt.current?.provider === 'xai' ? grok : chatgpt;
     const previous = lastStatus.current;
     lastStatus.current = status;
     const current = attempt.current;
@@ -45,7 +47,7 @@ export function useSignInTracking(): SignInTracking {
       error_code:
         status === 'plan_permission_required' ? 'plan_permission_required' : 'sign_in_failed',
     });
-  }, [status]);
+  }, [chatgpt, grok]);
 
   return {
     started: (provider) => {

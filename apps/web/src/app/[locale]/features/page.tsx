@@ -129,7 +129,7 @@ const baseFeatures = [
     icon: 'frost',
     title: 'AI connections & models',
     description:
-      'Use ChatGPT through your subscription, connect an API provider such as Claude, Gemini or OpenRouter, or choose a compatible local server. Pick a configured model for each conversation.',
+      'Use ChatGPT or Grok through your account, connect an API provider such as Claude, Gemini or OpenRouter, or choose a compatible local server. Pick a configured model for each conversation.',
     example: 'Connections / Add connection / Default model',
     note: 'Choose a tool-calling model and configure its context window for API connections. API usage is billed by the provider; local servers must be running. Model capabilities vary.',
   },

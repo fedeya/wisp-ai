@@ -120,8 +120,8 @@ export default function Onboarding() {
                   Your AI companion inside World of Warcraft. Setup takes about two minutes.
                 </p>
                 <p className="mt-4 max-w-[420px] text-sm text-subtle">
-                  You’ll need WoW Forever installed, and a ChatGPT plan or an API key from an AI
-                  provider.
+                  You’ll need WoW Forever installed, and a ChatGPT or Grok plan or an API key from
+                  an AI provider.
                 </p>
               </>
             )}

@@ -86,12 +86,23 @@ export default async function Setup({ params }: LocalePageProps) {
               </details>
               <details className="px-0 py-[14px] border-b-[1px] [border-bottom-style:solid] border-b-[var(--line)]">
                 <summary className="gap-[16px] cursor-pointer text-[14px] leading-[1.6] flex items-center justify-between list-none text-[#ded1ba]">
+                  {t('Grok account')}
+                  <Icon name="plus" size={15} />
+                </summary>
+                <p>
+                  {t(
+                    'Sign in with Continue with Grok. Confirm the code shown in Wisp on the xAI page. This option does not require an API key.',
+                  )}
+                </p>
+              </details>
+              <details className="px-0 py-[14px] border-b-[1px] [border-bottom-style:solid] border-b-[var(--line)]">
+                <summary className="gap-[16px] cursor-pointer text-[14px] leading-[1.6] flex items-center justify-between list-none text-[#ded1ba]">
                   {t('API provider')}
                   <Icon name="plus" size={15} />
                 </summary>
                 <p>
                   {t(
-                    'Choose Add connection and select a provider, such as Anthropic, Google, OpenAI or OpenRouter. Enter your API key and load the model list, or add a model by its exact ID.',
+                    'Choose Add connection and select a provider, such as Anthropic, Google, OpenAI, xAI or OpenRouter. Enter your API key and load the model list, or add a model by its exact ID.',
                   )}
                 </p>
                 <p>
@@ -206,7 +217,7 @@ export default async function Setup({ params }: LocalePageProps) {
             </summary>
             <p>
               {t(
-                'Check your selected connection in Connections and refresh the model list. For ChatGPT, finish browser sign-in or reconnect. For API connections, check your key, endpoint, model ID and context window, then use Test first model.',
+                'Check your selected connection in Connections and refresh the model list. For ChatGPT or Grok, finish browser sign-in or reconnect. For API connections, check your key, endpoint, model ID and context window, then use Test first model.',
               )}
             </p>
           </details>

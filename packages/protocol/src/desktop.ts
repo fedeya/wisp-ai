@@ -56,6 +56,8 @@ export const statusSchema = z.object({
   model: z.string(),
   activeTurns: z.number().int().nonnegative(),
   auth: authStateSchema,
+  /** Signed-in xAI / Grok account. Absent on older bridges. */
+  grok: authStateSchema.optional(),
   connections: z.array(connectionView).default([]),
   modelConnected: z.boolean().optional(),
   search: searchState.optional(),

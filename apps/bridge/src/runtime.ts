@@ -50,6 +50,7 @@ import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
 import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
+import { GrokAuth } from './auth/grok-auth.ts';
 import { TheWoWDB } from './integrations/thewowdb.ts';
 import { Simulator } from './integrations/simulation/simulator.ts';
 import { appPaths } from './app-paths.ts';
@@ -147,12 +148,21 @@ export async function startBridge(options: BridgeOptions = {}) {
     resources.defer(() => telemetry.close());
     const auth = new ChatGPTAuth(runtime, vault);
     await auth.load();
-    const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
+    const grok = new GrokAuth(vault);
+    await grok.load();
+    const connections = new ModelConnections(
+      path.join(runtime, 'connections.json'),
+      vault,
+      auth,
+      fetch,
+      grok,
+    );
     await connections.load();
     const modelFailures = new ModelFailures();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     await webSearch.load();
     resources.defer(() => auth.cancel());
+    resources.defer(() => grok.cancel());
     const database = new TheWoWDB();
     const panelStore = new PanelStore(applicationDatabase);
     await panelStore.load();
@@ -438,6 +448,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         ready: eve.isReady(),
         gameConnected: transport.gameConnected(),
         auth: auth.state(),
+        grok: grok.state(),
         connections: connections.list(),
         modelConnected: connections.connected(defaultModel()),
         search: webSearch.state(),
@@ -461,6 +472,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     }
     const desktopApp = createDesktopApp({
       auth,
+      grok,
       connections,
       webSearch,
       capabilitySettings,

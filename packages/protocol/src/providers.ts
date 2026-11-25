@@ -154,6 +154,9 @@ export type ConnectionModel = z.infer<typeof connectionModel>;
 export type DiscoveredConnectionModel = z.infer<typeof discoveredConnectionModel>;
 export type ConnectionView = z.infer<typeof connectionView>;
 
+/** Stable connection id for a signed-in Grok account. It is not an API-key connection. */
+export const GROK_SUBSCRIPTION_ID = '6f0e2c1a-9b4d-4e7a-8c31-0a5d7e9b2f14';
+
 export function connectionModelSlug(connection: string, model: string) {
   return `connection:${connection}:${model}`;
 }

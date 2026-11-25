@@ -12,6 +12,7 @@ import type { McpManager } from '../integrations/mcp/mcp-manager.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { GrokAuth } from '../auth/grok-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { PanelStore } from '../addon/panels.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
@@ -31,6 +32,7 @@ export const wowTransportInput = z.discriminatedUnion('action', [
 ]);
 interface DesktopDependencies {
   auth: ChatGPTAuth;
+  grok?: GrokAuth;
   connections: ModelConnections;
   webSearch: WebSearch;
   capabilitySettings: CapabilitySettings;
@@ -64,6 +66,7 @@ const ok = { ok: true } as const;
 export function createDesktopApp(deps: DesktopDependencies) {
   const {
     auth,
+    grok,
     connections,
     webSearch,
     capabilitySettings,
@@ -96,6 +99,25 @@ export function createDesktopApp(deps: DesktopDependencies) {
     .post('/auth/select', json(routes['/auth/select'].input), async (c) =>
       c.json(await accountOperation(() => auth.select(c.req.valid('json').profileId))),
     )
+    .post('/grok/start', async (c) => {
+      if (!grok) {
+        throw Error('Grok sign-in is unavailable.');
+      }
+      return c.json(await accountOperation(() => grok.beginSignIn()));
+    })
+    .post('/grok/cancel', async (c) => {
+      if (!grok) {
+        throw Error('Grok sign-in is unavailable.');
+      }
+      await grok.cancel();
+      return c.json(grok.state());
+    })
+    .post('/grok/disconnect', async (c) => {
+      if (!grok) {
+        throw Error('Grok sign-in is unavailable.');
+      }
+      return c.json(await accountOperation(() => grok.disconnect()));
+    })
     .post('/auth/model', json(routes['/auth/model'].input), async (c) => {
       const { model } = c.req.valid('json');
       await accountOperation(async () => {

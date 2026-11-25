@@ -2,6 +2,7 @@ import { test, expect, vi } from 'vitest';
 import type { Client } from 'eve/client';
 import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
+import { GrokAuthError } from '../src/auth/grok-auth.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/chat/context.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
@@ -226,6 +227,22 @@ test('chat telemetry distinguishes early failures before a turn reaches the engi
       {},
     );
   }
+  expect(f.send).not.toHaveBeenCalled();
+});
+
+test('a Grok authentication failure is classified as an authentication failure', async () => {
+  const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
+  const f = fixture(true, telemetry);
+  f.prepare.mockRejectedValueOnce(new GrokAuthError('Sign in with Grok in Wisp desktop.'));
+  await f.run(f.chat, 'Private question');
+  expect(telemetry.chat).toHaveBeenLastCalledWith(
+    'chat',
+    'failed',
+    expect.any(Number),
+    'model_auth_failed',
+    undefined,
+    noUsage,
+  );
   expect(f.send).not.toHaveBeenCalled();
 });
 

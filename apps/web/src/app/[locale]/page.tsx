@@ -18,11 +18,11 @@ export const revalidate = 300;
 const baseFaqs = [
   [
     'What do I need to get started?',
-    'A Windows PC, WoW: Forever and an AI connection: ChatGPT sign-in, a supported API provider or a compatible local server. Choose a model with tool calling and keep the Wisp desktop app running while you play.',
+    'A Windows PC, WoW: Forever and an AI connection: ChatGPT or Grok sign-in, a supported API provider or a compatible local server. Choose a model with tool calling and keep the Wisp desktop app running while you play.',
   ],
   [
     'Your subscription or your API key?',
-    'ChatGPT sign-in uses your account’s available models. API connections use your own provider credentials and billing. Compatible local servers are another option when the model supports Wisp’s tools.',
+    'ChatGPT and Grok sign-in use the models available on that account. API connections use your own provider credentials and billing. Compatible local servers are another option when the model supports Wisp’s tools.',
   ],
   [
     'Does Wisp play the game for me?',
@@ -479,7 +479,9 @@ export default async function Home({ params }: LocalePageProps) {
                 </span>
                 <h3 className="text-[15px] mb-[7px] md:mb-[11px]">{t('Connect your AI')}</h3>
                 <p className="text-[12px] leading-[1.8] text-muted max-w-full md:max-w-[290px]">
-                  {t('Sign in with ChatGPT or add an API connection, then choose your model.')}
+                  {t(
+                    'Sign in with ChatGPT or Grok, or add an API connection, then choose your model.',
+                  )}
                 </p>
               </li>
               <li className="grid grid-cols-[35px_1fr] gap-x-[14px] md:block">

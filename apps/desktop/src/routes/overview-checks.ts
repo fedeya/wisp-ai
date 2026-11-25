@@ -170,7 +170,7 @@ function providerCheck({ status, providerConnected, modelName }: OverviewInput):
     id: 'provider',
     tone: 'problem',
     title: 'No AI provider connected',
-    detail: 'Use your ChatGPT plan or an API key.',
+    detail: 'Use a ChatGPT or Grok plan, or an API key.',
     action: 'connect-provider',
   };
 }

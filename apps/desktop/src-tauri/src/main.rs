@@ -174,6 +174,9 @@ fn permitted(method: &str, route: &str) -> bool {
                 "/auth/select",
                 "/auth/disconnect",
                 "/auth/model",
+                "/grok/start",
+                "/grok/cancel",
+                "/grok/disconnect",
                 "/connections/save",
                 "/connections/test",
                 "/connections/discover",
@@ -715,15 +718,23 @@ fn open_exa_dashboard(app: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+fn allowed_sign_in_url(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    parsed.scheme() == "https"
+        && matches!(
+            parsed.host_str(),
+            Some("auth.openai.com" | "auth.x.ai" | "accounts.x.ai")
+        )
+        && parsed.port().is_none()
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+}
+
 #[tauri::command]
 fn open_sign_in(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid sign-in address.")?;
-    if parsed.scheme() != "https"
-        || parsed.host_str() != Some("auth.openai.com")
-        || parsed.port().is_some()
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-    {
+    if !allowed_sign_in_url(&url) {
         return Err("Unexpected sign-in address.".into());
     }
     app.opener()
@@ -1199,9 +1210,25 @@ mod tests {
         assert!(permitted("POST", "/routines/action"));
         assert!(permitted("POST", "/routines/open"));
         assert!(permitted("POST", "/app-update"));
+        assert!(permitted("POST", "/grok/start"));
+        assert!(permitted("POST", "/grok/cancel"));
+        assert!(permitted("POST", "/grok/disconnect"));
+        assert!(!permitted("GET", "/grok/start"));
         assert!(!permitted("GET", "/app-update"));
         assert!(permitted("POST", "/features/set"));
         assert!(!permitted("GET", "/features/set"));
+        assert!(allowed_sign_in_url(
+            "https://auth.openai.com/api/accounts/authorize"
+        ));
+        assert!(allowed_sign_in_url(
+            "https://accounts.x.ai/device?user_code=ABCD-1234"
+        ));
+        assert!(allowed_sign_in_url("https://auth.x.ai/device"));
+        assert!(!allowed_sign_in_url("https://evil.x.ai/device"));
+        assert!(!allowed_sign_in_url("http://accounts.x.ai/device"));
+        assert!(!allowed_sign_in_url(
+            "https://user:secret@accounts.x.ai/device"
+        ));
         assert!(!permitted("POST", "/suggestions"));
         assert!(!permitted("GET", "http://example.com"));
         assert!(!permitted("POST", "/model/responses"));

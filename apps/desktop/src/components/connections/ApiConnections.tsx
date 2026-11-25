@@ -22,7 +22,11 @@ export default function ApiConnections({ provider }: { provider: ProviderId }) {
     app.connections?.filter((connection) => provider === connection.provider) ?? [];
   const activeEditor: { connection?: ConnectionView } | null =
     editing ??
-    (provider !== 'openai' && app.online && !connections.length && !dismissedInitialEditor
+    (provider !== 'openai' &&
+    provider !== 'xai' &&
+    app.online &&
+    !connections.length &&
+    !dismissedInitialEditor
       ? {}
       : null);
 
@@ -35,7 +39,13 @@ export default function ApiConnections({ provider }: { provider: ProviderId }) {
     <Card kind="provider" className="p-5">
       <div className="section-title flex items-center justify-between gap-4">
         <div>
-          <h2>{provider === 'openai' ? 'OpenAI API' : 'API connections'}</h2>
+          <h2>
+            {provider === 'openai'
+              ? 'OpenAI API'
+              : provider === 'xai'
+                ? 'xAI API'
+                : 'API connections'}
+          </h2>
           <p className="text-muted text-[13px]">
             {provider === 'compatible'
               ? 'Use a local or custom OpenAI-compatible endpoint.'

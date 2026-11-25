@@ -8,6 +8,7 @@ import { turnInput, characterIdentity, rememberTurnQuests } from '../chat/contex
 import { chooseChatModel, resolveDefaultModel } from '../chat/chat-model.ts';
 import { generateConversationTitle } from '../chat/conversation-title.ts';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
+import { GrokAuthError } from '../auth/grok-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import { errorMessage } from '../errors.ts';
 import type { Logger } from 'pino';
@@ -337,7 +338,10 @@ export function createTurnRunner(deps: TurnDependencies) {
           timedOut || isTimeout(failure) || (failure instanceof Error && isTimeout(failure.cause))
             ? 'timeout'
             : 'failed';
-        if (failure instanceof ChatGPTAuthError && failureCode === 'model_preparation_failed') {
+        if (
+          (failure instanceof ChatGPTAuthError || failure instanceof GrokAuthError) &&
+          failureCode === 'model_preparation_failed'
+        ) {
           failureCode = 'model_auth_failed';
         }
         if (

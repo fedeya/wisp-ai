@@ -26,7 +26,7 @@ Wisp starts automatically when you open the desktop app. You can choose **Set up
 To use Wisp in WoW:
 
 1. In **Overview**, select the WoW folder containing `Wow.exe` and install/update the addon.
-2. In **AI Providers**, choose **Add provider** to find **ChatGPT**, **Claude**, **Gemini**, gateways and compatible endpoints. After connecting, return to **AI Providers** to select a **Default model**. See [AI connections](docs/usage.md#ai-connections) for API setup.
+2. In **AI Providers**, choose **Add provider** to find **ChatGPT**, **Grok**, **Claude**, **Gemini**, gateways and compatible endpoints. After connecting, return to **AI Providers** to select a **Default model**. See [AI connections](docs/usage.md#ai-connections) for API setup.
 3. Fully exit and restart WoW, then enable **Wisp AI** and its helper addons in the AddOns list.
 4. Type `/wisp` and ask a question. Keep the desktop app running; closing its window leaves it in the system tray.
 

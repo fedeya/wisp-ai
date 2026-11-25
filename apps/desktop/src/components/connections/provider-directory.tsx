@@ -6,7 +6,7 @@ const featured = {
   anthropic: { name: 'Claude', description: 'Anthropic API key' },
   google: { name: 'Gemini', description: 'Google API key' },
   deepseek: { name: 'DeepSeek', description: 'DeepSeek API key' },
-  xai: { name: 'Grok', description: 'xAI API key' },
+  xai: { name: 'Grok', description: 'Subscription or API key' },
   mistral: { name: 'Mistral', description: 'Mistral API key' },
   alibaba: { name: 'Qwen', description: 'Alibaba Cloud API key' },
   moonshotai: { name: 'Kimi', description: 'Moonshot API key' },

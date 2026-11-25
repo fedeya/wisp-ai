@@ -5,6 +5,7 @@ import {
   connectionSetup,
   connectionDiscovery,
   discoveredConnectionModel,
+  connectionModel,
   connectionModelSlug,
   parseConnectionModel,
   providerDefinitions,
@@ -20,6 +21,12 @@ import { modelToolSupport } from '@wisp/agent/tool-support';
 import { modelContextWindow } from '@wisp/agent/context-windows';
 import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import {
+  GROK_PROXY_BASE,
+  GROK_SUBSCRIPTION_ID,
+  grokProxyHeaders,
+  type GrokAuth,
+} from '../auth/grok-auth.ts';
 import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
 import type { SecretVault } from '../auth/secret-vault.ts';
@@ -102,17 +109,20 @@ export class ModelConnections implements ModelCatalog {
   private file: string;
   private vault: SecretVault;
   private chatgpt: ChatGPTAuth;
+  private grok?: GrokAuth;
   private fetcher: typeof fetch;
   constructor(
     file: string,
     vault: SecretVault,
     chatgpt: ChatGPTAuth,
     fetcher: typeof fetch = fetch,
+    grok?: GrokAuth,
   ) {
     this.file = file;
     this.vault = vault;
     this.chatgpt = chatgpt;
     this.fetcher = fetcher;
+    this.grok = grok;
   }
   async load() {
     this.connections = await readJson(this.file, z.array(connectionConfig), () => []);
@@ -136,6 +146,7 @@ export class ModelConnections implements ModelCatalog {
   hasProvider() {
     return (
       this.chatgpt.state().status !== 'signed_out' ||
+      (!!this.grok && this.grok.state().status !== 'signed_out') ||
       this.connections.some(
         (connection) =>
           (this.keys.has(connection.id) || connection.provider === 'compatible') &&
@@ -147,6 +158,9 @@ export class ModelConnections implements ModelCatalog {
     const selected = parseConnectionModel(model);
     if (!selected) {
       return this.chatgpt.state().status === 'connected';
+    }
+    if (selected.connection === GROK_SUBSCRIPTION_ID) {
+      return this.grok?.state().status === 'connected';
     }
     return this.connections.some(
       (connection) =>
@@ -279,14 +293,25 @@ export class ModelConnections implements ModelCatalog {
         }),
       );
     const account: AccountModel[] = [];
+    // Hold a catalog failure until every connected account has been tried.
+    // Otherwise a ChatGPT error hides a healthy Grok account when no API key is saved.
+    const accountErrors: unknown[] = [];
     if (this.chatgpt.state().status === 'connected') {
       try {
         account.push(...(await this.chatgpt.models()));
       } catch (error) {
-        if (!configured.length) {
-          throw error;
-        }
+        accountErrors.push(error);
       }
+    }
+    if (this.grok?.state().status === 'connected') {
+      try {
+        account.push(...(await this.grokAccountModels()));
+      } catch (error) {
+        accountErrors.push(error);
+      }
+    }
+    if (!configured.length && !account.length && accountErrors.length) {
+      throw accountErrors[0];
     }
     // Model names already say what they are ("Claude Opus 5.5"), so the
     // connection only prefixes a name that two sources share.
@@ -307,10 +332,28 @@ export class ModelConnections implements ModelCatalog {
   async prepare(model: string) {
     const parsed = parseConnectionModel(model);
     if (!parsed) {
+      // No slug yet. ChatGPT owns that default, unless it is signed out and
+      // Grok is the account still signing in or waiting on a plan grant.
+      const grok = this.grok;
+      const grokStatus = grok?.state().status;
+      if (this.chatgpt.state().status === 'signed_out' && grok && grokStatus !== 'signed_out') {
+        if (grok.pending || grokStatus === 'authorizing') {
+          throw Error('Finish Grok sign-in first.');
+        }
+        await grok.accessToken();
+        return;
+      }
       if (this.chatgpt.pending) {
         throw Error('Finish ChatGPT sign-in first.');
       }
       await this.chatgpt.accessToken();
+      return;
+    }
+    if (parsed.connection === GROK_SUBSCRIPTION_ID) {
+      if (this.grok?.pending) {
+        throw Error('Finish Grok sign-in first.');
+      }
+      await this.grok?.accessToken();
       return;
     }
     const connection = this.get(parsed.connection);
@@ -323,6 +366,13 @@ export class ModelConnections implements ModelCatalog {
     const parsed = parseConnectionModel(model);
     if (!parsed) {
       return {};
+    }
+    if (parsed.connection === GROK_SUBSCRIPTION_ID) {
+      return {
+        connectionId: GROK_SUBSCRIPTION_ID,
+        provider: 'xai' as const,
+        modelId: parsed.model,
+      };
     }
     const connection = this.get(parsed.connection);
     return { connectionId: connection.id, provider: connection.provider, modelId: parsed.model };
@@ -491,6 +541,9 @@ export class ModelConnections implements ModelCatalog {
     if (!parsed) {
       return this.chatgptComplete(model, instructions, text, signal);
     }
+    if (parsed.connection === GROK_SUBSCRIPTION_ID) {
+      return this.grokComplete(parsed.model, instructions, text, signal);
+    }
     const connection = this.get(parsed.connection);
     if (!connection.models.some((m) => m.id === parsed.model)) {
       throw Error('Model is no longer configured.');
@@ -580,6 +633,9 @@ export class ModelConnections implements ModelCatalog {
     return { ok: true };
   }
   async forward(id: string, suffix: string, body: string, incoming: Headers, signal: AbortSignal) {
+    if (id === GROK_SUBSCRIPTION_ID) {
+      return this.forwardGrok(suffix, body, incoming, signal);
+    }
     const connection = this.get(id);
     const secret = await this.credential(connection);
     const url = new URL('https://loopback.invalid' + suffix);
@@ -665,6 +721,158 @@ export class ModelConnections implements ModelCatalog {
         .json()
         .catch(() => ({ error: { message: `Provider returned HTTP ${response.status}.` } }));
       return Response.json(redact(body), {
+        status: response.status,
+        headers: response.headers.has('retry-after')
+          ? { 'retry-after': response.headers.get('retry-after')! }
+          : undefined,
+      });
+    }
+    return response;
+  }
+  private async grokAccountModels(): Promise<AccountModel[]> {
+    const listed = await this.grok!.models();
+    const models = listed
+      .filter(
+        (model) =>
+          connectionModel.shape.id.safeParse(model.id).success && !nonChatModel.test(model.id),
+      )
+      .map((model) => {
+        const supported = modelReasoningEfforts('xai', model.id);
+        return {
+          slug: connectionModelSlug(GROK_SUBSCRIPTION_ID, model.id),
+          displayName: model.name || model.id,
+          efforts: supported.length ? ['provider-default', ...supported] : [],
+          ...(supported.length ? { defaultEffort: 'provider-default' } : {}),
+          contextWindow: modelContextWindow('xai', model.id),
+        } satisfies AccountModel;
+      });
+    if (!models.length) {
+      throw Error('This Grok account did not return a chat model.');
+    }
+    return models;
+  }
+  private async grokComplete(
+    model: string,
+    instructions: string,
+    text: string,
+    signal: AbortSignal,
+  ) {
+    const entry = (await this.grokAccountModels()).find(
+      (item) => item.slug === connectionModelSlug(GROK_SUBSCRIPTION_ID, model),
+    );
+    if (!entry || !this.grok) {
+      throw Error('This model is not available.');
+    }
+    const effort = ['none', 'minimal', 'low'].find((level) => entry.efforts.includes(level));
+    const send = async (token: string) => {
+      const headers = grokProxyHeaders(token, model);
+      headers.set('content-type', 'application/json');
+      headers.set('accept', 'text/event-stream');
+      return this.fetcher(GROK_PROXY_BASE + '/responses', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          ...(effort ? { reasoning: { effort } } : {}),
+          store: false,
+          stream: true,
+          instructions,
+          input: [{ role: 'user', content: [{ type: 'input_text', text }] }],
+        }),
+        signal,
+        redirect: 'error',
+      });
+    };
+    let token = await this.grok.accessToken();
+    let response = await send(token);
+    if (response.status === 401) {
+      await response.body?.cancel();
+      token = await this.grok.accessToken(token);
+      response = await send(token);
+      if (response.status === 401) {
+        await this.grok.rejectSession(token);
+      }
+    }
+    if (!response.ok) {
+      const error = await normalizeModelError(response);
+      const body = (await error.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      throw Error(safeErrorMessage(body?.error?.message ?? 'The model is unavailable.'));
+    }
+    const completed = (await readCompletedResponse(response)) as {
+      output?: { type?: string; content?: { type?: string; text?: string }[] }[];
+    };
+    return (completed.output ?? [])
+      .filter((item) => item.type === 'message')
+      .flatMap((item) => item.content ?? [])
+      .map((part) => (part.type === 'output_text' ? (part.text ?? '') : ''))
+      .join('');
+  }
+  private async forwardGrok(suffix: string, body: string, incoming: Headers, signal: AbortSignal) {
+    if (!this.grok) {
+      throw Error('Sign in with Grok in Wisp desktop.');
+    }
+    const url = new URL('https://loopback.invalid' + suffix);
+    const data = JSON.parse(body) as Record<string, unknown>;
+    const model = data.model;
+    if (url.pathname !== '/responses' || url.search) {
+      throw Error('Unsupported model route.');
+    }
+    if (
+      typeof model !== 'string' ||
+      !(await this.grokAccountModels()).some(
+        (item) => item.slug === connectionModelSlug(GROK_SUBSCRIPTION_ID, model),
+      )
+    ) {
+      throw Error('Choose a configured model.');
+    }
+    data.store = false;
+    const send = async (token: string) => {
+      const headers = grokProxyHeaders(token, model);
+      headers.set('content-type', 'application/json');
+      for (const name of ['accept', 'ai-language-model-specification-version']) {
+        if (incoming.has(name)) {
+          headers.set(name, incoming.get(name)!);
+        }
+      }
+      return this.fetcher(GROK_PROXY_BASE + url.pathname, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+        signal,
+        redirect: 'error',
+      });
+    };
+    let token = await this.grok.accessToken();
+    let response = await send(token);
+    if (response.status === 401) {
+      await response.body?.cancel();
+      token = await this.grok.accessToken(token);
+      response = await send(token);
+      if (response.status === 401) {
+        await this.grok.rejectSession(token);
+      }
+    }
+    if (!response.ok) {
+      const redact = (value: unknown): unknown => {
+        if (typeof value === 'string') {
+          return safeErrorMessage(token ? value.split(token).join('[redacted]') : value);
+        }
+        if (Array.isArray(value)) {
+          return value.map(redact);
+        }
+        if (value && typeof value === 'object') {
+          return Object.fromEntries(
+            Object.entries(value).map(([key, entry]) => [key, redact(entry)]),
+          );
+        }
+        return value;
+      };
+      const failed = await response
+        .json()
+        .catch(() => ({ error: { message: `Provider returned HTTP ${response.status}.` } }));
+      return Response.json(redact(failed), {
         status: response.status,
         headers: response.headers.has('retry-after')
           ? { 'retry-after': response.headers.get('retry-after')! }

@@ -17,6 +17,7 @@
     "./capabilities": "./src/integrations/capabilities.ts",
     "./chat-model": "./src/chat/chat-model.ts",
     "./chatgpt-auth": "./src/auth/chatgpt-auth.ts",
+    "./grok-auth": "./src/auth/grok-auth.ts",
     "./context": "./src/chat/context.ts",
     "./desktop-migration": "./src/migrations/desktop.ts",
     "./desktop-server": "./src/desktop/desktop-server.ts",
