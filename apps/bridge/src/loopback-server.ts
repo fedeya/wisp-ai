@@ -1,19 +1,43 @@
-import { once } from 'node:events';
-import { type AddressInfo, type Server } from 'node:net';
+import { createServer } from 'node:http';
+import * as NodeHttpServer from '@effect/platform-node/NodeHttpServer';
+import { Effect } from 'effect';
+import type { Scope } from 'effect';
+import type { HttpServerRequest, HttpServerResponse } from 'effect/http';
 
-async function listen(server: Server, port: number): Promise<void> {
-  server.listen(port, '127.0.0.1');
-  await once(server, 'listening');
-}
+const addressInUse = (error: { cause?: unknown }) =>
+  (error.cause as NodeJS.ErrnoException | undefined)?.code === 'EADDRINUSE';
 
-export async function listenOnLoopback(server: Server, preferredPort: number): Promise<number> {
-  try {
-    await listen(server, preferredPort);
-  } catch (error) {
-    if (preferredPort === 0 || (error as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
-      throw error;
-    }
-    await listen(server, 0);
+/**
+ * Serves `app` on 127.0.0.1 until the caller's scope closes, on
+ * `preferredPort` or, when another process holds it, on a free port. Returns
+ * the bound port.
+ *
+ * Closing the scope does not wait for open requests: like the agent's model
+ * streams, they are cut at once so the bridge stops promptly.
+ */
+export const serveOnLoopback = Effect.fn('serveOnLoopback')(function* <E>(
+  app: Effect.Effect<
+    HttpServerResponse.HttpServerResponse,
+    E,
+    HttpServerRequest.HttpServerRequest | Scope.Scope
+  >,
+  preferredPort: number,
+) {
+  const listen = (port: number) =>
+    NodeHttpServer.make(() => createServer(), {
+      port,
+      host: '127.0.0.1',
+      gracefulShutdownTimeout: 0,
+    });
+  const server = yield* listen(preferredPort).pipe(
+    Effect.catchIf(
+      (error) => preferredPort !== 0 && addressInUse(error),
+      () => listen(0),
+    ),
+  );
+  yield* server.serve(app);
+  if (server.address._tag === 'UnixPathAddress') {
+    return yield* Effect.die(Error('The loopback server is not on a TCP port.'));
   }
-  return (server.address() as AddressInfo).port;
-}
+  return server.address.port;
+});

@@ -1,6 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { serveAgent } from './agent-server-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { characterIdentity, rememberTurnQuests } from '../src/chat/context.ts';
 
@@ -37,16 +36,14 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
     },
   }));
   // Other service dependencies are not used by the state endpoint under test.
-  const handler = createAgentHandler({
+  const server = await serveAgent({
     token: 'test',
     getChats: () => [chat],
     currentTransport: () => 'addon',
-    capabilitySettings: { enabled: () => allowed },
-    pending: { request },
-  } as unknown as Parameters<typeof createAgentHandler>[0]);
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = 'http://127.0.0.1:' + (server.address() as { port: number }).port + '/state';
+    capabilitySettings: { enabled: () => allowed } as never,
+    pending: { request } as never,
+  });
+  const url = server.origin + '/state';
   const read = (sections: string[], refresh?: boolean) =>
     fetch(url, {
       method: 'POST',
@@ -81,6 +78,6 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
     expect(await denied.text()).toContain('disabled');
     expect(request).toHaveBeenCalledTimes(2);
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await server.close();
   }
 });

@@ -14,9 +14,8 @@ import type { Packet } from '@wisp/protocol/protocol';
 import { readJson } from './json-file.ts';
 import { loadBridgeConfig } from './bridge-config.ts';
 import { z } from 'zod';
-import { createAgentHandler } from './agent/agent-server.ts';
+import { makeAgentApp } from './agent/agent-server.ts';
 import { GameRequests } from './addon/game-requests.ts';
-import { createServer, type Server } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -40,8 +39,8 @@ import { PanelStore } from './addon/panels.ts';
 import { McpManager } from './integrations/mcp/mcp-manager.ts';
 import { McpRelay } from './integrations/mcp/mcp-relay.ts';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
-import { startDesktopServer } from './desktop/desktop-server.ts';
-import { listenOnLoopback } from './loopback-server.ts';
+import { serveDesktop } from './desktop/desktop-server.ts';
+import { serveOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
 import { ModelConnections } from './models/model-connections.ts';
 import { createModelCatalogRefresh } from './models/model-catalog.ts';
@@ -439,42 +438,35 @@ export const makeBridge = Effect.fn('Bridge.make')(function* (options: BridgeOpt
       }),
     (connection) => connection.serialize(connection.disconnect),
   );
-  const server = yield* acquire(
-    () =>
-      createServer(
-        createAgentHandler({
-          logger,
-          telemetry,
-          modelFailures,
-          token,
-          auth,
-          connections,
-          webSearch,
-          mcpRelay,
-          capabilitySettings,
-          routineStore,
-          panelStore,
-          memoryStore,
-          pending,
-          database,
-          simulator,
-          getChats: () => state.chats,
-          currentTransport: () => state.activeTransport,
-          defaultModel,
-          readSimulationCharacter,
-          memorySnapshot,
-          presentReply: run.present,
-          setMemoryView: (view) => {
-            state.memoryView = view;
-          },
-          changed,
-        }),
-      ),
-    closeServer,
-  );
-  const agentPort = yield* Effect.promise(() =>
-    listenOnLoopback(server, options.agentPort ?? 43187),
-  );
+  // The agent server closes with the bridge scope, cutting open requests.
+  const agentApp = yield* makeAgentApp({
+    logger,
+    telemetry,
+    modelFailures,
+    token,
+    auth,
+    connections,
+    webSearch,
+    mcpRelay,
+    capabilitySettings,
+    routineStore,
+    panelStore,
+    memoryStore,
+    pending,
+    database,
+    simulator,
+    getChats: () => state.chats,
+    currentTransport: () => state.activeTransport,
+    defaultModel,
+    readSimulationCharacter,
+    memorySnapshot,
+    presentReply: run.present,
+    setMemoryView: (view) => {
+      state.memoryView = view;
+    },
+    changed,
+  });
+  const agentPort = yield* serveOnLoopback(agentApp, options.agentPort ?? 43187);
   const agentOrigin = 'http://127.0.0.1:' + agentPort;
   yield* Effect.promise(() => writeFile(path.join(runtime, 'bridge.pid'), String(process.pid)));
   setAgentHost({ origin: agentOrigin, token, capabilitiesFile: capabilitySettings.agentFile });
@@ -599,7 +591,7 @@ export const makeBridge = Effect.fn('Bridge.make')(function* (options: BridgeOpt
       );
     },
   });
-  yield* acquire(() => startDesktopServer(runtime, desktopApp, options.desktopPort), closeServer);
+  yield* serveDesktop(runtime, desktopApp, options.desktopPort);
   const transportStartup =
     options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
       ? Promise.resolve()
@@ -691,15 +683,4 @@ export async function startBridge(options: BridgeOptions = {}) {
     await stop().catch(() => {});
     throw error;
   }
-}
-
-function closeServer(server: Server) {
-  return new Promise<void>((resolve, reject) => {
-    if (!server.listening) {
-      resolve();
-      return;
-    }
-    server.close((error) => (error ? reject(error) : resolve()));
-    server.closeAllConnections();
-  });
 }

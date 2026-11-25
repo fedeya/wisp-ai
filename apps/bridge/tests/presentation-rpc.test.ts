@@ -1,6 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { serveAgent } from './agent-server-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { ReplyProjection } from '../src/reply/reply-stream.ts';
 
@@ -13,16 +12,13 @@ test('presentation RPC authenticates, scopes the active character and reports br
   const presentReply = vi.fn((_chat, callId, input, signal) =>
     projection.acceptPresentation(callId, input, signal),
   );
-  const server = createServer(
-    createAgentHandler({
-      token: 'test',
-      getChats: () => [chat],
-      currentTransport: () => transport,
-      presentReply,
-    } as unknown as Parameters<typeof createAgentHandler>[0]),
-  );
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = 'http://127.0.0.1:' + (server.address() as { port: number }).port + '/present';
+  const server = await serveAgent({
+    token: 'test',
+    getChats: () => [chat],
+    currentTransport: () => transport,
+    presentReply,
+  });
+  const url = server.origin + '/present';
   const input = { references: { nova: { kind: 'spell', id: 122, label: 'Nova' } } };
   const post = (body: unknown, token = 'test') =>
     fetch(url, {
@@ -63,6 +59,6 @@ test('presentation RPC authenticates, scopes the active character and reports br
     expect(chat.activity).toEqual([]);
   } finally {
     projection.finish();
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await server.close();
   }
 });

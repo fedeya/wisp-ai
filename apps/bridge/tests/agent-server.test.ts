@@ -1,19 +1,15 @@
 import { test, expect, vi } from 'vitest';
-import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { serveAgent } from './agent-server-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
-async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
-  const server = createServer(
-    createAgentHandler({
-      token: 'test',
-      currentTransport: () => 'addon',
-      capabilitySettings: { enabled: () => true },
-      ...deps,
-    } as unknown as Parameters<typeof createAgentHandler>[0]),
-  );
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
+async function serve(deps: Record<string, unknown>) {
+  const server = await serveAgent({
+    token: 'test',
+    currentTransport: () => 'addon',
+    capabilitySettings: { enabled: () => true } as never,
+    ...deps,
+  });
+  const origin = server.origin;
   const post = (route: string, body: unknown, init: RequestInit = {}) =>
     fetch(origin + route, {
       method: 'POST',
@@ -24,11 +20,7 @@ async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
   return {
     origin,
     post,
-    close: () =>
-      new Promise<void>((resolve) => {
-        server.close(() => resolve());
-        server.closeAllConnections();
-      }),
+    close: server.close,
   };
 }
 
