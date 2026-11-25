@@ -26,7 +26,7 @@ local function text(value)
     if not readable(value) or type(value) ~= "string" or value == "" then
         return nil
     end
-    return (value:gsub("[%c|]", " "):sub(1, 80))
+    return (ns.Shared.Text.TruncateUtf8Bytes(value:gsub("[%c|]", " "), 80))
 end
 
 local function flag(value)

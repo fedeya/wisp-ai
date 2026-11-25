@@ -1,5 +1,21 @@
 local helper = require("addon.tests.support")
 
+-- Expected prefixes are constructed independently, not with the truncation helper.
+local textCases = {
+    { "two-byte crossing", string.rep("a", 79) .. "é", string.rep("a", 79) },
+    { "three-byte crossing", string.rep("a", 78) .. "界", string.rep("a", 78) },
+    { "four-byte crossing", string.rep("a", 77) .. "😀", string.rep("a", 77) },
+    { "exact fit", string.rep("a", 76) .. "😀tail", string.rep("a", 76) .. "😀" },
+    { "ASCII overflow", string.rep("a", 81), string.rep("a", 80) },
+    { "short localized text", "é界😀", "é界😀" },
+    { "empty text", "", nil },
+    { "missing text", nil, nil },
+    { "non-string text", 123, nil },
+    { "secret text", "secret", nil },
+    { "pipe and controls", "é|\000\n\t界", "é    界" },
+    { "sanitized boundary", "|\n" .. string.rep("a", 77) .. "é", "  " .. string.rep("a", 77) },
+}
+
 local function setup(env)
     setfenv(1, env)
     do
@@ -99,6 +115,79 @@ local function setup(env)
         combatHandler = onEvent
     end
     helper.addon("Character/Inspect.lua", env)
+end
+
+for _, case in ipairs(textCases) do
+    it("preserves complete combat text bytes: " .. case[1], function()
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
+
+        function issecretvalue(value)
+            return value == "secret"
+        end
+        local input, expected = case[2], case[3]
+        function GetRealZoneText()
+            return input
+        end
+        function GetSubZoneText()
+            return input
+        end
+        local recap = {
+            events = {
+                {
+                    event = "SPELL_DAMAGE",
+                    spellName = input,
+                    sourceName = input,
+                    amount = 1,
+                },
+            },
+        }
+        recaps.latest, recaps[77] = recap, recap
+        sessions[9] = {
+            combatSources = { { name = input, classFilename = input, deathRecapID = 77 } },
+        }
+        sessions.player7 = {
+            combatSpells = {
+                { creatureName = input, totalAmount = 2 },
+                { combatSpellDetails = { unitName = input }, totalAmount = 1 },
+            },
+        }
+        sessions[7] = { combatSources = { { name = input, classFilename = input } } }
+        die()
+
+        -- Lua string equality compares raw bytes, with no host UTF-8 decoding.
+        local function check(actual)
+            assert(
+                expected == actual,
+                "raw byte mismatch: expected "
+                    .. #(expected or "")
+                    .. " bytes, got "
+                    .. #(actual or "")
+            )
+            assert(actual == nil or #actual <= 80)
+        end
+        local result = ns.Character.Inspect({ kind = "combat", args = { includeGroup = true } })
+        assert(result.status == "available")
+        local death, group = result.data.deaths[1], result.data.groupDeaths[1]
+        check(death.zone)
+        check(death.subzone)
+        for _, row in ipairs({ death, group }) do
+            check(row.killingBlow.spell)
+            check(row.killingBlow.source)
+            check(row.events[1].spell)
+            check(row.events[1].source)
+            check(row.damageBySource[1].ability)
+            check(row.damageBySource[1].source)
+        end
+        check(group.name)
+        check(group.class)
+        local fight = ns.Combat.Read({ view = "fight" }).fight
+        check(fight.damageTakenBySpell[1].source)
+        check(fight.damageTakenBySpell[2].source)
+        check(fight.groupDamageTaken[1].name)
+        check(fight.groupDamageTaken[1].class)
+    end)
 end
 
 it("copies the game's recap at each death and keeps the newest five", function()
