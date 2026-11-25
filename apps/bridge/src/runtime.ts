@@ -145,7 +145,7 @@ export const makeBridge = Effect.fn('Bridge.make')(function* (options: BridgeOpt
     ]),
   );
   const runtime = paths.runtime;
-  const simulator = new Simulator(ROOT, runtime);
+  const simulator = new Simulator(ROOT, runtime, services);
   yield* Effect.promise(() => mkdir(runtime, { recursive: true }));
   const databaseFile = applicationDatabaseFile(runtime);
   const applicationDatabase = yield* acquire(
@@ -179,7 +179,7 @@ export const makeBridge = Effect.fn('Bridge.make')(function* (options: BridgeOpt
   const mcpFile = mcpConfig
     ? path.resolve(paths.dataRoot, mcpConfig)
     : path.join(runtime, 'mcp.json');
-  const vault = options.vault || new NativeVault(paths.desktopExecutable);
+  const vault = options.vault || new NativeVault(paths.desktopExecutable, services);
   const mcpManager = yield* acquire(
     async () => {
       const manager = new McpManager(mcpFile, ROOT, vault);
