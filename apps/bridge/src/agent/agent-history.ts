@@ -178,7 +178,7 @@ export class AgentHistory {
   }
 
   /** The position after the session's last log entry. */
-  private next(db: Transaction | ApplicationDatabase['orm'], session: string) {
+  private next(db: Transaction, session: string) {
     const last = db
       .select({ seq: max(agentEntries.seq) })
       .from(agentEntries)

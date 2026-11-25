@@ -8,6 +8,7 @@ import {
   type ToolSet,
 } from 'ai';
 import { Cause, Effect, Exit, Queue, Schema, Stream } from 'effect';
+import { z } from 'zod';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { uuidv7 } from '@wisp/protocol/uuid';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
@@ -110,7 +111,14 @@ export interface EngineOptions {
 }
 
 function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error ?? 'The response failed.');
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error === null || error === undefined) return 'The response failed.';
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'The response failed.';
+  }
 }
 
 /**
@@ -140,44 +148,42 @@ function safeLabel(label: () => string | undefined) {
   }
 }
 
-// Token counts arrive either as numbers or as { total, cacheRead, ... } objects.
+const tokenCount = z.number().nullish();
+const tokenDetails = z.object({
+  total: tokenCount,
+  cacheRead: tokenCount,
+  cacheWrite: tokenCount,
+  reasoning: tokenCount,
+});
+/** Provider usage: counts arrive as numbers or as `{ total, cacheRead, ... }` objects. */
+const providerUsage = z.object({
+  inputTokens: z.union([z.number(), tokenDetails]).nullish(),
+  outputTokens: z.union([z.number(), tokenDetails]).nullish(),
+  cachedInputTokens: tokenCount,
+  reasoningTokens: tokenCount,
+});
+
 export function stepUsage(raw: unknown): TokenUsage | undefined {
-  if (!raw || typeof raw !== 'object') {
+  const parsed = providerUsage.safeParse(raw);
+  if (!parsed.success) {
     return undefined;
   }
-  const usage = raw as Record<string, any>;
-  const count = (value: unknown) =>
-    typeof value === 'number'
-      ? value
-      : value && typeof value === 'object' && typeof (value as any).total === 'number'
-        ? ((value as any).total as number)
-        : undefined;
-  const inputTokens = count(usage.inputTokens);
-  const outputTokens = count(usage.outputTokens);
-  if (inputTokens === undefined || outputTokens === undefined) {
+  const { inputTokens: input, outputTokens: output } = parsed.data;
+  const details = (value: typeof input) =>
+    typeof value === 'object' && value !== null ? value : undefined;
+  const inputTokens = typeof input === 'number' ? input : details(input)?.total;
+  const outputTokens = typeof output === 'number' ? output : details(output)?.total;
+  if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number') {
     return undefined;
   }
-  const cacheReadTokens =
-    typeof usage.cachedInputTokens === 'number'
-      ? usage.cachedInputTokens
-      : typeof usage.inputTokens?.cacheRead === 'number'
-        ? usage.inputTokens.cacheRead
-        : undefined;
-  const reasoningTokens =
-    typeof usage.reasoningTokens === 'number'
-      ? usage.reasoningTokens
-      : typeof usage.outputTokens?.reasoning === 'number'
-        ? usage.outputTokens.reasoning
-        : undefined;
-  const cacheWriteTokens =
-    typeof usage.inputTokens?.cacheWrite === 'number' ? usage.inputTokens.cacheWrite : undefined;
-  return {
-    inputTokens,
-    outputTokens,
-    ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
-    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
-    ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
-  };
+  const usage: TokenUsage = { inputTokens, outputTokens };
+  const cacheReadTokens = parsed.data.cachedInputTokens ?? details(input)?.cacheRead;
+  if (typeof cacheReadTokens === 'number') usage.cacheReadTokens = cacheReadTokens;
+  const reasoningTokens = parsed.data.reasoningTokens ?? details(output)?.reasoning;
+  if (typeof reasoningTokens === 'number') usage.reasoningTokens = reasoningTokens;
+  const cacheWriteTokens = details(input)?.cacheWrite;
+  if (typeof cacheWriteTokens === 'number') usage.cacheWriteTokens = cacheWriteTokens;
+  return usage;
 }
 
 /** A rough token count, enough to decide when to compact. */
@@ -205,9 +211,9 @@ function transcript(messages: ModelMessage[]) {
         typeof message.content === 'string'
           ? [{ type: 'text', text: message.content }]
           : message.content;
-      return (parts as Record<string, any>[]).map((part) => {
+      return (parts as ReadonlyArray<MessagePart>).map((part) => {
         if (part.type === 'text') {
-          return message.role + ': ' + clip(String(part.text), 4000);
+          return message.role + ': ' + clip(part.text, 4000);
         }
         if (part.type === 'tool-call') {
           return 'tool call ' + part.toolName + ' ' + clip(JSON.stringify(part.input), 400);
@@ -241,6 +247,12 @@ function lastMemory(history: ModelMessage[]) {
 
 type Labels = Pick<ReturnType<typeof assembleTools>, 'labels' | 'deferred'>;
 
+/** A part of a message's content array, whatever its role. */
+type MessagePart = Exclude<ModelMessage['content'], string>[number];
+
+/** The input of a `tool_call`: the deferred tool it runs and that tool's input. */
+const deferredCall = z.object({ name: z.string(), input: z.unknown().optional() });
+
 /**
  * The bridge events of one turn's AI SDK stream. A deferred call is shown as
  * the tool it runs, not as tool_call, and keeps its input for the settled label.
@@ -259,9 +271,10 @@ class TurnEvents {
     return this.tools.labels.get(name) ?? this.tools.deferred.get(name)?.label;
   }
 
-  private shown(name: string, input: any) {
-    return name === TOOL_CALL && input && typeof input.name === 'string'
-      ? { name: input.name as string, input: input.input ?? {} }
+  private shown(name: string, input: unknown) {
+    const deferred = name === TOOL_CALL ? deferredCall.safeParse(input) : undefined;
+    return deferred?.success
+      ? { name: deferred.data.name, input: deferred.data.input ?? {} }
       : { name, input };
   }
 
@@ -351,7 +364,24 @@ class TurnEvents {
       case 'error':
         this.failure = part.error;
         return [];
-      default:
+      case 'start':
+      case 'start-step':
+      case 'finish':
+      case 'abort':
+      case 'raw':
+      case 'ping':
+      case 'custom':
+      case 'file':
+      case 'source':
+      case 'reasoning-start':
+      case 'reasoning-delta':
+      case 'reasoning-end':
+      case 'reasoning-file':
+      case 'steering-message':
+      case 'tool-input-end':
+      case 'tool-approval-request':
+      case 'tool-approval-response':
+      case 'tool-output-denied':
         return [];
     }
   }
