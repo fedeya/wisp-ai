@@ -212,10 +212,11 @@ export const chatInstanceState = sqliteTable(
 );
 
 /**
- * One agent session of a chat: the model-facing conversation the agent
- * resumes on each turn. A new session starts when the model or connection
- * changes, since provider-native history (reasoning signatures, response IDs)
- * is not portable.
+ * The agent session of a chat: the model-facing conversation the agent
+ * resumes on each turn. A chat keeps one session when its model changes; each
+ * message records the model that wrote it, and provider-native data
+ * (reasoning signatures, encrypted reasoning, item IDs) is only replayed to
+ * that model.
  *
  * `chat_id` has no foreign key: a session starts on the chat's first turn,
  * before the chat's debounced save reaches this database. The chat store
@@ -227,7 +228,7 @@ export const agentSessions = sqliteTable(
   {
     id: text().primaryKey().notNull(),
     chatId: text('chat_id').notNull(),
-    /** The model slug the session was started with (`connection:<id>:<model>` for connections). */
+    /** The model slug of the latest turn (`connection:<id>:<model>` for connections). */
     model: text().notNull(),
     /** How `agent_messages.message` is encoded, so a later format can migrate older rows. */
     format: text().notNull(),
@@ -235,7 +236,6 @@ export const agentSessions = sqliteTable(
     wispVersion: text('wisp_version').notNull(),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
-    compactedAt: integer('compacted_at'),
     // Totals the providers reported for this session's model calls.
     tokensInput: integer('tokens_input').notNull().default(0),
     tokensOutput: integer('tokens_output').notNull().default(0),
@@ -255,7 +255,8 @@ export const agentSessions = sqliteTable(
 /**
  * A session's history: user, assistant and tool messages in AI SDK form
  * (`agent_sessions.format`), tool calls and results with their call IDs
- * included. It is always loaded whole, in position order.
+ * included. Rows are only appended, or replaced from a position when a turn is
+ * retried; compaction never deletes them.
  */
 export const agentMessages = sqliteTable(
   'agent_messages',
@@ -265,6 +266,8 @@ export const agentMessages = sqliteTable(
       .references(() => agentSessions.id, { onDelete: 'cascade' }),
     position: integer().notNull(),
     role: text().$type<'user' | 'assistant' | 'tool' | 'system'>().notNull(),
+    /** The model of the turn that wrote the message. */
+    model: text().notNull(),
     createdAt: integer('created_at').notNull(),
     message: text().notNull(),
   },
@@ -273,5 +276,30 @@ export const agentMessages = sqliteTable(
     check('agent_message_position', sql`${t.position} >= 0`),
     check('agent_message_role', sql`${t.role} IN ('user','assistant','tool','system')`),
     check('agent_message_json', sql`json_valid(${t.message})`),
+  ],
+);
+
+/**
+ * A compaction of a session's history. The model reads the latest one's
+ * summary, then the messages from `kept_from` on; earlier messages stay
+ * stored. A null summary means summarizing failed and the turn went on with
+ * the recent messages only.
+ */
+export const agentCompactions = sqliteTable(
+  'agent_compactions',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    /** Messages before this position are summarized; the rest are kept as they are. */
+    keptFrom: integer('kept_from').notNull(),
+    summary: text(),
+    /** The model that wrote the summary. */
+    model: text().notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.keptFrom] }),
+    check('agent_compaction_kept_from', sql`${t.keptFrom} >= 0`),
   ],
 );

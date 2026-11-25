@@ -11,6 +11,7 @@ import { Cause, Effect, Exit, Queue, Schema, Stream } from 'effect';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { capabilityEnabled } from './capabilities.ts';
+import { replayMessages, type ReplayTarget, type StoredMessage } from './replay.ts';
 import { connectionModel } from './connection-model.ts';
 import { localMemory, memorySlots } from './agent-memory.ts';
 import { McpTools } from './mcp-tools.ts';
@@ -30,6 +31,7 @@ import {
 } from './turn-tools.ts';
 
 export type { ModelMessage } from 'ai';
+export type { StoredMessage, ReplayTarget } from './replay.ts';
 export { TOOL_CALL, TOOL_SEARCH, searchTools, type ToolStubOutcome } from './turn-tools.ts';
 
 /** The stream events the bridge projects into a reply (`chat/events.ts`). */
@@ -57,14 +59,30 @@ export interface TokenUsage {
   cacheWriteTokens?: number;
 }
 
-/** Where each session's model-facing history lives (the bridge's SQLite). */
+/** What the model reads of a session: the latest compaction's summary and the messages after it. */
+export interface SessionHistory {
+  summary?: string;
+  /** The messages from `start` on, oldest first. */
+  messages: StoredMessage[];
+  /** The position of the first message; the next one appended takes `start + messages.length`. */
+  start: number;
+}
+
+/** A compaction: messages before `keptFrom` are summarized; no summary when summarizing failed. */
+export interface Compaction {
+  keptFrom: number;
+  summary?: string;
+  model: string;
+}
+
+/** Where each session's model-facing history lives (the bridge's SQLite). Nothing is deleted by compaction. */
 export interface EngineHistory {
   /** Called at the start of every turn; the first one starts the session. */
   begin(session: string, start: SessionStart): Promise<void>;
-  load(session: string): Promise<ModelMessage[]>;
-  append(session: string, from: number, messages: ModelMessage[]): Promise<void>;
-  /** Replaces the history with a compacted one. */
-  replace(session: string, messages: ModelMessage[]): Promise<void>;
+  load(session: string): Promise<SessionHistory>;
+  /** Stores messages from position `from` on, replacing any a retried turn left there. */
+  append(session: string, from: number, messages: ModelMessage[], model: string): Promise<void>;
+  compact(session: string, compaction: Compaction): Promise<void>;
   addUsage(session: string, usage: TokenUsage): Promise<void>;
   delete(session: string): Promise<void>;
 }
@@ -440,23 +458,44 @@ export function createAgentEngine(options: EngineOptions) {
       return AbortSignal.any([signal, controller.signal]);
     });
 
-  // Summarizes the older part of a history and stores the shorter one; null
-  // when summarizing failed and only the recent turns were kept.
+  /** A compaction's summary, as the first exchange the model reads. */
+  const summaryMessages = (summary: string | undefined): ModelMessage[] =>
+    summary === undefined
+      ? []
+      : [
+          {
+            role: 'user',
+            content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
+          },
+          { role: 'assistant', content: 'Understood; I will continue from that summary.' },
+        ];
+
+  /** The session as this turn's model reads it, with `next` messages after the stored ones. */
+  const prompt = (loaded: SessionHistory, target: ReplayTarget, next: StoredMessage[] = []) => [
+    ...summaryMessages(loaded.summary),
+    ...replayMessages([...loaded.messages, ...next], target),
+  ];
+
+  // Summarizes the older part of a history and records the compaction; the
+  // messages stay stored. False when summarizing failed and the model goes on
+  // with the recent turns only.
   const compact = Effect.fn('AgentEngine.compact')(function* (
     session: string,
-    messages: ModelMessage[],
+    loaded: SessionHistory,
     model: LanguageModel,
+    modelSlug: string,
   ) {
-    const { older, recent } = compactionSplit(messages);
+    const { older } = compactionSplit(loaded.messages.map((stored) => stored.message));
     if (!older.length) {
-      return messages;
+      return true;
     }
     const abortSignal = yield* callSignal(new AbortController().signal);
     const summary = yield* attempt('model', () =>
       generateText({
         model,
         instructions: SUMMARY_PROMPT,
-        prompt: transcript(older),
+        // An earlier summary is part of what the new one covers.
+        prompt: transcript([...summaryMessages(loaded.summary), ...older]),
         abortSignal,
       }),
     ).pipe(
@@ -472,21 +511,15 @@ export function createAgentEngine(options: EngineOptions) {
         }),
       ),
     );
-    if (summary === undefined) {
-      // Keep the turn answerable: drop the older part rather than overflow the context.
-      yield* attempt('history', () => history.replace(session, recent));
-      return null;
-    }
-    const compacted: ModelMessage[] = [
-      {
-        role: 'user',
-        content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
-      },
-      { role: 'assistant', content: 'Understood; I will continue from that summary.' },
-      ...recent,
-    ];
-    yield* attempt('history', () => history.replace(session, compacted));
-    return compacted;
+    // Without a summary the turn stays answerable by reading only the recent part.
+    yield* attempt('history', () =>
+      history.compact(session, {
+        keptFrom: loaded.start + older.length,
+        summary,
+        model: modelSlug,
+      }),
+    );
+    return summary !== undefined;
   }, Effect.scoped);
 
   // One turn: prepare, maybe compact, then the AI SDK tool loop until the model
@@ -507,27 +540,33 @@ export function createAgentEngine(options: EngineOptions) {
     // The player's input, as replayable history consumes it (rebuildHistory).
     yield* emit({ type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } });
 
-    let messages = yield* attempt('history', () => history.load(session));
+    const target: ReplayTarget = {
+      model: selected.model,
+      provider: selected.provider,
+      modelId: selected.modelId,
+    };
+    let loaded = yield* attempt('history', () => history.load(session));
     if (
       selected.contextWindow &&
-      estimateTokens(messages) + estimateTokens(input) >
+      estimateTokens(prompt(loaded, target)) + estimateTokens(input) >
         selected.contextWindow * COMPACTION_THRESHOLD
     ) {
       yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
-      const compacted = yield* compact(session, messages, model);
+      const compacted = yield* compact(session, loaded, model, selected.model);
       yield* emit({
         type: 'context.settled',
         data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
       });
-      messages = compacted ?? (yield* attempt('history', () => history.load(session)));
+      loaded = yield* attempt('history', () => history.load(session));
     }
-    const memory = tools.memory && tools.memory !== lastMemory(messages) ? tools.memory : '';
+    const earlier = prompt(loaded, target);
+    const memory = tools.memory && tools.memory !== lastMemory(earlier) ? tools.memory : '';
     const user: ModelMessage = {
       role: 'user',
       content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
     };
-    const stored = messages.length;
-    yield* attempt('history', () => history.append(session, stored, [user]));
+    const next = loaded.start + loaded.messages.length;
+    yield* attempt('history', () => history.append(session, next, [user], selected.model));
 
     const assembled = assembleTools({
       session,
@@ -540,7 +579,7 @@ export function createAgentEngine(options: EngineOptions) {
     const result = streamText({
       model,
       instructions: content.system,
-      messages: [...messages, user],
+      messages: prompt(loaded, target, [{ message: user, model: selected.model }]),
       tools: assembled.tools,
       abortSignal: yield* callSignal(signal),
       ...turnOptions(tools.direct, selected),
@@ -564,7 +603,7 @@ export function createAgentEngine(options: EngineOptions) {
     // Every step's messages, tool calls and results included.
     const response = yield* attempt('model', () => Promise.resolve(result.responseMessages));
     if (response.length) {
-      yield* attempt('history', () => history.append(session, stored + 1, response));
+      yield* attempt('history', () => history.append(session, next + 1, response, selected.model));
     }
   }, Effect.scoped);
 
@@ -628,6 +667,7 @@ export function createAgentEngine(options: EngineOptions) {
             session,
             yield* attempt('history', () => history.load(session)),
             model,
+            selected.model,
           );
           yield* emit({
             type: 'context.settled',

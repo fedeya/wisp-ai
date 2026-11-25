@@ -9,8 +9,10 @@ import {
   compactionSplit,
   createAgentEngine,
   searchTools,
+  type Compaction,
   type EngineEvent,
   type ModelMessage,
+  type StoredMessage,
 } from '../src/engine.ts';
 
 afterEach(() => setAgentHost(undefined));
@@ -124,7 +126,9 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
-  const histories = new Map<string, ModelMessage[]>();
+  // An in-memory history with the bridge store's rules: rows stay, compactions are records.
+  const histories = new Map<string, StoredMessage[]>();
+  const compactions = new Map<string, Compaction[]>();
   const sessions = new Map<
     string,
     { chatId: string; model: string; inputTokens: number; outputTokens: number }
@@ -143,14 +147,26 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
         totals.inputTokens += usage.inputTokens;
         totals.outputTokens += usage.outputTokens;
       },
-      load: async (session) => [...(histories.get(session) ?? [])],
-      append: async (session, from, messages) =>
+      load: async (session) => {
+        const latest = compactions.get(session)?.at(-1);
+        const start = latest?.keptFrom ?? 0;
+        return {
+          summary: latest?.summary,
+          messages: (histories.get(session) ?? []).slice(start),
+          start,
+        };
+      },
+      append: async (session, from, messages, model) =>
         void histories.set(session, [
           ...(histories.get(session) ?? []).slice(0, from),
-          ...messages,
+          ...messages.map((message) => ({ message, model })),
         ]),
-      replace: async (session, messages) => void histories.set(session, [...messages]),
-      delete: async (session) => void histories.delete(session),
+      compact: async (session, compaction) =>
+        void compactions.set(session, [...(compactions.get(session) ?? []), compaction]),
+      delete: async (session) => {
+        histories.delete(session);
+        compactions.delete(session);
+      },
     },
     logger: { info: () => {}, warn: () => {} },
   });
@@ -168,6 +184,7 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
     requests,
     inspections,
     histories,
+    compactions,
     sessions,
     close: async () => {
       server.close();
@@ -258,7 +275,7 @@ test(
       expect(history).toContain('Which addons do I have?');
       expect(history).toContain('tool-call-3');
       expect(history).toContain('Offline integration passed.');
-      expect(f.histories.get(session)!.at(-1)).toMatchObject({ role: 'tool' });
+      expect(f.histories.get(session)!.at(-1)!.message).toMatchObject({ role: 'tool' });
 
       await f.engine.end(session);
       expect(f.histories.has(session)).toBe(false);
@@ -284,7 +301,10 @@ test(
         turns.push({ role: 'user', content: 'Question ' + index + ' ' + 'x'.repeat(1500) });
         turns.push({ role: 'assistant', content: 'Answer ' + index });
       }
-      f.histories.set(session, turns);
+      f.histories.set(
+        session,
+        turns.map((message) => ({ message, model: 'gpt-test' })),
+      );
       const { events, result } = await f.send(session, 'Next question');
       expect(result).toEqual({ status: 'completed' });
       expect(events.map((event) => event.type)).toEqual(
@@ -294,15 +314,20 @@ test(
         kind: 'compaction',
         outcome: 'completed',
       });
+      // The compaction is a record: every message stays stored, this turn's included.
+      expect(f.compactions.get(session)).toEqual([
+        { keptFrom: 4, summary: 'Summary of the quest plan.', model: expect.any(String) },
+      ]);
       const stored = f.histories.get(session)!;
-      expect(stored[0]).toEqual({
-        role: 'user',
-        content: '<conversation_summary>\nSummary of the quest plan.\n</conversation_summary>',
-      });
-      // The four most recent turns survive, then this turn's question and answer.
-      expect(JSON.stringify(stored)).toContain('Question 2');
-      expect(JSON.stringify(stored)).not.toContain('Question 1 ');
+      expect(stored).toHaveLength(14);
+      expect(JSON.stringify(stored)).toContain('Question 1 ');
       expect(JSON.stringify(stored.at(-1))).toContain('Answer after compaction.');
+      // The model reads the summary, then the four most recent turns.
+      const sent = JSON.stringify(f.requests.at(-1)!.input);
+      expect(sent).toContain('<conversation_summary>');
+      expect(sent).toContain('Summary of the quest plan.');
+      expect(sent).toContain('Question 2');
+      expect(sent).not.toContain('Question 1 ');
     } finally {
       await f.close();
     }

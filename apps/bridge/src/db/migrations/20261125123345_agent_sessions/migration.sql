@@ -1,7 +1,19 @@
+CREATE TABLE `agent_compactions` (
+	`session_id` text NOT NULL,
+	`kept_from` integer NOT NULL,
+	`summary` text,
+	`model` text NOT NULL,
+	`created_at` integer NOT NULL,
+	CONSTRAINT `agent_compactions_pk` PRIMARY KEY(`session_id`, `kept_from`),
+	CONSTRAINT `fk_agent_compactions_session_id_agent_sessions_id_fk` FOREIGN KEY (`session_id`) REFERENCES `agent_sessions`(`id`) ON DELETE CASCADE,
+	CONSTRAINT "agent_compaction_kept_from" CHECK("kept_from" >= 0)
+) STRICT;
+--> statement-breakpoint
 CREATE TABLE `agent_messages` (
 	`session_id` text NOT NULL,
 	`position` integer NOT NULL,
 	`role` text NOT NULL,
+	`model` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`message` text NOT NULL,
 	CONSTRAINT `agent_messages_pk` PRIMARY KEY(`session_id`, `position`),
@@ -19,7 +31,6 @@ CREATE TABLE `agent_sessions` (
 	`wisp_version` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL,
-	`compacted_at` integer,
 	`tokens_input` integer DEFAULT 0 NOT NULL,
 	`tokens_output` integer DEFAULT 0 NOT NULL,
 	`tokens_reasoning` integer DEFAULT 0 NOT NULL,

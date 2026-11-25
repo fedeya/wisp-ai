@@ -30,6 +30,7 @@ test('the official Drizzle migrator creates the complete schema and shares its j
       .filter((table) => !String(table.name).startsWith('sqlite_'));
     expect(tables.map((table) => table.name).sort()).toEqual([
       '__drizzle_migrations',
+      'agent_compactions',
       'agent_messages',
       'agent_sessions',
       'chat_instance_state',
@@ -261,6 +262,7 @@ test('the agent session migration keeps the Eve column so an older version can s
       .prepare("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'agent_%' ORDER BY name")
       .all();
     expect(history).toEqual([
+      { name: 'agent_compactions', strict: 1 },
       { name: 'agent_messages', strict: 1 },
       { name: 'agent_sessions', strict: 1 },
     ]);

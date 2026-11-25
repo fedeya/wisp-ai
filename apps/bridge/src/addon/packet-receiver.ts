@@ -24,7 +24,6 @@ import {
   type CharacterProfile,
 } from '../chat/context.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
-import { parseConnectionModel } from '@wisp/protocol/providers';
 import { resumeChat, isEmptyDraft } from '../chat/sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
@@ -220,17 +219,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             throw Error('Wait for this reply before changing model settings.');
           }
           const selected = chooseChatModel(available, input.model, input.effort);
-          if (
-            chat.agentSession &&
-            chat.modelSettings?.model !== selected.model &&
-            (parseConnectionModel(chat.modelSettings?.model || '') ||
-              parseConnectionModel(selected.model))
-          ) {
-            // Start clean provider-native history while retaining the visible
-            // conversation. Reasoning signatures/response IDs are not portable.
-            endSession(engine, chat.agentSession);
-            chat.agentSession = undefined;
-          }
+          // The chat keeps its agent session: the agent replays each message's
+          // provider-native data only to the model that wrote it.
           chat.modelSettings = selected;
           chat.modelError = undefined;
           state.modelCatalog = available;

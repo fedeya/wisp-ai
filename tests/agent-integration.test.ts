@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '@wisp/agent/agent-host';
-import { createAgentEngine, type ModelMessage } from '@wisp/agent/engine';
+import { createAgentEngine, type StoredMessage } from '@wisp/agent/engine';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { applyEvent } from '@wisp/bridge/events';
@@ -205,17 +205,21 @@ test(
     await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
     setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
-    const histories = new Map<string, ModelMessage[]>();
+    // Each turn here is new or follows without compaction, so the history is a plain list.
+    const histories = new Map<string, StoredMessage[]>();
     const engine = createAgentEngine({
       origin: () => origin,
       token: 'offline-token',
       history: {
         begin: async () => {},
         addUsage: async () => {},
-        load: async (id) => [...(histories.get(id) ?? [])],
-        append: async (id, from, messages) =>
-          void histories.set(id, [...(histories.get(id) ?? []).slice(0, from), ...messages]),
-        replace: async (id, messages) => void histories.set(id, [...messages]),
+        load: async (id) => ({ messages: [...(histories.get(id) ?? [])], start: 0 }),
+        append: async (id, from, messages, model) =>
+          void histories.set(id, [
+            ...(histories.get(id) ?? []).slice(0, from),
+            ...messages.map((message) => ({ message, model })),
+          ]),
+        compact: async () => {},
         delete: async (id) => void histories.delete(id),
       },
       logger: { info: () => {}, warn: () => {} },
