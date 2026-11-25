@@ -167,6 +167,8 @@ export function createTurnRunner(deps: TurnDependencies) {
     let failureCode: ChatErrorCode = 'capability_sync_failed';
     let timedOut = false;
     let usageLimited = false;
+    // The provider refused the request itself, such as a history it will not take.
+    let rejected = false;
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
@@ -303,6 +305,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       if (result.status === 'failed') {
         timedOut = isTimeout(result.error);
         usageLimited = isUsageLimit(result.error);
+        rejected = result.reason === 'rejected';
         throw new Error(
           safeErrorMessage(result.error?.message || 'The response failed. Please try again.'),
         );
@@ -354,7 +357,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       // replays unfinished tools as interrupted. Only a request the provider
       // rejected (such as a history it will not take) starts a new session,
       // which begins from the chat's visible messages.
-      if (deps.modelFailures?.since(agentSession, started) === 'bad_request') {
+      if (rejected) {
         endSession(engine, chat.agentSession);
         chat.agentSession = undefined;
       }

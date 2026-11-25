@@ -645,13 +645,18 @@ test('a failed turn keeps its session, so a retry continues it', async () => {
 });
 
 test('a request the provider rejected starts a new session from the visible chat', async () => {
-  const failures = new ModelFailures();
-  const f = fixture(true, undefined, undefined, undefined, { modelFailures: failures });
+  const f = fixture();
   await f.run(f.chat, 'Earlier question', 'earlier');
-  f.send.mockImplementationOnce(async () => {
-    failures.record('eve', 'bad_request');
-    throw new Error('Invalid request');
+  const rejectedTurn = async () => ({
+    stream: async function* () {},
+    result: async () => ({
+      status: 'failed',
+      sessionEnded: false,
+      reason: 'rejected',
+      error: { name: 'AI_APICallError', message: 'Invalid request' },
+    }),
   });
+  f.send.mockImplementationOnce(rejectedTurn);
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.end).toHaveBeenCalledWith('eve');
   expect(f.chat.agentSession).toBeUndefined();

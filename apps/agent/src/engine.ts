@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   generateText,
   streamText,
@@ -16,23 +15,19 @@ import {
   Layer,
   ManagedRuntime,
   Queue,
-  Schema,
   Scope,
   Stream,
 } from 'effect';
 import { z } from 'zod';
-import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { uuidv7 } from '@wisp/protocol/uuid';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
-import { capabilityEnabled } from './capabilities.ts';
 import { replayMessages, type ReplayTarget, type StoredMessage } from './replay.ts';
-import { connectionModel } from './connection-model.ts';
-import { localMemory, memorySlots } from './agent-memory.ts';
-import { McpTools } from './mcp-tools.ts';
-import { authoredTools } from './tools.ts';
-import { toolOffered } from './enabled-tool.ts';
-import type { ToolDefinition } from './tool.ts';
-import { wispContent } from './wisp-agent.ts';
+import { EngineConfig, hostLayer, type EngineHost, type EngineLogger } from './engine-config.ts';
+import { CompactionFailed, HostError, ModelError, modelCall, modelError } from './engine-errors.ts';
+import { Mcp } from './mcp-tools.ts';
+import { SessionModels } from './session-models.ts';
+import { TurnToolbox } from './turn-toolbox.ts';
+import { WispAgent } from './wisp-agent.ts';
 import {
   HistoryError,
   SessionHistory,
@@ -50,16 +45,7 @@ import type {
   Tool,
 } from './session-message.ts';
 import { StepDraft, stepMessage } from './session-step.ts';
-import {
-  CONTROL_TOOLS,
-  TOOL_CALL,
-  assembleTools,
-  authored,
-  stubbed,
-  turnOptions,
-  type DeferredTool,
-  type ToolStub,
-} from './turn-tools.ts';
+import { CONTROL_TOOLS, TOOL_CALL, assembleTools, turnOptions } from './turn-tools.ts';
 
 export type { ModelMessage } from 'ai';
 export type { StoredMessage, ReplayTarget } from './replay.ts';
@@ -84,6 +70,12 @@ export interface TurnInput {
 export { FORMAT as SESSION_FORMAT } from './session-message.ts';
 export { HistoryError, SessionHistory } from './session-history.ts';
 export { TOOL_CALL, TOOL_SEARCH, searchTools, type ToolStubOutcome } from './turn-tools.ts';
+export { EngineConfig, hostLayer, type EngineHost, type EngineLogger } from './engine-config.ts';
+export { CompactionFailed, HostError, ModelError } from './engine-errors.ts';
+export { Mcp } from './mcp-tools.ts';
+export { SessionModels, type SelectedModel } from './session-models.ts';
+export { TurnToolbox, type TurnTools } from './turn-toolbox.ts';
+export { WispAgent } from './wisp-agent.ts';
 
 /** The stream events the bridge projects into a reply (`chat/events.ts`). */
 export interface EngineEvent {
@@ -93,31 +85,13 @@ export interface EngineEvent {
 export interface EngineResult {
   status: 'completed' | 'failed' | 'cancelled';
   error?: { message?: string };
+  /** For a failed model call, how it failed (`ModelError`). */
+  reason?: ModelError['reason'];
 }
-
-export interface EngineLogger {
-  info: (data: object, message: string) => void;
-  warn: (data: object, message: string) => void;
-}
-
-/** What the engine needs from its host. */
-export interface EngineHost {
-  /** The bridge's loopback agent endpoint and its token. */
-  readonly origin: () => string;
-  readonly token: string;
-  /** Player-configured MCP servers (`mcp.json`). */
-  readonly mcpConfigFile?: () => string | undefined;
-  readonly logger: EngineLogger;
-  /** Evals answer tools from fixtures: a stub result replaces the tool's own. */
-  readonly stub?: ToolStub;
-}
-
-export class EngineConfig extends Context.Service<EngineConfig, EngineHost>()(
-  '@wisp/agent/EngineConfig',
-) {}
 
 export interface EngineOptions extends EngineHost {
   history: HistoryStore;
+  logger: EngineLogger;
 }
 
 function errorText(error: unknown) {
@@ -131,35 +105,16 @@ function errorText(error: unknown) {
   }
 }
 
-/**
- * A step of a turn failed. `cause` is the original error, which reaches the
- * bridge unchanged so it can classify usage limits and timeouts.
- */
-export class AgentTurnError extends Schema.TaggedError<AgentTurnError>()('AgentTurnError', {
-  stage: Schema.Literals(['setup', 'model']),
-  cause: Schema.Defect(),
-}) {}
-
-/** Compacting a history on request did not produce a summary. */
-export class CompactionFailed extends Schema.TaggedError<CompactionFailed>()(
-  'CompactionFailed',
-  {},
-) {}
-
-/** Why a turn failed: a host or model call, or the session's log. */
-export type TurnError = AgentTurnError | HistoryError;
+/** Why a turn failed: a host call, the model, or the session's log. */
+export type TurnError = HostError | ModelError | HistoryError;
 
 /** The error behind a turn's failure, as the bridge classifies it. */
 const turnCause = (failure: unknown) =>
-  failure instanceof AgentTurnError || failure instanceof HistoryError
+  failure instanceof HostError || failure instanceof ModelError || failure instanceof HistoryError
     ? failure.cause
     : failure instanceof CompactionFailed
       ? new Error('Compaction failed.')
       : failure;
-
-/** A host or model call: interrupting the fiber aborts `signal`. */
-const attempt = <A>(stage: AgentTurnError['stage'], run: (signal: AbortSignal) => Promise<A>) =>
-  Effect.tryPromise({ try: run, catch: (cause) => new AgentTurnError({ stage, cause }) });
 
 /**
  * A signal that aborts when the current scope closes, for work that outlives
@@ -497,7 +452,7 @@ export class AgentEngine extends Context.Service<
   AgentEngine,
   {
     /** Loads instructions and skills ahead of the first turn. */
-    readonly preload: Effect.Effect<void, AgentTurnError>;
+    readonly preload: Effect.Effect<void, HostError>;
     readonly send: (
       session: string,
       chatId: string,
@@ -511,100 +466,15 @@ export class AgentEngine extends Context.Service<
   static readonly layer = Layer.effect(
     AgentEngine,
     Effect.gen(function* () {
-      const { origin, token, logger, stub, mcpConfigFile } = yield* EngineConfig;
+      const { stub } = yield* EngineConfig;
       const history = yield* SessionHistory;
-      const mcp = yield* Effect.acquireRelease(
-        Effect.sync(() => new McpTools(mcpConfigFile ?? (() => undefined))),
-        (tools) => Effect.promise(() => tools.close()),
-      );
+      const wisp = yield* WispAgent;
+      const models = yield* SessionModels;
+      const toolbox = yield* TurnToolbox;
 
       /** Adds one model call's reported tokens to its session's totals. */
       const recordUsage = (session: string, usage: TokenUsage | undefined) =>
         usage ? history.addUsage(session, usage) : Effect.void;
-
-      async function modelSettings(session: string, signal: AbortSignal) {
-        const response = await fetch(
-          origin() + '/session-model?session=' + encodeURIComponent(session),
-          {
-            headers: { authorization: 'Bearer ' + token },
-            signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-          },
-        );
-        if (!response.ok) {
-          throw Error(
-            (await response.text()) || 'Could not load model settings for this conversation.',
-          );
-        }
-        return selectedModel.parse(await response.json());
-      }
-
-      // The tools this turn may use: authored tools whose capability is on, memory
-      // slots in scope, and MCP tools. Deferred ones are reached through tool_call.
-      async function turnTools(session: string, signal: AbortSignal) {
-        const direct: Record<string, ToolDefinition> = {};
-        const deferred: DeferredTool[] = [];
-        const memory: string[] = [];
-        for (const [name, tool] of Object.entries(authoredTools)) {
-          if (!(await toolOffered(tool))) {
-            continue;
-          }
-          if (!tool.deferred) {
-            direct[name] = tool;
-            continue;
-          }
-          deferred.push(authored(name, tool, stub));
-        }
-        for (const slot of memorySlots) {
-          const slotMemory = localMemory(slot);
-          if (await slotMemory.scope(session, signal)) {
-            Object.assign(direct, slotMemory.tools());
-            const recalled = await slotMemory.recall(session, signal);
-            if (recalled) {
-              memory.push(recalled);
-            }
-          }
-        }
-        for (const tool of await mcp.tools((connection, error) =>
-          logger.warn(
-            { event: 'agent.mcp_unavailable', connection, error: errorText(error) },
-            'MCP connection unavailable',
-          ),
-        )) {
-          deferred.push({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            run: (input, ctx) => {
-              const fixture = stub?.(tool.name, input);
-              return fixture
-                ? Promise.resolve().then(() => stubbed(fixture))
-                : tool.call(
-                    input && typeof input === 'object' ? (input as Record<string, unknown>) : {},
-                    ctx.signal,
-                  );
-            },
-          });
-        }
-        return { direct, deferred, memory: memory.join('\n\n') };
-      }
-
-      function turnModel(
-        session: string,
-        selected: Awaited<ReturnType<typeof modelSettings>>,
-        cache: boolean,
-      ) {
-        return connectionModel(
-          selected,
-          origin(),
-          token,
-          () => capabilityEnabled('tool:web_search'),
-          // A stable per-conversation key keeps the tool loop on one prompt cache.
-          cache
-            ? 'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32)
-            : undefined,
-          session,
-        );
-      }
 
       // Summarizes the older part of a history and records the compaction; the
       // messages stay stored. False when summarizing failed and the model goes on
@@ -619,7 +489,7 @@ export class AgentEngine extends Context.Service<
         if (!older.length) {
           return true;
         }
-        const summary = yield* attempt('model', (abortSignal) =>
+        const summary = yield* modelCall((abortSignal) =>
           generateText({
             model,
             instructions: SUMMARY_PROMPT,
@@ -630,14 +500,15 @@ export class AgentEngine extends Context.Service<
         ).pipe(
           Effect.tap((response) => recordUsage(session, stepUsage(response.usage))),
           Effect.map((response) => response.text),
-          Effect.catchTag('AgentTurnError', (error) =>
-            Effect.sync(() => {
-              logger.warn(
-                { event: 'agent.compaction_failed', error: errorText(error.cause) },
-                'Compaction failed',
-              );
-              return undefined;
-            }),
+          Effect.catchTag('ModelError', (error) =>
+            Effect.logWarning('Compaction failed').pipe(
+              Effect.annotateLogs({
+                event: 'agent.compaction_failed',
+                reason: error.reason,
+                error: errorText(error.cause),
+              }),
+              Effect.as(undefined),
+            ),
           ),
         );
         // Without a summary the turn stays answerable by reading only the recent part.
@@ -675,11 +546,11 @@ export class AgentEngine extends Context.Service<
         input: TurnInput,
         emit: Emit,
       ): Effect.fn.Return<void, TurnError, Scope.Scope> {
-        const content = yield* attempt('setup', () => wispContent());
-        const selected = yield* attempt('setup', (signal) => modelSettings(session, signal));
+        const content = yield* wisp.content;
+        const selected = yield* models.selected(session);
         yield* history.begin(session, { chatId, model: selected.model });
-        const tools = yield* attempt('setup', (signal) => turnTools(session, signal));
-        const model = turnModel(session, selected, true);
+        const tools = yield* toolbox.tools(session);
+        const model = models.model(session, selected, true);
         yield* emit({ type: 'turn.started', data: {} });
         // The player's input, as replayable history consumes it (rebuildHistory).
         yield* emit({
@@ -761,29 +632,24 @@ export class AgentEngine extends Context.Service<
             completed: Date.now(),
           });
           return stopped
-            ? history
-                .append(session, [stopped], selected.model)
-                .pipe(
-                  Effect.catch((error) =>
-                    Effect.sync(() =>
-                      logger.warn(
-                        { event: 'agent.stopped_step_unlogged', error: errorText(error.cause) },
-                        'The stopped step could not be logged',
-                      ),
-                    ),
+            ? history.append(session, [stopped], selected.model).pipe(
+                Effect.catch((error) =>
+                  Effect.logWarning('The stopped step could not be logged').pipe(
+                    Effect.annotateLogs({
+                      event: 'agent.stopped_step_unlogged',
+                      error: errorText(error.cause),
+                    }),
                   ),
-                )
+                ),
+              )
             : Effect.void;
         };
         const events = new TurnEvents(assembled);
-        yield* Stream.fromAsyncIterable(
-          result.fullStream,
-          (cause) => new AgentTurnError({ stage: 'model', cause }),
-        ).pipe(
+        yield* Stream.fromAsyncIterable(result.fullStream, modelError).pipe(
           Stream.interruptWhen(Deferred.await(logFailed)),
           Stream.runForEach((part): Effect.Effect<void, TurnError> =>
             part.type === 'error'
-              ? Effect.fail(new AgentTurnError({ stage: 'model', cause: part.error }))
+              ? Effect.fail(modelError(part.error))
               : Effect.andThen(
                   part.type === 'finish-step'
                     ? recordUsage(session, stepUsage(part.usage))
@@ -799,8 +665,8 @@ export class AgentEngine extends Context.Service<
         session: string,
         emit: Emit,
       ) {
-        const selected = yield* attempt('setup', (signal) => modelSettings(session, signal));
-        const model = turnModel(session, selected, false);
+        const selected = yield* models.selected(session);
+        const model = models.model(session, selected, false);
         const loaded = yield* history.load(session);
         if (!(yield* compacting(emit, summarize(session, loaded, model, selected.model)))) {
           return yield* new CompactionFailed();
@@ -808,7 +674,7 @@ export class AgentEngine extends Context.Service<
       });
 
       return AgentEngine.of({
-        preload: attempt('setup', () => wispContent()).pipe(Effect.asVoid),
+        preload: Effect.asVoid(wisp.content),
         send: (session, chatId, input) => eventStream((emit) => turn(session, chatId, input, emit)),
         compact: (session) => eventStream((emit) => compactNow(session, emit)),
         end: (session) => history.delete(session),
@@ -835,11 +701,18 @@ const aborted = (signal: AbortSignal) =>
  * cancellation enters here, as an AbortSignal that interrupts its stream.
  */
 export function createAgentEngine(options: EngineOptions) {
-  const { history, ...config } = options;
+  const { history, ...host } = options;
   const runtime = ManagedRuntime.make(
     AgentEngine.layer.pipe(
-      Layer.provide(SessionHistory.layer(history)),
-      Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(config))),
+      Layer.provide(
+        Layer.mergeAll(
+          SessionHistory.layer(history),
+          WispAgent.layer,
+          SessionModels.layer,
+          TurnToolbox.layer.pipe(Layer.provide(Mcp.layer)),
+        ),
+      ),
+      Layer.provideMerge(hostLayer(host)),
     ),
   );
 
@@ -850,14 +723,12 @@ export function createAgentEngine(options: EngineOptions) {
     if (Exit.isSuccess(exit)) {
       return { status: 'completed' };
     }
-    const error = turnCause(Cause.squash(exit.cause));
-    options.logger.warn(
-      { event: 'agent.turn_failed', error: errorText(error) },
-      'Agent turn failed',
-    );
+    const failure = Cause.squash(exit.cause);
+    const error = turnCause(failure);
     return {
       status: 'failed',
       error: error instanceof Error ? error : { message: errorText(error) },
+      ...(failure instanceof ModelError ? { reason: failure.reason } : {}),
     };
   }
 
@@ -872,7 +743,19 @@ export function createAgentEngine(options: EngineOptions) {
     });
     const settling = stream.pipe(
       Stream.interruptWhen(aborted(signal)),
-      Stream.onExit((exit) => Effect.sync(() => settle(settled(exit, signal)))),
+      Stream.onExit((exit) => {
+        const result = settled(exit, signal);
+        settle(result);
+        return result.status === 'failed'
+          ? Effect.logWarning('Agent turn failed').pipe(
+              Effect.annotateLogs({
+                event: 'agent.turn_failed',
+                ...(result.reason ? { reason: result.reason } : {}),
+                error: errorText(result.error),
+              }),
+            )
+          : Effect.void;
+      }),
       Stream.catchCause(() => Stream.empty),
     );
     async function* events() {

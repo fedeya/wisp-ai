@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { Context, Effect, Layer } from 'effect';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -6,6 +7,8 @@ import { everlootTools } from '@wisp/protocol/capabilities';
 import { agentHost } from './agent-host.ts';
 import { bridgeOrigin } from './agent-rpc.ts';
 import { capabilityEnabled, connectionTools, readCapabilityFlags } from './capabilities.ts';
+import { EngineConfig } from './engine-config.ts';
+import { hostCall, type HostError } from './engine-errors.ts';
 
 /** One MCP tool offered through `tool_search` and `tool_call`, named `<connection>__<tool>`. */
 export interface McpTool {
@@ -270,4 +273,42 @@ export class McpTools {
   async close() {
     await this.drop();
   }
+}
+
+/** The MCP tools of the enabled connections, with clients kept across turns. */
+export class Mcp extends Context.Service<
+  Mcp,
+  { readonly tools: Effect.Effect<readonly McpTool[], HostError> }
+>()('@wisp/agent/Mcp') {
+  static readonly layer = Layer.effect(
+    Mcp,
+    Effect.gen(function* () {
+      const { mcpConfigFile } = yield* EngineConfig;
+      const clients = yield* Effect.acquireRelease(
+        Effect.sync(() => new McpTools(mcpConfigFile ?? (() => undefined))),
+        (tools) => Effect.promise(() => tools.close()),
+      );
+      const tools = Effect.gen(function* () {
+        const unavailable: { connection: string; error: unknown }[] = [];
+        const listed = yield* hostCall(() =>
+          clients.tools((connection, error) => unavailable.push({ connection, error })),
+        );
+        // An unreachable connection is left out of this turn, not fatal to it.
+        yield* Effect.forEach(
+          unavailable,
+          ({ connection, error }) =>
+            Effect.logWarning('MCP connection unavailable').pipe(
+              Effect.annotateLogs({
+                event: 'agent.mcp_unavailable',
+                connection,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            ),
+          { discard: true },
+        );
+        return listed;
+      }).pipe(Effect.withSpan('Mcp.tools'));
+      return Mcp.of({ tools });
+    }),
+  );
 }
