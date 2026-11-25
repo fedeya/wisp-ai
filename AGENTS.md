@@ -75,6 +75,19 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
 
+## Learning more about Effect
+
+This repository uses the Effect Typescript library.
+
+Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
+**completely**, and follow the links in the file when required.
+
+If you need to learn more about particular Effect apis and concepts that the
+guide doesn't cover, search through the source code in `node_modules/effect/src`.
+
+The root `package.json` declares `effect` so that `node_modules/effect` exists
+despite `hoist: false`; keep it on the same version as the workspaces.
+
 ## Conventions observed in the code
 
 - **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
@@ -95,8 +108,8 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   one JSON line per entry with a dotted `event` key. Effect code uses
   `Effect.logInfo(...)` with `Effect.annotateLogs({ event: 'bridge.tick_failed', ... })`;
   other code calls `bridgeLogger.info({ event: 'bridge.startup_failed', error: errorMessage(error) }, '...')`.
-- **Effect:** the bridge is moving to Effect 4, following the guides in
-  `node_modules/effect/ai-docs`: services are `Context.Service` classes with a
+- **Effect:** the bridge is moving to Effect 4, following the package's guide
+  (see above): services are `Context.Service` classes with a
   `static layer`, methods use `Effect.fn('Service.method')`, failures are
   `Schema.TaggedError`s, and resources are acquired with `Effect.acquireRelease`.
   `main.ts` runs the composition root (`makeBridge` in `runtime.ts`, a scoped
