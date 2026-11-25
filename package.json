@@ -40,6 +40,7 @@
     "@johnnymorganz/stylua-bin": "2.6.0",
     "@types/node": "26.6.6",
     "changie": "1.26.0",
+    "effect": "4.1.3",
     "lefthook": "2.2.2",
     "oxfmt": "0.77.0",
     "oxlint": "1.92.0",
