@@ -1,18 +1,21 @@
-import { and, asc, desc, eq, gte, isNotNull, max, notInArray, sql } from 'drizzle-orm';
-import type { ModelMessage } from '@wisp/agent/engine';
+import { and, asc, desc, eq, gte, isNotNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { SESSION_FORMAT, type Entry } from '@wisp/agent/engine';
 import type {
-  Compaction,
   HistoryStore,
-  LoadedHistory,
   SessionStart,
+  StoredRow,
   TokenUsage,
 } from '@wisp/agent/session-history';
 import { uuidv7 } from '@wisp/protocol/uuid';
+import { z } from 'zod';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { agentEntries, agentSessions, chatInstanceState } from '../db/schema.ts';
 
-/** How a message entry's `data` is encoded: an AI SDK 7 `ModelMessage` as JSON. */
-export const AGENT_MESSAGE_FORMAT = 'ai-sdk-7';
+/** How entries' `data` is encoded: Wisp's session format (`@wisp/agent/session-message`). */
+export const AGENT_MESSAGE_FORMAT = SESSION_FORMAT;
+
+/** What the store reads of a compaction entry; the engine owns the rest of the format. */
+const compactionData = z.object({ keptFrom: z.number(), summary: z.string().optional() });
 
 type Transaction = Parameters<Parameters<ApplicationDatabase['transaction']>[0]>[0];
 
@@ -58,7 +61,7 @@ export class AgentHistory implements HistoryStore {
   }
 
   /** The latest compaction's summary and the messages from where it keeps them. */
-  async load(session: string): Promise<LoadedHistory> {
+  async load(session: string): Promise<{ summary?: string; rows: StoredRow[] }> {
     await this.database.initialize();
     const orm = this.database.orm;
     const latest = orm
@@ -68,70 +71,45 @@ export class AgentHistory implements HistoryStore {
       .orderBy(desc(agentEntries.seq))
       .limit(1)
       .get();
-    const compaction = latest
-      ? (JSON.parse(latest.data) as { keptFrom: number; summary?: string })
-      : undefined;
-    const messages = orm
+    const compaction = latest ? compactionData.parse(JSON.parse(latest.data)) : undefined;
+    const rows = orm
       .select({ seq: agentEntries.seq, data: agentEntries.data, model: agentEntries.model })
       .from(agentEntries)
       .where(
         and(
           eq(agentEntries.sessionId, session),
-          eq(agentEntries.type, 'message'),
+          ne(agentEntries.type, 'compaction'),
           gte(agentEntries.seq, compaction?.keptFrom ?? 0),
         ),
       )
       .orderBy(asc(agentEntries.seq))
       .all()
-      .map((row) => ({
-        seq: row.seq,
-        message: JSON.parse(row.data) as ModelMessage,
-        model: row.model,
-      }));
-    return { summary: compaction?.summary, messages };
+      .map((row): StoredRow => ({ seq: row.seq, model: row.model, data: JSON.parse(row.data) }));
+    return compaction?.summary === undefined ? { rows } : { summary: compaction.summary, rows };
   }
 
   /**
-   * Logs messages after the last entry. The log only grows: a compaction or
+   * Logs entries after the last one. The log only grows: a compaction or
    * another write that lands in between keeps its place instead of being
    * overwritten.
    */
-  async append(session: string, messages: readonly ModelMessage[], model: string) {
-    if (!messages.length) return;
+  async append(session: string, entries: readonly Entry[], model: string) {
+    if (!entries.length) return;
     await this.database.transaction((db) => {
       const from = this.next(db, session);
       const createdAt = this.now();
       db.insert(agentEntries)
         .values(
-          messages.map((message, index) => ({
+          entries.map((entry, index) => ({
             sessionId: session,
             seq: from + index,
             id: uuidv7(createdAt),
-            type: 'message' as const,
-            role: message.role,
+            type: entry.type,
             model,
             createdAt,
-            data: JSON.stringify(message),
+            data: JSON.stringify(entry),
           })),
         )
-        .run();
-    });
-  }
-
-  /** Logs a compaction after the last entry; the messages it summarizes stay. */
-  async compact(session: string, compaction: Compaction) {
-    await this.database.transaction((db) => {
-      const createdAt = this.now();
-      db.insert(agentEntries)
-        .values({
-          sessionId: session,
-          seq: this.next(db, session),
-          id: uuidv7(createdAt),
-          type: 'compaction',
-          model: compaction.model,
-          createdAt,
-          data: JSON.stringify({ keptFrom: compaction.keptFrom, summary: compaction.summary }),
-        })
         .run();
     });
   }

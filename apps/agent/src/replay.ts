@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { ModelMessage } from 'ai';
+import type {
+  AssistantContent,
+  JSONValue,
+  ModelMessage,
+  ToolResultPart,
+  UserModelMessage,
+} from 'ai';
+import type { Message, Native, Tool } from './session-message.ts';
 
-/** A stored history message and the model of the turn that wrote it. */
+/** A logged message and the model of the turn that wrote it. */
 export interface StoredMessage {
-  message: ModelMessage;
+  message: Message;
   model: string;
 }
 
@@ -51,59 +58,125 @@ export function toolCallIdFor(id: string, family: Family) {
   }
 }
 
-type Part = Record<string, unknown> & { type: string };
+type ProviderOptions = NonNullable<ToolResultPart['providerOptions']>;
 
-function withoutProviderOptions<T extends object>(value: T): T {
-  if (!('providerOptions' in value)) return value;
-  const { providerOptions: _dropped, ...rest } = value as T & { providerOptions?: unknown };
-  return rest as T;
+/** Wraps the player's saved memory as the model reads it. */
+export const memoryBlock = (text: string) => `<saved_memory>\n${text}\n</saved_memory>`;
+
+/** Sent for a call the turn stopped before it finished. */
+export const INTERRUPTED_TOOL =
+  'The turn stopped before this tool finished; its result is unknown.';
+
+const nativeOptions = (native: Native | undefined, own: boolean) =>
+  own && native ? { providerOptions: native as ProviderOptions } : {};
+
+function toolOutput(state: Tool['state']): ToolResultPart['output'] {
+  switch (state.status) {
+    case 'running':
+      return { type: 'error-text', value: INTERRUPTED_TOOL };
+    case 'error':
+      return { type: 'error-text', value: state.error };
+    case 'completed':
+      return state.output.type === 'text'
+        ? { type: 'text', value: state.output.text }
+        : { type: 'json', value: state.output.value as JSONValue };
+  }
 }
 
 /**
- * A message written by another model, as the target may read it: provider
- * metadata (reasoning signatures, encrypted reasoning, item IDs) only proves
- * generation to the model that produced it, so it is dropped, and so is
- * reasoning, which another model cannot verify. Returns undefined when nothing
- * is left.
+ * A logged message as the model library's messages. Provider-native data
+ * (reasoning signatures, encrypted reasoning, item IDs) only proves generation
+ * to the model that produced it, so another model gets neither it nor the
+ * reasoning, which it cannot verify.
  */
-function foreign(message: ModelMessage): ModelMessage | undefined {
-  const bare = withoutProviderOptions(message);
-  if (typeof bare.content === 'string') return bare;
-  const content = (bare.content as Part[])
-    .filter((part) => part.type !== 'reasoning')
-    .map(withoutProviderOptions);
-  return content.length ? ({ ...bare, content } as ModelMessage) : undefined;
-}
-
-function renameToolCalls(message: ModelMessage, family: Family): ModelMessage {
-  if (family === 'other' || typeof message.content === 'string') return message;
-  let changed = false;
-  const content = (message.content as Part[]).map((part) => {
-    if (typeof part.toolCallId !== 'string') return part;
-    const toolCallId = toolCallIdFor(part.toolCallId, family);
-    if (toolCallId === part.toolCallId) return part;
-    changed = true;
-    return { ...part, toolCallId };
-  });
-  return changed ? ({ ...message, content } as ModelMessage) : message;
+export function toModelMessages(message: Message, own: boolean, family: Family): ModelMessage[] {
+  const id = (callId: string) => toolCallIdFor(callId, family);
+  switch (message.type) {
+    case 'user':
+      return [{ role: 'user', content: message.content.map((part) => ({ ...part })) }];
+    case 'synthetic':
+      return [{ role: 'user', content: [{ type: 'text', text: memoryBlock(message.text) }] }];
+    case 'assistant': {
+      const content: Exclude<AssistantContent, string> = [];
+      const results: ToolResultPart[] = [];
+      for (const part of message.content) {
+        if (part.type === 'reasoning') {
+          if (own) {
+            content.push({
+              type: 'reasoning',
+              text: part.text,
+              ...nativeOptions(part.native, own),
+            });
+          }
+          continue;
+        }
+        if (part.type === 'text') {
+          content.push({ type: 'text', text: part.text, ...nativeOptions(part.native, own) });
+          continue;
+        }
+        content.push({
+          type: 'tool-call',
+          toolCallId: id(part.id),
+          toolName: part.name,
+          input: part.state.input,
+          ...(part.providerExecuted ? { providerExecuted: true } : {}),
+          ...nativeOptions(part.native, own),
+        });
+        const result: ToolResultPart = {
+          type: 'tool-result',
+          toolCallId: id(part.id),
+          toolName: part.name,
+          output: toolOutput(part.state),
+          ...(part.state.status === 'running' ? {} : nativeOptions(part.state.native, own)),
+        };
+        // A provider's own tools answer inside its message; Wisp's in a tool message.
+        if (part.providerExecuted) content.push(result);
+        else results.push(result);
+      }
+      const messages: ModelMessage[] = [];
+      if (content.length) {
+        messages.push({ role: 'assistant', content, ...nativeOptions(message.native, own) });
+      }
+      if (results.length) messages.push({ role: 'tool', content: results });
+      return messages;
+    }
+  }
 }
 
 /**
- * The stored history as the target model reads it. Messages from other models
- * lose their provider-native data, tool call IDs follow the target's rules,
- * and for Mistral, which rejects a user message right after tool results, an
- * assistant message bridges the two (as opencode does).
+ * The logged messages as the target model reads them. Messages from other
+ * models lose their provider-native data and reasoning, tool call IDs follow
+ * the target's rules, consecutive user messages (saved memory and the
+ * player's input) merge into one, and for Mistral, which rejects a user
+ * message right after tool results, an assistant message bridges the two (as
+ * opencode does).
  */
-export function replayMessages(stored: StoredMessage[], target: ReplayTarget): ModelMessage[] {
+export function replayMessages(
+  stored: readonly StoredMessage[],
+  target: ReplayTarget,
+): ModelMessage[] {
   const family = modelFamily(target);
   const messages: ModelMessage[] = [];
   for (const { message, model } of stored) {
-    const readable = model === target.model ? message : foreign(message);
-    if (!readable) continue;
-    if (family === 'mistral' && readable.role === 'user' && messages.at(-1)?.role === 'tool') {
-      messages.push({ role: 'assistant', content: 'Done.' });
+    for (const next of toModelMessages(message, model === target.model, family)) {
+      const last = messages.at(-1);
+      if (next.role === 'user' && last?.role === 'user') {
+        messages[messages.length - 1] = {
+          role: 'user',
+          content: [...asParts(last.content), ...asParts(next.content)],
+        };
+        continue;
+      }
+      if (family === 'mistral' && next.role === 'user' && last?.role === 'tool') {
+        messages.push({ role: 'assistant', content: 'Done.' });
+      }
+      messages.push(next);
     }
-    messages.push(renameToolCalls(readable, family));
   }
   return messages;
 }
+
+const asParts = (
+  content: UserModelMessage['content'],
+): Exclude<UserModelMessage['content'], string> =>
+  typeof content === 'string' ? [{ type: 'text', text: content }] : content;

@@ -1,6 +1,6 @@
-import type { ModelMessage } from 'ai';
 import { Context, Effect, Layer, Schema } from 'effect';
 import type { StoredMessage } from './replay.ts';
+import { Message, type Entry } from './session-message.ts';
 
 /** The chat a session belongs to and the model it runs on. */
 export interface SessionStart {
@@ -17,7 +17,7 @@ export interface TokenUsage {
   cacheWriteTokens?: number;
 }
 
-/** A stored message and its place in the session's log. */
+/** A logged message and its place in the session's log. */
 export interface LoggedMessage extends StoredMessage {
   seq: number;
 }
@@ -29,36 +29,36 @@ export interface LoadedHistory {
   messages: LoggedMessage[];
 }
 
-/** A compaction: messages before `keptFrom` are summarized; no summary when summarizing failed. */
-export interface Compaction {
-  keptFrom: number;
-  summary?: string;
+/** A row of the log as the store returns it; `data` is decoded by the engine. */
+export interface StoredRow {
+  seq: number;
   model: string;
+  data: unknown;
 }
 
 /**
  * Where each session's log is kept (the bridge's SQLite). The log only grows:
- * nothing is replaced, and compaction deletes nothing.
+ * nothing is replaced, and compaction deletes nothing. The store keeps entries
+ * as JSON and reads only what it needs to find the latest compaction.
  */
 export interface HistoryStore {
   /** Called at the start of every turn; the first one starts the session. */
   begin(session: string, start: SessionStart): Promise<void>;
-  load(session: string): Promise<LoadedHistory>;
-  /** Logs messages after the last entry. */
-  append(session: string, messages: readonly ModelMessage[], model: string): Promise<void>;
-  /** Logs a compaction after the last entry. */
-  compact(session: string, compaction: Compaction): Promise<void>;
+  /** The latest compaction's summary and the message rows from its `keptFrom` on. */
+  load(session: string): Promise<{ summary?: string; rows: StoredRow[] }>;
+  /** Logs entries after the last one. */
+  append(session: string, entries: readonly Entry[], model: string): Promise<void>;
   addUsage(session: string, usage: TokenUsage): Promise<void>;
   delete(session: string): Promise<void>;
 }
 
 /** Reading or writing a session's log failed. */
 export class HistoryError extends Schema.TaggedError<HistoryError>()('HistoryError', {
-  operation: Schema.Literals(['begin', 'load', 'append', 'compact', 'addUsage', 'delete']),
+  operation: Schema.Literals(['begin', 'load', 'append', 'addUsage', 'delete']),
   cause: Schema.Defect(),
 }) {}
 
-/** A session's model history, as the engine reads and writes it. */
+/** A session's log, as the engine reads and writes it. */
 export class SessionHistory extends Context.Service<
   SessionHistory,
   {
@@ -66,12 +66,8 @@ export class SessionHistory extends Context.Service<
     readonly load: (session: string) => Effect.Effect<LoadedHistory, HistoryError>;
     readonly append: (
       session: string,
-      messages: readonly ModelMessage[],
+      entries: readonly Entry[],
       model: string,
-    ) => Effect.Effect<void, HistoryError>;
-    readonly compact: (
-      session: string,
-      compaction: Compaction,
     ) => Effect.Effect<void, HistoryError>;
     readonly addUsage: (session: string, usage: TokenUsage) => Effect.Effect<void, HistoryError>;
     readonly delete: (session: string) => Effect.Effect<void, HistoryError>;
@@ -83,17 +79,29 @@ export class SessionHistory extends Context.Service<
       SessionHistory,
       SessionHistory.of({
         begin: (session, start) => call('begin', () => store.begin(session, start)),
-        load: (session) => call('load', () => store.load(session)),
-        append: (session, messages, model) =>
-          messages.length
-            ? call('append', () => store.append(session, messages, model))
+        load: Effect.fn('SessionHistory.load')(function* (session: string) {
+          const { summary, rows } = yield* call('load', () => store.load(session));
+          // Rows that do not decode fail the load rather than replay a broken history.
+          const messages = yield* Effect.forEach(rows, (row) =>
+            decodeMessage(row.data).pipe(
+              Effect.map((message): LoggedMessage => ({ seq: row.seq, model: row.model, message })),
+            ),
+          ).pipe(Effect.mapError((cause) => new HistoryError({ operation: 'load', cause })));
+          const loaded: LoadedHistory = { messages };
+          if (summary !== undefined) loaded.summary = summary;
+          return loaded;
+        }),
+        append: (session, entries, model) =>
+          entries.length
+            ? call('append', () => store.append(session, entries, model))
             : Effect.void,
-        compact: (session, compaction) => call('compact', () => store.compact(session, compaction)),
         addUsage: (session, usage) => call('addUsage', () => store.addUsage(session, usage)),
         delete: (session) => call('delete', () => store.delete(session)),
       }),
     );
 }
+
+const decodeMessage = Schema.decodeUnknownEffect(Message);
 
 /** A store call, failing with a HistoryError for its operation. */
 const call = <A>(operation: HistoryError['operation'], run: () => Promise<A>) =>

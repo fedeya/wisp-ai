@@ -3,6 +3,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import { createAgentEngine, type EngineEvent, type ToolStubOutcome } from '../src/engine.ts';
 import { agentHost } from '../src/agent-host.ts';
+import { MemoryHistory } from '../src/memory-history.ts';
 import { eventsView, type Check, type TurnView } from './checks.ts';
 import { playerMessage } from './fixtures/fedrath.ts';
 
@@ -57,14 +58,7 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     origin: () => host.origin,
     token: host.token,
     // Each eval is a single new turn; nothing is resumed.
-    history: {
-      begin: async () => {},
-      load: async () => ({ messages: [] }),
-      append: async () => {},
-      compact: async () => {},
-      addUsage: async () => {},
-      delete: async () => {},
-    },
+    history: new MemoryHistory(),
     logger: { info: () => {}, warn: () => {} },
     stub: (tool, input) => definition.stubs.find((stub) => matches(stub, tool, input))?.outcome,
   });

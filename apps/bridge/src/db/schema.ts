@@ -230,7 +230,7 @@ export const agentSessions = sqliteTable(
     chatId: text('chat_id').notNull(),
     /** The model slug of the latest turn (`connection:<id>:<model>` for connections). */
     model: text().notNull(),
-    /** How `agent_messages.message` is encoded, so a later format can migrate older rows. */
+    /** How `agent_entries.data` is encoded (`wisp-1`), so a later format can migrate older rows. */
     format: text().notNull(),
     /** The Wisp version that started the session. */
     wispVersion: text('wisp_version').notNull(),
@@ -253,20 +253,22 @@ export const agentSessions = sqliteTable(
 );
 
 /**
- * A session's log, in order: the messages the agent exchanged with the model
- * and the compactions of that history.
+ * A session's log, in order. `data` is an entry in Wisp's session format
+ * (`agent_sessions.format`, `wisp-1`: `@wisp/agent/session-message`),
+ * plain JSON that does not depend on any model library; `type` repeats its
+ * `type`:
  *
- * - `message`: a user, assistant or tool message in AI SDK form
- *   (`agent_sessions.format`), tool calls and results with their call IDs
- *   included; `model` is the model of the turn that wrote it.
+ * - `user`: the player's turn input.
+ * - `synthetic`: text Wisp added for the model, such as saved memory.
+ * - `assistant`: one model step, its tool calls with their results.
  * - `compaction`: `{ keptFrom, summary? }`. The model reads the latest one's
- *   summary, then the messages from `keptFrom` on; no summary means
- *   summarizing failed and the turn went on with the recent messages only.
+ *   summary, then the entries from `keptFrom` on; no summary means
+ *   summarizing failed and the turn went on with the recent entries only.
  *
- * `seq` is the exact order the model reads. `id` (a UUID v7) names an entry
- * for records outside the log, such as where a forked session branched off.
- * Entries are only appended, or replaced from a position when a turn is
- * retried (the replacements get new IDs); compaction never deletes messages.
+ * `model` is the model of the turn that wrote the entry. `seq` is the exact
+ * order the model reads. `id` (a UUID v7) names an entry for records outside
+ * the log, such as where a forked session branched off. Entries are only
+ * appended: nothing is replaced, and compaction never deletes messages.
  */
 export const agentEntries = sqliteTable(
   'agent_entries',
@@ -276,10 +278,8 @@ export const agentEntries = sqliteTable(
       .references(() => agentSessions.id, { onDelete: 'cascade' }),
     seq: integer().notNull(),
     id: text().notNull(),
-    type: text().$type<'message' | 'compaction'>().notNull(),
-    /** The message's role; null for compactions. */
-    role: text().$type<'user' | 'assistant' | 'tool' | 'system'>(),
-    /** The model that wrote the message or the summary. */
+    type: text().$type<'user' | 'synthetic' | 'assistant' | 'compaction'>().notNull(),
+    /** The model of the turn that wrote the entry. */
     model: text().notNull(),
     createdAt: integer('created_at').notNull(),
     data: text().notNull(),
@@ -289,10 +289,8 @@ export const agentEntries = sqliteTable(
     uniqueIndex('agent_entries_id').on(t.id),
     index('agent_entries_type').on(t.sessionId, t.type, t.seq),
     check('agent_entry_seq', sql`${t.seq} >= 0`),
-    check(
-      'agent_entry_type',
-      sql`(${t.type} = 'message' AND ${t.role} IN ('user','assistant','tool','system')) OR (${t.type} = 'compaction' AND ${t.role} IS NULL)`,
-    ),
+    check('agent_entry_type', sql`${t.type} IN ('user','synthetic','assistant','compaction')`),
+    check('agent_entry_data_type', sql`json_extract(${t.data}, '$.type') = ${t.type}`),
     check('agent_entry_json', sql`json_valid(${t.data}) AND json_type(${t.data}) = 'object'`),
   ],
 );
