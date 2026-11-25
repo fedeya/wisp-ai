@@ -73,7 +73,10 @@ function streamed(count: number, item: Item) {
     .join('');
 }
 
-async function fixture(plan: (count: number, request: Item) => Item, contextWindow?: number) {
+async function fixture(
+  plan: (count: number, request: Item) => Item | undefined,
+  contextWindow?: number,
+) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-engine-'));
   const flags = path.join(root, 'capabilities.json');
   await writeFile(
@@ -108,7 +111,12 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
       const request = JSON.parse(body) as Item;
       requests.push(request);
       const item = plan(requests.length, request);
-      if (request.stream) {
+      if (!item) {
+        // A request the provider rejects, which the AI SDK does not retry.
+        res
+          .writeHead(400, { 'content-type': 'application/json' })
+          .end(JSON.stringify({ error: { message: 'Rejected', type: 'invalid_request_error' } }));
+      } else if (request.stream) {
         res
           .writeHead(200, { 'content-type': 'text/event-stream' })
           .end(streamed(requests.length, item));
@@ -375,3 +383,30 @@ test('compaction keeps whole recent turns and search ranks tool names first', ()
   ]);
   expect(searchTools(tools, 'unrelated')).toEqual([]);
 });
+
+test(
+  'a turn that fails after a tool ran keeps that step in the history',
+  { timeout: 60_000 },
+  async () => {
+    const f = await fixture((count) =>
+      count === 1
+        ? toolCall(count, 'tool_call', { name: 'wow__get_settings', input: {} })
+        : undefined,
+    );
+    try {
+      const session = f.engine.newSessionId();
+      const turn = await f.send(session, 'Which addons do I have?');
+      expect(turn.result.status).toBe('failed');
+      expect(f.inspections).toHaveLength(1);
+      // The next turn's model sees the settings it already read.
+      expect(f.messagesOf(session).map((entry) => entry.message.role)).toEqual([
+        'user',
+        'assistant',
+        'tool',
+      ]);
+      expect(JSON.stringify(f.messagesOf(session).at(-1)!.message)).toContain('tool-call-1');
+    } finally {
+      await f.close();
+    }
+  },
+);
