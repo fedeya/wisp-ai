@@ -6,6 +6,7 @@ import type {
   SessionStart,
   TokenUsage,
 } from '@wisp/agent/engine';
+import { uuidv7 } from '@wisp/protocol/uuid';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { agentEntries, agentSessions, chatInstanceState } from '../db/schema.ts';
 
@@ -102,6 +103,7 @@ export class AgentHistory {
           messages.map((message, index) => ({
             sessionId: session,
             seq: from + index,
+            id: uuidv7(createdAt),
             type: 'message' as const,
             role: message.role,
             model,
@@ -116,13 +118,15 @@ export class AgentHistory {
   /** Logs a compaction after the last entry; the messages it summarizes stay. */
   async compact(session: string, compaction: Compaction) {
     await this.database.transaction((db) => {
+      const createdAt = this.now();
       db.insert(agentEntries)
         .values({
           sessionId: session,
           seq: this.next(db, session),
+          id: uuidv7(createdAt),
           type: 'compaction',
           model: compaction.model,
-          createdAt: this.now(),
+          createdAt,
           data: JSON.stringify({ keptFrom: compaction.keptFrom, summary: compaction.summary }),
         })
         .run();

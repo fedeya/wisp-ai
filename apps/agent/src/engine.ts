@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   generateText,
   streamText,
@@ -9,6 +9,7 @@ import {
 } from 'ai';
 import { Cause, Effect, Exit, Queue, Schema, Stream } from 'effect';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
+import { uuidv7 } from '@wisp/protocol/uuid';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { capabilityEnabled } from './capabilities.ts';
 import { replayMessages, type ReplayTarget, type StoredMessage } from './replay.ts';
@@ -655,7 +656,7 @@ export function createAgentEngine(options: EngineOptions) {
   }
 
   return {
-    newSessionId: (): string => randomUUID(),
+    newSessionId: (): string => uuidv7(),
     /** Loads instructions and skills ahead of the first turn. */
     preload: () => wispContent().then(() => undefined),
     /** Starts a turn; events stream once and the result settles when they end. */

@@ -263,8 +263,10 @@ export const agentSessions = sqliteTable(
  *   summary, then the messages from `keptFrom` on; no summary means
  *   summarizing failed and the turn went on with the recent messages only.
  *
+ * `seq` is the exact order the model reads. `id` (a UUID v7) names an entry
+ * for records outside the log, such as where a forked session branched off.
  * Entries are only appended, or replaced from a position when a turn is
- * retried; compaction never deletes messages.
+ * retried (the replacements get new IDs); compaction never deletes messages.
  */
 export const agentEntries = sqliteTable(
   'agent_entries',
@@ -273,6 +275,7 @@ export const agentEntries = sqliteTable(
       .notNull()
       .references(() => agentSessions.id, { onDelete: 'cascade' }),
     seq: integer().notNull(),
+    id: text().notNull(),
     type: text().$type<'message' | 'compaction'>().notNull(),
     /** The message's role; null for compactions. */
     role: text().$type<'user' | 'assistant' | 'tool' | 'system'>(),
@@ -283,6 +286,7 @@ export const agentEntries = sqliteTable(
   },
   (t) => [
     primaryKey({ columns: [t.sessionId, t.seq] }),
+    uniqueIndex('agent_entries_id').on(t.id),
     index('agent_entries_type').on(t.sessionId, t.type, t.seq),
     check('agent_entry_seq', sql`${t.seq} >= 0`),
     check(

@@ -1,6 +1,7 @@
 CREATE TABLE `agent_entries` (
 	`session_id` text NOT NULL,
 	`seq` integer NOT NULL,
+	`id` text NOT NULL,
 	`type` text NOT NULL,
 	`role` text,
 	`model` text NOT NULL,
@@ -30,6 +31,7 @@ CREATE TABLE `agent_sessions` (
 ) STRICT;
 --> statement-breakpoint
 ALTER TABLE `chat_instance_state` ADD `agent_session` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `agent_entries_id` ON `agent_entries` (`id`);--> statement-breakpoint
 CREATE INDEX `agent_entries_type` ON `agent_entries` (`session_id`,`type`,`seq`);--> statement-breakpoint
 CREATE INDEX `agent_sessions_chat` ON `agent_sessions` (`chat_id`);
 --> statement-breakpoint

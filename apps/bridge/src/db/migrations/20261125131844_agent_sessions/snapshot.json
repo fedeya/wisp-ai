@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "92b80e2f-026a-4fa1-af5a-abd292029da0",
+  "id": "b120a0da-46f9-44ab-bd9a-cfa34c19c49b",
   "prevIds": ["b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea"],
   "ddl": [
     {
@@ -62,6 +62,16 @@
       "table": "agent_entries",
       "name": "seq",
       "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_entries",
+      "name": "id",
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -897,6 +907,20 @@
       "default": null,
       "generated": null,
       "entityType": "columns"
+    },
+    {
+      "table": "agent_entries",
+      "name": "agent_entries_id",
+      "columns": [
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
     },
     {
       "table": "agent_entries",
