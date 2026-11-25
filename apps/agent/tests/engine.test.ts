@@ -161,12 +161,11 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
               ? [{ seq, message: entry.message, model: entry.model }]
               : [],
           ),
-          next: log.length,
         };
       },
-      append: async (session, from, messages, model) =>
+      append: async (session, messages, model) =>
         void logs.set(session, [
-          ...(logs.get(session) ?? []).slice(0, from),
+          ...(logs.get(session) ?? []),
           ...messages.map((message) => ({ type: 'message' as const, message, model })),
         ]),
       compact: async (session, compaction) =>
