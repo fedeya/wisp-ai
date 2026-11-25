@@ -1,15 +1,24 @@
-import { and, asc, eq, gte, isNotNull, notInArray, sql } from 'drizzle-orm';
-import type { ModelMessage, SessionStart, TokenUsage } from '@wisp/agent/engine';
+import { and, asc, desc, eq, gte, isNotNull, notInArray, sql } from 'drizzle-orm';
+import type {
+  Compaction,
+  ModelMessage,
+  SessionHistory,
+  SessionStart,
+  TokenUsage,
+} from '@wisp/agent/engine';
 import type { ApplicationDatabase } from '../db/application-database.ts';
-import { agentMessages, agentSessions, chatInstanceState } from '../db/schema.ts';
+import { agentCompactions, agentMessages, agentSessions, chatInstanceState } from '../db/schema.ts';
 
 /** How `agent_messages.message` is encoded: an AI SDK 7 `ModelMessage` as JSON. */
 export const AGENT_MESSAGE_FORMAT = 'ai-sdk-7';
 
+type Transaction = Parameters<Parameters<ApplicationDatabase['transaction']>[0]>[0];
+
 /**
  * Each agent session's model-facing history, in the application database
- * next to the visible conversation. The agent sends it in full on every turn,
- * so a provider sees a stable prefix and can reuse its cache.
+ * next to the visible conversation. Messages are kept for the life of the
+ * session: a compaction is a record of where the model's reading starts and
+ * what summarizes the messages before it.
  */
 export class AgentHistory {
   readonly database: ApplicationDatabase;
@@ -24,7 +33,7 @@ export class AgentHistory {
     this.now = options.now ?? Date.now;
   }
 
-  /** Starts the session on its chat's first turn, or marks a resumed one as used. */
+  /** Starts the session on its chat's first turn; later turns record their model. */
   async begin(session: string, start: SessionStart) {
     await this.database.transaction((db) => {
       const now = this.now();
@@ -38,34 +47,65 @@ export class AgentHistory {
           createdAt: now,
           updatedAt: now,
         })
-        .onConflictDoUpdate({ target: agentSessions.id, set: { updatedAt: now } })
+        .onConflictDoUpdate({
+          target: agentSessions.id,
+          set: { model: start.model, updatedAt: now },
+        })
         .run();
     });
   }
 
-  async load(session: string): Promise<ModelMessage[]> {
+  /** The latest compaction's summary and the messages from where it keeps them. */
+  async load(session: string): Promise<SessionHistory> {
     await this.database.initialize();
-    return this.database.orm
-      .select({ message: agentMessages.message })
+    const orm = this.database.orm;
+    const latest = orm
+      .select({ keptFrom: agentCompactions.keptFrom, summary: agentCompactions.summary })
+      .from(agentCompactions)
+      .where(eq(agentCompactions.sessionId, session))
+      .orderBy(desc(agentCompactions.keptFrom))
+      .limit(1)
+      .get();
+    const start = latest?.keptFrom ?? 0;
+    const messages = orm
+      .select({ message: agentMessages.message, model: agentMessages.model })
       .from(agentMessages)
-      .where(eq(agentMessages.sessionId, session))
+      .where(and(eq(agentMessages.sessionId, session), gte(agentMessages.position, start)))
       .orderBy(asc(agentMessages.position))
       .all()
-      .map((row) => JSON.parse(row.message) as ModelMessage);
+      .map((row) => ({ message: JSON.parse(row.message) as ModelMessage, model: row.model }));
+    return { summary: latest?.summary ?? undefined, messages, start };
   }
 
-  /** Appends a turn's messages after the `from` messages already stored. */
-  async append(session: string, from: number, messages: ModelMessage[]) {
-    await this.database.transaction((db) => this.write(db, session, from, messages));
-  }
-
-  /** Replaces the whole history with a compacted one. */
-  async replace(session: string, messages: ModelMessage[]) {
+  /** Stores a turn's messages from position `from` on, replacing what a retried turn left there. */
+  async append(session: string, from: number, messages: ModelMessage[], model: string) {
     await this.database.transaction((db) => {
-      this.write(db, session, 0, messages);
-      db.update(agentSessions)
-        .set({ compactedAt: this.now() })
-        .where(eq(agentSessions.id, session))
+      db.delete(agentMessages)
+        .where(and(eq(agentMessages.sessionId, session), gte(agentMessages.position, from)))
+        .run();
+      this.insert(db, session, from, messages, model);
+    });
+  }
+
+  /** Records a compaction; the messages it summarizes stay stored. */
+  async compact(session: string, compaction: Compaction) {
+    await this.database.transaction((db) => {
+      db.insert(agentCompactions)
+        .values({
+          sessionId: session,
+          keptFrom: compaction.keptFrom,
+          summary: compaction.summary ?? null,
+          model: compaction.model,
+          createdAt: this.now(),
+        })
+        .onConflictDoUpdate({
+          target: [agentCompactions.sessionId, agentCompactions.keptFrom],
+          set: {
+            summary: compaction.summary ?? null,
+            model: compaction.model,
+            createdAt: this.now(),
+          },
+        })
         .run();
     });
   }
@@ -86,7 +126,7 @@ export class AgentHistory {
     });
   }
 
-  /** Forgets a session; its messages go with it. */
+  /** Forgets a session, with its messages and compactions. */
   async delete(session: string) {
     await this.database.transaction((db) => {
       db.delete(agentSessions).where(eq(agentSessions.id, session)).run();
@@ -114,28 +154,26 @@ export class AgentHistory {
     });
   }
 
-  private write(
-    db: Parameters<Parameters<ApplicationDatabase['transaction']>[0]>[0],
+  private insert(
+    db: Transaction,
     session: string,
     from: number,
     messages: ModelMessage[],
+    model: string,
   ) {
-    db.delete(agentMessages)
-      .where(and(eq(agentMessages.sessionId, session), gte(agentMessages.position, from)))
+    if (!messages.length) return;
+    const createdAt = this.now();
+    db.insert(agentMessages)
+      .values(
+        messages.map((message, index) => ({
+          sessionId: session,
+          position: from + index,
+          role: message.role,
+          model,
+          createdAt,
+          message: JSON.stringify(message),
+        })),
+      )
       .run();
-    if (messages.length) {
-      const createdAt = this.now();
-      db.insert(agentMessages)
-        .values(
-          messages.map((message, index) => ({
-            sessionId: session,
-            position: from + index,
-            role: message.role,
-            createdAt,
-            message: JSON.stringify(message),
-          })),
-        )
-        .run();
-    }
   }
 }

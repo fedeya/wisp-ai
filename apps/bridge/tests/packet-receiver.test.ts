@@ -220,7 +220,7 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
   expect(context?.sections.quests).toBeUndefined();
 });
 
-test('changing native models resets provider history while preserving the visible chat', async () => {
+test("changing models keeps the chat's agent session and its visible conversation", async () => {
   const f = fixture();
   const chat = f.state.chats[0]!;
   chat.status = 'done';
@@ -243,9 +243,9 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(first));
-  expect(chat.agentSession).toBeUndefined();
+  const session = chat.agentSession;
+  expect(session).toBeDefined();
   expect(chat.messages[0]?.text).toBe('Keep this conversation');
-  chat.agentSession = 'native-session';
   f.receive(
     packetSchema.parse({
       type: 'chat_model_set',
@@ -258,8 +258,8 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(second));
-  expect(chat.agentSession).toBeUndefined();
-  expect(f.end).toHaveBeenCalledTimes(2);
+  expect(chat.agentSession).toBe(session);
+  expect(f.end).not.toHaveBeenCalled();
 });
 
 test('reload interrupts old turns, rejects outstanding reads and clears character-specific commands', async () => {

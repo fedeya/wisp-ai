@@ -1,9 +1,13 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "3fdd0b78-b701-4f8e-a233-b61dd813cca7",
+  "id": "ed0552cd-4516-4649-8fd8-0a5692a31dcc",
   "prevIds": ["b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea"],
   "ddl": [
+    {
+      "name": "agent_compactions",
+      "entityType": "tables"
+    },
     {
       "name": "agent_messages",
       "entityType": "tables"
@@ -49,6 +53,56 @@
       "entityType": "tables"
     },
     {
+      "table": "agent_compactions",
+      "name": "session_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_compactions",
+      "name": "kept_from",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_compactions",
+      "name": "summary",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_compactions",
+      "name": "model",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_compactions",
+      "name": "created_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
       "table": "agent_messages",
       "name": "session_id",
       "type": "text",
@@ -71,6 +125,16 @@
     {
       "table": "agent_messages",
       "name": "role",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_messages",
+      "name": "model",
       "type": "text",
       "notNull": true,
       "autoincrement": false,
@@ -163,16 +227,6 @@
       "name": "updated_at",
       "type": "integer",
       "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_sessions",
-      "name": "compacted_at",
-      "type": "integer",
-      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -1055,6 +1109,17 @@
       "entityType": "indexes"
     },
     {
+      "table": "agent_compactions",
+      "name": "fk_agent_compactions_session_id_agent_sessions_id_fk",
+      "columns": ["session_id"],
+      "tableTo": "agent_sessions",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
       "table": "agent_messages",
       "name": "fk_agent_messages_session_id_agent_sessions_id_fk",
       "columns": ["session_id"],
@@ -1097,6 +1162,13 @@
       "onDelete": "CASCADE",
       "nameExplicit": false,
       "entityType": "fks"
+    },
+    {
+      "table": "agent_compactions",
+      "name": "agent_compactions_pk",
+      "columns": ["session_id", "kept_from"],
+      "nameExplicit": false,
+      "entityType": "pks"
     },
     {
       "table": "agent_messages",
@@ -1174,6 +1246,12 @@
       "columns": ["id"],
       "nameExplicit": false,
       "entityType": "pks"
+    },
+    {
+      "table": "agent_compactions",
+      "name": "agent_compaction_kept_from",
+      "value": "\"kept_from\" >= 0",
+      "entityType": "checks"
     },
     {
       "table": "agent_messages",
