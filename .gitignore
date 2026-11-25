@@ -1,4 +1,5 @@
 node_modules/
+# Left in development checkouts by the former Eve agent runtime.
 .eve/
 .env*
 runtime/

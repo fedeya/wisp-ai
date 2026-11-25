@@ -632,7 +632,7 @@ local function receive()
     if queue[1] and queue[1].index > 1 then
         return
     end
-    -- The hello can be acknowledged before Eve is ready. Keep reading until
+    -- The hello can be acknowledged before the agent is ready. Keep reading until
     -- startup completes, even after that acknowledgement clears the outbox.
     local waiting = not ns.connected or next(awaiting) ~= nil or partialDownlink ~= nil
     local firstTextWaiting = false

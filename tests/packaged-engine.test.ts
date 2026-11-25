@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { ChatStore, conversationInstanceId } from '@wisp/bridge/chat-store';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
+import { migrationsFolder } from '@wisp/bridge/db/migrate';
 
 const exec = promisify(execFile);
 test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
@@ -24,7 +25,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
       await source.load();
       const chat = {
         ...newChat('history', 'game'),
-        eveId: 'old-session',
+        agentSession: 'old-session',
         messages: [{ role: 'user' as const, text: 'History survives packaging 🧙' }],
       };
       await source.flush([chat]);
@@ -96,7 +97,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         windowsHide: true,
         timeout: 30000,
       });
-      expect(JSON.parse(selfTest.stdout).sqlite).toBe(true);
+      expect(JSON.parse(selfTest.stdout)).toMatchObject({ sqlite: true, agent: true });
       await exec(executable, ['scripts/migrate-desktop.ts', previous], {
         env,
         windowsHide: true,
@@ -106,12 +107,14 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         readOnly: true,
       });
       try {
-        expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+        expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+          (await readdir(migrationsFolder)).length,
+        );
         expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
         expect(
           db
-            .prepare('SELECT eve_id FROM chat_instance_state WHERE instance_id = ?')
-            .get(conversationInstanceId(path.join(destination, 'runtime')))!.eve_id,
+            .prepare('SELECT agent_session FROM chat_instance_state WHERE instance_id = ?')
+            .get(conversationInstanceId(path.join(destination, 'runtime')))!.agent_session,
         ).toBeNull();
         expect(db.prepare('SELECT title FROM routines').get()!.title).toBe('Review');
         expect(db.prepare('SELECT summary FROM routine_runs').get()!.summary).toBe('Keep history');
@@ -134,9 +137,9 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
         const original = new DatabaseSync(source.file, { readOnly: true });
         try {
-          expect(original.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id).toBe(
-            'old-session',
-          );
+          expect(
+            original.prepare('SELECT agent_session FROM chat_instance_state').get()!.agent_session,
+          ).toBe('old-session');
         } finally {
           original.close();
         }
@@ -190,7 +193,9 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         path.join(previous, 'config.local.json'),
         JSON.stringify({ wow, model: 'offline-fixture' }),
       );
-      const chats = [{ id: 'fixture', eveId: 'old-session', status: 'working', messages: [] }];
+      const chats = [
+        { id: 'fixture', agentSession: 'old-session', status: 'working', messages: [] },
+      ];
       await writeFile(path.join(previous, 'runtime/chats.json'), JSON.stringify(chats));
       await exec(engine, ['scripts/migrate-desktop.ts', previous], {
         cwd: root,

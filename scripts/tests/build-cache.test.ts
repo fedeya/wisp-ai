@@ -51,7 +51,7 @@ test('native executable reuse ignores external runtime payload but invalidates e
   try {
     await project(root);
     const original = await nativeBuildKey(root, context);
-    await put(root, 'apps/agent/agent/tools/example.ts', 'new agent tool');
+    await put(root, 'apps/agent/src/wisp/tools/example.ts', 'new agent tool');
     await put(root, 'apps/bridge/src/main.ts', 'updated bridge');
     await put(root, 'addon/WispAI/UI/Window.lua', 'updated addon');
     await put(root, 'apps/desktop/src-tauri/resources/payload/BUILD.json', 'new release commit');
