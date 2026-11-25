@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
-import { APICallError, RetryError } from 'ai';
+import { APICallError, RetryError, simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { Effect, Layer, Stream } from 'effect';
+import { z } from 'zod';
 import {
   AgentEngine,
   EngineConfig,
@@ -13,6 +14,8 @@ import {
 } from '../src/engine.ts';
 import { modelError } from '../src/engine-errors.ts';
 import { MemoryHistory } from '../src/memory-history.ts';
+import { defineTool, type ToolDefinition } from '../src/tool.ts';
+import type { DeferredTool } from '../src/turn-tools.ts';
 
 const apiError = (statusCode: number) =>
   new APICallError({
@@ -22,8 +25,18 @@ const apiError = (statusCode: number) =>
     statusCode,
   });
 
+const usage = {
+  inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+  outputTokens: { total: 1, text: 1, reasoning: undefined },
+};
+
 /** The engine with its host replaced by layers: no bridge, no HTTP. */
-function engineLayer(model: MockLanguageModelV4, history: MemoryHistory) {
+function engineLayer(
+  model: MockLanguageModelV4,
+  history: MemoryHistory,
+  direct: Record<string, ToolDefinition> = {},
+  deferred: DeferredTool[] = [],
+) {
   return AgentEngine.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -41,7 +54,7 @@ function engineLayer(model: MockLanguageModelV4, history: MemoryHistory) {
         ),
         Layer.succeed(
           TurnToolbox,
-          TurnToolbox.of({ tools: () => Effect.succeed({ direct: {}, deferred: [], memory: '' }) }),
+          TurnToolbox.of({ tools: () => Effect.succeed({ direct, deferred, memory: '' }) }),
         ),
       ),
     ),
@@ -64,6 +77,101 @@ test('a request the provider refuses fails the turn as a rejected model call', a
   expect(failure).toMatchObject({ _tag: 'ModelError', reason: 'rejected', status: 400 });
   // The player's message was logged before the model was called.
   expect(history.entries('s').map(({ entry }) => entry.type)).toEqual(['user']);
+});
+
+test('text parts a provider reuses an ID for in a later step stream as separate parts', async () => {
+  let call = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      call += 1;
+      const first = call === 1;
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start' as const, warnings: [] },
+            { type: 'text-start' as const, id: 'txt' },
+            { type: 'text-delta' as const, id: 'txt', delta: first ? 'Looking.' : 'Found it.' },
+            { type: 'text-end' as const, id: 'txt' },
+            ...(first
+              ? [
+                  {
+                    type: 'tool-call' as const,
+                    toolCallId: 'c1',
+                    toolName: 'tool_search',
+                    input: JSON.stringify({ query: 'map' }),
+                  },
+                ]
+              : []),
+            {
+              type: 'finish' as const,
+              finishReason: {
+                unified: first ? ('tool-calls' as const) : ('stop' as const),
+                raw: undefined,
+              },
+              usage,
+            },
+          ],
+        }),
+      };
+    },
+  });
+  const events = await Effect.runPromise(
+    Effect.flatMap(AgentEngine, (engine) =>
+      Stream.runCollect(engine.send('s', 'chat', { text: 'Where?' })),
+    ).pipe(Effect.provide(engineLayer(model, new MemoryHistory()))),
+  );
+  const texts = Array.from(events).flatMap((event) =>
+    event.type === 'content.completed' ? [event.data as { partId: string; value: string }] : [],
+  );
+  // The AI SDK gives a reused provider ID a new one, so the bridge never merges the two.
+  expect(texts.map((text) => text.value)).toEqual(['Looking.', 'Found it.']);
+  expect(new Set(texts.map((text) => text.partId)).size).toBe(2);
+});
+
+test('an endsTurn tool run through tool_call ends the turn', async () => {
+  let calls = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      calls += 1;
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start' as const, warnings: [] },
+            {
+              type: 'tool-call' as const,
+              toolCallId: 'c' + calls,
+              toolName: 'tool_call',
+              input: JSON.stringify({ name: 'skip_tip', input: {} }),
+            },
+            {
+              type: 'finish' as const,
+              finishReason: { unified: 'tool-calls' as const, raw: undefined },
+              usage,
+            },
+          ],
+        }),
+      };
+    },
+  });
+  const skipTip = defineTool({
+    description: 'Skip the tip.',
+    inputSchema: z.object({}),
+    endsTurn: true,
+    execute: () => ({ skipped: true }),
+  });
+  await Effect.runPromise(
+    Effect.flatMap(AgentEngine, (engine) =>
+      Stream.runDrain(engine.send('s', 'chat', { text: 'Tip?' })),
+    ).pipe(
+      Effect.provide(
+        engineLayer(model, new MemoryHistory(), { skip_tip: skipTip }, [
+          // tool_call is offered when the turn has deferred tools, as every real turn does.
+          { name: 'map', description: 'Map.', inputSchema: {}, run: async () => ({}) },
+        ]),
+      ),
+    ),
+  );
+  expect(calls).toBe(1);
 });
 
 test('model errors are classified by the status of their last attempt', () => {

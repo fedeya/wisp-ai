@@ -40,7 +40,7 @@ function settled(input: unknown, output: ToolResultOutput, options: unknown): To
       return {
         status: 'completed',
         input,
-        output: { type: 'json', value: output.value },
+        output: { type: 'content', value: output.value },
         ...native,
       };
     case 'error-text':

@@ -9,9 +9,10 @@ export type AgentEngine = Pick<
 >;
 
 /**
- * Starts a turn on the chat's agent session. A chat without one (new, carried
- * over from an older version, or reset after the provider rejected a request)
- * starts a session whose first turn carries the recent visible conversation.
+ * Starts a turn on the chat's agent session, or a new one when the chat has
+ * none (new, carried over from an older version, or reset after the provider
+ * rejected a request). The turn carries the recent visible conversation; the
+ * engine logs it only when the session has no log yet.
  */
 export function sendChatTurn(
   engine: AgentEngine,
@@ -26,7 +27,7 @@ export function sendChatTurn(
   }
   return engine.send(
     chat.agentSession!,
-    resumed ? input : withConversationHistory(input, chat.messages),
+    withConversationHistory(input, chat.messages),
     signal,
     chat.id,
   );

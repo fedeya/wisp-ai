@@ -66,7 +66,11 @@ export interface TurnInput {
   text: string;
   /** The game and chat as they are now, as named blocks of data. */
   context?: readonly ContextBlock[];
-  /** The chat's earlier messages, for a session that starts in a chat that has some. */
+  /**
+   * The chat's earlier messages. They are logged only when the session has no
+   * log yet, so a session that starts mid-chat, or one the chat points at
+   * without a log, still begins with the conversation.
+   */
   history?: readonly HistoryLine[];
 }
 export { FORMAT as SESSION_FORMAT } from './session-message.ts';
@@ -252,11 +256,8 @@ function lastMemory(messages: readonly LoggedMessage[]) {
  * was last sent, the turn's context, the chat's earlier messages), then what
  * the player wrote.
  */
-function turnEntries(
-  input: TurnInput,
-  memory: string,
-  logged: readonly LoggedMessage[],
-): Message[] {
+function turnEntries(input: TurnInput, memory: string, loaded: LoadedHistory): Message[] {
+  const logged = loaded.messages;
   const entries: Message[] = [];
   if (memory && memory !== lastMemory(logged)) {
     entries.push({ type: 'synthetic', kind: 'memory', text: memory });
@@ -264,7 +265,7 @@ function turnEntries(
   if (input.context?.length) {
     entries.push({ type: 'synthetic', kind: 'context', blocks: [...input.context] });
   }
-  if (input.history?.length) {
+  if (input.history?.length && !logged.length && loaded.summary === undefined) {
     entries.push({ type: 'synthetic', kind: 'history', messages: [...input.history] });
   }
   entries.push({ type: 'user', content: [{ type: 'text', text: input.text }] });
@@ -570,15 +571,13 @@ export class AgentEngine extends Context.Service<
         let loaded = yield* history.load(session);
         if (
           selected.contextWindow &&
-          estimateTokens(
-            prompt(loaded, target, stored(turnEntries(input, tools.memory, loaded.messages))),
-          ) >
+          estimateTokens(prompt(loaded, target, stored(turnEntries(input, tools.memory, loaded)))) >
             selected.contextWindow * COMPACTION_THRESHOLD
         ) {
           yield* compacting(emit, summarize(session, loaded, model, selected.model));
           loaded = yield* history.load(session);
         }
-        const entries = turnEntries(input, tools.memory, loaded.messages);
+        const entries = turnEntries(input, tools.memory, loaded);
         yield* history.append(session, entries, selected.model);
 
         // The model stream and its tools stop when the turn's scope closes.
