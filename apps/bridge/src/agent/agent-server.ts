@@ -76,7 +76,7 @@ interface AgentDependencies {
 type AgentContext = Context<{ Bindings: HttpBindings }>;
 // The agent shows these messages to the model, so they are passed through unsanitized.
 const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
-// Aborts the game, simulator or search work when Eve hangs up before the reply is written.
+// Aborts the game, simulator or search work when the agent hangs up before the reply is written.
 function abortOnHangUp(c: AgentContext) {
   const abort = new AbortController();
   const { outgoing } = c.env;
@@ -212,7 +212,7 @@ export function createAgentApp(deps: AgentDependencies) {
     }
   });
 
-  // Tool calls from Eve: each names the Eve session of a working chat on the live connection.
+  // Tool calls from the agent: each names the agent session of a working chat on the live connection.
   interface ToolCall {
     raw: unknown;
     chat: Chat;

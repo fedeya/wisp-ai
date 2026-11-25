@@ -2,7 +2,7 @@ import { startBridge } from './runtime.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogger as logger } from './logger.ts';
 
-/** How long a crashing bridge may spend releasing SQLite and Eve before it exits. */
+/** How long a crashing bridge may spend releasing SQLite and the agent before it exits. */
 const CRASH_SHUTDOWN_MS = 5000;
 
 let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
@@ -20,7 +20,7 @@ process.on('unhandledRejection', (reason) => {
 
 // A synchronous throw that reached the event loop may have left state half
 // updated, so the bridge does not keep running. It logs the cause, releases
-// Eve and SQLite when it can, and exits non-zero so the desktop app can start
+// the agent and SQLite when it can, and exits non-zero so the desktop app can start
 // a fresh one.
 process.on('uncaughtException', (error) => {
   logger.fatal(

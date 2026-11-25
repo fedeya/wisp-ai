@@ -1,11 +1,11 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { SessionNotActiveError, type Client } from 'eve/client';
-import { sendChatTurn } from '../src/agent/agent-session.ts';
-import { turnInput, visibleUserText } from '../src/chat/context.ts';
+import { sendChatTurn, type AgentEngine } from '../src/agent/agent-session.ts';
+import type { TurnInput } from '@wisp/agent/engine';
+import { turnInput } from '../src/chat/context.ts';
 import type { Chat } from '../src/chat/events.ts';
 
-function fixture(error?: Error) {
+function fixture() {
   const chat: Chat = {
     id: 'chat',
     agentSession: 'old',
@@ -21,16 +21,16 @@ function fixture(error?: Error) {
       { role: 'user', text: 'What is next?' },
     ],
   };
-  const sent: { id: string; input: string }[] = [];
+  const sent: { id: string; input: TurnInput }[] = [];
   let created = 0;
-  const delivery = { status: 'accepted' };
-  const session = (id: string) => ({
-    id,
-    send: async (input: string) => {
+  const delivery = {
+    events: (async function* () {})(),
+    result: Promise.resolve({ status: 'completed' as const }),
+  };
+  const engine: AgentEngine = {
+    newSessionId: () => 'new-' + ++created,
+    send: (id, input) => {
       sent.push({ id, input });
-      if (id === 'old' && error) {
-        throw error;
-      }
       assert.equal(
         chat.agentSession,
         id,
@@ -38,88 +38,80 @@ function fixture(error?: Error) {
       );
       return delivery;
     },
-  });
-  const client = {
-    sessions: { attach: session, create: async () => ({ session: session('new-' + ++created) }) },
-  } as unknown as Pick<Client, 'sessions'>;
-  return { chat, client, sent, created: () => created, delivery };
+    end: async () => {},
+  };
+  return { chat, engine, sent, created: () => created, delivery };
 }
 
-test('an inactive session is replaced once and keeps bounded visible history', async () => {
-  const f = fixture(new SessionNotActiveError());
+const signal = () => AbortSignal.timeout(1000);
+
+function packedHistory(input: TurnInput) {
+  assert.ok(input.history);
+  return input.history;
+}
+
+test('a new session starts with bounded visible history', () => {
+  const f = fixture();
+  f.chat.agentSession = undefined;
   const input = turnInput('What is next?', undefined, f.chat);
-  assert.equal(await sendChatTurn(f.client, f.chat, input), f.delivery);
+  assert.equal(sendChatTurn(f.engine, f.chat, input, signal()), f.delivery);
   assert.equal(f.created(), 1);
   assert.equal(f.chat.agentSession, 'new-1');
-  assert.equal(f.sent.length, 2);
-  assert.ok(f.sent[1].input.includes('<historical_conversation>'));
-  assert.ok(f.sent[1].input.includes('Follow this guide'));
-  assert.ok(!f.sent[1].input.includes('private diagnostic'));
-  assert.equal(visibleUserText(f.sent[1].input), 'What is next?');
+  assert.equal(f.sent.length, 1);
+  assert.deepEqual(packedHistory(f.sent[0]!.input), [
+    { role: 'user', text: 'Follow this guide' },
+    { role: 'assistant', text: 'We can use that guide.' },
+  ]);
+  assert.equal(f.sent[0]!.input.text, 'What is next?');
 });
 
-test.each(['new', 'inactive'])(
-  'a %s session restores assistant history from original replies instead of cached text',
-  async (mode) => {
-    const f = fixture(mode === 'inactive' ? new SessionNotActiveError() : undefined);
-    if (mode === 'new') {
-      f.chat.agentSession = undefined;
-    }
-    const markdown = '| Pieza | Estado |\n|---|---|\n| Toga | Equipada |';
-    f.chat.messages.splice(
-      1,
-      1,
-      {
-        role: 'assistant',
-        text: '',
-        rawReply: JSON.stringify({ type: 'text_delta', text: markdown }),
-        streaming: false,
-      },
-      {
-        role: 'assistant',
-        text: 'obsolete cached interpretation',
-        rawReply: 'Respuesta original en texto normal.',
-        streaming: false,
-      },
-      { role: 'assistant', text: 'Legacy reply without a source.' },
-      { role: 'assistant', text: 'stale content from malformed source', rawReply: '{broken' },
-      { role: 'assistant', text: 'stale metadata preview', rawReply: '{"type":"no_tip"}' },
-      { role: 'assistant', text: 'unfinished preview', rawReply: 'unfinished', streaming: true },
-      { role: 'tool', text: 'private tool diagnostic' },
-    );
-    const before = JSON.stringify(f.chat.messages);
-    await sendChatTurn(f.client, f.chat, turnInput('What is next?', undefined, f.chat));
-    const input = f.sent.at(-1)!.input;
-    const packed = /<historical_conversation>\n([^\n]*)\n<\/historical_conversation>/.exec(input);
-    assert.ok(packed);
-    const history = JSON.parse(packed[1]);
-    assert.deepEqual(history, [
-      { role: 'user', text: 'Follow this guide' },
-      { role: 'assistant', text: markdown },
-      { role: 'assistant', text: 'Respuesta original en texto normal.' },
-      { role: 'assistant', text: 'Legacy reply without a source.' },
-    ]);
-    assert.equal(JSON.stringify(f.chat.messages), before);
-    assert.equal(visibleUserText(input), 'What is next?');
-    assert.equal(f.created(), 1);
-  },
-);
-
-test('live sessions are reused and ambiguous failures are never resent', async () => {
-  const live = fixture();
-  await sendChatTurn(live.client, live.chat, 'Message');
-  assert.equal(live.created(), 0);
-  assert.equal(live.sent.length, 1);
-  const failed = fixture(new Error('Network interrupted'));
-  await assert.rejects(
-    () => sendChatTurn(failed.client, failed.chat, 'Message'),
-    /Network interrupted/,
+test('a new session restores assistant history from original replies instead of cached text', () => {
+  const f = fixture();
+  f.chat.agentSession = undefined;
+  const markdown = '| Pieza | Estado |\n|---|---|\n| Toga | Equipada |';
+  f.chat.messages.splice(
+    1,
+    1,
+    {
+      role: 'assistant',
+      text: '',
+      rawReply: JSON.stringify({ type: 'text_delta', text: markdown }),
+      streaming: false,
+    },
+    {
+      role: 'assistant',
+      text: 'obsolete cached interpretation',
+      rawReply: 'Respuesta original en texto normal.',
+      streaming: false,
+    },
+    { role: 'assistant', text: 'Legacy reply without a source.' },
+    { role: 'assistant', text: 'stale content from malformed source', rawReply: '{broken' },
+    { role: 'assistant', text: 'stale metadata preview', rawReply: '{"type":"no_tip"}' },
+    { role: 'assistant', text: 'unfinished preview', rawReply: 'unfinished', streaming: true },
+    { role: 'tool', text: 'private tool diagnostic' },
   );
-  assert.equal(failed.created(), 0);
-  assert.equal(failed.sent.length, 1);
+  const before = JSON.stringify(f.chat.messages);
+  sendChatTurn(f.engine, f.chat, turnInput('What is next?', undefined, f.chat), signal());
+  const input = f.sent.at(-1)!.input;
+  assert.deepEqual(packedHistory(input), [
+    { role: 'user', text: 'Follow this guide' },
+    { role: 'assistant', text: markdown },
+    { role: 'assistant', text: 'Respuesta original en texto normal.' },
+    { role: 'assistant', text: 'Legacy reply without a source.' },
+  ]);
+  assert.equal(JSON.stringify(f.chat.messages), before);
+  assert.equal(input.text, 'What is next?');
+  assert.equal(f.created(), 1);
 });
 
-test('restored original replies keep the existing history count and per-message limits', async () => {
+test('a live session is reused with the message as sent', () => {
+  const live = fixture();
+  sendChatTurn(live.engine, live.chat, { text: 'Message' }, signal());
+  assert.equal(live.created(), 0);
+  assert.deepEqual(live.sent, [{ id: 'old', input: { text: 'Message' } }]);
+});
+
+test('restored original replies keep the existing history count and per-message limits', () => {
   const f = fixture();
   f.chat.agentSession = undefined;
   f.chat.messages = Array.from({ length: 15 }, (_, index) => ({
@@ -128,14 +120,10 @@ test('restored original replies keep the existing history count and per-message 
     rawReply: JSON.stringify({ type: 'text_delta', text: String(index) + ': ' + 'x'.repeat(2500) }),
   }));
   f.chat.messages.push({ role: 'user', text: 'What is next?' });
-  await sendChatTurn(f.client, f.chat, turnInput('What is next?', undefined, f.chat));
-  const packed = /<historical_conversation>\n([^\n]*)\n<\/historical_conversation>/.exec(
-    f.sent[0].input,
-  );
-  assert.ok(packed);
-  const history = JSON.parse(packed[1]) as { role: string; text: string }[];
+  sendChatTurn(f.engine, f.chat, turnInput('What is next?', undefined, f.chat), signal());
+  const history = packedHistory(f.sent[0]!.input);
   assert.equal(history.length, 12);
-  assert.ok(history[0].text.startsWith('3: '));
+  assert.ok(history[0]!.text.startsWith('3: '));
   assert.ok(history.at(-1)!.text.startsWith('14: '));
   assert.ok(history.every((message) => message.text.length === 2000));
 });

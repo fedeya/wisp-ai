@@ -5,17 +5,17 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '../apps/bridge/src/integrations/integration-state.ts';
-import { dynamicEvaluate } from './node_modules/eve/dist/src/dynamic/definition.js';
-import flightPaths from '../apps/agent/agent/tools/wow__inspect_flight_paths.ts';
-import quest from '../apps/agent/agent/tools/questie__get_quest.ts';
-import chain from '../apps/agent/agent/tools/questie__get_quest_chain.ts';
-import object from '../apps/agent/agent/tools/questie__find_object_locations.ts';
-import stored from '../apps/agent/agent/tools/syndicator__find_item.ts';
-import prices from '../apps/agent/agent/tools/auctionator__get_item_prices.ts';
-import guideStep from '../apps/agent/agent/tools/polestar__get_guide_step.ts';
-import createGuide from '../apps/agent/agent/tools/polestar__create_guide.ts';
-import hearthstone from '../apps/agent/agent/tools/wow__inspect_hearthstone.ts';
-import combat from '../apps/agent/agent/tools/wow__read_combat.ts';
+import { toolOffered } from '@wisp/agent/enabled-tool';
+import flightPaths from '../apps/agent/src/wisp/tools/wow__inspect_flight_paths.ts';
+import quest from '../apps/agent/src/wisp/tools/questie__get_quest.ts';
+import chain from '../apps/agent/src/wisp/tools/questie__get_quest_chain.ts';
+import object from '../apps/agent/src/wisp/tools/questie__find_object_locations.ts';
+import stored from '../apps/agent/src/wisp/tools/syndicator__find_item.ts';
+import prices from '../apps/agent/src/wisp/tools/auctionator__get_item_prices.ts';
+import guideStep from '../apps/agent/src/wisp/tools/polestar__get_guide_step.ts';
+import createGuide from '../apps/agent/src/wisp/tools/polestar__create_guide.ts';
+import hearthstone from '../apps/agent/src/wisp/tools/wow__inspect_hearthstone.ts';
+import combat from '../apps/agent/src/wisp/tools/wow__read_combat.ts';
 import {
   questChainInput,
   storedItemInput,
@@ -42,7 +42,7 @@ test('item and spell references can opt into cooldown readings', () => {
   }
 });
 
-test('actual new Eve definitions follow per-API readiness, parent switches and expiration', async () => {
+test('actual tool definitions follow per-API readiness, parent switches and expiration', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-addon-tools-'));
   const previous = process.env.WOW_CAPABILITIES_FILE;
   try {
@@ -50,8 +50,9 @@ test('actual new Eve definitions follow per-API readiness, parent switches and e
     settings.agentFile = path.join(directory, 'agent.json');
     process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
     const state = new IntegrationState(settings);
-    const resolve = async (definition: unknown) =>
-      dynamicEvaluate(definition as never)({} as never);
+    // A tool as the agent offers it this turn, or null while its capability is off.
+    const resolve = async <T extends { capability?: string }>(definition: T) =>
+      (await toolOffered(definition)) ? definition : null;
     const report = {
       version: '1.60',
       questie: {

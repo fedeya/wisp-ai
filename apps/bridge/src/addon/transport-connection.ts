@@ -38,7 +38,7 @@ export interface TransportConnection {
   connect(wow: string | undefined, save?: boolean): Promise<void>;
   /** Stop the transport and forget the game session; call inside `serialize`. */
   disconnect(): Promise<void>;
-  /** Whether the addon has acknowledged a snapshot published while Eve was ready. */
+  /** Whether the addon has acknowledged a snapshot published while the agent was ready. */
   gameConnected(): boolean;
   logError(error: unknown): void;
 }

@@ -270,6 +270,9 @@ importers:
       '@ai-sdk/zai':
         specifier: 3.0.49
         version: 3.0.49(zod@4.6.7)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.2
+        version: 1.32.2(zod@4.6.7)
       '@openrouter/ai-sdk-provider':
         specifier: 3.1.0
         version: 3.1.0(ai@7.0.164(zod@4.6.7))(zod@4.6.7)
@@ -282,18 +285,12 @@ importers:
       effect:
         specifier: 4.1.3
         version: 4.1.3
-      eve:
-        specifier: 1.0.0-rc.6
-        version: 1.0.0-rc.6(ai@7.0.164(zod@4.6.7))(just-bash@3.6.0)(next@16.4.5(@playwright/test@1.65.0)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)(svelte@5.57.3)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       impit:
         specifier: 0.14.8
         version: 0.14.8
       ipaddr.js:
         specifier: 2.5.0
         version: 2.5.0
-      just-bash:
-        specifier: 3.6.0
-        version: 3.6.0
       linkedom:
         specifier: 0.18.15
         version: 0.18.15
@@ -343,9 +340,6 @@ importers:
       drizzle-orm:
         specifier: 1.0.0-rc.5
         version: 1.0.0-rc.5(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
-      eve:
-        specifier: 1.0.0-rc.6
-        version: 1.0.0-rc.6(ai@7.0.164(zod@4.6.7))(just-bash@3.6.0)(next@16.4.5(@playwright/test@1.65.0)(@types/node@26.6.6)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react@19.3.1)(svelte@5.57.3)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
       hono:
         specifier: 4.13.15
         version: 4.13.15
@@ -642,6 +636,9 @@ importers:
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1))
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
 
 packages:
 
@@ -4501,7 +4498,8 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@borewit/text-codec@0.2.3': {}
+  '@borewit/text-codec@0.2.3':
+    optional: true
 
   '@cloudflare/oxlint-config@0.2.0(oxlint@1.95.0)(tsrs@7.1.0-beta.tsrs5)':
     dependencies:
@@ -4843,7 +4841,8 @@ snapshots:
     transitivePeerDependencies:
       - eslint
 
-  '@nodable/entities@3.1.0': {}
+  '@nodable/entities@3.1.0':
+    optional: true
 
   '@openfeature/core@1.12.0': {}
 
@@ -5240,8 +5239,10 @@ snapshots:
       token-types: 6.2.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
-  '@tokenizer/token@0.3.0': {}
+  '@tokenizer/token@0.3.0':
+    optional: true
 
   '@tsrs/darwin-arm64@7.1.0-beta.tsrs5':
     optional: true
@@ -5407,7 +5408,8 @@ snapshots:
 
   ansi-styles@5.2.0: {}
 
-  anynum@1.0.1: {}
+  anynum@1.0.1:
+    optional: true
 
   aria-query@5.3.0:
     dependencies:
@@ -5540,7 +5542,8 @@ snapshots:
 
   color-name@1.1.4: {}
 
-  commander@6.2.1: {}
+  commander@6.2.1:
+    optional: true
 
   commander@9.5.0: {}
 
@@ -5617,7 +5620,8 @@ snapshots:
   devalue@5.9.4:
     optional: true
 
-  diff@8.0.4: {}
+  diff@8.0.4:
+    optional: true
 
   dom-accessibility-api@0.5.16: {}
 
@@ -5850,6 +5854,7 @@ snapshots:
     dependencies:
       path-expression-matcher: 1.6.2
       xml-naming: 0.3.0
+    optional: true
 
   fast-xml-parser@5.12.0:
     dependencies:
@@ -5859,6 +5864,7 @@ snapshots:
       path-expression-matcher: 1.6.2
       strnum: 2.5.1
       xml-naming: 0.3.0
+    optional: true
 
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
@@ -5880,6 +5886,7 @@ snapshots:
       uint8array-extras: 1.6.0
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   finalhandler@2.1.1:
     dependencies:
@@ -5948,6 +5955,7 @@ snapshots:
     dependencies:
       ipaddr.js: 2.2.0
       undici: 7.29.0
+    optional: true
 
   h3@2.0.8(crossws@0.4.17(srvx@1.0.8))(ocache@0.3.1):
     dependencies:
@@ -6035,7 +6043,8 @@ snapshots:
 
   ini@1.3.8: {}
 
-  ini@6.0.0: {}
+  ini@6.0.0:
+    optional: true
 
   into-stream@9.1.0: {}
 
@@ -6043,7 +6052,8 @@ snapshots:
 
   ipaddr.js@1.9.1: {}
 
-  ipaddr.js@2.2.0: {}
+  ipaddr.js@2.2.0:
+    optional: true
 
   ipaddr.js@2.5.0: {}
 
@@ -6071,7 +6081,8 @@ snapshots:
       '@types/estree': 1.0.10
     optional: true
 
-  is-unsafe@2.0.3: {}
+  is-unsafe@2.0.3:
+    optional: true
 
   isarray@1.0.0: {}
 
@@ -6140,6 +6151,7 @@ snapshots:
       yaml: 2.9.1
     transitivePeerDependencies:
       - supports-color
+    optional: true
 
   lefthook-android-arm64@2.2.2:
     optional: true
@@ -6293,7 +6305,8 @@ snapshots:
 
   mkdirp-classic@0.5.3: {}
 
-  modern-tar@0.7.7: {}
+  modern-tar@0.7.7:
+    optional: true
 
   motion-dom@14.10.1:
     dependencies:
@@ -6434,7 +6447,8 @@ snapshots:
       '@oxlint/binding-win32-ia32-msvc': 1.95.0
       '@oxlint/binding-win32-x64-msvc': 1.95.0
 
-  papaparse@5.7.0: {}
+  papaparse@5.7.0:
+    optional: true
 
   parse5-parser-stream@8.1.0:
     dependencies:
@@ -6446,7 +6460,8 @@ snapshots:
 
   parseurl@1.3.3: {}
 
-  path-expression-matcher@1.6.2: {}
+  path-expression-matcher@1.6.2:
+    optional: true
 
   path-key@3.1.1: {}
 
@@ -6594,7 +6609,8 @@ snapshots:
       minimist: 1.2.8
       strip-json-comments: 2.0.1
 
-  re2js@1.3.3: {}
+  re2js@1.3.3:
+    optional: true
 
   react-dom@19.3.1(react@19.3.1):
     dependencies:
@@ -6686,6 +6702,7 @@ snapshots:
   run@2.1.3(typescript@5.9.3):
     optionalDependencies:
       typescript: 5.9.3
+    optional: true
 
   safe-buffer@5.1.2: {}
 
@@ -6704,6 +6721,7 @@ snapshots:
   seek-bzip@2.0.0:
     dependencies:
       commander: 6.2.1
+    optional: true
 
   semver@7.8.6: {}
 
@@ -6810,7 +6828,8 @@ snapshots:
       once: 1.4.0
       simple-concat: 1.0.1
 
-  smol-toml@1.9.1: {}
+  smol-toml@1.9.1:
+    optional: true
 
   sonic-boom@4.2.1:
     dependencies:
@@ -6822,7 +6841,8 @@ snapshots:
 
   sprintf-js@1.1.3: {}
 
-  sql.js@1.15.2: {}
+  sql.js@1.15.2:
+    optional: true
 
   srvx@1.0.8: {}
 
@@ -6866,10 +6886,12 @@ snapshots:
   strnum@2.5.1:
     dependencies:
       anynum: 1.0.1
+    optional: true
 
   strtok3@10.7.0:
     dependencies:
       '@tokenizer/token': 0.3.0
+    optional: true
 
   styled-jsx@5.1.6(react@19.3.1):
     dependencies:
@@ -6994,6 +7016,7 @@ snapshots:
       '@borewit/text-codec': 0.2.3
       '@tokenizer/token': 0.3.0
       ieee754: 1.2.1
+    optional: true
 
   tough-cookie@6.1.0:
     dependencies:
@@ -7043,11 +7066,13 @@ snapshots:
 
   uhyphen@0.2.0: {}
 
-  uint8array-extras@1.6.0: {}
+  uint8array-extras@1.6.0:
+    optional: true
 
   undici-types@8.9.0: {}
 
-  undici@7.29.0: {}
+  undici@7.29.0:
+    optional: true
 
   undici@7.30.2: {}
 
@@ -7149,7 +7174,8 @@ snapshots:
 
   xml-name-validator@5.0.0: {}
 
-  xml-naming@0.3.0: {}
+  xml-naming@0.3.0:
+    optional: true
 
   xmlchars@2.2.0: {}
 
@@ -7157,7 +7183,8 @@ snapshots:
 
   yallist@5.0.0: {}
 
-  yaml@2.9.1: {}
+  yaml@2.9.1:
+    optional: true
 
   yargs-parser@20.2.9: {}
 

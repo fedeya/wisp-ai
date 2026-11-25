@@ -115,7 +115,7 @@ test('actions run without a character identity and add the expected character wh
   }
 });
 
-test('agent server aborts game requests when Eve hangs up', async () => {
+test('agent server aborts game requests when the agent hangs up', async () => {
   const chat = workingChat();
   let seen: AbortSignal | undefined;
   const request = vi.fn(
