@@ -98,11 +98,13 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - **Effect:** the bridge is moving to Effect 4, following the guides in
   `node_modules/effect/ai-docs`: services are `Context.Service` classes with a
   `static layer`, methods use `Effect.fn('Service.method')`, failures are
-  `Schema.TaggedError`s, and resources are acquired in layers. `app-runtime.ts`
-  builds `AppLayer` into one `ManagedRuntime` in the composition root; Promise
-  callers run Effect code through it, and long-lived fibers are forked into the
-  bridge scope (`RuntimeResources.fork`). Modules with a Promise API, such as
-  `agent/turn-runner.ts` and `addon/game-requests.ts`, use Effect inside.
+  `Schema.TaggedError`s, and resources are acquired with `Effect.acquireRelease`.
+  `main.ts` runs the composition root (`makeBridge` in `runtime.ts`, a scoped
+  Effect) with `NodeRuntime.runMain`, providing `AppLayer` from `app-runtime.ts`
+  once; long-lived fibers are forked into the bridge's scope. Modules that still
+  have a Promise API get the bridge's services and run Effect code with
+  `Effect.runPromiseWith`; `addon/transport.ts`, `agent/turn-runner.ts` and
+  `addon/game-requests.ts` use Effect inside.
 - **Errors:** convert unknown errors with `errorMessage` from
   `apps/bridge/src/errors.ts`, which sanitizes via `safeErrorMessage`.
 - **Addon Lua:** follow [docs/lua-guidelines.md](docs/lua-guidelines.md) and

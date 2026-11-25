@@ -5,7 +5,7 @@ import {
   type WebSearchInput,
 } from '@wisp/protocol/search';
 import { parseConnectionModel } from '@wisp/protocol/providers';
-import { Cause, Exit, type ManagedRuntime } from 'effect';
+import { Cause, Effect, Exit, type Context } from 'effect';
 import { Exa, ExaSearchError } from './exa.ts';
 import type { z } from 'zod';
 import type { SecretVault } from '../../auth/secret-vault.ts';
@@ -48,18 +48,13 @@ export class WebSearch implements WowheadSearch {
   private file: string;
   private vault: SecretVault;
   private auth: ChatGPTAuth;
-  private runtime: ManagedRuntime.ManagedRuntime<Exa, never>;
-  /** `runtime` provides the Exa service the searches run on. */
-  constructor(
-    file: string,
-    vault: SecretVault,
-    auth: ChatGPTAuth,
-    runtime: ManagedRuntime.ManagedRuntime<Exa, never>,
-  ) {
+  private services: Context.Context<Exa>;
+  /** `services` holds the Exa service the searches run on. */
+  constructor(file: string, vault: SecretVault, auth: ChatGPTAuth, services: Context.Context<Exa>) {
     this.file = file;
     this.vault = vault;
     this.auth = auth;
-    this.runtime = runtime;
+    this.services = services;
   }
   async load() {
     this.config = await readJson(this.file, searchConfig, () => ({ provider: 'auto' }));
@@ -129,7 +124,7 @@ export class WebSearch implements WowheadSearch {
     signal?: AbortSignal,
     budget = resolveWebSearch(query),
   ) {
-    const exit = await this.runtime.runPromiseExit(
+    const exit = await Effect.runPromiseExitWith(this.services)(
       Exa.use((exa) => exa.search(query, key, budget)),
       signal ? { signal } : undefined,
     );

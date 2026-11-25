@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Layer, ManagedRuntime } from 'effect';
+import { Effect, Layer, Scope } from 'effect';
 import { FetchHttpClient } from 'effect/http';
 import { WebSearch } from '@wisp/bridge/web-search';
 import { Exa } from '@wisp/bridge/exa';
@@ -19,12 +19,15 @@ afterEach(async () => {
     temporary.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
-// The Exa service on a fake fetch, as the bridge's app runtime provides it.
-function exaRuntime(fetcher: typeof fetch) {
-  return ManagedRuntime.make(
-    Exa.layer.pipe(
-      Layer.provide(HttpClientLive),
-      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetcher)),
+// The Exa service on a fake fetch, as the bridge's app layer provides it.
+function exaServices(fetcher: typeof fetch) {
+  return Effect.runSync(
+    Layer.buildWithScope(
+      Exa.layer.pipe(
+        Layer.provide(HttpClientLive),
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetcher)),
+      ),
+      Scope.makeUnsafe(),
     ),
   );
 }
@@ -65,7 +68,7 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
     ),
   };
   const file = path.join(directory, 'search.json');
-  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, exaRuntime(fetcher));
+  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, exaServices(fetcher));
   await search.load();
   return {
     search,
@@ -96,7 +99,7 @@ test('Exa credentials are separate from language models, protected, persistent, 
     f.file,
     f.vault,
     f.auth as unknown as ChatGPTAuth,
-    exaRuntime(vi.fn()),
+    exaServices(vi.fn()),
   );
   await restored.load();
   expect(restored.state()).toEqual({ provider: 'auto', hasExaKey: true });
