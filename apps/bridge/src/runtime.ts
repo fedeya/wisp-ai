@@ -403,7 +403,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     void Promise.all([
       retireLegacyEngine(paths.legacyEngine),
       rm(path.join(runtime, 'eve.log'), { force: true }),
-    ]).catch((error) =>
+    ]).catch((error: unknown) =>
       logger.warn(
         { event: 'agent.legacy_engine_cleanup_failed', error: errorMessage(error) },
         'Could not remove the old Eve engine folder',
@@ -412,7 +412,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     // Histories no conversation refers to belong to deleted chats or reset sessions.
     await agentHistory
       .prune()
-      .catch((error) =>
+      .catch((error: unknown) =>
         logger.warn(
           { event: 'agent.history_prune_failed', error: errorMessage(error) },
           'Could not prune agent history',
@@ -423,7 +423,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         engineReady = true;
         changed();
       },
-      (error) =>
+      (error: unknown) =>
         logger.error(
           { event: 'agent.preload_failed', error: errorMessage(error) },
           'Agent failed to load',

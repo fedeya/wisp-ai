@@ -46,7 +46,7 @@ export function toolCallIdFor(id: string, family: Family) {
       return id.length <= 40 ? id : 'call_' + hash(id).slice(0, 35);
     case 'anthropic':
       return id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    default:
+    case 'other':
       return id;
   }
 }
