@@ -125,10 +125,24 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
   const histories = new Map<string, ModelMessage[]>();
+  const sessions = new Map<
+    string,
+    { chatId: string; model: string; inputTokens: number; outputTokens: number }
+  >();
   const engine = createAgentEngine({
     origin: () => origin,
     token: 'offline-token',
     history: {
+      begin: async (session, start) =>
+        void sessions.set(
+          session,
+          sessions.get(session) ?? { ...start, inputTokens: 0, outputTokens: 0 },
+        ),
+      addUsage: async (session, usage) => {
+        const totals = sessions.get(session)!;
+        totals.inputTokens += usage.inputTokens;
+        totals.outputTokens += usage.outputTokens;
+      },
       load: async (session) => [...(histories.get(session) ?? [])],
       append: async (session, from, messages) =>
         void histories.set(session, [
@@ -141,7 +155,7 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
     logger: { info: () => {}, warn: () => {} },
   });
   async function send(session: string, input: string) {
-    const turn = engine.send(session, input, AbortSignal.timeout(30000));
+    const turn = engine.send(session, input, AbortSignal.timeout(30000), 'chat');
     const events: EngineEvent[] = [];
     for await (const event of turn.events) {
       events.push(event);
@@ -154,6 +168,7 @@ async function fixture(plan: (count: number, request: Item) => Item, contextWind
     requests,
     inspections,
     histories,
+    sessions,
     close: async () => {
       server.close();
       await engine.close();
@@ -227,6 +242,12 @@ test(
         data: expect.objectContaining({ kind: 'text', value: 'Offline integration passed.' }),
       });
       expect(first.events.filter((event) => event.type === 'usage.recorded')).toHaveLength(4);
+      // The session belongs to its chat, and each model step's tokens add to its totals.
+      expect(f.sessions.get(session)).toMatchObject({
+        chatId: 'chat',
+        inputTokens: 80,
+        outputTokens: 40,
+      });
 
       // The next turn resends the stored history, tool calls included, and an
       // endsTurn tool finishes it without another model step.

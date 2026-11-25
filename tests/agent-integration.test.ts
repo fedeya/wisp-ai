@@ -210,6 +210,8 @@ test(
       origin: () => origin,
       token: 'offline-token',
       history: {
+        begin: async () => {},
+        addUsage: async () => {},
         load: async (id) => [...(histories.get(id) ?? [])],
         append: async (id, from, messages) =>
           void histories.set(id, [...(histories.get(id) ?? []).slice(0, from), ...messages]),
@@ -219,7 +221,7 @@ test(
       logger: { info: () => {}, warn: () => {} },
     });
     const session = engine.newSessionId();
-    const send = (input: string) => engine.send(session, input, AbortSignal.timeout(15000));
+    const send = (input: string) => engine.send(session, input, AbortSignal.timeout(15000), 'chat');
     const names = (i: number) =>
       (requests[i]!.tools as { name: string }[]).map((tool) => tool.name);
     const output = (i: number, callId: string) =>

@@ -1,11 +1,15 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b8560b14-690f-449a-8a50-802d4d106168",
+  "id": "3fdd0b78-b701-4f8e-a233-b61dd813cca7",
   "prevIds": ["b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea"],
   "ddl": [
     {
       "name": "agent_messages",
+      "entityType": "tables"
+    },
+    {
+      "name": "agent_sessions",
       "entityType": "tables"
     },
     {
@@ -46,7 +50,7 @@
     },
     {
       "table": "agent_messages",
-      "name": "session",
+      "name": "session_id",
       "type": "text",
       "notNull": true,
       "autoincrement": false,
@@ -66,11 +70,161 @@
     },
     {
       "table": "agent_messages",
+      "name": "role",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_messages",
+      "name": "created_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_messages",
       "name": "message",
       "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "id",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "chat_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "model",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "format",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "wisp_version",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "created_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "updated_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "compacted_at",
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "tokens_input",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "tokens_output",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "tokens_reasoning",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "tokens_cache_read",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "tokens_cache_write",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
       "generated": null,
       "entityType": "columns"
     },
@@ -735,6 +889,20 @@
       "entityType": "columns"
     },
     {
+      "table": "agent_sessions",
+      "name": "agent_sessions_chat",
+      "columns": [
+        {
+          "value": "chat_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
       "table": "chats",
       "name": "chats_character_activity",
       "columns": [
@@ -887,6 +1055,17 @@
       "entityType": "indexes"
     },
     {
+      "table": "agent_messages",
+      "name": "fk_agent_messages_session_id_agent_sessions_id_fk",
+      "columns": ["session_id"],
+      "tableTo": "agent_sessions",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
       "table": "chat_instance_state",
       "name": "fk_chat_instance_state_chat_id_chats_id_fk",
       "columns": ["chat_id"],
@@ -922,7 +1101,7 @@
     {
       "table": "agent_messages",
       "name": "agent_messages_pk",
-      "columns": ["session", "position"],
+      "columns": ["session_id", "position"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -962,6 +1141,13 @@
       "entityType": "pks"
     },
     {
+      "table": "agent_sessions",
+      "name": "agent_sessions_pk",
+      "columns": ["id"],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
       "table": "chats",
       "name": "chats_pk",
       "columns": ["id"],
@@ -997,8 +1183,20 @@
     },
     {
       "table": "agent_messages",
+      "name": "agent_message_role",
+      "value": "\"role\" IN ('user','assistant','tool','system')",
+      "entityType": "checks"
+    },
+    {
+      "table": "agent_messages",
       "name": "agent_message_json",
       "value": "json_valid(\"message\")",
+      "entityType": "checks"
+    },
+    {
+      "table": "agent_sessions",
+      "name": "agent_session_tokens",
+      "value": "\"tokens_input\" >= 0 AND \"tokens_output\" >= 0 AND \"tokens_reasoning\" >= 0 AND \"tokens_cache_read\" >= 0 AND \"tokens_cache_write\" >= 0",
       "entityType": "checks"
     },
     {
