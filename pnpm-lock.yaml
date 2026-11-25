@@ -179,6 +179,9 @@ importers:
       changie:
         specifier: 1.26.0
         version: 1.26.0
+      effect:
+        specifier: 4.1.3
+        version: 4.1.3
       lefthook:
         specifier: 2.2.2
         version: 2.2.2
@@ -267,10 +270,10 @@ importers:
         version: 3.0.49(zod@4.6.7)
       '@mastra/core':
         specifier: 1.82.0
-        version: 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+        version: 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@mastra/mcp':
         specifier: 2.8.0
-        version: 2.8.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
+        version: 2.8.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
       '@openrouter/ai-sdk-provider':
         specifier: 3.1.0
         version: 3.1.0(ai@7.0.164(zod@4.6.7))(zod@4.6.7)
@@ -307,7 +310,7 @@ importers:
         version: 5.0.6
       mastra:
         specifier: 1.38.0
-        version: 1.38.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(bare-buffer@3.7.1)(zod@4.6.7)
+        version: 1.38.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(bare-buffer@3.7.1)(zod@4.6.7)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -340,7 +343,7 @@ importers:
         version: link:../../packages/protocol
       drizzle-orm:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7)
+        version: 1.0.0-rc.5(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
       hono:
         specifier: 4.13.15
         version: 4.13.15
@@ -365,7 +368,7 @@ importers:
         version: 26.6.6
       drizzle-kit:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7))
+        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -573,7 +576,7 @@ importers:
     devDependencies:
       '@mastra/core':
         specifier: 1.82.0
-        version: 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+        version: 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -3331,6 +3334,9 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
+  effect@4.1.3:
+    resolution: {integrity: sha512-QWNEu35groH/78Ejq01lZGt8U0sF1P4nrhbcAZz5WffcS27bUUK9C/db+xWWUwNYUvFD5SrSLE0mFGtwyP0PCQ==}
+
   electron-to-chromium@1.5.492:
     resolution: {integrity: sha512-4uMs7omhajKiud0GqALLTazS/zyvHLTLmDWVTR+e6BnyJo5bSNrph/JoRWEFJJmY75ct9hCiSGsbFF9fLe5gDw==}
 
@@ -6043,7 +6049,7 @@ snapshots:
     dependencies:
       '@lukeed/csprng': 1.1.0
 
-  '@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
+  '@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@a2a-js/sdk-v0_3': '@a2a-js/sdk@0.3.14(express@5.3.0)'
       '@a2a-js/sdk-v1': '@a2a-js/sdk@1.0.1(express@5.3.0)'
@@ -6062,7 +6068,7 @@ snapshots:
       execa: 9.6.1
       fastq: 1.20.3
       hono: 4.13.16
-      hono-openapi: 1.6.0(hono@4.13.16)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      hono-openapi: 1.6.0(effect@4.1.3)(hono@4.13.16)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       ignore: 7.0.16
       jpeg-js: 0.4.4
       json-schema: 0.4.0
@@ -6096,14 +6102,14 @@ snapshots:
       - zod-openapi
       - zod-to-json-schema
 
-  '@mastra/deployer@1.82.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)':
+  '@mastra/deployer@1.82.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@babel/core': 8.1.3
       '@babel/preset-typescript': 8.0.7(@babel/core@8.1.3)
       '@babel/traverse': 8.1.3
       '@hono/node-ws': 1.3.2(@hono/node-server@2.1.6(hono@4.13.16))(hono@4.13.16)
-      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
-      '@mastra/server': 1.82.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)
+      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@mastra/server': 1.82.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)
       '@optimize-lodash/rollup-plugin': 5.1.0(rollup@4.68.8)
       '@rollup/plugin-alias': 6.0.0(rollup@4.68.8)
       '@rollup/plugin-commonjs': 29.0.2(rollup@4.68.8)
@@ -6133,15 +6139,15 @@ snapshots:
       - utf-8-validate
       - zod
 
-  '@mastra/loggers@1.3.11(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))':
+  '@mastra/loggers@1.3.11(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))':
     dependencies:
-      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       pino: 10.4.0
       pino-pretty: 13.2.0
 
-  '@mastra/mcp@2.8.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)':
+  '@mastra/mcp@2.8.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)':
     dependencies:
-      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@modelcontextprotocol/client': 2.4.0
       '@modelcontextprotocol/core': 2.4.0
       '@modelcontextprotocol/ext-apps': 2.0.4(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/core@2.4.0)(@modelcontextprotocol/server@2.4.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(zod@4.6.7)
@@ -6162,9 +6168,9 @@ snapshots:
       zod: 4.6.7
       zod-from-json-schema: 0.5.2
 
-  '@mastra/server@1.82.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)':
+  '@mastra/server@1.82.0(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)':
     dependencies:
-      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       hono: 4.13.16
       zod: 4.6.7
 
@@ -6612,21 +6618,23 @@ snapshots:
     dependencies:
       escape-string-regexp: 5.0.0
 
-  '@standard-community/standard-json@0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
+  '@standard-community/standard-json@0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(effect@4.1.3)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@types/json-schema': 7.0.15
       quansync: 0.2.11
     optionalDependencies:
+      effect: 4.1.3
       zod: 4.6.7
       zod-to-json-schema: 3.25.2(zod@4.6.7)
 
-  '@standard-community/standard-openapi@0.2.12(@standard-community/standard-json@0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.7)':
+  '@standard-community/standard-openapi@0.2.12(@standard-community/standard-json@0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(effect@4.1.3)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(@standard-schema/spec@1.1.0)(effect@4.1.3)(openapi-types@12.1.3)(zod@4.6.7)':
     dependencies:
-      '@standard-community/standard-json': 0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@standard-community/standard-json': 0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(effect@4.1.3)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
       openapi-types: 12.1.3
     optionalDependencies:
+      effect: 4.1.3
       zod: 4.6.7
 
   '@standard-schema/spec@1.1.0': {}
@@ -7355,12 +7363,13 @@ snapshots:
 
   dotenv@17.4.2: {}
 
-  drizzle-kit@1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7)):
+  drizzle-kit@1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)):
     optionalDependencies:
-      drizzle-orm: 1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7)
+      drizzle-orm: 1.0.0-rc.5(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
 
-  drizzle-orm@1.0.0-rc.5(sql.js@1.15.2)(zod@4.6.7):
+  drizzle-orm@1.0.0-rc.5(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7):
     optionalDependencies:
+      effect: 4.1.3
       sql.js: 1.15.2
       zod: 4.6.7
 
@@ -7375,6 +7384,8 @@ snapshots:
       readable-stream: 2.3.8
 
   ee-first@1.1.1: {}
+
+  effect@4.1.3: {}
 
   electron-to-chromium@1.5.492: {}
 
@@ -7680,11 +7691,11 @@ snapshots:
 
   help-me@5.0.0: {}
 
-  hono-openapi@1.6.0(hono@4.13.16)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7):
+  hono-openapi@1.6.0(effect@4.1.3)(hono@4.13.16)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7):
     dependencies:
       '@hono/standard-validator': 0.4.1(@standard-schema/spec@1.1.0)(hono@4.13.16)
-      '@standard-community/standard-json': 0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
-      '@standard-community/standard-openapi': 0.2.12(@standard-community/standard-json@0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(@standard-schema/spec@1.1.0)(openapi-types@12.1.3)(zod@4.6.7)
+      '@standard-community/standard-json': 0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(effect@4.1.3)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@standard-community/standard-openapi': 0.2.12(@standard-community/standard-json@0.4.1(@standard-schema/spec@1.1.0)(@types/json-schema@7.0.15)(effect@4.1.3)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(@standard-schema/spec@1.1.0)(effect@4.1.3)(openapi-types@12.1.3)(zod@4.6.7)
       '@standard-schema/spec': 1.1.0
       '@types/json-schema': 7.0.15
       hono: 4.13.16
@@ -8043,15 +8054,15 @@ snapshots:
 
   marked@18.1.3: {}
 
-  mastra@1.38.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(bare-buffer@3.7.1)(zod@4.6.7):
+  mastra@1.38.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(bare-buffer@3.7.1)(zod@4.6.7):
     dependencies:
       '@babel/parser': 8.1.3
       '@babel/types': 8.1.3
       '@clack/prompts': 1.9.0
       '@expo/devcert': 1.2.2
-      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
-      '@mastra/deployer': 1.82.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)
-      '@mastra/loggers': 1.3.11(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))
+      '@mastra/core': 1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7)
+      '@mastra/deployer': 1.82.0(@hono/node-server@2.1.6(hono@4.13.16))(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))(zod@4.6.7)
+      '@mastra/loggers': 1.3.11(@mastra/core@1.82.0(ai@7.0.164(zod@4.6.7))(effect@4.1.3)(express@5.3.0)(zod-to-json-schema@3.25.2(zod@4.6.7))(zod@4.6.7))
       archiver: 8.0.0(bare-buffer@3.7.1)
       commander: 14.0.3
       dotenv: 17.4.2
