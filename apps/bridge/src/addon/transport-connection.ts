@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { Effect, Semaphore } from 'effect';
 import path from 'node:path';
 import type { Logger } from '../logger.ts';
 import type { Packet } from '@wisp/protocol/protocol';
@@ -49,7 +50,8 @@ export function createTransportConnection(
 ): TransportConnection {
   const { state, pending, integrationState, snapshots, capabilitySettings, changed, logger } = deps;
   let transport: DiskTransport | undefined;
-  let transportWork = Promise.resolve();
+  // Connects and disconnects take this one permit, in the order they were asked for.
+  const operations = Semaphore.makeUnsafe(1);
 
   function logError(error: unknown) {
     logger.error(
@@ -122,11 +124,10 @@ export function createTransportConnection(
 
   return {
     current: () => transport,
-    serialize(work) {
-      const operation = transportWork.catch(() => {}).then(work);
-      transportWork = operation;
-      return operation;
-    },
+    serialize: (work) =>
+      Effect.runPromise(
+        operations.withPermits(1)(Effect.tryPromise({ try: work, catch: (error) => error })),
+      ),
     connect,
     disconnect,
     gameConnected: () =>

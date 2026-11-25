@@ -2,7 +2,17 @@ import { watch, type FSWatcher } from 'node:fs';
 import { readdir, readFile, mkdir, writeFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
+import {
+  Cause,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Schedule,
+  Schema,
+  Scope,
+  Semaphore,
+} from 'effect';
 import { luaJson, packetSchema, type Packet } from '@wisp/protocol/protocol';
 import {
   MailboxDecoder,
@@ -88,9 +98,45 @@ export const ACTIVE_SESSION_MS = 150_000;
 /** How often the fallback tick walks every character folder once a session is active. */
 export const FULL_SCAN_INTERVAL_MS = 5000;
 
+/** A file operation on the game's folders failed; `cause` is the Node error. */
+export class TransportFileError extends Schema.TaggedError<TransportFileError>()(
+  'TransportFileError',
+  { operation: Schema.String, cause: Schema.Defect() },
+) {}
+
+const fileOperation = <A>(operation: string, run: () => Promise<A>) =>
+  Effect.tryPromise({ try: run, catch: (cause) => new TransportFileError({ operation, cause }) });
+
+// WoW, antivirus scanners and sync tools hold these files open for a moment.
+const SHARED_FILE_CODES = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOENT']);
+const sharedFileBusy = (error: TransportFileError) =>
+  SHARED_FILE_CODES.has((error.cause as NodeJS.ErrnoException | undefined)?.code ?? '');
+/** Eight more tries, waiting 4 ms longer before each. */
+const SHARED_FILE_RETRY = Schedule.recurs(8).pipe(
+  Schedule.addDelay(({ attempt }) => Effect.succeed(Duration.millis(4 * attempt))),
+);
+
+/** The error a Promise caller sees: the Node error behind a file failure, or the defect. */
+function rejection(cause: Cause.Cause<TransportFileError>) {
+  const error = Cause.squash(cause);
+  return error instanceof TransportFileError ? error.cause : error;
+}
+
+/**
+ * The addon's disk transport: it reads the game's uplink frames from each
+ * character's AddOns.txt and writes snapshots back through the downlink lane
+ * and the payload file.
+ *
+ * Its background work runs as fibers in the transport's scope: the fallback
+ * scan, the downlink watchdog, reads started by folder watchers and control
+ * writes. `stop()` closes the scope, which interrupts the loops and reads,
+ * waits for a control write in progress and closes the watchers. Publications
+ * run one at a time, and so do reads of one file.
+ */
 export class DiskTransport {
-  private scans?: Promise<void>;
-  private reads = new Map<string, Promise<void>>();
+  private readonly scope = Scope.makeUnsafe();
+  private readonly publications = Semaphore.makeUnsafe(1);
+  private readonly fileLocks = new Map<string, Semaphore.Semaphore>();
   private onError: (error: unknown) => void;
   private mailboxDecoders = new Map<string, MailboxDecoder>();
   private activeFile?: string;
@@ -113,15 +159,15 @@ export class DiskTransport {
   private acknowledgedSnapshot?: PublishedSnapshot;
   private downlink?: DownlinkTransfer;
   private publicationEpoch = 0;
-  private controlTimer?: ReturnType<typeof setInterval>;
-  private controlWriting?: Promise<void>;
+  /** The control write in progress; later writers wait for it instead of starting another. */
+  private controlWriting?: Deferred.Deferred<void, TransportFileError>;
   private lastControlWriteAt = 0;
   stopped = false;
   published = '';
-  timer?: ReturnType<typeof setInterval>;
   nextSlot = 1;
   peerRevision = 0;
-  writing = Promise.resolve();
+  /** Settles when the latest publication has been written. */
+  writing: Promise<void> = Promise.resolve();
   watchers = new Map<string, FSWatcher>();
   performance: {
     controlWrites: number;
@@ -156,29 +202,69 @@ export class DiskTransport {
     this.onError = onError;
     this.onHeldOff = onHeldOff;
     this.onSlowDownlink = onSlowDownlink;
+    Effect.runSync(
+      Scope.addFinalizer(
+        this.scope,
+        Effect.sync(() => {
+          for (const watcher of this.watchers.values()) {
+            watcher.close();
+          }
+          this.watchers.clear();
+        }),
+      ),
+    );
   }
+
+  /** Runs `effect` at the Promise edge, rejecting with the underlying error. */
+  private run<A>(effect: Effect.Effect<A, TransportFileError>): Promise<A> {
+    return Effect.runPromiseExit(effect).then((exit) => {
+      if (Exit.isSuccess(exit)) return exit.value;
+      throw rejection(exit.cause);
+    });
+  }
+
+  private report = (cause: Cause.Cause<TransportFileError>) =>
+    Effect.sync(() => this.onError(rejection(cause)));
+
+  /** Runs `effect` as a fiber of this transport, reporting its failure. */
+  private background(effect: Effect.Effect<unknown, TransportFileError>) {
+    if (this.stopped) return;
+    Effect.runSync(Effect.forkIn(effect.pipe(Effect.catchCause(this.report)), this.scope));
+  }
+
+  /** Runs `tick` every `interval` until the transport stops; a failed tick is reported. */
+  private every(interval: Duration.Input, tick: Effect.Effect<void, TransportFileError>) {
+    this.background(
+      Effect.forever(
+        Effect.sleep(interval).pipe(Effect.andThen(tick), Effect.catchCause(this.report)),
+      ),
+    );
+  }
+
   async start() {
     await this.scan(true);
     if (this.stopped) return;
     let lastScanAt = Date.now();
-    this.timer = setInterval(() => {
-      if (this.scans) return;
-      // Folder watchers deliver most changes; this tick is the fallback.
-      // Walking every character folder and rereading every state file each
-      // second costs I/O that grows with the number of characters, so once a
-      // game session is active only its file is reread every second and the
-      // full walk (new characters, character switches) runs less often.
-      const active = this.activeFile;
-      const work =
-        !active || Date.now() - lastScanAt >= FULL_SCAN_INTERVAL_MS
-          ? ((lastScanAt = Date.now()), this.scan(false))
-          : this.read(active, false);
-      this.scans = work.catch(this.onError).finally(() => {
-        this.scans = undefined;
-      });
-    }, 1000);
-    this.controlTimer = setInterval(() => {
-      if (this.activeFile && this.controlPending()) {
+    // Folder watchers deliver most changes; this tick is the fallback.
+    // Walking every character folder and rereading every state file each
+    // second costs I/O that grows with the number of characters, so once a
+    // game session is active only its file is reread every second and the
+    // full walk (new characters, character switches) runs less often.
+    this.every(
+      '1 second',
+      Effect.suspend(() => {
+        const active = this.activeFile;
+        if (!active || Date.now() - lastScanAt >= FULL_SCAN_INTERVAL_MS) {
+          lastScanAt = Date.now();
+          return this.scanFolders(false);
+        }
+        return this.readState(active, false);
+      }),
+    );
+    this.every(
+      '150 millis',
+      Effect.sync(() => {
+        if (!this.activeFile || !this.controlPending()) return;
         const transfer = this.downlink;
         if (transfer && Date.now() - transfer.lastProgressAt > 5000) {
           // A lost final ACK or an interrupted receiver must not pin the lane
@@ -191,38 +277,50 @@ export class DiskTransport {
           }
           this.frameTransfer(transfer);
         }
-        void this.read(this.activeFile, false).catch(this.onError);
-      }
-    }, 150);
+        this.background(this.readState(this.activeFile, false));
+      }),
+    );
   }
-  async scan(baseline: boolean) {
-    const account = path.join(this.wow, 'WTF', 'Account');
-    const walk = async (dir: string, depth: number): Promise<void> => {
-      if (this.stopped || depth > 4) {
-        return;
-      }
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        if (this.stopped) return;
-        const file = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walk(file, depth + 1);
-        } else if (entry.name.toLowerCase() === 'addons.txt') {
-          if (!this.mailboxDecoders.has(file)) {
-            this.mailboxDecoders.set(file, new MailboxDecoder(UPLINK_KIND));
-          }
-          this.watchDirectory(dir, file);
-          await this.read(file, baseline);
+
+  /** Walks every character folder once; `baseline` records frames without replaying them. */
+  scan(baseline: boolean) {
+    return this.run(this.scanFolders(baseline));
+  }
+
+  /** Reads one state file, after any read of it already in progress. */
+  read(file: string, baseline: boolean) {
+    return this.run(this.readState(file, baseline));
+  }
+
+  private scanFolders = Effect.fn('DiskTransport.scan')(function* (
+    this: DiskTransport,
+    baseline: boolean,
+  ) {
+    const walk = (dir: string, depth: number): Effect.Effect<void, TransportFileError> =>
+      Effect.gen({ self: this }, function* () {
+        if (this.stopped || depth > 4) {
+          return;
         }
-      }
-    };
-    await walk(account, 0);
-  }
+        const entries = yield* Effect.promise(() =>
+          readdir(dir, { withFileTypes: true }).catch(() => []),
+        );
+        for (const entry of entries) {
+          if (this.stopped) return;
+          const file = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            yield* walk(file, depth + 1);
+          } else if (entry.name.toLowerCase() === 'addons.txt') {
+            if (!this.mailboxDecoders.has(file)) {
+              this.mailboxDecoders.set(file, new MailboxDecoder(UPLINK_KIND));
+            }
+            this.watchDirectory(dir, file);
+            yield* this.readState(file, baseline);
+          }
+        }
+      });
+    yield* walk(path.join(this.wow, 'WTF', 'Account'), 0);
+  });
+
   /**
    * Watch a character folder for state-file changes. The watch only speeds up
    * reads; the one-second scan still finds every change. A watcher that fails
@@ -238,7 +336,7 @@ export class DiskTransport {
     try {
       watcher = watch(dir, (_, name) => {
         if (String(name).toLowerCase() === 'addons.txt') {
-          void this.read(file, false).catch(this.onError);
+          this.background(this.readState(file, false));
         }
       });
     } catch (error) {
@@ -256,31 +354,37 @@ export class DiskTransport {
     });
     this.watchers.set(dir, watcher);
   }
-  async read(file: string, baseline: boolean) {
-    if (this.stopped) return;
-    const work = (this.reads.get(file) || Promise.resolve())
-      .catch(() => {})
-      .then(() => this.readCurrent(file, baseline));
-    this.reads.set(file, work);
-    try {
-      await work;
-    } finally {
-      if (this.reads.get(file) === work) {
-        this.reads.delete(file);
-      }
+
+  private fileLock(file: string) {
+    let lock = this.fileLocks.get(file);
+    if (!lock) {
+      lock = Semaphore.makeUnsafe(1);
+      this.fileLocks.set(file, lock);
     }
+    return lock;
   }
-  private async readCurrent(file: string, baseline: boolean) {
+
+  private readState = Effect.fn('DiskTransport.read')(function* (
+    this: DiskTransport,
+    file: string,
+    baseline: boolean,
+  ) {
+    if (this.stopped) return;
+    yield* this.fileLock(file).withPermits(1)(this.readCurrent(file, baseline));
+  });
+
+  private readCurrent = Effect.fn('DiskTransport.readCurrent')(function* (
+    this: DiskTransport,
+    file: string,
+    baseline: boolean,
+  ) {
     if (this.stopped) {
       return;
     }
-    let text;
-    try {
-      text = await this.sharedFile(() => readFile(file, 'utf8'));
-    } catch {
-      return;
-    }
-    if (this.stopped) return;
+    const text = yield* this.sharedFile('read state file', () => readFile(file, 'utf8')).pipe(
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+    if (text === undefined || this.stopped) return;
     const mailboxFrame = readUplink(text);
     let mailboxDecoder = this.mailboxDecoders.get(file);
     if (!mailboxDecoder) {
@@ -305,7 +409,7 @@ export class DiskTransport {
         const transfer = this.downlink;
         const applied =
           transfer && (transfer.bulk || transfer.index + 1 === transfer.frames.length);
-        await this.acknowledgeDownlink(
+        yield* this.acknowledgeDownlink(
           {
             a: [
               compact.generation,
@@ -329,19 +433,20 @@ export class DiskTransport {
         if (message) {
           let value: unknown;
           let packet: Packet | undefined;
+          let ack: ReturnType<typeof parseDownlinkAck> | false = false;
           try {
             value = JSON.parse(inflateMessage(message).toString('utf8'));
-            const ack = message.flags === 0 && parseDownlinkAck(value);
-            if (ack) {
-              if (file === this.activeFile && this.mailboxVersion) {
-                await this.acknowledgeDownlink(ack);
-              }
-            } else {
+            ack = message.flags === 0 && parseDownlinkAck(value);
+            if (!ack) {
               packet = packetSchema.parse(value);
             }
           } catch {
             // Corrupt, oversized or schema-invalid messages wait for the game's
             // existing application-level resend; never dispatch partial data.
+          }
+          if (ack && file === this.activeFile && this.mailboxVersion) {
+            // A failed write here is retried by the downlink watchdog.
+            yield* Effect.ignore(this.acknowledgeDownlink(ack));
           }
           if (packet?.transportVersion === 2) {
             if (
@@ -392,7 +497,8 @@ export class DiskTransport {
     if (file === this.activeFile) {
       this.repairControl(text);
     }
-  }
+  });
+
   private repairControl(text: string) {
     if (
       !this.notification ||
@@ -404,118 +510,134 @@ export class DiskTransport {
     ) {
       return;
     }
-    void this.writeControl().catch(this.onError);
+    this.background(this.writeControl());
   }
+
   private controlPending() {
     return Boolean(
       this.notification && (this.downlink || this.peerRevision < this.publishedRevision),
     );
   }
-  private async sharedFile<T>(operation: () => Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (attempt >= 8 || !['EBUSY', 'EPERM', 'EACCES', 'ENOENT'].includes(code || '')) {
-          throw error;
-        }
-        await delay(4 * (attempt + 1));
-      }
-    }
+
+  /** A file operation the game may briefly block, retried while it is busy. */
+  private sharedFile<A>(operation: string, run: () => Promise<A>) {
+    return fileOperation(operation, run).pipe(
+      Effect.retry({ schedule: SHARED_FILE_RETRY, while: sharedFileBusy }),
+    );
   }
-  private writeControl(): Promise<void> {
-    if (this.controlWriting) {
-      return this.controlWriting;
-    }
-    const work = (async () => {
-      const file = this.activeFile;
-      const frame = this.notification;
-      if (this.stopped || !file || !frame || !this.controlPending() || this.uplinkBusy.get(file)) {
-        return;
-      }
-      const quietMs = 5 - (Date.now() - (this.uplinkObserved.get(file)?.at || 0));
-      if (quietMs > 0) {
-        await delay(quietMs);
-      }
-      const current = await this.sharedFile(() => readFile(file, 'utf8'));
-      // An empty file is one being rewritten (truncated, not yet written).
-      // Replacing it would drop the writer's uplink frame and every other
-      // addon's setting; the watchdog retries once the content is back.
-      if (!current.trim()) {
-        return;
-      }
-      if (
-        this.stopped ||
-        this.activeFile !== file ||
-        this.notification !== frame ||
-        readDownlink(current)?.equals(frame)
-      ) {
-        return;
-      }
-      // The game owns the uplink lane. Pause control writes while a multi-frame
-      // message is in flight, avoiding replacement of its next fragment.
-      const incoming = readUplink(current);
-      const parsed = incoming && decodeFrame(incoming);
-      if (parsed?.kind === UPLINK_KIND && !(parsed.flags & LAST)) {
-        return;
-      }
-      const temporary = file + '.wisp-control.tmp';
-      await writeFile(temporary, replaceDownlink(current, frame), 'utf8');
-      let replaced = false;
-      try {
-        if (this.stopped || this.activeFile !== file || this.notification !== frame) {
-          return;
-        }
-        const latest = await this.sharedFile(() => readFile(file, 'utf8'));
-        // Preserve concurrent game packets and unrelated user addon settings.
-        // A changed file is retried from a fresh snapshot by the watchdog.
-        if (latest !== current) {
-          return;
-        }
-        await this.sharedFile(() => rename(temporary, file));
-        replaced = true;
-      } finally {
-        // An abandoned write must not leave its copy beside the game's files.
-        if (!replaced) {
-          await rm(temporary, { force: true }).catch(() => {});
-        }
-      }
-      this.lastControlWriteAt = Date.now();
-      this.performance.controlWrites++;
-      this.performance.wireBytes += frame.length;
-      if (this.downlink && this.notification === frame) {
-        this.downlink.sentAt ??= this.lastControlWriteAt;
-        this.downlink.writes++;
-      }
-    })();
-    this.controlWriting = work;
-    void work
-      .finally(() => {
-        if (this.controlWriting === work) {
-          this.controlWriting = undefined;
-        }
-      })
-      .catch(() => {});
-    return work;
+
+  /**
+   * Writes the pending control frame. A write already in progress is shared,
+   * not repeated; the write itself runs to the end even when the transport
+   * stops, so it never leaves a temporary copy behind.
+   */
+  private writeControl(): Effect.Effect<void, TransportFileError> {
+    return Effect.suspend(() => {
+      if (this.stopped) return Effect.void;
+      if (this.controlWriting) return Deferred.await(this.controlWriting);
+      const done = Deferred.makeUnsafe<void, TransportFileError>();
+      this.controlWriting = done;
+      Effect.runSync(
+        Effect.forkIn(
+          this.replaceControl().pipe(
+            Effect.exit,
+            Effect.flatMap((exit) => {
+              if (this.controlWriting === done) this.controlWriting = undefined;
+              return Deferred.done(done, exit);
+            }),
+            Effect.uninterruptible,
+          ),
+          this.scope,
+        ),
+      );
+      return Deferred.await(done);
+    });
   }
-  private async writePayload(json: string) {
+
+  private replaceControl = Effect.fn('DiskTransport.writeControl')(function* (this: DiskTransport) {
+    const file = this.activeFile;
+    const frame = this.notification;
+    if (this.stopped || !file || !frame || !this.controlPending() || this.uplinkBusy.get(file)) {
+      return;
+    }
+    const quietMs = 5 - (Date.now() - (this.uplinkObserved.get(file)?.at || 0));
+    if (quietMs > 0) {
+      yield* Effect.sleep(quietMs);
+    }
+    const current = yield* this.sharedFile('read state file', () => readFile(file, 'utf8'));
+    // An empty file is one being rewritten (truncated, not yet written).
+    // Replacing it would drop the writer's uplink frame and every other
+    // addon's setting; the watchdog retries once the content is back.
+    if (!current.trim()) {
+      return;
+    }
+    if (
+      this.stopped ||
+      this.activeFile !== file ||
+      this.notification !== frame ||
+      readDownlink(current)?.equals(frame)
+    ) {
+      return;
+    }
+    // The game owns the uplink lane. Pause control writes while a multi-frame
+    // message is in flight, avoiding replacement of its next fragment.
+    const incoming = readUplink(current);
+    const parsed = incoming && decodeFrame(incoming);
+    if (parsed?.kind === UPLINK_KIND && !(parsed.flags & LAST)) {
+      return;
+    }
+    const temporary = file + '.wisp-control.tmp';
+    const replaced = yield* Effect.acquireUseRelease(
+      fileOperation('write control copy', () =>
+        writeFile(temporary, replaceDownlink(current, frame), 'utf8'),
+      ),
+      () =>
+        Effect.gen({ self: this }, function* () {
+          if (this.stopped || this.activeFile !== file || this.notification !== frame) {
+            return false;
+          }
+          const latest = yield* this.sharedFile('read state file', () => readFile(file, 'utf8'));
+          // Preserve concurrent game packets and unrelated user addon settings.
+          // A changed file is retried from a fresh snapshot by the watchdog.
+          if (latest !== current) {
+            return false;
+          }
+          yield* this.sharedFile('replace state file', () => rename(temporary, file));
+          return true;
+        }),
+      // An abandoned write must not leave its copy beside the game's files.
+      (_, exit) =>
+        Exit.isSuccess(exit) && exit.value
+          ? Effect.void
+          : Effect.promise(() => rm(temporary, { force: true }).catch(() => {})),
+    );
+    if (!replaced) {
+      return;
+    }
+    this.lastControlWriteAt = Date.now();
+    this.performance.controlWrites++;
+    this.performance.wireBytes += frame.length;
+    if (this.downlink && this.notification === frame) {
+      this.downlink.sentAt ??= this.lastControlWriteAt;
+      this.downlink.writes++;
+    }
+  });
+
+  private writePayload = Effect.fn('DiskTransport.writePayload')(function* (
+    this: DiskTransport,
+    json: string,
+  ) {
     const file = path.join(this.wow, 'Interface', 'AddOns', 'WispAI_Payload', 'Payload.lua');
-    await mkdir(path.dirname(file), { recursive: true });
+    yield* fileOperation('create payload folder', () =>
+      mkdir(path.dirname(file), { recursive: true }),
+    );
     const tmp = file + '.tmp';
-    await writeFile(tmp, luaJson(json), 'utf8');
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await rename(tmp, file);
-        break;
-      } catch (error) {
-        if (attempt >= 5) {
-          throw error;
-        }
-        await delay(30);
-      }
-    }
-  }
+    yield* fileOperation('write payload copy', () => writeFile(tmp, luaJson(json), 'utf8'));
+    yield* fileOperation('replace payload', () => rename(tmp, file)).pipe(
+      Effect.retry({ times: 5, schedule: Schedule.spaced('30 millis') }),
+    );
+  });
+
   private reportSlowDownlink(phase: SlowDownlink['phase'], transfer: DownlinkTransfer) {
     const file = this.activeFile;
     const observed = file ? this.uplinkObserved.get(file) : undefined;
@@ -535,12 +657,14 @@ export class DiskTransport {
       this.onError(error);
     }
   }
+
   private clearDownlink() {
     this.downlink = undefined;
     this.latestSnapshot = undefined;
     this.acknowledgedSnapshot = undefined;
     this.publicationEpoch++;
   }
+
   private frameTransfer(transfer: DownlinkTransfer) {
     const kind = this.compactAck ? COMPACT_DOWNLINK_KIND : DOWNLINK_KIND;
     transfer.frames = transfer.bulk
@@ -566,7 +690,8 @@ export class DiskTransport {
     }
     this.notification = transfer.frames[0];
   }
-  private async startDownlink() {
+
+  private startDownlink = Effect.fn('DiskTransport.startDownlink')(function* (this: DiskTransport) {
     const record = this.latestSnapshot;
     if (
       this.stopped ||
@@ -600,30 +725,31 @@ export class DiskTransport {
     };
     this.downlink = transfer;
     if (transfer.bulk) {
-      try {
-        await this.writePayload(record.json);
-      } catch {
-        // Bulk files are an acceleration, never a prerequisite for progress.
-        transfer.bulk = false;
-      }
+      // Bulk files are an acceleration, never a prerequisite for progress.
+      yield* this.writePayload(record.json).pipe(
+        Effect.catch(() => Effect.sync(() => void (transfer.bulk = false))),
+      );
     }
     if (this.downlink !== transfer || this.stopped) {
       return;
     }
     this.frameTransfer(transfer);
-    await this.writeControl();
+    yield* this.writeControl();
+  });
+
+  /** Runs `work` after every earlier publication, recording it as the latest one. */
+  private enqueue(work: Effect.Effect<void, TransportFileError>) {
+    this.writing = this.run(this.publications.withPermits(1)(work));
+    return this.writing;
   }
+
   private queueDownlink() {
     const epoch = this.publicationEpoch;
-    this.writing = this.writing
-      .catch(() => {})
-      .then(async () => {
-        if (epoch === this.publicationEpoch) {
-          await this.startDownlink();
-        }
-      });
-    void this.writing.catch(this.onError);
+    void this.enqueue(
+      Effect.suspend(() => (epoch === this.publicationEpoch ? this.startDownlink() : Effect.void)),
+    ).catch(this.onError);
   }
+
   private finishDownlink(revision: number) {
     const transfer = this.downlink;
     if (!transfer || revision < transfer.snapshot.revision) {
@@ -653,7 +779,9 @@ export class DiskTransport {
     this.notification = undefined;
     this.queueDownlink();
   }
-  private async acknowledgeDownlink(
+
+  private acknowledgeDownlink = Effect.fn('DiskTransport.acknowledgeDownlink')(function* (
+    this: DiskTransport,
     ack: NonNullable<ReturnType<typeof parseDownlinkAck>>,
     compact = false,
   ) {
@@ -685,14 +813,14 @@ export class DiskTransport {
       } else if (!ack.b) {
         transfer.bulk = false;
         this.frameTransfer(transfer);
-        await this.writeControl();
+        yield* this.writeControl();
       }
     } else if (transfer.index + 1 < transfer.frames.length) {
       transfer.index++;
       transfer.sentAt = undefined;
       transfer.writes = 0;
       this.notification = transfer.frames[transfer.index];
-      await this.writeControl();
+      yield* this.writeControl();
     } else if (ack.a[2] === transfer.snapshot.revision) {
       this.finishDownlink(ack.a[2]);
     } else {
@@ -702,7 +830,8 @@ export class DiskTransport {
       this.notification = undefined;
       this.queueDownlink();
     }
-  }
+  });
+
   publish(snapshot: unknown) {
     const json = JSON.stringify(snapshot);
     const revision = (snapshot as { rev?: unknown } | null)?.rev;
@@ -711,9 +840,8 @@ export class DiskTransport {
     }
     this.published = json;
     const epoch = this.publicationEpoch;
-    this.writing = this.writing
-      .catch(() => {})
-      .then(async () => {
+    return this.enqueue(
+      Effect.gen({ self: this }, function* () {
         if (this.stopped || epoch !== this.publicationEpoch) {
           return;
         }
@@ -724,10 +852,10 @@ export class DiskTransport {
             json,
             snapshot: JSON.parse(json),
           };
-          await this.startDownlink();
+          yield* this.startDownlink();
           return;
         }
-        await this.writePayload(json);
+        yield* this.writePayload(json);
         if (Number.isSafeInteger(revision) && Number(revision) > 0) {
           this.publishedRevision = Number(revision);
           this.notification = encodeFrame({
@@ -738,17 +866,20 @@ export class DiskTransport {
             payload: Buffer.from(JSON.stringify({ r: revision })),
           });
           this.notificationSequence = (this.notificationSequence + 1) & 65535;
-          await this.writeControl();
+          yield* this.writeControl();
         }
-      })
-      .catch((error) => {
-        if (this.published === json) {
-          this.published = '';
-        }
-        throw error;
-      });
-    return this.writing;
+      }).pipe(
+        Effect.tapError(() =>
+          Effect.sync(() => {
+            if (this.published === json) {
+              this.published = '';
+            }
+          }),
+        ),
+      ),
+    );
   }
+
   setCursor(slot: number, receivedRevision: number) {
     this.nextSlot = Math.max(this.nextSlot, slot);
     if (
@@ -768,6 +899,7 @@ export class DiskTransport {
       this.finishDownlink(receivedRevision);
     }
   }
+
   resetSession() {
     this.nextSlot = 1;
     this.peerRevision = 0;
@@ -778,15 +910,11 @@ export class DiskTransport {
     this.generation = randomBytes(4).readUInt32BE() || 1;
     this.notificationSequence = 0;
   }
+
+  /** Stops the loops and watchers, then waits for the control write and publications in flight. */
   async stop() {
     this.stopped = true;
-    clearInterval(this.timer);
-    clearInterval(this.controlTimer);
-    for (const watcher of this.watchers.values()) {
-      watcher.close();
-    }
-    this.watchers.clear();
-    await Promise.allSettled([this.scans, ...this.reads.values()]);
-    await Promise.allSettled([this.writing, this.controlWriting]);
+    await Effect.runPromise(Scope.close(this.scope, Exit.void));
+    await Effect.runPromise(this.publications.withPermits(1)(Effect.void));
   }
 }
