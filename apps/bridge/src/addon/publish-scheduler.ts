@@ -1,3 +1,5 @@
+import { Clock, Effect, FiberHandle } from 'effect';
+
 /** Trailing window that coalesces a burst of `changed()` calls into one snapshot. */
 export const PUBLISH_COALESCE_MS = 50;
 /**
@@ -11,36 +13,29 @@ export const PUBLISH_MIN_INTERVAL_MS = 400;
 export interface PublishScheduler {
   /** Request a publish; repeated calls before it fires coalesce into one. */
   schedule(): void;
-  /** Cancel any pending publish and ignore later requests. */
-  stop(): void;
 }
 
-export function createPublishScheduler(
+/**
+ * Publishes after a burst of changes settles, at most once per interval. The
+ * pending publish is a fiber in the caller's scope; closing the scope cancels
+ * it and ignores later requests.
+ */
+export const makePublishScheduler = Effect.fn('PublishScheduler.make')(function* (
   publish: () => void,
   {
     coalesceMs = PUBLISH_COALESCE_MS,
     minIntervalMs = PUBLISH_MIN_INTERVAL_MS,
-    now = Date.now,
-  }: { coalesceMs?: number; minIntervalMs?: number; now?: () => number } = {},
-): PublishScheduler {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  }: { coalesceMs?: number; minIntervalMs?: number } = {},
+) {
+  const run = yield* FiberHandle.makeRuntime<never, never, void>();
   let lastPublishAt = -Infinity;
-  let stopped = false;
-  function run() {
-    timer = undefined;
-    lastPublishAt = now();
+  const pending = Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    yield* Effect.sleep(Math.max(coalesceMs, lastPublishAt + minIntervalMs - now));
+    lastPublishAt = yield* Clock.currentTimeMillis;
     publish();
-  }
+  });
   return {
-    schedule() {
-      if (stopped || timer) return;
-      const wait = Math.max(coalesceMs, lastPublishAt + minIntervalMs - now());
-      timer = setTimeout(run, wait);
-    },
-    stop() {
-      stopped = true;
-      clearTimeout(timer);
-      timer = undefined;
-    },
-  };
-}
+    schedule: () => void run(pending, { onlyIfMissing: true }),
+  } satisfies PublishScheduler;
+});

@@ -384,3 +384,33 @@ test('desktop API saves a provider and model without WoW', async () => {
     await rm(f.dataDirectory, { recursive: true, force: true });
   }
 });
+
+test('a stop request from the desktop app releases the bridge', async () => {
+  const f = await fixture(false);
+  try {
+    const bridge = await startBridge(f.options);
+    const identity = JSON.parse(
+      await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
+    );
+    const headers = { authorization: 'Bearer ' + identity.token };
+    const response = await fetch(`http://127.0.0.1:${identity.port}/stop`, {
+      method: 'POST',
+      headers,
+    });
+    expect(response.ok).toBe(true);
+    // The desktop gets its answer first; the servers close right after.
+    await expect
+      .poll(
+        () =>
+          fetch(`http://127.0.0.1:${identity.port}/status`, { headers }).then(
+            () => 'open',
+            () => 'closed',
+          ),
+        { timeout: 5000 },
+      )
+      .toBe('closed');
+    await bridge.stop();
+  } finally {
+    await rm(f.dataDirectory, { recursive: true, force: true });
+  }
+});
