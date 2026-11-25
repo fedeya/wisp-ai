@@ -1,0 +1,3 @@
+kind: Fixed
+body: Long routine tips no longer cut off part of a localized character or literal pipe.
+time: 2026-11-25T12:24:43Z

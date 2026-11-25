@@ -81,7 +81,12 @@ function ns.Advice.RefreshAdvice()
                         end)
                         :gsub("[%*`]", "")
                         :gsub("|", "||")
-                        :sub(1, 220)
+                    preview = ns.Shared.Text.TruncateUtf8Bytes(preview, 220)
+                    -- Truncation must not leave half of an escaped literal pipe.
+                    local pipes = preview:match("|+$")
+                    if pipes and #pipes % 2 == 1 then
+                        preview = preview:sub(1, -2)
+                    end
                     break
                 end
             end
