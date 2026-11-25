@@ -11,6 +11,7 @@ import {
   searchTools,
   type EngineEvent,
   type Entry,
+  type TurnInput,
 } from '../src/engine.ts';
 import { MemoryHistory } from '../src/memory-history.ts';
 
@@ -161,11 +162,16 @@ async function fixture(
   });
   async function send(
     session: string,
-    input: string,
+    input: string | TurnInput,
     onEvent: (event: EngineEvent) => void = () => {},
     signal = AbortSignal.timeout(30_000),
   ) {
-    const turn = engine.send(session, input, signal, 'chat');
+    const turn = engine.send(
+      session,
+      typeof input === 'string' ? { text: input } : input,
+      signal,
+      'chat',
+    );
     const events: EngineEvent[] = [];
     for await (const event of turn.events) {
       events.push(event);
@@ -479,6 +485,41 @@ test(
         error: { message: 'The disk is full.' },
       });
       expect(f.requests).toHaveLength(1);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
+  'a turn logs its context and the earlier chat apart from what the player wrote',
+  { timeout: 60_000 },
+  async () => {
+    const f = await fixture((count) => message(count, 'Answer ' + count));
+    try {
+      const session = f.engine.newSessionId();
+      const context = [{ name: 'game_context', data: { zone: 'Orgrimmar' } }];
+      await f.send(session, {
+        text: 'Where am I?',
+        context,
+        history: [{ role: 'user', text: 'Hi' }],
+      });
+      await f.send(session, { text: 'And now?', context });
+      expect(
+        f
+          .messagesOf(session)
+          .map(({ entry }) => (entry.type === 'synthetic' ? entry.kind : entry.type)),
+      ).toEqual(['context', 'history', 'user', 'assistant', 'context', 'user', 'assistant']);
+      expect(f.messagesOf(session)[2]!.entry).toEqual({
+        type: 'user',
+        content: [{ type: 'text', text: 'Where am I?' }],
+      });
+      // The model reads each turn as the one tagged message the bridge used to send.
+      expect(JSON.stringify(f.requests[1]!.input)).toContain(
+        JSON.stringify(
+          '<game_context>\n{"zone":"Orgrimmar"}\n</game_context>\n\n<user_message>\n"And now?"\n</user_message>',
+        ).slice(1, -1),
+      );
     } finally {
       await f.close();
     }

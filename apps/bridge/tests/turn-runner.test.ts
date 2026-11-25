@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import type { TurnInput } from '@wisp/agent/engine';
 import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
@@ -39,8 +40,9 @@ function fixture(
   const engine = {
     newSessionId,
     end,
-    send: (_session: string, input: string, signal: AbortSignal) => {
-      const delivery = send(input) as Promise<{
+    // The mock records the turn as JSON, so tests can look for what it carries.
+    send: (_session: string, input: TurnInput, signal: AbortSignal) => {
+      const delivery = send(JSON.stringify(input)) as Promise<{
         stream: (options?: {
           signal?: AbortSignal;
         }) => AsyncIterable<{ type: string; data: Record<string, unknown> }>;

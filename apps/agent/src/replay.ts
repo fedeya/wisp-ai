@@ -6,7 +6,7 @@ import type {
   ToolResultPart,
   UserModelMessage,
 } from 'ai';
-import type { Message, Native, Tool } from './session-message.ts';
+import type { Message, Native, Synthetic, Tool } from './session-message.ts';
 
 /** A logged message and the model of the turn that wrote it. */
 export interface StoredMessage {
@@ -60,8 +60,32 @@ export function toolCallIdFor(id: string, family: Family) {
 
 type ProviderOptions = NonNullable<ToolResultPart['providerOptions']>;
 
+/**
+ * A named block as the model reads it: its data as JSON between tags. JSON
+ * escapes the tag delimiters, so game strings and player text cannot close it.
+ */
+export function tagged(name: string, data: unknown) {
+  const json = (JSON.stringify(data) ?? 'null')
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026');
+  return `<${name}>\n${json}\n</${name}>`;
+}
+
 /** Wraps the player's saved memory as the model reads it. */
 export const memoryBlock = (text: string) => `<saved_memory>\n${text}\n</saved_memory>`;
+
+/** What Wisp added to a turn, as the model reads it. */
+function syntheticText(message: Synthetic) {
+  switch (message.kind) {
+    case 'memory':
+      return memoryBlock(message.text);
+    case 'context':
+      return message.blocks.map((block) => tagged(block.name, block.data)).join('\n\n');
+    case 'history':
+      return tagged('historical_conversation', message.messages);
+  }
+}
 
 /** Sent for a call the turn stopped before it finished. */
 export const INTERRUPTED_TOOL =
@@ -93,9 +117,13 @@ export function toModelMessages(message: Message, own: boolean, family: Family):
   const id = (callId: string) => toolCallIdFor(callId, family);
   switch (message.type) {
     case 'user':
-      return [{ role: 'user', content: message.content.map((part) => ({ ...part })) }];
-    case 'synthetic':
-      return [{ role: 'user', content: [{ type: 'text', text: memoryBlock(message.text) }] }];
+      return [
+        userMessage(message.content.map((part) => tagged('user_message', part.text)).join('\n\n')),
+      ];
+    case 'synthetic': {
+      const text = syntheticText(message);
+      return text ? [userMessage(text)] : [];
+    }
     case 'assistant': {
       const content: Exclude<AssistantContent, string> = [];
       const results: ToolResultPart[] = [];
@@ -146,8 +174,8 @@ export function toModelMessages(message: Message, own: boolean, family: Family):
 /**
  * The logged messages as the target model reads them. Messages from other
  * models lose their provider-native data and reasoning, tool call IDs follow
- * the target's rules, consecutive user messages (saved memory and the
- * player's input) merge into one, and for Mistral, which rejects a user
+ * the target's rules, consecutive user messages (what Wisp added and
+ * the player's message) merge into one text, as the bridge used to send it, and for Mistral, which rejects a user
  * message right after tool results, an assistant message bridges the two (as
  * opencode does).
  */
@@ -161,10 +189,9 @@ export function replayMessages(
     for (const next of toModelMessages(message, model === target.model, family)) {
       const last = messages.at(-1);
       if (next.role === 'user' && last?.role === 'user') {
-        messages[messages.length - 1] = {
-          role: 'user',
-          content: [...asParts(last.content), ...asParts(next.content)],
-        };
+        messages[messages.length - 1] = userMessage(
+          userText(last.content) + '\n\n' + userText(next.content),
+        );
         continue;
       }
       if (family === 'mistral' && next.role === 'user' && last?.role === 'tool') {
@@ -176,7 +203,13 @@ export function replayMessages(
   return messages;
 }
 
-const asParts = (
-  content: UserModelMessage['content'],
-): Exclude<UserModelMessage['content'], string> =>
-  typeof content === 'string' ? [{ type: 'text', text: content }] : content;
+const userMessage = (text: string): UserModelMessage => ({
+  role: 'user',
+  content: [{ type: 'text', text }],
+});
+
+/** A replayed user message's text; replay writes only text parts. */
+const userText = (content: UserModelMessage['content']) =>
+  typeof content === 'string'
+    ? content
+    : content.map((part) => (part.type === 'text' ? part.text : '')).join('\n\n');

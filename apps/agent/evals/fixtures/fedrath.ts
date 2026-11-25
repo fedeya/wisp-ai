@@ -1,3 +1,4 @@
+import type { TurnInput } from '../../src/engine.ts';
 import type { ToolStub } from '../harness.ts';
 
 // Stub responses must be plain JSON values.
@@ -82,21 +83,25 @@ const location = {
   y: 0.48,
 };
 
-export function playerMessage(text: string, chatId = 'eval-chat') {
-  const tagged = (name: string, data: unknown) =>
-    `<${name}>\n${JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026')}\n</${name}>`;
-  return [
-    tagged('game_context', {
-      capturedAt: 1_795_319_000,
-      source: 'WoW addon live API',
-      sections: {
-        character: { status: 'available', data: character },
-        location: { status: 'available', data: location },
+/** A player's turn as the bridge sends it: Fedrath's game context in a new chat. */
+export function playerMessage(text: string, chatId = 'eval-chat'): TurnInput {
+  return {
+    text,
+    context: [
+      {
+        name: 'game_context',
+        data: {
+          capturedAt: 1_795_319_000,
+          source: 'WoW addon live API',
+          sections: {
+            character: { status: 'available', data: character },
+            location: { status: 'available', data: location },
+          },
+        },
       },
-    }),
-    tagged('conversation_context', { id: chatId, title: 'New chat', automatic: false }),
-    tagged('user_message', text),
-  ].join('\n\n');
+      { name: 'conversation_context', data: { id: chatId, title: 'New chat', automatic: false } },
+    ],
+  };
 }
 
 const gearReading = {

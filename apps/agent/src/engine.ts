@@ -41,7 +41,14 @@ import {
   type LoggedMessage,
   type TokenUsage,
 } from './session-history.ts';
-import type { Assistant, Compaction, Message, Tool } from './session-message.ts';
+import type {
+  Assistant,
+  Compaction,
+  ContextBlock,
+  HistoryLine,
+  Message,
+  Tool,
+} from './session-message.ts';
 import { StepDraft, stepMessage } from './session-step.ts';
 import {
   CONTROL_TOOLS,
@@ -64,7 +71,16 @@ export type {
   StoredRow,
   TokenUsage,
 } from './session-history.ts';
-export type { Compaction, Entry, Message } from './session-message.ts';
+export type { Compaction, ContextBlock, Entry, HistoryLine, Message } from './session-message.ts';
+
+/** A player's turn: what they wrote, and what Wisp sends the model with it. */
+export interface TurnInput {
+  text: string;
+  /** The game and chat as they are now, as named blocks of data. */
+  context?: readonly ContextBlock[];
+  /** The chat's earlier messages, for a session that starts in a chat that has some. */
+  history?: readonly HistoryLine[];
+}
 export { FORMAT as SESSION_FORMAT } from './session-message.ts';
 export { HistoryError, SessionHistory } from './session-history.ts';
 export { TOOL_CALL, TOOL_SEARCH, searchTools, type ToolStubOutcome } from './turn-tools.ts';
@@ -247,6 +263,9 @@ function transcript(summary: string | undefined, messages: readonly Message[]) {
     if (message.type === 'user') {
       lines.push(...message.content.map((part) => 'user: ' + clip(part.text, 4000)));
     }
+    if (message.type === 'synthetic' && message.kind === 'history') {
+      lines.push(...message.messages.map((line) => line.role + ': ' + clip(line.text, 4000)));
+    }
     if (message.type !== 'assistant') continue;
     for (const part of message.content) {
       if (part.type === 'text') lines.push('assistant: ' + clip(part.text, 4000));
@@ -269,6 +288,30 @@ function lastMemory(messages: readonly LoggedMessage[]) {
     if (message.type === 'synthetic' && message.kind === 'memory') return message.text;
   }
   return undefined;
+}
+
+/**
+ * A turn's log entries: what Wisp adds (saved memory when it changed since it
+ * was last sent, the turn's context, the chat's earlier messages), then what
+ * the player wrote.
+ */
+function turnEntries(
+  input: TurnInput,
+  memory: string,
+  logged: readonly LoggedMessage[],
+): Message[] {
+  const entries: Message[] = [];
+  if (memory && memory !== lastMemory(logged)) {
+    entries.push({ type: 'synthetic', kind: 'memory', text: memory });
+  }
+  if (input.context?.length) {
+    entries.push({ type: 'synthetic', kind: 'context', blocks: [...input.context] });
+  }
+  if (input.history?.length) {
+    entries.push({ type: 'synthetic', kind: 'history', messages: [...input.history] });
+  }
+  entries.push({ type: 'user', content: [{ type: 'text', text: input.text }] });
+  return entries;
 }
 
 /** A step's reported tokens, as the log keeps them. */
@@ -458,7 +501,7 @@ export class AgentEngine extends Context.Service<
     readonly send: (
       session: string,
       chatId: string,
-      input: string,
+      input: TurnInput,
     ) => Stream.Stream<EngineEvent, TurnError>;
     /** Summarizes a session's older history now, as a long one would be before its next turn. */
     readonly compact: (session: string) => Stream.Stream<EngineEvent, TurnError | CompactionFailed>;
@@ -629,7 +672,7 @@ export class AgentEngine extends Context.Service<
       const turn = Effect.fn('AgentEngine.turn')(function* (
         session: string,
         chatId: string,
-        input: string,
+        input: TurnInput,
         emit: Emit,
       ): Effect.fn.Return<void, TurnError, Scope.Scope> {
         const content = yield* attempt('setup', () => wispContent());
@@ -641,7 +684,7 @@ export class AgentEngine extends Context.Service<
         // The player's input, as replayable history consumes it (rebuildHistory).
         yield* emit({
           type: 'delivery.consumed',
-          data: { parts: [{ kind: 'text', text: input }] },
+          data: { parts: [{ kind: 'text', text: input.text }] },
         });
 
         const target: ReplayTarget = {
@@ -649,21 +692,20 @@ export class AgentEngine extends Context.Service<
           provider: selected.provider,
           modelId: selected.modelId,
         };
+        const stored = (messages: readonly Message[]) =>
+          messages.map((message) => ({ message, model: selected.model }));
         let loaded = yield* history.load(session);
         if (
           selected.contextWindow &&
-          estimateTokens(prompt(loaded, target)) + estimateTokens(input) >
+          estimateTokens(
+            prompt(loaded, target, stored(turnEntries(input, tools.memory, loaded.messages))),
+          ) >
             selected.contextWindow * COMPACTION_THRESHOLD
         ) {
           yield* compacting(emit, summarize(session, loaded, model, selected.model));
           loaded = yield* history.load(session);
         }
-        // The player's input, after their saved memory when it changed since last sent.
-        const entries: Message[] = [];
-        if (tools.memory && tools.memory !== lastMemory(loaded.messages)) {
-          entries.push({ type: 'synthetic', kind: 'memory', text: tools.memory });
-        }
-        entries.push({ type: 'user', content: [{ type: 'text', text: input }] });
+        const entries = turnEntries(input, tools.memory, loaded.messages);
         yield* history.append(session, entries, selected.model);
 
         // The model stream and its tools stop when the turn's scope closes.
@@ -686,11 +728,7 @@ export class AgentEngine extends Context.Service<
         const result = streamText({
           model,
           instructions: content.system,
-          messages: prompt(
-            loaded,
-            target,
-            entries.map((message) => ({ message, model: selected.model })),
-          ),
+          messages: prompt(loaded, target, stored(entries)),
           tools: assembled.tools,
           abortSignal: signal,
           ...turnOptions(tools.direct, selected),
@@ -854,7 +892,7 @@ export function createAgentEngine(options: EngineOptions) {
     newSessionId: (): string => uuidv7(),
     preload: () => runtime.runPromise(Effect.flatMap(AgentEngine, (engine) => engine.preload)),
     /** Starts a turn; events stream once and the result settles when they end. */
-    send: (session: string, input: string, signal: AbortSignal, chatId: string) =>
+    send: (session: string, input: TurnInput, signal: AbortSignal, chatId: string) =>
       run(
         signal,
         Stream.unwrap(Effect.map(AgentEngine, (engine) => engine.send(session, chatId, input))),

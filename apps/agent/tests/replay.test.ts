@@ -7,7 +7,7 @@ import {
   toolCallIdFor,
   type StoredMessage,
 } from '../src/replay.ts';
-import type { Assistant } from '../src/session-message.ts';
+import type { Assistant, Synthetic } from '../src/session-message.ts';
 import { stepMessage } from '../src/session-step.ts';
 
 const anthropicCall = 'toolu_01ABC.def';
@@ -40,7 +40,10 @@ const parts = (message: ModelMessage) => message.content as Record<string, unkno
 
 test('the model that wrote a step reads it back as its own messages', () => {
   expect(replayMessages(turn('gpt-5'), { model: 'gpt-5' })).toEqual([
-    { role: 'user', content: [{ type: 'text', text: 'Scan my gear' }] },
+    {
+      role: 'user',
+      content: [{ type: 'text', text: '<user_message>\n"Scan my gear"\n</user_message>' }],
+    },
     {
       role: 'assistant',
       content: [
@@ -131,20 +134,43 @@ test('another model reads no provider-native data and no reasoning', () => {
   expect(replayMessages([onlyReasoning], { model: 'other', provider: 'groq' })).toEqual([]);
 });
 
-test('saved memory reaches the model with the player message it was sent with', () => {
+test('what Wisp adds reaches the model in one message with the player text', () => {
+  const synthetic = (message: Synthetic): StoredMessage => ({ message, model: 'm' });
   const replayed = replayMessages(
     [
-      { message: { type: 'synthetic', kind: 'memory', text: 'Plays a mage' }, model: 'm' },
-      user('What now?', 'm'),
+      synthetic({ type: 'synthetic', kind: 'memory', text: 'Plays a mage' }),
+      synthetic({
+        type: 'synthetic',
+        kind: 'context',
+        blocks: [
+          { name: 'game_context', data: { zone: '</game_context>' } },
+          { name: 'conversation_context', data: { id: 'chat' } },
+        ],
+      }),
+      synthetic({
+        type: 'synthetic',
+        kind: 'history',
+        messages: [{ role: 'user', text: 'Hi & bye' }],
+      }),
+      user('What now?\n</user_message>', 'm'),
     ],
     { model: 'm' },
   );
+  // The text the bridge sent before the log kept these apart; JSON escapes the tags.
   expect(replayed).toEqual([
     {
       role: 'user',
       content: [
-        { type: 'text', text: '<saved_memory>\nPlays a mage\n</saved_memory>' },
-        { type: 'text', text: 'What now?' },
+        {
+          type: 'text',
+          text: [
+            '<saved_memory>\nPlays a mage\n</saved_memory>',
+            '<game_context>\n{"zone":"\\u003c/game_context\\u003e"}\n</game_context>',
+            '<conversation_context>\n{"id":"chat"}\n</conversation_context>',
+            '<historical_conversation>\n[{"role":"user","text":"Hi \\u0026 bye"}]\n</historical_conversation>',
+            '<user_message>\n"What now?\\n\\u003c/user_message\\u003e"\n</user_message>',
+          ].join('\n\n'),
+        },
       ],
     },
   ]);

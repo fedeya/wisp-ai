@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { sendChatTurn, type AgentEngine } from '../src/agent/agent-session.ts';
-import { turnInput, visibleUserText } from '../src/chat/context.ts';
+import type { TurnInput } from '@wisp/agent/engine';
+import { turnInput } from '../src/chat/context.ts';
 import type { Chat } from '../src/chat/events.ts';
 
 function fixture() {
@@ -20,7 +21,7 @@ function fixture() {
       { role: 'user', text: 'What is next?' },
     ],
   };
-  const sent: { id: string; input: string }[] = [];
+  const sent: { id: string; input: TurnInput }[] = [];
   let created = 0;
   const delivery = {
     events: (async function* () {})(),
@@ -44,10 +45,9 @@ function fixture() {
 
 const signal = () => AbortSignal.timeout(1000);
 
-function packedHistory(input: string) {
-  const packed = /<historical_conversation>\n([^\n]*)\n<\/historical_conversation>/.exec(input);
-  assert.ok(packed);
-  return JSON.parse(packed[1]!) as { role: string; text: string }[];
+function packedHistory(input: TurnInput) {
+  assert.ok(input.history);
+  return input.history;
 }
 
 test('a new session starts with bounded visible history', () => {
@@ -58,10 +58,11 @@ test('a new session starts with bounded visible history', () => {
   assert.equal(f.created(), 1);
   assert.equal(f.chat.agentSession, 'new-1');
   assert.equal(f.sent.length, 1);
-  assert.ok(f.sent[0]!.input.includes('<historical_conversation>'));
-  assert.ok(f.sent[0]!.input.includes('Follow this guide'));
-  assert.ok(!f.sent[0]!.input.includes('private diagnostic'));
-  assert.equal(visibleUserText(f.sent[0]!.input), 'What is next?');
+  assert.deepEqual(packedHistory(f.sent[0]!.input), [
+    { role: 'user', text: 'Follow this guide' },
+    { role: 'assistant', text: 'We can use that guide.' },
+  ]);
+  assert.equal(f.sent[0]!.input.text, 'What is next?');
 });
 
 test('a new session restores assistant history from original replies instead of cached text', () => {
@@ -99,15 +100,15 @@ test('a new session restores assistant history from original replies instead of 
     { role: 'assistant', text: 'Legacy reply without a source.' },
   ]);
   assert.equal(JSON.stringify(f.chat.messages), before);
-  assert.equal(visibleUserText(input), 'What is next?');
+  assert.equal(input.text, 'What is next?');
   assert.equal(f.created(), 1);
 });
 
 test('a live session is reused with the message as sent', () => {
   const live = fixture();
-  sendChatTurn(live.engine, live.chat, 'Message', signal());
+  sendChatTurn(live.engine, live.chat, { text: 'Message' }, signal());
   assert.equal(live.created(), 0);
-  assert.deepEqual(live.sent, [{ id: 'old', input: 'Message' }]);
+  assert.deepEqual(live.sent, [{ id: 'old', input: { text: 'Message' } }]);
 });
 
 test('restored original replies keep the existing history count and per-message limits', () => {

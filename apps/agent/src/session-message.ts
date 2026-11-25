@@ -23,20 +23,44 @@ export type Native = typeof Native.Type;
 
 const native = Schema.optionalKey(Native);
 
-/** What the player sent: the bridge's turn input, game context included. */
+/** What the player wrote, and nothing else. */
 export const User = Schema.Struct({
   type: Schema.tag('user'),
   content: Schema.Array(Schema.Struct({ type: Schema.tag('text'), text: Schema.String })),
 });
 export type User = typeof User.Type;
 
-/** Text the engine adds for the model, which the player did not write. */
-export const Synthetic = Schema.Struct({
-  type: Schema.tag('synthetic'),
-  /** `memory`: the player's saved memory, sent again whenever it changes. */
-  kind: Schema.Literals(['memory']),
+/** A named piece of a turn's context, such as `game_context`, as data. */
+export const ContextBlock = Schema.Struct({ name: Schema.String, data: Schema.Unknown });
+export type ContextBlock = typeof ContextBlock.Type;
+
+/** A message of the chat from before its session started. */
+export const HistoryLine = Schema.Struct({
+  role: Schema.Literals(['user', 'assistant']),
   text: Schema.String,
 });
+export type HistoryLine = typeof HistoryLine.Type;
+
+/**
+ * What Wisp adds to a turn for the model, which the player did not write. The
+ * model reads it together with the player message that follows it.
+ */
+export const Synthetic = Schema.Union([
+  /** The player's saved memory, sent again whenever it changes. */
+  Schema.Struct({ type: Schema.tag('synthetic'), kind: Schema.tag('memory'), text: Schema.String }),
+  /** The game and chat as they were when the player sent the turn. */
+  Schema.Struct({
+    type: Schema.tag('synthetic'),
+    kind: Schema.tag('context'),
+    blocks: Schema.Array(ContextBlock),
+  }),
+  /** The chat's visible messages, for a session that starts in a chat that has some. */
+  Schema.Struct({
+    type: Schema.tag('synthetic'),
+    kind: Schema.tag('history'),
+    messages: Schema.Array(HistoryLine),
+  }),
+]);
 export type Synthetic = typeof Synthetic.Type;
 
 /** What the model sees of a tool's result. */
