@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import { uuidv7Time } from '@wisp/protocol/uuid';
 import { databaseScope } from './database-fixture.ts';
 import { AGENT_MESSAGE_FORMAT, AgentHistory } from '../src/agent/agent-history.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
@@ -81,6 +82,12 @@ test('agent history appends turns with their model and replaces a retried turn',
         { seq: 1, message: { role: 'assistant', content: 'Answer' }, model: 'claude' },
       ],
     });
+    // Every entry has its own UUID v7, stamped with its creation time.
+    for (const row of f.entries()) {
+      expect(row.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7/);
+      expect(uuidv7Time(row.id)).toBe(row.createdAt);
+    }
+    expect(new Set(f.entries().map((row) => row.id)).size).toBe(2);
     expect(f.entries().map((row) => [row.seq, row.role, row.model])).toEqual([
       [0, 'user', 'gpt'],
       [1, 'assistant', 'claude'],
