@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import type { Entry } from '@wisp/agent/engine';
 import { uuidv7Time } from '@wisp/protocol/uuid';
 import { databaseScope } from './database-fixture.ts';
 import { AGENT_MESSAGE_FORMAT, AgentHistory } from '../src/agent/agent-history.ts';
@@ -10,6 +11,17 @@ import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { agentEntries, agentSessions } from '../src/db/schema.ts';
 import type { ApplicationDatabase } from '../src/db/application-database.ts';
+
+const user = (text: string): Entry => ({ type: 'user', content: [{ type: 'text', text }] });
+const answer = (text: string): Entry => ({
+  type: 'assistant',
+  content: [{ type: 'text', text }],
+  time: { created: 0 },
+});
+const compaction = (keptFrom: number, summary?: string): Entry =>
+  summary === undefined
+    ? { type: 'compaction', keptFrom }
+    : { type: 'compaction', keptFrom, summary };
 
 async function fixture() {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-agent-history-'));
@@ -21,23 +33,18 @@ async function fixture() {
   return {
     file,
     scope,
+    database,
     history,
     tick: (ms: number) => void (clock += ms),
     session: (id: string) =>
       database.orm.select().from(agentSessions).where(eq(agentSessions.id, id)).get(),
     entries: () => database.orm.select().from(agentEntries).orderBy(agentEntries.seq).all(),
-    messages: () =>
+    count: (type: 'messages' | 'compactions') =>
       database.orm
         .select()
         .from(agentEntries)
         .all()
-        .filter((row) => row.type === 'message'),
-    compactions: () =>
-      database.orm
-        .select()
-        .from(agentEntries)
-        .all()
-        .filter((row) => row.type === 'compaction'),
+        .filter((row) => (row.type === 'compaction') === (type === 'compactions')).length,
     async close() {
       await scope.close();
       await rm(directory, { recursive: true, force: true });
@@ -45,40 +52,44 @@ async function fixture() {
   };
 }
 
-test('agent history appends turns with their model and never replaces an entry', async () => {
+test('agent history appends entries as JSON with their model and never replaces one', async () => {
   const f = await fixture();
   try {
     await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
-    await f.history.append('s', [{ role: 'user', content: 'Question' }], 'gpt');
-    await f.history.append(
-      's',
-      [
+    const step: Entry = {
+      type: 'assistant',
+      content: [
         {
-          role: 'assistant',
-          content: [{ type: 'tool-call', toolCallId: 'c', toolName: 't', input: {} }],
-        },
-        {
-          role: 'tool',
-          content: [
-            {
-              type: 'tool-result',
-              toolCallId: 'c',
-              toolName: 't',
-              output: { type: 'json', value: 1 },
-            },
-          ],
+          type: 'tool',
+          id: 'c',
+          name: 't',
+          state: { status: 'completed', input: {}, output: { type: 'json', value: 1 } },
         },
       ],
+      finish: 'tool-calls',
+      time: { created: 1, completed: 2 },
+    };
+    await f.history.append(
+      's',
+      [{ type: 'synthetic', kind: 'memory', text: 'Mage' }, user('Q')],
       'gpt',
     );
-    await f.history.append('s', [{ role: 'assistant', content: 'Answer' }], 'claude');
+    await f.history.append('s', [step], 'gpt');
+    await f.history.append('s', [answer('Answer')], 'claude');
     const loaded = await new AgentHistory(f.scope.open(f.file)).load('s');
-    expect(loaded.summary).toBeUndefined();
-    expect(loaded.messages.map((entry) => [entry.seq, entry.message.role, entry.model])).toEqual([
-      [0, 'user', 'gpt'],
-      [1, 'assistant', 'gpt'],
-      [2, 'tool', 'gpt'],
-      [3, 'assistant', 'claude'],
+    expect(loaded).toEqual({
+      rows: [
+        { seq: 0, model: 'gpt', data: { type: 'synthetic', kind: 'memory', text: 'Mage' } },
+        { seq: 1, model: 'gpt', data: user('Q') },
+        { seq: 2, model: 'gpt', data: step },
+        { seq: 3, model: 'claude', data: answer('Answer') },
+      ],
+    });
+    expect(f.entries().map((row) => row.type)).toEqual([
+      'synthetic',
+      'user',
+      'assistant',
+      'assistant',
     ]);
     // Every entry has its own UUID v7, stamped with its creation time.
     for (const row of f.entries()) {
@@ -91,39 +102,62 @@ test('agent history appends turns with their model and never replaces an entry',
   }
 });
 
+test('the table rejects an entry whose type does not match its data', async () => {
+  const f = await fixture();
+  try {
+    await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
+    const insert = () =>
+      f.database.orm
+        .insert(agentEntries)
+        .values({
+          sessionId: 's',
+          seq: 0,
+          id: 'x',
+          type: 'user',
+          model: 'gpt',
+          createdAt: 0,
+          data: JSON.stringify(answer('A')),
+        })
+        .run();
+    expect(insert).toThrow(
+      expect.objectContaining({
+        cause: expect.objectContaining({
+          message: expect.stringMatching(/CHECK constraint failed: agent_entry_data_type/),
+        }),
+      }),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test('compaction is a log entry with a summary and where reading starts; nothing is deleted', async () => {
   const f = await fixture();
   try {
     await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
-    const turns = Array.from({ length: 6 }, (_, index) => ({
-      role: index % 2 ? ('assistant' as const) : ('user' as const),
-      content: 'Message ' + index,
-    }));
+    const turns = Array.from({ length: 6 }, (_, index) =>
+      index % 2 ? answer('Message ' + index) : user('Message ' + index),
+    );
     await f.history.append('s', turns, 'gpt');
-    await f.history.compact('s', { keptFrom: 2, summary: 'First summary', model: 'gpt' });
-    await f.history.compact('s', { keptFrom: 4, model: 'gpt' });
+    await f.history.append('s', [compaction(2, 'First summary')], 'gpt');
+    await f.history.append('s', [compaction(4)], 'gpt');
     // The latest compaction wins; one without a summary just starts reading later.
     expect(await f.history.load('s')).toEqual({
-      summary: undefined,
-      messages: turns.slice(4).map((message, index) => ({ seq: 4 + index, message, model: 'gpt' })),
+      rows: turns.slice(4).map((data, index) => ({ seq: 4 + index, model: 'gpt', data })),
     });
     // The next turn logs after the compactions; reading skips them.
-    await f.history.append('s', [{ role: 'user', content: 'Next' }], 'gpt');
-    await f.history.compact('s', { keptFrom: 8, summary: 'Latest summary', model: 'claude' });
+    await f.history.append('s', [user('Next')], 'gpt');
+    await f.history.append('s', [compaction(8, 'Latest summary')], 'claude');
     const loaded = await f.history.load('s');
     expect(loaded.summary).toBe('Latest summary');
-    expect(loaded.messages.map((entry) => entry.seq)).toEqual([8]);
-    expect(f.entries().map((row) => [row.seq, row.type, row.role])).toEqual([
-      ...turns.map((turn, index) => [index, 'message', turn.role]),
-      [6, 'compaction', null],
-      [7, 'compaction', null],
-      [8, 'message', 'user'],
-      [9, 'compaction', null],
+    expect(loaded.rows.map((row) => row.seq)).toEqual([8]);
+    expect(f.entries().map((row) => [row.seq, row.type])).toEqual([
+      ...turns.map((turn, index) => [index, turn.type]),
+      [6, 'compaction'],
+      [7, 'compaction'],
+      [8, 'user'],
+      [9, 'compaction'],
     ]);
-    expect(JSON.parse(f.compactions().at(-1)!.data)).toEqual({
-      keptFrom: 8,
-      summary: 'Latest summary',
-    });
   } finally {
     await f.close();
   }
@@ -143,6 +177,7 @@ test('a session records its chat, latest model, format, version and token totals
       reasoningTokens: 7,
       cacheWriteTokens: 30,
     });
+    expect(AGENT_MESSAGE_FORMAT).toBe('wisp-1');
     expect(f.session('s')).toMatchObject({
       chatId: 'chat',
       model: 'gpt',
@@ -171,13 +206,12 @@ test('ending a session or deleting its chat removes its history; prune drops the
       ['orphan', 'never-saved'],
     ]) {
       await f.history.begin(session, { chatId, model: 'm' });
-      await f.history.append(session, [{ role: 'user', content: session }], 'm');
-      await f.history.compact(session, { keptFrom: 0, summary: 'S', model: 'm' });
+      await f.history.append(session, [user(session), compaction(0, 'S')], 'm');
     }
     await f.history.delete('ended');
-    expect((await f.history.load('ended')).messages).toEqual([]);
-    expect(f.messages()).toHaveLength(3);
-    expect(f.compactions()).toHaveLength(3);
+    expect((await f.history.load('ended')).rows).toEqual([]);
+    expect(f.count('messages')).toBe(3);
+    expect(f.count('compactions')).toBe(3);
 
     const chats = new ChatStore(f.scope.open(f.file), () => {});
     await chats.load();
@@ -188,10 +222,10 @@ test('ending a session or deleting its chat removes its history; prune drops the
     expect(f.session('deleted')).toBeUndefined();
 
     await f.history.prune();
-    expect((await f.history.load('kept')).messages).toHaveLength(1);
+    expect((await f.history.load('kept')).rows).toHaveLength(1);
     expect(f.session('orphan')).toBeUndefined();
-    expect(f.messages()).toHaveLength(1);
-    expect(f.compactions()).toHaveLength(1);
+    expect(f.count('messages')).toBe(1);
+    expect(f.count('compactions')).toBe(1);
   } finally {
     await f.close();
   }
@@ -201,17 +235,17 @@ test('a compaction logged during a turn keeps its place when the turn ends', asy
   const f = await fixture();
   try {
     await f.history.begin('s', { chatId: 'chat', model: 'gpt' });
-    await f.history.append('s', [{ role: 'user', content: 'Question' }], 'gpt');
-    await f.history.compact('s', { keptFrom: 0, summary: 'Summary', model: 'gpt' });
-    await f.history.append('s', [{ role: 'assistant', content: 'Answer' }], 'gpt');
-    expect(f.entries().map((row) => [row.seq, row.type, row.role])).toEqual([
-      [0, 'message', 'user'],
-      [1, 'compaction', null],
-      [2, 'message', 'assistant'],
+    await f.history.append('s', [user('Question')], 'gpt');
+    await f.history.append('s', [compaction(0, 'Summary')], 'gpt');
+    await f.history.append('s', [answer('Answer')], 'gpt');
+    expect(f.entries().map((row) => [row.seq, row.type])).toEqual([
+      [0, 'user'],
+      [1, 'compaction'],
+      [2, 'assistant'],
     ]);
     const loaded = await f.history.load('s');
     expect(loaded.summary).toBe('Summary');
-    expect(loaded.messages.map((entry) => entry.seq)).toEqual([0, 2]);
+    expect(loaded.rows.map((row) => row.seq)).toEqual([0, 2]);
   } finally {
     await f.close();
   }

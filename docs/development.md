@@ -329,9 +329,11 @@ is still unstable. Shared agent rules live in
 `apps/agent/src/wisp/skills/<name>/SKILL.md`, with a short frontmatter description
 stating when to use each skill. The system prompt lists those descriptions and the
 `skill` tool returns the full instructions. Each session's model history, tool
-calls and results included, is stored in `agent_messages` in `runtime/wisp.sqlite`
-and sent in full every turn, so providers can reuse their prompt cache. When it
-nears the model's context window, older turns are summarized into one message.
+calls and results included, is a log in `agent_entries` in `runtime/wisp.sqlite`,
+in Wisp's own format (`wisp-1`, [session-message.ts](../apps/agent/src/session-message.ts))
+rather than the AI SDK's, and is sent in full every turn, so providers can reuse
+their prompt cache. When it nears the model's context window, older turns are
+summarized; the log keeps them.
 
 Tools are listed in [tools.ts](../apps/agent/src/tools.ts). Specialized ones are
 `deferred: true`: `tool_search` returns their names, descriptions and input

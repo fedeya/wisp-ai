@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b120a0da-46f9-44ab-bd9a-cfa34c19c49b",
+  "id": "9d68ef1b-a561-49dc-a5a1-7f70c9d523a4",
   "prevIds": ["b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea"],
   "ddl": [
     {
@@ -83,16 +83,6 @@
       "name": "type",
       "type": "text",
       "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_entries",
-      "name": "role",
-      "type": "text",
-      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -1240,7 +1230,13 @@
     {
       "table": "agent_entries",
       "name": "agent_entry_type",
-      "value": "(\"type\" = 'message' AND \"role\" IN ('user','assistant','tool','system')) OR (\"type\" = 'compaction' AND \"role\" IS NULL)",
+      "value": "\"type\" IN ('user','synthetic','assistant','compaction')",
+      "entityType": "checks"
+    },
+    {
+      "table": "agent_entries",
+      "name": "agent_entry_data_type",
+      "value": "json_extract(\"data\", '$.type') = \"type\"",
       "entityType": "checks"
     },
     {

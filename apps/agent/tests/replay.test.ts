@@ -1,12 +1,47 @@
 import { expect, test } from 'vitest';
 import type { ModelMessage } from 'ai';
-import { modelFamily, replayMessages, toolCallIdFor, type StoredMessage } from '../src/replay.ts';
+import {
+  INTERRUPTED_TOOL,
+  modelFamily,
+  replayMessages,
+  toolCallIdFor,
+  type StoredMessage,
+} from '../src/replay.ts';
+import type { Assistant } from '../src/session-message.ts';
+import { stepMessage } from '../src/session-step.ts';
 
 const anthropicCall = 'toolu_01ABC.def';
+const user = (text: string, model: string): StoredMessage => ({
+  message: { type: 'user', content: [{ type: 'text', text }] },
+  model,
+});
+const step = (id: string): Assistant => ({
+  type: 'assistant',
+  content: [
+    { type: 'reasoning', text: 'Thinking', native: { anthropic: { signature: 'sig' } } },
+    { type: 'text', text: 'Checking', native: { openai: { itemId: 'msg_1' } } },
+    {
+      type: 'tool',
+      id,
+      name: 'wow__query_character',
+      state: { status: 'completed', input: {}, output: { type: 'json', value: { level: 20 } } },
+      native: { openai: { itemId: 'fc_1' } },
+    },
+  ],
+  finish: 'tool-calls',
+  time: { created: 1, completed: 2 },
+});
 const turn = (model: string, id = 'call_abc123'): StoredMessage[] => [
-  { message: { role: 'user', content: 'Scan my gear' }, model },
-  {
-    message: {
+  user('Scan my gear', model),
+  { message: step(id), model },
+];
+
+const parts = (message: ModelMessage) => message.content as Record<string, unknown>[];
+
+test('the model that wrote a step reads it back as its own messages', () => {
+  expect(replayMessages(turn('gpt-5'), { model: 'gpt-5' })).toEqual([
+    { role: 'user', content: [{ type: 'text', text: 'Scan my gear' }] },
+    {
       role: 'assistant',
       content: [
         {
@@ -17,36 +52,62 @@ const turn = (model: string, id = 'call_abc123'): StoredMessage[] => [
         { type: 'text', text: 'Checking', providerOptions: { openai: { itemId: 'msg_1' } } },
         {
           type: 'tool-call',
-          toolCallId: id,
+          toolCallId: 'call_abc123',
           toolName: 'wow__query_character',
           input: {},
           providerOptions: { openai: { itemId: 'fc_1' } },
         },
       ],
     },
-    model,
-  },
-  {
-    message: {
+    {
       role: 'tool',
       content: [
         {
           type: 'tool-result',
-          toolCallId: id,
+          toolCallId: 'call_abc123',
           toolName: 'wow__query_character',
           output: { type: 'json', value: { level: 20 } },
         },
       ],
     },
-    model,
-  },
-];
+  ]);
+});
 
-const parts = (message: ModelMessage) => message.content as Record<string, unknown>[];
-
-test('the model that wrote a message reads it unchanged', () => {
-  const stored = turn('gpt-5');
-  expect(replayMessages(stored, { model: 'gpt-5' })).toEqual(stored.map((s) => s.message));
+test('a step logged from the AI SDK replays as the messages it came from', () => {
+  const response: ModelMessage[] = [
+    {
+      role: 'assistant',
+      content: [
+        { type: 'reasoning', text: 'Hmm', providerOptions: { anthropic: { signature: 's' } } },
+        { type: 'text', text: 'Reading your bags' },
+        { type: 'tool-call', toolCallId: 'c1', toolName: 'bags', input: { slot: 1 } },
+        { type: 'tool-call', toolCallId: 'c2', toolName: 'quests', input: {} },
+      ],
+    },
+    {
+      role: 'tool',
+      content: [
+        {
+          type: 'tool-result',
+          toolCallId: 'c1',
+          toolName: 'bags',
+          output: { type: 'text', value: 'Hearthstone' },
+        },
+        {
+          type: 'tool-result',
+          toolCallId: 'c2',
+          toolName: 'quests',
+          output: { type: 'error-text', value: 'Not connected' },
+        },
+      ],
+    },
+  ];
+  const logged = stepMessage(response, { finish: 'tool-calls', created: 1, completed: 2 });
+  expect(logged.content.map((part) => part.type)).toEqual(['reasoning', 'text', 'tool', 'tool']);
+  expect(logged.content[3]).toMatchObject({ state: { status: 'error', error: 'Not connected' } });
+  // The log is plain JSON that does not depend on the AI SDK's shapes.
+  const stored = JSON.parse(JSON.stringify(logged)) as Assistant;
+  expect(replayMessages([{ message: stored, model: 'm' }], { model: 'm' })).toEqual(response);
 });
 
 test('another model reads no provider-native data and no reasoning', () => {
@@ -58,12 +119,67 @@ test('another model reads no provider-native data and no reasoning', () => {
   const assistant = parts(replayed[1]!);
   expect(assistant.map((part) => part.type)).toEqual(['text', 'tool-call']);
   expect(assistant.every((part) => !('providerOptions' in part))).toBe(true);
-  // A message left with nothing readable is skipped.
+  // A step left with nothing readable is skipped.
   const onlyReasoning: StoredMessage = {
-    message: { role: 'assistant', content: [{ type: 'reasoning', text: 'Hmm' }] },
+    message: {
+      type: 'assistant',
+      content: [{ type: 'reasoning', text: 'Hmm' }],
+      time: { created: 0 },
+    },
     model: 'gpt-5',
   };
   expect(replayMessages([onlyReasoning], { model: 'other', provider: 'groq' })).toEqual([]);
+});
+
+test('saved memory reaches the model with the player message it was sent with', () => {
+  const replayed = replayMessages(
+    [
+      { message: { type: 'synthetic', kind: 'memory', text: 'Plays a mage' }, model: 'm' },
+      user('What now?', 'm'),
+    ],
+    { model: 'm' },
+  );
+  expect(replayed).toEqual([
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: '<saved_memory>\nPlays a mage\n</saved_memory>' },
+        { type: 'text', text: 'What now?' },
+      ],
+    },
+  ]);
+});
+
+test('a tool the turn stopped replays as interrupted; a provider tool answers in its message', () => {
+  const stopped: Assistant = {
+    type: 'assistant',
+    content: [
+      { type: 'tool', id: 'c1', name: 'bags', state: { status: 'running', input: {} } },
+      {
+        type: 'tool',
+        id: 'ws',
+        name: 'web_search',
+        providerExecuted: true,
+        state: { status: 'completed', input: {}, output: { type: 'json', value: [] } },
+      },
+    ],
+    finish: 'interrupted',
+    time: { created: 0 },
+  };
+  const [assistant, tool] = replayMessages([{ message: stopped, model: 'm' }], { model: 'm' });
+  expect(parts(assistant!).map((part) => part.type)).toEqual([
+    'tool-call',
+    'tool-call',
+    'tool-result',
+  ]);
+  expect(parts(tool!)).toEqual([
+    {
+      type: 'tool-result',
+      toolCallId: 'c1',
+      toolName: 'bags',
+      output: { type: 'error-text', value: INTERRUPTED_TOOL },
+    },
+  ]);
 });
 
 test('tool call IDs follow the target API, matching between call and result', () => {
@@ -91,8 +207,8 @@ test('tool call IDs follow the target API, matching between call and result', ()
 });
 
 test('Mistral gets an assistant message between tool results and the next user message', () => {
-  const stored = [...turn('gpt-5'), { message: { role: 'user', content: 'And now?' }, model: 'x' }];
-  const replayed = replayMessages(stored as StoredMessage[], { model: 'm', provider: 'mistral' });
+  const stored = [...turn('gpt-5'), user('And now?', 'x')];
+  const replayed = replayMessages(stored, { model: 'm', provider: 'mistral' });
   expect(replayed.map((message) => message.role)).toEqual([
     'user',
     'assistant',
@@ -101,7 +217,7 @@ test('Mistral gets an assistant message between tool results and the next user m
     'user',
   ]);
   expect(replayed[3]).toEqual({ role: 'assistant', content: 'Done.' });
-  expect(replayMessages(stored as StoredMessage[], { model: 'gpt-5' })).toHaveLength(4);
+  expect(replayMessages(stored, { model: 'gpt-5' })).toHaveLength(4);
 });
 
 test('model families come from the provider, or the model name on gateways', () => {

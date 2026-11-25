@@ -4,7 +4,8 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '@wisp/agent/agent-host';
-import { createAgentEngine, type StoredMessage } from '@wisp/agent/engine';
+import { createAgentEngine } from '@wisp/agent/engine';
+import { MemoryHistory } from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
 import { applyEvent } from '@wisp/bridge/events';
@@ -205,26 +206,11 @@ test(
     await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
     setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
-    // Each turn here is new or follows without compaction, so the history is a plain list.
-    const histories = new Map<string, StoredMessage[]>();
+    const history = new MemoryHistory();
     const engine = createAgentEngine({
       origin: () => origin,
       token: 'offline-token',
-      history: {
-        begin: async () => {},
-        addUsage: async () => {},
-        load: async (id) => {
-          const log = histories.get(id) ?? [];
-          return { messages: log.map((entry, seq) => ({ ...entry, seq })) };
-        },
-        append: async (id, messages, model) =>
-          void histories.set(id, [
-            ...(histories.get(id) ?? []),
-            ...messages.map((message) => ({ message, model })),
-          ]),
-        compact: async () => {},
-        delete: async (id) => void histories.delete(id),
-      },
+      history,
       logger: { info: () => {}, warn: () => {} },
     });
     const session = engine.newSessionId();
@@ -436,7 +422,7 @@ test(
         },
       });
       // Every turn's model history persists for the next one.
-      expect(JSON.stringify(histories.get(session))).toContain(text);
+      expect(JSON.stringify(history.entries(session))).toContain(text);
     } catch (error) {
       throw new Error(
         'Offline agent integration failed: ' +

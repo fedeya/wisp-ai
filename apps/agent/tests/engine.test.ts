@@ -9,11 +9,10 @@ import {
   compactionSplit,
   createAgentEngine,
   searchTools,
-  type Compaction,
   type EngineEvent,
-  type ModelMessage,
-  type StoredMessage,
+  type Entry,
 } from '../src/engine.ts';
+import { MemoryHistory } from '../src/memory-history.ts';
 
 afterEach(() => setAgentHost(undefined));
 
@@ -76,7 +75,11 @@ function streamed(count: number, item: Item) {
 async function fixture(
   plan: (count: number, request: Item) => Item | undefined,
   contextWindow?: number,
-  options: { appendFails?: (count: number) => boolean } = {},
+  options: {
+    appendFails?: (count: number) => boolean;
+    /** Game reads answer after this long, for a turn stopped while a tool runs. */
+    inspectDelayMs?: number;
+  } = {},
 ) {
   let appends = 0;
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-engine-'));
@@ -108,7 +111,10 @@ async function fixture(
       json({ model: 'offline-test', effort: 'provider-default', contextWindow });
     } else if (req.url === '/inspect') {
       inspections.push(JSON.parse(body));
-      json({ status: 'completed', data: { settings: [], verified: true } });
+      setTimeout(
+        () => json({ status: 'completed', data: { settings: [], verified: true } }),
+        options.inspectDelayMs ?? 0,
+      );
     } else {
       const request = JSON.parse(body) as Item;
       requests.push(request);
@@ -137,56 +143,20 @@ async function fixture(
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
   // An in-memory log with the bridge store's rules: entries stay, compactions are entries.
-  type Entry = (StoredMessage & { type: 'message' }) | (Compaction & { type: 'compaction' });
-  const logs = new Map<string, Entry[]>();
+  const history = new (class extends MemoryHistory {
+    override async append(session: string, entries: readonly Entry[], model: string) {
+      if (options.appendFails?.(++appends)) throw Error('The disk is full.');
+      return super.append(session, entries, model);
+    }
+  })();
   const messagesOf = (session: string) =>
-    (logs.get(session) ?? []).filter((entry) => entry.type === 'message');
+    history.entries(session).filter(({ entry }) => entry.type !== 'compaction');
   const compactionsOf = (session: string) =>
-    (logs.get(session) ?? []).filter((entry) => entry.type === 'compaction');
-  const sessions = new Map<
-    string,
-    { chatId: string; model: string; inputTokens: number; outputTokens: number }
-  >();
+    history.entries(session).filter(({ entry }) => entry.type === 'compaction');
   const engine = createAgentEngine({
     origin: () => origin,
     token: 'offline-token',
-    history: {
-      begin: async (session, start) =>
-        void sessions.set(
-          session,
-          sessions.get(session) ?? { ...start, inputTokens: 0, outputTokens: 0 },
-        ),
-      addUsage: async (session, usage) => {
-        const totals = sessions.get(session)!;
-        totals.inputTokens += usage.inputTokens;
-        totals.outputTokens += usage.outputTokens;
-      },
-      load: async (session) => {
-        const log = logs.get(session) ?? [];
-        const latest = compactionsOf(session).at(-1);
-        return {
-          summary: latest?.summary,
-          messages: log.flatMap((entry, seq) =>
-            entry.type === 'message' && seq >= (latest?.keptFrom ?? 0)
-              ? [{ seq, message: entry.message, model: entry.model }]
-              : [],
-          ),
-        };
-      },
-      append: async (session, messages, model) => {
-        if (options.appendFails?.(++appends)) throw Error('The disk is full.');
-        logs.set(session, [
-          ...(logs.get(session) ?? []),
-          ...messages.map((message) => ({ type: 'message' as const, message, model })),
-        ]);
-      },
-      compact: async (session, compaction) =>
-        void logs.set(session, [
-          ...(logs.get(session) ?? []),
-          { type: 'compaction', ...compaction },
-        ]),
-      delete: async (session) => void logs.delete(session),
-    },
+    history,
     logger: { info: () => {}, warn: () => {} },
   });
   async function send(
@@ -208,10 +178,10 @@ async function fixture(
     send,
     requests,
     inspections,
-    logs,
+    history,
     messagesOf,
     compactionsOf,
-    sessions,
+    sessions: history.sessions,
     close: async () => {
       server.close();
       await engine.close();
@@ -219,6 +189,13 @@ async function fixture(
     },
   };
 }
+
+const userEntry = (text: string): Entry => ({ type: 'user', content: [{ type: 'text', text }] });
+const assistantEntry = (text: string): Entry => ({
+  type: 'assistant',
+  content: [{ type: 'text', text }],
+  time: { created: 0 },
+});
 
 const toolNames = (request: Item) => (request.tools as { name: string }[]).map((tool) => tool.name);
 
@@ -301,10 +278,36 @@ test(
       expect(history).toContain('Which addons do I have?');
       expect(history).toContain('tool-call-3');
       expect(history).toContain('Offline integration passed.');
-      expect(f.messagesOf(session).at(-1)!.message).toMatchObject({ role: 'tool' });
+      // Each step is one assistant entry, its tool calls carrying their results.
+      expect(f.messagesOf(session).map(({ entry }) => entry.type)).toEqual([
+        'user',
+        'assistant',
+        'assistant',
+        'assistant',
+        'assistant',
+        'user',
+        'assistant',
+      ]);
+      expect(f.messagesOf(session)[3]!.entry).toMatchObject({
+        type: 'assistant',
+        finish: 'tool-calls',
+        tokens: { input: 20, output: 10 },
+        content: [
+          {
+            type: 'tool',
+            id: 'tool-call-3',
+            name: 'tool_call',
+            state: { status: 'completed', input: { name: 'wow__get_settings' } },
+          },
+        ],
+      });
+      expect(f.messagesOf(session).at(-1)!.entry).toMatchObject({
+        type: 'assistant',
+        content: [{ type: 'tool', name: 'wisp__skip_tip', state: { status: 'completed' } }],
+      });
 
       await f.engine.end(session);
-      expect(f.logs.has(session)).toBe(false);
+      expect(f.history.has(session)).toBe(false);
     } finally {
       await f.close();
     }
@@ -322,15 +325,12 @@ test(
     );
     try {
       const session = f.engine.newSessionId();
-      const turns: ModelMessage[] = [];
+      const turns: Entry[] = [];
       for (let index = 0; index < 6; index++) {
-        turns.push({ role: 'user', content: 'Question ' + index + ' ' + 'x'.repeat(1500) });
-        turns.push({ role: 'assistant', content: 'Answer ' + index });
+        turns.push(userEntry('Question ' + index + ' ' + 'x'.repeat(1500)));
+        turns.push(assistantEntry('Answer ' + index));
       }
-      f.logs.set(
-        session,
-        turns.map((message) => ({ type: 'message', message, model: 'gpt-test' })),
-      );
+      await f.history.append(session, turns, 'gpt-test');
       const { events, result } = await f.send(session, 'Next question');
       expect(result).toEqual({ status: 'completed' });
       expect(events.map((event) => event.type)).toEqual(
@@ -343,15 +343,13 @@ test(
       // The compaction is a log entry: every message stays, this turn's included.
       expect(f.compactionsOf(session)).toEqual([
         {
-          type: 'compaction',
-          keptFrom: 4,
-          summary: 'Summary of the quest plan.',
+          entry: { type: 'compaction', keptFrom: 4, summary: 'Summary of the quest plan.' },
           model: expect.any(String),
         },
       ]);
       const stored = f.messagesOf(session);
       expect(stored).toHaveLength(14);
-      expect(f.logs.get(session)![12]!.type).toBe('compaction');
+      expect(f.history.entries(session)[12]!.entry.type).toBe('compaction');
       expect(JSON.stringify(stored)).toContain('Question 1 ');
       expect(JSON.stringify(stored.at(-1))).toContain('Answer after compaction.');
       // The model reads the summary, then the four most recent turns.
@@ -367,13 +365,19 @@ test(
 );
 
 test('compaction keeps whole recent turns and search ranks tool names first', () => {
-  const history: ModelMessage[] = Array.from({ length: 10 }, (_, index) => ({
-    role: index % 2 ? 'assistant' : 'user',
-    content: String(index),
-  }));
+  const history: Entry[] = Array.from({ length: 10 }, (_, index) =>
+    index % 2 ? assistantEntry(String(index)) : userEntry(String(index)),
+  );
   const { older, recent } = compactionSplit(history, 2);
   expect(older).toHaveLength(6);
-  expect(recent[0]).toEqual({ role: 'user', content: '6' });
+  expect(recent[0]).toEqual(userEntry('6'));
+  // Saved memory stays with the player message it was sent with.
+  const withMemory: Entry[] = [
+    ...history.slice(0, 6),
+    { type: 'synthetic', kind: 'memory', text: 'Plays a mage' },
+    ...history.slice(6),
+  ];
+  expect(compactionSplit(withMemory, 2).recent[0]).toMatchObject({ type: 'synthetic' });
   expect(compactionSplit(history.slice(0, 2), 4)).toEqual({
     older: [],
     recent: history.slice(0, 2),
@@ -409,12 +413,11 @@ test(
       expect(turn.result.status).toBe('failed');
       expect(f.inspections).toHaveLength(1);
       // The next turn's model sees the settings it already read.
-      expect(f.messagesOf(session).map((entry) => entry.message.role)).toEqual([
-        'user',
-        'assistant',
-        'tool',
-      ]);
-      expect(JSON.stringify(f.messagesOf(session).at(-1)!.message)).toContain('tool-call-1');
+      expect(f.messagesOf(session).map(({ entry }) => entry.type)).toEqual(['user', 'assistant']);
+      expect(f.messagesOf(session).at(-1)!.entry).toMatchObject({
+        type: 'assistant',
+        content: [{ type: 'tool', id: 'tool-call-1', state: { status: 'completed' } }],
+      });
     } finally {
       await f.close();
     }
@@ -425,13 +428,16 @@ test(
   'cancelling a turn stops the tool loop and settles it as cancelled',
   { timeout: 60_000 },
   async () => {
-    const f = await fixture((count) =>
-      toolCall(count, 'tool_call', { name: 'wow__get_settings', input: {} }),
+    const f = await fixture(
+      (count) => toolCall(count, 'tool_call', { name: 'wow__get_settings', input: {} }),
+      undefined,
+      { inspectDelayMs: 2000 },
     );
     try {
       const controller = new AbortController();
+      const session = f.engine.newSessionId();
       const turn = await f.send(
-        f.engine.newSessionId(),
+        session,
         'Which addons do I have?',
         (event) => event.type === 'call.requested' && controller.abort(),
         controller.signal,
@@ -439,6 +445,14 @@ test(
       expect(turn.result).toEqual({ status: 'cancelled' });
       expect(turn.events.filter((event) => event.type === 'call.requested')).toHaveLength(1);
       expect(f.requests).toHaveLength(1);
+      // The step it stopped is logged, its call as still running.
+      expect(f.messagesOf(session).at(-1)!.entry).toMatchObject({
+        type: 'assistant',
+        finish: 'interrupted',
+        content: [
+          { type: 'tool', id: 'tool-call-1', name: 'tool_call', state: { status: 'running' } },
+        ],
+      });
     } finally {
       await f.close();
     }

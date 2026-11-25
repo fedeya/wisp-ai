@@ -3,14 +3,14 @@ CREATE TABLE `agent_entries` (
 	`seq` integer NOT NULL,
 	`id` text NOT NULL,
 	`type` text NOT NULL,
-	`role` text,
 	`model` text NOT NULL,
 	`created_at` integer NOT NULL,
 	`data` text NOT NULL,
 	CONSTRAINT `agent_entries_pk` PRIMARY KEY(`session_id`, `seq`),
 	CONSTRAINT `fk_agent_entries_session_id_agent_sessions_id_fk` FOREIGN KEY (`session_id`) REFERENCES `agent_sessions`(`id`) ON DELETE CASCADE,
 	CONSTRAINT "agent_entry_seq" CHECK("seq" >= 0),
-	CONSTRAINT "agent_entry_type" CHECK(("type" = 'message' AND "role" IN ('user','assistant','tool','system')) OR ("type" = 'compaction' AND "role" IS NULL)),
+	CONSTRAINT "agent_entry_type" CHECK("type" IN ('user','synthetic','assistant','compaction')),
+	CONSTRAINT "agent_entry_data_type" CHECK(json_extract("data", '$.type') = "type"),
 	CONSTRAINT "agent_entry_json" CHECK(json_valid("data") AND json_type("data") = 'object')
 ) STRICT;
 --> statement-breakpoint
