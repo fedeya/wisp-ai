@@ -24,6 +24,9 @@ const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
   { turnInput } = await load('src/chat/context.ts');
 const { createAgentEngine } = await import(pathToFileURL(path.join(agent, 'src/engine.ts')).href);
 const { setAgentHost } = await import(pathToFileURL(path.join(agent, 'src/agent-host.ts')).href);
+const { MemoryHistory } = await import(
+  pathToFileURL(path.join(agent, 'src/memory-history.ts')).href
+);
 const { Simulator } = await load('src/integrations/simulation/simulator.ts');
 const { CapabilitySettings } = await load('src/integrations/capabilities.ts');
 const addonFixtures =
@@ -205,17 +208,11 @@ setAgentHost({
   token,
   capabilitiesFile: capabilities.agentFile,
 });
-const histories = new Map();
 const engine = createAgentEngine({
   origin: () => 'http://127.0.0.1:43197',
   token,
-  history: {
-    load: async (id) => [...(histories.get(id) ?? [])],
-    append: async (id, from, messages) =>
-      void histories.set(id, [...(histories.get(id) ?? []).slice(0, from), ...messages]),
-    replace: async (id, messages) => void histories.set(id, [...messages]),
-    delete: async (id) => void histories.delete(id),
-  },
+  // The session log stays in memory for the run, as in the engine's tests.
+  history: new MemoryHistory(),
   logger: { info: () => {}, warn: (data, message) => console.warn(message, data) },
 });
 const report = { model, tests: [] };
