@@ -53,6 +53,7 @@ export function toolCallIdFor(id: string, family: Family) {
 }
 
 type ProviderOptions = NonNullable<ToolResultPart['providerOptions']>;
+type ContentOutput = Extract<ToolResultPart['output'], { type: 'content' }>;
 
 /**
  * A named block as the model reads it: its data as JSON between tags. JSON
@@ -95,9 +96,14 @@ function toolOutput(state: Tool['state']): ToolResultPart['output'] {
     case 'error':
       return { type: 'error-text', value: state.error };
     case 'completed':
-      return state.output.type === 'text'
-        ? { type: 'text', value: state.output.text }
-        : { type: 'json', value: state.output.value as JSONValue };
+      switch (state.output.type) {
+        case 'text':
+          return { type: 'text', value: state.output.text };
+        case 'json':
+          return { type: 'json', value: state.output.value as JSONValue };
+        case 'content':
+          return { type: 'content', value: state.output.value as ContentOutput['value'] };
+      }
   }
 }
 
