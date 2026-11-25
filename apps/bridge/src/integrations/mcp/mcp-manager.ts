@@ -174,11 +174,16 @@ export class McpManager {
     const work = this.queue
       .catch(() => {})
       .then(async () => {
+        const updates: [string, string][] = [];
         if (parsed.token !== undefined) {
-          await this.vault.write('mcp:' + parsed.server.name + ':token', parsed.token);
+          updates.push(['mcp:' + parsed.server.name + ':token', parsed.token]);
         }
         if (parsed.env !== undefined) {
-          await this.vault.write('mcp:' + parsed.server.name + ':env', JSON.stringify(parsed.env));
+          updates.push(['mcp:' + parsed.server.name + ':env', JSON.stringify(parsed.env)]);
+        }
+        const previous = new Map<string, string>();
+        for (const [key] of updates) {
+          previous.set(key, await this.vault.read(key));
         }
         const old = this.servers[parsed.server.name];
         const definition = {
@@ -188,7 +193,34 @@ export class McpManager {
           envKeys: parsed.env !== undefined ? Object.keys(parsed.env) : old?.envKeys,
         };
         const next = { ...this.servers, [definition.name]: definition };
-        await this.persist(next);
+        const attempted: string[] = [];
+        try {
+          for (const [key, value] of updates) {
+            // A vault write can mutate storage before rejecting.
+            attempted.push(key);
+            await this.vault.write(key, value);
+          }
+          await this.persist(next);
+        } catch (error) {
+          const failures: unknown[] = [];
+          for (const key of attempted.reverse()) {
+            try {
+              await this.vault.write(key, previous.get(key)!);
+            } catch (failure) {
+              failures.push(failure);
+            }
+          }
+          if (failures.length) {
+            throw new AggregateError(
+              [error, ...failures],
+              'MCP save and credential restoration failed',
+              {
+                cause: error,
+              },
+            );
+          }
+          throw error;
+        }
         await this.disconnect(definition.name);
       });
     this.queue = work;
