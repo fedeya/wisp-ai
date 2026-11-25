@@ -1,4 +1,4 @@
-import { hasToolCall, isStepCount, tool, type ToolSet } from 'ai';
+import { hasToolCall, isStepCount, tool, type StopCondition, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { AuthoredSkill } from './content.ts';
 import type { ToolDefinition } from './tool.ts';
@@ -193,6 +193,16 @@ export function assembleTools(options: {
   return { tools, labels, deferred };
 }
 
+/** Stops when the last step ran one of `names` through tool_call, which direct tools also accept. */
+export function ranThroughCall(names: ReadonlySet<string>): StopCondition<ToolSet> {
+  return ({ steps }) =>
+    steps.at(-1)?.toolResults.some((result) => {
+      if (result.toolName !== TOOL_CALL) return false;
+      const target = (result.input as { name?: unknown } | undefined)?.name;
+      return typeof target === 'string' && names.has(target);
+    }) ?? false;
+}
+
 /** Run options of a turn: the step budget, endsTurn tools and reasoning effort. */
 export function turnOptions(
   direct: Record<string, ToolDefinition>,
@@ -202,7 +212,10 @@ export function turnOptions(
     .filter(([, definition]) => definition.endsTurn)
     .map(([name]) => name);
   return {
-    stopWhen: [isStepCount(MAX_STEPS), ...(endsTurn.length ? [hasToolCall(...endsTurn)] : [])],
+    stopWhen: [
+      isStepCount(MAX_STEPS),
+      ...(endsTurn.length ? [hasToolCall(...endsTurn), ranThroughCall(new Set(endsTurn))] : []),
+    ],
     ...(selected.provider || selected.effort === 'provider-default'
       ? {}
       : { providerOptions: { openai: { reasoningEffort: selected.effort } } }),
