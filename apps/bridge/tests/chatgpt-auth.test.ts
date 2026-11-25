@@ -6,7 +6,315 @@ import path from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { createHash } from 'node:crypto';
 import { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
+import { createAccountOperations } from '../src/account-operations.ts';
+import { createModelCatalogRefresh } from '../src/models/model-catalog.ts';
+import { ModelConnections } from '../src/models/model-connections.ts';
 import { bridgeLogger } from '../src/logger.ts';
+
+async function selectionFixture(t: Pick<TestContext, 'onTestFinished'>) {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-auth-select-'));
+  t.onTestFinished(() => rm(root, { recursive: true, force: true }));
+  let now = 1800000000000;
+  const values = new Map([
+    [
+      'chatgpt:accounts',
+      JSON.stringify({
+        activeId: 'oaiapp_one',
+        profiles: ['one', 'two'].map((id) => ({
+          id: 'oaiapp_' + id,
+          email: id + '@example.test',
+          tokens: {
+            accessToken: 'synthetic-access-' + id,
+            refreshToken: 'synthetic-refresh-' + id,
+            idToken: 'synthetic-id-' + id,
+            expiresAt: now + (id === 'one' ? 3600000 : 7200000),
+            scopes: ['chatgpt.tokens.use.direct'],
+          },
+        })),
+      }),
+    ],
+  ]);
+  const vault = {
+    read: async (key: string) => values.get(key) || '',
+    write: vi.fn(async (key: string, value: string) => {
+      values.set(key, value);
+    }),
+  };
+  const authorizations: string[] = [];
+  const mock = (async (input, init) => {
+    assert.equal(String(input), 'https://api.openai.com/v1/models');
+    const authorization = new Headers(init?.headers).get('authorization')!;
+    authorizations.push(authorization);
+    return Response.json({
+      models: [
+        {
+          slug: authorization.endsWith('-one') ? 'model-one' : 'model-two',
+          visibility: 'list',
+        },
+      ],
+    });
+  }) as typeof fetch;
+  const auth = new ChatGPTAuth(root, vault, { fetch: mock, now: () => now });
+  await auth.load();
+  auth.message = 'Existing account message';
+  let catalog = Promise.resolve([] as Awaited<ReturnType<ChatGPTAuth['models']>>);
+  const afterOperation = vi.fn(() => {
+    catalog = auth.models();
+  });
+  const operations = createAccountOperations({
+    isStopping: () => false,
+    hasActiveTurn: () => false,
+    afterOperation,
+  });
+  return {
+    auth,
+    vault,
+    values,
+    authorizations,
+    operations,
+    afterOperation,
+    catalog: () => catalog,
+    advance: () => {
+      now += 3600000;
+    },
+  };
+}
+
+for (const rejectSelection of [false, true]) {
+  test(`background renewal preserves durable identity after ${rejectSelection ? 'rejected' : 'accepted'} selection`, async (t) => {
+    const f = await selectionFixture(t);
+    await f.auth.models();
+    f.advance();
+    const fetchModels = f.auth.fetcher;
+    const tokenExchange = vi.fn(async (init?: RequestInit) => {
+      const body = new URLSearchParams(String(init?.body));
+      assert.equal(body.get('grant_type'), 'refresh_token');
+      assert.equal(body.get('client_id'), 'oaiapp_one');
+      assert.equal(body.get('refresh_token'), 'synthetic-refresh-one');
+      return Response.json({
+        access_token: 'synthetic-renewed-one',
+        refresh_token: 'synthetic-rotated-one',
+        token_type: 'Bearer',
+        expires_in: 3600,
+      });
+    });
+    f.auth.fetcher = (async (input, init) => {
+      if (String(input) === 'https://auth.openai.com/.well-known/openid-configuration') {
+        return Response.json({
+          issuer: 'https://auth.openai.com',
+          authorization_endpoint: 'https://auth.openai.com/authorize',
+          token_endpoint: 'https://auth.openai.com/token',
+          jwks_uri: 'https://auth.openai.com/jwks',
+        });
+      }
+      if (String(input) === 'https://auth.openai.com/token') {
+        return tokenExchange(init);
+      }
+      return fetchModels(input, init);
+    }) as typeof fetch;
+    const gates = [0, 1].map(() => {
+      let release!: () => void;
+      let reject!: (reason: Error) => void;
+      const promise = new Promise<void>((resolve, rejectWrite) => {
+        release = resolve;
+        reject = rejectWrite;
+      });
+      return { promise, release, reject };
+    });
+    let notifyWriting!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      notifyWriting = resolve;
+    });
+    const write = f.vault.write.getMockImplementation()!;
+    let writes = 0;
+    const committed: string[] = [];
+    f.vault.write.mockImplementation(async (key, value) => {
+      const index = writes++;
+      if (index === 0) {
+        notifyWriting();
+      }
+      await gates[index]?.promise;
+      await write(key, value);
+      committed.push(JSON.parse(value).activeId);
+    });
+    const state = {
+      modelCatalog: [] as Awaited<ReturnType<ChatGPTAuth['models']>>,
+      modelCatalogError: undefined as string | undefined,
+    };
+    const refreshCatalog = createModelCatalogRefresh({
+      state,
+      connections: new ModelConnections(
+        path.join(f.auth.runtime, 'connections.json'),
+        f.vault,
+        f.auth,
+      ),
+      changed: () => {},
+    });
+    const selection = f.operations.run(() => f.auth.select('oaiapp_two'));
+    const settled = rejectSelection
+      ? assert.rejects(selection, /Synthetic queued rejection/)
+      : selection;
+    let background: Promise<void> | undefined;
+    try {
+      await writing;
+      background = refreshCatalog();
+      // Flush the mock exchange and its persistence attempt without releasing selection.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(tokenExchange.mock.calls.length, 1);
+      assert.equal(f.operations.busy(), true);
+      assert.equal(f.auth.state().activeId, 'oaiapp_one');
+      if (rejectSelection) {
+        gates[0]!.reject(Error('Synthetic queued rejection'));
+      } else {
+        gates[0]!.release();
+      }
+      await settled;
+      const expectedId = rejectSelection ? 'oaiapp_one' : 'oaiapp_two';
+      if (!rejectSelection) {
+        assert.equal((await selection).activeId, 'oaiapp_two');
+      }
+      assert.equal(JSON.parse(f.values.get('chatgpt:accounts')!).activeId, expectedId);
+      gates[1]!.release();
+      await background;
+      await f.catalog();
+      assert.equal(state.modelCatalogError, undefined);
+      assert.equal(f.auth.state().activeId, expectedId);
+      assert.equal(JSON.parse(f.values.get('chatgpt:accounts')!).activeId, expectedId);
+      assert.deepEqual(committed, rejectSelection ? ['oaiapp_one'] : ['oaiapp_two', 'oaiapp_two']);
+      if (rejectSelection) {
+        // Both the already-queued renewal and a later selection must survive the rejection.
+        await f.operations.run(() => f.auth.select('oaiapp_two'));
+        await f.catalog();
+        assert.equal(f.auth.state().activeId, 'oaiapp_two');
+        assert.equal(JSON.parse(f.values.get('chatgpt:accounts')!).activeId, 'oaiapp_two');
+      }
+      const restored = new ChatGPTAuth(f.auth.runtime, f.vault);
+      await restored.load();
+      assert.equal(restored.state().activeId, 'oaiapp_two');
+      assert.equal(f.auth.saved.profiles[0]?.tokens?.refreshToken, 'synthetic-rotated-one');
+      assert.equal(
+        JSON.parse(f.values.get('chatgpt:accounts')!).profiles[0].tokens.refreshToken,
+        'synthetic-rotated-one',
+      );
+      assert.equal(tokenExchange.mock.calls.length, 1);
+      assert.equal(writes, rejectSelection ? 3 : 2);
+    } finally {
+      for (const gate of gates) {
+        gate.release();
+      }
+      await Promise.allSettled([settled, background]);
+      await f.catalog();
+    }
+  });
+}
+
+test('rejected account selection preserves the active identity and permits a successful retry', async (t) => {
+  const f = await selectionFixture(t);
+  const cached = await f.auth.models();
+  const before = f.auth.state();
+  const durable = f.values.get('chatgpt:accounts');
+  const write = f.vault.write.getMockImplementation()!;
+  f.vault.write.mockRejectedValueOnce(Error('Synthetic vault rejection'));
+
+  await assert.rejects(
+    f.operations.run(() => f.auth.select('oaiapp_two')),
+    /Synthetic vault rejection/,
+  );
+  const catalog = await f.catalog();
+  await f.auth.authorized('https://api.openai.com/v1/models', { method: 'GET' });
+  assert.deepEqual(
+    {
+      activeId: f.auth.state().activeId,
+      authorization: f.authorizations.at(-1),
+      durableActiveId: JSON.parse(f.values.get('chatgpt:accounts')!).activeId,
+    },
+    {
+      activeId: 'oaiapp_one',
+      authorization: 'Bearer synthetic-access-one',
+      durableActiveId: 'oaiapp_one',
+    },
+  );
+  assert.deepEqual(f.auth.state(), before);
+  assert.equal(f.values.get('chatgpt:accounts'), durable);
+  assert.equal(catalog, cached);
+  assert.equal(f.authorizations.length, 2);
+  assert.equal(f.operations.busy(), false);
+  assert.equal(f.afterOperation.mock.calls.length, 1);
+
+  f.vault.write.mockImplementation(write);
+  await f.operations.run(() => f.auth.select('oaiapp_two'));
+  const selected = await f.catalog();
+  assert.equal(f.auth.state().activeId, 'oaiapp_two');
+  assert.equal(JSON.parse(f.values.get('chatgpt:accounts')!).activeId, 'oaiapp_two');
+  assert.equal(f.auth.state().message, '');
+  assert.equal(f.auth.state().revision, before.revision + 1);
+  assert.equal(f.vault.write.mock.calls.length, 2);
+  assert.equal(f.afterOperation.mock.calls.length, 2);
+  assert.equal(f.authorizations.length, 3);
+  assert.equal(f.authorizations.at(-1), 'Bearer synthetic-access-two');
+  assert.equal(selected[0]?.slug, 'model-two');
+  assert.equal(await f.auth.models(), selected);
+  assert.equal(f.authorizations.length, 3);
+});
+
+for (const rejectWrite of [false, true]) {
+  test(`account selection stays unchanged during a deferred ${rejectWrite ? 'rejected' : 'successful'} write`, async (t) => {
+    const f = await selectionFixture(t);
+    const cached = await f.auth.models();
+    const before = f.auth.state();
+    const durable = f.values.get('chatgpt:accounts');
+    let release!: () => void;
+    let reject!: (reason: Error) => void;
+    let notifyEntered!: () => void;
+    const gate = new Promise<void>((resolve, rejectGate) => {
+      release = resolve;
+      reject = rejectGate;
+    });
+    const entered = new Promise<void>((resolve) => {
+      notifyEntered = resolve;
+    });
+    const write = f.vault.write.getMockImplementation()!;
+    f.vault.write.mockImplementationOnce(async (key, value) => {
+      notifyEntered();
+      await gate;
+      await write(key, value);
+    });
+    const selection = f.operations.run(() => f.auth.select('oaiapp_two'));
+    const settled = rejectWrite
+      ? assert.rejects(selection, /Synthetic deferred rejection/)
+      : selection;
+    try {
+      await entered;
+      assert.equal(f.operations.busy(), true);
+      assert.deepEqual(f.auth.state(), before);
+      assert.equal(f.values.get('chatgpt:accounts'), durable);
+      assert.equal(await f.auth.models(), cached);
+      await f.auth.authorized('https://api.openai.com/v1/models', { method: 'GET' });
+      assert.equal(f.authorizations.at(-1), 'Bearer synthetic-access-one');
+      assert.equal(f.afterOperation.mock.calls.length, 0);
+    } finally {
+      if (rejectWrite) {
+        reject(Error('Synthetic deferred rejection'));
+      } else {
+        release();
+      }
+      await settled;
+      await f.catalog();
+    }
+    assert.equal(f.operations.busy(), false);
+    assert.equal(f.afterOperation.mock.calls.length, 1);
+    assert.equal(f.auth.state().activeId, rejectWrite ? 'oaiapp_one' : 'oaiapp_two');
+    assert.equal(JSON.parse(f.values.get('chatgpt:accounts')!).activeId, f.auth.state().activeId);
+    assert.equal(f.auth.state().revision, before.revision + (rejectWrite ? 0 : 1));
+    if (rejectWrite) {
+      assert.deepEqual(f.auth.state(), before);
+      assert.equal(await f.auth.models(), cached);
+    } else {
+      assert.equal(f.auth.state().message, '');
+      assert.equal(f.authorizations.at(-1), 'Bearer synthetic-access-two');
+    }
+  });
+}
 
 async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-auth-')),
