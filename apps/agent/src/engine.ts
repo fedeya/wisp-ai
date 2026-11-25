@@ -610,6 +610,9 @@ export function createAgentEngine(options: EngineOptions) {
       skills: content.skills,
       stub,
     });
+    // Each step is logged as soon as it ends (the loop waits for it), so a
+    // cancelled or failed turn keeps the tool calls that already ran.
+    let logFailure: unknown;
     const result = streamText({
       model,
       instructions: content.system,
@@ -617,6 +620,14 @@ export function createAgentEngine(options: EngineOptions) {
       tools: assembled.tools,
       abortSignal: yield* callSignal(signal),
       ...turnOptions(tools.direct, selected),
+      onStepEnd: async ({ response }) => {
+        if (logFailure !== undefined || !response.messages.length) return;
+        try {
+          await history.append(session, response.messages, selected.model);
+        } catch (error) {
+          logFailure = error;
+        }
+      },
     });
     const events = new TurnEvents(assembled);
     yield* Stream.fromAsyncIterable(
@@ -634,10 +645,8 @@ export function createAgentEngine(options: EngineOptions) {
     if (events.failure !== undefined) {
       return yield* new AgentTurnError({ stage: 'model', cause: events.failure });
     }
-    // Every step's messages, tool calls and results included.
-    const response = yield* attempt('model', () => Promise.resolve(result.responseMessages));
-    if (response.length) {
-      yield* attempt('history', () => history.append(session, response, selected.model));
+    if (logFailure !== undefined) {
+      return yield* new AgentTurnError({ stage: 'history', cause: logFailure });
     }
   }, Effect.scoped);
 
