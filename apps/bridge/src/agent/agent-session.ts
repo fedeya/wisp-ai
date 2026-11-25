@@ -9,9 +9,9 @@ export type AgentEngine = Pick<
 >;
 
 /**
- * Starts a turn on the chat's agent session. A chat without one (new, or reset
- * after a model change or failure) starts a session whose first message carries
- * the recent visible conversation.
+ * Starts a turn on the chat's agent session. A chat without one (new, carried
+ * over from an older version, or reset after the provider rejected a request)
+ * starts a session whose first turn carries the recent visible conversation.
  */
 export function sendChatTurn(
   engine: AgentEngine,

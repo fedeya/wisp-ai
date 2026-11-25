@@ -626,28 +626,40 @@ test('interrupting a delivery aborts its stream and drains the runner', async ()
   expect(f.chat.status).toBe('interrupted');
 });
 
-test('retry after failure restores history without duplicating the user message', async () => {
+test('a failed turn keeps its session, so a retry continues it', async () => {
   const f = fixture();
   await f.run(f.chat, 'Earlier question', 'earlier');
   f.send.mockRejectedValueOnce(new Error('Provider unavailable'));
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('error');
-  expect(f.chat.agentSession).toBeUndefined();
+  expect(f.chat.agentSession).toBe('eve');
+  expect(f.end).not.toHaveBeenCalled();
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('done');
   expect(f.chat.messages.filter((m) => m.id === 'failed')).toHaveLength(1);
+  // The session's own log has the earlier turns; no visible history is resent.
+  const input = JSON.parse(f.send.mock.calls.at(-1)![0]) as { text: string; history?: unknown };
+  expect(input.text).toBe('Explain that quest');
+  expect(input.history).toBeUndefined();
+  expect(f.newSessionId).toHaveBeenCalledTimes(1);
+});
+
+test('a request the provider rejected starts a new session from the visible chat', async () => {
+  const failures = new ModelFailures();
+  const f = fixture(true, undefined, undefined, undefined, { modelFailures: failures });
+  await f.run(f.chat, 'Earlier question', 'earlier');
+  f.send.mockImplementationOnce(async () => {
+    failures.record('eve', 'bad_request');
+    throw new Error('Invalid request');
+  });
+  await f.run(f.chat, 'Explain that quest', 'failed');
+  expect(f.end).toHaveBeenCalledWith('eve');
+  expect(f.chat.agentSession).toBeUndefined();
+  await f.run(f.chat, 'Try that again', 'follow-up');
   const input = f.send.mock.calls.at(-1)![0];
   expect(input).toContain('Earlier question');
   expect(input).toContain('Explain that quest');
   expect(f.newSessionId).toHaveBeenCalledTimes(2);
-});
-
-test('a follow-up after failure includes the failed question in restored history', async () => {
-  const f = fixture();
-  f.send.mockRejectedValueOnce(new Error('Provider unavailable'));
-  await f.run(f.chat, 'Explain that quest', 'failed');
-  await f.run(f.chat, 'Try that again', 'follow-up');
-  expect(f.send.mock.calls.at(-1)![0]).toContain('Explain that quest');
 });
 
 function deferred<T>() {
@@ -786,8 +798,9 @@ test('a turn whose engine goes silent fails as a timeout and frees the engine se
   await f.run.drain();
   expect(f.chat.status).toBe('error');
   expect(f.chat.messages.at(-1)?.text).toMatch(/received nothing from the AI/);
-  expect(f.end).toHaveBeenCalledWith('eve');
-  expect(f.chat.agentSession).toBeUndefined();
+  // A stall is not the history's fault; the next turn continues the session.
+  expect(f.end).not.toHaveBeenCalled();
+  expect(f.chat.agentSession).toBe('eve');
   expect(chats.at(-1)?.outcome).toBe('timeout');
 });
 

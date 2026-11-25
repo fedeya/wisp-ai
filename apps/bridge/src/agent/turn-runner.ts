@@ -350,9 +350,14 @@ export function createTurnRunner(deps: TurnDependencies) {
         }
       }
       parts.flush(chat, Date.now(), true);
-      // A failed turn can leave its history unanswerable; continue in a new session.
-      endSession(engine, chat.agentSession);
-      chat.agentSession = undefined;
+      // The session survives a failed turn: its log keeps the steps that ran and
+      // replays unfinished tools as interrupted. Only a request the provider
+      // rejected (such as a history it will not take) starts a new session,
+      // which begins from the chat's visible messages.
+      if (deps.modelFailures?.since(agentSession, started) === 'bad_request') {
+        endSession(engine, chat.agentSession);
+        chat.agentSession = undefined;
+      }
       chat.messages.push({
         role: 'system',
         text: failure instanceof Error ? failure.message : String(failure),
