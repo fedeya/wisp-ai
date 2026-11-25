@@ -1,3 +1,5 @@
+import { Context, Effect, Layer } from 'effect';
+import { hostCall, type HostError } from './engine-errors.ts';
 import { readInstructions, readSkills, type AuthoredSkill } from './content.ts';
 import { SKILL } from './turn-tools.ts';
 
@@ -38,4 +40,15 @@ export function wispContent() {
   }));
   content.catch(() => (content = undefined));
   return content;
+}
+
+/** Wisp's instructions and skills, read once per process. */
+export class WispAgent extends Context.Service<
+  WispAgent,
+  { readonly content: Effect.Effect<WispContent, HostError> }
+>()('@wisp/agent/WispAgent') {
+  static readonly layer = Layer.succeed(
+    WispAgent,
+    WispAgent.of({ content: hostCall(() => wispContent()) }),
+  );
 }

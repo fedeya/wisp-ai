@@ -314,16 +314,23 @@ The agent runs inside the bridge on the [AI SDK](https://ai-sdk.dev), with each
 turn run as an [Effect](https://effect.website) program:
 
 ```text
-src/engine.ts       a turn: history, compaction, the streamText tool loop, stream events
-src/turn-tools.ts   the turn's AI SDK tools: direct tools, skill, tool_search, tool_call
-src/mcp-tools.ts    MCP connections through the official MCP SDK client
+src/engine.ts          AgentEngine: a turn's history, compaction, the streamText tool loop, events
+src/session-history.ts SessionHistory: the session log, over the bridge's store
+src/session-models.ts  SessionModels: the model each session runs on
+src/turn-toolbox.ts    TurnToolbox: the tools and saved memory of a turn
+src/mcp-tools.ts       Mcp: MCP connections through the official MCP SDK client
+src/wisp-agent.ts      WispAgent: instructions and skills
+src/turn-tools.ts      the turn's AI SDK tools: direct tools, skill, tool_search, tool_call
 src/wisp/           instructions.md, skills/ and tools/ the agent reads
 ```
 
 `streamText` runs the model and tool steps and stops when the model calls no
 tool, an `endsTurn` tool runs or the step budget ends. Effect owns the turn
 around it: cancellation interrupts it and aborts the provider call, and every
-failure settles the turn once. Only stable Effect modules are used; `effect/ai`
+failure settles the turn once, as a typed error (`HostError`, `ModelError` with
+how the provider refused, `HistoryError`). Each dependency is a service with its
+own layer, so a test can replace any of them; logs go through Effect's logger to
+the bridge's. Only stable Effect modules are used; `effect/ai`
 is still unstable. Shared agent rules live in
 `apps/agent/src/wisp/instructions.md`. Task procedures live in Agent Skills at
 `apps/agent/src/wisp/skills/<name>/SKILL.md`, with a short frontmatter description
