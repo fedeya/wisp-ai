@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { APICallError, RetryError } from 'ai';
+import { APICallError, RetryError, simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { Effect, Layer, Stream } from 'effect';
 import {
@@ -64,6 +64,59 @@ test('a request the provider refuses fails the turn as a rejected model call', a
   expect(failure).toMatchObject({ _tag: 'ModelError', reason: 'rejected', status: 400 });
   // The player's message was logged before the model was called.
   expect(history.entries('s').map(({ entry }) => entry.type)).toEqual(['user']);
+});
+
+test('text parts a provider reuses an ID for in a later step stream as separate parts', async () => {
+  const usage = {
+    inputTokens: { total: 1, noCache: 1, cacheRead: undefined, cacheWrite: undefined },
+    outputTokens: { total: 1, text: 1, reasoning: undefined },
+  };
+  let call = 0;
+  const model = new MockLanguageModelV4({
+    doStream: async () => {
+      call += 1;
+      const first = call === 1;
+      return {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: 'stream-start' as const, warnings: [] },
+            { type: 'text-start' as const, id: 'txt' },
+            { type: 'text-delta' as const, id: 'txt', delta: first ? 'Looking.' : 'Found it.' },
+            { type: 'text-end' as const, id: 'txt' },
+            ...(first
+              ? [
+                  {
+                    type: 'tool-call' as const,
+                    toolCallId: 'c1',
+                    toolName: 'tool_search',
+                    input: JSON.stringify({ query: 'map' }),
+                  },
+                ]
+              : []),
+            {
+              type: 'finish' as const,
+              finishReason: {
+                unified: first ? ('tool-calls' as const) : ('stop' as const),
+                raw: undefined,
+              },
+              usage,
+            },
+          ],
+        }),
+      };
+    },
+  });
+  const events = await Effect.runPromise(
+    Effect.flatMap(AgentEngine, (engine) =>
+      Stream.runCollect(engine.send('s', 'chat', { text: 'Where?' })),
+    ).pipe(Effect.provide(engineLayer(model, new MemoryHistory()))),
+  );
+  const texts = Array.from(events).flatMap((event) =>
+    event.type === 'content.completed' ? [event.data as { partId: string; value: string }] : [],
+  );
+  // The AI SDK gives a reused provider ID a new one, so the bridge never merges the two.
+  expect(texts.map((text) => text.value)).toEqual(['Looking.', 'Found it.']);
+  expect(new Set(texts.map((text) => text.partId)).size).toBe(2);
 });
 
 test('model errors are classified by the status of their last attempt', () => {
