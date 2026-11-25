@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import type { Entry } from '@wisp/agent/session-message';
-import { uuidv7Time } from '@wisp/protocol/uuid';
+import { version } from 'uuid';
 import { databaseScope } from './database-fixture.ts';
 import { AGENT_MESSAGE_FORMAT, AgentHistory } from '../src/agent/agent-history.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
@@ -93,8 +93,8 @@ test('agent history appends entries as JSON with their model and never replaces 
     ]);
     // Every entry has its own UUID v7, stamped with its creation time.
     for (const row of f.entries()) {
-      expect(row.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7/);
-      expect(uuidv7Time(row.id)).toBe(row.createdAt);
+      expect(version(row.id)).toBe(7);
+      expect(Number.parseInt(row.id.replaceAll('-', '').slice(0, 12), 16)).toBe(row.createdAt);
     }
     expect(new Set(f.entries().map((row) => row.id)).size).toBe(4);
   } finally {

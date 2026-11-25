@@ -6,7 +6,7 @@ import type {
   StoredRow,
   TokenUsage,
 } from '@wisp/agent/session-history';
-import { uuidv7 } from '@wisp/protocol/uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { agentEntries, agentSessions, chatInstanceState } from '../db/schema.ts';
@@ -103,7 +103,7 @@ export class AgentHistory implements HistoryStore {
           entries.map((entry, index) => ({
             sessionId: session,
             seq: from + index,
-            id: uuidv7(createdAt),
+            id: uuidv7({ msecs: createdAt }),
             type: entry.type,
             model,
             createdAt,
