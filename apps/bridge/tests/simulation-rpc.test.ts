@@ -1,6 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { serveAgent } from './agent-server-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 test('simulation RPC skips game reads and transport freshness for hypothetical requests only', async () => {
@@ -9,18 +8,15 @@ test('simulation RPC skips game reads and transport freshness for hypothetical r
   const run = vi.fn(async () => ({ status: 'native', result: {} }));
   let enabled = true;
   let transport = 'new-addon';
-  const server = createServer(
-    createAgentHandler({
-      token: 'test',
-      getChats: () => [chat],
-      currentTransport: () => transport,
-      capabilitySettings: { enabled: () => enabled },
-      readSimulationCharacter,
-      simulator: { run },
-    } as unknown as Parameters<typeof createAgentHandler>[0]),
-  );
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = 'http://127.0.0.1:' + (server.address() as { port: number }).port + '/simulate';
+  const server = await serveAgent({
+    token: 'test',
+    getChats: () => [chat],
+    currentTransport: () => transport,
+    capabilitySettings: { enabled: () => enabled } as never,
+    readSimulationCharacter,
+    simulator: { run } as never,
+  });
+  const url = server.origin + '/simulate';
   const post = (input: unknown) =>
     fetch(url, {
       method: 'POST',
@@ -53,6 +49,6 @@ test('simulation RPC skips game reads and transport freshness for hypothetical r
     expect((await post({ nativeRequest })).status).toBe(503);
     expect(run).toHaveBeenCalledTimes(3);
   } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await server.close();
   }
 });

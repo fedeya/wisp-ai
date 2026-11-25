@@ -5,10 +5,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NativeVault } from '../src/auth/secret-vault.ts';
-import { startDesktopServer } from '../src/desktop/desktop-server.ts';
+import { Effect, Exit, Scope } from 'effect';
+import { serveDesktop } from '../src/desktop/desktop-server.ts';
 test('desktop controls require the session token and reject browser origins', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-desktop-'));
-  const server = await startDesktopServer(root, { fetch: () => Response.json({ ok: true }) }, 0);
+  const scope = Scope.makeUnsafe();
+  await Effect.runPromise(
+    serveDesktop(root, { fetch: () => Response.json({ ok: true }) }, 0).pipe(Scope.provide(scope)),
+  );
   try {
     const identity = JSON.parse(await readFile(path.join(root, 'desktop.json'), 'utf8'));
     const url = 'http://127.0.0.1:' + identity.port + '/status';
@@ -33,7 +37,7 @@ test('desktop controls require the session token and reject browser origins', as
     assert.equal(oversized.status, 400);
     assert.deepEqual(await oversized.json(), { error: 'Request is too large' });
   } finally {
-    await new Promise<void>((r) => server.close(() => r()));
+    await Effect.runPromise(Scope.close(scope, Exit.void));
     await rm(root, { recursive: true, force: true });
   }
 });

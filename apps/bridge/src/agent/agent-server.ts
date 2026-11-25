@@ -1,10 +1,16 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import { timingSafeEqual } from 'node:crypto';
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import * as NodeHttpServerRequest from '@effect/platform-node/NodeHttpServerRequest';
+import { ByteSize, Effect } from 'effect';
+import {
+  HttpIncomingMessage,
+  HttpRouter,
+  HttpServerError,
+  HttpServerRequest,
+  HttpServerResponse,
+} from 'effect/http';
 import { z } from 'zod';
-import { Hono, type Context } from 'hono';
-import { bodyLimit } from 'hono/body-limit';
-import { getRequestListener, type HttpBindings } from '@hono/node-server';
-import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { rpcRequests, rpcResponses } from '@wisp/protocol/agent-rpc';
 import { actionTools } from '@wisp/protocol/game-actions';
 import { routineInput, routineEvents } from '@wisp/protocol/routines';
@@ -42,7 +48,7 @@ export interface MemoryView {
   error?: string;
   requestId?: string;
 }
-interface AgentDependencies {
+export interface AgentDependencies {
   logger?: Pick<Logger, 'info'>;
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
@@ -57,7 +63,7 @@ interface AgentDependencies {
   panelStore: PanelStore;
   memoryStore: MemoryStore;
   pending: GameRequests;
-  /** TheWoWDB catalog requests, run on the app runtime. */
+  /** TheWoWDB catalog requests, run on the bridge's services. */
   database: {
     query(input: z.input<typeof databaseRequest>, signal?: AbortSignal): Promise<DatabaseResult>;
   };
@@ -76,20 +82,38 @@ interface AgentDependencies {
     signal: AbortSignal,
   ) => Promise<ReplyPresentation>;
 }
-type AgentContext = Context<{ Bindings: HttpBindings }>;
 // The agent shows these messages to the model, so they are passed through unsanitized.
 const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
-// Aborts the game, simulator or search work when the agent hangs up before the reply is written.
-function abortOnHangUp(c: AgentContext) {
-  const abort = new AbortController();
-  const { outgoing } = c.env;
-  outgoing.once('close', () => {
-    if (!outgoing.writableEnded) {
-      abort.abort();
-    }
+const failed = (error: unknown) => HttpServerResponse.text(failure(error), { status: 503 });
+
+/**
+ * Runs Promise work for a request. Its signal aborts when the agent hangs up
+ * before the reply is written, which interrupts the request fiber.
+ */
+const work = <A>(run: (signal: AbortSignal) => Promise<A>) =>
+  Effect.tryPromise({ try: run, catch: (error) => error });
+
+/** Streams a reply on the raw Node request and response, as model proxies and the MCP relay do. */
+const raw = (
+  forward: (incoming: IncomingMessage, outgoing: ServerResponse) => Promise<void>,
+  onFailure: (error: unknown, outgoing: ServerResponse) => void,
+) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const incoming = NodeHttpServerRequest.toIncomingMessage(request) as IncomingMessage;
+    const outgoing = NodeHttpServerRequest.toServerResponse(request) as ServerResponse;
+    yield* Effect.promise(() =>
+      forward(incoming, outgoing).catch((error) => onFailure(error, outgoing)),
+    );
+    // The reply is already written; the server sends nothing more.
+    return HttpServerResponse.empty();
   });
-  return abort.signal;
-}
+
+const tooLarge = (error: unknown) =>
+  error instanceof HttpServerError.HttpServerError &&
+  error.reason._tag === 'RequestParseError' &&
+  error.reason.reason === 'BodyTooLarge';
+
 const inspectionTools = {
   settings: 'get_settings',
   npc_locations: 'find_npc_locations',
@@ -119,7 +143,13 @@ const inspectionTools = {
   map: 'inspect_map',
   hearthstone: 'inspect_hearthstone',
 } as const;
-export function createAgentApp(deps: AgentDependencies) {
+
+/**
+ * The loopback server the agent's tools call. Every request carries the
+ * bridge's token; tool routes name the agent session of a working chat on the
+ * live game connection.
+ */
+export const makeAgentApp = Effect.fn('AgentServer.make')(function* (deps: AgentDependencies) {
   const {
     token,
     auth,
@@ -142,100 +172,106 @@ export function createAgentApp(deps: AgentDependencies) {
     changed,
   } = deps;
   const expected = Buffer.from('Bearer ' + token);
-  const app = new Hono<{ Bindings: HttpBindings }>();
-  app.notFound((c) => c.body(null, 404));
-  app.use(async (c, next) => {
-    const supplied = Buffer.from(c.req.header('authorization') || '');
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      return c.text('Forbidden', 403);
-    }
-    await next();
-  });
+  const router = yield* HttpRouter.make;
 
   // Model proxies and the MCP relay stream on the raw Node request and response.
-  const proxy =
-    (forward: (c: AgentContext) => Promise<void>) =>
-    async (c: AgentContext): Promise<Response> => {
-      const { outgoing } = c.env;
-      try {
-        await forward(c);
-      } catch (e) {
-        if (outgoing.headersSent) {
-          outgoing.destroy();
-        } else {
-          outgoing
-            .writeHead(503, { 'content-type': 'application/json', 'x-wisp-model-error': 'true' })
-            .end(
-              JSON.stringify({
-                error: { message: e instanceof Error ? e.message : 'Model request failed' },
-              }),
-            );
-        }
-      }
-      return RESPONSE_ALREADY_SENT;
-    };
-  app.post(
+  const modelFailed = (error: unknown, outgoing: ServerResponse) => {
+    if (outgoing.headersSent) {
+      outgoing.destroy();
+    } else {
+      outgoing
+        .writeHead(503, { 'content-type': 'application/json', 'x-wisp-model-error': 'true' })
+        .end(
+          JSON.stringify({
+            error: { message: error instanceof Error ? error.message : 'Model request failed' },
+          }),
+        );
+    }
+  };
+  yield* router.add(
+    'POST',
     '/model/responses',
-    proxy((c) => proxyModel(c.env.incoming, c.env.outgoing, auth, deps.logger, deps.modelFailures)),
-  );
-  app.post(
-    '/model/connections/*',
-    proxy((c) =>
-      proxyConnectionModel(c.env.incoming, c.env.outgoing, connections, deps.modelFailures),
+    raw(
+      (incoming, outgoing) => proxyModel(incoming, outgoing, auth, deps.logger, deps.modelFailures),
+      modelFailed,
     ),
   );
-  app.all('/mcp/*', async (c) => {
-    const { incoming, outgoing } = c.env;
-    try {
-      await mcpRelay.handle(incoming, outgoing, (incoming.url || '').slice(5));
-    } catch {
-      outgoing.writeHead(503).end('MCP connection failed');
-    }
-    return RESPONSE_ALREADY_SENT;
-  });
+  yield* router.add(
+    'POST',
+    '/model/connections/*',
+    raw(
+      (incoming, outgoing) =>
+        proxyConnectionModel(incoming, outgoing, connections, deps.modelFailures),
+      modelFailed,
+    ),
+  );
+  yield* router.add(
+    '*',
+    '/mcp/*',
+    raw(
+      (incoming, outgoing) => mcpRelay.handle(incoming, outgoing, (incoming.url || '').slice(5)),
+      (_, outgoing) => void outgoing.writeHead(503).end('MCP connection failed'),
+    ),
+  );
 
-  app.get('/session-model', async (c) => {
-    try {
-      const id = c.req.query('session');
-      const chat = getChats().find((chat) => chat.agentSession === id && chat.status === 'working');
-      if (!chat?.modelSettings) {
-        throw Error('No model selected for this turn.');
-      }
-      const models = await connections.models();
-      const selected = chooseChatModel(models, chat.modelSettings.model, chat.modelSettings.effort);
-      return c.json({
-        ...selected,
-        ...(await connections.selection(selected.model)),
-        webSearchAvailable:
-          capabilitySettings.enabled('tool:web_search') && webSearch.available(selected.model),
-        contextWindow: models.find((m) => m.slug === selected.model)?.contextWindow,
+  yield* router.add(
+    'GET',
+    '/session-model',
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const id = new URL(request.url, 'http://bridge.invalid').searchParams.get('session');
+      const selection = yield* work(async () => {
+        const chat = getChats().find(
+          (chat) => chat.agentSession === id && chat.status === 'working',
+        );
+        if (!chat?.modelSettings) {
+          throw Error('No model selected for this turn.');
+        }
+        const models = await connections.models();
+        const selected = chooseChatModel(
+          models,
+          chat.modelSettings.model,
+          chat.modelSettings.effort,
+        );
+        return {
+          ...selected,
+          ...(await connections.selection(selected.model)),
+          webSearchAvailable:
+            capabilitySettings.enabled('tool:web_search') && webSearch.available(selected.model),
+          contextWindow: models.find((m) => m.slug === selected.model)?.contextWindow,
+        };
       });
-    } catch (error) {
-      return c.text(failure(error), 503);
-    }
-  });
+      return HttpServerResponse.jsonUnsafe(selection);
+    }).pipe(Effect.catch((error) => Effect.succeed(failed(error)))),
+  );
 
   // Tool calls from the agent: each names the agent session of a working chat on the live connection.
   interface ToolCall {
     raw: unknown;
     chat: Chat;
-    signal: () => AbortSignal;
+    /** Aborts when the agent hangs up before the reply is written. */
+    signal: AbortSignal;
   }
   const operationShape = z.object({
     operation: z.string().optional(),
     input: z.object({ operation: z.string().optional() }).optional(),
   });
-  function tool(
-    route: string,
-    handle: (call: ToolCall, c: AgentContext) => Promise<unknown>,
+  const tool = (
+    route: `/${string}`,
+    handle: (call: ToolCall) => Promise<unknown>,
     maxSize = 32768,
-  ) {
-    app.post(
+  ) =>
+    router.add(
+      'POST',
       route,
-      bodyLimit({ maxSize, onError: (c) => c.text('Request is too large', 503) }),
-      async (c) => {
-        try {
-          const raw: unknown = JSON.parse(await c.req.text());
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const body = yield* request.text.pipe(
+          Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(maxSize)),
+          Effect.mapError((error) => (tooLarge(error) ? Error('Request is too large') : error)),
+        );
+        const result = yield* work(async (signal) => {
+          const raw: unknown = JSON.parse(body);
           const { agentSession } = z.object({ agentSession: z.string().min(1) }).parse(raw);
           const operation = operationShape.parse(raw);
           const chat = getChats().find(
@@ -265,25 +301,18 @@ export function createAgentApp(deps: AgentDependencies) {
               'Automatic suggestions cannot change settings, memory, panels, macros or map markers',
             );
           }
-          let signal: AbortSignal | undefined;
-          const result = await handle(
-            { raw, chat, signal: () => (signal ??= abortOnHangUp(c)) },
-            c,
-          );
-          return c.json(result as object);
-        } catch (error) {
-          return c.text(failure(error), 503);
-        }
-      },
+          return handle({ raw, chat, signal });
+        });
+        return HttpServerResponse.jsonUnsafe(result);
+      }).pipe(Effect.catch((error) => Effect.succeed(failed(error)))),
     );
-  }
 
-  tool('/present', async ({ raw, chat, signal }) => {
+  yield* tool('/present', async ({ raw, chat, signal }) => {
     const data = rpcRequests.present.parse(raw);
-    return deps.presentReply(chat, data.callId, data.presentation, signal());
+    return deps.presentReply(chat, data.callId, data.presentation, signal);
   });
 
-  tool(
+  yield* tool(
     '/simulate',
     async ({ raw, chat, signal }) => {
       const data = rpcRequests.simulate.parse(raw);
@@ -292,7 +321,6 @@ export function createAgentApp(deps: AgentDependencies) {
       }
       const { agentSession: _session, ...args } = data;
       const input = simulationInput.parse(args);
-      const abort = signal();
       const needsLiveState = simulationNeedsLiveState(input);
       const snapshot = needsLiveState ? await readSimulationCharacter(chat.id) : undefined;
       if (
@@ -302,7 +330,7 @@ export function createAgentApp(deps: AgentDependencies) {
       ) {
         throw Error('The character changed. Request a new simulation.');
       }
-      return simulator.run(snapshot, input, abort);
+      return simulator.run(snapshot, input, signal);
     },
     1024 * 1024,
   );
@@ -319,14 +347,13 @@ export function createAgentApp(deps: AgentDependencies) {
       if (!capabilitySettings.enabled('tool:' + name)) {
         throw new Error('This knowledge source is disabled in Settings');
       }
-      const abort = signal();
       const { agentSession: _session, ...args } = data;
       return route === '/database'
-        ? database.query(databaseRequest.parse(args), abort)
+        ? database.query(databaseRequest.parse(args), signal)
         : measuredWebSearch(
             wowheadQuery.parse(args),
             chat.modelSettings?.model || defaultModel(),
-            abort,
+            signal,
           );
     });
   // Web search is the slowest tool, so record its budget and outcome to tune depth defaults.
@@ -357,10 +384,10 @@ export function createAgentApp(deps: AgentDependencies) {
       throw error;
     }
   }
-  knowledge('/database');
-  knowledge('/wowhead');
+  yield* knowledge('/database');
+  yield* knowledge('/wowhead');
 
-  tool('/routines', async ({ raw, chat }) => {
+  yield* tool('/routines', async ({ raw, chat }) => {
     const data = rpcRequests.routines.parse(raw);
     if (!capabilitySettings.enabled('tool:manage_routine')) {
       throw Error('Routines are disabled');
@@ -393,7 +420,7 @@ export function createAgentApp(deps: AgentDependencies) {
         : { routines };
   });
 
-  tool('/panels', async ({ raw, chat }) => {
+  yield* tool('/panels', async ({ raw, chat }) => {
     const data = rpcRequests.panels.parse(raw);
     if (!capabilitySettings.enabled('tool:manage_panel')) {
       throw Error('Persistent panels are disabled');
@@ -421,9 +448,9 @@ export function createAgentApp(deps: AgentDependencies) {
         : { panels };
   });
 
-  tool('/identity', async ({ chat }) => ({ characterKey: chat.characterKey || null }));
+  yield* tool('/identity', async ({ chat }) => ({ characterKey: chat.characterKey || null }));
 
-  tool('/memory', async ({ raw, chat }) => {
+  yield* tool('/memory', async ({ raw, chat }) => {
     const data = rpcRequests.memory.parse(raw);
     if (data.slot !== 'preferences' && data.slot !== 'character') {
       throw new Error('Invalid memory scope');
@@ -462,7 +489,7 @@ export function createAgentApp(deps: AgentDependencies) {
     return { entries };
   });
 
-  tool('/title', async ({ raw, chat }) => {
+  yield* tool('/title', async ({ raw, chat }) => {
     const data = rpcRequests.title.parse(raw);
     if (!capabilitySettings.enabled('tool:set_conversation_title')) {
       throw new Error('Conversation titles are disabled in Settings');
@@ -479,7 +506,7 @@ export function createAgentApp(deps: AgentDependencies) {
 
   // Game reads and actions go to the addon through the pending-request mailbox.
   const game = (route: '/state' | '/inspect' | '/action') =>
-    tool(route, async ({ raw, chat, signal }) => {
+    tool(route, async ({ raw, chat, signal: abort }) => {
       const inspection =
         route === '/inspect' ? rpcRequests.inspect.parse(raw).inspection : undefined;
       const action = route === '/action' ? rpcRequests.action.parse(raw).action : undefined;
@@ -495,7 +522,6 @@ export function createAgentApp(deps: AgentDependencies) {
       // `tool` already rejects. The expected character is a second check that
       // is sent only when the turn knew who was playing.
       const stateRequest = !inspection && !action ? rpcRequests.state.parse(raw) : undefined;
-      const abort = signal();
       if (stateRequest) {
         return queryCharacterSections(
           chat,
@@ -562,12 +588,17 @@ export function createAgentApp(deps: AgentDependencies) {
         ? readLoadedItems(() => request(), abort)
         : request();
     });
-  game('/state');
-  game('/inspect');
-  game('/action');
-  return app;
-}
-// Node listener for the loopback agent server.
-export function createAgentHandler(deps: AgentDependencies) {
-  return getRequestListener(createAgentApp(deps).fetch);
-}
+  yield* game('/state');
+  yield* game('/inspect');
+  yield* game('/action');
+
+  const routes = router.asHttpEffect();
+  return Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const supplied = Buffer.from(request.headers.authorization || '');
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      return HttpServerResponse.text('Forbidden', { status: 403 });
+    }
+    return yield* routes;
+  });
+});
