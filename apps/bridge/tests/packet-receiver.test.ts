@@ -16,7 +16,7 @@ import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
   const database = new ApplicationDatabase('unused');
-  const chat = { ...newChat('old', 'one'), eveId: 'eve', status: 'working' as const };
+  const chat = { ...newChat('old', 'one'), agentSession: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
   state.activeTransport = 'one';
   state.currentCharacterKey = 'old-character';
@@ -110,7 +110,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     );
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledWith('model'));
     expect(chat.status).toBe('working');
-    expect(chat.eveId).toBeUndefined();
+    expect(chat.agentSession).toBeUndefined();
     expect(create).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
@@ -241,9 +241,9 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(first));
-  expect(chat.eveId).toBeUndefined();
+  expect(chat.agentSession).toBeUndefined();
   expect(chat.messages[0]?.text).toBe('Keep this conversation');
-  chat.eveId = 'native-session';
+  chat.agentSession = 'native-session';
   f.receive(
     packetSchema.parse({
       type: 'chat_model_set',
@@ -256,7 +256,7 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(second));
-  expect(chat.eveId).toBeUndefined();
+  expect(chat.agentSession).toBeUndefined();
   expect(f.end).toHaveBeenCalledTimes(2);
 });
 

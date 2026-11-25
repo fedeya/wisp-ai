@@ -15,15 +15,15 @@ export async function sendChatTurn(
   input: string,
   signal?: AbortSignal,
 ) {
-  const resumed = Boolean(chat.eveId);
+  const resumed = Boolean(chat.agentSession);
   if (!resumed) {
     resetContextUsage(chat);
   }
-  let session = chat.eveId
-    ? client.sessions.attach(chat.eveId)
+  let session = chat.agentSession
+    ? client.sessions.attach(chat.agentSession)
     : (await client.sessions.create({ signal })).session;
   signal?.throwIfAborted();
-  chat.eveId = session.id;
+  chat.agentSession = session.id;
   try {
     return await session.send(resumed ? input : withConversationHistory(input, chat.messages), {
       signal,
@@ -36,7 +36,7 @@ export async function sendChatTurn(
     session = (await client.sessions.create({ signal })).session;
     signal?.throwIfAborted();
     resetContextUsage(chat);
-    chat.eveId = session.id;
+    chat.agentSession = session.id;
     return session.send(withConversationHistory(input, chat.messages), { signal });
   }
 }

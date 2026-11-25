@@ -120,9 +120,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       )) {
         interrupt(chat);
         settleTurn(chat, 'interrupted');
-        if (chat.eveId) {
+        if (chat.agentSession) {
           void client.sessions
-            .attach(chat.eveId)
+            .attach(chat.agentSession)
             .cancel()
             .catch((error) =>
               logger.warn(
@@ -230,15 +230,15 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           }
           const selected = chooseChatModel(available, input.model, input.effort);
           if (
-            chat.eveId &&
+            chat.agentSession &&
             chat.modelSettings?.model !== selected.model &&
             (parseConnectionModel(chat.modelSettings?.model || '') ||
               parseConnectionModel(selected.model))
           ) {
             // Start clean provider-native history while retaining the visible
             // conversation. Reasoning signatures/response IDs are not portable.
-            const previous = chat.eveId;
-            chat.eveId = undefined;
+            const previous = chat.agentSession;
+            chat.agentSession = undefined;
             void client.sessions
               .attach(previous)
               .end({ reason: 'AI model or connection changed' })
@@ -597,9 +597,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       state.deletedChatIds.add(packet.chat);
       state.chats = state.chats.filter((c) => c.id !== packet.chat);
       pending.cancelChat(packet.chat);
-      if (removed?.eveId) {
+      if (removed?.agentSession) {
         void client.sessions
-          .attach(removed.eveId)
+          .attach(removed.agentSession)
           .end({ reason: 'Conversation deleted by user' })
           .catch(() => {});
       }
@@ -656,9 +656,9 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       if (chat) {
         interrupt(chat);
       }
-      if (chat?.eveId) {
+      if (chat?.agentSession) {
         void client.sessions
-          .attach(chat.eveId)
+          .attach(chat.agentSession)
           .cancel()
           .catch(() => {});
       }

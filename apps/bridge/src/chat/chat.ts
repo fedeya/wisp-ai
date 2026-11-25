@@ -64,7 +64,7 @@ export const chatSchema = z.object({
     })
     .optional(),
   titleGenerated: z.boolean().optional(),
-  eveId: z.string().optional(),
+  agentSession: z.string().optional(),
   characterKey: z.string().optional(),
   unread: z.boolean().optional(),
   historyVersion: z.number().optional(),

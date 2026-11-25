@@ -194,7 +194,7 @@ export function createAgentApp(deps: AgentDependencies) {
   app.get('/session-model', async (c) => {
     try {
       const id = c.req.query('session');
-      const chat = getChats().find((chat) => chat.eveId === id && chat.status === 'working');
+      const chat = getChats().find((chat) => chat.agentSession === id && chat.status === 'working');
       if (!chat?.modelSettings) {
         throw Error('No model selected for this turn.');
       }
@@ -235,7 +235,9 @@ export function createAgentApp(deps: AgentDependencies) {
           const raw: unknown = JSON.parse(await c.req.text());
           const { agentSession } = z.object({ agentSession: z.string().min(1) }).parse(raw);
           const operation = operationShape.parse(raw);
-          const chat = getChats().find((c) => c.eveId === agentSession && c.status === 'working');
+          const chat = getChats().find(
+            (c) => c.agentSession === agentSession && c.status === 'working',
+          );
           let detachedSimulation = false;
           if (route === '/simulate') {
             const { agentSession: _session, ...args } = rpcRequests.simulate.parse(raw);

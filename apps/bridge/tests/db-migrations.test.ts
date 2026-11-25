@@ -14,13 +14,14 @@ import { migrateDatabase, migrationsFolder } from '../src/db/migrate.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
 
+const migrations = (await readdir(migrationsFolder)).length;
+
 test('the official Drizzle migrator creates the complete schema and shares its journal with Wisp', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-migrations-'));
   const file = path.join(root, 'wisp.sqlite');
   const database = new DatabaseSync(file);
   try {
     const names = (await readdir(migrationsFolder)).sort();
-    expect(names).toHaveLength(1);
     expect(names[0]).toMatch(/_initial$/);
     migrateDatabase(database);
     const tables = database
@@ -29,6 +30,8 @@ test('the official Drizzle migrator creates the complete schema and shares its j
       .filter((table) => !String(table.name).startsWith('sqlite_'));
     expect(tables.map((table) => table.name).sort()).toEqual([
       '__drizzle_migrations',
+      'agent_entries',
+      'agent_sessions',
       'chat_instance_state',
       'chats',
       'memory_entries',
@@ -59,7 +62,9 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     migrate(drizzle({ client: database }), { migrationsFolder });
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
     expect(database.prepare('SELECT role, text FROM messages').get()).toEqual(chat.messages[0]);
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrations,
+    );
     const folder = path.join(root, 'migrations');
     await cp(migrationsFolder, folder, { recursive: true });
     const pending = path.join(folder, '20980101000000_next');
@@ -70,7 +75,9 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     );
     migrateDatabase(database, folder);
     migrate(drizzle({ client: database }), { migrationsFolder: folder });
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(2);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrations + 1,
+    );
     const failing = path.join(folder, '20990101000000_failure');
     await mkdir(failing);
     await writeFile(
@@ -81,7 +88,9 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     expect(
       database.prepare("SELECT name FROM sqlite_master WHERE name='should_rollback'").get(),
     ).toBeUndefined();
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(2);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrations + 1,
+    );
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
   } finally {
     database.close();
@@ -108,7 +117,9 @@ test('a failed initial migration rolls back every table and can retry', async ()
     expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(0);
     migrateDatabase(database);
     expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
-    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+    expect(database.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrations,
+    );
   } finally {
     database.close();
     await rm(root, { recursive: true, force: true });
@@ -158,7 +169,9 @@ test('startup succeeds when another connection commits after Drizzle reads the e
     };
     migrateDatabase(first);
     expect(competingStartup).toBe(true);
-    expect(first.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(1);
+    expect(first.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
+      migrations,
+    );
     expect(first.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
   } finally {
     first.close();
@@ -220,5 +233,39 @@ test('three processes can migrate and import the same database simultaneously', 
     ]);
   } finally {
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+  }
+});
+
+test('the agent session migration keeps the Eve column so an older version can still read chats', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wisp-agent-session-migration-'));
+  const database = new DatabaseSync(path.join(root, 'wisp.sqlite'));
+  try {
+    // The database as the last version with Eve left it.
+    const initial = path.join(root, 'initial');
+    await mkdir(initial);
+    const [first] = (await readdir(migrationsFolder)).sort();
+    await cp(path.join(migrationsFolder, first!), path.join(initial, first!), { recursive: true });
+    migrateDatabase(database, initial);
+    database.exec(
+      `INSERT INTO chats (id, sort_index, title, status, revision, extras)
+       VALUES ('chat', 0, 'Quest help', 'done', 1, '{}');
+       INSERT INTO chat_instance_state (instance_id, chat_id, revision, history_revision, owner, eve_id)
+       VALUES ('instance', 'chat', 1, 1, 'game', 'eve-session');`,
+    );
+    migrateDatabase(database);
+    // The query an Eve version runs still works; its session ids are gone with its store.
+    expect(
+      database.prepare('SELECT chat_id, eve_id, agent_session FROM chat_instance_state').get(),
+    ).toEqual({ chat_id: 'chat', eve_id: null, agent_session: null });
+    const history = database
+      .prepare("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'agent_%' ORDER BY name")
+      .all();
+    expect(history).toEqual([
+      { name: 'agent_entries', strict: 1 },
+      { name: 'agent_sessions', strict: 1 },
+    ]);
+  } finally {
+    database.close();
+    await rm(root, { recursive: true, force: true });
   }
 });

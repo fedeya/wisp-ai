@@ -35,7 +35,7 @@ async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
 const workingChat = (proactive = false) => ({
   ...newChat('chat', 'addon'),
   status: 'working' as const,
-  eveId: 'eve',
+  agentSession: 'eve',
   characterKey: 'Realm-Name',
   proactive,
 });
@@ -92,7 +92,7 @@ test('actions run without a character identity and add the expected character wh
   const unknown = { ...workingChat(), characterKey: undefined };
   const known = {
     ...workingChat(),
-    eveId: 'known',
+    agentSession: 'known',
     characterKey: JSON.stringify(['WoW Forever', '', 'Fedrath']),
   };
   const request = vi.fn(async (_input: { action?: unknown }) => ({ status: 'completed' }));

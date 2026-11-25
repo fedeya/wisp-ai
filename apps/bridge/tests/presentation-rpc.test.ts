@@ -7,7 +7,7 @@ import { ReplyProjection } from '../src/reply/reply-stream.ts';
 test('presentation RPC authenticates, scopes the active character and reports bridge acceptance errors', async () => {
   const chat = newChat('presentation', 'addon');
   chat.status = 'working';
-  chat.eveId = 'eve';
+  chat.agentSession = 'eve';
   let transport = 'addon';
   const projection = new ReplyProjection();
   const presentReply = vi.fn((_chat, callId, input, signal) =>

@@ -611,7 +611,7 @@ test('retry after failure restores history without duplicating the user message'
   f.send.mockRejectedValueOnce(new Error('Provider unavailable'));
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('error');
-  expect(f.chat.eveId).toBeUndefined();
+  expect(f.chat.agentSession).toBeUndefined();
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('done');
   expect(f.chat.messages.filter((m) => m.id === 'failed')).toHaveLength(1);
@@ -766,7 +766,7 @@ test('a turn whose engine goes silent fails as a timeout and frees the engine se
   expect(f.chat.status).toBe('error');
   expect(f.chat.messages.at(-1)?.text).toMatch(/received nothing from the AI/);
   expect(f.cancel).toHaveBeenCalledTimes(1);
-  expect(f.chat.eveId).toBeUndefined();
+  expect(f.chat.agentSession).toBeUndefined();
   expect(chats.at(-1)?.outcome).toBe('timeout');
 });
 

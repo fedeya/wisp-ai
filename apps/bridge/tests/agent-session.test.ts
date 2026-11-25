@@ -8,7 +8,7 @@ import type { Chat } from '../src/chat/events.ts';
 function fixture(error?: Error) {
   const chat: Chat = {
     id: 'chat',
-    eveId: 'old',
+    agentSession: 'old',
     title: 'Test',
     titleGenerated: true,
     owner: 'game',
@@ -31,7 +31,11 @@ function fixture(error?: Error) {
       if (id === 'old' && error) {
         throw error;
       }
-      assert.equal(chat.eveId, id, 'bridge lookup must be updated before memory recall runs');
+      assert.equal(
+        chat.agentSession,
+        id,
+        'bridge lookup must be updated before memory recall runs',
+      );
       return delivery;
     },
   });
@@ -46,7 +50,7 @@ test('an inactive session is replaced once and keeps bounded visible history', a
   const input = turnInput('What is next?', undefined, f.chat);
   assert.equal(await sendChatTurn(f.client, f.chat, input), f.delivery);
   assert.equal(f.created(), 1);
-  assert.equal(f.chat.eveId, 'new-1');
+  assert.equal(f.chat.agentSession, 'new-1');
   assert.equal(f.sent.length, 2);
   assert.ok(f.sent[1].input.includes('<historical_conversation>'));
   assert.ok(f.sent[1].input.includes('Follow this guide'));
@@ -59,7 +63,7 @@ test.each(['new', 'inactive'])(
   async (mode) => {
     const f = fixture(mode === 'inactive' ? new SessionNotActiveError() : undefined);
     if (mode === 'new') {
-      f.chat.eveId = undefined;
+      f.chat.agentSession = undefined;
     }
     const markdown = '| Pieza | Estado |\n|---|---|\n| Toga | Equipada |';
     f.chat.messages.splice(
@@ -117,7 +121,7 @@ test('live sessions are reused and ambiguous failures are never resent', async (
 
 test('restored original replies keep the existing history count and per-message limits', async () => {
   const f = fixture();
-  f.chat.eveId = undefined;
+  f.chat.agentSession = undefined;
   f.chat.messages = Array.from({ length: 15 }, (_, index) => ({
     role: 'assistant',
     text: '',

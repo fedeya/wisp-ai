@@ -170,7 +170,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     let preparedMs: number | undefined;
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
-    // Failure paths clear chat.eveId before telemetry reads which session failed.
+    // Failure paths clear chat.agentSession before telemetry reads which session failed.
     let agentSession: string | undefined;
     controllers.set(chat, controller);
     usageLimitedChats.delete(chat);
@@ -259,7 +259,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         turnInput(text, context, chat, capabilitySettings.snapshot()),
         controller.signal,
       );
-      agentSession = chat.eveId;
+      agentSession = chat.agentSession;
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
       changed();
@@ -296,7 +296,7 @@ export function createTurnRunner(deps: TurnDependencies) {
       const result = await response.result({ signal: controller.signal });
       assertCurrent();
       if (result.sessionEnded) {
-        chat.eveId = undefined;
+        chat.agentSession = undefined;
       }
       if (chat.proactive) {
         chat.tipSkipped = parts.noTip;
@@ -350,14 +350,14 @@ export function createTurnRunner(deps: TurnDependencies) {
         }
       }
       parts.flush(chat, Date.now(), true);
-      if (stalled && chat.eveId) {
+      if (stalled && chat.agentSession) {
         // Free the engine session the stalled turn may still be holding.
         void client.sessions
-          .attach(chat.eveId)
+          .attach(chat.agentSession)
           .cancel()
           .catch(() => {});
       }
-      chat.eveId = undefined;
+      chat.agentSession = undefined;
       chat.messages.push({
         role: 'system',
         text: failure instanceof Error ? failure.message : String(failure),

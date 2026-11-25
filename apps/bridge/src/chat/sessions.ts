@@ -2,7 +2,7 @@ import type { Chat } from './events.ts';
 export function isEmptyDraft(chat: Chat): boolean {
   return (
     chat.title === 'New conversation' &&
-    !chat.eveId &&
+    !chat.agentSession &&
     !chat.routineId &&
     !chat.inline &&
     !chat.proactive &&
@@ -15,7 +15,7 @@ export function isAutomaticEmptyChat(chat: Chat): boolean {
   return (
     /^\d+-\d+-first$/.test(chat.id) &&
     chat.title === 'New conversation' &&
-    !chat.eveId &&
+    !chat.agentSession &&
     !chat.messages.length &&
     chat.status === 'idle'
   );

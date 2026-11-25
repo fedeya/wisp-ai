@@ -220,7 +220,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     });
     bridge.receive(packetSchema.parse({ type: 'hello', session: 'live', seq: 1, at: 1 }));
     const chat = newChat('search-chat', 'live');
-    chat.eveId = 'eve-search';
+    chat.agentSession = 'eve-search';
     chat.status = 'working';
     chat.modelSettings = { model: `connection:${id}:local`, effort: 'provider-default' };
     bridge.state.chats.push(chat);
