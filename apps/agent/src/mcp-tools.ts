@@ -160,6 +160,7 @@ async function connect(connection: McpConnection): Promise<Connected> {
  */
 export class McpTools {
   private current?: { key: string; clients: Map<string, Connected> };
+  private closed = false;
   private configFile: () => string | undefined;
   constructor(configFile: () => string | undefined) {
     this.configFile = configFile;
@@ -189,10 +190,16 @@ export class McpTools {
     clients: Map<string, Connected>,
     name: string,
     connection: McpConnection,
-  ): Promise<Connected> {
+  ): Promise<Connected | undefined> {
+    if (this.current?.clients !== clients) return;
     let connected = clients.get(name);
     if (!connected) {
       connected = await connect(connection);
+      // Shutdown or a configuration change can drop this cache while connecting.
+      if (this.current?.clients !== clients) {
+        await connected.client.close().catch(() => {});
+        return;
+      }
       clients.set(name, connected);
     }
     if (!connected.tools || Date.now() - connected.at > CACHE_MS) {
@@ -218,7 +225,9 @@ export class McpTools {
 
   /** The enabled MCP tools; an unreachable connection is skipped and reported to onError. */
   async tools(onError: (connection: string, error: unknown) => void): Promise<McpTool[]> {
+    if (this.closed) return [];
     const connections = await mcpConnections(this.configFile());
+    if (this.closed) return [];
     if (!Object.keys(connections).length) {
       await this.drop();
       return [];
@@ -226,19 +235,22 @@ export class McpTools {
     const key = JSON.stringify(connections);
     if (this.current?.key !== key) {
       await this.drop();
+      if (this.closed) return [];
       this.current = { key, clients: new Map() };
     }
     const { clients } = this.current!;
     const tools: McpTool[] = [];
     for (const [name, connection] of Object.entries(connections)) {
-      let connected: Connected;
+      let connected: Connected | undefined;
       try {
         connected = await this.listed(clients, name, connection);
       } catch (error) {
+        if (this.current?.clients !== clients) return [];
         // Retried on the next turn instead of caching its absence.
         onError(name, error);
         continue;
       }
+      if (!connected || this.current?.clients !== clients) return [];
       for (const tool of connected.tools ?? []) {
         if (
           (connection.allow && !connection.allow.includes(tool.name)) ||
@@ -271,6 +283,7 @@ export class McpTools {
   }
 
   async close() {
+    this.closed = true;
     await this.drop();
   }
 }

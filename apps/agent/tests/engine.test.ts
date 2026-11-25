@@ -14,6 +14,7 @@ import {
   type TurnInput,
 } from '../src/engine.ts';
 import { MemoryHistory } from '../src/memory-history.ts';
+import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));
 
@@ -78,6 +79,7 @@ async function fixture(
   contextWindow?: number,
   options: {
     appendFails?: (count: number) => boolean;
+    beforeAppend?: (entries: readonly Entry[]) => Promise<void>;
     /** Game reads answer after this long, for a turn stopped while a tool runs. */
     inspectDelayMs?: number;
   } = {},
@@ -147,6 +149,7 @@ async function fixture(
   const history = new (class extends MemoryHistory {
     override async append(session: string, entries: readonly Entry[], model: string) {
       if (options.appendFails?.(++appends)) throw Error('The disk is full.');
+      if (options.beforeAppend) await options.beforeAppend(entries);
       return super.append(session, entries, model);
     }
   })();
@@ -429,6 +432,47 @@ test(
     }
   },
 );
+
+test('cancelling while a completed step is being saved does not repeat the step', async () => {
+  const saving = gate();
+  const releaseSave = gate();
+  const f = await fixture(
+    (count) => toolCall(count, 'tool_call', { name: 'wow__get_settings', input: {} }),
+    undefined,
+    {
+      beforeAppend: async (entries) => {
+        if (entries.some((entry) => entry.type === 'assistant')) {
+          saving.open();
+          await releaseSave.promise;
+        }
+      },
+    },
+  );
+  const controller = new AbortController();
+  const session = f.engine.newSessionId();
+  const turn = f.send(session, 'Check my settings', undefined, controller.signal);
+  try {
+    await Promise.race([
+      saving.promise,
+      turn.then(() => {
+        throw Error('The turn ended before saving the assistant step.');
+      }),
+    ]);
+    controller.abort();
+    releaseSave.open();
+    expect((await turn).result).toEqual({ status: 'cancelled' });
+    expect(f.requests).toHaveLength(1);
+    const assistants = f.messagesOf(session).filter(({ entry }) => entry.type === 'assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0]?.entry).toMatchObject({
+      content: [{ type: 'tool', id: 'tool-call-1', state: { status: 'completed' } }],
+    });
+  } finally {
+    controller.abort();
+    releaseSave.open();
+    await f.close();
+  }
+});
 
 test(
   'cancelling a turn stops the tool loop and settles it as cancelled',
