@@ -637,10 +637,9 @@ test('a failed turn keeps its session, so a retry continues it', async () => {
   await f.run(f.chat, 'Explain that quest', 'failed');
   expect(f.chat.status).toBe('done');
   expect(f.chat.messages.filter((m) => m.id === 'failed')).toHaveLength(1);
-  // The session's own log has the earlier turns; no visible history is resent.
+  // The same session continues; the engine logs the visible history only for a session without a log.
   const input = JSON.parse(f.send.mock.calls.at(-1)![0]) as { text: string; history?: unknown };
   expect(input.text).toBe('Explain that quest');
-  expect(input.history).toBeUndefined();
   expect(f.newSessionId).toHaveBeenCalledTimes(1);
 });
 

@@ -504,7 +504,8 @@ test(
         context,
         history: [{ role: 'user', text: 'Hi' }],
       });
-      await f.send(session, { text: 'And now?', context });
+      // The session has a log now, so the chat's earlier messages are not logged again.
+      await f.send(session, { text: 'And now?', context, history: [{ role: 'user', text: 'Hi' }] });
       expect(
         f
           .messagesOf(session)

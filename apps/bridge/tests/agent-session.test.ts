@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { sendChatTurn, type AgentEngine } from '../src/agent/agent-session.ts';
 import type { TurnInput } from '@wisp/agent/engine';
-import { turnInput } from '../src/chat/context.ts';
+import { turnInput, withConversationHistory } from '../src/chat/context.ts';
 import type { Chat } from '../src/chat/events.ts';
 
 function fixture() {
@@ -104,11 +104,14 @@ test('a new session restores assistant history from original replies instead of 
   assert.equal(f.created(), 1);
 });
 
-test('a live session is reused with the message as sent', () => {
+test('a live session is reused with the message as sent and the visible chat', () => {
   const live = fixture();
   sendChatTurn(live.engine, live.chat, { text: 'Message' }, signal());
   assert.equal(live.created(), 0);
-  assert.deepEqual(live.sent, [{ id: 'old', input: { text: 'Message' } }]);
+  // The engine logs the visible chat only when the session has no log yet.
+  assert.deepEqual(live.sent, [
+    { id: 'old', input: withConversationHistory({ text: 'Message' }, live.chat.messages) },
+  ]);
 });
 
 test('restored original replies keep the existing history count and per-message limits', () => {
