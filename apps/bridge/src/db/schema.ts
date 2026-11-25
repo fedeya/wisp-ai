@@ -212,21 +212,66 @@ export const chatInstanceState = sqliteTable(
 );
 
 /**
- * The model-facing history of each agent session: user, assistant and tool
- * messages in AI SDK form, tool calls and results included. A new session
- * starts when the model or connection changes, since provider-native history
- * (reasoning signatures, response IDs) is not portable.
+ * One agent session of a chat: the model-facing conversation the agent
+ * resumes on each turn. A new session starts when the model or connection
+ * changes, since provider-native history (reasoning signatures, response IDs)
+ * is not portable.
+ *
+ * `chat_id` has no foreign key: a session starts on the chat's first turn,
+ * before the chat's debounced save reaches this database. The chat store
+ * deletes a chat's sessions with the chat, and startup removes sessions whose
+ * chat was never saved.
+ */
+export const agentSessions = sqliteTable(
+  'agent_sessions',
+  {
+    id: text().primaryKey().notNull(),
+    chatId: text('chat_id').notNull(),
+    /** The model slug the session was started with (`connection:<id>:<model>` for connections). */
+    model: text().notNull(),
+    /** How `agent_messages.message` is encoded, so a later format can migrate older rows. */
+    format: text().notNull(),
+    /** The Wisp version that started the session. */
+    wispVersion: text('wisp_version').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    compactedAt: integer('compacted_at'),
+    // Totals the providers reported for this session's model calls.
+    tokensInput: integer('tokens_input').notNull().default(0),
+    tokensOutput: integer('tokens_output').notNull().default(0),
+    tokensReasoning: integer('tokens_reasoning').notNull().default(0),
+    tokensCacheRead: integer('tokens_cache_read').notNull().default(0),
+    tokensCacheWrite: integer('tokens_cache_write').notNull().default(0),
+  },
+  (t) => [
+    index('agent_sessions_chat').on(t.chatId),
+    check(
+      'agent_session_tokens',
+      sql`${t.tokensInput} >= 0 AND ${t.tokensOutput} >= 0 AND ${t.tokensReasoning} >= 0 AND ${t.tokensCacheRead} >= 0 AND ${t.tokensCacheWrite} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * A session's history: user, assistant and tool messages in AI SDK form
+ * (`agent_sessions.format`), tool calls and results with their call IDs
+ * included. It is always loaded whole, in position order.
  */
 export const agentMessages = sqliteTable(
   'agent_messages',
   {
-    session: text().notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
     position: integer().notNull(),
+    role: text().$type<'user' | 'assistant' | 'tool' | 'system'>().notNull(),
+    createdAt: integer('created_at').notNull(),
     message: text().notNull(),
   },
   (t) => [
-    primaryKey({ columns: [t.session, t.position] }),
+    primaryKey({ columns: [t.sessionId, t.position] }),
     check('agent_message_position', sql`${t.position} >= 0`),
+    check('agent_message_role', sql`${t.role} IN ('user','assistant','tool','system')`),
     check('agent_message_json', sql`json_valid(${t.message})`),
   ],
 );

@@ -1,17 +1,46 @@
-import { and, asc, eq, gte, isNotNull, notInArray } from 'drizzle-orm';
-import type { ModelMessage } from '@wisp/agent/engine';
+import { and, asc, eq, gte, isNotNull, notInArray, sql } from 'drizzle-orm';
+import type { ModelMessage, SessionStart, TokenUsage } from '@wisp/agent/engine';
 import type { ApplicationDatabase } from '../db/application-database.ts';
-import { agentMessages, chatInstanceState } from '../db/schema.ts';
+import { agentMessages, agentSessions, chatInstanceState } from '../db/schema.ts';
+
+/** How `agent_messages.message` is encoded: an AI SDK 7 `ModelMessage` as JSON. */
+export const AGENT_MESSAGE_FORMAT = 'ai-sdk-7';
 
 /**
- * The model-facing history of each agent session, in the application
- * database next to the visible conversation. The agent sends it in full on
- * every turn, so a provider sees a stable prefix and can reuse its cache.
+ * Each agent session's model-facing history, in the application database
+ * next to the visible conversation. The agent sends it in full on every turn,
+ * so a provider sees a stable prefix and can reuse its cache.
  */
 export class AgentHistory {
   readonly database: ApplicationDatabase;
-  constructor(database: ApplicationDatabase) {
+  private readonly wispVersion: string;
+  private readonly now: () => number;
+  constructor(
+    database: ApplicationDatabase,
+    options: { wispVersion: string; now?: () => number } = { wispVersion: 'unknown' },
+  ) {
     this.database = database;
+    this.wispVersion = options.wispVersion;
+    this.now = options.now ?? Date.now;
+  }
+
+  /** Starts the session on its chat's first turn, or marks a resumed one as used. */
+  async begin(session: string, start: SessionStart) {
+    await this.database.transaction((db) => {
+      const now = this.now();
+      db.insert(agentSessions)
+        .values({
+          id: session,
+          chatId: start.chatId,
+          model: start.model,
+          format: AGENT_MESSAGE_FORMAT,
+          wispVersion: this.wispVersion,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({ target: agentSessions.id, set: { updatedAt: now } })
+        .run();
+    });
   }
 
   async load(session: string): Promise<ModelMessage[]> {
@@ -19,7 +48,7 @@ export class AgentHistory {
     return this.database.orm
       .select({ message: agentMessages.message })
       .from(agentMessages)
-      .where(eq(agentMessages.session, session))
+      .where(eq(agentMessages.sessionId, session))
       .orderBy(asc(agentMessages.position))
       .all()
       .map((row) => JSON.parse(row.message) as ModelMessage);
@@ -27,45 +56,54 @@ export class AgentHistory {
 
   /** Appends a turn's messages after the `from` messages already stored. */
   async append(session: string, from: number, messages: ModelMessage[]) {
+    await this.database.transaction((db) => this.write(db, session, from, messages));
+  }
+
+  /** Replaces the whole history with a compacted one. */
+  async replace(session: string, messages: ModelMessage[]) {
     await this.database.transaction((db) => {
-      db.delete(agentMessages)
-        .where(and(eq(agentMessages.session, session), gte(agentMessages.position, from)))
+      this.write(db, session, 0, messages);
+      db.update(agentSessions)
+        .set({ compactedAt: this.now() })
+        .where(eq(agentSessions.id, session))
         .run();
-      if (messages.length) {
-        db.insert(agentMessages)
-          .values(
-            messages.map((message, index) => ({
-              session,
-              position: from + index,
-              message: JSON.stringify(message),
-            })),
-          )
-          .run();
-      }
     });
   }
 
-  /** Replaces the whole history, for example with a compacted one. */
-  async replace(session: string, messages: ModelMessage[]) {
-    await this.append(session, 0, messages);
+  /** Adds one model call's reported tokens to the session's totals. */
+  async addUsage(session: string, usage: TokenUsage) {
+    await this.database.transaction((db) => {
+      db.update(agentSessions)
+        .set({
+          tokensInput: sql`${agentSessions.tokensInput} + ${usage.inputTokens}`,
+          tokensOutput: sql`${agentSessions.tokensOutput} + ${usage.outputTokens}`,
+          tokensReasoning: sql`${agentSessions.tokensReasoning} + ${usage.reasoningTokens ?? 0}`,
+          tokensCacheRead: sql`${agentSessions.tokensCacheRead} + ${usage.cacheReadTokens ?? 0}`,
+          tokensCacheWrite: sql`${agentSessions.tokensCacheWrite} + ${usage.cacheWriteTokens ?? 0}`,
+        })
+        .where(eq(agentSessions.id, session))
+        .run();
+    });
   }
 
+  /** Forgets a session; its messages go with it. */
   async delete(session: string) {
     await this.database.transaction((db) => {
-      db.delete(agentMessages).where(eq(agentMessages.session, session)).run();
+      db.delete(agentSessions).where(eq(agentSessions.id, session)).run();
     });
   }
 
   /**
-   * Removes the history of every session no saved conversation refers to.
-   * Run it before turns start: a new session is saved with its chat later.
+   * Removes every session no saved conversation refers to: ones whose chat was
+   * deleted or never saved, and ones a failed end left behind. Run it before
+   * turns start, because a new session is saved with its chat later.
    */
   async prune() {
     await this.database.transaction((db) => {
-      db.delete(agentMessages)
+      db.delete(agentSessions)
         .where(
           notInArray(
-            agentMessages.session,
+            agentSessions.id,
             db
               .select({ session: chatInstanceState.agentSession })
               .from(chatInstanceState)
@@ -74,5 +112,30 @@ export class AgentHistory {
         )
         .run();
     });
+  }
+
+  private write(
+    db: Parameters<Parameters<ApplicationDatabase['transaction']>[0]>[0],
+    session: string,
+    from: number,
+    messages: ModelMessage[],
+  ) {
+    db.delete(agentMessages)
+      .where(and(eq(agentMessages.sessionId, session), gte(agentMessages.position, from)))
+      .run();
+    if (messages.length) {
+      const createdAt = this.now();
+      db.insert(agentMessages)
+        .values(
+          messages.map((message, index) => ({
+            sessionId: session,
+            position: from + index,
+            role: message.role,
+            createdAt,
+            message: JSON.stringify(message),
+          })),
+        )
+        .run();
+    }
   }
 }

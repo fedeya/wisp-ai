@@ -23,6 +23,7 @@ export function sendChatTurn(engine: AgentEngine, chat: Chat, input: string, sig
     chat.agentSession!,
     resumed ? input : withConversationHistory(input, chat.messages),
     signal,
+    chat.id,
   );
 }
 

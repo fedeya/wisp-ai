@@ -58,9 +58,11 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     token: host.token,
     // Each eval is a single new turn; nothing is resumed.
     history: {
+      begin: async () => {},
       load: async () => [],
       append: async () => {},
       replace: async () => {},
+      addUsage: async () => {},
       delete: async () => {},
     },
     logger: { info: () => {}, warn: () => {} },
@@ -71,6 +73,7 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
       engine.newSessionId(),
       playerMessage(definition.question),
       AbortSignal.timeout(300_000),
+      'eval',
     );
     const events: EngineEvent[] = [];
     for await (const event of run.events) {

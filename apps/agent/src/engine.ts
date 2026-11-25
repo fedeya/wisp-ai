@@ -42,11 +42,30 @@ export interface EngineResult {
   error?: { message?: string };
 }
 
+/** The chat a session belongs to and the model it runs on. */
+export interface SessionStart {
+  chatId: string;
+  model: string;
+}
+
+/** Tokens one model call reported. */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+}
+
 /** Where each session's model-facing history lives (the bridge's SQLite). */
 export interface EngineHistory {
+  /** Called at the start of every turn; the first one starts the session. */
+  begin(session: string, start: SessionStart): Promise<void>;
   load(session: string): Promise<ModelMessage[]>;
   append(session: string, from: number, messages: ModelMessage[]): Promise<void>;
+  /** Replaces the history with a compacted one. */
   replace(session: string, messages: ModelMessage[]): Promise<void>;
+  addUsage(session: string, usage: TokenUsage): Promise<void>;
   delete(session: string): Promise<void>;
 }
 
@@ -96,8 +115,8 @@ function safeLabel(label: () => string | undefined) {
   }
 }
 
-// Token counts arrive either as numbers or as { total, cacheRead } objects.
-export function stepUsage(raw: unknown) {
+// Token counts arrive either as numbers or as { total, cacheRead, ... } objects.
+export function stepUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== 'object') {
     return undefined;
   }
@@ -119,10 +138,20 @@ export function stepUsage(raw: unknown) {
       : typeof usage.inputTokens?.cacheRead === 'number'
         ? usage.inputTokens.cacheRead
         : undefined;
+  const reasoningTokens =
+    typeof usage.reasoningTokens === 'number'
+      ? usage.reasoningTokens
+      : typeof usage.outputTokens?.reasoning === 'number'
+        ? usage.outputTokens.reasoning
+        : undefined;
+  const cacheWriteTokens =
+    typeof usage.inputTokens?.cacheWrite === 'number' ? usage.inputTokens.cacheWrite : undefined;
   return {
     inputTokens,
     outputTokens,
     ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+    ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cacheWriteTokens } : {}),
   };
 }
 
@@ -318,6 +347,9 @@ const aborted = (signal: AbortSignal) =>
 export function createAgentEngine(options: EngineOptions) {
   const { origin, token, history, logger, stub } = options;
   const mcp = new McpTools(options.mcpConfigFile ?? (() => undefined));
+  /** Adds one model call's reported tokens to its session's totals. */
+  const recordUsage = (session: string, usage: TokenUsage | undefined) =>
+    usage ? attempt('history', () => history.addUsage(session, usage)) : Effect.void;
   async function modelSettings(session: string, signal: AbortSignal) {
     const response = await fetch(
       origin() + '/session-model?session=' + encodeURIComponent(session),
@@ -428,6 +460,7 @@ export function createAgentEngine(options: EngineOptions) {
         abortSignal,
       }),
     ).pipe(
+      Effect.tap((response) => recordUsage(session, stepUsage(response.usage))),
       Effect.map((response) => response.text),
       Effect.catchTag('AgentTurnError', (error) =>
         Effect.sync(() => {
@@ -460,12 +493,14 @@ export function createAgentEngine(options: EngineOptions) {
   // stops calling tools, a tool ends the turn, or the step budget runs out.
   const turn = Effect.fn('AgentEngine.turn')(function* (
     session: string,
+    chatId: string,
     input: string,
     signal: AbortSignal,
     emit: (event: EngineEvent) => Effect.Effect<unknown>,
   ) {
     const content = yield* attempt('setup', () => wispContent());
     const selected = yield* attempt('setup', () => modelSettings(session, signal));
+    yield* attempt('history', () => history.begin(session, { chatId, model: selected.model }));
     const tools = yield* attempt('setup', () => turnTools(session, signal));
     const model = turnModel(session, selected, true);
     yield* emit({ type: 'turn.started', data: {} });
@@ -514,7 +549,15 @@ export function createAgentEngine(options: EngineOptions) {
     yield* Stream.fromAsyncIterable(
       result.fullStream,
       (cause) => new AgentTurnError({ stage: 'model', cause }),
-    ).pipe(Stream.runForEach((part) => Effect.forEach(events.read(part), emit)));
+    ).pipe(
+      Stream.runForEach((part) =>
+        Effect.forEach(events.read(part), (event) =>
+          event.type === 'usage.recorded'
+            ? recordUsage(session, event.data.usage as TokenUsage).pipe(Effect.andThen(emit(event)))
+            : emit(event),
+        ),
+      ),
+    );
     if (events.failure !== undefined) {
       return yield* new AgentTurnError({ stage: 'model', cause: events.failure });
     }
@@ -571,8 +614,8 @@ export function createAgentEngine(options: EngineOptions) {
     /** Loads instructions and skills ahead of the first turn. */
     preload: () => wispContent().then(() => undefined),
     /** Starts a turn; events stream once and the result settles when they end. */
-    send(session: string, input: string, signal: AbortSignal) {
-      return events(signal, (emit) => turn(session, input, signal, emit));
+    send(session: string, input: string, signal: AbortSignal, chatId: string) {
+      return events(signal, (emit) => turn(session, chatId, input, signal, emit));
     },
     /** Summarizes a session's older history now, as a long one would be before its next turn. */
     compact(session: string, signal: AbortSignal) {

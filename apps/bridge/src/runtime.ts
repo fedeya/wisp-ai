@@ -238,7 +238,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     resources.defer(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
-    const agentHistory = new AgentHistory(applicationDatabase);
+    const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
     let engineReady = false;
     const engine = createAgentEngine({
       origin: () => agentOrigin,

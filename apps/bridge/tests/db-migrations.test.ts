@@ -31,6 +31,7 @@ test('the official Drizzle migrator creates the complete schema and shares its j
     expect(tables.map((table) => table.name).sort()).toEqual([
       '__drizzle_migrations',
       'agent_messages',
+      'agent_sessions',
       'chat_instance_state',
       'chats',
       'memory_entries',
@@ -257,9 +258,12 @@ test('the agent session migration keeps the Eve column so an older version can s
       database.prepare('SELECT chat_id, eve_id, agent_session FROM chat_instance_state').get(),
     ).toEqual({ chat_id: 'chat', eve_id: null, agent_session: null });
     const history = database
-      .prepare("SELECT strict FROM pragma_table_list WHERE name = 'agent_messages'")
-      .get();
-    expect(history).toEqual({ strict: 1 });
+      .prepare("SELECT name, strict FROM pragma_table_list WHERE name LIKE 'agent_%' ORDER BY name")
+      .all();
+    expect(history).toEqual([
+      { name: 'agent_messages', strict: 1 },
+      { name: 'agent_sessions', strict: 1 },
+    ]);
   } finally {
     database.close();
     await rm(root, { recursive: true, force: true });
