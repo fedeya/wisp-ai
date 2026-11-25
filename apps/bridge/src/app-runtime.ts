@@ -3,6 +3,7 @@ import { HttpClientLive } from './integrations/http-client.ts';
 import { Exa } from './integrations/search/exa.ts';
 import { TheWoWDB } from './integrations/thewowdb.ts';
 import { LoggerLive } from './logger.ts';
+import { ProcessLayer } from './process.ts';
 
 /**
  * The services every part of the bridge can use. `main.ts` provides it once
@@ -10,6 +11,7 @@ import { LoggerLive } from './logger.ts';
  */
 export const AppLayer = Layer.mergeAll(
   LoggerLive,
+  ProcessLayer,
   Layer.mergeAll(TheWoWDB.layer, Exa.layer).pipe(Layer.provide(HttpClientLive)),
 );
 

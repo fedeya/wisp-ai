@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { readFile, writeFile, mkdtemp, rm, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-const execute = promisify(execFile);
+import { type Context, Effect } from 'effect';
+import type { ChildProcessSpawner } from 'effect/process';
+import { processServices, runProcess } from '../../process.ts';
 import {
   simulationInput,
   rotationAction,
@@ -74,12 +74,38 @@ const raceMap: Record<string, string> = {
   Orc: 'RaceOrc',
   Tauren: 'RaceTauren',
 };
+const SIMULATOR_FAILURES = {
+  exit: 'The simulator exited with an error.',
+  timeout: 'The simulator did not finish within 45 seconds.',
+  output: 'The simulator wrote more output than expected.',
+} as const;
+
 export class Simulator {
   readonly root: string;
   readonly runtime: string;
-  constructor(root: string, runtime = path.join(root, 'runtime')) {
+  private services: Context.Context<ChildProcessSpawner.ChildProcessSpawner>;
+  constructor(
+    root: string,
+    runtime = path.join(root, 'runtime'),
+    services: Context.Context<ChildProcessSpawner.ChildProcessSpawner> = processServices(),
+  ) {
     this.root = path.resolve(root);
     this.runtime = path.resolve(runtime);
+    this.services = services;
+  }
+  /** Runs the pinned simulator on one input file; `signal` interrupts it. */
+  private simulate(executable: string, infile: string, outfile: string, signal?: AbortSignal) {
+    return Effect.runPromiseWith(this.services)(
+      runProcess(executable, ['sim', '--infile', infile, '--outfile', outfile], {
+        timeout: '45 seconds',
+        maxOutputBytes: 1024 * 1024,
+      }).pipe(
+        Effect.mapError((error) =>
+          error.reason === 'spawn' ? error.cause : Error(SIMULATOR_FAILURES[error.reason]),
+        ),
+      ),
+      signal ? { signal } : undefined,
+    );
   }
   async prepare(
     snapshot: unknown,
@@ -501,12 +527,7 @@ export class Simulator {
       const infile = path.join(temporary, 'input.json'),
         outfile = path.join(temporary, 'output.json');
       await writeFile(infile, JSON.stringify(request));
-      await execute(executable, ['sim', '--infile', infile, '--outfile', outfile], {
-        windowsHide: true,
-        timeout: 45000,
-        maxBuffer: 1024 * 1024,
-        signal,
-      });
+      await this.simulate(executable, infile, outfile, signal);
       const result = JSON.parse(await readFile(outfile, 'utf8'));
       if (result.error) {
         throw Error(result.error.message || 'Simulator rejected the native request.');
@@ -543,12 +564,7 @@ export class Simulator {
       const infile = path.join(temporary, 'input.json'),
         outfile = path.join(temporary, 'output.json');
       await writeFile(infile, JSON.stringify(prepared.request));
-      await execute(executable, ['sim', '--infile', infile, '--outfile', outfile], {
-        windowsHide: true,
-        timeout: 45000,
-        maxBuffer: 1024 * 1024,
-        signal,
-      });
+      await this.simulate(executable, infile, outfile, signal);
       const result = JSON.parse(await readFile(outfile, 'utf8'));
       if (result.error) {
         throw Error(result.error.message || 'Simulator rejected this character.');
