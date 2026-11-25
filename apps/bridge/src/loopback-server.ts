@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { type AddressInfo, type Server } from 'node:net';
+import type { AddressInfo, Server } from 'node:net';
 
 async function listen(server: Server, port: number): Promise<void> {
   server.listen(port, '127.0.0.1');
