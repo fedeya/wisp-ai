@@ -19,7 +19,7 @@ import {
   Stream,
 } from 'effect';
 import { z } from 'zod';
-import { uuidv7 } from '@wisp/protocol/uuid';
+import { v7 as uuidv7 } from 'uuid';
 import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
 import { replayMessages, type ReplayTarget } from './replay.ts';
 import { EngineConfig, hostLayer, type EngineHost, type EngineLogger } from './engine-config.ts';
