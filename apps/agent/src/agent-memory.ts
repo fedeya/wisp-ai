@@ -9,7 +9,7 @@ export function localMemory(slot: 'preferences' | 'character') {
       'turn.started': async (ctx) => {
         const result = await agentRPC(
           'memory',
-          { eveSession: ctx.session.id, slot, operation: 'list' },
+          { agentSession: ctx.session.id, slot, operation: 'list' },
           ctx.abortSignal,
         );
         return result.entries.length
@@ -39,7 +39,7 @@ export function localMemory(slot: 'preferences' | 'character') {
         execute: async (input) =>
           agentRPC(
             'memory',
-            { eveSession: ctx.session.id, slot, operation: 'save', ...input },
+            { agentSession: ctx.session.id, slot, operation: 'save', ...input },
             ctx.abortSignal,
           ),
       }),
@@ -50,7 +50,7 @@ export function localMemory(slot: 'preferences' | 'character') {
         execute: async (input) =>
           agentRPC(
             'memory',
-            { eveSession: ctx.session.id, slot, operation: 'remove', ...input },
+            { agentSession: ctx.session.id, slot, operation: 'remove', ...input },
             ctx.abortSignal,
           ),
       }),
@@ -69,7 +69,7 @@ export function localMemory(slot: 'preferences' | 'character') {
       if (slot === 'preferences') {
         return 'local-player';
       }
-      const result = await agentRPC('identity', { eveSession: ctx.session.id }, ctx.abortSignal);
+      const result = await agentRPC('identity', { agentSession: ctx.session.id }, ctx.abortSignal);
       return result.characterKey || null;
     },
     provider,

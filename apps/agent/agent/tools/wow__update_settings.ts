@@ -23,7 +23,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'update_settings', args } },
+        { agentSession: ctx.session.id, action: { kind: 'update_settings', args } },
         ctx.abortSignal,
       ),
   }),

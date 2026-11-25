@@ -30,10 +30,10 @@ test('presentation RPC authenticates, scopes the active character and reports br
       headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
-  const payload = { eveSession: 'eve', callId: 'one', presentation: input };
+  const payload = { agentSession: 'eve', callId: 'one', presentation: input };
   try {
     expect((await post(payload, 'wrong')).status).toBe(403);
-    expect((await post({ ...payload, eveSession: 'other' })).status).toBe(503);
+    expect((await post({ ...payload, agentSession: 'other' })).status).toBe(503);
     transport = 'other-addon';
     expect((await post(payload)).status).toBe(503);
     transport = 'addon';

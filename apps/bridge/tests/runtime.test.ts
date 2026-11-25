@@ -235,14 +235,14 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     };
     expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
     expect(
-      await agent('/wowhead', { eveSession: 'eve-search', query: 'Frost Nova' }),
+      await agent('/wowhead', { agentSession: 'eve-search', query: 'Frost Nova' }),
     ).toMatchObject({ status: 'available', provider: 'Exa' });
     chat.status = 'done';
     await desktop('/search/save', { provider: 'auto', apiKey: 'private-exa-key' });
     chat.status = 'working';
     expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
     const result = await agent('/wowhead', {
-      eveSession: 'eve-search',
+      agentSession: 'eve-search',
       query: 'Frost Nova',
       depth: 'deep',
       maxResults: 7,

@@ -13,7 +13,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'compare_items', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'compare_items', args } },
         ctx.abortSignal,
       ),
   }),

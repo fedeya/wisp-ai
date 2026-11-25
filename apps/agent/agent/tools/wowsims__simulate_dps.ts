@@ -17,6 +17,6 @@ export default enabledTool(
           : 'Requested a WoWSims DPS simulation',
     },
     execute: (args, ctx) =>
-      agentRPC('simulate', { eveSession: ctx.session.id, ...args }, ctx.abortSignal, 85000),
+      agentRPC('simulate', { agentSession: ctx.session.id, ...args }, ctx.abortSignal, 85000),
   }),
 );

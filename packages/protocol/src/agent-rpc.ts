@@ -25,7 +25,7 @@ export const characterSections = z
   )
   .min(1)
   .max(9);
-const session = { eveSession: z.string().min(1) };
+const session = { agentSession: z.string().min(1) };
 export const memoryRequest = z.discriminatedUnion('operation', [
   z.object({
     ...session,

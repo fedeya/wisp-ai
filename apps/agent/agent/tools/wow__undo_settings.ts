@@ -19,7 +19,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'undo_settings', args } },
+        { agentSession: ctx.session.id, action: { kind: 'undo_settings', args } },
         ctx.abortSignal,
       ),
   }),

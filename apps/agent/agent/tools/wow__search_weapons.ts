@@ -13,7 +13,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'search_weapons', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'search_weapons', args } },
         ctx.abortSignal,
         60_000,
       ),

@@ -19,7 +19,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'polestar_guide', args } },
+        { agentSession: ctx.session.id, action: { kind: 'polestar_guide', args } },
         ctx.abortSignal,
       ),
   }),

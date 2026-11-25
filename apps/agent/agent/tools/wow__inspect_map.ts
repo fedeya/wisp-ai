@@ -16,7 +16,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'map', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'map', args } },
         ctx.abortSignal,
       ),
   }),

@@ -17,7 +17,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'database',
-        { eveSession: ctx.session.id, operation: 'search', ...args },
+        { agentSession: ctx.session.id, operation: 'search', ...args },
         ctx.abortSignal,
       ),
   }),

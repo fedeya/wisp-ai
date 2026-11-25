@@ -171,7 +171,7 @@ export function createTurnRunner(deps: TurnDependencies) {
     let admittedMs: number | undefined;
     let firstTextMs: number | undefined;
     // Failure paths clear chat.eveId before telemetry reads which session failed.
-    let eveSession: string | undefined;
+    let agentSession: string | undefined;
     controllers.set(chat, controller);
     usageLimitedChats.delete(chat);
     const generation = Symbol();
@@ -259,7 +259,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         turnInput(text, context, chat, capabilitySettings.snapshot()),
         controller.signal,
       );
-      eveSession = chat.eveId;
+      agentSession = chat.eveId;
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
       changed();
@@ -388,7 +388,7 @@ export function createTurnRunner(deps: TurnDependencies) {
               provider: deps.modelProvider?.(model),
               failureKind:
                 outcome === 'failed' || outcome === 'timeout'
-                  ? deps.modelFailures?.since(eveSession, started)
+                  ? deps.modelFailures?.since(agentSession, started)
                   : undefined,
             }
           : {},

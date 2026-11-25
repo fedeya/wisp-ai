@@ -20,6 +20,6 @@ export default enabledTool(
       complete: ({ sections }) => 'Read ' + sections.join(', '),
     },
     execute: ({ sections, refresh }, ctx) =>
-      agentRPC('state', { eveSession: ctx.session.id, sections, refresh }, ctx.abortSignal),
+      agentRPC('state', { agentSession: ctx.session.id, sections, refresh }, ctx.abortSignal),
   }),
 );

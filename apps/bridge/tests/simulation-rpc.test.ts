@@ -25,7 +25,7 @@ test('simulation RPC skips game reads and transport freshness for hypothetical r
     fetch(url, {
       method: 'POST',
       headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify({ eveSession: 'eve', ...(input as object) }),
+      body: JSON.stringify({ agentSession: 'eve', ...(input as object) }),
     });
   try {
     const nativeRequest = { raid: {}, padding: 'x'.repeat(33000) };

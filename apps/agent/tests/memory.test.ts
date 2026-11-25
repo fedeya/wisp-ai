@@ -12,7 +12,7 @@ test('native Eve memory recalls on a new session and character scope fails close
     return new Response(
       JSON.stringify(
         String(url).endsWith('/identity')
-          ? { characterKey: data.eveSession === 'unknown' ? null : 'mage' }
+          ? { characterKey: data.agentSession === 'unknown' ? null : 'mage' }
           : { entries },
       ),
     );
@@ -34,7 +34,7 @@ test('native Eve memory recalls on a new session and character scope fails close
       abortSignal: new AbortController().signal,
     } as never);
     assert.match(JSON.stringify(recalled), /Guide A/);
-    assert.equal(requests.at(-1)?.eveSession, 'new-session');
+    assert.equal(requests.at(-1)?.agentSession, 'new-session');
     assert.equal(requests.at(-1)?.slot, 'character');
     const tools = await memory.provider.tools!({
       session: { id: 'new-session' },
@@ -42,7 +42,7 @@ test('native Eve memory recalls on a new session and character scope fails close
     } as never);
     await (tools!.save_memory as any).execute({ key: 'guide', text: 'Guide B' });
     assert.deepEqual(requests.at(-1), {
-      eveSession: 'new-session',
+      agentSession: 'new-session',
       slot: 'character',
       operation: 'save',
       key: 'guide',

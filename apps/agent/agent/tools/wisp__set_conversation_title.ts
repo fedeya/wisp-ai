@@ -11,6 +11,6 @@ export default enabledTool(
     }),
     label: { start: () => 'Naming conversation' },
     execute: ({ title }, ctx) =>
-      agentRPC('title', { eveSession: ctx.session.id, title }, ctx.abortSignal, 5000),
+      agentRPC('title', { agentSession: ctx.session.id, title }, ctx.abortSignal, 5000),
   }),
 );

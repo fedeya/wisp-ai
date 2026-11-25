@@ -131,7 +131,7 @@ const server = createServer(async (req, res) => {
       raw += b;
     }
     const data = JSON.parse(raw),
-      { eveSession: _session, ...args } = data;
+      { agentSession: _session, ...args } = data;
     let value;
     const call = { endpoint: req.url, operation: data.operation };
     rpc.push(call);

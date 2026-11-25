@@ -16,7 +16,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'inspect',
-        { eveSession: ctx.session.id, inspection: { kind: 'training', args } },
+        { agentSession: ctx.session.id, inspection: { kind: 'training', args } },
         ctx.abortSignal,
       ),
   }),

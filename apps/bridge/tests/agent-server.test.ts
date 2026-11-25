@@ -56,10 +56,10 @@ test('agent server rejects bad tokens, unknown routes and oversized bodies', asy
       (await fetch(server.origin + '/identity', { headers: { authorization: 'Bearer test' } }))
         .status,
     ).toBe(404);
-    const large = await server.post('/identity', { eveSession: 'eve', pad: 'x'.repeat(40000) });
+    const large = await server.post('/identity', { agentSession: 'eve', pad: 'x'.repeat(40000) });
     expect(large.status).toBe(503);
     expect(await large.text()).toBe('Request is too large');
-    const identity = await server.post('/identity', { eveSession: 'eve' });
+    const identity = await server.post('/identity', { agentSession: 'eve' });
     expect(identity.status).toBe(200);
     expect(await identity.json()).toEqual({ characterKey: 'Realm-Name' });
   } finally {
@@ -72,7 +72,7 @@ test('agent server refuses changes from automatic suggestions and reports the re
   const server = await serve({ getChats: () => [chat] });
   try {
     const refused = await server.post('/memory', {
-      eveSession: 'eve',
+      agentSession: 'eve',
       slot: 'character',
       operation: 'save',
       key: 'k',
@@ -80,7 +80,7 @@ test('agent server refuses changes from automatic suggestions and reports the re
     });
     expect(refused.status).toBe(503);
     expect(await refused.text()).toMatch(/Automatic suggestions cannot change/);
-    const missing = await server.post('/identity', { eveSession: 'other' });
+    const missing = await server.post('/identity', { agentSession: 'other' });
     expect(missing.status).toBe(503);
     expect(await missing.text()).toBe('No active connection for this character');
   } finally {
@@ -102,8 +102,8 @@ test('actions run without a character identity and add the expected character wh
     args: { mapId: 1, x: 50, y: 50, label: 'NPC', source: 'user', navigate: true },
   };
   try {
-    for (const eveSession of ['eve', 'known']) {
-      const reply = await server.post('/action', { eveSession, action: waypoint });
+    for (const agentSession of ['eve', 'known']) {
+      const reply = await server.post('/action', { agentSession, action: waypoint });
       expect(reply.status).toBe(200);
     }
     expect(request.mock.calls.map(([input]) => input.action)).toEqual([
@@ -131,7 +131,7 @@ test('agent server aborts game requests when Eve hangs up', async () => {
     const reply = server
       .post(
         '/inspect',
-        { eveSession: 'eve', inspection: { kind: 'target', args: {} } },
+        { agentSession: 'eve', inspection: { kind: 'target', args: {} } },
         { signal: client.signal },
       )
       .catch(() => undefined);
@@ -167,7 +167,7 @@ test('web search reports its depth, provider and outcome without the query', asy
   });
   try {
     const found = await server.post('/wowhead', {
-      eveSession: 'eve',
+      agentSession: 'eve',
       query: 'private query',
       depth: 'deep',
     });
@@ -180,7 +180,7 @@ test('web search reports its depth, provider and outcome without the query', asy
       resultCount: 2,
     });
     expect(
-      (await server.post('/wowhead', { eveSession: 'eve', query: 'private query' })).status,
+      (await server.post('/wowhead', { agentSession: 'eve', query: 'private query' })).status,
     ).toBe(503);
     expect(telemetry.webSearch).toHaveBeenLastCalledWith({
       depth: 'standard',

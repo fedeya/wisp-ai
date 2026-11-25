@@ -11,6 +11,6 @@ export default enabledTool(
     inputSchema: panelInput,
     label: { start: () => 'Managing panels', complete: () => 'Managed panels' },
     execute: (input, ctx) =>
-      agentRPC('panels', { eveSession: ctx.session.id, input }, ctx.abortSignal),
+      agentRPC('panels', { agentSession: ctx.session.id, input }, ctx.abortSignal),
   }),
 );

@@ -19,7 +19,7 @@ export default enabledTool(
     execute: async (args, ctx) =>
       agentRPC(
         'action',
-        { eveSession: ctx.session.id, action: { kind: 'clear_waypoint', args } },
+        { agentSession: ctx.session.id, action: { kind: 'clear_waypoint', args } },
         ctx.abortSignal,
       ),
   }),

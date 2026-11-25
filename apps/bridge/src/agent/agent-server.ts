@@ -233,12 +233,12 @@ export function createAgentApp(deps: AgentDependencies) {
       async (c) => {
         try {
           const raw: unknown = JSON.parse(await c.req.text());
-          const { eveSession } = z.object({ eveSession: z.string().min(1) }).parse(raw);
+          const { agentSession } = z.object({ agentSession: z.string().min(1) }).parse(raw);
           const operation = operationShape.parse(raw);
-          const chat = getChats().find((c) => c.eveId === eveSession && c.status === 'working');
+          const chat = getChats().find((c) => c.eveId === agentSession && c.status === 'working');
           let detachedSimulation = false;
           if (route === '/simulate') {
-            const { eveSession: _session, ...args } = rpcRequests.simulate.parse(raw);
+            const { agentSession: _session, ...args } = rpcRequests.simulate.parse(raw);
             detachedSimulation = !simulationNeedsLiveState(args);
           }
           if (
@@ -285,7 +285,7 @@ export function createAgentApp(deps: AgentDependencies) {
       if (chat.proactive || !capabilitySettings.enabled('tool:simulate_dps')) {
         throw Error('DPS simulation is disabled or not allowed for automatic suggestions.');
       }
-      const { eveSession: _session, ...args } = data;
+      const { agentSession: _session, ...args } = data;
       const input = simulationInput.parse(args);
       const abort = signal();
       const needsLiveState = simulationNeedsLiveState(input);
@@ -315,7 +315,7 @@ export function createAgentApp(deps: AgentDependencies) {
         throw new Error('This knowledge source is disabled in Settings');
       }
       const abort = signal();
-      const { eveSession: _session, ...args } = data;
+      const { agentSession: _session, ...args } = data;
       return route === '/database'
         ? database.query(databaseRequest.parse(args), abort)
         : measuredWebSearch(

@@ -12,7 +12,7 @@ export default defineTool({
     agentRPC(
       'present',
       {
-        eveSession: ctx.session.id,
+        agentSession: ctx.session.id,
         callId: ctx.callId,
         presentation: input,
       },

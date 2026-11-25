@@ -23,7 +23,7 @@ export default enabledTool(
     execute: (args, ctx) =>
       agentRPC(
         'wowhead',
-        { eveSession: ctx.session.id, ...args },
+        { agentSession: ctx.session.id, ...args },
         ctx.abortSignal,
         resolveWebSearch(args).timeoutSeconds * 1000 + 15000,
       ),

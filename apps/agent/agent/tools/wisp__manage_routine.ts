@@ -11,6 +11,6 @@ export default enabledTool(
     inputSchema: routineInput,
     label: { start: () => 'Managing routines', complete: () => 'Processed a routine request' },
     execute: (input, ctx) =>
-      agentRPC('routines', { eveSession: ctx.session.id, input }, ctx.abortSignal),
+      agentRPC('routines', { agentSession: ctx.session.id, input }, ctx.abortSignal),
   }),
 );
