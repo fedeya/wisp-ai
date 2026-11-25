@@ -35,7 +35,7 @@ Run from the repository root. Toolchain: Node 26.13.1+ and pnpm 12.18.0
 | `pnpm build`                                    | Turbo build of all workspaces (not the native host or installer)                            |
 | `pnpm check`                                    | `format:check`, `lint`, `typecheck` and `typecheck:root`                                    |
 | `pnpm format` / `pnpm format:check`             | oxfmt, StyLua (`addon`, `tests`, `.busted`, `.luacheckrc`), Prettier                        |
-| `pnpm lint`                                     | oxlint `--deny-warnings`, then `pnpm lint:addon` (Luacheck)                                 |
+| `pnpm lint`                                     | oxlint with `@cloudflare/oxlint-config` (rules still being adopted warn), then Luacheck     |
 | `pnpm test`                                     | All Vitest suites and Busted specs                                                          |
 | `pnpm test:core`                                | TypeScript suites except desktop UI and addon                                               |
 | `pnpm test:integration`                         | `tests/` (`@wisp/tests`)                                                                    |
