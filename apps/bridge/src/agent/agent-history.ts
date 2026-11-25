@@ -1,11 +1,12 @@
 import { and, asc, desc, eq, gte, isNotNull, max, notInArray, sql } from 'drizzle-orm';
+import type { ModelMessage } from '@wisp/agent/engine';
 import type {
   Compaction,
-  ModelMessage,
-  SessionHistory,
+  HistoryStore,
+  LoadedHistory,
   SessionStart,
   TokenUsage,
-} from '@wisp/agent/engine';
+} from '@wisp/agent/session-history';
 import { uuidv7 } from '@wisp/protocol/uuid';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { agentEntries, agentSessions, chatInstanceState } from '../db/schema.ts';
@@ -21,7 +22,7 @@ type Transaction = Parameters<Parameters<ApplicationDatabase['transaction']>[0]>
  * for the life of the session: a compaction is a log entry saying where the
  * model's reading starts and what summarizes the messages before it.
  */
-export class AgentHistory {
+export class AgentHistory implements HistoryStore {
   readonly database: ApplicationDatabase;
   private readonly wispVersion: string;
   private readonly now: () => number;
@@ -57,7 +58,7 @@ export class AgentHistory {
   }
 
   /** The latest compaction's summary and the messages from where it keeps them. */
-  async load(session: string): Promise<SessionHistory> {
+  async load(session: string): Promise<LoadedHistory> {
     await this.database.initialize();
     const orm = this.database.orm;
     const latest = orm
@@ -95,7 +96,7 @@ export class AgentHistory {
    * another write that lands in between keeps its place instead of being
    * overwritten.
    */
-  async append(session: string, messages: ModelMessage[], model: string) {
+  async append(session: string, messages: readonly ModelMessage[], model: string) {
     if (!messages.length) return;
     await this.database.transaction((db) => {
       const from = this.next(db, session);

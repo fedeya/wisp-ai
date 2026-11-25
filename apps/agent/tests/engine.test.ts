@@ -76,7 +76,9 @@ function streamed(count: number, item: Item) {
 async function fixture(
   plan: (count: number, request: Item) => Item | undefined,
   contextWindow?: number,
+  options: { appendFails?: (count: number) => boolean } = {},
 ) {
+  let appends = 0;
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-engine-'));
   const flags = path.join(root, 'capabilities.json');
   await writeFile(
@@ -171,11 +173,13 @@ async function fixture(
           ),
         };
       },
-      append: async (session, messages, model) =>
-        void logs.set(session, [
+      append: async (session, messages, model) => {
+        if (options.appendFails?.(++appends)) throw Error('The disk is full.');
+        logs.set(session, [
           ...(logs.get(session) ?? []),
           ...messages.map((message) => ({ type: 'message' as const, message, model })),
-        ]),
+        ]);
+      },
       compact: async (session, compaction) =>
         void logs.set(session, [
           ...(logs.get(session) ?? []),
@@ -185,11 +189,17 @@ async function fixture(
     },
     logger: { info: () => {}, warn: () => {} },
   });
-  async function send(session: string, input: string) {
-    const turn = engine.send(session, input, AbortSignal.timeout(30000), 'chat');
+  async function send(
+    session: string,
+    input: string,
+    onEvent: (event: EngineEvent) => void = () => {},
+    signal = AbortSignal.timeout(30_000),
+  ) {
+    const turn = engine.send(session, input, signal, 'chat');
     const events: EngineEvent[] = [];
     for await (const event of turn.events) {
       events.push(event);
+      onEvent(event);
     }
     return { events, result: await turn.result };
   }
@@ -405,6 +415,56 @@ test(
         'tool',
       ]);
       expect(JSON.stringify(f.messagesOf(session).at(-1)!.message)).toContain('tool-call-1');
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
+  'cancelling a turn stops the tool loop and settles it as cancelled',
+  { timeout: 60_000 },
+  async () => {
+    const f = await fixture((count) =>
+      toolCall(count, 'tool_call', { name: 'wow__get_settings', input: {} }),
+    );
+    try {
+      const controller = new AbortController();
+      const turn = await f.send(
+        f.engine.newSessionId(),
+        'Which addons do I have?',
+        (event) => event.type === 'call.requested' && controller.abort(),
+        controller.signal,
+      );
+      expect(turn.result).toEqual({ status: 'cancelled' });
+      expect(turn.events.filter((event) => event.type === 'call.requested')).toHaveLength(1);
+      expect(f.requests).toHaveLength(1);
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+test(
+  'a turn whose step cannot be logged fails with the store error',
+  { timeout: 60_000 },
+  async () => {
+    const f = await fixture(
+      (count) =>
+        count === 1
+          ? toolCall(count, 'tool_call', { name: 'wow__get_settings', input: {} })
+          : message(count, 'Should not be reached.'),
+      undefined,
+      // The player's message logs; the first step does not.
+      { appendFails: (count) => count === 2 },
+    );
+    try {
+      const turn = await f.send(f.engine.newSessionId(), 'Which addons do I have?');
+      expect(turn.result).toMatchObject({
+        status: 'failed',
+        error: { message: 'The disk is full.' },
+      });
+      expect(f.requests).toHaveLength(1);
     } finally {
       await f.close();
     }
