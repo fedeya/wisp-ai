@@ -73,6 +73,7 @@ export class ChatGPTAuth {
   private discovery?: Promise<Discovery>;
   private jwks?: ReturnType<typeof createRemoteJWKSet>;
   private refreshes = new Map<string, Promise<string>>();
+  private persistence: Promise<void> = Promise.resolve();
   private modelsCache?: {
     id: string;
     models: AccountModel[];
@@ -109,10 +110,21 @@ export class ChatGPTAuth {
       this.saved = savedSchema.parse(JSON.parse(raw));
     }
   }
-  private async persist() {
-    await this.vault.write('chatgpt:accounts', JSON.stringify(this.saved));
-    this.revision++;
-    this.modelsCache = undefined;
+  private persist(activeId?: string) {
+    const work = this.persistence.then(async () => {
+      // Snapshot at the write boundary, after earlier selections have been published.
+      const saved = activeId === undefined ? this.saved : { ...this.saved, activeId };
+      await this.vault.write('chatgpt:accounts', JSON.stringify(saved));
+      if (activeId !== undefined) {
+        this.saved.activeId = activeId;
+        this.message = '';
+      }
+      this.revision++;
+      this.modelsCache = undefined;
+    });
+    // A rejected write still rejects its caller, but must not block later writes.
+    this.persistence = work.catch(() => {});
+    return work;
   }
   private current() {
     return this.saved.profiles.find((p) => p.id === this.saved.activeId);
@@ -463,9 +475,7 @@ export class ChatGPTAuth {
     if (!this.saved.profiles.some((p) => p.id === id)) {
       throw new ChatGPTAuthError('Saved account not found.');
     }
-    this.saved.activeId = id;
-    this.message = '';
-    await this.persist();
+    await this.persist(id);
     return this.state();
   }
   async accessToken(rejectedToken?: string): Promise<string> {
