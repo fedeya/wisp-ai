@@ -35,7 +35,7 @@ Run from the repository root. Toolchain: Node 26.13.1+ and pnpm 12.18.0
 | `pnpm build`                                    | Turbo build of all workspaces (not the native host or installer)                            |
 | `pnpm check`                                    | `format:check`, `lint`, `typecheck` and `typecheck:root`                                    |
 | `pnpm format` / `pnpm format:check`             | oxfmt, StyLua (`addon`, `tests`, `.busted`, `.luacheckrc`), Prettier                        |
-| `pnpm lint`                                     | oxlint `--deny-warnings`, then `pnpm lint:addon` (Luacheck)                                 |
+| `pnpm lint`                                     | oxlint with `@cloudflare/oxlint-config` (rules still being adopted warn), then Luacheck     |
 | `pnpm test`                                     | All Vitest suites and Busted specs                                                          |
 | `pnpm test:core`                                | TypeScript suites except desktop UI and addon                                               |
 | `pnpm test:integration`                         | `tests/` (`@wisp/tests`)                                                                    |
@@ -74,6 +74,19 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
   addon's Lua against `@wisp/protocol` and the bridge.
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
+
+## Learning more about Effect
+
+This repository uses the Effect Typescript library.
+
+Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
+**completely**, and follow the links in the file when required.
+
+If you need to learn more about particular Effect apis and concepts that the
+guide doesn't cover, search through the source code in `node_modules/effect/src`.
+
+The root `package.json` declares `effect` so that `node_modules/effect` exists
+despite `hoist: false`; keep it on the same version as the workspaces.
 
 ## Conventions observed in the code
 
