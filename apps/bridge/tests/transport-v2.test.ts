@@ -1,4 +1,5 @@
 import { test, vi } from 'vitest';
+import { Effect } from 'effect';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -819,8 +820,13 @@ test('an active session rereads only its own state file between full folder walk
     await f.bridge.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true });
     assert.equal(f.packets.length, 1);
-    const scan = vi.spyOn(f.bridge, 'scan');
-    const read = vi.spyOn(f.bridge, 'read');
+    // The fallback tick calls the transport's own scan and read steps.
+    const steps = f.bridge as unknown as {
+      scanFolders: (baseline: boolean) => Effect.Effect<void, unknown>;
+      readState: (file: string, baseline: boolean) => Effect.Effect<void, unknown>;
+    };
+    const scan = vi.spyOn(steps, 'scanFolders');
+    const read = vi.spyOn(steps, 'readState');
     await delay(1200);
     assert.equal(scan.mock.calls.length, 0, 'no full walk within the scan interval');
     assert.ok(read.mock.calls.some(([file]) => file === f.file));
@@ -836,16 +842,17 @@ test('an abandoned control write removes its temporary copy', async () => {
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true });
     // Make the game appear to rewrite the file between the bridge's two reads.
     const transport = f.bridge as unknown as {
-      sharedFile: <T>(operation: () => Promise<T>) => Promise<T>;
+      sharedFile: <T>(operation: string, run: () => Promise<T>) => Effect.Effect<T, unknown>;
     };
     const original = transport.sharedFile.bind(f.bridge);
     let reads = 0;
-    transport.sharedFile = async <T>(operation: () => Promise<T>) => {
-      const value = await original(operation);
-      return (
-        typeof value === 'string' && ++reads === 2 ? value + '\r\nGame: enabled' : value
-      ) as T;
-    };
+    transport.sharedFile = <T>(operation: string, run: () => Promise<T>) =>
+      original(operation, run).pipe(
+        Effect.map(
+          (value) =>
+            (typeof value === 'string' && ++reads === 2 ? value + '\r\nGame: enabled' : value) as T,
+        ),
+      );
     const before = await readFile(f.file, 'utf8');
     await f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'abandoned' });
     assert.ok(reads >= 2, 'the write reached its second read');
