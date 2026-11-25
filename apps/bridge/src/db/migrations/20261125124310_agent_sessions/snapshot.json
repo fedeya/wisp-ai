@@ -1,15 +1,11 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ed0552cd-4516-4649-8fd8-0a5692a31dcc",
+  "id": "92b80e2f-026a-4fa1-af5a-abd292029da0",
   "prevIds": ["b5d6bf5e-0b46-4b07-a1a6-15c43eef83ea"],
   "ddl": [
     {
-      "name": "agent_compactions",
-      "entityType": "tables"
-    },
-    {
-      "name": "agent_messages",
+      "name": "agent_entries",
       "entityType": "tables"
     },
     {
@@ -53,7 +49,7 @@
       "entityType": "tables"
     },
     {
-      "table": "agent_compactions",
+      "table": "agent_entries",
       "name": "session_id",
       "type": "text",
       "notNull": true,
@@ -63,8 +59,8 @@
       "entityType": "columns"
     },
     {
-      "table": "agent_compactions",
-      "name": "kept_from",
+      "table": "agent_entries",
+      "name": "seq",
       "type": "integer",
       "notNull": true,
       "autoincrement": false,
@@ -73,8 +69,18 @@
       "entityType": "columns"
     },
     {
-      "table": "agent_compactions",
-      "name": "summary",
+      "table": "agent_entries",
+      "name": "type",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "agent_entries",
+      "name": "role",
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -83,7 +89,7 @@
       "entityType": "columns"
     },
     {
-      "table": "agent_compactions",
+      "table": "agent_entries",
       "name": "model",
       "type": "text",
       "notNull": true,
@@ -93,7 +99,7 @@
       "entityType": "columns"
     },
     {
-      "table": "agent_compactions",
+      "table": "agent_entries",
       "name": "created_at",
       "type": "integer",
       "notNull": true,
@@ -103,58 +109,8 @@
       "entityType": "columns"
     },
     {
-      "table": "agent_messages",
-      "name": "session_id",
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_messages",
-      "name": "position",
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_messages",
-      "name": "role",
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_messages",
-      "name": "model",
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_messages",
-      "name": "created_at",
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "agent_messages",
-      "name": "message",
+      "table": "agent_entries",
+      "name": "data",
       "type": "text",
       "notNull": true,
       "autoincrement": false,
@@ -943,6 +899,28 @@
       "entityType": "columns"
     },
     {
+      "table": "agent_entries",
+      "name": "agent_entries_type",
+      "columns": [
+        {
+          "value": "session_id",
+          "isExpression": false
+        },
+        {
+          "value": "type",
+          "isExpression": false
+        },
+        {
+          "value": "seq",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
       "table": "agent_sessions",
       "name": "agent_sessions_chat",
       "columns": [
@@ -1109,19 +1087,8 @@
       "entityType": "indexes"
     },
     {
-      "table": "agent_compactions",
-      "name": "fk_agent_compactions_session_id_agent_sessions_id_fk",
-      "columns": ["session_id"],
-      "tableTo": "agent_sessions",
-      "columnsTo": ["id"],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "entityType": "fks"
-    },
-    {
-      "table": "agent_messages",
-      "name": "fk_agent_messages_session_id_agent_sessions_id_fk",
+      "table": "agent_entries",
+      "name": "fk_agent_entries_session_id_agent_sessions_id_fk",
       "columns": ["session_id"],
       "tableTo": "agent_sessions",
       "columnsTo": ["id"],
@@ -1164,16 +1131,9 @@
       "entityType": "fks"
     },
     {
-      "table": "agent_compactions",
-      "name": "agent_compactions_pk",
-      "columns": ["session_id", "kept_from"],
-      "nameExplicit": false,
-      "entityType": "pks"
-    },
-    {
-      "table": "agent_messages",
-      "name": "agent_messages_pk",
-      "columns": ["session_id", "position"],
+      "table": "agent_entries",
+      "name": "agent_entries_pk",
+      "columns": ["session_id", "seq"],
       "nameExplicit": false,
       "entityType": "pks"
     },
@@ -1248,27 +1208,21 @@
       "entityType": "pks"
     },
     {
-      "table": "agent_compactions",
-      "name": "agent_compaction_kept_from",
-      "value": "\"kept_from\" >= 0",
+      "table": "agent_entries",
+      "name": "agent_entry_seq",
+      "value": "\"seq\" >= 0",
       "entityType": "checks"
     },
     {
-      "table": "agent_messages",
-      "name": "agent_message_position",
-      "value": "\"position\" >= 0",
+      "table": "agent_entries",
+      "name": "agent_entry_type",
+      "value": "(\"type\" = 'message' AND \"role\" IN ('user','assistant','tool','system')) OR (\"type\" = 'compaction' AND \"role\" IS NULL)",
       "entityType": "checks"
     },
     {
-      "table": "agent_messages",
-      "name": "agent_message_role",
-      "value": "\"role\" IN ('user','assistant','tool','system')",
-      "entityType": "checks"
-    },
-    {
-      "table": "agent_messages",
-      "name": "agent_message_json",
-      "value": "json_valid(\"message\")",
+      "table": "agent_entries",
+      "name": "agent_entry_json",
+      "value": "json_valid(\"data\") AND json_type(\"data\") = 'object'",
       "entityType": "checks"
     },
     {

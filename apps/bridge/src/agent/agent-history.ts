@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, max, notInArray, sql } from 'drizzle-orm';
 import type {
   Compaction,
   ModelMessage,
@@ -7,18 +7,18 @@ import type {
   TokenUsage,
 } from '@wisp/agent/engine';
 import type { ApplicationDatabase } from '../db/application-database.ts';
-import { agentCompactions, agentMessages, agentSessions, chatInstanceState } from '../db/schema.ts';
+import { agentEntries, agentSessions, chatInstanceState } from '../db/schema.ts';
 
-/** How `agent_messages.message` is encoded: an AI SDK 7 `ModelMessage` as JSON. */
+/** How a message entry's `data` is encoded: an AI SDK 7 `ModelMessage` as JSON. */
 export const AGENT_MESSAGE_FORMAT = 'ai-sdk-7';
 
 type Transaction = Parameters<Parameters<ApplicationDatabase['transaction']>[0]>[0];
 
 /**
- * Each agent session's model-facing history, in the application database
- * next to the visible conversation. Messages are kept for the life of the
- * session: a compaction is a record of where the model's reading starts and
- * what summarizes the messages before it.
+ * Each agent session's model-facing history, as one ordered log in the
+ * application database next to the visible conversation. Messages are kept
+ * for the life of the session: a compaction is a log entry saying where the
+ * model's reading starts and what summarizes the messages before it.
  */
 export class AgentHistory {
   readonly database: ApplicationDatabase;
@@ -60,51 +60,70 @@ export class AgentHistory {
     await this.database.initialize();
     const orm = this.database.orm;
     const latest = orm
-      .select({ keptFrom: agentCompactions.keptFrom, summary: agentCompactions.summary })
-      .from(agentCompactions)
-      .where(eq(agentCompactions.sessionId, session))
-      .orderBy(desc(agentCompactions.keptFrom))
+      .select({ data: agentEntries.data })
+      .from(agentEntries)
+      .where(and(eq(agentEntries.sessionId, session), eq(agentEntries.type, 'compaction')))
+      .orderBy(desc(agentEntries.seq))
       .limit(1)
       .get();
-    const start = latest?.keptFrom ?? 0;
+    const compaction = latest
+      ? (JSON.parse(latest.data) as { keptFrom: number; summary?: string })
+      : undefined;
     const messages = orm
-      .select({ message: agentMessages.message, model: agentMessages.model })
-      .from(agentMessages)
-      .where(and(eq(agentMessages.sessionId, session), gte(agentMessages.position, start)))
-      .orderBy(asc(agentMessages.position))
+      .select({ seq: agentEntries.seq, data: agentEntries.data, model: agentEntries.model })
+      .from(agentEntries)
+      .where(
+        and(
+          eq(agentEntries.sessionId, session),
+          eq(agentEntries.type, 'message'),
+          gte(agentEntries.seq, compaction?.keptFrom ?? 0),
+        ),
+      )
+      .orderBy(asc(agentEntries.seq))
       .all()
-      .map((row) => ({ message: JSON.parse(row.message) as ModelMessage, model: row.model }));
-    return { summary: latest?.summary ?? undefined, messages, start };
+      .map((row) => ({
+        seq: row.seq,
+        message: JSON.parse(row.data) as ModelMessage,
+        model: row.model,
+      }));
+    return { summary: compaction?.summary, messages, next: this.next(orm, session) };
   }
 
-  /** Stores a turn's messages from position `from` on, replacing what a retried turn left there. */
+  /** Logs a turn's messages from position `from` on, replacing what a retried turn left there. */
   async append(session: string, from: number, messages: ModelMessage[], model: string) {
     await this.database.transaction((db) => {
-      db.delete(agentMessages)
-        .where(and(eq(agentMessages.sessionId, session), gte(agentMessages.position, from)))
+      db.delete(agentEntries)
+        .where(and(eq(agentEntries.sessionId, session), gte(agentEntries.seq, from)))
         .run();
-      this.insert(db, session, from, messages, model);
+      if (!messages.length) return;
+      const createdAt = this.now();
+      db.insert(agentEntries)
+        .values(
+          messages.map((message, index) => ({
+            sessionId: session,
+            seq: from + index,
+            type: 'message' as const,
+            role: message.role,
+            model,
+            createdAt,
+            data: JSON.stringify(message),
+          })),
+        )
+        .run();
     });
   }
 
-  /** Records a compaction; the messages it summarizes stay stored. */
+  /** Logs a compaction after the last entry; the messages it summarizes stay. */
   async compact(session: string, compaction: Compaction) {
     await this.database.transaction((db) => {
-      db.insert(agentCompactions)
+      db.insert(agentEntries)
         .values({
           sessionId: session,
-          keptFrom: compaction.keptFrom,
-          summary: compaction.summary ?? null,
+          seq: this.next(db, session),
+          type: 'compaction',
           model: compaction.model,
           createdAt: this.now(),
-        })
-        .onConflictDoUpdate({
-          target: [agentCompactions.sessionId, agentCompactions.keptFrom],
-          set: {
-            summary: compaction.summary ?? null,
-            model: compaction.model,
-            createdAt: this.now(),
-          },
+          data: JSON.stringify({ keptFrom: compaction.keptFrom, summary: compaction.summary }),
         })
         .run();
     });
@@ -126,7 +145,7 @@ export class AgentHistory {
     });
   }
 
-  /** Forgets a session, with its messages and compactions. */
+  /** Forgets a session and its log. */
   async delete(session: string) {
     await this.database.transaction((db) => {
       db.delete(agentSessions).where(eq(agentSessions.id, session)).run();
@@ -154,26 +173,13 @@ export class AgentHistory {
     });
   }
 
-  private insert(
-    db: Transaction,
-    session: string,
-    from: number,
-    messages: ModelMessage[],
-    model: string,
-  ) {
-    if (!messages.length) return;
-    const createdAt = this.now();
-    db.insert(agentMessages)
-      .values(
-        messages.map((message, index) => ({
-          sessionId: session,
-          position: from + index,
-          role: message.role,
-          model,
-          createdAt,
-          message: JSON.stringify(message),
-        })),
-      )
-      .run();
+  /** The position after the session's last log entry. */
+  private next(db: Transaction | ApplicationDatabase['orm'], session: string) {
+    const last = db
+      .select({ seq: max(agentEntries.seq) })
+      .from(agentEntries)
+      .where(eq(agentEntries.sessionId, session))
+      .get();
+    return last?.seq === null || last?.seq === undefined ? 0 : last.seq + 1;
   }
 }
