@@ -24,6 +24,7 @@
     "./tool": "./src/tool.ts",
     "./tools": "./src/tools.ts",
     "./engine": "./src/engine.ts",
+    "./session-history": "./src/session-history.ts",
     "./content": "./src/content.ts",
     "./mcp-tools": "./src/mcp-tools.ts"
   },

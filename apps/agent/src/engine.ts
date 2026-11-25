@@ -7,7 +7,18 @@ import {
   type TextStreamPart,
   type ToolSet,
 } from 'ai';
-import { Cause, Effect, Exit, Queue, Schema, Stream } from 'effect';
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  ManagedRuntime,
+  Queue,
+  Schema,
+  Stream,
+} from 'effect';
 import { z } from 'zod';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
 import { uuidv7 } from '@wisp/protocol/uuid';
@@ -22,6 +33,13 @@ import { toolOffered } from './enabled-tool.ts';
 import type { ToolDefinition } from './tool.ts';
 import { wispContent } from './wisp-agent.ts';
 import {
+  HistoryError,
+  SessionHistory,
+  type HistoryStore,
+  type LoadedHistory,
+  type TokenUsage,
+} from './session-history.ts';
+import {
   CONTROL_TOOLS,
   TOOL_CALL,
   assembleTools,
@@ -34,6 +52,15 @@ import {
 
 export type { ModelMessage } from 'ai';
 export type { StoredMessage, ReplayTarget } from './replay.ts';
+export type {
+  Compaction,
+  HistoryStore,
+  LoadedHistory,
+  LoggedMessage,
+  SessionStart,
+  TokenUsage,
+} from './session-history.ts';
+export { HistoryError, SessionHistory } from './session-history.ts';
 export { TOOL_CALL, TOOL_SEARCH, searchTools, type ToolStubOutcome } from './turn-tools.ts';
 
 /** The stream events the bridge projects into a reply (`chat/events.ts`). */
@@ -46,66 +73,29 @@ export interface EngineResult {
   error?: { message?: string };
 }
 
-/** The chat a session belongs to and the model it runs on. */
-export interface SessionStart {
-  chatId: string;
-  model: string;
+export interface EngineLogger {
+  info: (data: object, message: string) => void;
+  warn: (data: object, message: string) => void;
 }
 
-/** Tokens one model call reported. */
-export interface TokenUsage {
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens?: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-}
-
-/** A stored message and its place in the session's log. */
-export interface LoggedMessage extends StoredMessage {
-  seq: number;
-}
-
-/** What the model reads of a session: the latest compaction's summary and the messages it keeps. */
-export interface SessionHistory {
-  summary?: string;
-  /** The messages from the latest compaction's `keptFrom` on, oldest first. */
-  messages: LoggedMessage[];
-}
-
-/** A compaction: messages before `keptFrom` are summarized; no summary when summarizing failed. */
-export interface Compaction {
-  keptFrom: number;
-  summary?: string;
-  model: string;
-}
-
-/** Where each session's model-facing history lives (the bridge's SQLite). Nothing is deleted by compaction. */
-export interface EngineHistory {
-  /** Called at the start of every turn; the first one starts the session. */
-  begin(session: string, start: SessionStart): Promise<void>;
-  load(session: string): Promise<SessionHistory>;
-  /** Logs messages after the last entry; entries are never replaced or deleted. */
-  append(session: string, messages: ModelMessage[], model: string): Promise<void>;
-  /** Logs a compaction after the last entry. */
-  compact(session: string, compaction: Compaction): Promise<void>;
-  addUsage(session: string, usage: TokenUsage): Promise<void>;
-  delete(session: string): Promise<void>;
-}
-
-export interface EngineOptions {
+/** What the engine needs from its host. */
+export interface EngineHost {
   /** The bridge's loopback agent endpoint and its token. */
-  origin: () => string;
-  token: string;
-  history: EngineHistory;
+  readonly origin: () => string;
+  readonly token: string;
   /** Player-configured MCP servers (`mcp.json`). */
-  mcpConfigFile?: () => string | undefined;
-  logger: {
-    info: (data: object, message: string) => void;
-    warn: (data: object, message: string) => void;
-  };
+  readonly mcpConfigFile?: () => string | undefined;
+  readonly logger: EngineLogger;
   /** Evals answer tools from fixtures: a stub result replaces the tool's own. */
-  stub?: ToolStub;
+  readonly stub?: ToolStub;
+}
+
+export class EngineConfig extends Context.Service<EngineConfig, EngineHost>()(
+  '@wisp/agent/EngineConfig',
+) {}
+
+export interface EngineOptions extends EngineHost {
+  history: HistoryStore;
 }
 
 function errorText(error: unknown) {
@@ -124,7 +114,7 @@ function errorText(error: unknown) {
  * bridge unchanged so it can classify usage limits and timeouts.
  */
 export class AgentTurnError extends Schema.TaggedError<AgentTurnError>()('AgentTurnError', {
-  stage: Schema.Literals(['setup', 'history', 'model']),
+  stage: Schema.Literals(['setup', 'model']),
   cause: Schema.Defect(),
 }) {}
 
@@ -134,9 +124,21 @@ export class CompactionFailed extends Schema.TaggedError<CompactionFailed>()(
   {},
 ) {}
 
-/** A promise as an Effect that fails with an AgentTurnError for its stage. */
-const attempt = <A>(stage: AgentTurnError['stage'], run: () => Promise<A>) =>
+/** Why a turn failed: a host or model call, or the session's log. */
+export type TurnError = AgentTurnError | HistoryError;
+
+/** A host or model call: interrupting the fiber aborts `signal`. */
+const attempt = <A>(stage: AgentTurnError['stage'], run: (signal: AbortSignal) => Promise<A>) =>
   Effect.tryPromise({ try: run, catch: (cause) => new AgentTurnError({ stage, cause }) });
+
+/**
+ * A signal that aborts when the current scope closes, for work that outlives
+ * one promise: the model stream and the tools it runs.
+ */
+const scopeSignal = Effect.acquireRelease(
+  Effect.sync(() => new AbortController()),
+  (controller) => Effect.sync(() => controller.abort()),
+).pipe(Effect.map((controller) => controller.signal));
 
 function safeLabel(label: () => string | undefined) {
   try {
@@ -260,7 +262,6 @@ class TurnEvents {
   private inputs = new Map<string, string>();
   private calls = new Map<string, { name: string; input: unknown }>();
   private tools: Labels;
-  failure: unknown;
   constructor(tools: Labels) {
     this.tools = tools;
   }
@@ -359,9 +360,8 @@ class TurnEvents {
         const usage = stepUsage(part.usage);
         return usage ? [{ type: 'usage.recorded', data: { kind: 'model', usage } }] : [];
       }
+      // A provider error fails the turn where the stream is read.
       case 'error':
-        this.failure = part.error;
-        return [];
       case 'start':
       case 'start-step':
       case 'finish':
@@ -385,270 +385,341 @@ class TurnEvents {
   }
 }
 
-/** Resolves when the signal aborts, as an interruption. */
+/** A compaction's summary, as the first exchange the model reads. */
+const summaryMessages = (summary: string | undefined): ModelMessage[] =>
+  summary === undefined
+    ? []
+    : [
+        {
+          role: 'user',
+          content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
+        },
+        { role: 'assistant', content: 'Understood; I will continue from that summary.' },
+      ];
+
+/** The session as this turn's model reads it, with `next` messages after the stored ones. */
+const prompt = (loaded: LoadedHistory, target: ReplayTarget, next: StoredMessage[] = []) => [
+  ...summaryMessages(loaded.summary),
+  ...replayMessages([...loaded.messages, ...next], target),
+];
+
+type Emit = (event: EngineEvent) => Effect.Effect<unknown>;
+
+/** A program's events as a stream that ends with it, or fails with its error. */
+const eventStream = <E>(program: (emit: Emit) => Effect.Effect<unknown, E>) =>
+  Stream.callback<EngineEvent, E>((queue) =>
+    Queue.into(queue)(program((event) => Queue.offer(queue, event))),
+  );
+
+/** The agent: runs a session's turns and compactions as event streams. */
+export class AgentEngine extends Context.Service<
+  AgentEngine,
+  {
+    /** Loads instructions and skills ahead of the first turn. */
+    readonly preload: Effect.Effect<void, AgentTurnError>;
+    readonly send: (
+      session: string,
+      chatId: string,
+      input: string,
+    ) => Stream.Stream<EngineEvent, TurnError>;
+    /** Summarizes a session's older history now, as a long one would be before its next turn. */
+    readonly compact: (session: string) => Stream.Stream<EngineEvent, TurnError | CompactionFailed>;
+    readonly end: (session: string) => Effect.Effect<void, HistoryError>;
+  }
+>()('@wisp/agent/AgentEngine') {
+  static readonly layer = Layer.effect(
+    AgentEngine,
+    Effect.gen(function* () {
+      const { origin, token, logger, stub, mcpConfigFile } = yield* EngineConfig;
+      const history = yield* SessionHistory;
+      const mcp = yield* Effect.acquireRelease(
+        Effect.sync(() => new McpTools(mcpConfigFile ?? (() => undefined))),
+        (tools) => Effect.promise(() => tools.close()),
+      );
+
+      /** Adds one model call's reported tokens to its session's totals. */
+      const recordUsage = (session: string, usage: TokenUsage | undefined) =>
+        usage ? history.addUsage(session, usage) : Effect.void;
+
+      async function modelSettings(session: string, signal: AbortSignal) {
+        const response = await fetch(
+          origin() + '/session-model?session=' + encodeURIComponent(session),
+          {
+            headers: { authorization: 'Bearer ' + token },
+            signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+          },
+        );
+        if (!response.ok) {
+          throw Error(
+            (await response.text()) || 'Could not load model settings for this conversation.',
+          );
+        }
+        return selectedModel.parse(await response.json());
+      }
+
+      // The tools this turn may use: authored tools whose capability is on, memory
+      // slots in scope, and MCP tools. Deferred ones are reached through tool_call.
+      async function turnTools(session: string, signal: AbortSignal) {
+        const direct: Record<string, ToolDefinition> = {};
+        const deferred: DeferredTool[] = [];
+        const memory: string[] = [];
+        for (const [name, tool] of Object.entries(authoredTools)) {
+          if (!(await toolOffered(tool))) {
+            continue;
+          }
+          if (!tool.deferred) {
+            direct[name] = tool;
+            continue;
+          }
+          deferred.push(authored(name, tool, stub));
+        }
+        for (const slot of memorySlots) {
+          const slotMemory = localMemory(slot);
+          if (await slotMemory.scope(session, signal)) {
+            Object.assign(direct, slotMemory.tools());
+            const recalled = await slotMemory.recall(session, signal);
+            if (recalled) {
+              memory.push(recalled);
+            }
+          }
+        }
+        for (const tool of await mcp.tools((connection, error) =>
+          logger.warn(
+            { event: 'agent.mcp_unavailable', connection, error: errorText(error) },
+            'MCP connection unavailable',
+          ),
+        )) {
+          deferred.push({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            run: (input, ctx) => {
+              const fixture = stub?.(tool.name, input);
+              return fixture
+                ? Promise.resolve().then(() => stubbed(fixture))
+                : tool.call(
+                    input && typeof input === 'object' ? (input as Record<string, unknown>) : {},
+                    ctx.signal,
+                  );
+            },
+          });
+        }
+        return { direct, deferred, memory: memory.join('\n\n') };
+      }
+
+      function turnModel(
+        session: string,
+        selected: Awaited<ReturnType<typeof modelSettings>>,
+        cache: boolean,
+      ) {
+        return connectionModel(
+          selected,
+          origin(),
+          token,
+          () => capabilityEnabled('tool:web_search'),
+          // A stable per-conversation key keeps the tool loop on one prompt cache.
+          cache
+            ? 'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32)
+            : undefined,
+          session,
+        );
+      }
+
+      // Summarizes the older part of a history and records the compaction; the
+      // messages stay stored. False when summarizing failed and the model goes on
+      // with the recent turns only.
+      const summarize = Effect.fn('AgentEngine.summarize')(function* (
+        session: string,
+        loaded: LoadedHistory,
+        model: LanguageModel,
+        modelSlug: string,
+      ) {
+        const { older } = compactionSplit(loaded.messages.map((stored) => stored.message));
+        if (!older.length) {
+          return true;
+        }
+        const summary = yield* attempt('model', (abortSignal) =>
+          generateText({
+            model,
+            instructions: SUMMARY_PROMPT,
+            // An earlier summary is part of what the new one covers.
+            prompt: transcript([...summaryMessages(loaded.summary), ...older]),
+            abortSignal,
+          }),
+        ).pipe(
+          Effect.tap((response) => recordUsage(session, stepUsage(response.usage))),
+          Effect.map((response) => response.text),
+          Effect.catchTag('AgentTurnError', (error) =>
+            Effect.sync(() => {
+              logger.warn(
+                { event: 'agent.compaction_failed', error: errorText(error.cause) },
+                'Compaction failed',
+              );
+              return undefined;
+            }),
+          ),
+        );
+        // Without a summary the turn stays answerable by reading only the recent part.
+        yield* history.compact(session, {
+          keptFrom: loaded.messages[older.length]!.seq,
+          summary,
+          model: modelSlug,
+        });
+        return summary !== undefined;
+      });
+
+      /** Runs a compaction between `context` events. */
+      const compacting = Effect.fn('AgentEngine.compacting')(function* (
+        emit: Emit,
+        run: Effect.Effect<boolean, TurnError>,
+      ) {
+        yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
+        const compacted = yield* run;
+        yield* emit({
+          type: 'context.settled',
+          data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
+        });
+        return compacted;
+      });
+
+      // One turn: prepare, maybe compact, then the AI SDK tool loop until the model
+      // stops calling tools, a tool ends the turn, or the step budget runs out.
+      const turn = Effect.fn('AgentEngine.turn')(function* (
+        session: string,
+        chatId: string,
+        input: string,
+        emit: Emit,
+      ) {
+        const content = yield* attempt('setup', () => wispContent());
+        const selected = yield* attempt('setup', (signal) => modelSettings(session, signal));
+        yield* history.begin(session, { chatId, model: selected.model });
+        const tools = yield* attempt('setup', (signal) => turnTools(session, signal));
+        const model = turnModel(session, selected, true);
+        yield* emit({ type: 'turn.started', data: {} });
+        // The player's input, as replayable history consumes it (rebuildHistory).
+        yield* emit({
+          type: 'delivery.consumed',
+          data: { parts: [{ kind: 'text', text: input }] },
+        });
+
+        const target: ReplayTarget = {
+          model: selected.model,
+          provider: selected.provider,
+          modelId: selected.modelId,
+        };
+        let loaded = yield* history.load(session);
+        if (
+          selected.contextWindow &&
+          estimateTokens(prompt(loaded, target)) + estimateTokens(input) >
+            selected.contextWindow * COMPACTION_THRESHOLD
+        ) {
+          yield* compacting(emit, summarize(session, loaded, model, selected.model));
+          loaded = yield* history.load(session);
+        }
+        const earlier = prompt(loaded, target);
+        const memory = tools.memory && tools.memory !== lastMemory(earlier) ? tools.memory : '';
+        const user: ModelMessage = {
+          role: 'user',
+          content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
+        };
+        yield* history.append(session, [user], selected.model);
+
+        // The model stream and its tools stop when the turn's scope closes.
+        const signal = yield* scopeSignal;
+        const assembled = assembleTools({
+          session,
+          signal,
+          direct: tools.direct,
+          deferred: tools.deferred,
+          skills: content.skills,
+          stub,
+        });
+        // Each step is logged when it ends (the loop waits for it), so a cancelled
+        // or failed turn keeps the tool calls that already ran. A failed write
+        // ends the stream with that error.
+        const logFailed = yield* Deferred.make<never, HistoryError>();
+        const runStep = Effect.runPromiseWith(yield* Effect.context<never>());
+        const result = streamText({
+          model,
+          instructions: content.system,
+          messages: prompt(loaded, target, [{ message: user, model: selected.model }]),
+          tools: assembled.tools,
+          abortSignal: signal,
+          ...turnOptions(tools.direct, selected),
+          onStepEnd: ({ response }) =>
+            runStep(
+              history.append(session, response.messages, selected.model).pipe(
+                Effect.catch((error) => Deferred.fail(logFailed, error)),
+                Effect.asVoid,
+              ),
+            ),
+        });
+        const events = new TurnEvents(assembled);
+        yield* Stream.fromAsyncIterable(
+          result.fullStream,
+          (cause) => new AgentTurnError({ stage: 'model', cause }),
+        ).pipe(
+          Stream.interruptWhen(Deferred.await(logFailed)),
+          Stream.runForEach((part): Effect.Effect<void, TurnError> =>
+            part.type === 'error'
+              ? Effect.fail(new AgentTurnError({ stage: 'model', cause: part.error }))
+              : Effect.andThen(
+                  part.type === 'finish-step'
+                    ? recordUsage(session, stepUsage(part.usage))
+                    : Effect.void,
+                  Effect.forEach(events.read(part), emit, { discard: true }),
+                ),
+          ),
+        );
+      }, Effect.scoped);
+
+      const compactNow = Effect.fn('AgentEngine.compactNow')(function* (
+        session: string,
+        emit: Emit,
+      ) {
+        const selected = yield* attempt('setup', (signal) => modelSettings(session, signal));
+        const model = turnModel(session, selected, false);
+        const loaded = yield* history.load(session);
+        if (!(yield* compacting(emit, summarize(session, loaded, model, selected.model)))) {
+          return yield* new CompactionFailed();
+        }
+      });
+
+      return AgentEngine.of({
+        preload: attempt('setup', () => wispContent()).pipe(Effect.asVoid),
+        send: (session, chatId, input) => eventStream((emit) => turn(session, chatId, input, emit)),
+        compact: (session) => eventStream((emit) => compactNow(session, emit)),
+        end: (session) => history.delete(session),
+      });
+    }),
+  );
+}
+
+/** Completes when `signal` aborts. */
 const aborted = (signal: AbortSignal) =>
-  Effect.callback<never>((resume) => {
-    const abort = () => resume(Effect.interrupt);
+  Effect.callback<void>((resume) => {
     if (signal.aborted) {
-      abort();
+      resume(Effect.void);
       return;
     }
+    const abort = () => resume(Effect.void);
     signal.addEventListener('abort', abort, { once: true });
     return Effect.sync(() => signal.removeEventListener('abort', abort));
   });
 
+/**
+ * The engine for a host that does not run Effect (the bridge, tests and
+ * evals): promises, and turns as an event iterable plus a result. Every turn's
+ * cancellation enters here, as an AbortSignal that interrupts its stream.
+ */
 export function createAgentEngine(options: EngineOptions) {
-  const { origin, token, history, logger, stub } = options;
-  const mcp = new McpTools(options.mcpConfigFile ?? (() => undefined));
-  /** Adds one model call's reported tokens to its session's totals. */
-  const recordUsage = (session: string, usage: TokenUsage | undefined) =>
-    usage ? attempt('history', () => history.addUsage(session, usage)) : Effect.void;
-  async function modelSettings(session: string, signal: AbortSignal) {
-    const response = await fetch(
-      origin() + '/session-model?session=' + encodeURIComponent(session),
-      {
-        headers: { authorization: 'Bearer ' + token },
-        signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
-      },
-    );
-    if (!response.ok) {
-      throw Error(
-        (await response.text()) || 'Could not load model settings for this conversation.',
-      );
-    }
-    return selectedModel.parse(await response.json());
-  }
-
-  // The tools this turn may use: authored tools whose capability is on, memory
-  // slots in scope, and MCP tools. Deferred ones are reached through tool_call.
-  async function turnTools(session: string, signal: AbortSignal) {
-    const direct: Record<string, ToolDefinition> = {};
-    const deferred: DeferredTool[] = [];
-    const memory: string[] = [];
-    for (const [name, tool] of Object.entries(authoredTools)) {
-      if (!(await toolOffered(tool))) {
-        continue;
-      }
-      if (!tool.deferred) {
-        direct[name] = tool;
-        continue;
-      }
-      deferred.push(authored(name, tool, stub));
-    }
-    for (const slot of memorySlots) {
-      const slotMemory = localMemory(slot);
-      if (await slotMemory.scope(session, signal)) {
-        Object.assign(direct, slotMemory.tools());
-        const recalled = await slotMemory.recall(session, signal);
-        if (recalled) {
-          memory.push(recalled);
-        }
-      }
-    }
-    for (const tool of await mcp.tools((connection, error) =>
-      logger.warn(
-        { event: 'agent.mcp_unavailable', connection, error: errorText(error) },
-        'MCP connection unavailable',
-      ),
-    )) {
-      deferred.push({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema,
-        run: (input, ctx) => {
-          const fixture = stub?.(tool.name, input);
-          return fixture
-            ? Promise.resolve().then(() => stubbed(fixture))
-            : tool.call(
-                input && typeof input === 'object' ? (input as Record<string, unknown>) : {},
-                ctx.signal,
-              );
-        },
-      });
-    }
-    return { direct, deferred, memory: memory.join('\n\n') };
-  }
-
-  function turnModel(
-    session: string,
-    selected: Awaited<ReturnType<typeof modelSettings>>,
-    cache: boolean,
-  ) {
-    return connectionModel(
-      selected,
-      origin(),
-      token,
-      () => capabilityEnabled('tool:web_search'),
-      // A stable per-conversation key keeps the tool loop on one prompt cache.
-      cache ? 'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32) : undefined,
-      session,
-    );
-  }
-
-  // A provider call ends with the turn: interrupting the Effect aborts it.
-  const callSignal = (signal: AbortSignal) =>
-    Effect.gen(function* () {
-      const controller = new AbortController();
-      yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()));
-      return AbortSignal.any([signal, controller.signal]);
-    });
-
-  /** A compaction's summary, as the first exchange the model reads. */
-  const summaryMessages = (summary: string | undefined): ModelMessage[] =>
-    summary === undefined
-      ? []
-      : [
-          {
-            role: 'user',
-            content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
-          },
-          { role: 'assistant', content: 'Understood; I will continue from that summary.' },
-        ];
-
-  /** The session as this turn's model reads it, with `next` messages after the stored ones. */
-  const prompt = (loaded: SessionHistory, target: ReplayTarget, next: StoredMessage[] = []) => [
-    ...summaryMessages(loaded.summary),
-    ...replayMessages([...loaded.messages, ...next], target),
-  ];
-
-  // Summarizes the older part of a history and records the compaction; the
-  // messages stay stored. False when summarizing failed and the model goes on
-  // with the recent turns only.
-  const compact = Effect.fn('AgentEngine.compact')(function* (
-    session: string,
-    loaded: SessionHistory,
-    model: LanguageModel,
-    modelSlug: string,
-  ) {
-    const { older } = compactionSplit(loaded.messages.map((stored) => stored.message));
-    if (!older.length) {
-      return true;
-    }
-    const abortSignal = yield* callSignal(new AbortController().signal);
-    const summary = yield* attempt('model', () =>
-      generateText({
-        model,
-        instructions: SUMMARY_PROMPT,
-        // An earlier summary is part of what the new one covers.
-        prompt: transcript([...summaryMessages(loaded.summary), ...older]),
-        abortSignal,
-      }),
-    ).pipe(
-      Effect.tap((response) => recordUsage(session, stepUsage(response.usage))),
-      Effect.map((response) => response.text),
-      Effect.catchTag('AgentTurnError', (error) =>
-        Effect.sync(() => {
-          logger.warn(
-            { event: 'agent.compaction_failed', error: errorText(error.cause) },
-            'Compaction failed',
-          );
-          return undefined;
-        }),
-      ),
-    );
-    // Without a summary the turn stays answerable by reading only the recent part.
-    yield* attempt('history', () =>
-      history.compact(session, {
-        keptFrom: loaded.messages[older.length]!.seq,
-        summary,
-        model: modelSlug,
-      }),
-    );
-    return summary !== undefined;
-  }, Effect.scoped);
-
-  // One turn: prepare, maybe compact, then the AI SDK tool loop until the model
-  // stops calling tools, a tool ends the turn, or the step budget runs out.
-  const turn = Effect.fn('AgentEngine.turn')(function* (
-    session: string,
-    chatId: string,
-    input: string,
-    signal: AbortSignal,
-    emit: (event: EngineEvent) => Effect.Effect<unknown>,
-  ) {
-    const content = yield* attempt('setup', () => wispContent());
-    const selected = yield* attempt('setup', () => modelSettings(session, signal));
-    yield* attempt('history', () => history.begin(session, { chatId, model: selected.model }));
-    const tools = yield* attempt('setup', () => turnTools(session, signal));
-    const model = turnModel(session, selected, true);
-    yield* emit({ type: 'turn.started', data: {} });
-    // The player's input, as replayable history consumes it (rebuildHistory).
-    yield* emit({ type: 'delivery.consumed', data: { parts: [{ kind: 'text', text: input }] } });
-
-    const target: ReplayTarget = {
-      model: selected.model,
-      provider: selected.provider,
-      modelId: selected.modelId,
-    };
-    let loaded = yield* attempt('history', () => history.load(session));
-    if (
-      selected.contextWindow &&
-      estimateTokens(prompt(loaded, target)) + estimateTokens(input) >
-        selected.contextWindow * COMPACTION_THRESHOLD
-    ) {
-      yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
-      const compacted = yield* compact(session, loaded, model, selected.model);
-      yield* emit({
-        type: 'context.settled',
-        data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
-      });
-      loaded = yield* attempt('history', () => history.load(session));
-    }
-    const earlier = prompt(loaded, target);
-    const memory = tools.memory && tools.memory !== lastMemory(earlier) ? tools.memory : '';
-    const user: ModelMessage = {
-      role: 'user',
-      content: memory ? '<saved_memory>\n' + memory + '\n</saved_memory>\n\n' + input : input,
-    };
-    yield* attempt('history', () => history.append(session, [user], selected.model));
-
-    const assembled = assembleTools({
-      session,
-      signal,
-      direct: tools.direct,
-      deferred: tools.deferred,
-      skills: content.skills,
-      stub,
-    });
-    // Each step is logged as soon as it ends (the loop waits for it), so a
-    // cancelled or failed turn keeps the tool calls that already ran.
-    let logFailure: unknown;
-    const result = streamText({
-      model,
-      instructions: content.system,
-      messages: prompt(loaded, target, [{ message: user, model: selected.model }]),
-      tools: assembled.tools,
-      abortSignal: yield* callSignal(signal),
-      ...turnOptions(tools.direct, selected),
-      onStepEnd: async ({ response }) => {
-        if (logFailure !== undefined || !response.messages.length) return;
-        try {
-          await history.append(session, response.messages, selected.model);
-        } catch (error) {
-          logFailure = error;
-        }
-      },
-    });
-    const events = new TurnEvents(assembled);
-    yield* Stream.fromAsyncIterable(
-      result.fullStream,
-      (cause) => new AgentTurnError({ stage: 'model', cause }),
-    ).pipe(
-      Stream.runForEach((part) =>
-        Effect.forEach(events.read(part), (event) =>
-          event.type === 'usage.recorded'
-            ? recordUsage(session, event.data.usage as TokenUsage).pipe(Effect.andThen(emit(event)))
-            : emit(event),
-        ),
-      ),
-    );
-    if (events.failure !== undefined) {
-      return yield* new AgentTurnError({ stage: 'model', cause: events.failure });
-    }
-    if (logFailure !== undefined) {
-      return yield* new AgentTurnError({ stage: 'history', cause: logFailure });
-    }
-  }, Effect.scoped);
+  const { history, ...config } = options;
+  const runtime = ManagedRuntime.make(
+    AgentEngine.layer.pipe(
+      Layer.provide(SessionHistory.layer(history)),
+      Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(config))),
+    ),
+  );
 
   function settled(exit: Exit.Exit<unknown, unknown>, signal: AbortSignal): EngineResult {
     if (signal.aborted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))) {
@@ -657,72 +728,64 @@ export function createAgentEngine(options: EngineOptions) {
     if (Exit.isSuccess(exit)) {
       return { status: 'completed' };
     }
-    const squashed = Cause.squash(exit.cause);
+    const failure = Cause.squash(exit.cause);
     const error =
-      squashed instanceof AgentTurnError
-        ? squashed.cause
-        : squashed instanceof CompactionFailed
+      failure instanceof AgentTurnError || failure instanceof HistoryError
+        ? failure.cause
+        : failure instanceof CompactionFailed
           ? new Error('Compaction failed.')
-          : squashed;
-    logger.warn({ event: 'agent.turn_failed', error: errorText(error) }, 'Agent turn failed');
+          : failure;
+    options.logger.warn(
+      { event: 'agent.turn_failed', error: errorText(error) },
+      'Agent turn failed',
+    );
     return {
       status: 'failed',
       error: error instanceof Error ? error : { message: errorText(error) },
     };
   }
 
-  /** Runs a turn program as an event stream; the result settles when it ends. */
-  function events(
+  /** A stream's events until it ends; the result settles with its exit. */
+  function run(
     signal: AbortSignal,
-    program: (
-      emit: (event: EngineEvent) => Effect.Effect<unknown>,
-    ) => Effect.Effect<unknown, unknown>,
+    stream: Stream.Stream<EngineEvent, TurnError | CompactionFailed, AgentEngine>,
   ) {
     let settle!: (result: EngineResult) => void;
-    const result = new Promise<EngineResult>((resolve) => (settle = resolve));
-    const stream = Stream.callback<EngineEvent>((queue) =>
-      program((event) => Queue.offer(queue, event)).pipe(
-        Effect.raceFirst(aborted(signal)),
-        Effect.onExit((exit) => Effect.sync(() => settle(settled(exit, signal)))),
-        Effect.exit,
-        Effect.andThen(Queue.end(queue)),
-      ),
+    const result = new Promise<EngineResult>((resolve) => {
+      settle = resolve;
+    });
+    const settling = stream.pipe(
+      Stream.interruptWhen(aborted(signal)),
+      Stream.onExit((exit) => Effect.sync(() => settle(settled(exit, signal)))),
+      Stream.catchCause(() => Stream.empty),
     );
-    return { events: Stream.toAsyncIterable(stream), result };
+    async function* events() {
+      let context: Context.Context<AgentEngine>;
+      try {
+        context = await runtime.context();
+      } catch (error) {
+        settle(settled(Exit.die(error), signal));
+        return;
+      }
+      yield* Stream.toAsyncIterableWith(context)(settling);
+    }
+    return { events: events(), result };
   }
 
   return {
     newSessionId: (): string => uuidv7(),
-    /** Loads instructions and skills ahead of the first turn. */
-    preload: () => wispContent().then(() => undefined),
+    preload: () => runtime.runPromise(Effect.flatMap(AgentEngine, (engine) => engine.preload)),
     /** Starts a turn; events stream once and the result settles when they end. */
-    send(session: string, input: string, signal: AbortSignal, chatId: string) {
-      return events(signal, (emit) => turn(session, chatId, input, signal, emit));
-    },
-    /** Summarizes a session's older history now, as a long one would be before its next turn. */
-    compact(session: string, signal: AbortSignal) {
-      return events(signal, (emit) =>
-        Effect.gen(function* () {
-          const selected = yield* attempt('setup', () => modelSettings(session, signal));
-          const model = turnModel(session, selected, false);
-          yield* emit({ type: 'context.started', data: { kind: 'compaction' } });
-          const compacted = yield* compact(
-            session,
-            yield* attempt('history', () => history.load(session)),
-            model,
-            selected.model,
-          );
-          yield* emit({
-            type: 'context.settled',
-            data: { kind: 'compaction', outcome: compacted ? 'completed' : 'failed' },
-          });
-          if (!compacted) {
-            return yield* new CompactionFailed();
-          }
-        }),
-      );
-    },
-    end: (session: string) => history.delete(session),
-    close: () => mcp.close(),
+    send: (session: string, input: string, signal: AbortSignal, chatId: string) =>
+      run(
+        signal,
+        Stream.unwrap(Effect.map(AgentEngine, (engine) => engine.send(session, chatId, input))),
+      ),
+    compact: (session: string, signal: AbortSignal) =>
+      run(signal, Stream.unwrap(Effect.map(AgentEngine, (engine) => engine.compact(session)))),
+    end: (session: string) =>
+      runtime.runPromise(Effect.flatMap(AgentEngine, (engine) => engine.end(session))),
+    /** Closes MCP connections and everything else the engine holds. */
+    close: () => runtime.dispose(),
   };
 }
