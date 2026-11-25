@@ -1,5 +1,7 @@
 import { characterLabel } from '@wisp/protocol/character-key';
+import { Cause, Duration, Effect } from 'effect';
 import { RuntimeResources } from './runtime-resources.ts';
+import { makeAppRuntime } from './app-runtime.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
@@ -82,6 +84,9 @@ export interface BridgeOptions {
  */
 export async function startBridge(options: BridgeOptions = {}) {
   const resources = new RuntimeResources();
+  // Effect code runs on one runtime built from AppLayer; it is released last.
+  const appRuntime = makeAppRuntime();
+  resources.defer(() => appRuntime.dispose());
   // Set by stop() or a desktop stop request; checked by everything that
   // starts work, so nothing new begins while resources close.
   let shutdownRequested = false;
@@ -527,7 +532,23 @@ export async function startBridge(options: BridgeOptions = {}) {
       options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
         ? Promise.resolve()
         : transport.serialize(() => transport.connect(config.get().wow)).catch(transport.logError);
-    const integrationHealth = setInterval(() => {
+    // Background ticks run as fibers in the bridge scope, which interrupts them on
+    // stop. A failing tick is logged and the next one still runs.
+    const every = (interval: Duration.Input, tick: () => void) =>
+      resources.fork(
+        appRuntime,
+        Effect.forever(
+          Effect.sleep(interval).pipe(
+            Effect.andThen(Effect.sync(tick)),
+            Effect.catchCause((cause) =>
+              Effect.logError('Background tick failed').pipe(
+                Effect.annotateLogs({ event: 'bridge.tick_failed', error: Cause.pretty(cause) }),
+              ),
+            ),
+          ),
+        ),
+      );
+    every('30 seconds', () => {
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
       if (JSON.stringify(capabilitySettings.snapshot()) !== before) {
@@ -541,20 +562,18 @@ export async function startBridge(options: BridgeOptions = {}) {
           );
         changed();
       }
-    }, 30000);
-    resources.defer(() => clearInterval(integrationHealth));
+    });
     // Snapshots publish from changed(); this tick only polls what has no event:
     // the addon's acknowledged revision, and a publish that is still dirty
     // because the transport was missing or its last write failed.
-    const publish = setInterval(() => {
+    every(PUBLISH_MIN_INTERVAL_MS, () => {
       observeGameConnection();
       publisher.retry();
-    }, PUBLISH_MIN_INTERVAL_MS);
+    });
     logger.info(
       { event: 'bridge.started', version: bridgeVersion, channel: features.channel },
       'Wisp started',
     );
-    resources.defer(() => clearInterval(publish));
     function stop() {
       shutdownRequested = true;
       pending.cancelAll('Bridge stopped');
