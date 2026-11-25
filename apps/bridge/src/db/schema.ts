@@ -258,8 +258,10 @@ export const agentSessions = sqliteTable(
  * plain JSON that does not depend on any model library; `type` repeats its
  * `type`:
  *
- * - `user`: the player's turn input.
- * - `synthetic`: text Wisp added for the model, such as saved memory.
+ * - `user`: what the player wrote.
+ * - `synthetic`: what Wisp added to a turn for the model, as data: saved
+ *   memory (`kind: 'memory'`), the game and chat context (`context`) and the
+ *   chat's earlier messages when a session starts mid-chat (`history`).
  * - `assistant`: one model step, its tool calls with their results.
  * - `compaction`: `{ keptFrom, summary? }`. The model reads the latest one's
  *   summary, then the entries from `keptFrom` on; no summary means

@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '@wisp/agent/agent-host';
-import { createAgentEngine } from '@wisp/agent/engine';
+import { createAgentEngine, type TurnInput } from '@wisp/agent/engine';
 import { MemoryHistory } from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
@@ -214,7 +214,8 @@ test(
       logger: { info: () => {}, warn: () => {} },
     });
     const session = engine.newSessionId();
-    const send = (input: string) => engine.send(session, input, AbortSignal.timeout(15000), 'chat');
+    const send = (input: TurnInput) =>
+      engine.send(session, input, AbortSignal.timeout(15000), 'chat');
     const names = (i: number) =>
       (requests[i]!.tools as { name: string }[]).map((tool) => tool.name);
     const output = (i: number, callId: string) =>

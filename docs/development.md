@@ -332,7 +332,9 @@ stating when to use each skill. The system prompt lists those descriptions and t
 calls and results included, is a log in `agent_entries` in `runtime/wisp.sqlite`,
 in Wisp's own format (`wisp-1`, [session-message.ts](../apps/agent/src/session-message.ts))
 rather than the AI SDK's, and is sent in full every turn, so providers can reuse
-their prompt cache. When it nears the model's context window, older turns are
+their prompt cache. A turn logs what the player wrote apart from what Wisp adds
+to it (saved memory, the game and chat context, the chat's earlier messages when
+a session starts mid-chat); the model reads them together as one tagged message. When it nears the model's context window, older turns are
 summarized; the log keeps them.
 
 Tools are listed in [tools.ts](../apps/agent/src/tools.ts). Specialized ones are

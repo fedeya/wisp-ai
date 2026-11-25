@@ -1,4 +1,4 @@
-import type { createAgentEngine } from '@wisp/agent/engine';
+import type { createAgentEngine, TurnInput } from '@wisp/agent/engine';
 import type { Chat } from '../chat/events.ts';
 import { withConversationHistory } from '../chat/context.ts';
 import { resetContextUsage } from '@wisp/protocol/context-usage';
@@ -13,7 +13,12 @@ export type AgentEngine = Pick<
  * after a model change or failure) starts a session whose first message carries
  * the recent visible conversation.
  */
-export function sendChatTurn(engine: AgentEngine, chat: Chat, input: string, signal: AbortSignal) {
+export function sendChatTurn(
+  engine: AgentEngine,
+  chat: Chat,
+  input: TurnInput,
+  signal: AbortSignal,
+) {
   const resumed = Boolean(chat.agentSession);
   if (!resumed) {
     resetContextUsage(chat);
