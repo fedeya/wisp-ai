@@ -1,6 +1,7 @@
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import * as SqliteDrizzle from 'drizzle-orm/effect-sqlite-node';
 import { migrate } from 'drizzle-orm/effect-sqlite-node/migrator';
+import type { SQLiteEffectDatabase } from 'drizzle-orm/sqlite-core/effect';
 import { Context, Effect, Layer, Schedule, Schema } from 'effect';
 import * as Reactivity from 'effect/reactivity/Reactivity';
 import { migrationsFolder } from './migrate.ts';
@@ -10,16 +11,28 @@ import { preparePrivateDatabase } from './private-file.ts';
 export class DatabaseError extends Schema.TaggedError<DatabaseError>()('DatabaseError', {
   operation: Schema.Literals(['open', 'migrate']),
   cause: Schema.Defect(),
-}) {}
+}) {
+  override get message() {
+    const reason = this.cause instanceof Error ? this.cause.message : String(this.cause);
+    return `Cannot ${this.operation} the application database: ${reason}`;
+  }
+}
 
 export type SqlOrm = SqliteDrizzle.EffectSQLiteNodeDatabase & {
   $client: SqliteClient.SqliteClient;
 };
 
+/** The database or an open transaction on it: queries read the same either way. */
+export type SqlExecutor = SQLiteEffectDatabase<
+  SqliteDrizzle.EffectSQLiteNodeQueryEffectHKT,
+  SqliteDrizzle.EffectSQLiteNodeRunResult
+>;
+
 /** Wisp's SQLite file as an Effect Drizzle database: open, in WAL mode and migrated. */
-export class SqlDatabase extends Context.Service<SqlDatabase, { readonly db: SqlOrm }>()(
-  '@wisp/db/SqlDatabase',
-) {}
+export class SqlDatabase extends Context.Service<
+  SqlDatabase,
+  { readonly file: string; readonly db: SqlOrm }
+>()('@wisp/db/SqlDatabase') {}
 
 // Drizzle reads its journal before BEGIN, so a concurrent startup can win the
 // migration race: retry lock contention and a table created by the winner.
@@ -48,7 +61,7 @@ export const make = Effect.fnUntraced(function* (file: string, folder = migratio
     Effect.retry({ while: isMigrationRace, times: 2, schedule: Schedule.spaced('25 millis') }),
     Effect.mapError((cause) => new DatabaseError({ operation: 'migrate', cause })),
   );
-  return SqlDatabase.of({ db });
+  return SqlDatabase.of({ file, db });
 });
 
 export const layer = (file: string) => Layer.effect(SqlDatabase, make(file));

@@ -1,44 +1,43 @@
 import { test, expect, vi } from 'vitest';
-import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { it } from '@effect/vitest';
+import { Effect, Fiber } from 'effect';
+import { chatsAt, testDirectory, TestDirectory } from './storage-fixture.ts';
 import { migrateDesktop } from '../src/migrations/desktop.ts';
 
 function chat(id = 'chat') {
   return { ...newChat(id, 'game'), messages: [{ role: 'user' as const, text: 'Hello' }] };
 }
-async function fixture() {
-  const root = await mkdtemp(path.join(tmpdir(), 'wisp-sqlite-'));
-  const file = path.join(root, 'wisp.sqlite');
-  const legacy = path.join(root, 'chats.json');
-  const stores: ChatStore[] = [];
-  const store = () => {
-    const next = new ChatStore(file, (error) => {
-      throw error;
+/** A test directory whose `store()` opens the conversation store over its database. */
+const withChats = <A, E, R>(
+  work: (f: {
+    root: string;
+    file: string;
+    legacy: string;
+    store: () => ReturnType<typeof chatsAt>;
+  }) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const { root, file } = yield* TestDirectory;
+    return yield* work({
+      root,
+      file,
+      legacy: path.join(root, 'chats.json'),
+      store: () =>
+        chatsAt(file, {
+          onError: (error) => {
+            throw error;
+          },
+        }),
     });
-    stores.push(next);
-    return next;
-  };
-  return {
-    root,
-    file,
-    legacy,
-    store,
-    async close() {
-      vi.useRealTimers();
-      for (const next of stores) {
-        await next.close();
-      }
-      if (path.dirname(root) !== path.resolve(tmpdir())) {
-        throw Error('Unexpected test directory');
-      }
-      await rm(root, { recursive: true, force: true });
-    },
-  };
-}
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => vi.useRealTimers())),
+    Effect.scoped,
+    Effect.provide(testDirectory),
+  );
 function inspect<T>(file: string, read: (db: DatabaseSync) => T): T {
   const db = new DatabaseSync(file);
   try {
@@ -48,308 +47,333 @@ function inspect<T>(file: string, read: (db: DatabaseSync) => T): T {
   }
 }
 
-test('imports complete rich history once and retains byte-for-byte legacy backups', async () => {
-  const f = await fixture();
-  try {
-    const original = [
-      {
-        ...chat(),
-        characterKey: '["Forever","Realm","Mage"]',
-        agentSession: 'session',
-        modelSettings: { model: 'luna', effort: 'high' },
-        futureMetadata: { keep: true },
-        messages: [
-          {
-            role: 'assistant',
-            id: 'answer',
-            text: 'Hola 🧙\n世界',
-            ui: [{ id: 'detail', kind: 'text', text: 'Details' }],
-            parts: [
-              { type: 'text', text: 'Hola' },
-              { type: 'ui', id: 'detail' },
-            ],
-            references: {},
-            futureMessageMetadata: [1, 2, 3],
-          },
-        ],
-      },
-    ];
-    const bytes = JSON.stringify(original, null, 3) + '\n';
-    await writeFile(f.legacy, bytes);
-    const store = f.store();
-    const loaded = await store.load();
-    expect(loaded[0]).toMatchObject(original[0]);
-    expect(await readFile(f.legacy, 'utf8')).toBe(bytes);
-    const backups = (await readdir(f.root)).filter((name) => name.startsWith('chats.pre-sqlite-'));
-    expect(backups).toHaveLength(1);
-    expect(await readFile(path.join(f.root, backups[0]), 'utf8')).toBe(bytes);
-    expect(inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM messages').get()!.n)).toBe(
-      1,
-    );
-    loaded[0].title = 'Saved in SQLite';
-    await store.flush(loaded);
-    await store.close();
-    // A stale or corrupt JSON cannot replace the successfully imported database.
-    await writeFile(f.legacy, '{stale and broken');
-    const reopened = f.store();
-    expect((await reopened.load())[0].title).toBe('Saved in SQLite');
-    await reopened.flush([]);
-    await reopened.close();
-    expect(await f.store().load()).toEqual([]);
-  } finally {
-    await f.close();
-  }
-});
+it.live('imports complete rich history once and retains byte-for-byte legacy backups', () =>
+  withChats((f) =>
+    Effect.gen(function* () {
+      const original = [
+        {
+          ...chat(),
+          characterKey: '["Forever","Realm","Mage"]',
+          agentSession: 'session',
+          modelSettings: { model: 'luna', effort: 'high' },
+          futureMetadata: { keep: true },
+          messages: [
+            {
+              role: 'assistant',
+              id: 'answer',
+              text: 'Hola 🧙\n世界',
+              ui: [{ id: 'detail', kind: 'text', text: 'Details' }],
+              parts: [
+                { type: 'text', text: 'Hola' },
+                { type: 'ui', id: 'detail' },
+              ],
+              references: {},
+              futureMessageMetadata: [1, 2, 3],
+            },
+          ],
+        },
+      ];
+      const bytes = JSON.stringify(original, null, 3) + '\n';
+      yield* Effect.promise(async () => writeFile(f.legacy, bytes));
+      const store = yield* f.store();
+      const loaded = yield* store.load();
+      expect(loaded[0]).toMatchObject(original[0]);
+      expect(yield* Effect.promise(async () => readFile(f.legacy, 'utf8'))).toBe(bytes);
+      const backups = (yield* Effect.promise(async () => readdir(f.root))).filter((name) =>
+        name.startsWith('chats.pre-sqlite-'),
+      );
+      expect(backups).toHaveLength(1);
+      expect(
+        yield* Effect.promise(async () => readFile(path.join(f.root, backups[0]), 'utf8')),
+      ).toBe(bytes);
+      expect(
+        inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM messages').get()!.n),
+      ).toBe(1);
+      loaded[0].title = 'Saved in SQLite';
+      yield* store.flush(loaded);
+      yield* store.close();
+      // A stale or corrupt JSON cannot replace the successfully imported database.
+      yield* Effect.promise(async () => writeFile(f.legacy, '{stale and broken'));
+      const reopened = yield* f.store();
+      expect((yield* reopened.load())[0].title).toBe('Saved in SQLite');
+      yield* reopened.flush([]);
+      yield* reopened.close();
+      expect(yield* (yield* f.store()).load()).toEqual([]);
+    }),
+  ),
+);
 
 test.each([
   '{broken',
   JSON.stringify([chat(), { ...chat('bad'), messages: [{ role: 'assistant', text: 42 }] }]),
   JSON.stringify([chat(), chat()]),
-])('invalid or duplicate legacy history is preserved without partial import: %s', async (bytes) => {
-  const f = await fixture();
-  try {
-    await writeFile(f.legacy, bytes);
-    const store = f.store();
-    await expect(store.load()).rejects.toThrow('preserved');
-    await expect(store.flush([])).rejects.toThrow('Load conversations');
-    expect(await readFile(f.legacy, 'utf8')).toBe(bytes);
-    expect(inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM chats').get()!.n)).toBe(0);
-    // Correcting the source permits a clean retry after the failed import.
-    await writeFile(f.legacy, JSON.stringify([chat()]));
-    expect(await f.store().load()).toHaveLength(1);
-  } finally {
-    await f.close();
-  }
-});
+])('invalid or duplicate legacy history is preserved without partial import: %s', (bytes) =>
+  Effect.runPromise(
+    withChats((f) =>
+      Effect.gen(function* () {
+        yield* Effect.promise(async () => writeFile(f.legacy, bytes));
+        const store = yield* f.store();
+        expect((yield* Effect.flip(store.load())).message).toContain('preserved');
+        expect((yield* Effect.flip(store.flush([]))).message).toContain('Load conversations');
+        expect(yield* Effect.promise(async () => readFile(f.legacy, 'utf8'))).toBe(bytes);
+        expect(
+          inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM chats').get()!.n),
+        ).toBe(0);
+        // Correcting the source permits a clean retry after the failed import.
+        yield* Effect.promise(async () => writeFile(f.legacy, JSON.stringify([chat()])));
+        expect(yield* (yield* f.store()).load()).toHaveLength(1);
+      }),
+    ),
+  ),
+);
 
-test('a failed migration rolls back all rows and retries with the existing backup', async () => {
-  const f = await fixture();
-  try {
-    const initial = f.store();
-    await initial.load();
-    await initial.close();
-    inspect(f.file, (db) =>
-      db.exec(`DELETE FROM metadata;
+it.live('a failed migration rolls back all rows and retries with the existing backup', () =>
+  withChats((f) =>
+    Effect.gen(function* () {
+      const initial = yield* f.store();
+      yield* initial.load();
+      yield* initial.close();
+      inspect(f.file, (db) =>
+        db.exec(`DELETE FROM metadata;
       CREATE TRIGGER inject_failure BEFORE INSERT ON messages WHEN NEW.position = 1
       BEGIN SELECT RAISE(ABORT, 'injected failure'); END;`),
-    );
-    const original = chat();
-    original.messages.push({ role: 'user', text: 'Second message' });
-    await writeFile(f.legacy, JSON.stringify([original]));
-    await expect(f.store().load()).rejects.toThrow('preserved');
-    expect(inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM chats').get()!.n)).toBe(0);
-    expect(inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM metadata').get()!.n)).toBe(
-      0,
-    );
-    inspect(f.file, (db) => db.exec('DROP TRIGGER inject_failure'));
-    expect((await f.store().load())[0].messages).toEqual(original.messages);
-    expect(
-      (await readdir(f.root)).filter((name) => name.startsWith('chats.pre-sqlite-')),
-    ).toHaveLength(1);
-  } finally {
-    await f.close();
-  }
-});
+      );
+      const original = chat();
+      original.messages.push({ role: 'user', text: 'Second message' });
+      yield* Effect.promise(async () => writeFile(f.legacy, JSON.stringify([original])));
+      expect(
+        (yield* Effect.flip(Effect.flatMap(f.store(), (store) => store.load()))).message,
+      ).toContain('preserved');
+      expect(inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM chats').get()!.n)).toBe(
+        0,
+      );
+      expect(
+        inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM metadata').get()!.n),
+      ).toBe(0);
+      inspect(f.file, (db) => db.exec('DROP TRIGGER inject_failure'));
+      expect((yield* (yield* f.store()).load())[0].messages).toEqual(original.messages);
+      expect(
+        (yield* Effect.promise(async () => readdir(f.root))).filter((name) =>
+          name.startsWith('chats.pre-sqlite-'),
+        ),
+      ).toHaveLength(1);
+    }),
+  ),
+);
 
-test('empty drafts are neither restored nor saved; deletion cascades to messages', async () => {
-  const f = await fixture();
-  try {
-    const draft = newChat('draft', 'game');
-    await writeFile(f.legacy, JSON.stringify([draft, chat()]));
-    const store = f.store();
-    expect((await store.load()).map((c) => c.id)).toEqual(['chat']);
-    await store.flush([draft, chat()]);
-    expect(inspect(f.file, (db) => db.prepare('SELECT id FROM chats').all())).toEqual([
-      { id: 'chat' },
-    ]);
-    await store.flush([]);
-    expect(inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM messages').get()!.n)).toBe(
-      0,
-    );
-  } finally {
-    await f.close();
-  }
-});
+it.live('empty drafts are neither restored nor saved; deletion cascades to messages', () =>
+  withChats((f) =>
+    Effect.gen(function* () {
+      const draft = newChat('draft', 'game');
+      yield* Effect.promise(async () => writeFile(f.legacy, JSON.stringify([draft, chat()])));
+      const store = yield* f.store();
+      expect((yield* store.load()).map((c) => c.id)).toEqual(['chat']);
+      yield* store.flush([draft, chat()]);
+      expect(inspect(f.file, (db) => db.prepare('SELECT id FROM chats').all())).toEqual([
+        { id: 'chat' },
+      ]);
+      yield* store.flush([]);
+      expect(
+        inspect(f.file, (db) => db.prepare('SELECT count(*) AS n FROM messages').get()!.n),
+      ).toBe(0);
+    }),
+  ),
+);
 
-test('restart interrupts active turns and queued saves capture independent snapshots', async () => {
-  const f = await fixture();
-  try {
-    await writeFile(
-      f.legacy,
-      JSON.stringify([
-        {
-          ...chat(),
-          status: 'working',
-          activity: [{ id: 'call', name: 'query_character', label: 'Read', status: 'running' }],
-          messages: [
-            { role: 'user', text: 'Hello' },
+it.live('restart interrupts active turns and queued saves capture independent snapshots', () =>
+  withChats((f) =>
+    Effect.gen(function* () {
+      yield* Effect.promise(async () =>
+        writeFile(
+          f.legacy,
+          JSON.stringify([
             {
-              id: 'tool-call',
-              role: 'tool',
-              text: 'Read',
-              tool: { id: 'call', name: 'query_character', label: 'Read', status: 'running' },
+              ...chat(),
+              status: 'working',
+              activity: [{ id: 'call', name: 'query_character', label: 'Read', status: 'running' }],
+              messages: [
+                { role: 'user', text: 'Hello' },
+                {
+                  id: 'tool-call',
+                  role: 'tool',
+                  text: 'Read',
+                  tool: { id: 'call', name: 'query_character', label: 'Read', status: 'running' },
+                },
+              ],
+              usage: {
+                inputTokens: 1,
+                outputTokens: 2,
+                cacheReadTokens: 0,
+                compactions: 0,
+                compacting: true,
+              },
             },
-          ],
-          usage: {
-            inputTokens: 1,
-            outputTokens: 2,
-            cacheReadTokens: 0,
-            compactions: 0,
-            compacting: true,
-          },
-        },
-      ]),
-    );
-    const store = f.store();
-    const chats = await store.load();
-    expect(chats[0].status).toBe('interrupted');
-    expect(chats[0].usage!.compacting).toBe(false);
-    // The calls died with the turn; none is left running.
-    expect(chats[0].messages[1]?.tool?.status).toBe('cancelled');
-    expect(chats[0].activity.map(({ status }) => status)).not.toContain('running');
-    const first = store.flush(chats);
-    chats[0].title = 'Latest';
-    await Promise.all([first, store.flush(chats)]);
-    await store.close();
-    expect((await f.store().load())[0].title).toBe('Latest');
-  } finally {
-    await f.close();
-  }
-});
+          ]),
+        ),
+      );
+      const store = yield* f.store();
+      const chats = yield* store.load();
+      expect(chats[0].status).toBe('interrupted');
+      expect(chats[0].usage!.compacting).toBe(false);
+      // The calls died with the turn; none is left running.
+      expect(chats[0].messages[1]?.tool?.status).toBe('cancelled');
+      expect(chats[0].activity.map(({ status }) => status)).not.toContain('running');
+      const first = yield* Effect.forkChild(store.flush(chats));
+      chats[0].title = 'Latest';
+      yield* store.flush(chats);
+      yield* Fiber.join(first);
+      yield* store.close();
+      expect((yield* (yield* f.store()).load())[0].title).toBe('Latest');
+    }),
+  ),
+);
 
-test('streaming writes update only changed messages and preserve other conversations', async () => {
-  const f = await fixture();
-  try {
-    const store = f.store();
-    await store.load();
-    const chats = [chat(), chat('other')];
-    await store.flush(chats);
-    inspect(f.file, (db) =>
-      db.exec(`CREATE TABLE changed_messages(chat_id TEXT);
+it.live('streaming writes update only changed messages and preserve other conversations', () =>
+  withChats((f) =>
+    Effect.gen(function* () {
+      const store = yield* f.store();
+      yield* store.load();
+      const chats = [chat(), chat('other')];
+      yield* store.flush(chats);
+      inspect(f.file, (db) =>
+        db.exec(`CREATE TABLE changed_messages(chat_id TEXT);
       CREATE TRIGGER message_updates AFTER UPDATE ON messages
       BEGIN INSERT INTO changed_messages VALUES(NEW.chat_id); END;`),
-    );
-    vi.useFakeTimers();
-    chats[0].messages[0].text = 'Streaming update';
-    store.schedule(() => chats);
-    store.schedule(() => chats);
-    await vi.advanceTimersByTimeAsync(1000);
-    await store.flush(chats);
-    expect(inspect(f.file, (db) => db.prepare('SELECT * FROM changed_messages').all())).toEqual([
-      { chat_id: 'chat' },
-    ]);
-    expect(
-      inspect(
-        f.file,
-        (db) => db.prepare("SELECT revision FROM chats WHERE id = 'other'").get()!.revision,
-      ),
-    ).toBe(0);
-    chats[0].messages.push({ role: 'user', text: 'Appended' });
-    await store.flush(chats);
-    chats[0].messages.splice(0, 1);
-    await store.flush(chats);
-    await store.close();
-    expect((await f.store().load())[0].messages).toEqual(chats[0].messages);
-  } finally {
-    await f.close();
-  }
-});
+      );
+      vi.useFakeTimers();
+      chats[0].messages[0].text = 'Streaming update';
+      store.schedule(() => chats);
+      store.schedule(() => chats);
+      yield* Effect.promise(async () => vi.advanceTimersByTimeAsync(1000));
+      yield* store.flush(chats);
+      expect(inspect(f.file, (db) => db.prepare('SELECT * FROM changed_messages').all())).toEqual([
+        { chat_id: 'chat' },
+      ]);
+      expect(
+        inspect(
+          f.file,
+          (db) => db.prepare("SELECT revision FROM chats WHERE id = 'other'").get()!.revision,
+        ),
+      ).toBe(0);
+      chats[0].messages.push({ role: 'user', text: 'Appended' });
+      yield* store.flush(chats);
+      chats[0].messages.splice(0, 1);
+      yield* store.flush(chats);
+      yield* store.close();
+      expect((yield* (yield* f.store()).load())[0].messages).toEqual(chats[0].messages);
+    }),
+  ),
+);
 
-test('stale writes fail atomically instead of overwriting another connection', async () => {
-  const f = await fixture();
-  try {
-    const first = f.store();
-    await first.load();
-    await first.flush([chat(), chat('other')]);
-    const stale = f.store();
-    const old = await stale.load();
-    const latest = [chat(), chat('other')];
-    latest[0].title = 'Committed';
-    await first.flush(latest);
-    old[1].title = 'Must roll back';
-    old[0].title = 'Stale';
-    await expect(stale.flush(old.reverse())).rejects.toThrow('another process');
-    const stored = await f.store().load();
-    expect(stored[0].title).toBe('Committed');
-    expect(stored[1].title).toBe('New conversation');
-  } finally {
-    await f.close();
-  }
-});
+it.live('stale writes fail atomically instead of overwriting another connection', () =>
+  withChats((f) =>
+    Effect.gen(function* () {
+      const first = yield* f.store();
+      yield* first.load();
+      yield* first.flush([chat(), chat('other')]);
+      const stale = yield* f.store();
+      const old = yield* stale.load();
+      const latest = [chat(), chat('other')];
+      latest[0].title = 'Committed';
+      yield* first.flush(latest);
+      old[1].title = 'Must roll back';
+      old[0].title = 'Stale';
+      expect((yield* Effect.flip(stale.flush(old.reverse()))).message).toContain('another process');
+      const stored = yield* (yield* f.store()).load();
+      expect(stored[0].title).toBe('Committed');
+      expect(stored[1].title).toBe('New conversation');
+    }),
+  ),
+);
 
 test.each(['incompatible schema', 'corrupt database'])(
   'refuses %s instead of silently falling back to JSON',
-  async (kind) => {
-    const f = await fixture();
-    try {
-      if (kind === 'incompatible schema') {
-        inspect(f.file, (db) =>
-          db.exec(
-            "CREATE TABLE chats(id TEXT PRIMARY KEY, title TEXT); INSERT INTO chats VALUES ('keep', 'original')",
-          ),
-        );
-      } else {
-        await writeFile(f.file, 'not a SQLite file');
-      }
-      const original = await readFile(f.file);
-      await writeFile(f.legacy, JSON.stringify([chat()]));
-      await expect(f.store().load()).rejects.toThrow('preserved');
-      if (kind === 'incompatible schema') {
-        expect(inspect(f.file, (db) => db.prepare('SELECT * FROM chats').all())).toEqual([
-          { id: 'keep', title: 'original' },
-        ]);
-      } else {
-        expect(await readFile(f.file)).toEqual(original);
-      }
-    } finally {
-      await f.close();
-    }
-  },
+  (kind) =>
+    Effect.runPromise(
+      withChats((f) =>
+        Effect.gen(function* () {
+          if (kind === 'incompatible schema') {
+            inspect(f.file, (db) =>
+              db.exec(
+                "CREATE TABLE chats(id TEXT PRIMARY KEY, title TEXT); INSERT INTO chats VALUES ('keep', 'original')",
+              ),
+            );
+          } else {
+            yield* Effect.promise(async () => writeFile(f.file, 'not a SQLite file'));
+          }
+          const original = yield* Effect.promise(async () => readFile(f.file));
+          yield* Effect.promise(async () => writeFile(f.legacy, JSON.stringify([chat()])));
+          // The database refuses to open; the legacy JSON is not used in its place.
+          expect(
+            (yield* Effect.flip(Effect.flatMap(f.store(), (store) => store.load()))).message,
+          ).toMatch(/application database/);
+          if (kind === 'incompatible schema') {
+            expect(inspect(f.file, (db) => db.prepare('SELECT * FROM chats').all())).toEqual([
+              { id: 'keep', title: 'original' },
+            ]);
+          } else {
+            expect(yield* Effect.promise(async () => readFile(f.file))).toEqual(original);
+          }
+        }),
+      ),
+    ),
 );
 
-test('installation import replaces an empty workspace and snapshots WAL data without modifying the source', async () => {
-  const f = await fixture();
-  const source = path.join(f.root, 'old');
-  const destination = path.join(f.root, 'new');
-  let sourceStore: ChatStore | undefined;
-  try {
-    await writeFile(path.join(f.root, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    sourceStore = new ChatStore(path.join(source, 'runtime/wisp.sqlite'), () => {});
-    await sourceStore.load();
-    const original = { ...chat(), agentSession: 'source-session', status: 'working' as const };
-    await sourceStore.flush([original]);
-    await writeFile(
-      path.join(source, 'runtime/chats.json'),
-      '{stale JSON must not override SQLite',
-    );
-    await writeFile(path.join(source, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    const empty = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
-    await empty.load();
-    await empty.close();
-    await writeFile(path.join(destination, 'runtime/chatgpt-host.json'), 'new host');
-    await writeFile(path.join(source, 'runtime/chatgpt-host.json'), 'old host');
-    // No desktop endpoint: source DB remains open with committed WAL pages.
-    await migrateDesktop(source, destination, '');
-    expect(await readFile(path.join(destination, 'runtime/chatgpt-host.json'), 'utf8')).toBe(
-      'old host',
-    );
-    const imported = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
-    try {
-      const chats = await imported.load();
-      expect(chats[0].agentSession).toBeUndefined();
-      expect(chats[0].status).toBe('interrupted');
-      expect(chats[0].messages).toEqual(original.messages);
-    } finally {
-      await imported.close();
-    }
-    expect(
-      inspect(
-        path.join(source, 'runtime/wisp.sqlite'),
-        (db) => db.prepare('SELECT agent_session FROM chat_instance_state').get()!.agent_session,
-      ),
-    ).toBe('source-session');
-  } finally {
-    await sourceStore?.close();
-    await f.close();
-  }
-});
+it.live(
+  'installation import replaces an empty workspace and snapshots WAL data without modifying the source',
+  () =>
+    withChats((f) =>
+      Effect.gen(function* () {
+        const source = path.join(f.root, 'old');
+        const destination = path.join(f.root, 'new');
+        yield* Effect.promise(async () =>
+          writeFile(path.join(f.root, 'config.local.json'), JSON.stringify({ wow: 'test' })),
+        );
+        const sourceStore = yield* chatsAt(path.join(source, 'runtime/wisp.sqlite'));
+        yield* sourceStore.load();
+        const original = { ...chat(), agentSession: 'source-session', status: 'working' as const };
+        yield* sourceStore.flush([original]);
+        yield* Effect.promise(async () =>
+          writeFile(
+            path.join(source, 'runtime/chats.json'),
+            '{stale JSON must not override SQLite',
+          ),
+        );
+        yield* Effect.promise(async () =>
+          writeFile(path.join(source, 'config.local.json'), JSON.stringify({ wow: 'test' })),
+        );
+        const empty = yield* chatsAt(path.join(destination, 'runtime/wisp.sqlite'));
+        yield* empty.load();
+        yield* empty.close();
+        yield* Effect.promise(async () =>
+          writeFile(path.join(destination, 'runtime/chatgpt-host.json'), 'new host'),
+        );
+        yield* Effect.promise(async () =>
+          writeFile(path.join(source, 'runtime/chatgpt-host.json'), 'old host'),
+        );
+        // No desktop endpoint: source DB remains open with committed WAL pages.
+        yield* Effect.promise(async () => migrateDesktop(source, destination, ''));
+        expect(
+          yield* Effect.promise(async () =>
+            readFile(path.join(destination, 'runtime/chatgpt-host.json'), 'utf8'),
+          ),
+        ).toBe('old host');
+        const imported = yield* chatsAt(path.join(destination, 'runtime/wisp.sqlite'));
+        try {
+          const chats = yield* imported.load();
+          expect(chats[0].agentSession).toBeUndefined();
+          expect(chats[0].status).toBe('interrupted');
+          expect(chats[0].messages).toEqual(original.messages);
+        } finally {
+          yield* imported.close();
+        }
+        expect(
+          inspect(
+            path.join(source, 'runtime/wisp.sqlite'),
+            (db) =>
+              db.prepare('SELECT agent_session FROM chat_instance_state').get()!.agent_session,
+          ),
+        ).toBe('source-session');
+      }),
+    ),
+);

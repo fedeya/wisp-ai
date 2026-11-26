@@ -1,7 +1,9 @@
+import { Effect } from 'effect';
 import { test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { runBridgeEffect } from './capture-logs.ts';
+import { unusedStores } from './storage-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 test('simulation RPC skips game reads and transport freshness for hypothetical requests only', async () => {
@@ -19,7 +21,7 @@ test('simulation RPC skips game reads and transport freshness for hypothetical r
         capabilitySettings: { enabled: () => enabled },
         readSimulationCharacter,
         simulator: { run },
-      } as unknown as Parameters<typeof createAgentHandler>[0]),
+      } as unknown as Parameters<typeof createAgentHandler>[0]).pipe(Effect.provide(unusedStores)),
     ),
   );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

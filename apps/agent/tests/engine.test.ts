@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from 'vitest';
-import { Logger, References } from 'effect';
+import { Effect, Logger, References } from 'effect';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -16,6 +16,7 @@ import {
   type TurnInput,
 } from '../src/engine.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
+import { HistoryStoreError } from '../src/session/session-history.ts';
 import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));
@@ -151,10 +152,15 @@ async function fixture(
   setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
   // An in-memory log with the bridge store's rules: entries stay, compactions are entries.
   const history = new (class extends MemoryHistory {
-    override async append(session: string, entries: readonly Entry[], model: string) {
-      if (options.appendFails?.(++appends)) throw Error('The disk is full.');
-      if (options.beforeAppend) await options.beforeAppend(entries);
-      return super.append(session, entries, model);
+    override append(session: string, entries: readonly Entry[], model: string) {
+      const append = super.append(session, entries, model);
+      return Effect.gen(function* () {
+        if (options.appendFails?.(++appends)) {
+          return yield* new HistoryStoreError({ cause: Error('The disk is full.') });
+        }
+        yield* Effect.promise(async () => options.beforeAppend?.(entries));
+        yield* append;
+      });
     }
   })();
   const messagesOf = (session: string) =>
@@ -343,7 +349,7 @@ test(
         turns.push(userEntry('Question ' + index + ' ' + 'x'.repeat(1500)));
         turns.push(assistantEntry('Answer ' + index));
       }
-      await f.history.append(session, turns, 'gpt-test');
+      await Effect.runPromise(f.history.append(session, turns, 'gpt-test'));
       const { events, result } = await f.send(session, 'Next question');
       expect(result).toEqual({ status: 'completed' });
       expect(events.map((event) => event.type)).toEqual(

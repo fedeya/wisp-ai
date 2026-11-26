@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
@@ -8,14 +8,16 @@ import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import { IntegrationState } from '../src/integrations/integration-state.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
-import { ApplicationDatabase } from '../src/application-database.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { gameEvent } from './game-event-fixture.ts';
 import type { AccountModel } from '../src/chat/chat-model.ts';
+import { unusedStores } from './storage-fixture.ts';
 
-function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
-  const database = new ApplicationDatabase('unused');
+function fixture(
+  overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {},
+  stores: Layer.Layer<RoutineStore | PanelStore | MemoryStore> = unusedStores,
+) {
   const chat = { ...newChat('old', 'one'), agentSession: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
   state.activeTransport = 'one';
@@ -28,7 +30,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const interrupt = vi.fn();
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
-  const receive = runBridgeEffect(
+  const receivePacket = runBridgeEffect(
     createPacketReceiver({
       state,
       request: () => Effect.void,
@@ -37,19 +39,18 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       engine: { end },
       cancel,
       models: { models },
-      routineStore: new RoutineStore(database),
-      panelStore: new PanelStore(database),
-      memoryStore: new MemoryStore(database),
       refreshModelCatalog: async () => {},
       setCapability: () => Effect.void,
-      memorySnapshot: async () => ({ status: 'available', entries: [] }),
+      memorySnapshot: () => Effect.succeed({ status: 'available', entries: [] }),
       run,
       interrupt,
       runtime: 'unused',
       changed: () => {},
       ...overrides,
-    }),
+    }).pipe(Effect.provide(stores)),
   );
+  const receive = (packet: Parameters<typeof receivePacket>[0]) =>
+    runBridgeEffect(receivePacket(packet));
   return { state, receive, cancel, end, interrupt, run, models };
 }
 
@@ -305,14 +306,21 @@ test('a new character key is adopted before the packet that reports it is handle
       calls.push('adopt');
     }),
   );
-  const observe = vi.fn(async () => void calls.push('observe'));
+  const observe = vi.fn(() => Effect.sync(() => void calls.push('observe')));
   const capabilitySettings = new CapabilitySettings('unused');
   vi.spyOn(capabilitySettings, 'enabled').mockReturnValue(true);
-  const f = fixture({
-    adoptCharacter,
-    routineStore: { observe } as unknown as RoutineStore,
-    capabilitySettings,
-  });
+  const routines = Effect.runSync(
+    Effect.gen(function* () {
+      return yield* RoutineStore;
+    }).pipe(Effect.provide(unusedStores)),
+  );
+  const f = fixture(
+    { adoptCharacter, capabilitySettings },
+    Layer.merge(
+      unusedStores,
+      Layer.succeed(RoutineStore, RoutineStore.of({ ...routines, observe })),
+    ),
+  );
   const character = {
     status: 'available',
     data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },

@@ -1,19 +1,34 @@
 import { and, eq } from 'drizzle-orm';
-import type { Panel } from '@wisp/agent/contract/panels';
-import type { ApplicationOrm } from '@wisp/db/database';
+import { Effect } from 'effect';
+import { z } from 'zod';
+import { panelContent, type Panel } from '@wisp/agent/contract/panels';
+import { decodeRecord } from '@wisp/db/repository';
+import type { SqlExecutor } from '@wisp/db/sql-database';
 import { panels } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
 
-export function readPanels(db: ApplicationOrm): Panel[] {
-  return db
+/** A panel as it is saved: its content plus who owns it and when it changed. */
+export const savedPanel = panelContent.safeExtend({
+  characterKey: z.string().min(1),
+  updatedAt: z.number(),
+  formerKey: z.string().optional(),
+});
+
+export const readPanels = (db: SqlExecutor) =>
+  db
     .select()
     .from(panels)
     .orderBy(panels.sortIndex)
     .all()
-    .map(({ sortIndex: _sortIndex, content, ...row }) => ({ ...JSON.parse(content), ...row }));
-}
+    .pipe(
+      Effect.flatMap((rows) =>
+        Effect.forEach(rows, ({ sortIndex: _sortIndex, content, ...row }) =>
+          decodeRecord<Panel>('panel', savedPanel, () => ({ ...JSON.parse(content), ...row })),
+        ),
+      ),
+    );
 
-export function savePanels(db: ApplicationOrm, value: Panel[]) {
+export const savePanels = Effect.fnUntraced(function* (db: SqlExecutor, value: Panel[]) {
   const next = value.map(({ characterKey, id, title, updatedAt, ...content }, sortIndex) => ({
     characterKey,
     id,
@@ -22,8 +37,8 @@ export function savePanels(db: ApplicationOrm, value: Panel[]) {
     sortIndex,
     content: JSON.stringify(content),
   }));
-  syncRows(
-    db.select().from(panels).all(),
+  yield* syncRows(
+    yield* db.select().from(panels).all(),
     next,
     (r) => JSON.stringify([r.characterKey, r.id]),
     (r) =>
@@ -38,4 +53,4 @@ export function savePanels(db: ApplicationOrm, value: Panel[]) {
         .where(and(eq(panels.characterKey, r.characterKey), eq(panels.id, r.id)))
         .run(),
   );
-}
+});

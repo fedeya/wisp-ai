@@ -7,7 +7,9 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
-import { ChatStore, conversationInstanceId } from '@wisp/server/chat-store';
+import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import * as Sql from '@wisp/db/sql-database';
+import * as Chats from '@wisp/server/chat-store';
 import { newChat } from '@wisp/server/chat-lifecycle';
 import { migrationsFolder } from '@wisp/db/migrate';
 
@@ -20,7 +22,20 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
     const previous = path.join(root, 'previous');
     const destination = path.join(root, 'imported');
     await mkdir(path.join(previous, 'runtime'), { recursive: true });
-    const source = new ChatStore(path.join(previous, 'runtime/wisp.sqlite'), () => {});
+    const file = path.join(previous, 'runtime/wisp.sqlite');
+    const scope = Effect.runSync(Scope.make());
+    const context = await Effect.runPromise(
+      Layer.build(
+        Chats.layer({ onError: () => {} }).pipe(Layer.provideMerge(Sql.layer(file))),
+      ).pipe(Scope.provide(scope)),
+    );
+    const store = Context.get(context, Chats.ChatStore);
+    const source = {
+      file,
+      load: () => Effect.runPromise(store.load()),
+      flush: (chats: Parameters<typeof store.flush>[0]) => Effect.runPromise(store.flush(chats)),
+      close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+    };
     try {
       await source.load();
       const chat = {
@@ -114,7 +129,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         expect(
           db
             .prepare('SELECT agent_session FROM chat_instance_state WHERE instance_id = ?')
-            .get(conversationInstanceId(path.join(destination, 'runtime')))!.agent_session,
+            .get(Chats.conversationInstanceId(path.join(destination, 'runtime')))!.agent_session,
         ).toBeNull();
         expect(db.prepare('SELECT title FROM routines').get()!.title).toBe('Review');
         expect(db.prepare('SELECT summary FROM routine_runs').get()!.summary).toBe('Keep history');

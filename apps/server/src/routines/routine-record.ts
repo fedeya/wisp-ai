@@ -1,6 +1,8 @@
-import type { Routine, RoutineRun } from '@wisp/protocol/routines';
+import { routineRun, savedRoutine, type Routine, type RoutineRun } from '@wisp/protocol/routines';
 import { and, eq } from 'drizzle-orm';
-import type { ApplicationOrm } from '@wisp/db/database';
+import { Effect } from 'effect';
+import { decodeRecord } from '@wisp/db/repository';
+import type { SqlExecutor } from '@wisp/db/sql-database';
 import { routines, routineRuns } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
 export type RoutineRow = typeof routines.$inferSelect;
@@ -20,9 +22,8 @@ export function encodeRoutine(
     content: JSON.stringify(content),
   };
 }
-export function decodeRoutine({ sortIndex: _sortIndex, content, ...row }: RoutineRow): Routine {
-  return { ...JSON.parse(content), ...row };
-}
+export const decodeRoutine = ({ sortIndex: _sortIndex, content, ...row }: RoutineRow) =>
+  decodeRecord<Routine>('routine', savedRoutine, () => ({ ...JSON.parse(content), ...row }));
 export function encodeRun(
   {
     id,
@@ -52,23 +53,16 @@ export function encodeRun(
     extras: JSON.stringify(extras),
   };
 }
-export function decodeRun({
-  sortIndex: _sortIndex,
-  extras,
-  finishedAt,
-  summary,
-  ...row
-}: RunRow): RoutineRun {
-  return {
+export const decodeRun = ({ sortIndex: _sortIndex, extras, finishedAt, summary, ...row }: RunRow) =>
+  decodeRecord<RoutineRun>('routine run', routineRun, () => ({
     ...JSON.parse(extras),
     ...row,
     ...(finishedAt === null ? {} : { finishedAt }),
     ...(summary === null ? {} : { summary }),
-  };
-}
+  }));
 
-export function importRoutines(
-  db: ApplicationOrm,
+export const importRoutines = Effect.fnUntraced(function* (
+  db: SqlExecutor,
   value: { routines: Routine[]; runs: RoutineRun[] },
 ) {
   const nextRoutines = value.routines.map(
@@ -83,8 +77,8 @@ export function importRoutines(
       content: JSON.stringify(content),
     }),
   );
-  syncRows(
-    db.select().from(routines).all(),
+  yield* syncRows(
+    yield* db.select().from(routines).all(),
     nextRoutines,
     (r) => JSON.stringify([r.characterKey, r.id]),
     (r) =>
@@ -128,12 +122,12 @@ export function importRoutines(
       extras: JSON.stringify(extras),
     }),
   );
-  syncRows(
-    db.select().from(routineRuns).all(),
+  yield* syncRows(
+    yield* db.select().from(routineRuns).all(),
     nextRuns,
     (r) => r.id,
     (r) =>
       db.insert(routineRuns).values(r).onConflictDoUpdate({ target: routineRuns.id, set: r }).run(),
     (r) => db.delete(routineRuns).where(eq(routineRuns.id, r.id)).run(),
   );
-}
+});

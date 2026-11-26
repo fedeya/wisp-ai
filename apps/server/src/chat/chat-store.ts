@@ -1,19 +1,21 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { DatabaseSync } from 'node:sqlite';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, count, eq, sql } from 'drizzle-orm';
+import { Context, Effect, FiberHandle, Layer, Schema, Semaphore } from 'effect';
 import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
 import { cancelRunningCalls } from './chat-lifecycle.ts';
-import type { ApplicationOrm } from '@wisp/db/database';
-import { ApplicationDatabase } from '../application-database.ts';
+import { planSave } from './chat-diff.ts';
 import { writeMigrationBackup } from '@wisp/db/private-file';
+import { CorruptRecord, DatabaseFailure, sqlFailures, type SqlFailure } from '@wisp/db/repository';
+import { SqlDatabase, type SqlExecutor } from '@wisp/db/sql-database';
 import {
   agentSessions,
   chats as chatTable,
   messages as messageTable,
+  metadata,
   chatInstanceState,
 } from '@wisp/db/schema';
 import {
@@ -25,384 +27,450 @@ import {
   type MessageIdentities,
 } from './chat-record.ts';
 
-interface StoreOptions {
+/** Another process saved a chat since this one read it; saving would overwrite that. */
+export class ChatConflict extends Schema.TaggedError<ChatConflict>()('ChatConflict', {
+  message: Schema.String,
+}) {}
+
+/** The pre-SQLite `chats.json` cannot be imported as it is; it stays untouched. */
+export class LegacyHistoryRejected extends Schema.TaggedError<LegacyHistoryRejected>()(
+  'LegacyHistoryRejected',
+  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {}
+
+/** The store was used out of order, such as saving before a successful load. */
+export class ChatStoreMisuse extends Schema.TaggedError<ChatStoreMisuse>()('ChatStoreMisuse', {
+  message: Schema.String,
+}) {}
+
+type LoadReason = LegacyHistoryRejected | ChatStoreMisuse | DatabaseFailure | CorruptRecord;
+
+/** Loading failed without changing anything; `cause` says why. */
+export class ChatLoadFailed extends Schema.TaggedError<ChatLoadFailed>()('ChatLoadFailed', {
+  cause: Schema.Union([LegacyHistoryRejected, ChatStoreMisuse, DatabaseFailure, CorruptRecord]),
+}) {
+  override get message() {
+    return 'Cannot load conversations; the original history was preserved. ' + this.cause.message;
+  }
+}
+
+export class ChatStoreError extends Schema.TaggedError<ChatStoreError>()('ChatStoreError', {
+  reason: Schema.Union([ChatLoadFailed, ChatConflict, ChatStoreMisuse, DatabaseFailure]),
+}) {
+  override get message() {
+    return this.reason.message;
+  }
+}
+
+export interface ChatStoreOptions {
+  /** Called when a scheduled save fails; nobody awaits those. */
+  onError: (error: ChatStoreError) => void;
+  legacyFile?: string;
   instanceId?: string;
+  /** An installation import copies this instance's private engine state. */
   inheritInstanceId?: string;
 }
+
+/**
+ * The conversations of one bridge instance, saved as normalized rows. Saves
+ * write only what changed since the last save, and a revision on each chat
+ * stops a save from overwriting a copy another process changed.
+ */
+export class ChatStore extends Context.Service<
+  ChatStore,
+  {
+    readonly instanceId: string;
+    readonly load: () => Effect.Effect<Chat[], ChatStoreError>;
+    readonly flush: (chats: Chat[]) => Effect.Effect<void, ChatStoreError>;
+    /** Saves a second after the first change since the last save. */
+    readonly schedule: (snapshot: () => Chat[]) => void;
+  }
+>()('@wisp/server/ChatStore') {}
 
 export function conversationInstanceId(runtime: string) {
   const resolved = path.resolve(runtime);
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
 }
 
-export class ChatStore {
-  readonly file: string;
-  readonly legacyFile: string;
-  readonly instanceId: string;
-  private options: StoreOptions;
-  private onError: (error: unknown) => void;
-  private db?: DatabaseSync;
-  private orm?: ApplicationOrm;
-  private queue: Promise<void> = Promise.resolve();
-  private timer?: ReturnType<typeof setTimeout>;
-  private saved = new Map<string, StoredChat>();
-  private identities: MessageIdentities = new WeakMap();
-  private writable = false;
-  readonly database: ApplicationDatabase;
-  private ownsDatabase: boolean;
+const SAVE_DELAY = '1 second';
 
-  constructor(
-    file: string | ApplicationDatabase,
-    onError: (error: unknown) => void,
-    legacyFile?: string,
-    options: StoreOptions = {},
-  ) {
-    this.ownsDatabase = typeof file === 'string';
-    this.database = typeof file === 'string' ? new ApplicationDatabase(file) : file;
-    this.file = this.database.file;
-    this.legacyFile = legacyFile ?? path.join(path.dirname(this.file), 'chats.json');
-    this.instanceId = options.instanceId ?? conversationInstanceId(path.dirname(this.file));
-    if (!this.instanceId) {
-      throw Error('Choose a conversation instance identity.');
-    }
-    this.options = options;
-    this.onError = onError;
+const conflict = (what = 'Conversation') =>
+  new ChatConflict({ message: what + ' changed in another process. Restart Wisp before saving.' });
+
+const countRows = (db: SqlExecutor, table: typeof chatTable | typeof messageTable) =>
+  db
+    .select({ n: count() })
+    .from(table)
+    .get()
+    .pipe(Effect.map((row) => Number(row?.n ?? 0)));
+
+const isInitialized = (db: SqlExecutor) =>
+  db.select().from(metadata).where(eq(metadata.key, 'initialized')).get().pipe(Effect.map(Boolean));
+
+const insertChat = Effect.fnUntraced(function* (db: SqlExecutor, chat: StoredChat) {
+  yield* db.insert(chatTable).values(chat.row).run();
+  for (const message of chat.messages) {
+    yield* db.insert(messageTable).values(message).run();
   }
+  if (chat.state) {
+    yield* db.insert(chatInstanceState).values(chat.state).run();
+  }
+});
 
-  async load(): Promise<Chat[]> {
-    if (this.db) {
-      throw Error('Conversation store is already open.');
-    }
-    try {
-      await this.database.initialize();
-      this.db = this.database.connection;
-      this.orm = this.database.orm;
-      this.transaction(() => {
-        // Installation imports explicitly inherit private state in the copy.
-        // An ordinary instance never reads another instance's engine session.
-        if (this.options.inheritInstanceId) {
-          for (const row of this.orm!.select()
-            .from(chatInstanceState)
-            .where(eq(chatInstanceState.instanceId, this.options.inheritInstanceId))
-            .all()) {
-            this.orm!.insert(chatInstanceState)
-              .values({ ...row, instanceId: this.instanceId })
-              .onConflictDoNothing()
-              .run();
-          }
-        }
-      });
-      await this.importLegacy();
-      const chats = this.readChats();
-      this.writable = true;
-      return chats
-        .filter((chat) => !isEmptyDraft(chat))
-        .map((chat) => {
-          const restored: Chat = {
-            ...chat,
-            messages: chat.messages.map((message) =>
-              message.streaming &&
-              (message.rawReply !== undefined || message.replyFormat === 'text') &&
-              this.saved.get(chat.id)?.state
-                ? { ...message, streaming: false }
-                : message,
-            ),
-            lastActivityAt: chat.lastActivityAt ?? chat.lastUsedAt ?? 0,
-            status:
-              chat.status === 'working' && this.saved.get(chat.id)?.state
-                ? 'interrupted'
-                : chat.status,
-            usage: chat.usage ? { ...chat.usage, compacting: false } : undefined,
-          };
-          // The turn died with the previous bridge, and so did its calls.
-          if (restored.status === 'interrupted') {
-            cancelRunningCalls(restored);
-          }
-          return restored;
-        });
-    } catch (cause) {
-      if (this.ownsDatabase) {
-        await this.database.close();
-      }
-      this.db = undefined;
-      this.orm = undefined;
-      this.saved.clear();
-      throw Error('Cannot load conversations; the original history was preserved.', { cause });
+const saveMessages = Effect.fnUntraced(function* (
+  db: SqlExecutor,
+  chat: StoredChat,
+  old: StoredChat,
+) {
+  const retained = new Set(chat.messages.map((message) => message.id));
+  for (const message of old.messages) {
+    if (!retained.has(message.id)) {
+      yield* db.delete(messageTable).where(eq(messageTable.id, message.id)).run();
     }
   }
-
-  private transaction(work: () => void) {
-    this.orm!.transaction(work, { behavior: 'immediate' });
+  const previous = new Map(old.messages.map((message) => [message.id, message]));
+  const moved = chat.messages.some((message) => {
+    const before = previous.get(message.id);
+    return before !== undefined && before.position !== message.position;
+  });
+  if (moved) {
+    // Positions are unique per chat: park every row past both lengths first.
+    yield* db
+      .update(messageTable)
+      .set({
+        position: sql`${messageTable.position} + ${Math.max(old.messages.length, chat.messages.length) + 1}`,
+      })
+      .where(eq(messageTable.chatId, chat.row.id))
+      .run();
   }
-
-  private serialize(chat: Chat, position: number) {
-    return encodeChat(chat, position, this.instanceId, this.identities, this.saved.get(chat.id));
-  }
-
-  private async importLegacy() {
-    const db = this.db!;
-    const initialized = () =>
-      db.prepare("SELECT value FROM metadata WHERE key = 'initialized'").get();
-    if (initialized()) {
-      return;
+  for (const message of chat.messages) {
+    const before = previous.get(message.id);
+    if (!before) {
+      yield* db.insert(messageTable).values(message).run();
+    } else if (moved || !sameRow(message, before)) {
+      yield* db
+        .update(messageTable)
+        .set(message)
+        .where(and(eq(messageTable.id, message.id), eq(messageTable.chatId, chat.row.id)))
+        .run();
     }
-    let original: Buffer | undefined;
-    try {
-      original = await readFile(this.legacyFile);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+  }
+});
+
+/** A chat restored after the previous bridge stopped: its turn and running calls ended with it. */
+const restore = (chat: Chat, hadPrivateState: boolean): Chat => {
+  const restored: Chat = {
+    ...chat,
+    messages: chat.messages.map((message) =>
+      message.streaming &&
+      (message.rawReply !== undefined || message.replyFormat === 'text') &&
+      hadPrivateState
+        ? { ...message, streaming: false }
+        : message,
+    ),
+    lastActivityAt: chat.lastActivityAt ?? chat.lastUsedAt ?? 0,
+    status: chat.status === 'working' && hadPrivateState ? 'interrupted' : chat.status,
+    usage: chat.usage ? { ...chat.usage, compacting: false } : undefined,
+  };
+  if (restored.status === 'interrupted') {
+    cancelRunningCalls(restored);
+  }
+  return restored;
+};
+
+const readLegacy = (file: string) =>
+  Effect.tryPromise({
+    try: async () => {
+      try {
+        return await readFile(file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
         throw error;
       }
+    },
+    catch: (cause) =>
+      new LegacyHistoryRejected({ message: 'Cannot read the legacy conversations.', cause }),
+  });
+
+const parseLegacy = (original: Buffer | undefined) =>
+  Effect.try({
+    try: () => {
+      const chats: Chat[] = original ? JSON.parse(original.toString('utf8')) : [];
+      z.array(chatSchema).parse(chats);
+      return chats;
+    },
+    catch: (cause) =>
+      new LegacyHistoryRejected({ message: 'The legacy conversations are not valid.', cause }),
+  });
+
+export const make = Effect.fnUntraced(function* (options: ChatStoreOptions) {
+  const { file, db } = yield* SqlDatabase;
+  const legacyFile = options.legacyFile ?? path.join(path.dirname(file), 'chats.json');
+  const instanceId = options.instanceId ?? conversationInstanceId(path.dirname(file));
+  const saving = yield* Semaphore.make(1);
+  const runScheduled = yield* FiberHandle.makeRuntime<never>();
+  const identities: MessageIdentities = new WeakMap();
+  let saved = new Map<string, StoredChat>();
+  let loaded = false;
+  let writable = false;
+
+  const serialize = (chat: Chat, position: number) =>
+    encodeChat(chat, position, instanceId, identities, saved.get(chat.id));
+
+  const importLegacy = Effect.fnUntraced(function* () {
+    if (yield* isInitialized(db)) {
+      return;
     }
-    const chats: Chat[] = original ? JSON.parse(original.toString('utf8')) : [];
-    z.array(chatSchema).parse(chats);
+    const original = yield* readLegacy(legacyFile);
+    const chats = yield* parseLegacy(original);
     if (new Set(chats.map((chat) => chat.id)).size !== chats.length) {
-      throw Error('Duplicate conversation IDs in legacy history.');
+      return yield* new LegacyHistoryRejected({
+        message: 'Duplicate conversation IDs in legacy history.',
+      });
     }
     const digest = original && createHash('sha256').update(original).digest('hex');
     if (original) {
-      const backup = path.join(path.dirname(this.legacyFile), `chats.pre-sqlite-${digest}.json`);
-      await writeMigrationBackup(backup, original);
+      const backup = path.join(path.dirname(legacyFile), `chats.pre-sqlite-${digest}.json`);
+      yield* Effect.tryPromise({
+        try: () => writeMigrationBackup(backup, original),
+        catch: (cause) =>
+          new LegacyHistoryRejected({ message: 'Cannot back up the legacy conversations.', cause }),
+      });
     }
-    this.transaction(() => {
-      if (initialized()) {
-        return;
-      }
-      if (Number(db.prepare('SELECT count(*) AS count FROM chats').get()!.count) !== 0) {
-        throw Error('Uninitialized conversation database already contains data.');
-      }
-      chats.forEach((chat, index) => this.insertChat(this.serialize(chat, index)));
-      if (
-        Number(db.prepare('SELECT count(*) AS count FROM messages').get()!.count) !==
-        chats.reduce((sum, chat) => sum + chat.messages.length, 0)
-      ) {
-        throw Error('Imported conversation message count does not match.');
-      }
-      const record = db.prepare('INSERT INTO metadata(key, value) VALUES (?, ?)');
-      if (digest) {
-        record.run('legacy_sha256', digest);
-      }
-      record.run('initialized', '1');
-    });
-  }
-
-  private readChats(): Chat[] {
-    // The content and the optimistic revisions must describe one WAL snapshot,
-    // even when another connection commits between these SELECT statements.
-    return this.orm!.transaction(
-      (orm) => {
-        const messages = new Map<string, MessageRow[]>();
-        for (const row of orm
-          .select()
-          .from(messageTable)
-          .orderBy(messageTable.chatId, messageTable.position)
-          .all()) {
-          const values = messages.get(row.chatId) ?? [];
-          if (row.position !== values.length) {
-            throw Error('Conversation messages are not contiguous.');
-          }
-          values.push(row);
-          messages.set(row.chatId, values);
+    yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        if (yield* isInitialized(tx)) {
+          return;
         }
-        const states = new Map(
-          orm
-            .select()
-            .from(chatInstanceState)
-            .where(eq(chatInstanceState.instanceId, this.instanceId))
-            .all()
-            .map((row) => [row.chatId, row]),
-        );
-        return orm
-          .select()
-          .from(chatTable)
-          .orderBy(chatTable.sortIndex, chatTable.id)
-          .all()
-          .map((row) => {
-            const record = { row, messages: messages.get(row.id) ?? [], state: states.get(row.id) };
-            const chat = decodeChat(record, this.identities);
-            chatSchema.parse(chat);
-            this.saved.set(row.id, record);
-            return chat;
+        if ((yield* countRows(tx, chatTable)) !== 0) {
+          return yield* new LegacyHistoryRejected({
+            message: 'Uninitialized conversation database already contains data.',
           });
-      },
-      { behavior: 'deferred' },
-    );
-  }
-
-  private insertChat(chat: StoredChat) {
-    this.orm!.insert(chatTable).values(chat.row).run();
-    for (const message of chat.messages) {
-      this.orm!.insert(messageTable).values(message).run();
-    }
-    if (chat.state) {
-      this.orm!.insert(chatInstanceState).values(chat.state).run();
-    }
-  }
-
-  schedule(snapshot: () => Chat[]) {
-    if (!this.timer && this.writable) {
-      this.timer = setTimeout(() => {
-        this.timer = undefined;
-        void this.flush(snapshot()).catch(this.onError);
-      }, 1000);
-    }
-  }
-
-  async flush(chats: Chat[]) {
-    if (!this.writable) {
-      throw Error('Load conversations successfully before saving them.');
-    }
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    const snapshot = chats
-      .filter((chat) => !isEmptyDraft(chat))
-      .map((chat, index) => this.serialize(chat, index));
-    if (new Set(snapshot.map((chat) => chat.row.id)).size !== snapshot.length) {
-      throw Error('Duplicate conversation IDs cannot be saved.');
-    }
-    const work = this.queue.catch(() => {}).then(() => this.save(snapshot));
-    this.queue = work;
-    await work;
-  }
-
-  private save(snapshot: StoredChat[]) {
-    const orm = this.orm!;
-    const next = new Map(snapshot.map((chat) => [chat.row.id, chat]));
-    // Revisions are assigned when the queued snapshot is committed, not when
-    // it is captured: earlier saves may still be queued for this same chat.
-    const changed = snapshot
-      .map((chat) => {
-        const old = this.saved.get(chat.row.id);
-        chat.row.revision = old?.row.revision ?? 0;
-        if (chat.state) {
-          chat.state.revision = old?.state?.revision ?? 0;
-          chat.state.historyRevision = chat.row.revision;
         }
-        const history =
-          !old ||
-          !sameRow(chat.row, old.row) ||
-          chat.messages.length !== old.messages.length ||
-          chat.messages.some((m, i) => !old.messages[i] || !sameRow(m, old.messages[i]));
-        const state = !old?.state || !chat.state || !sameRow(chat.state, old.state);
-        return { chat, old, history, state };
-      })
-      .filter(({ history, state }) => history || state);
-    const deleted = [...this.saved.values()].filter((chat) => !next.has(chat.row.id));
+        for (const [index, chat] of chats.entries()) {
+          yield* insertChat(tx, serialize(chat, index));
+        }
+        const expected = chats.reduce((sum, chat) => sum + chat.messages.length, 0);
+        if ((yield* countRows(tx, messageTable)) !== expected) {
+          return yield* new LegacyHistoryRejected({
+            message: 'Imported conversation message count does not match.',
+          });
+        }
+        if (digest) {
+          yield* tx.insert(metadata).values({ key: 'legacy_sha256', value: digest }).run();
+        }
+        yield* tx.insert(metadata).values({ key: 'initialized', value: '1' }).run();
+      }),
+    );
+  });
+
+  const inheritPrivateState = (from: string) =>
+    db.transaction((tx) =>
+      Effect.gen(function* () {
+        for (const row of yield* tx
+          .select()
+          .from(chatInstanceState)
+          .where(eq(chatInstanceState.instanceId, from))
+          .all()) {
+          yield* tx
+            .insert(chatInstanceState)
+            .values({ ...row, instanceId })
+            .onConflictDoNothing()
+            .run();
+        }
+      }),
+    );
+
+  // One transaction: the content and the optimistic revisions describe the
+  // same moment, even when another process saves while this one reads.
+  const readChats = db.transaction((tx) =>
+    Effect.gen(function* () {
+      const messages = new Map<string, MessageRow[]>();
+      for (const row of yield* tx
+        .select()
+        .from(messageTable)
+        .orderBy(messageTable.chatId, messageTable.position)
+        .all()) {
+        const values = messages.get(row.chatId) ?? [];
+        if (row.position !== values.length) {
+          return yield* new CorruptRecord({
+            table: 'message',
+            cause: Error('Conversation messages are not contiguous.'),
+          });
+        }
+        values.push(row);
+        messages.set(row.chatId, values);
+      }
+      const states = new Map(
+        (yield* tx
+          .select()
+          .from(chatInstanceState)
+          .where(eq(chatInstanceState.instanceId, instanceId))
+          .all()).map((row) => [row.chatId, row]),
+      );
+      const rows = yield* tx
+        .select()
+        .from(chatTable)
+        .orderBy(chatTable.sortIndex, chatTable.id)
+        .all();
+      const records = rows.map((row): StoredChat => ({
+        row,
+        messages: messages.get(row.id) ?? [],
+        state: states.get(row.id),
+      }));
+      const chats = yield* Effect.forEach(records, (record) =>
+        Effect.try({
+          try: () => {
+            const chat = decodeChat(record, identities);
+            chatSchema.parse(chat);
+            return chat;
+          },
+          catch: (cause) => new CorruptRecord({ table: 'conversation', cause }),
+        }),
+      );
+      return { records, chats };
+    }),
+  );
+
+  const load = Effect.fn('ChatStore.load')(
+    function* () {
+      if (loaded) {
+        return yield* new ChatStoreMisuse({ message: 'Conversation store is already open.' });
+      }
+      loaded = true;
+      if (options.inheritInstanceId) {
+        yield* inheritPrivateState(options.inheritInstanceId);
+      }
+      yield* importLegacy();
+      const { records, chats } = yield* readChats;
+      saved = new Map(records.map((record) => [record.row.id, record]));
+      writable = true;
+      return chats
+        .filter((chat) => !isEmptyDraft(chat))
+        .map((chat) => restore(chat, saved.get(chat.id)?.state !== undefined));
+    },
+    (self) => sqlFailures<Chat[], LoadReason | SqlFailure, never>(self),
+    Effect.tapError(() =>
+      Effect.sync(() => {
+        loaded = false;
+      }),
+    ),
+    Effect.mapError((cause) => new ChatStoreError({ reason: new ChatLoadFailed({ cause }) })),
+  );
+
+  const save = Effect.fnUntraced(function* (snapshot: StoredChat[]) {
+    const { deleted, changed } = planSave(saved, snapshot);
     if (!changed.length && !deleted.length) {
       return;
     }
-    this.transaction(() => {
-      for (const chat of deleted) {
-        const result = orm
-          .delete(chatTable)
-          .where(and(eq(chatTable.id, chat.row.id), eq(chatTable.revision, chat.row.revision)))
-          .run();
-        if (result.changes !== 1) {
-          throw Error('Conversation changed in another process. Restart Wisp before saving.');
-        }
-        // Sessions have no foreign key to their chat (they start before it is saved).
-        orm.delete(agentSessions).where(eq(agentSessions.chatId, chat.row.id)).run();
-      }
-      for (const { chat, old, history } of changed) {
-        if (!old) {
-          this.insertChat(chat);
-          continue;
-        }
-        if (history) {
-          chat.row.revision++;
-          const result = orm
-            .update(chatTable)
-            .set(chat.row)
-            .where(and(eq(chatTable.id, chat.row.id), eq(chatTable.revision, old.row.revision)))
+    yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        for (const chat of deleted) {
+          const result = yield* tx
+            .delete(chatTable)
+            .where(and(eq(chatTable.id, chat.row.id), eq(chatTable.revision, chat.row.revision)))
             .run();
           if (result.changes !== 1) {
-            throw Error('Conversation changed in another process. Restart Wisp before saving.');
+            return yield* conflict();
           }
-          this.saveMessages(chat, old);
-        } else if (
-          orm
-            .select({ revision: chatTable.revision })
-            .from(chatTable)
-            .where(eq(chatTable.id, chat.row.id))
-            .get()?.revision !== old.row.revision
-        ) {
-          throw Error('Conversation changed in another process. Restart Wisp before saving.');
+          // Sessions have no foreign key to their chat (they start before it is saved).
+          yield* tx.delete(agentSessions).where(eq(agentSessions.chatId, chat.row.id)).run();
         }
-        if (chat.state) {
-          chat.state.historyRevision = chat.row.revision;
-          if (old.state) {
-            chat.state.revision++;
-            const result = orm
-              .update(chatInstanceState)
-              .set(chat.state)
-              .where(
-                and(
-                  eq(chatInstanceState.chatId, chat.row.id),
-                  eq(chatInstanceState.instanceId, this.instanceId),
-                  eq(chatInstanceState.revision, old.state.revision),
-                ),
-              )
+        for (const { chat, old, history } of changed) {
+          if (!old) {
+            yield* insertChat(tx, chat);
+            continue;
+          }
+          if (history) {
+            chat.row.revision++;
+            const result = yield* tx
+              .update(chatTable)
+              .set(chat.row)
+              .where(and(eq(chatTable.id, chat.row.id), eq(chatTable.revision, old.row.revision)))
               .run();
             if (result.changes !== 1) {
-              throw Error(
-                'Conversation session changed in another process. Restart Wisp before saving.',
-              );
+              return yield* conflict();
             }
+            yield* saveMessages(tx, chat, old);
           } else {
-            orm.insert(chatInstanceState).values(chat.state).run();
+            const current = yield* tx
+              .select({ revision: chatTable.revision })
+              .from(chatTable)
+              .where(eq(chatTable.id, chat.row.id))
+              .get();
+            if (current?.revision !== old.row.revision) {
+              return yield* conflict();
+            }
+          }
+          if (!chat.state) {
+            continue;
+          }
+          chat.state.historyRevision = chat.row.revision;
+          if (!old.state) {
+            yield* tx.insert(chatInstanceState).values(chat.state).run();
+            continue;
+          }
+          chat.state.revision++;
+          const result = yield* tx
+            .update(chatInstanceState)
+            .set(chat.state)
+            .where(
+              and(
+                eq(chatInstanceState.chatId, chat.row.id),
+                eq(chatInstanceState.instanceId, instanceId),
+                eq(chatInstanceState.revision, old.state.revision),
+              ),
+            )
+            .run();
+          if (result.changes !== 1) {
+            return yield* conflict('Conversation session');
           }
         }
-      }
-    });
-    this.saved = next;
-  }
-
-  private saveMessages(chat: StoredChat, old: StoredChat) {
-    const orm = this.orm!;
-    const retained = new Set(chat.messages.map((m) => m.id));
-    for (const message of old.messages) {
-      if (!retained.has(message.id)) {
-        orm.delete(messageTable).where(eq(messageTable.id, message.id)).run();
-      }
-    }
-    const previous = new Map(old.messages.map((m) => [m.id, m]));
-    const moved = chat.messages.some(
-      (message) =>
-        previous.has(message.id) && previous.get(message.id)!.position !== message.position,
+      }),
     );
-    if (moved) {
-      orm
-        .update(messageTable)
-        .set({
-          position: sql`${messageTable.position} + ${Math.max(old.messages.length, chat.messages.length) + 1}`,
-        })
-        .where(eq(messageTable.chatId, chat.row.id))
-        .run();
-    }
-    for (const message of chat.messages) {
-      const before = previous.get(message.id);
-      if (!before) {
-        orm.insert(messageTable).values(message).run();
-      } else if (moved || !sameRow(message, before)) {
-        orm
-          .update(messageTable)
-          .set(message)
-          .where(and(eq(messageTable.id, message.id), eq(messageTable.chatId, chat.row.id)))
-          .run();
-      }
-    }
-  }
+    saved = new Map(snapshot.map((chat) => [chat.row.id, chat]));
+  });
 
-  async close() {
-    clearTimeout(this.timer);
-    this.timer = undefined;
-    this.writable = false;
-    await this.queue.catch(() => {});
-    if (this.ownsDatabase) {
-      await this.database.close();
-    }
-    this.db = undefined;
-    this.orm = undefined;
-    this.saved.clear();
-  }
-}
+  const flush = Effect.fn('ChatStore.flush')(
+    function* (chats: Chat[]) {
+      if (!writable) {
+        return yield* new ChatStoreMisuse({
+          message: 'Load conversations successfully before saving them.',
+        });
+      }
+      const snapshot = chats
+        .filter((chat) => !isEmptyDraft(chat))
+        .map((chat, index) => serialize(chat, index));
+      if (new Set(snapshot.map((chat) => chat.row.id)).size !== snapshot.length) {
+        return yield* new ChatStoreMisuse({
+          message: 'Duplicate conversation IDs cannot be saved.',
+        });
+      }
+      yield* saving.withPermit(save(snapshot));
+    },
+    (self) => sqlFailures<void, ChatConflict | ChatStoreMisuse | SqlFailure, never>(self),
+    Effect.mapError((reason) => new ChatStoreError({ reason })),
+  );
+
+  const schedule = (snapshot: () => Chat[]) => {
+    if (!writable) return;
+    runScheduled(
+      Effect.sleep(SAVE_DELAY).pipe(
+        Effect.andThen(Effect.suspend(() => flush(snapshot()))),
+        Effect.catch((error) => Effect.sync(() => options.onError(error))),
+      ),
+      { onlyIfMissing: true },
+    );
+  };
+
+  // Closing stops the save that is waiting and lets the one in progress commit.
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      writable = false;
+    }).pipe(Effect.andThen(saving.withPermit(Effect.void))),
+  );
+
+  return ChatStore.of({ instanceId, load, flush, schedule });
+});
+
+export const layer = (options: ChatStoreOptions) => Layer.effect(ChatStore, make(options));

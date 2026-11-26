@@ -1,34 +1,46 @@
 import { and, eq } from 'drizzle-orm';
+import { Effect } from 'effect';
 import type { z } from 'zod';
-import type { memoryEntry } from '@wisp/agent/contract/agent-rpc';
-import type { ApplicationOrm } from '@wisp/db/database';
+import { memoryEntry } from '@wisp/agent/contract/agent-rpc';
+import { decodeRecord } from '@wisp/db/repository';
+import type { SqlExecutor } from '@wisp/db/sql-database';
 import { memoryEntries, memoryScopes } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
 
 export type MemorySlot = 'preferences' | 'character';
 export type MemoryEntry = z.infer<typeof memoryEntry>;
 
-export function readMemory(db: ApplicationOrm, slot: MemorySlot, owner: string): MemoryEntry[] {
-  return db
+const scope = (slot: MemorySlot, owner: string) =>
+  and(eq(memoryEntries.slot, slot), eq(memoryEntries.owner, owner));
+
+export const readMemory = (db: SqlExecutor, slot: MemorySlot, owner: string) =>
+  db
     .select()
     .from(memoryEntries)
-    .where(and(eq(memoryEntries.slot, slot), eq(memoryEntries.owner, owner)))
+    .where(scope(slot, owner))
     .orderBy(memoryEntries.sortIndex)
     .all()
-    .map(({ slot: _slot, owner: _owner, sortIndex: _sortIndex, extras, ...row }) => ({
-      ...JSON.parse(extras),
-      ...row,
-    }));
-}
+    .pipe(
+      Effect.flatMap((rows) =>
+        Effect.forEach(
+          rows,
+          ({ slot: _slot, owner: _owner, sortIndex: _sortIndex, extras, ...row }) =>
+            decodeRecord<MemoryEntry>('memory', memoryEntry, () => ({
+              ...JSON.parse(extras),
+              ...row,
+            })),
+        ),
+      ),
+    );
 
-export function saveMemory(
-  db: ApplicationOrm,
+export const saveMemory = Effect.fnUntraced(function* (
+  db: SqlExecutor,
   slot: MemorySlot,
   owner: string,
   entries: MemoryEntry[],
   extras = '{}',
 ) {
-  db.insert(memoryScopes).values({ slot, owner, extras }).onConflictDoNothing().run();
+  yield* db.insert(memoryScopes).values({ slot, owner, extras }).onConflictDoNothing().run();
   const next = entries.map(({ key, text, updatedAt, ...extra }, sortIndex) => ({
     slot,
     owner,
@@ -38,12 +50,8 @@ export function saveMemory(
     sortIndex,
     extras: JSON.stringify(extra),
   }));
-  syncRows(
-    db
-      .select()
-      .from(memoryEntries)
-      .where(and(eq(memoryEntries.slot, slot), eq(memoryEntries.owner, owner)))
-      .all(),
+  yield* syncRows(
+    yield* db.select().from(memoryEntries).where(scope(slot, owner)).all(),
     next,
     (r) => r.key,
     (r) =>
@@ -58,13 +66,7 @@ export function saveMemory(
     (r) =>
       db
         .delete(memoryEntries)
-        .where(
-          and(
-            eq(memoryEntries.slot, slot),
-            eq(memoryEntries.owner, owner),
-            eq(memoryEntries.key, r.key),
-          ),
-        )
+        .where(and(scope(slot, owner), eq(memoryEntries.key, r.key)))
         .run(),
   );
-}
+});

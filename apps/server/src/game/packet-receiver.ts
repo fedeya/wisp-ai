@@ -11,9 +11,9 @@ import type { Chat } from '../chat/events.ts';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
-import type { RoutineStore } from '../routines/routine-store.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from '../agent/memory-store.ts';
+import { RoutineStore } from '../routines/routine-store.ts';
+import { PanelStore } from '../panels/panel-store.ts';
+import { MemoryStore } from '../agent/memory-store.ts';
 import {
   characterIdentity,
   characterProfile,
@@ -35,12 +35,9 @@ interface ReceiverDependencies {
   integrationState: IntegrationState;
   capabilitySettings: CapabilitySettings;
   models: Pick<ModelCatalog, 'models'>;
-  routineStore: RoutineStore;
-  panelStore: PanelStore;
-  memoryStore: MemoryStore;
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
-  memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
+  memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, unknown>;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   interrupt: (chat: Chat) => void;
   /** Stops a turn the player cancelled. */
@@ -54,8 +51,10 @@ interface ReceiverDependencies {
 export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverDependencies) {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
-  const runSync = Effect.runSyncWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const routineStore = yield* RoutineStore;
+  const panelStore = yield* PanelStore;
+  const memoryStore = yield* MemoryStore;
   const {
     state,
     engine,
@@ -63,9 +62,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     integrationState,
     capabilitySettings,
     models,
-    routineStore,
-    panelStore,
-    memoryStore,
     refreshModelCatalog,
     setCapability,
     memorySnapshot,
@@ -84,7 +80,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     state.chats.push(chat);
     return chat;
   };
-  return function receive(packet: GameEvent) {
+  return Effect.fnUntraced(function* (packet: GameEvent) {
     const receivedAt = now();
     if (state.activeTransport && packet.session === state.activeTransport) {
       activeSeenAt = receivedAt;
@@ -257,7 +253,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       const character = characterProfile(packet.context);
       if (character) {
         state.currentCharacterKey = character.key;
-        if (deps.adoptCharacter) runSync(deps.adoptCharacter(character));
+        if (deps.adoptCharacter) yield* deps.adoptCharacter(character);
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -276,11 +272,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       if (packet.type === 'routine_event' && capabilitySettings.enabled('tool:manage_routine')) {
         const event = routineEvent.safeParse({ event: data?.event, values: data?.values });
         if (event.success) {
-          void routineStore
-            .observe(identity, event.data)
-            .then(changed)
-            .catch((error) =>
-              runFork(
+          runFork(
+            routineStore.observe(identity, event.data).pipe(
+              Effect.andThen(Effect.sync(changed)),
+              Effect.catch((error) =>
                 Effect.logWarning('Routine event failed').pipe(
                   Effect.annotateLogs({
                     event: 'routine.event_failed',
@@ -288,7 +283,8 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
                   }),
                 ),
               ),
-            );
+            ),
+          );
         }
       }
       return;
@@ -301,16 +297,16 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         input.success &&
         ['pause', 'resume', 'remove'].includes(input.data.operation)
       ) {
-        void routineStore
-          .mutate(identity, input.data)
-          .then(changed)
-          .catch((error) =>
-            runFork(
+        runFork(
+          routineStore.mutate(identity, input.data).pipe(
+            Effect.andThen(Effect.sync(changed)),
+            Effect.catch((error) =>
               Effect.logWarning('Routine action failed').pipe(
                 Effect.annotateLogs({ event: 'routine.action_failed', error: errorMessage(error) }),
               ),
             ),
-          );
+          ),
+        );
       }
       return;
     }
@@ -324,7 +320,20 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     }
     if (packet.type === 'panel_ask' && packet.key && packet.nodeId) {
       const identity = characterIdentity(packet.context),
-        panel = identity ? panelStore.list(identity).find((p) => p.id === packet.key) : undefined;
+        panels = identity
+          ? yield* panelStore.list(identity).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning('Panel lookup failed').pipe(
+                  Effect.annotateLogs({
+                    event: 'panel.lookup_failed',
+                    error: errorMessage(error),
+                  }),
+                  Effect.as([]),
+                ),
+              ),
+            )
+          : [],
+        panel = panels.find((p) => p.id === packet.key);
       const node = panel?.ui.find((n) => n.id === packet.nodeId);
       if (!panel || node?.kind !== 'button' || node.action.kind !== 'ask') {
         return;
@@ -505,46 +514,51 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       const identity = characterIdentity(packet.context),
         transportSession = state.activeTransport;
       state.memoryViewRequest = packet.requestId;
-      void (async () => {
-        if (packet.type !== 'memory_list') {
-          if (packet.slot !== 'preferences' && packet.slot !== 'character') {
-            throw new Error('Invalid memory scope');
-          }
-          const owner = packet.slot === 'preferences' ? 'local-player' : identity;
-          if (!owner || typeof packet.key !== 'string') {
-            throw new Error('A fresh character identity and memory key are required');
-          }
-          if (packet.type === 'memory_save' && typeof packet.text !== 'string') {
-            throw new Error('Memory text is required');
-          }
-          await memoryStore.update(
-            packet.slot,
-            owner,
-            packet.key,
-            packet.type === 'memory_save' ? packet.text : undefined,
+      const current = () =>
+        state.activeTransport === transportSession && state.memoryViewRequest === packet.requestId;
+      const change = Effect.gen(function* () {
+        if (packet.type === 'memory_list') return;
+        if (packet.slot !== 'preferences' && packet.slot !== 'character') {
+          return yield* Effect.fail(Error('Invalid memory scope'));
+        }
+        const owner = packet.slot === 'preferences' ? 'local-player' : identity;
+        if (!owner || typeof packet.key !== 'string') {
+          return yield* Effect.fail(
+            Error('A fresh character identity and memory key are required'),
           );
         }
-        const snapshot = await memorySnapshot(identity);
-        if (
-          state.activeTransport === transportSession &&
-          state.memoryViewRequest === packet.requestId
-        ) {
-          state.memoryView = { ...snapshot, requestId: packet.requestId };
+        if (packet.type === 'memory_save' && typeof packet.text !== 'string') {
+          return yield* Effect.fail(Error('Memory text is required'));
         }
-      })()
-        .catch((error) => {
-          if (
-            state.activeTransport === transportSession &&
-            state.memoryViewRequest === packet.requestId
-          ) {
-            state.memoryView = {
-              status: 'unavailable',
-              error: error.message,
-              requestId: packet.requestId,
-            };
-          }
-        })
-        .finally(changed);
+        yield* memoryStore.update(
+          packet.slot,
+          owner,
+          packet.key,
+          packet.type === 'memory_save' ? packet.text : undefined,
+        );
+      });
+      runFork(
+        change.pipe(
+          Effect.andThen(memorySnapshot(identity)),
+          Effect.tap((snapshot) =>
+            Effect.sync(() => {
+              if (current()) state.memoryView = { ...snapshot, requestId: packet.requestId };
+            }),
+          ),
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              if (current()) {
+                state.memoryView = {
+                  status: 'unavailable',
+                  error: errorMessage(error),
+                  requestId: packet.requestId,
+                };
+              }
+            }),
+          ),
+          Effect.ensuring(Effect.sync(changed)),
+        ),
+      );
       changed();
       return;
     }
@@ -610,5 +624,5 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.type !== 'poll') {
       changed();
     }
-  };
+  });
 });

@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { Effect } from 'effect';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { gameEvent } from './game-event-fixture.ts';
 import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/wow-bridge/mailbox';
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { chatsAt } from './storage-fixture.ts';
 import { agentHost } from '@wisp/agent/agent-host';
 
 async function fixture(configured = true) {
@@ -189,7 +191,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
       baseURL: 'http://localhost:1234/v1',
       models: [{ id: 'local', contextWindow: 64000 }],
     });
-    bridge.receive(gameEvent({ type: 'hello', session: 'live', seq: 1, at: 1 }));
+    await bridge.receive(gameEvent({ type: 'hello', session: 'live', seq: 1, at: 1 }));
     const chat = newChat('search-chat', 'live');
     chat.agentSession = 'eve-search';
     chat.status = 'working';
@@ -268,20 +270,23 @@ test('the assembled runtime serves validated status, receives packets, persists 
       headers: { authorization: 'Bearer ' + identity.token },
     });
     expect(statusSchema.parse(await response.json()).auth.status).toBe('signed_out');
-    bridge.receive(gameEvent({ type: 'hello', session: 'test', seq: 1, at: 1 }));
-    bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }));
+    await bridge.receive(gameEvent({ type: 'hello', session: 'test', seq: 1, at: 1 }));
+    await bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }));
     bridge.state.chats
       .find((chat) => chat.id === 'chat')!
       .messages.push({
         role: 'user',
         text: 'Hello',
       });
-    bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }));
+    await bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }));
     await bridge.stop();
-    const { ChatStore } = await import('../src/chat/chat-store.ts');
-    const store = new ChatStore(path.join(f.dataDirectory, 'runtime/wisp.sqlite'), () => {});
-    const saved = await store.load();
-    await store.close();
+    const saved = await Effect.runPromise(
+      Effect.scoped(
+        Effect.flatMap(chatsAt(path.join(f.dataDirectory, 'runtime/wisp.sqlite')), (store) =>
+          store.load(),
+        ),
+      ),
+    );
     expect(saved.map((chat: { id: string }) => chat.id)).toContain('chat');
     expect(saved.find((chat: { id: string }) => chat.id === 'chat')!.messages).toEqual([
       { role: 'user', text: 'Hello' },
