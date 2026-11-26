@@ -417,10 +417,26 @@ export function runeStubs(): ToolStub[] {
       tool: 'thewowdb__search_database',
       match: { query: /[Rr]une|[Rr]una/ },
       outcome: {
+        // The shape TheWoWDB.result() in the bridge returns: the API payload
+        // under `data`, its records verified as Forever items.
         response: {
           status: 'available',
-          source: { name: 'TheWoWDB', version: 'forever' },
-          results: [{ kind: 'item', id: 17031, name: 'Rune of Teleportation' }],
+          source: {
+            name: 'TheWoWDB',
+            version: 'forever',
+            apiUrl:
+              'https://thewowdb.com/api/v1/forever/item/?q=Rune+of+Teleportation&page=1&per_page=10',
+          },
+          fetchedAt: '2026-11-23T00:00:00.000Z',
+          cacheHit: false,
+          data: {
+            version: 'forever',
+            kind: 'item',
+            results: [
+              { version: 'forever', kind: 'item', id: 17031, name: 'Rune of Teleportation' },
+            ],
+          },
+          note: 'Preserve record links, attribution and build. Catalog facts are not live player state; an older build may differ. Zone IDs are not necessarily native UiMap IDs.',
         },
       },
     },

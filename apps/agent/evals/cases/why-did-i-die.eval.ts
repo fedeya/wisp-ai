@@ -28,9 +28,8 @@ describeEval(
       expect.soft(toolCalls(result).map((call) => call.name)).toContain('wow__read_combat');
       expect.soft(presented, 'names the killer').toMatch(/Deforester/i);
       expect.soft(presented, 'names the killing blow').toMatch(/Fireball/i);
-      expect
-        .soft(presented, 'does not ask the player for the log')
-        .not.toMatch(/paste|copy the|open (the )?combat log/i);
+      // Whether the answer asks the player for the log is left to the
+      // uses-available-data judge: "you don't need to paste it" is fine.
     });
   },
 );
