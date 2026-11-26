@@ -1,6 +1,7 @@
 # Development
 
-[Home](../README.md) · [Usage](usage.md) · [Integrations](reference.md)
+[Home](../README.md) · [Usage](usage.md) · [Integrations](reference.md) ·
+[Package boundaries](package-boundaries.md)
 
 ## Prerequisites and checks
 

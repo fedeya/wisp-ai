@@ -5,6 +5,10 @@ local Node bridge, which runs an agent runtime and is shipped inside a Tauri
 desktop app for Windows. It is a pnpm + Turborepo monorepo (one lockfile,
 `hoist: false`). Human-facing setup lives in [docs/development.md](docs/development.md).
 
+Before moving code between workspaces or adding a cross-workspace dependency,
+consult [Package boundaries](docs/package-boundaries.md) for the target
+ownership and dependency direction.
+
 Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 [apps/web/AGENTS.md](apps/web/AGENTS.md).
 
