@@ -1,11 +1,6 @@
-import { Cause, Context, Effect, Exit, Layer, ManagedRuntime, Queue, Stream } from 'effect';
+import { Cause, Context, Effect, Exit, Layer, Logger, ManagedRuntime, Queue, Stream } from 'effect';
 import { v7 as uuidv7 } from 'uuid';
-import {
-  EngineConfig,
-  hostLayer,
-  type EngineHost,
-  type EngineLogger,
-} from './host/engine-config.ts';
+import { EngineConfig, type EngineHost } from './host/engine-config.ts';
 import { Mcp } from './integrations/mcp-tools.ts';
 import { SessionModels } from './models/session-models.ts';
 import { compactHistory } from './execution/compaction.ts';
@@ -25,12 +20,7 @@ import { TurnToolbox } from './tools/turn-toolbox.ts';
 import { WispAgent } from './wisp/wisp-agent.ts';
 
 export type { ModelMessage } from 'ai';
-export {
-  EngineConfig,
-  hostLayer,
-  type EngineHost,
-  type EngineLogger,
-} from './host/engine-config.ts';
+export { EngineConfig, type EngineHost } from './host/engine-config.ts';
 export { Mcp } from './integrations/mcp-tools.ts';
 export { SessionModels, type SelectedModel } from './models/session-models.ts';
 export { compactionSplit, estimateTokens } from './execution/compaction.ts';
@@ -76,7 +66,8 @@ export interface EngineResult {
 
 export interface EngineOptions extends EngineHost {
   history: HistoryStore;
-  logger: EngineLogger;
+  /** Hosts can supply their own Effect logging layer; otherwise the engine is silent. */
+  logging?: Layer.Layer<never>;
 }
 
 /** A program's events as a stream that ends with it, or fails with its error. */
@@ -152,7 +143,7 @@ const aborted = (signal: AbortSignal) =>
  * cancellation enters here, as an AbortSignal that interrupts its stream.
  */
 export function createAgentEngine(options: EngineOptions) {
-  const { history, ...host } = options;
+  const { history, logging = Logger.layer([]), ...host } = options;
   const runtime = ManagedRuntime.make(
     AgentEngine.layer.pipe(
       Layer.provide(
@@ -163,7 +154,8 @@ export function createAgentEngine(options: EngineOptions) {
           TurnToolbox.layer.pipe(Layer.provide(Mcp.layer)),
         ),
       ),
-      Layer.provideMerge(hostLayer(host)),
+      Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(host))),
+      Layer.provideMerge(logging),
     ),
   );
 

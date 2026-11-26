@@ -112,9 +112,10 @@ despite `hoist: false`; keep it on the same version as the workspaces.
   workspace to declare each package it imports in its own `package.json`
   (nothing is hoisted). Unit tests import their package's source; integration
   tests use package exports.
-- **Logging:** the bridge logs with pino (`apps/bridge/src/logger.ts`) using
-  structured objects with a dotted `event` key, e.g.
-  `{ event: 'bridge.startup_failed', error: errorMessage(error) }`.
+- **Logging:** use `Effect.log*` with `Effect.annotateLogs` for structured fields,
+  including a dotted `event` key. The bridge and agent share the JSON logging
+  layer in `apps/bridge/src/logger.ts`; capture an Effect runner where Node
+  callbacks are created and use `Effect.log*` directly inside Effect operations.
 - **Errors:** convert unknown errors with `errorMessage` from
   `apps/bridge/src/errors.ts`, which sanitizes via `safeErrorMessage`.
 - **Addon Lua:** follow [docs/lua-guidelines.md](docs/lua-guidelines.md) and

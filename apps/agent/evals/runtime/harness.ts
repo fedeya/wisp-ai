@@ -49,7 +49,6 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
       origin: () => host.origin,
       token: host.token,
       history: new MemoryHistory(),
-      logger: { info: () => {}, warn: () => {} },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });
     try {

@@ -9,7 +9,7 @@ import { generateConversationTitle } from '../chat/conversation-title.ts';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/agent/contract/model-errors';
 import { errorMessage } from '../errors.ts';
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
@@ -92,12 +92,12 @@ interface TurnDependencies {
   hasProvider?: () => boolean;
   isCurrent: (chat: Chat) => boolean;
   changed: () => void;
-  logger: Pick<Logger, 'info' | 'error'>;
   flushSnapshot?: () => void;
   /** How long an admitted turn may go without engine activity; defaults to `TURN_IDLE_TIMEOUT_MS`. */
   idleTimeoutMs?: number;
 }
-export function createTurnRunner(deps: TurnDependencies) {
+export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependencies) {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const {
     engine,
     models,
@@ -110,7 +110,6 @@ export function createTurnRunner(deps: TurnDependencies) {
     accountBusy,
     isCurrent,
     changed,
-    logger,
   } = deps;
   const idleTimeoutMs = deps.idleTimeoutMs ?? TURN_IDLE_TIMEOUT_MS;
   const generations = new WeakMap<Chat, symbol>();
@@ -145,9 +144,14 @@ export function createTurnRunner(deps: TurnDependencies) {
           changed();
         },
         (error) => {
-          logger.info(
-            { event: 'chat.title_failed', chat: chat.id, error: errorMessage(error) },
-            'Conversation title failed',
+          runFork(
+            Effect.logInfo('Conversation title failed').pipe(
+              Effect.annotateLogs({
+                event: 'chat.title_failed',
+                chat: chat.id,
+                error: errorMessage(error),
+              }),
+            ),
           );
         },
       )
@@ -367,15 +371,17 @@ export function createTurnRunner(deps: TurnDependencies) {
         // The addon shows this notice in the game's language; `text` is the fallback.
         ...(failure instanceof NoProviderError ? { notice: 'noProvider' as const } : {}),
       });
-      logger[failed ? 'error' : 'info'](
-        {
-          event: 'chat.turn_failed',
-          chat: chat.id,
-          messageId,
-          outcome,
-          error: errorMessage(failure),
-        },
-        'Turn failed',
+      const log = failed ? Effect.logError : Effect.logInfo;
+      runFork(
+        log('Turn failed').pipe(
+          Effect.annotateLogs({
+            event: 'chat.turn_failed',
+            chat: chat.id,
+            messageId,
+            outcome,
+            error: errorMessage(failure),
+          }),
+        ),
       );
     } finally {
       const model = chat.modelSettings?.model || defaultModel();
@@ -396,18 +402,19 @@ export function createTurnRunner(deps: TurnDependencies) {
             }
           : {},
       );
-      logger.info(
-        {
-          event: 'chat.turn_timing',
-          chat: chat.id,
-          messageId,
-          outcome,
-          preparedMs,
-          admittedMs,
-          firstTextMs,
-          totalMs: Math.round(performance.now() - started),
-        },
-        'Turn timing',
+      runFork(
+        Effect.logInfo('Turn timing').pipe(
+          Effect.annotateLogs({
+            event: 'chat.turn_timing',
+            chat: chat.id,
+            messageId,
+            outcome,
+            preparedMs,
+            admittedMs,
+            firstTextMs,
+            totalMs: Math.round(performance.now() - started),
+          }),
+        ),
       );
       clearInterval(streaming);
       clearTimeout(idle);
@@ -469,4 +476,4 @@ export function createTurnRunner(deps: TurnDependencies) {
       }
     },
   });
-}
+});

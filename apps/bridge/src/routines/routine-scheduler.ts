@@ -6,7 +6,7 @@ import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
 interface SchedulerDependencies {
   state: SessionState;
   routineStore: RoutineStore;
@@ -15,13 +15,12 @@ interface SchedulerDependencies {
   isReady: () => boolean;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   changed: () => void;
-  logger: Pick<Logger, 'error'>;
   /** Whether a finished routine chat failed on a usage limit; tests replace it. */
   usageLimited?: (chat: Chat) => boolean;
 }
-export function startRoutineScheduler(deps: SchedulerDependencies) {
-  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed, logger } =
-    deps;
+export const startRoutineScheduler = Effect.fnUntraced(function* (deps: SchedulerDependencies) {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed } = deps;
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
     state.chats.push(chat);
@@ -124,12 +123,13 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
       );
       await routineStore.finish(chat.id, status, summary);
     })()
-      .catch((error) =>
-        logger.error(
-          { event: 'routine.dispatch_failed', error: errorMessage(error) },
-          'Routine dispatch failed',
-        ),
-      )
+      .catch((error: unknown) => {
+        runFork(
+          Effect.logError('Routine dispatch failed').pipe(
+            Effect.annotateLogs({ event: 'routine.dispatch_failed', error: errorMessage(error) }),
+          ),
+        );
+      })
       .finally(() => {
         dispatchingRoutine = false;
         changed();
@@ -139,4 +139,4 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
     clearInterval(timer);
     await dispatch;
   };
-}
+});

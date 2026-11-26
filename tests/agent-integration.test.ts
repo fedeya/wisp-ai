@@ -211,7 +211,6 @@ test(
       origin: () => origin,
       token: 'offline-token',
       history,
-      logger: { info: () => {}, warn: () => {} },
     });
     const session = engine.newSessionId();
     const send = (input: TurnInput) =>

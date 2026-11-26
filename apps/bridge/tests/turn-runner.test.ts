@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import type { TurnInput } from '@wisp/agent/engine';
 import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
@@ -67,32 +68,32 @@ function fixture(
   const isReady = vi.fn(() => true);
   const accountBusy = vi.fn(() => false);
   const hasProvider = vi.fn(() => true);
-  const logger = { info: vi.fn(), error: vi.fn() };
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
-  const run = createTurnRunner({
-    telemetry,
-    engine,
-    models: { models, prepare, complete },
-    capabilitySettings: {
-      publish: async () => {},
-      enabled: () => titlesEnabled,
-      snapshot: () => [],
-    },
-    currentTransport: () => transport,
-    activeChat: () => 'chat',
-    defaultModel: () => defaultModel,
-    isReady,
-    isStopping: () => false,
-    accountBusy,
-    hasProvider,
-    isCurrent: () => current,
-    changed,
-    logger,
-    flushSnapshot,
-    idleTimeoutMs,
-    ...extra,
-  });
+  const run = runBridgeEffect(
+    createTurnRunner({
+      telemetry,
+      engine,
+      models: { models, prepare, complete },
+      capabilitySettings: {
+        publish: async () => {},
+        enabled: () => titlesEnabled,
+        snapshot: () => [],
+      },
+      currentTransport: () => transport,
+      activeChat: () => 'chat',
+      defaultModel: () => defaultModel,
+      isReady,
+      isStopping: () => false,
+      accountBusy,
+      hasProvider,
+      isCurrent: () => current,
+      changed,
+      flushSnapshot,
+      idleTimeoutMs,
+      ...extra,
+    }),
+  );
   return {
     chat,
     run,
@@ -105,7 +106,6 @@ function fixture(
     isReady,
     accountBusy,
     hasProvider,
-    logger,
     flushSnapshot,
     changed,
     changeCharacter: () => {
@@ -118,6 +118,7 @@ function fixture(
 }
 
 test('a complete turn projects streamed content and settles once', async () => {
+  const logs = captureLogs();
   const f = fixture();
   await f.run(f.chat, 'Question');
   expect(f.chat.status).toBe('done');
@@ -129,10 +130,8 @@ test('a complete turn projects streamed content and settles once', async () => {
   ).toBe('Hello');
   expect(f.send).toHaveBeenCalledTimes(1);
   expect(f.flushSnapshot).toHaveBeenCalledTimes(1);
-  const timing = f.logger.info.mock.calls.find(
-    ([fields]) => fields?.event === 'chat.turn_timing',
-  )?.[0];
-  expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
+  const [timing] = logs('chat.turn_timing');
+  expect(timing?.firstTextMs).toBeGreaterThanOrEqual(0);
   await f.run.drain();
 });
 
@@ -186,22 +185,21 @@ test('a streamed comparison requests publication before the tool settles', async
 });
 
 test('real streamed turns report their mode, outcome and tool lifecycle to telemetry', async () => {
+  const logs = captureLogs();
   const observe = vi.fn();
   const telemetry = { chat: vi.fn(), toolObserver: () => observe, usageObserver };
   const f = fixture(true, telemetry);
   f.chat.inline = true;
   await f.run(f.chat, 'Private question');
   expect(observe).toHaveBeenCalledWith(expect.objectContaining({ type: 'content.delta' }));
-  const timing = f.logger.info.mock.calls.find(
-    ([fields]) => fields?.event === 'chat.turn_timing',
-  )?.[0];
-  expect(timing.firstTextMs).toBeGreaterThanOrEqual(0);
+  const [timing] = logs('chat.turn_timing');
+  expect(timing?.firstTextMs).toBeGreaterThanOrEqual(0);
   expect(telemetry.chat).toHaveBeenCalledWith(
     'hover',
     'completed',
     expect.any(Number),
     undefined,
-    timing.firstTextMs,
+    timing?.firstTextMs,
     noUsage,
     {},
   );
@@ -516,6 +514,7 @@ test.each(['character', 'delete', 'interrupt'] as const)(
 );
 
 test('old assistant messages cannot count as the first text of a new turn', async () => {
+  const logs = captureLogs();
   const telemetry = { chat: vi.fn(), toolObserver: () => vi.fn(), usageObserver };
   const f = fixture(true, telemetry);
   f.chat.messages.push({ role: 'assistant', text: 'Previous answer' });
@@ -533,11 +532,9 @@ test('old assistant messages cannot count as the first text of a new turn', asyn
     result: async () => ({ status: 'completed', sessionEnded: false }),
   }));
   await f.run(f.chat, 'Next question');
-  const timing = f.logger.info.mock.calls.find(
-    ([fields]) => fields?.event === 'chat.turn_timing',
-  )?.[0];
+  const [timing] = logs('chat.turn_timing');
   expect(timing).toBeDefined();
-  expect(timing.firstTextMs).toBeUndefined();
+  expect(timing?.firstTextMs).toBeUndefined();
   expect(telemetry.chat).toHaveBeenCalledWith(
     'chat',
     'completed',
@@ -708,16 +705,14 @@ test('a generated title never replaces a name chosen meanwhile', async () => {
 });
 
 test('a failed title keeps the reply and is retried on a later turn', async () => {
+  const logs = captureLogs();
   const f = fixture();
   f.complete.mockRejectedValueOnce(Error('Private provider error'));
   await f.run(f.chat, 'Hola');
   await f.run.drain();
   expect(f.chat.status).toBe('done');
   expect(f.chat.titleGenerated).not.toBe(true);
-  expect(f.logger.info).toHaveBeenCalledWith(
-    expect.objectContaining({ event: 'chat.title_failed' }),
-    expect.any(String),
-  );
+  expect(logs('chat.title_failed')).toHaveLength(1);
   await f.run(f.chat, 'Quiero una build de mago');
   await f.run.drain();
   expect(f.complete).toHaveBeenCalledTimes(2);

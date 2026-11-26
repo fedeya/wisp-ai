@@ -9,6 +9,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { McpRelay } from '../src/integrations/mcp/mcp-relay.ts';
+import { runBridgeEffect } from './capture-logs.ts';
 test(
   'stdio MCP setup tests real tools, encrypts through the vault interface and gates relay calls',
   { timeout: 30000 },
@@ -35,9 +36,11 @@ test(
     let allowed = true;
     const relay = new McpRelay(manager, () => allowed);
     const http = createServer(
-      createAgentHandler({ token: 'test', mcpRelay: relay } as Parameters<
-        typeof createAgentHandler
-      >[0]),
+      runBridgeEffect(
+        createAgentHandler({ token: 'test', mcpRelay: relay } as Parameters<
+          typeof createAgentHandler
+        >[0]),
+      ),
     );
     await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
     const port = (http.address() as { port: number }).port;

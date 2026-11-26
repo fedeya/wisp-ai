@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -62,20 +63,21 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     const run = vi.fn(async (chat: (typeof state.chats)[number]) => {
       chat.status = 'done';
     });
-    const logger = { error: vi.fn() };
+    const logs = captureLogs();
     // Arm the interval one tick before the mutation timestamp so save, claim,
     // and pause all happen in the same millisecond without any real-time race.
     vi.setSystemTime(start - 3000);
-    stop = startRoutineScheduler({
-      state,
-      routineStore: store,
-      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-      isStopping: () => false,
-      isReady: () => true,
-      logger,
-      changed: () => settled.resolve(),
-      run,
-    });
+    stop = runBridgeEffect(
+      startRoutineScheduler({
+        state,
+        routineStore: store,
+        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        isStopping: () => false,
+        isReady: () => true,
+        changed: () => settled.resolve(),
+        run,
+      }),
+    );
     await vi.advanceTimersByTimeAsync(3000);
     await claimed.promise;
     expect(store.history()).toHaveLength(1);
@@ -88,7 +90,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     expect(state.chats).toEqual([]);
     expect(store.history()).toEqual([]);
     expect(store.list('mage')[0].enabled).toBe(false);
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logs('routine.dispatch_failed')).toEqual([]);
     expect(claimSpy).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(3000);
@@ -106,7 +108,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     expect(store.history()).toHaveLength(1);
     expect(store.history()[0].status).toBe('done');
     expect(store.list('mage')[0].enabled).toBe(true);
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logs('routine.dispatch_failed')).toEqual([]);
   } finally {
     releaseClaim.resolve();
     await stop?.();
@@ -156,31 +158,32 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     const selected: string[] = [];
     let active = 0;
     let maxActive = 0;
-    const logger = { error: vi.fn() };
-    stop = startRoutineScheduler({
-      state,
-      routineStore: store,
-      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-      isStopping: () => false,
-      isReady: () => true,
-      logger,
-      changed: () => settledA.resolve(),
-      run: async (chat) => {
-        selected.push(chat.routineId!);
-        active++;
-        maxActive = Math.max(maxActive, active);
-        chat.status = 'working';
-        if (selected.length === 1) {
-          startedA.resolve();
-          await releaseA.promise;
-        } else {
-          startedB.resolve();
-          await releaseB.promise;
-        }
-        chat.status = 'done';
-        active--;
-      },
-    });
+    const logs = captureLogs();
+    stop = runBridgeEffect(
+      startRoutineScheduler({
+        state,
+        routineStore: store,
+        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        isStopping: () => false,
+        isReady: () => true,
+        changed: () => settledA.resolve(),
+        run: async (chat) => {
+          selected.push(chat.routineId!);
+          active++;
+          maxActive = Math.max(maxActive, active);
+          chat.status = 'working';
+          if (selected.length === 1) {
+            startedA.resolve();
+            await releaseA.promise;
+          } else {
+            startedB.resolve();
+            await releaseB.promise;
+          }
+          chat.status = 'done';
+          active--;
+        },
+      }),
+    );
     await vi.advanceTimersByTimeAsync(3000);
     await startedA.promise;
     expect(selected).toEqual(['a']);
@@ -204,7 +207,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     releaseB.resolve();
     await stop();
     expect(store.history().map((run) => run.status)).toEqual(['done', 'done']);
-    expect(logger.error).not.toHaveBeenCalled();
+    expect(logs('routine.dispatch_failed')).toEqual([]);
   } finally {
     releaseA.resolve();
     releaseB.resolve();
