@@ -25,7 +25,7 @@ a build dependency, separate from what the desktop UI imports.
 | Workspace             | Responsibility                                                                                                                                                              |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/server`         | Runs the local host. Owns application workflows and permissions, and wires the agent, game transport, and storage together.                                                 |
-| `apps/agent`          | Runs model turns, defines tools, assembles context, and declares the host capabilities it needs. The host or an eval supplies those capabilities.                           |
+| `apps/agent`          | Owns the harness that runs model turns, the tools and their implementations, and how context is assembled. Declares the capabilities it needs from the host.                |
 | `apps/desktop`        | Owns the desktop UI and supervises the local process. The UI uses the Desktop API to reach the host.                                                                        |
 | `addon/WispAI`        | Owns the in-game UI, WoW API calls, and the Lua side of the game transport.                                                                                                 |
 | `packages/wow-bridge` | Owns the TypeScript side of the game transport: mailbox framing, delivery, and matching responses to requests. The server decides what an event means for the application.  |
@@ -53,13 +53,36 @@ shared product value; a mailbox slot count belongs to the game wire format.
 Move wire constants and encoders with the bridge, and expose packaging helpers
 through an entry point for their actual consumers.
 
-### Let the agent ask for capabilities
+### Keep tool implementation with the agent
+
+A tool owns how it answers its question: which data to read, which sources to
+combine, and what to return to the model. It can read bundled game data or call
+an external API directly, using an agent-owned client when that makes the
+integration easier to reuse or test. A network call alone doesn't make an
+operation the server's job.
+
+Ask the host for operations that need its authority or resources: access to the
+active WoW session, mutations to shared player state, or access mediated by
+host-managed credentials. The host checks session ownership and permissions and
+provides the operation the tool needs. The tool decides how to use the result.
 
 [`GameAccess`](../apps/agent/src/host/game-access.ts) already lets the server or
-an eval supply game capabilities. Other calls through
+an eval supply live game access. Other calls through
 [`agent-rpc.ts`](../apps/agent/src/host/agent-rpc.ts) still discover a loopback
-host through global or environment configuration. Use supplied capabilities
-for in-process calls and keep RPC where a separate process needs it.
+host through global or environment configuration. Use supplied capabilities for
+in-process operations that really need the host, and keep RPC where a separate
+process needs it. Before replacing an RPC with a capability, check whether the
+work belongs in the agent in the first place.
+
+- [`wow__dungeon_loot`](../apps/agent/src/wisp/tools/wow__dungeon_loot.ts)
+  already does this: the agent selects drops from its bundled AtlasLoot data
+  and builds the answer, asking `GameAccess` for the live item and equipment
+  reading. An external catalog lookup, if needed, could also run in the agent.
+- [`wow__item_sources`](../apps/agent/src/wisp/tools/wow__item_sources.ts) is a
+  candidate for the same split. Today the server
+  [combines Everloot relations with in-game names and prices](../apps/server/src/integrations/item-sources.ts).
+  The agent can own that composition while the host continues to enforce
+  access to the active game session and the enabled integrations.
 
 ### Give each application operation one owner
 
