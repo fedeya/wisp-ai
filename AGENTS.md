@@ -75,9 +75,13 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
 
-## Learning more about Effect
+## Current priority: code quality with Effect
 
-This repository uses the Effect Typescript library.
+Improve the codebase's readability and maintainability, using Effect where it
+makes dependencies, error handling, cancellation, or resource lifetimes clearer.
+Prefer the simplest implementation that fits: keep pure logic as plain
+TypeScript, and don't add a service or layer unless it earns its place. Keep
+cleanup separate from behavior changes so reviewers can verify each on its own.
 
 Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
 **completely**, and follow the links in the file when required.
