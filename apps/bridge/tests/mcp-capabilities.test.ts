@@ -8,6 +8,7 @@ import {
   mcpCapabilityCatalog,
 } from '../src/integrations/mcp/mcp-capabilities.ts';
 import { mcpDefinition } from '@wisp/protocol/mcp-setup';
+import * as Everloot from '@wisp/agent/everloot';
 
 type Server = Parameters<typeof mcpCapabilityCatalog>[0][number];
 
@@ -21,8 +22,11 @@ test('adds MCP servers and tools after the built-in capabilities without URL sec
     },
     { name: 'local', enabled: false, description: 'Local helper' },
   ] as unknown as Server[];
-  const catalog = mcpCapabilityCatalog(servers);
-  const added = catalog.slice(defaultCapabilities().length);
+  const catalog = mcpCapabilityCatalog(servers, [Everloot.profile]);
+  const bundledStart = defaultCapabilities().length;
+  const customStart = bundledStart + Everloot.capabilities.length;
+  assert.deepEqual(catalog.slice(bundledStart, customStart), Everloot.capabilities);
+  const added = catalog.slice(customStart);
   assert.deepEqual(added, [
     {
       id: 'mcp:notes',

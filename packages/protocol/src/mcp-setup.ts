@@ -6,9 +6,6 @@ export const mcpName = z
   .refine(
     (s) =>
       ![
-        'everloot',
-        'everloot_search',
-        'everloot_changes',
         'external',
         'wow',
         'questie',

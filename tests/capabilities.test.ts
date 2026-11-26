@@ -12,6 +12,8 @@ import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';
 import { localMemory } from '@wisp/agent/agent-memory';
 import { z } from 'zod';
 import { filterWebSearch } from '@wisp/agent/model-tools';
+import * as Everloot from '@wisp/agent/everloot';
+import { defaultCapabilities } from '@wisp/protocol/capabilities';
 
 const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
   Effect.provide(layerFromFile()),
@@ -21,7 +23,8 @@ test('settings persist, filter offered tools, and preserve child settings when a
   const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-capabilities-'));
   const previous = process.env.WOW_CAPABILITIES_FILE;
   try {
-    const settings = new CapabilitySettings(path.join(directory, 'capabilities.json'));
+    const catalog = [...defaultCapabilities(), ...Everloot.capabilities];
+    const settings = new CapabilitySettings(path.join(directory, 'capabilities.json'), catalog);
     process.env.WOW_CAPABILITIES_FILE = settings.file;
     await settings.load();
     const tool = enabledTool('search_database', {
@@ -54,7 +57,7 @@ test('settings persist, filter offered tools, and preserve child settings when a
       settings.snapshot().find((entry) => entry.id === 'mcp_tool:everloot:market_value')?.enabled,
       false,
     );
-    const restarted = new CapabilitySettings(settings.file);
+    const restarted = new CapabilitySettings(settings.file, catalog);
     await restarted.load();
     assert.equal(restarted.enabled('tool:search_database'), false);
     await settings.set('memory:preferences', false);

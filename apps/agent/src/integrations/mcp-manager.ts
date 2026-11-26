@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { Effect, Exit, Scope, Semaphore, type Duration } from 'effect';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { Capability } from '@wisp/protocol/capabilities';
 import { McpConnection, McpConnectionError } from './mcp-connection.ts';
 import type { Connection } from './mcp-connection.ts';
 export { mcpDefinition, mcpSetup };
@@ -28,6 +29,7 @@ export interface McpToolGroup {
 
 export interface BundledMcp {
   definition: MCPDefinition;
+  capabilities: readonly Capability[];
   redirect?: RequestRedirect;
   toolsTtl?: Duration.Input;
   callTimeoutMs?: number;
@@ -50,6 +52,22 @@ const vaultError = (cause: unknown) => new McpVaultError(message(cause), { cause
 
 function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] = []) {
   const builtIns = new Map(bundled.map((profile) => [profile.definition.name, profile]));
+  const reservedNames = new Set(
+    bundled.flatMap(({ definition, toolGroups }) => [
+      definition.name,
+      ...toolGroups.map(({ namespace }) => namespace.replace(/-/g, '_')),
+    ]),
+  );
+  function customName(key: string) {
+    const parsed = name.parse(key);
+    if (reservedNames.has(parsed)) throw Error('MCP name is reserved: ' + parsed);
+    return parsed;
+  }
+  function parseSetup(input: Setup) {
+    const setup = mcpSetup.parse(input);
+    customName(setup.server.name);
+    return setup;
+  }
   let servers: Record<string, MCPDefinition> = {};
   let closed = false;
   const connectionScope = Scope.makeUnsafe('parallel');
@@ -77,7 +95,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
           Object.entries(raw.servers || {}).map(([key, s]) => [
             key,
             {
-              ...mcpDefinition.parse({ ...s, name: key }),
+              ...mcpDefinition.parse({ ...s, name: customName(key) }),
               tools: Array.isArray(s.tools) ? (s.tools as MCPDefinition['tools']) : [],
               hasToken: s.hasToken === true,
               envKeys: Array.isArray(s.envKeys) ? (s.envKeys as string[]) : [],
@@ -145,7 +163,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
 
   const test = Effect.fn('McpManager.test')(function* (input: Setup) {
     const parsed = yield* Effect.try({
-      try: () => mcpSetup.parse(input),
+      try: () => parseSetup(input),
       catch: configurationError,
     });
     return yield* probe(parsed);
@@ -153,7 +171,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
 
   const save = Effect.fn('McpManager.save')(function* (input: Setup) {
     const parsed = yield* Effect.try({
-      try: () => mcpSetup.parse(input),
+      try: () => parseSetup(input),
       catch: configurationError,
     });
     const tested = yield* probe(parsed);
@@ -195,7 +213,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
   });
 
   const setEnabled = Effect.fn('McpManager.setEnabled')(function* (key: string, enabled: boolean) {
-    yield* Effect.try({ try: () => name.parse(key), catch: configurationError });
+    yield* Effect.try({ try: () => customName(key), catch: configurationError });
     if (typeof enabled !== 'boolean') {
       return yield* Effect.fail(new McpConfigurationError('Invalid MCP switch'));
     }
@@ -212,7 +230,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
   }, exclusive);
 
   const remove = Effect.fn('McpManager.remove')(function* (key: string) {
-    yield* Effect.try({ try: () => name.parse(key), catch: configurationError });
+    yield* Effect.try({ try: () => customName(key), catch: configurationError });
     const next = { ...servers };
     delete next[key];
     yield* persist(next);

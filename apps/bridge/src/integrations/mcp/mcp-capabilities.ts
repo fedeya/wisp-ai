@@ -9,8 +9,14 @@ type McpServerView = ReturnType<McpManager['list']>[number];
  * The built-in capabilities plus one entry per MCP server and its tools.
  * Server URLs are shown without credentials, query or fragment.
  */
-export function mcpCapabilityCatalog(servers: McpServerView[]): Capability[] {
-  const catalog = defaultCapabilities();
+export function mcpCapabilityCatalog(
+  servers: McpServerView[],
+  bundled: McpManager['bundled'] = [],
+): Capability[] {
+  const catalog = [
+    ...defaultCapabilities(),
+    ...bundled.flatMap(({ capabilities }) => capabilities),
+  ];
   for (const server of servers) {
     const url = server.url ? new URL(server.url) : undefined;
     if (url) {
@@ -49,7 +55,7 @@ export function createMcpCapabilities(
   return {
     /** Rebuild the capability catalog after the MCP server list changed. */
     refreshCatalog() {
-      capabilitySettings.catalog = mcpCapabilityCatalog(mcpManager.list());
+      capabilitySettings.catalog = mcpCapabilityCatalog(mcpManager.list(), mcpManager.bundled);
     },
     /** Start or stop each MCP server as its saved capability setting says. */
     applySavedSettings: Effect.fn('McpCapabilities.applySavedSettings')(function* () {

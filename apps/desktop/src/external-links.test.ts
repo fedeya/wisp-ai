@@ -1,7 +1,6 @@
-import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { expect, test } from 'vitest';
 import { keyPages } from './components/connections/ConnectionEditor';
-import { integrationGuide } from './components/integrations/integration-guides';
+import { integrationGuideLinks } from './components/integrations/integration-guides';
 import capabilityFile from '../src-tauri/capabilities/default.json';
 
 // The opener plugin turns clicks on `target="_blank"` links into `open_url`
@@ -23,7 +22,7 @@ const links = [
   'https://wisp.fedeya.sh/changelog',
   'https://wisp.fedeya.sh/changelog?channel=nightly',
   ...Object.values(keyPages),
-  ...defaultCapabilities().flatMap(({ id }) => integrationGuide(id)?.link?.url ?? []),
+  ...integrationGuideLinks(),
 ];
 
 test('every external link in the desktop app is allowed by the opener capability', () => {

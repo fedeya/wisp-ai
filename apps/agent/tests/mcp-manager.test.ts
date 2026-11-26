@@ -478,10 +478,7 @@ test('MCP setup rejects embedded URL credentials and keeps command arguments str
   assert.throws(() =>
     mcpSetup.parse({ server: { name: 'test', url: 'https://user:secret@example.com/mcp' } }),
   );
-  assert.throws(() =>
-    mcpSetup.parse({ server: { name: 'everloot', url: 'https://example.com/mcp' } }),
-  );
-  for (const name of ['wow', 'questie', 'wisp', 'everloot_search']) {
+  for (const name of ['wow', 'questie', 'wisp']) {
     assert.throws(() => mcpSetup.parse({ server: { name, url: 'https://example.com/mcp' } }));
   }
   assert.equal(
@@ -490,4 +487,17 @@ test('MCP setup rejects embedded URL credentials and keeps command arguments str
     }).server.args[0],
     'literal; not a shell',
   );
+});
+
+test('the manager reserves bundled MCP names and their model namespaces', async () => {
+  const manager = McpManager.make('.', undefined, [Everloot.profile]);
+  try {
+    for (const name of ['everloot', 'everloot_search', 'everloot_changes']) {
+      const input = mcpSetup.parse({ server: { name, url: 'https://example.com/mcp' } });
+      await assert.rejects(Effect.runPromise(manager.test(input)), /MCP name is reserved/);
+      await assert.rejects(Effect.runPromise(manager.save(input)), /MCP name is reserved/);
+    }
+  } finally {
+    await Effect.runPromise(manager.close());
+  }
 });
