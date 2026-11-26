@@ -159,7 +159,9 @@ export async function migrateDesktop(
       }
       for (const chat of chats) {
         if (chat && typeof chat === 'object') {
+          // Model histories start over; the visible conversations carry over.
           delete chat.eveId;
+          delete chat.agentSession;
           if (chat.status === 'working') {
             chat.status = 'interrupted';
           }

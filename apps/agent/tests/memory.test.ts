@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
-import { localMemory } from '../src/agent-memory.ts';
+import { localMemory } from '../src/wisp/agent-memory.ts';
 
 const signal = () => new AbortController().signal;
 const ctx = (id: string) => ({ session: { id }, abortSignal: signal(), callId: 'call' });

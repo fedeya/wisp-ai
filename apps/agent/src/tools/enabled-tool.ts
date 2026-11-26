@@ -1,6 +1,6 @@
 import { toolDescriptions } from '@wisp/protocol/capabilities';
 import type { ToolDefinition } from './tool.ts';
-import { capabilityEnabled } from './capabilities.ts';
+import { capabilityEnabled } from '../host/capabilities.ts';
 /**
  * Offers a tool while its capability is on. A tool in `toolFeatures` is also
  * off while its feature flag is, because the bridge publishes it as disabled.

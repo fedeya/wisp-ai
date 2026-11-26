@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from 'effect';
-import { hostCall, type HostError } from './engine-errors.ts';
+import { hostCall, type HostError } from '../execution/engine-errors.ts';
 import { readInstructions, readSkills, type AuthoredSkill } from './content.ts';
-import { SKILL } from './turn-tools.ts';
+import { SKILL } from '../tools/turn-tools.ts';
 
 export interface WispContent {
   /** instructions.md followed by the list of skills the skill tool loads. */

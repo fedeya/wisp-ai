@@ -3,7 +3,7 @@ import {
   fallbackContextWindow,
   knownContextWindow,
   modelContextWindow,
-} from '../src/context-windows.ts';
+} from '../src/models/context-windows.ts';
 
 test.each([
   ['gpt-6.2-sol', 922_000],

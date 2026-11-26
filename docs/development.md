@@ -314,14 +314,15 @@ The agent runs inside the bridge on the [AI SDK](https://ai-sdk.dev), with each
 turn run as an [Effect](https://effect.website) program:
 
 ```text
-src/engine.ts          AgentEngine: a turn's history, compaction, the streamText tool loop, events
-src/session-history.ts SessionHistory: the session log, over the bridge's store
-src/session-models.ts  SessionModels: the model each session runs on
-src/turn-toolbox.ts    TurnToolbox: the tools and saved memory of a turn
-src/mcp-tools.ts       Mcp: MCP connections through the official MCP SDK client
-src/wisp-agent.ts      WispAgent: instructions and skills
-src/turn-tools.ts      the turn's AI SDK tools: direct tools, skill, tool_search, tool_call
-src/wisp/           instructions.md, skills/ and tools/ the agent reads
+apps/agent/src/
+  engine.ts     AgentEngine: service wiring and the bridge-facing API
+  execution/    Turn execution, stream events, and compaction
+  session/      Session log and replay
+  models/       Model selection and provider adapters
+  host/         Agent configuration and bridge RPC
+  tools/        Per-turn toolbox and AI SDK tool assembly
+  integrations/ MCP and web fetching
+  wisp/         Instructions, skills, memory, and authored tools
 ```
 
 `streamText` runs the model and tool steps and stops when the model calls no
@@ -337,14 +338,14 @@ is still unstable. Shared agent rules live in
 stating when to use each skill. The system prompt lists those descriptions and the
 `skill` tool returns the full instructions. Each session's model history, tool
 calls and results included, is a log in `agent_entries` in `runtime/wisp.sqlite`,
-in Wisp's own format (`wisp-1`, [session-message.ts](../apps/agent/src/session-message.ts))
+in Wisp's own format (`wisp-1`, [session-message.ts](../apps/agent/src/session/session-message.ts))
 rather than the AI SDK's, and is sent in full every turn, so providers can reuse
 their prompt cache. A turn logs what the player wrote apart from what Wisp adds
 to it (saved memory, the game and chat context, the chat's earlier messages when
 a session starts mid-chat); the model reads them together as one tagged message. When it nears the model's context window, older turns are
 summarized; the log keeps them.
 
-Tools are listed in [tools.ts](../apps/agent/src/tools.ts). Specialized ones are
+Tools are listed in [the registry](../apps/agent/src/wisp/tool-registry.ts). Specialized ones are
 `deferred: true`: `tool_search` returns their names, descriptions and input
 schemas, and `tool_call({ name, input })` runs them, so the request's tool list
 never changes. MCP tools, connected through the MCP SDK client, are reached

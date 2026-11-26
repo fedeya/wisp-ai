@@ -1,8 +1,13 @@
 import { expect, test } from 'vitest';
 import type { ModelMessage } from 'ai';
-import { INTERRUPTED_TOOL, modelFamily, replayMessages, toolCallIdFor } from '../src/replay.ts';
-import type { Assistant, StoredMessage, Synthetic } from '../src/session-message.ts';
-import { stepMessage } from '../src/session-step.ts';
+import {
+  INTERRUPTED_TOOL,
+  modelFamily,
+  replayMessages,
+  toolCallIdFor,
+} from '../src/session/replay.ts';
+import type { Assistant, StoredMessage, Synthetic } from '../src/session/session-message.ts';
+import { stepMessage } from '../src/session/session-step.ts';
 
 const anthropicCall = 'toolu_01ABC.def';
 const user = (text: string, model: string): StoredMessage => ({
