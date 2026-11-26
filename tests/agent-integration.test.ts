@@ -199,21 +199,23 @@ test(
       history,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: inspectWith((agentSession, inspection) =>
-          Effect.sync(() => {
-            toolCalls.push({ agentSession, inspection });
-            return inspection.kind === 'questie_quest'
-              ? {
-                  status: 'available',
-                  data: {
+        inspectGame: inspectWith(
+          { item_sources: unavailableGameAccess.inspectGame },
+          (agentSession, inspection) =>
+            Effect.sync(() => {
+              toolCalls.push({ agentSession, inspection });
+              return inspection.kind === 'questie_quest'
+                ? {
                     status: 'available',
-                    questId: 166,
-                    data: { name: 'The Defias Brotherhood' },
-                    reference: { kind: 'quest', id: 166 },
-                  },
-                }
-              : { status: 'completed', data: { settings: [], verified: true } };
-          }),
+                    data: {
+                      status: 'available',
+                      questId: 166,
+                      data: { name: 'The Defias Brotherhood' },
+                      reference: { kind: 'quest', id: 166 },
+                    },
+                  }
+                : { status: 'completed', data: { settings: [], verified: true } };
+            }),
         ),
       },
     });

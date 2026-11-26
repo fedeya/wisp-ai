@@ -162,12 +162,14 @@ async function fixture(
     history,
     gameAccess: {
       ...unavailableGameAccess,
-      inspectGame: inspectWith((agentSession, inspection) =>
-        Effect.gen(function* () {
-          inspections.push({ agentSession, inspection });
-          if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
-          return { status: 'completed', data: { settings: [], verified: true } };
-        }),
+      inspectGame: inspectWith(
+        { item_sources: unavailableGameAccess.inspectGame },
+        (agentSession, inspection) =>
+          Effect.gen(function* () {
+            inspections.push({ agentSession, inspection });
+            if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
+            return { status: 'completed', data: { settings: [], verified: true } };
+          }),
       ),
     },
     logging: options.logging,

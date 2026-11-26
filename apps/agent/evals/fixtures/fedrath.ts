@@ -1,4 +1,5 @@
 import type { TurnInput } from '../../src/engine.ts';
+import type { ItemSourcesResult } from '../../src/host/game-access.ts';
 import type { ToolStub } from '../runtime/harness.ts';
 
 // A level 21 Horde mage modelled on a real player's gear questions: empty
@@ -405,18 +406,20 @@ const prices: Record<number, number> = {
 // Per-item answers in the shape the bridge's item_sources returns: only names,
 // zones, quest levels and evidence, never details production cannot see. The
 // eval GameAccess returns these for the requested IDs only.
-const relationKinds: Record<string, string> = {
+type FixtureSourceGroup = 'drops' | 'vendors' | 'quests' | 'crafted';
+type FixtureSource = NonNullable<ItemSourcesResult['items'][number]['drops']>[number];
+const relationKinds: Partial<Record<string, FixtureSourceGroup>> = {
   dropped_by: 'drops',
   drops_from: 'drops',
   sold_by: 'vendors',
   reward_from: 'quests',
   created_by: 'crafted',
 };
-export function itemSourcesFixture() {
+export function itemSourcesFixture(): Partial<Record<number, ItemSourcesResult['items'][number]>> {
   const ids = [...Object.values(armor), ...Object.values(weapons)].flat().map((entry) => entry.id);
   return Object.fromEntries(
     ids.map((itemId) => {
-      const found: Record<string, unknown[]> = {};
+      const found: Partial<Record<FixtureSourceGroup, FixtureSource[]>> = {};
       for (const edge of (sources[itemId] ?? []) as Array<Record<string, any>>) {
         const kind = relationKinds[String(edge.rel)];
         if (!kind) {
@@ -437,7 +440,7 @@ export function itemSourcesFixture() {
           ...found,
           auction: prices[itemId] ? { unitPriceCopper: prices[itemId], ageDays: 0 } : undefined,
           sourceKnown: Object.keys(found).length > 0,
-          sourcesStatus: 'available',
+          sourcesStatus: 'available' as const,
         },
       ];
     }),

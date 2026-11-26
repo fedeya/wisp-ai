@@ -1,7 +1,6 @@
 import { Effect, Schema } from 'effect';
 import { GameAccess, gameReading, inspectWith } from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
-import { inspectionSchema } from '@wisp/agent/contract/game-inspection';
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
@@ -118,17 +117,38 @@ export function make(deps: Dependencies) {
       });
     }),
     inspectGame: inspectWith(
-      Effect.fn('GameAccess.inspectGame')(function* (session, input) {
-        const inspection = yield* Effect.try({
-          try: () => inspectionSchema.parse(input),
-          catch: asError,
-        });
+      {
+        item_sources: Effect.fn('GameAccess.itemSources')(function* (session, inspection) {
+          const { request } = yield* authorize(session, inspectionTools[inspection.kind]);
+          const run = Effect.runPromiseWith(yield* Effect.context<never>());
+          return yield* Effect.tryPromise({
+            try: (signal) =>
+              itemSources(
+                inspection.args.itemIds,
+                (input) => run(request({ kind: 'inspect', inspection: input }), { signal }),
+                {
+                  everloot: everlootAllowed('entity_relations'),
+                  questie: capabilitySettings.enabled('integration:questie'),
+                  auctionator:
+                    capabilitySettings.enabled('integration:auctionator') &&
+                    capabilitySettings.enabled('tool:get_item_prices'),
+                  readEverloot: (tool, args) =>
+                    run(
+                      Everloot.read(deps.mcpManager, tool, args, () => everlootAllowed(tool)),
+                      { signal },
+                    ),
+                },
+              ),
+            catch: asError,
+          });
+        }),
+      },
+      Effect.fn('GameAccess.inspectGame')(function* (session, inspection) {
         const { request } = yield* authorize(session, inspectionTools[inspection.kind]);
         const inspect = (inspection: unknown) => request({ kind: 'inspect', inspection });
         if (
           inspection.kind !== 'search_armor' &&
           inspection.kind !== 'search_weapons' &&
-          inspection.kind !== 'item_sources' &&
           !retriesItemLoading(inspection)
         ) {
           return yield* inspect(inspection);
@@ -152,15 +172,6 @@ export function make(deps: Dependencies) {
                   );
                 }
                 return searchGear(inspection, readItems, readEverloot);
-              case 'item_sources':
-                return itemSources(inspection.args.itemIds, read, {
-                  everloot: everlootAllowed('entity_relations'),
-                  questie: capabilitySettings.enabled('integration:questie'),
-                  auctionator:
-                    capabilitySettings.enabled('integration:auctionator') &&
-                    capabilitySettings.enabled('tool:get_item_prices'),
-                  readEverloot,
-                });
               default:
                 return readItems(inspection);
             }

@@ -26,7 +26,10 @@ it('runs the loot tool against the catalog, asking GameAccess only for raw items
       session: { id: 'turn' },
       callId: 'loot',
       abortSignal: new AbortController().signal,
-      gameAccess: { ...unavailableGameAccess, inspectGame: inspectWith(inspectGame) },
+      gameAccess: {
+        ...unavailableGameAccess,
+        inspectGame: inspectWith({ item_sources: unavailableGameAccess.inspectGame }, inspectGame),
+      },
       runEffect: Effect.runPromise,
     },
   );

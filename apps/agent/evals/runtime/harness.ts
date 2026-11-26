@@ -57,38 +57,45 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
       history: new MemoryHistory(),
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: inspectWith((_session, inspection) => {
-          if (inspection.kind === 'gear_candidates') {
-            return Effect.sync(() => {
-              const found = inspection.args.itemIds.map((id) => lootItems[id]).filter(Boolean);
-              return {
+        inspectGame: inspectWith(
+          {
+            item_sources: (_session, inspection) =>
+              Effect.sync(() => ({
                 status: 'available',
-                data: {
+                items: [...new Set(inspection.args.itemIds)].map(
+                  (itemId) =>
+                    itemSources[itemId] ?? {
+                      itemId,
+                      sourceKnown: false,
+                      sourcesStatus: 'available',
+                    },
+                ),
+                priceStatus: 'available',
+                realm: 'Vorn',
+                note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
+              })),
+          },
+          (_session, inspection) => {
+            if (inspection.kind === 'gear_candidates') {
+              return Effect.sync(() => {
+                const found = inspection.args.itemIds.map((id) => lootItems[id]).filter(Boolean);
+                return {
                   status: 'available',
-                  items: found
-                    .filter((entry) => entry.kind === 'item')
-                    .map((entry) => entry.reading),
-                  other: found
-                    .filter((entry) => entry.kind === 'other')
-                    .map((entry) => entry.reading),
-                },
-              };
-            });
-          }
-          if (inspection.kind === 'item_sources') {
-            return Effect.sync(() => ({
-              status: 'available',
-              items: [...new Set(inspection.args.itemIds)].map(
-                (itemId) =>
-                  itemSources[itemId] ?? { itemId, sourceKnown: false, sourcesStatus: 'available' },
-              ),
-              priceStatus: 'available',
-              realm: 'Vorn',
-              note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
-            }));
-          }
-          return Effect.fail(new Error('Not available in evals: stub this inspection tool.'));
-        }),
+                  data: {
+                    status: 'available',
+                    items: found
+                      .filter((entry) => entry.kind === 'item')
+                      .map((entry) => entry.reading),
+                    other: found
+                      .filter((entry) => entry.kind === 'other')
+                      .map((entry) => entry.reading),
+                  },
+                };
+              });
+            }
+            return Effect.fail(new Error('Not available in evals: stub this inspection tool.'));
+          },
+        ),
       },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });
