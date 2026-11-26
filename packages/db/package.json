@@ -1,0 +1,32 @@
+{
+  "name": "@wisp/db",
+  "version": "0.3.2",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./application-file": "./src/application-file.ts",
+    "./database": "./src/database.ts",
+    "./migrate": "./src/migrate.ts",
+    "./private-file": "./src/private-file.ts",
+    "./schema": "./src/schema.ts"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "typecheck": "tsc --noEmit",
+    "test": "cd ../.. && vitest run --config packages/db/vitest.config.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "1.0.0-rc.5"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "drizzle-kit": "1.0.0-rc.5",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

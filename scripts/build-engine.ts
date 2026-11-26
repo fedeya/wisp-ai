@@ -65,7 +65,7 @@ export async function buildEngine() {
     },
   });
   await cp(path.join(root, 'scripts/engine-entry.mjs'), path.join(directory, 'engine.mjs'));
-  await cp(path.join(root, 'apps/server/src/db/migrations'), path.join(directory, 'migrations'), {
+  await cp(path.join(root, 'packages/db/src/migrations'), path.join(directory, 'migrations'), {
     recursive: true,
   });
   await writeFile(

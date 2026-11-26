@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { preparePrivateDatabase } from '../src/db/private-file.ts';
+import { preparePrivateDatabase } from '@wisp/db/private-file';
 
 test('startup reads messages, private state and revisions from one snapshot during a concurrent commit', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-startup-snapshot-'));

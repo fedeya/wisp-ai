@@ -13,7 +13,7 @@ import {
   saveMemory,
   savePanels,
 } from '../src/db/product-store.ts';
-import { chats, metadata, routineRuns, routines } from '../src/db/schema.ts';
+import { chats, metadata, routineRuns, routines } from '@wisp/db/schema';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';

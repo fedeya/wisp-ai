@@ -8,7 +8,7 @@ import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
   DATABASE_NAME,
-} from '../db/application-file.ts';
+} from '@wisp/db/application-file';
 
 async function stopPreviousBridge(source: string) {
   let identity: { port?: number; token?: string };

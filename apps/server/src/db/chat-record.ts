@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Chat, Message } from '../chat/chat.ts';
-import type { chats, messages, chatInstanceState } from './schema.ts';
+import type { chats, messages, chatInstanceState } from '@wisp/db/schema';
 
 export type ChatRow = typeof chats.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;

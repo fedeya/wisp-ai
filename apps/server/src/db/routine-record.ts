@@ -1,5 +1,5 @@
 import type { Routine, RoutineRun } from '@wisp/protocol/routines';
-import type { routines, routineRuns } from './schema.ts';
+import type { routines, routineRuns } from '@wisp/db/schema';
 export type RoutineRow = typeof routines.$inferSelect;
 export type RunRow = typeof routineRuns.$inferSelect;
 export function encodeRoutine(

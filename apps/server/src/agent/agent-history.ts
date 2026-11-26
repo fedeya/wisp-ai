@@ -9,7 +9,7 @@ import type {
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
 import type { ApplicationDatabase } from '../db/application-database.ts';
-import { agentEntries, agentSessions, chatInstanceState } from '../db/schema.ts';
+import { agentEntries, agentSessions, chatInstanceState } from '@wisp/db/schema';
 
 /** How entries' `data` is encoded: Wisp's session format (`@wisp/agent/session-message`). */
 export const AGENT_MESSAGE_FORMAT = SESSION_FORMAT;
