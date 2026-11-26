@@ -1,13 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Effect } from 'effect';
 import { dungeonLootInput } from '../src/contract/game-inspection.ts';
-import { unavailableGameAccess } from '../src/host/game-access.ts';
+import {
+  inspectWith,
+  unavailableGameAccess,
+  type GameInspection,
+} from '../src/host/game-access.ts';
 import { dungeonLoot } from '../src/wisp/dungeon-loot.ts';
 import generated from '../src/wisp/dungeon-loot.json' with { type: 'json' };
 import tool from '../src/wisp/tools/wow__dungeon_loot.ts';
 
 it('runs the loot tool against the catalog, asking GameAccess only for raw items', async () => {
-  const inspectGame = vi.fn<typeof unavailableGameAccess.inspectGame>((_, inspection) => {
+  const inspectGame = vi.fn((_: string, inspection: GameInspection) => {
     if (inspection.kind !== 'gear_candidates') {
       return Effect.fail(new Error('Expected an item read'));
     }
@@ -22,7 +26,7 @@ it('runs the loot tool against the catalog, asking GameAccess only for raw items
       session: { id: 'turn' },
       callId: 'loot',
       abortSignal: new AbortController().signal,
-      gameAccess: { ...unavailableGameAccess, inspectGame },
+      gameAccess: { ...unavailableGameAccess, inspectGame: inspectWith(inspectGame) },
       runEffect: Effect.runPromise,
     },
   );

@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { GameAccess, gameReading } from '@wisp/agent/game-access';
+import { GameAccess, gameReading, inspectWith } from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
 import { inspectionSchema } from '@wisp/agent/contract/game-inspection';
 import { expectedCharacter } from '@wisp/protocol/character-key';
@@ -117,57 +117,58 @@ export function make(deps: Dependencies) {
         catch: asError,
       });
     }),
-    inspectGame: Effect.fn('GameAccess.inspectGame')(function* (session, input) {
-      const inspection = yield* Effect.try({
-        try: () => inspectionSchema.parse(input),
-        catch: asError,
-      });
-      const { request } = yield* authorize(session, inspectionTools[inspection.kind]);
-      const inspect = (inspection: unknown) => request({ kind: 'inspect', inspection });
-      if (
-        inspection.kind !== 'search_armor' &&
-        inspection.kind !== 'search_weapons' &&
-        inspection.kind !== 'item_sources' &&
-        !retriesItemLoading(inspection)
-      ) {
-        return yield* inspect(inspection).pipe(Effect.flatMap(parseReading));
-      }
-      const run = Effect.runPromiseWith(yield* Effect.context<never>());
-      const value = yield* Effect.tryPromise({
-        try: async (signal) => {
-          const read = (input: unknown) => run(inspect(input), { signal });
-          const readItems = (input: unknown) => readLoadedItems(() => read(input), signal);
-          const readEverloot: Everloot.Lookup = (tool, args) =>
-            run(
-              Everloot.read(deps.mcpManager, tool, args, () => everlootAllowed(tool)),
-              { signal },
-            );
-          switch (inspection.kind) {
-            case 'search_armor':
-            case 'search_weapons':
-              if (!everlootAllowed('item_categories')) {
-                throw new Error(
-                  'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
-                );
-              }
-              return searchGear(inspection, readItems, readEverloot);
-            case 'item_sources':
-              return itemSources(inspection.args.itemIds, read, {
-                everloot: everlootAllowed('entity_relations'),
-                questie: capabilitySettings.enabled('integration:questie'),
-                auctionator:
-                  capabilitySettings.enabled('integration:auctionator') &&
-                  capabilitySettings.enabled('tool:get_item_prices'),
-                readEverloot,
-              });
-            default:
-              return readItems(inspection);
-          }
-        },
-        catch: asError,
-      });
-      return yield* parseReading(value);
-    }),
+    inspectGame: inspectWith(
+      Effect.fn('GameAccess.inspectGame')(function* (session, input) {
+        const inspection = yield* Effect.try({
+          try: () => inspectionSchema.parse(input),
+          catch: asError,
+        });
+        const { request } = yield* authorize(session, inspectionTools[inspection.kind]);
+        const inspect = (inspection: unknown) => request({ kind: 'inspect', inspection });
+        if (
+          inspection.kind !== 'search_armor' &&
+          inspection.kind !== 'search_weapons' &&
+          inspection.kind !== 'item_sources' &&
+          !retriesItemLoading(inspection)
+        ) {
+          return yield* inspect(inspection);
+        }
+        const run = Effect.runPromiseWith(yield* Effect.context<never>());
+        return yield* Effect.tryPromise({
+          try: async (signal) => {
+            const read = (input: unknown) => run(inspect(input), { signal });
+            const readItems = (input: unknown) => readLoadedItems(() => read(input), signal);
+            const readEverloot: Everloot.Lookup = (tool, args) =>
+              run(
+                Everloot.read(deps.mcpManager, tool, args, () => everlootAllowed(tool)),
+                { signal },
+              );
+            switch (inspection.kind) {
+              case 'search_armor':
+              case 'search_weapons':
+                if (!everlootAllowed('item_categories')) {
+                  throw new Error(
+                    'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
+                  );
+                }
+                return searchGear(inspection, readItems, readEverloot);
+              case 'item_sources':
+                return itemSources(inspection.args.itemIds, read, {
+                  everloot: everlootAllowed('entity_relations'),
+                  questie: capabilitySettings.enabled('integration:questie'),
+                  auctionator:
+                    capabilitySettings.enabled('integration:auctionator') &&
+                    capabilitySettings.enabled('tool:get_item_prices'),
+                  readEverloot,
+                });
+              default:
+                return readItems(inspection);
+            }
+          },
+          catch: asError,
+        });
+      }),
+    ),
     runGameAction: Effect.fn('GameAccess.runGameAction')(function* (session, input) {
       const action = yield* Effect.try({ try: () => actionSchema.parse(input), catch: asError });
       const { character, request } = yield* authorize(session, actionTools[action.kind], true);

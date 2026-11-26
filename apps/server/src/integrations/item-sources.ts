@@ -1,4 +1,5 @@
 import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
+import type { ItemSourcesResult } from '@wisp/agent/game-access';
 
 // How an item is obtained, by Everloot relation. Other relations (reagent for,
 // same icon, set membership) do not say where to get the item.
@@ -72,7 +73,7 @@ export async function itemSources(
     auctionator: boolean;
     readEverloot: EverlootLookup;
   },
-) {
+): Promise<ItemSourcesResult> {
   const ids = [...new Set(itemIds)];
   const found = options.everloot
     ? await Promise.all(ids.map((id) => relations(id, options.readEverloot)))
@@ -105,7 +106,8 @@ export async function itemSources(
   const spells = byId(names.spells);
   const prices = new Map((names.prices ?? []).map((price) => [price.itemId, price]));
   const items = ids.map((id, index) => {
-    const sources: Partial<Record<SourceKind, unknown[]>> = {};
+    type ItemSource = NonNullable<ItemSourcesResult['items'][number]['drops']>[number];
+    const sources: Partial<Record<SourceKind, ItemSource[]>> = {};
     for (const edge of found[index]!.edges) {
       const kind = edge.rel ? OBTAIN[edge.rel as keyof typeof OBTAIN] : undefined;
       if (!kind || !Number.isInteger(edge.toId)) {

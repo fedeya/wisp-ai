@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Effect } from 'effect';
-import { unavailableGameAccess } from '../../src/host/game-access.ts';
+import { inspectWith, unavailableGameAccess } from '../../src/host/game-access.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -57,7 +57,7 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
       history: new MemoryHistory(),
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: (_session, inspection) => {
+        inspectGame: inspectWith((_session, inspection) => {
           if (inspection.kind === 'gear_candidates') {
             return Effect.sync(() => {
               const found = inspection.args.itemIds.map((id) => lootItems[id]).filter(Boolean);
@@ -88,7 +88,7 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
             }));
           }
           return Effect.fail(new Error('Not available in evals: stub this inspection tool.'));
-        },
+        }),
       },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });

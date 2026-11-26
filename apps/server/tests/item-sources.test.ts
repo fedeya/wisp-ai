@@ -72,7 +72,7 @@ test('sources for several items are read together and named in one game request'
       },
     },
   ]);
-  const [boots, linen, ring] = result.items as Array<Record<string, any>>;
+  const [boots, linen, ring] = result.items;
   expect(boots).toMatchObject({
     itemId: 4320,
     sourceKnown: true,
@@ -81,7 +81,7 @@ test('sources for several items are read together and named in one game request'
     ],
     auction: { unitPriceCopper: 7000, ageDays: 0 },
   });
-  expect(boots.vendors).toBeUndefined();
+  expect(boots?.vendors).toBeUndefined();
   expect(linen).toMatchObject({
     drops: [
       {
@@ -117,7 +117,7 @@ test('Everloot failures or a disabled integration still return prices', async ()
   });
   expect(calls).toEqual([]);
   expect(disabled.items[0]).toMatchObject({ sourcesStatus: 'disabled' });
-  expect(disabled.sources.everloot).toBe('disabled in Settings');
+  expect(disabled.sources).toMatchObject({ everloot: 'disabled in Settings' });
 });
 
 test('disabled Questie and Auctionator settings keep their reads out of the game request', async () => {
@@ -140,7 +140,7 @@ test('disabled Questie and Auctionator settings keep their reads out of the game
     },
   ]);
   expect(result.items[0]).toMatchObject({ drops: [{ kind: 'npc', id: 2266 }] });
-  expect(result.sources.prices).toBe('disabled in Settings');
+  expect(result.sources).toMatchObject({ prices: 'disabled in Settings' });
 });
 
 test('relations beyond the Everloot per-relation limit are reported', async () => {

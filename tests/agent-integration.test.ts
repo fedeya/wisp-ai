@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { Effect } from 'effect';
-import { unavailableGameAccess } from '@wisp/agent/game-access';
+import { inspectWith, unavailableGameAccess } from '@wisp/agent/game-access';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -199,7 +199,7 @@ test(
       history,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: (agentSession, inspection) =>
+        inspectGame: inspectWith((agentSession, inspection) =>
           Effect.sync(() => {
             toolCalls.push({ agentSession, inspection });
             return inspection.kind === 'questie_quest'
@@ -214,6 +214,7 @@ test(
                 }
               : { status: 'completed', data: { settings: [], verified: true } };
           }),
+        ),
       },
     });
     const session = engine.newSessionId();
