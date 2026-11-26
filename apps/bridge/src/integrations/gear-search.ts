@@ -3,7 +3,7 @@ import {
   typelessArmorSlots,
   type armorSearchInput,
   type weaponSearchInput,
-} from '@wisp/protocol/game-inspection';
+} from '@wisp/agent/contract/game-inspection';
 import { callEverloot } from './everloot.ts';
 
 // Everloot lists at most 100 items per call; one call per quality keeps every

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
 import { PanelStore } from '../src/addon/panels.ts';
-import { panelContent } from '@wisp/protocol/panels';
+import { panelContent } from '@wisp/agent/contract/panels';
 const example = {
   id: 'materials',
   title: 'Materials',

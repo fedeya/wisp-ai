@@ -5,15 +5,15 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import { rpcRequests, rpcResponses } from '@wisp/protocol/agent-rpc';
-import { actionTools } from '@wisp/protocol/game-actions';
+import { rpcRequests, rpcResponses } from '@wisp/agent/contract/agent-rpc';
+import { actionTools } from '@wisp/agent/contract/game-actions';
 import { routineInput, routineEvents } from '@wisp/protocol/routines';
-import { panelInput } from '@wisp/protocol/panels';
-import { simulationInput, simulationNeedsLiveState } from '@wisp/protocol/simulation';
-import { databaseRequest } from '@wisp/protocol/database';
+import { panelInput } from '@wisp/agent/contract/panels';
+import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
+import { databaseRequest } from '@wisp/agent/contract/database';
 import { wowheadQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
-import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
+import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { McpRelay } from '../integrations/mcp/mcp-relay.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
@@ -149,7 +149,7 @@ export function createAgentApp(deps: AgentDependencies) {
     await next();
   });
 
-  // Model proxies and the MCP relay stream on the raw Node request and response.
+  // Model proxies stream on the raw Node request and response.
   const proxy =
     (forward: (c: AgentContext) => Promise<void>) =>
     async (c: AgentContext): Promise<Response> => {
@@ -182,13 +182,11 @@ export function createAgentApp(deps: AgentDependencies) {
     ),
   );
   app.all('/mcp/*', async (c) => {
-    const { incoming, outgoing } = c.env;
     try {
-      await mcpRelay.handle(incoming, outgoing, (incoming.url || '').slice(5));
+      return await mcpRelay.handle(c.req.raw, c.req.path.slice('/mcp/'.length));
     } catch {
-      outgoing.writeHead(503).end('MCP connection failed');
+      return c.text('MCP connection failed', 503);
     }
-    return RESPONSE_ALREADY_SENT;
   });
 
   app.get('/session-model', async (c) => {

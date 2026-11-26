@@ -2,8 +2,8 @@ import {
   PRESENT_UI_TOOL,
   replyPresentation,
   type ReplyPresentation,
-} from '@wisp/protocol/reply-presentation';
-import type { ReferenceCatalog } from '@wisp/protocol/rich-reference';
+} from '@wisp/agent/contract/reply-presentation';
+import type { ReferenceCatalog } from '@wisp/agent/contract/rich-reference';
 import type { Chat, Message, ReplyPart } from '../chat/chat.ts';
 import { setReplyPreview, type PresentationProgress } from './reply-content.ts';
 

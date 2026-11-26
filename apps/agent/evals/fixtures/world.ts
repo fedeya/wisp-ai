@@ -1,11 +1,9 @@
-import type { ToolStub } from '../harness.ts';
+import type { ToolStub } from '../runtime/harness.ts';
 
 // Quest, dungeon and map fixtures for non-gear questions. Put these before
 // fedrathStubs(): the first matching stub wins.
-const json = (value: unknown) => JSON.parse(JSON.stringify(value));
-
 export function questStubs(): ToolStub[] {
-  return json([
+  return [
     {
       id: 'quest-875',
       tool: 'questie__get_quest',
@@ -66,29 +64,27 @@ export function questStubs(): ToolStub[] {
         },
       },
     },
-  ]);
+  ];
 }
 
 // Catalog and web lookups the dungeon scenarios should not need, since
 // wow__query_dungeons answers them. They return nothing rather than facts, so
 // a stray search neither reaches the real services nor contradicts the game.
 export function noLookupStubs(): ToolStub[] {
-  return json(
-    [
-      'thewowdb__search_database',
-      'thewowdb__get_database_entity',
-      'web__web_search',
-      'web_fetch',
-    ].map((tool) => ({
-      id: 'no-' + tool,
-      tool,
-      outcome: { response: { status: 'available', data: { results: [] } } },
-    })),
-  );
+  return [
+    'thewowdb__search_database',
+    'thewowdb__get_database_entity',
+    'web__web_search',
+    'web_fetch',
+  ].map((tool) => ({
+    id: 'no-' + tool,
+    tool,
+    outcome: { response: { status: 'available', data: { results: [] } } },
+  }));
 }
 
 export function mapStubs(): ToolStub[] {
-  return json([
+  return [
     {
       id: 'map',
       tool: 'wow__inspect_map',
@@ -107,7 +103,7 @@ export function mapStubs(): ToolStub[] {
       tool: 'wow__set_map_waypoint',
       outcome: { response: { status: 'available', data: { placed: true, navigation: true } } },
     },
-  ]);
+  ];
 }
 
 // wow__query_dungeons for a level 21 Horde character: names and ranges as Forever's
@@ -230,11 +226,11 @@ const dungeons = [
 ];
 
 export function dungeonStubs(): ToolStub[] {
-  return json([
+  return [
     {
       id: 'dungeon-rfc',
       tool: 'wow__query_dungeons',
-      match: { dungeon: { pattern: '[Ss]ima|[Rr]agefire|RFC|rfc' } },
+      match: { dungeon: /sima|ragefire|rfc/i },
       outcome: { response: { status: 'available', data: { ...reading, dungeons: [rfc] } } },
     },
     {
@@ -242,7 +238,7 @@ export function dungeonStubs(): ToolStub[] {
       tool: 'wow__query_dungeons',
       outcome: { response: { status: 'available', data: { ...reading, dungeons } } },
     },
-  ]);
+  ];
 }
 
 // The game's Death Recap for the character's latest death, in the shape
@@ -298,7 +294,7 @@ const recapEvents = [
   },
 ];
 export function combatStubs(): ToolStub[] {
-  return json([
+  return [
     {
       id: 'combat',
       tool: 'wow__read_combat',
@@ -335,7 +331,7 @@ export function combatStubs(): ToolStub[] {
         },
       },
     },
-  ]);
+  ];
 }
 
 // Forever PvP progression for a level 21 character that has fought in the
@@ -343,7 +339,7 @@ export function combatStubs(): ToolStub[] {
 // collector (Character/Capture.lua) returns: counters only, no rules, so the
 // agent has to apply what its PvP instructions say.
 export function pvpStubs(): ToolStub[] {
-  return json([
+  return [
     {
       id: 'character-pvp',
       tool: 'wow__query_character',
@@ -375,7 +371,7 @@ export function pvpStubs(): ToolStub[] {
         },
       },
     },
-  ]);
+  ];
 }
 
 // Rune of Teleportation: the catalog finds the item and Questie places its
@@ -415,11 +411,11 @@ export function runeStubs(): ToolStub[] {
       note: 'Database spawn positions, not live sightings or guaranteed active phases. Coordinates are percentages on the verified native map. Missing coverage is unknown, not absence. No waypoint was placed.',
     },
   };
-  return json([
+  return [
     {
       id: 'rune-search',
       tool: 'thewowdb__search_database',
-      match: { query: { pattern: '[Rr]une|[Rr]una' } },
+      match: { query: /[Rr]une|[Rr]una/ },
       outcome: {
         response: {
           status: 'available',
@@ -431,7 +427,7 @@ export function runeStubs(): ToolStub[] {
     {
       id: 'horthus-by-name',
       tool: 'questie__find_npc_locations',
-      match: { name: { pattern: '[Hh]orthus' } },
+      match: { name: /[Hh]orthus/ },
       outcome: horthus,
     },
     {
@@ -440,5 +436,5 @@ export function runeStubs(): ToolStub[] {
       match: { npcId: { const: 3335 } },
       outcome: horthus,
     },
-  ]);
+  ];
 }

@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { simulationInput } from '@wisp/protocol/simulation';
+import { simulationInput } from '../../contract/simulation.ts';
 export default enabledTool(
   'simulate_dps',
   defineTool({

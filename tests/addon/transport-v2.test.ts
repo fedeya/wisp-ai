@@ -10,7 +10,7 @@ import {
   LAST,
   encodeFrame,
   decodeFrame,
-} from '../../packages/protocol/src/mailbox.ts';
+} from '@wisp/bridge/mailbox';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');

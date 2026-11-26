@@ -1,6 +1,12 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
-import { judgeModel, judgeRun, type Run } from '../evals/quality-scorer.ts';
+import {
+  judgeAnswer,
+  judgeInstructions,
+  judgeModel,
+  qualityPrompt,
+} from '../evals/judges/quality-scorer.ts';
+import { judges } from '../evals/judges/binary-judges.ts';
 
 test('a judge asks the eval model for a structured verdict over the eval bridge', async () => {
   const requests: Record<string, any>[] = [];
@@ -48,29 +54,15 @@ test('a judge asks the eval model for a structured verdict over the eval bridge'
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   try {
-    const run: Run = {
-      label: 'test',
-      name: 'find-upgrades',
-      prompt: 'find upgrades for me',
-      seconds: 1,
-      steps: 2,
-      reply: 'Get Spidersilk Boots.',
-      presented: [],
-      results: [{ tool: 'wow__search_armor', input: {}, output: { items: [] } }],
-    };
-    const verdict = await judgeRun(
+    const { output } = await judgeAnswer(
       judgeModel(origin, 'eval-token', 'gpt-5.4'),
-      run,
-      3,
-      'unsupported-claim',
+      judgeInstructions(judges['unsupported-claim']),
+      qualityPrompt('find-upgrades', 'find upgrades for me', 'Get Spidersilk Boots.', [
+        { name: 'wow__search_armor', arguments: {}, status: 'ok', result: { items: [] } },
+      ]),
+      AbortSignal.timeout(5000),
     );
-    expect(verdict).toEqual({
-      run: 3,
-      label: 'test',
-      name: 'find-upgrades',
-      judge: 'unsupported-claim',
-      ...grades,
-    });
+    expect(output).toEqual(grades);
     const request = requests.at(-1)!;
     expect(request.url).toBe('/model/responses');
     expect(request.authorization).toBe('Bearer eval-token');

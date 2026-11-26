@@ -1,6 +1,6 @@
 import { integrationContext, type CapabilityView } from '@wisp/protocol/capabilities';
 import type { Chat, Message } from './events.ts';
-import { linkedReferences } from '@wisp/protocol/references';
+import { linkedReferences } from './references.ts';
 import { z } from 'zod';
 import type { TurnInput } from '@wisp/agent/engine';
 import { replyContent } from '../reply/reply-content.ts';

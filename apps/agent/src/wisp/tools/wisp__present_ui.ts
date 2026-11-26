@@ -1,5 +1,5 @@
 import { defineTool, toolOutput } from '@wisp/agent/tool';
-import { replyPresentation } from '@wisp/protocol/reply-presentation';
+import { replyPresentation } from '../../contract/reply-presentation.ts';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 
 export default defineTool({

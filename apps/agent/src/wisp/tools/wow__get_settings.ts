@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { settingsRead } from '@wisp/protocol/settings';
+import { settingsRead } from '../../contract/settings.ts';
 export default enabledTool(
   'get_settings',
   defineTool({

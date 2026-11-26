@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { panelInput } from '@wisp/protocol/panels';
+import { panelInput } from '../../contract/panels.ts';
 export default enabledTool(
   'manage_panel',
   defineTool({

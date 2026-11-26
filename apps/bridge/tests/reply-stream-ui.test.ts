@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { LegacyReplyStream as ReplyStream } from '../src/reply/legacy-reply.ts';
-import { selectionValues } from '@wisp/protocol/ui-schema';
+import { selectionValues } from '@wisp/agent/contract/ui-schema';
 test('reply preserves text and UI order, including updates and pending prose', () => {
   const r = new ReplyStream();
   const emit = (event: unknown) => r.feed(JSON.stringify(event) + '\n');

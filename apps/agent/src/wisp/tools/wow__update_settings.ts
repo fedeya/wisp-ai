@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { settingsUpdate } from '@wisp/protocol/settings';
+import { settingsUpdate } from '../../contract/settings.ts';
 export default enabledTool(
   'update_settings',
   defineTool({
