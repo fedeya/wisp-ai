@@ -30,7 +30,7 @@ export async function stageTauri({ packaged = false } = {}) {
     const executable = process.env.npm_execpath || 'pnpm';
     const args = [
       '--filter',
-      '@wisp/bridge',
+      '@wisp/server',
       '--prod',
       'deploy',
       '--legacy',
@@ -86,7 +86,7 @@ export async function stageTauri({ packaged = false } = {}) {
     ),
   );
   console.log(
-    'Deployed production bridge, agent and protocol without personal data or desktop build tools.',
+    'Staged the Wisp server and its dependencies without personal data or desktop build tools.',
   );
 }
 

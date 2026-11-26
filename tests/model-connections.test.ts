@@ -2,11 +2,11 @@ import { test, expect, vi, afterEach } from 'vitest';
 import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { ModelConnections } from '@wisp/bridge/model-connections';
+import { ModelConnections } from '@wisp/server/model-connections';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { providerDefinitions, connectionModelSlug } from '@wisp/protocol/providers';
 import { desktopRoutes } from '@wisp/protocol/desktop-routes';
-import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
+import type { ChatGPTAuth } from '@wisp/server/chatgpt-auth';
 
 const directories: string[] = [];
 afterEach(async () => {

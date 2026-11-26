@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { addonVersionFromToc } from '../../apps/bridge/src/addon/addon-version.ts';
+import { addonVersionFromToc } from '../../apps/server/src/wow-bridge/addon-version.ts';
 import { addonReleaseVersion, stampAddonReleaseVersion } from '../addon-release-version.ts';
 
 test('release patch counts addon and helper changes from the current base version', async () => {
@@ -105,7 +105,7 @@ test('the packaged addon version is inherited by the installed addon and helpers
         path.join(payload, 'package.json'),
         JSON.stringify({ version: desktopVersion }),
       );
-      const args = ['apps/bridge/scripts/install.ts', wow];
+      const args = ['apps/server/scripts/install.ts', wow];
       if (managedByDesktop) args.push('--skip-config');
       await promisify(execFile)(process.execPath, args, {
         cwd: process.cwd(),

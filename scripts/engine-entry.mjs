@@ -38,7 +38,7 @@ if (mode === '--version') {
   await import('./npm/bin/npx-cli.js');
 } else {
   const commands = {
-    'src/main.ts': './bridge.mjs',
+    'src/main.ts': './server.mjs',
     'scripts/install.ts': './install.mjs',
     'scripts/migrate-desktop.ts': './migrate-desktop.mjs',
   };

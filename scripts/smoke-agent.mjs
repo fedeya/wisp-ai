@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { Effect } from 'effect';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const root = process.env.WISP_RESOURCE_ROOT || repository;
-const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/bridge');
+const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/server');
 const require = createRequire(path.join(bridge, 'package.json'));
 const dir =
   process.env.WISP_SMOKE_DIR || path.resolve(repository, '../../work', 'agent-smoke-' + Date.now());

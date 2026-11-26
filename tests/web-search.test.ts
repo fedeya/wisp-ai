@@ -2,8 +2,8 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { WebSearch } from '@wisp/bridge/web-search';
-import type { ChatGPTAuth } from '@wisp/bridge/chatgpt-auth';
+import { WebSearch } from '@wisp/server/web-search';
+import type { ChatGPTAuth } from '@wisp/server/chatgpt-auth';
 import { connectionModel } from '@wisp/agent/connection-model';
 
 const apiModel = 'connection:35302f8c-128a-48fb-98a1-9eb03bb71f72:claude-test';

@@ -13,7 +13,7 @@ Wisp reads character state on demand and can inspect references, compare item st
 | [Everloot](https://everloot.app/docs/mcp/clients) | Read-only Forever references, recipes, locations, talent plans and market estimates/history. No API key, uploader or extra addon required.                    |
 | Wowhead search                                    | Forever-only fallback via ChatGPT or Exa, independently of the model. Public Exa needs no key and has free rate limits; an optional key uses account credits. |
 
-Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/bridge/src/integrations/thewowdb.ts), [Everloot’s allowlist](../apps/agent/src/integrations/everloot.ts), [Wowhead search](../apps/bridge/src/integrations/search/wowhead-search.ts) and the agent instructions.
+Source links, build, age and coverage matter; see [how to interpret answers](usage.md#reading-the-answers) and [what leaves your computer](usage.md#what-leaves-your-computer). For filtering and integration contracts, consult [TheWoWDB](../apps/server/src/integrations/thewowdb.ts), [Everloot’s allowlist](../apps/agent/src/integrations/everloot.ts), [Wowhead search](../apps/server/src/integrations/search/wowhead-search.ts) and the agent instructions.
 
 ## Custom MCP connections
 
@@ -67,4 +67,4 @@ Example equipment comparison (the agent resolves learned spell and candidate ite
 }
 ```
 
-Build prerequisites are in [development](development.md#build-and-run-on-windows); packaged Windows apps include the binary, so players do not need Go/protoc. See the [pinned manifest](../simulator/manifest.json), [adapter](../apps/bridge/src/integrations/simulation/simulator.ts), [attribution](../NOTICE) and [MIT license](../simulator/LICENSE-WoWSims.txt).
+Build prerequisites are in [development](development.md#build-and-run-on-windows); packaged Windows apps include the binary, so players do not need Go/protoc. See the [pinned manifest](../simulator/manifest.json), [adapter](../apps/server/src/integrations/simulation/simulator.ts), [attribution](../NOTICE) and [MIT license](../simulator/LICENSE-WoWSims.txt).

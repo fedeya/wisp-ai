@@ -12,7 +12,7 @@ code, and the channel decides at runtime whether it runs.
 The bridge is the only place flags are evaluated, through
 [OpenFeature](https://openfeature.dev) (`@openfeature/web-sdk`, the static-context
 SDK, because the bridge serves a single player and reads values synchronously).
-Its provider, `ChannelFeatureProvider` in `apps/bridge/src/features.ts`, decides
+Its provider, `ChannelFeatureProvider` in `apps/server/src/features.ts`, decides
 each flag in this order:
 
 1. The player's override, saved as `features` in the bridge config and changed

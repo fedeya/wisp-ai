@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$entryPath = Join-Path $projectRoot 'apps\bridge\src\main.ts'
+$entryPath = Join-Path $projectRoot 'apps\server\src\main.ts'
 $runtimePath = Join-Path $projectRoot 'runtime'
 New-Item -ItemType Directory -Path $runtimePath -Force | Out-Null
 $pidPath = Join-Path $runtimePath 'bridge.pid'
