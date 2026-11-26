@@ -43,9 +43,12 @@ excluded explicitly; installs do not need `--ignore-scripts`. The web deploy use
 
 `pnpm typecheck` (also used by CI) runs the Effect build of native TypeScript 7
 for the root and non-web workspaces. The shared [`tsconfig.base.json`](../tsconfig.base.json)
-enables Effect diagnostics: errors fail the check, warnings appear in the CLI
-without failing it, and suggestions stay in the editor. The website still generates
-route types with `next typegen` and checks them with its own TypeScript 5.9.
+enables Effect diagnostics: errors fail the check, while warnings and suggestions
+are advisory. The shared config enables `exactOptionalPropertyTypes` to distinguish
+omitted properties from properties explicitly set to `undefined`. Agent, server,
+WoW bridge, and integration tests opt out until their existing optional types are
+migrated; desktop and web have separate configs. The website still generates route
+types with `next typegen` and checks them with its own TypeScript 5.9.
 Package builds also keep their existing TypeScript 5.9 emit; the package-boundary
 test uses that version's JavaScript compiler API.
 
