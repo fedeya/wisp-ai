@@ -6,6 +6,10 @@ local function activityTime()
     end
     return latest
 end
+-- A picker-created conversation temporarily owns the New chat draft, until
+-- it is sent, explicitly deleted, or returned by automatic empty-chat cleanup.
+local NEW_DRAFT = "__new" -- The draft with no conversation yet.
+local newDraftChat
 local function discardEmptyDraft()
     local chat = ns.Chat.Current()
     if
@@ -18,11 +22,12 @@ local function discardEmptyDraft()
         and not chat.inline
         and not chat.proactive
     then
+        if chat.id == newDraftChat then
+            ns.db.drafts[NEW_DRAFT] = ns.db.drafts[chat.id] or ""
+        end
         ns.Chat.DeleteChat(chat.id)
     end
 end
--- The draft typed into a conversation that does not exist yet (New chat).
-local NEW_DRAFT = "__new"
 local function saveDraft()
     if ns.draft then
         ns.db.drafts[ns.active or NEW_DRAFT] = ns.draft:GetText()
@@ -50,7 +55,9 @@ function ns.Chat.StartNew()
     end
 end
 
-function ns.Chat.NewChat()
+-- Submit owns draft consumption itself; picker-created chats take ownership now.
+function ns.Chat.NewChat(preserveNewDraft)
+    local ownsNewDraft = not preserveNewDraft and not ns.active
     discardEmptyDraft()
     ns.composingNew = false
     ns.chatCounter = (ns.chatCounter or 0) + 1
@@ -69,6 +76,11 @@ function ns.Chat.NewChat()
         lastActivityAt = activityTime(),
     }
     ns.pendingChats[ns.active] = ns.chats[#ns.chats]
+    if ownsNewDraft then
+        newDraftChat = ns.active
+        ns.db.drafts[ns.active] = ns.draft and ns.draft:GetText() or ns.db.drafts[NEW_DRAFT]
+        ns.db.drafts[NEW_DRAFT] = nil
+    end
     ns.Transport.Send({ type = "new", chat = ns.active })
     if ns.UI.Refresh then
         ns.UI.Refresh()
@@ -111,6 +123,9 @@ function ns.Chat.Select(id)
     ns.UI.Refresh()
 end
 function ns.Chat.DeleteChat(id)
+    if newDraftChat == id then
+        newDraftChat = nil
+    end
     ns.workStarted[id] = nil
     ns.deletedChats[id] = true
     ns.pendingChats[id] = nil
@@ -151,7 +166,7 @@ function ns.Chat.Submit(prompt)
     -- A New chat becomes a conversation only now, with its first message.
     local startsConversation = not ns.active or ns.active == ""
     if startsConversation then
-        ns.Chat.NewChat()
+        ns.Chat.NewChat(true)
     end
     chat = ns.Chat.Current()
     if not chat then
@@ -181,6 +196,9 @@ function ns.Chat.Submit(prompt)
         chat.lastActivityAt = activityTime()
     end
     if prompt == nil then
+        if newDraftChat == ns.active then
+            newDraftChat = nil
+        end
         ns.draft:SetText("")
         ns.db.drafts[ns.active] = ""
         if startsConversation then
