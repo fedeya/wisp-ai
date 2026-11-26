@@ -42,7 +42,7 @@ interface DesktopDependencies {
   openRoutine: (id: string) => void;
   readSimulationCharacter: () => Promise<unknown>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
-  setWowTransport: (input: z.infer<typeof wowTransportInput>) => Promise<void>;
+  setWowTransport: (input: z.infer<typeof wowTransportInput>) => Effect.Effect<void, unknown>;
   setAppUpdate: (version: string | null) => void;
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
   refreshMcpCatalog: () => void;
@@ -216,7 +216,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       return c.json(ok);
     })
     .post('/addon/transport', json(wowTransportInput), async (c) => {
-      await deps.setWowTransport(c.req.valid('json'));
+      await runPromise(deps.setWowTransport(c.req.valid('json')));
       return c.json(ok);
     })
     .post('/stop', (c) => {

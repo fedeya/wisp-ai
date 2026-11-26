@@ -12,10 +12,10 @@
       "types": "./dist/wow-bridge.d.ts",
       "default": "./dist/wow-bridge.js"
     },
-    "./*": {
-      "types": "./dist/*.d.ts",
-      "default": "./dist/*.js"
-    }
+    "./downlink": "./dist/wire/downlink.js",
+    "./mailbox": "./dist/wire/mailbox.js",
+    "./protocol": "./dist/wire/protocol.js",
+    "./snapshots": "./dist/delivery.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -24,10 +24,10 @@
   },
   "dependencies": {
     "@wisp/protocol": "workspace:*",
-    "effect": "4.1.3",
-    "zod": "4.6.7"
+    "effect": "4.1.3"
   },
   "devDependencies": {
+    "@effect/platform-node": "4.1.3",
     "@types/node": "26.6.6",
     "typescript": "5.9.3",
     "vitest": "5.1.0"

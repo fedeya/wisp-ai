@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { Deferred, Effect } from 'effect';
+import { Clock, Deferred, Effect } from 'effect';
+import { SecureRandom } from 'effect/crypto';
 
 export interface GameRequest {
   chat: string;
@@ -23,15 +23,8 @@ const AGENT_TIMEOUT_MESSAGE =
 const UNRESPONSIVE_MESSAGE =
   'WoW did not respond to the previous game request, so this one was not sent. Do not call game tools again in this turn: answer with what you already know, and tell the player to type /reload in WoW if Wisp keeps not responding.';
 
-export interface GameTimeout {
-  kind: 'state' | 'inspection' | 'action';
-  /** True when the addon sent nothing at all while the request waited. */
-  addonSilent: boolean;
-  waitedMs: number;
-}
 export interface GameRequestOptions {
   now?: () => number;
-  onTimeout?: (timeout: GameTimeout) => void;
 }
 
 export class GameRequests {
@@ -39,24 +32,42 @@ export class GameRequests {
   private recoveryIds = new Map<string, string>();
   private changed: () => void;
   private now: () => number;
-  private onTimeout: (timeout: GameTimeout) => void;
+  private readonly nextId: Effect.Effect<string>;
   private lastHeardAt = 0;
   private unresponsiveSince?: number;
   private closed = false;
   /** IDs of recently timed-out requests, kept only to recognize a late answer. */
   private timedOut = new Map<string, { session: string; chat: string }>();
-  constructor(changed: () => void, options: GameRequestOptions = {}) {
+  private constructor(
+    changed: () => void,
+    options: GameRequestOptions,
+    clock: Clock.Clock,
+    nextId: Effect.Effect<string>,
+  ) {
     this.changed = changed;
-    this.now = options.now ?? Date.now;
-    this.onTimeout = options.onTimeout ?? (() => {});
+    this.now = options.now ?? (() => clock.currentTimeMillisUnsafe());
+    this.nextId = nextId;
   }
+
+  static readonly make = Effect.fnUntraced(function* (
+    changed: () => void,
+    options: GameRequestOptions = {},
+  ) {
+    const clock = yield* Clock.Clock;
+    const random = yield* SecureRandom.SecureRandom;
+    return new GameRequests(changed, options, clock, random.uuidV4());
+  }, Effect.provide(SecureRandom.layerWebCrypto));
 
   /** Records any packet from the active game window, to tell a silent addon from a busy one. */
   heard() {
     this.lastHeardAt = this.now();
   }
 
-  request(input: GameRequest, timeout = 30_000): Effect.Effect<unknown, Error> {
+  request(
+    input: GameRequest,
+    timeout = 30_000,
+    isActive = () => true,
+  ): Effect.Effect<unknown, Error> {
     return Effect.gen({ self: this }, function* () {
       if (this.closed) {
         return yield* Effect.fail(new Error('Bridge stopped'));
@@ -71,7 +82,7 @@ export class GameRequests {
       }
       const startedAt = this.now();
       const reply = yield* Deferred.make<unknown, Error>();
-      let id = randomUUID();
+      let id = yield* this.nextId;
       const previousIds: string[] = [];
 
       const remove = () => {
@@ -90,21 +101,31 @@ export class GameRequests {
         },
       };
       yield* Effect.acquireRelease(
-        Effect.sync(() => {
+        Effect.suspend(() => {
+          if (this.closed) return Effect.fail(new Error('Bridge stopped'));
+          if (!isActive()) return Effect.fail(new Error('No active connection for this character'));
           this.pending.set(id, request);
+          return Effect.void;
         }),
         () => Effect.sync(remove),
       );
       this.changed();
 
       // Recover only reads. The addon deduplicates by ID, so each retry needs a new one.
-      if (!input.action && (input.sections || input.inspection)) {
+      const kind =
+        input.action !== undefined
+          ? 'action'
+          : input.inspection !== undefined
+            ? 'inspection'
+            : 'state';
+      if (kind === 'inspection' || (kind === 'state' && input.sections)) {
         const retry = Effect.sleep(timeout / 3).pipe(
           Effect.andThen(
-            Effect.sync(() => {
+            Effect.gen({ self: this }, function* () {
+              const nextId = yield* this.nextId;
               if (!this.pending.delete(id)) return;
               previousIds.push(id);
-              id = randomUUID();
+              id = nextId;
               for (const previous of previousIds) {
                 this.recoveryIds.set(previous, id);
               }
@@ -116,15 +137,15 @@ export class GameRequests {
         yield* Effect.andThen(retry, retry).pipe(Effect.forkScoped({ startImmediately: true }));
       }
 
-      const expire = Effect.sync(() => {
+      const expire = Effect.gen({ self: this }, function* () {
         if (!this.pending.has(id)) return;
         const timedOutAt = this.now();
         this.unresponsiveSince = timedOutAt;
-        this.onTimeout({
-          kind: input.action ? 'action' : input.inspection ? 'inspection' : 'state',
+        const timeoutDetails = {
+          kind,
           addonSilent: this.lastHeardAt <= startedAt,
           waitedMs: timedOutAt - startedAt,
-        });
+        };
         // Remember every ID this request used, so a late answer proves WoW recovered.
         for (const timedOutId of [id, ...previousIds]) {
           this.timedOut.set(timedOutId, { session: input.session, chat: input.chat });
@@ -136,7 +157,10 @@ export class GameRequests {
         request.finish(
           Effect.fail(new Error(input.agent ? AGENT_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE)),
         );
-      });
+        yield* Effect.logWarning('WoW did not answer a request').pipe(
+          Effect.annotateLogs({ event: 'game.request_timeout', ...timeoutDetails }),
+        );
+      }).pipe(Effect.uninterruptible);
       yield* Effect.sleep(timeout).pipe(
         Effect.andThen(expire),
         Effect.forkScoped({ startImmediately: true }),
@@ -163,6 +187,8 @@ export class GameRequests {
   cancelAll(reason: string) {
     // A new window or reconnection starts with a fresh channel.
     this.unresponsiveSince = undefined;
+    this.lastHeardAt = 0;
+    this.timedOut.clear();
     for (const request of this.pending.values()) {
       request.finish(Effect.fail(new Error(reason)));
     }
