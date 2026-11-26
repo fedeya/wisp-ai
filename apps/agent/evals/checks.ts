@@ -159,3 +159,20 @@ export const commonScorers = (): Check[] => [
     (turn) => gluedFormatting(turn.reply).length === 0,
   ),
 ];
+
+/**
+ * What the player reads: the reply, then each text of its present_ui panels on
+ * its own line, so sentence checks such as recommendedByName work on panels.
+ */
+export function visibleText(turn: TurnView): string {
+  const texts: string[] = [turn.reply];
+  const collect = (value: unknown): void => {
+    if (typeof value === 'string') texts.push(value);
+    else if (Array.isArray(value)) value.forEach(collect);
+    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+  };
+  for (const call of turn.toolCalls) {
+    if (call.name === 'wisp__present_ui') collect(call.input);
+  }
+  return texts.join('\n');
+}

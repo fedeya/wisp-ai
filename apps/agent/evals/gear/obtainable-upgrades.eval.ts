@@ -1,5 +1,5 @@
 import { defineEval } from '../harness.ts';
-import { expects, presentedItemIds, recommendedByName, replied } from '../checks.ts';
+import { expects, presentedItemIds, recommendedByName, replied, visibleText } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 
 // Crafted-only candidates in the fixture (Tailoring or Enchanting recipes),
@@ -23,13 +23,13 @@ export default defineEval({
     ),
     expects(
       'recommends no crafted-only item by name',
-      (turn) => recommendedByName(turn.reply, CRAFTED_NAMES).length === 0,
+      (turn) => recommendedByName(visibleText(turn), CRAFTED_NAMES).length === 0,
     ),
     expects(
       'recommends gear from a quest, vendor or drop',
       (turn) =>
         /Seal of the Forsaken|Blessed Apprentice Boots|Woven Silk Shoulders|Fine Cloth Bracers|Spectral Light Pendant/i.test(
-          turn.reply,
+          visibleText(turn),
         ) || presentedItemIds(turn).some((id) => [15700, 3065, 14112, 3647, 12047].includes(id)),
     ),
   ],

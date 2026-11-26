@@ -5,7 +5,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '../src/host/agent-host.ts';
 import { defineEval, matches, runEval, type MatchRule } from '../evals/harness.ts';
-import { calledTool, expects, maxToolCalls, notCalledTool, replied } from '../evals/checks.ts';
+import {
+  calledTool,
+  expects,
+  maxToolCalls,
+  notCalledTool,
+  recommendedByName,
+  replied,
+  visibleText,
+} from '../evals/checks.ts';
 
 afterEach(() => setAgentHost(undefined));
 
@@ -161,4 +169,27 @@ test('stubs match inputs by value, pattern and array element', () => {
   const pvp = stub({ sections: { contains: { const: 'pvp' } } });
   expect(matches(pvp, 't', { sections: ['character', 'pvp'] })).toBe(true);
   expect(matches(pvp, 't', { sections: ['gear'] })).toBe(false);
+});
+
+test('name checks read panel text line by line, after the reply', () => {
+  const turn = {
+    reply: 'Buy Blessed Apprentice Boots from the vendor.',
+    presented: '',
+    toolCalls: [
+      {
+        name: 'wisp__present_ui',
+        input: {
+          blocks: [
+            { type: 'text', text: 'Buy Azure Silk Hood' },
+            { text: "Skip Spidersilk Boots, you can't get them" },
+          ],
+        },
+      },
+    ],
+  };
+  const text = visibleText(turn);
+  expect(text.startsWith(turn.reply)).toBe(true);
+  expect(recommendedByName(text, /Azure Silk Hood|Spidersilk Boots/i)).toEqual([
+    'Buy Azure Silk Hood',
+  ]);
 });
