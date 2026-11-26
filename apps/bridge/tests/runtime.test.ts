@@ -337,6 +337,8 @@ test('a late startup failure closes the agent and already-started runtime resour
     await expect(startBridge({ ...f.options, desktopPort: -1 })).rejects.toMatchObject({
       code: 'ERR_SOCKET_BAD_PORT',
     });
+    const { origin } = agentHost()!;
+    await expect(fetch(origin)).rejects.toThrow();
   } finally {
     await rm(f.dataDirectory, { recursive: true, force: true });
   }
