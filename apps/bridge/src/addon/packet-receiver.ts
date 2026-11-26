@@ -1,5 +1,4 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
-import type { Client } from 'eve/client';
 import type { Packet } from '@wisp/protocol/protocol';
 import { selectionValues } from '@wisp/protocol/ui-schema';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
@@ -25,16 +24,16 @@ import {
   type CharacterProfile,
 } from '../chat/context.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
-import { parseConnectionModel } from '@wisp/protocol/providers';
 import { resumeChat, isEmptyDraft } from '../chat/sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
+import { endSession, type AgentEngine } from '../agent/agent-session.ts';
 import type { Logger } from 'pino';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
-  client: Pick<Client, 'sessions'>;
+  engine: Pick<AgentEngine, 'end'>;
   pending: GameRequests;
   integrationState: IntegrationState;
   capabilitySettings: CapabilitySettings;
@@ -48,6 +47,8 @@ interface ReceiverDependencies {
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   interrupt: (chat: Chat) => void;
+  /** Stops a turn the player cancelled. */
+  cancel?: (chat: Chat) => void;
   runtime: string;
   changed: () => void;
   flushAcknowledgment?: () => void;
@@ -59,7 +60,7 @@ interface ReceiverDependencies {
 export function createPacketReceiver(deps: ReceiverDependencies) {
   const {
     state,
-    client,
+    engine,
     pending,
     integrationState,
     capabilitySettings,
@@ -120,17 +121,6 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       )) {
         interrupt(chat);
         settleTurn(chat, 'interrupted');
-        if (chat.eveId) {
-          void client.sessions
-            .attach(chat.eveId)
-            .cancel()
-            .catch((error) =>
-              logger.warn(
-                { event: 'session.cancel_failed', error: errorMessage(error) },
-                'Session cancellation failed',
-              ),
-            );
-        }
       }
       state.activeTransport = packet.session;
       state.currentCharacterKey = undefined;
@@ -229,26 +219,8 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             throw Error('Wait for this reply before changing model settings.');
           }
           const selected = chooseChatModel(available, input.model, input.effort);
-          if (
-            chat.eveId &&
-            chat.modelSettings?.model !== selected.model &&
-            (parseConnectionModel(chat.modelSettings?.model || '') ||
-              parseConnectionModel(selected.model))
-          ) {
-            // Start clean provider-native history while retaining the visible
-            // conversation. Reasoning signatures/response IDs are not portable.
-            const previous = chat.eveId;
-            chat.eveId = undefined;
-            void client.sessions
-              .attach(previous)
-              .end({ reason: 'AI model or connection changed' })
-              .catch((error) =>
-                logger.warn(
-                  { event: 'session.cleanup_failed', error: errorMessage(error) },
-                  'Session cleanup failed',
-                ),
-              );
-          }
+          // The chat keeps its agent session: the agent replays each message's
+          // provider-native data only to the model that wrote it.
           chat.modelSettings = selected;
           chat.modelError = undefined;
           state.modelCatalog = available;
@@ -597,12 +569,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       state.deletedChatIds.add(packet.chat);
       state.chats = state.chats.filter((c) => c.id !== packet.chat);
       pending.cancelChat(packet.chat);
-      if (removed?.eveId) {
-        void client.sessions
-          .attach(removed.eveId)
-          .end({ reason: 'Conversation deleted by user' })
-          .catch(() => {});
-      }
+      endSession(engine, removed?.agentSession);
       state.activeChat = resumeChat(state.chats, packet.nextChat)?.id || '';
       changed();
       return;
@@ -648,20 +615,14 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         }
       }
     }
-    if (packet.type === 'state_result' && packet.requestId) {
-      pending.receive(packet.requestId, packet.session, packet.chat, packet.data);
-    }
     if (packet.type === 'cancel') {
       const chat = chatFor(packet.chat);
       if (chat) {
-        interrupt(chat);
+        (deps.cancel ?? interrupt)(chat);
       }
-      if (chat?.eveId) {
-        void client.sessions
-          .attach(chat.eveId)
-          .cancel()
-          .catch(() => {});
-      }
+    }
+    if (packet.type === 'state_result' && packet.requestId) {
+      pending.receive(packet.requestId, packet.session, packet.chat, packet.data);
     }
     if (packet.type !== 'poll') {
       changed();

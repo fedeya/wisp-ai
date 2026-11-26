@@ -29,7 +29,7 @@ export function httpFailureKind(status: number): ModelFailureKind {
   return 'http_other';
 }
 
-/** Undefined when the request was abandoned by Eve rather than failed. */
+/** Undefined when the request was abandoned by the agent rather than failed. */
 export function thrownFailureKind(
   error: unknown,
   signal?: AbortSignal,
@@ -44,7 +44,7 @@ export function thrownFailureKind(
   return 'wisp_rejected';
 }
 
-/** The Eve session a proxied model request belongs to, when the agent named it. */
+/** The agent session a proxied model request belongs to, when the agent named it. */
 export function requestSession(headers: IncomingHttpHeaders) {
   const value = headers[MODEL_SESSION_HEADER];
   return typeof value === 'string' && /^[\w-]{1,128}$/.test(value) ? value : undefined;
@@ -53,7 +53,7 @@ export function requestSession(headers: IncomingHttpHeaders) {
 const keptSessions = 256;
 
 /**
- * The latest model failure of each Eve session. A chat runs one turn at a time on
+ * The latest model failure of each agent session. A chat runs one turn at a time on
  * its own session, so a failure seen since the turn started is that turn's.
  */
 export class ModelFailures {

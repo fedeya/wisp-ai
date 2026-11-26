@@ -1,10 +1,12 @@
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
 process.env.WISP_ENGINE_EXECUTABLE = process.execPath;
 process.env.WISP_RESOURCE_ROOT ||= path.dirname(process.execPath);
+// The agent's instructions and skills are assets next to this entry point.
+process.env.WISP_AGENT_CONTENT = fileURLToPath(new URL('./agent/', import.meta.url));
 const mode = process.argv[2] || 'src/main.ts';
 if (mode === '--version') {
   console.log(`Wisp engine (Node ${process.versions.node})`);
@@ -17,18 +19,20 @@ if (mode === '--version') {
     throw Error('SQLite is unavailable in the packaged engine.');
   }
   db.close();
-  const metadata = JSON.parse(
-    readFileSync(fileURLToPath(new URL('./eve/package.json', import.meta.url)), 'utf8'),
-  );
+  const content = process.env.WISP_AGENT_CONTENT;
+  const skills = readdirSync(path.join(content, 'skills'));
+  if (!existsSync(path.join(content, 'instructions.md')) || !skills.length) {
+    throw Error('The agent instructions or skills are missing from the packaged engine.');
+  }
   console.log(
-    JSON.stringify({ engine: true, sqlite: true, node: process.versions.node, eve: metadata.name }),
+    JSON.stringify({
+      engine: true,
+      sqlite: true,
+      node: process.versions.node,
+      agent: true,
+      skills: skills.length,
+    }),
   );
-} else if (mode === '--eve') {
-  process.env.NITRO_HOST = '127.0.0.1';
-  process.env.NITRO_PORT = process.argv[3] || '43186';
-  process.env.WORKFLOW_LOCAL_BASE_URL = `http://127.0.0.1:${process.env.NITRO_PORT}`;
-  delete process.env.EVE_DEV;
-  await import('./eve/index.mjs');
 } else if (mode === '--npx') {
   process.argv.splice(1, 2, fileURLToPath(new URL('./npm/bin/npx-cli.js', import.meta.url)));
   process.execPath = path.join(process.env.WISP_RESOURCE_ROOT, 'runtime/node.exe');

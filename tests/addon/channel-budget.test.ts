@@ -49,10 +49,15 @@ function transportHarness() {
   return run;
 }
 
-test('idle clients consume no channels, duplicate replies back off, and user actions wake reads', () => {
-  const run = transportHarness();
-  run(
-    `
+// A long synchronous Fengari simulation: about 2 s alone, several times that on a
+// loaded CI runner while other suites run in parallel.
+test(
+  'idle clients consume no channels, duplicate replies back off, and user actions wake reads',
+  { timeout: 20_000 },
+  () => {
+    const run = transportHarness();
+    run(
+      `
 ns.Transport.Send({ type = "hello" })
 timers[.04]()
 publishRevision(1)
@@ -71,9 +76,9 @@ assert(
     "an hour of idle heartbeats must consume zero additional bulk channels"
 )
 `,
-  );
-  run(
-    `
+    );
+    run(
+      `
 ns.chats[1].status = "working"
 local before = loads
 for index = 1, 240 do
@@ -89,8 +94,9 @@ now=now+.1
 timers[0.5]()
 assert(loads == before + 1 and ns.rev == 2, "new actions must bypass the backoff immediately")
 `,
-  );
-});
+    );
+  },
+);
 
 test('startup keeps reading after hello is acknowledged while the agent is still starting', () => {
   const run = transportHarness();

@@ -27,7 +27,7 @@ test('thrown proxy errors are classified without reading their messages', () => 
   expect(thrownFailureKind(new TypeError('fetch failed'))).toBe('network');
   expect(thrownFailureKind(new ChatGPTAuthError('Private account'))).toBe('auth');
   expect(thrownFailureKind(new Error('Choose a configured model.'))).toBe('wisp_rejected');
-  // Eve abandoning a request is not a failure.
+  // The agent abandoning a request is not a failure.
   expect(thrownFailureKind(new DOMException('Private', 'AbortError'))).toBeUndefined();
   expect(thrownFailureKind(new TypeError('x'), AbortSignal.abort())).toBeUndefined();
 });

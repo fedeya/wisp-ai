@@ -1,5 +1,4 @@
 import { test, expect, vi } from 'vitest';
-import type { Client } from 'eve/client';
 import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
@@ -16,7 +15,7 @@ import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
   const database = new ApplicationDatabase('unused');
-  const chat = { ...newChat('old', 'one'), eveId: 'eve', status: 'working' as const };
+  const chat = { ...newChat('old', 'one'), agentSession: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
   state.activeTransport = 'one';
   state.currentCharacterKey = 'old-character';
@@ -24,8 +23,8 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   state.panelCommand = { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' };
   const pending = new GameRequests(() => {});
   const capabilitySettings = new CapabilitySettings('unused');
-  const cancel = vi.fn(async () => {});
-  const end = vi.fn(async () => {});
+  const cancel = vi.fn();
+  const end = vi.fn(async (_session: string) => {});
   const interrupt = vi.fn();
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
@@ -35,10 +34,8 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
     pending,
     capabilitySettings,
     integrationState: new IntegrationState(capabilitySettings),
-    client: { sessions: { attach: () => ({ cancel, end }) } } as unknown as Pick<
-      Client,
-      'sessions'
-    >,
+    engine: { end },
+    cancel,
     models: { models },
     routineStore: new RoutineStore(database),
     panelStore: new PanelStore(database),
@@ -68,18 +65,15 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     releasePreparation = resolve;
   });
   const prepare = vi.fn(() => preparation);
-  const send = vi.fn(async () => ({
-    stream: async function* () {},
-    result: async () => ({ status: 'completed', sessionEnded: false }),
+  const send = vi.fn(() => ({
+    events: (async function* () {})(),
+    result: Promise.resolve({ status: 'completed' as const }),
   }));
-  const session = { id: 'eve', send, cancel: vi.fn(async () => {}) };
-  const create = vi.fn(async () => ({ session }));
-  const client = {
-    sessions: { create, attach: vi.fn(() => session) },
-  } as unknown as Pick<Client, 'sessions'>;
+  const newSessionId = vi.fn(() => 'session');
+  const engine = { newSessionId, send, end: vi.fn(async () => {}) };
   const capabilitySettings = new CapabilitySettings('unused');
   const run = createTurnRunner({
-    client,
+    engine,
     models: {
       prepare,
       models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
@@ -96,7 +90,14 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     changed: () => {},
     logger: { info: vi.fn(), error: vi.fn() },
   });
-  const { receive } = fixture({ state, client, capabilitySettings, run, interrupt: run.interrupt });
+  const { receive } = fixture({
+    state,
+    engine,
+    capabilitySettings,
+    run,
+    interrupt: run.interrupt,
+    cancel: run.cancel,
+  });
   try {
     receive(
       packetSchema.parse({
@@ -110,8 +111,8 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     );
     await vi.waitFor(() => expect(prepare).toHaveBeenCalledWith('model'));
     expect(chat.status).toBe('working');
-    expect(chat.eveId).toBeUndefined();
-    expect(create).not.toHaveBeenCalled();
+    expect(chat.agentSession).toBeUndefined();
+    expect(newSessionId).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
     receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
   } finally {
@@ -119,15 +120,16 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     await run.drain();
   }
   expect(send).not.toHaveBeenCalled();
-  expect(create).not.toHaveBeenCalled();
-  expect(chat.status).toBe('interrupted');
+  expect(newSessionId).not.toHaveBeenCalled();
+  expect(chat.status).toBe('cancelled');
 });
 
-test('Stop interrupts locally and still cancels an existing Eve session', () => {
+test('Stop cancels the turn in the bridge and keeps its session', () => {
   const f = fixture();
   f.receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: 'old', seq: 1, at: 1 }));
-  expect(f.interrupt).toHaveBeenCalledExactlyOnceWith(f.state.chats[0]);
-  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(f.cancel).toHaveBeenCalledExactlyOnceWith(f.state.chats[0]);
+  expect(f.interrupt).not.toHaveBeenCalled();
+  expect(f.end).not.toHaveBeenCalled();
 });
 
 test('a stale-session cancel cannot interrupt or cancel the current chat', () => {
@@ -218,7 +220,7 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
   expect(context?.sections.quests).toBeUndefined();
 });
 
-test('changing native models resets provider history while preserving the visible chat', async () => {
+test("changing models keeps the chat's agent session and its visible conversation", async () => {
   const f = fixture();
   const chat = f.state.chats[0]!;
   chat.status = 'done';
@@ -241,9 +243,9 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(first));
-  expect(chat.eveId).toBeUndefined();
+  const session = chat.agentSession;
+  expect(session).toBeDefined();
   expect(chat.messages[0]?.text).toBe('Keep this conversation');
-  chat.eveId = 'native-session';
   f.receive(
     packetSchema.parse({
       type: 'chat_model_set',
@@ -256,8 +258,8 @@ test('changing native models resets provider history while preserving the visibl
     }),
   );
   await vi.waitFor(() => expect(chat.modelSettings?.model).toBe(second));
-  expect(chat.eveId).toBeUndefined();
-  expect(f.end).toHaveBeenCalledTimes(2);
+  expect(chat.agentSession).toBe(session);
+  expect(f.end).not.toHaveBeenCalled();
 });
 
 test('reload interrupts old turns, rejects outstanding reads and clears character-specific commands', async () => {
@@ -267,7 +269,7 @@ test('reload interrupts old turns, rejects outstanding reads and clears characte
   f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 1 }));
   await rejection;
   expect(f.state.chats[0].status).toBe('interrupted');
-  expect(f.cancel).toHaveBeenCalledTimes(1);
+  expect(f.cancel).not.toHaveBeenCalled();
   expect(f.interrupt).toHaveBeenCalledTimes(1);
   expect(f.state.currentCharacterKey).toBeUndefined();
   expect(f.state.panelCommand).toBeUndefined();

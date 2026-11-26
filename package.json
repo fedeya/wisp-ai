@@ -10,7 +10,6 @@
     "web:dev": "turbo run dev --filter=@wisp/web",
     "web:build": "turbo run build --filter=@wisp/web",
     "start": "turbo run start --filter=@wisp/bridge",
-    "agent": "turbo run dev --filter=@wisp/agent",
     "install-addon": "node apps/bridge/scripts/install.ts",
     "data:generate": "pnpm --filter @wisp/game-data generate",
     "data:check": "pnpm --filter @wisp/game-data check",

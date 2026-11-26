@@ -6,6 +6,7 @@ import { MODEL_SESSION_HEADER, selectedModel } from '@wisp/protocol/agent-rpc';
 import type { z } from 'zod';
 import { subscriptionCallOptions, filterWebSearch } from './model-tools.ts';
 import { applyModelReasoning } from './reasoning.ts';
+import { withAnthropicCache } from './prompt-cache.ts';
 
 export function connectionModel(
   selected: z.infer<typeof selectedModel>,
@@ -63,6 +64,9 @@ export function connectionModel(
         params = applyModelReasoning(params, selected.provider!, selected.effort);
         if (selected.provider === 'openai') {
           params = withCacheKey(params, cacheKey);
+        }
+        if (selected.provider === 'anthropic' && cacheKey) {
+          params = { ...params, prompt: withAnthropicCache(params.prompt) };
         }
         if (selected.provider === 'openai' || selected.provider === 'xai') {
           const namespace = selected.provider;

@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Wisp AI
 ## IconTexture: Interface\AddOns\WispAI\Textures\Wisp.tga
-## Notes: Ask about WoW with your character, Eve and your ChatGPT plan.
+## Notes: Ask about WoW with your character and your ChatGPT plan or AI provider.
 ## Author: Personal project
 ## Version: 1.0.0
 ## SavedVariables: WispAIDB

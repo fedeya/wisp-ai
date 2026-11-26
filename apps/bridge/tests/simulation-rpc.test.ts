@@ -4,7 +4,7 @@ import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 test('simulation RPC skips game reads and transport freshness for hypothetical requests only', async () => {
-  const chat = { ...newChat('sim', 'old-addon'), status: 'working' as const, eveId: 'eve' };
+  const chat = { ...newChat('sim', 'old-addon'), status: 'working' as const, agentSession: 'eve' };
   const readSimulationCharacter = vi.fn(async () => ({ sections: {} }));
   const run = vi.fn(async () => ({ status: 'native', result: {} }));
   let enabled = true;
@@ -25,7 +25,7 @@ test('simulation RPC skips game reads and transport freshness for hypothetical r
     fetch(url, {
       method: 'POST',
       headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify({ eveSession: 'eve', ...(input as object) }),
+      body: JSON.stringify({ agentSession: 'eve', ...(input as object) }),
     });
   try {
     const nativeRequest = { raid: {}, padding: 'x'.repeat(33000) };

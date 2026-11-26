@@ -181,8 +181,9 @@ export async function migrateDesktop(
       });
       try {
         const chats = await store.load();
+        // Model histories start over; the visible conversations carry over.
         for (const chat of chats) {
-          delete chat.eveId;
+          delete chat.agentSession;
         }
         await store.flush(chats);
       } finally {

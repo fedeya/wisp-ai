@@ -1,41 +1,26 @@
-import { defineEval } from 'eve/evals';
-import { satisfies } from 'eve/evals/expect';
-import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
-import { saveTurn } from '../report.ts';
-
-const prompt = 'find upgrades for me';
+import { defineEval } from '../harness.ts';
+import { calledTool, expects, maxToolCalls, notCalledTool, replied } from '../checks.ts';
+import { fedrathStubs } from '../fixtures/fedrath.ts';
 
 export default defineEval({
   description: 'A level 21 mage asks for upgrades; the agent searches real candidates per slot.',
   tags: ['gear', 'tiers'],
-  async test(t) {
-    const session = await t.session({ stubs: fedrathStubs() });
-    const started = performance.now();
-    const turn = await session.send(playerMessage(prompt));
-    await saveTurn('find-upgrades', prompt, turn, performance.now() - started);
-    turn.expectOk();
-    t.calledTool('wow__search_armor');
-    t.notCalledTool('thewowdb__search_database').soft();
-    t.maxToolCalls(30).soft();
-    const reply = turn.reply ?? '';
+  question: 'find upgrades for me',
+  stubs: fedrathStubs(),
+  gates: [
+    replied(),
+    calledTool('wow__search_armor'),
     // Wisp names items through registered references, so check those too.
-    const presented = JSON.stringify(
-      turn.toolCalls.filter((call) => call.name === 'wisp__present_ui').map((call) => call.input),
-    );
-    t.check(
-      reply + presented,
-      satisfies(
-        (text: string) =>
-          /"id":(4320|4314|7048)|Spidersilk Boots|Shoulders|Azure Silk Hood/i.test(text),
-        'recommends searched candidates',
-      ),
-    );
-    t.check(
-      reply,
-      satisfies(
-        (text: string) => !/Explorer's Medallion/i.test(text) || /agility/i.test(text),
-        'does not push the agility neck to a mage',
-      ),
-    ).soft();
-  },
+    expects('recommends searched candidates', (turn) =>
+      /"id":(4320|4314|7048)|Spidersilk Boots|Shoulders|Azure Silk Hood/i.test(turn.presented),
+    ),
+  ],
+  scorers: [
+    notCalledTool('thewowdb__search_database'),
+    maxToolCalls(30),
+    expects(
+      'does not push the agility neck to a mage',
+      (turn) => !/Explorer's Medallion/i.test(turn.reply) || /agility/i.test(turn.reply),
+    ),
+  ],
 });

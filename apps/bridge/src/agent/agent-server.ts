@@ -76,7 +76,7 @@ interface AgentDependencies {
 type AgentContext = Context<{ Bindings: HttpBindings }>;
 // The agent shows these messages to the model, so they are passed through unsanitized.
 const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
-// Aborts the game, simulator or search work when Eve hangs up before the reply is written.
+// Aborts the game, simulator or search work when the agent hangs up before the reply is written.
 function abortOnHangUp(c: AgentContext) {
   const abort = new AbortController();
   const { outgoing } = c.env;
@@ -194,7 +194,7 @@ export function createAgentApp(deps: AgentDependencies) {
   app.get('/session-model', async (c) => {
     try {
       const id = c.req.query('session');
-      const chat = getChats().find((chat) => chat.eveId === id && chat.status === 'working');
+      const chat = getChats().find((chat) => chat.agentSession === id && chat.status === 'working');
       if (!chat?.modelSettings) {
         throw Error('No model selected for this turn.');
       }
@@ -212,7 +212,7 @@ export function createAgentApp(deps: AgentDependencies) {
     }
   });
 
-  // Tool calls from Eve: each names the Eve session of a working chat on the live connection.
+  // Tool calls from the agent: each names the agent session of a working chat on the live connection.
   interface ToolCall {
     raw: unknown;
     chat: Chat;
@@ -233,12 +233,14 @@ export function createAgentApp(deps: AgentDependencies) {
       async (c) => {
         try {
           const raw: unknown = JSON.parse(await c.req.text());
-          const { eveSession } = z.object({ eveSession: z.string().min(1) }).parse(raw);
+          const { agentSession } = z.object({ agentSession: z.string().min(1) }).parse(raw);
           const operation = operationShape.parse(raw);
-          const chat = getChats().find((c) => c.eveId === eveSession && c.status === 'working');
+          const chat = getChats().find(
+            (c) => c.agentSession === agentSession && c.status === 'working',
+          );
           let detachedSimulation = false;
           if (route === '/simulate') {
-            const { eveSession: _session, ...args } = rpcRequests.simulate.parse(raw);
+            const { agentSession: _session, ...args } = rpcRequests.simulate.parse(raw);
             detachedSimulation = !simulationNeedsLiveState(args);
           }
           if (
@@ -285,7 +287,7 @@ export function createAgentApp(deps: AgentDependencies) {
       if (chat.proactive || !capabilitySettings.enabled('tool:simulate_dps')) {
         throw Error('DPS simulation is disabled or not allowed for automatic suggestions.');
       }
-      const { eveSession: _session, ...args } = data;
+      const { agentSession: _session, ...args } = data;
       const input = simulationInput.parse(args);
       const abort = signal();
       const needsLiveState = simulationNeedsLiveState(input);
@@ -315,7 +317,7 @@ export function createAgentApp(deps: AgentDependencies) {
         throw new Error('This knowledge source is disabled in Settings');
       }
       const abort = signal();
-      const { eveSession: _session, ...args } = data;
+      const { agentSession: _session, ...args } = data;
       return route === '/database'
         ? database.query(databaseRequest.parse(args), abort)
         : measuredWebSearch(

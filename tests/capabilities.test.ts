@@ -5,16 +5,14 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { capabilityEnabled, connectionTools } from '@wisp/agent/capabilities';
-import { enabledTool } from '@wisp/agent/enabled-tool';
+import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';
 import { localMemory } from '@wisp/agent/agent-memory';
-import { dynamicEvaluate } from './node_modules/eve/dist/src/dynamic/definition.js';
-import external from '../apps/agent/agent/connections/external.ts';
-import everloot from '../apps/agent/agent/connections/everloot.ts';
+import { mcpConnections } from '@wisp/agent/mcp-tools';
+import { z } from 'zod';
 import { filterWebSearch } from '@wisp/agent/model-tools';
-import { namedEntries } from './node_modules/eve/dist/src/definitions/named.js';
-import { CONNECTION_SLUG_PATTERN } from './node_modules/eve/dist/src/discover/grammar.js';
-import { readStampedConnectionProtocol } from './node_modules/eve/dist/src/public/definitions/connections/protocol.js';
-import { resolveDynamicConnectionValue } from './node_modules/eve/dist/src/runtime/resolve-connection.js';
+
+// Tool names are <connection>__<tool>; a connection name must keep them legal function names.
+const CONNECTION_NAME = /^[a-z][a-z0-9-]*$/;
 
 test('settings persist, filter real tool/MCP definitions, and preserve child settings when an MCP is off', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-capabilities-'));
@@ -23,70 +21,44 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
     const settings = new CapabilitySettings(path.join(directory, 'capabilities.json'));
     process.env.WOW_CAPABILITIES_FILE = settings.file;
     await settings.load();
-    const definition = { description: 'target' };
-    const resolve = dynamicEvaluate(enabledTool('search_database', definition));
-    assert.equal(await resolve({} as never), definition);
+    const tool = enabledTool('search_database', {
+      description: 'target',
+      inputSchema: z.object({}),
+      execute: () => null,
+    });
+    assert.equal(tool.capability, 'tool:search_database');
+    assert.equal(await toolOffered(tool), true);
     await Promise.all([
       settings.set('tool:search_database', false),
       settings.set('mcp_tool:everloot:market_value', false),
     ]);
     assert.equal(
-      await resolve({} as never),
-      null,
-      'disabled tools must be removed from Eve, not only hidden in the UI',
+      await toolOffered(tool),
+      false,
+      'disabled tools must be removed from the agent, not only hidden in the UI',
     );
     assert.equal(await capabilityEnabled('tool:search_database'), false);
-    const connection = await dynamicEvaluate(everloot)({} as never);
-    assert.ok(connection);
-    const source = {
-      logicalPath: 'connections/everloot.ts',
-      slug: 'everloot',
-      sourceId: 'connections/everloot.ts',
-      sourceKind: 'module' as const,
-    };
-    const kind = {
-      noun: 'connection',
-      made: 'defineMcpClientConnection()',
-      is: (value: unknown) => readStampedConnectionProtocol(value) !== undefined,
-      pattern: CONNECTION_SLUG_PATTERN,
-      rule: 'Expected a valid connection slug',
-    };
-    const runtimeConnections = namedEntries(source, connection, kind).map(({ name, entry }) =>
-      resolveDynamicConnectionValue(entry, { ...source, connectionName: name }),
-    );
-    assert.deepEqual(
-      runtimeConnections.map((c) => c.connectionName),
-      ['everloot', 'everloot-search', 'everloot-changes'],
-    );
-    assert.throws(
-      () => namedEntries(source, { everloot_search: connection['everloot-search'] }, kind),
-      /illegal connection name/,
-    );
-    assert.equal(
-      'allow' in connection.everloot.tools! &&
-        connection.everloot.tools.allow.includes('market_value'),
-      false,
-    );
+    const connection = await mcpConnections();
+    assert.deepEqual(Object.keys(connection), ['everloot', 'everloot-search', 'everloot-changes']);
+    assert.ok(Object.keys(connection).every((name) => CONNECTION_NAME.test(name)));
+    assert.equal(connection.everloot!.allow!.includes('market_value'), false);
     assert.ok(
       (await connectionTools('everloot', ['auction_history', 'market_value'])).includes(
         'auction_history',
       ),
     );
-    assert.equal(connection['everloot-search'].toolCall?.providedArguments?.version, 'forever');
-    assert.equal(connection['everloot-changes'].toolCall?.providedArguments?.game, 'forever');
+    assert.equal(connection['everloot-search']!.provided?.version, 'forever');
+    assert.equal(connection['everloot-changes']!.provided?.game, 'forever');
     for (const definition of Object.values(connection)) {
       assert.ok(
-        !(
-          'allow' in definition.tools! &&
-          definition.tools.allow.some((name) =>
-            ['get_by_name', 'get_entity', 'answer_sources', 'fetch', 'search'].includes(name),
-          )
+        !definition.allow?.some((name) =>
+          ['get_by_name', 'get_entity', 'answer_sources', 'fetch', 'search'].includes(name),
         ),
         'unfiltered cross-version lookup must not be exposed',
       );
     }
     await settings.set('mcp:everloot', false);
-    assert.equal(await dynamicEvaluate(everloot)({} as never), null);
+    assert.deepEqual(await mcpConnections(), {});
     assert.equal(
       settings.snapshot().find((entry) => entry.id === 'mcp_tool:everloot:auction_history')
         ?.effective,
@@ -103,7 +75,7 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
     await settings.set('memory:preferences', false);
     const memory = localMemory('preferences');
     assert.equal(
-      await (memory.scope as any)({ session: { id: 'session' } }),
+      await memory.scope('session', new AbortController().signal),
       null,
       'disabled memory must not be recalled',
     );
@@ -141,14 +113,37 @@ test('disabled native search is removed from model calls without affecting other
   assert.deepEqual(filtered.toolChoice, { type: 'auto' });
 });
 
+// Everloot is on by default; these tests look at the player's own servers only.
+async function withoutEverloot(work: () => Promise<void>) {
+  const previous = process.env.WOW_CAPABILITIES_FILE;
+  const directory = await mkdtemp(path.join(tmpdir(), 'wisp-no-everloot-'));
+  try {
+    process.env.WOW_CAPABILITIES_FILE = path.join(directory, 'capabilities.json');
+    await writeFile(
+      process.env.WOW_CAPABILITIES_FILE,
+      JSON.stringify({ enabled: { 'mcp:everloot': false } }),
+    );
+    await work();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.WOW_CAPABILITIES_FILE;
+    } else {
+      process.env.WOW_CAPABILITIES_FILE = previous;
+    }
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 test('a fresh install has no custom MCP connections until configured', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-external-missing-'));
   const previous = process.env.WOW_MCP_CONFIG;
   try {
     process.env.WOW_MCP_CONFIG = path.join(directory, 'mcp.json');
-    assert.equal(await dynamicEvaluate(external)({} as never), null);
-    await writeFile(process.env.WOW_MCP_CONFIG, 'invalid JSON');
-    await assert.rejects(async () => dynamicEvaluate(external)({} as never), SyntaxError);
+    await withoutEverloot(async () => {
+      assert.deepEqual(await mcpConnections(process.env.WOW_MCP_CONFIG), {});
+      await writeFile(process.env.WOW_MCP_CONFIG!, 'invalid JSON');
+      await assert.rejects(mcpConnections(process.env.WOW_MCP_CONFIG), SyntaxError);
+    });
   } finally {
     if (previous === undefined) {
       delete process.env.WOW_MCP_CONFIG;
@@ -159,24 +154,27 @@ test('a fresh install has no custom MCP connections until configured', async () 
   }
 });
 
-test('custom MCP connections use legal Eve names and the configured bridge origin', async () => {
+test('custom MCP connections use legal names and the configured bridge origin', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-external-'));
   const previous = process.env.WOW_MCP_CONFIG;
   const flags = process.env.WOW_CAPABILITIES_FILE;
   const origin = process.env.WOW_BRIDGE_URL;
   try {
     process.env.WOW_MCP_CONFIG = path.join(directory, 'mcp.json');
-    process.env.WOW_CAPABILITIES_FILE = '';
+    process.env.WOW_CAPABILITIES_FILE = path.join(directory, 'capabilities.json');
+    await writeFile(
+      process.env.WOW_CAPABILITIES_FILE,
+      JSON.stringify({ enabled: { 'mcp:everloot': false } }),
+    );
     process.env.WOW_BRIDGE_URL = 'http://127.0.0.1:49521';
     await writeFile(
       process.env.WOW_MCP_CONFIG,
       JSON.stringify({ servers: { my_tools: { enabled: true, description: 'Test' } } }),
     );
-    const connections = await dynamicEvaluate(external)({} as never);
-    assert.ok(connections);
+    const connections = await mcpConnections(process.env.WOW_MCP_CONFIG);
     assert.deepEqual(Object.keys(connections), ['my-tools']);
-    assert.match(Object.keys(connections)[0], CONNECTION_SLUG_PATTERN);
-    assert.equal(connections['my-tools'].url, 'http://127.0.0.1:49521/mcp/my_tools');
+    assert.match(Object.keys(connections)[0]!, CONNECTION_NAME);
+    assert.equal(connections['my-tools']!.url, 'http://127.0.0.1:49521/mcp/my_tools');
   } finally {
     if (previous === undefined) {
       delete process.env.WOW_MCP_CONFIG;
