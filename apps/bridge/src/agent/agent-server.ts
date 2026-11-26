@@ -149,7 +149,7 @@ export function createAgentApp(deps: AgentDependencies) {
     await next();
   });
 
-  // Model proxies and the MCP relay stream on the raw Node request and response.
+  // Model proxies stream on the raw Node request and response.
   const proxy =
     (forward: (c: AgentContext) => Promise<void>) =>
     async (c: AgentContext): Promise<Response> => {
@@ -182,13 +182,11 @@ export function createAgentApp(deps: AgentDependencies) {
     ),
   );
   app.all('/mcp/*', async (c) => {
-    const { incoming, outgoing } = c.env;
     try {
-      await mcpRelay.handle(incoming, outgoing, (incoming.url || '').slice(5));
+      return await mcpRelay.handle(c.req.raw, c.req.path.slice('/mcp/'.length));
     } catch {
-      outgoing.writeHead(503).end('MCP connection failed');
+      return c.text('MCP connection failed', 503);
     }
-    return RESPONSE_ALREADY_SENT;
   });
 
   app.get('/session-model', async (c) => {

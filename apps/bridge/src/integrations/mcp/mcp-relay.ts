@@ -1,6 +1,5 @@
-import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import type { McpManager } from './mcp-manager.ts';
@@ -9,28 +8,25 @@ export class McpRelay {
   allowed: (server: string, tool?: string) => boolean;
   sessions = new Map<
     string,
-    { name: string; server: Server; transport: StreamableHTTPServerTransport }
+    { name: string; server: Server; transport: WebStandardStreamableHTTPServerTransport }
   >();
   readOnlyMode: () => boolean = () => false;
   constructor(manager: McpManager, allowed: McpRelay['allowed']) {
     this.manager = manager;
     this.allowed = allowed;
   }
-  async handle(req: IncomingMessage, res: ServerResponse, name: string) {
+  async handle(request: Request, name: string): Promise<Response> {
     if (!this.allowed(name) || !this.manager.servers[name]?.enabled) {
-      res.writeHead(403).end('MCP disabled');
-      return;
+      return new Response('MCP disabled', { status: 403 });
     }
-    const id = String(req.headers['mcp-session-id'] || '');
+    const id = request.headers.get('mcp-session-id');
     let entry = id ? this.sessions.get(id) : undefined;
     if (id && (!entry || entry.name !== name)) {
-      res.writeHead(404).end('Unknown MCP session');
-      return;
+      return new Response('Unknown MCP session', { status: 404 });
     }
     if (!entry) {
-      if (req.method !== 'POST' || this.sessions.size >= 50) {
-        res.writeHead(400).end('Initialize the MCP connection first');
-        return;
+      if (request.method !== 'POST' || this.sessions.size >= 50) {
+        return new Response('Initialize the MCP connection first', { status: 400 });
       }
       const server = new Server(
         { name: 'Wisp-' + name, version: '0.2.0' },
@@ -64,7 +60,7 @@ export class McpRelay {
           { signal: extra.signal, timeout: 60000 },
         );
       });
-      const transport = new StreamableHTTPServerTransport({
+      const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {
           this.sessions.set(id, { name, server, transport });
@@ -78,7 +74,7 @@ export class McpRelay {
       await server.connect(transport);
       entry = { name, server, transport };
     }
-    await entry.transport.handleRequest(req, res);
+    return entry.transport.handleRequest(request);
   }
   async close() {
     await Promise.all([...this.sessions.values()].map((s) => s.server.close()));
