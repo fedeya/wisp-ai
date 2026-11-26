@@ -11,7 +11,7 @@ export default defineEval({
   stubs: [...runeStubs(), ...mapStubs(), ...fedrathStubs()],
   gates: [
     replied(),
-    expects('names the vendor from the data', (turn) => /Horthus/i.test(turn.reply)),
-    expects('does not guess a district', (turn) => !/Valley of Spirits/i.test(turn.reply)),
+    expects('names the vendor from the data', (turn) => /Horthus/i.test(turn.presented)),
+    expects('does not guess a district', (turn) => !/Valley of Spirits/i.test(turn.presented)),
   ],
 });

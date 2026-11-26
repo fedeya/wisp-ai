@@ -15,14 +15,14 @@ export default defineEval({
     expects(
       'says world kills do not raise the rank',
       (turn) =>
-        /^\W*no\b/i.test(turn.reply) ||
+        /^\W*no\b/i.test(turn.presented) ||
         /(doesn['’]?t|does not|won['’]?t|will not|not)\b[^.]{0,80}\b(rank|Civilian)/i.test(
-          turn.reply,
+          turn.presented,
         ),
     ),
     expects(
       'points to battlegrounds and Honor',
-      (turn) => /battleground/i.test(turn.reply) && /honor/i.test(turn.reply),
+      (turn) => /battleground/i.test(turn.presented) && /honor/i.test(turn.presented),
     ),
   ],
 });

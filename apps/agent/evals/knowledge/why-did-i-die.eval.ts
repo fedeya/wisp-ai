@@ -14,11 +14,11 @@ export default defineEval({
     calledTool('wow__read_combat'),
     expects(
       'names the killer and the killing blow',
-      (turn) => /Deforester/i.test(turn.reply) && /Fireball/i.test(turn.reply),
+      (turn) => /Deforester/i.test(turn.presented) && /Fireball/i.test(turn.presented),
     ),
     expects(
       'does not ask the player for the log',
-      (turn) => !/paste|copy the|open (the )?combat log/i.test(turn.reply),
+      (turn) => !/paste|copy the|open (the )?combat log/i.test(turn.presented),
     ),
   ],
 });
