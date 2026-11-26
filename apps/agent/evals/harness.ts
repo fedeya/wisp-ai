@@ -7,12 +7,28 @@ import { MemoryHistory } from '../src/memory-history.ts';
 import { commonScorers, eventsView, type Check, type TurnView } from './checks.ts';
 import { playerMessage } from './fixtures/fedrath.ts';
 
+/**
+ * A rule for one input field: equal to `const`, a string matching the regular
+ * expression `pattern`, or an array with an element that meets `contains`.
+ */
+export type MatchRule = { const: unknown } | { pattern: string } | { contains: MatchRule };
+
+function meets(value: unknown, rule: MatchRule): boolean {
+  if ('pattern' in rule) {
+    return typeof value === 'string' && new RegExp(rule.pattern).test(value);
+  }
+  if ('contains' in rule) {
+    return Array.isArray(value) && value.some((element) => meets(element, rule.contains));
+  }
+  return isDeepStrictEqual(value, rule.const);
+}
+
 /** Answers a tool from a fixture; the first stub whose tool and `match` fit wins. */
 export interface ToolStub {
   id: string;
   tool: string;
-  /** Input fields that must equal `const`. */
-  match?: Record<string, { const: unknown }>;
+  /** Input fields and the rule each must meet. */
+  match?: Record<string, MatchRule>;
   outcome: ToolStubOutcome;
 }
 
@@ -29,14 +45,12 @@ export interface EvalDefinition {
 }
 export const defineEval = (definition: EvalDefinition) => definition;
 
-function matches(stub: ToolStub, tool: string, input: unknown) {
+export function matches(stub: ToolStub, tool: string, input: unknown) {
   if (stub.tool !== tool) {
     return false;
   }
   const fields = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-  return Object.entries(stub.match ?? {}).every(([key, rule]) =>
-    isDeepStrictEqual(fields[key], rule.const),
-  );
+  return Object.entries(stub.match ?? {}).every(([key, rule]) => meets(fields[key], rule));
 }
 
 export interface EvalOutcome {

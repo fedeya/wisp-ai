@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '../src/agent-host.ts';
-import { defineEval, runEval } from '../evals/harness.ts';
+import { defineEval, matches, runEval, type MatchRule } from '../evals/harness.ts';
 import { calledTool, expects, maxToolCalls, notCalledTool, replied } from '../evals/checks.ts';
 
 afterEach(() => setAgentHost(undefined));
@@ -146,3 +146,19 @@ test(
     }
   },
 );
+
+test('stubs match inputs by value, pattern and array element', () => {
+  const stub = (match: Record<string, MatchRule>) => ({
+    id: 's',
+    tool: 't',
+    match,
+    outcome: { response: {} },
+  });
+  expect(matches(stub({ id: { const: 7 } }), 't', { id: 7 })).toBe(true);
+  expect(matches(stub({ id: { const: 7 } }), 'other', { id: 7 })).toBe(false);
+  expect(matches(stub({ query: { pattern: '[Rr]une' } }), 't', { query: 'Rune of X' })).toBe(true);
+  expect(matches(stub({ query: { pattern: '[Rr]une' } }), 't', { query: 'Hood' })).toBe(false);
+  const pvp = stub({ sections: { contains: { const: 'pvp' } } });
+  expect(matches(pvp, 't', { sections: ['character', 'pvp'] })).toBe(true);
+  expect(matches(pvp, 't', { sections: ['gear'] })).toBe(false);
+});
