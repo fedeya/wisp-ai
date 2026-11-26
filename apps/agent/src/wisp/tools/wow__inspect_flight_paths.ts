@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { flightPathsInput } from '@wisp/protocol/game-inspection';
+import { flightPathsInput } from '../../contract/game-inspection.ts';
 
 export default enabledTool(
   'inspect_flight_paths',

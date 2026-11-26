@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { objectLocationsInput } from '@wisp/protocol/game-inspection';
+import { objectLocationsInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'find_object_locations',
   defineTool({

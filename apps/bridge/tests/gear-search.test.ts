@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { armorSearchInput, weaponSearchInput } from '@wisp/protocol/game-inspection';
+import { armorSearchInput, weaponSearchInput } from '@wisp/agent/contract/game-inspection';
 import { gearCategory, searchGear, type GearSearch } from '../src/integrations/gear-search.ts';
 
 const armor = (args: unknown): GearSearch => ({

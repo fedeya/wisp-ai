@@ -9,7 +9,7 @@ import {
   simulationInput,
   rotationAction,
   simulationNeedsLiveState,
-} from '@wisp/protocol/simulation';
+} from '@wisp/agent/contract/simulation';
 import { adapters } from './adapters/index.ts';
 import type { ClassMetadata } from './adapters/types.ts';
 import { equipmentSlots, replaceEquipment, type CatalogItem } from './equipment.ts';

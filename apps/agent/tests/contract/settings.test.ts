@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { settingsRead, settingsUpdate } from '../src/settings.ts';
+import { settingsRead, settingsUpdate } from '../../src/contract/settings.ts';
 
 test('settings schema bounds scalar preview/apply requests', () => {
   assert.equal(settingsRead.parse({ sections: ['action_bars', 'keybindings'] }).limit, 30);

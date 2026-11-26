@@ -7,7 +7,9 @@ import { McpManager, mcpSetup } from '../src/integrations/mcp/mcp-manager.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createServer } from 'node:http';
+import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { McpRelay } from '../src/integrations/mcp/mcp-relay.ts';
+import { runBridgeEffect } from './capture-logs.ts';
 test(
   'stdio MCP setup tests real tools, encrypts through the vault interface and gates relay calls',
   { timeout: 30000 },
@@ -34,25 +36,54 @@ test(
     let allowed = true;
     const relay = new McpRelay(manager, () => allowed);
     const http = createServer(
-      (req, res) =>
-        void relay.handle(req, res, 'test_server').catch(() => res.writeHead(500).end()),
+      runBridgeEffect(
+        createAgentHandler({ token: 'test', mcpRelay: relay } as Parameters<
+          typeof createAgentHandler
+        >[0]),
+      ),
     );
     await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
     const port = (http.address() as { port: number }).port;
+    const url = new URL(`http://127.0.0.1:${port}/mcp/test_server`);
+    const authorization = 'Bearer test';
+    const accept = 'application/json, text/event-stream';
+    const transport = new StreamableHTTPClientTransport(url, {
+      requestInit: { headers: { authorization } },
+      fetch: async (input, init) => {
+        const response = await fetch(input, init);
+        if (init?.method === 'POST' && response.status === 200) {
+          assert.match(response.headers.get('content-type') ?? '', /^text\/event-stream/);
+        }
+        return response;
+      },
+    });
     const client = new Client({ name: 'test', version: '1' }, { capabilities: {} });
     try {
       assert.equal((await manager.save(input)).count, 1);
       assert.ok(!(await readFile(manager.file, 'utf8')).includes('private-test-value'));
       assert.ok(secrets.size > 0);
-      await client.connect(
-        new StreamableHTTPClientTransport(new URL('http://127.0.0.1:' + port + '/mcp')),
-      );
+      const forbidden = await fetch(url, { headers: { accept } });
+      assert.equal(forbidden.status, 403);
+      assert.equal(await forbidden.text(), 'Forbidden');
+      await client.connect(transport);
+      const sessionId = transport.sessionId;
+      assert.ok(sessionId);
       assert.equal((await client.listTools()).tools[0].name, 'echo');
       const result = await client.callTool({ name: 'echo', arguments: {} });
       assert.match(JSON.stringify(result), /bridgeTokenLeaked/);
       assert.match(JSON.stringify(result), /true/);
       allowed = false;
       await assert.rejects(() => client.callTool({ name: 'echo', arguments: {} }));
+      const disabled = await fetch(url, { headers: { authorization, accept } });
+      assert.equal(disabled.status, 403);
+      assert.equal(await disabled.text(), 'MCP disabled');
+      allowed = true;
+      await transport.terminateSession();
+      const expired = await fetch(url, {
+        headers: { authorization, accept, 'mcp-session-id': sessionId },
+      });
+      assert.equal(expired.status, 404);
+      assert.equal(await expired.text(), 'Unknown MCP session');
       await manager.setEnabled('test_server', false);
       assert.equal(manager.list()[0].enabled, false);
       await assert.rejects(manager.connect('test_server'), /unavailable/);

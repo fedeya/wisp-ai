@@ -1,5 +1,5 @@
 import type { SessionState } from '../session-state.ts';
-import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
+import { PRESENT_UI_TOOL } from '@wisp/agent/contract/reply-presentation';
 import { replyContent, replyPresentationProgress } from '../reply/reply-content.ts';
 export function projectChats(state: SessionState, now = Date.now()) {
   let ordinaryCount = 0;

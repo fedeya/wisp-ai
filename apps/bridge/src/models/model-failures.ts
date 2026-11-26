@@ -1,5 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http';
-import { MODEL_SESSION_HEADER } from '@wisp/protocol/agent-rpc';
+import { MODEL_SESSION_HEADER } from '@wisp/agent/contract/agent-rpc';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
 
 /**

@@ -357,11 +357,19 @@ schemas and enforceable constraints in code.
 
 `tests/agent-integration.test.ts` exercises skill activation, tool discovery and
 execution, permission denial and follow-up turns with the real agent and an
-offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals against a
-real model through the eval bridge: each case is one engine turn whose gates
-must pass and whose scorers are tracked. `apps/agent/evals/grade.ts` grades saved
-answers with the eval model as a judge. Prompt edits still need gameplay evaluation
-before claiming better answers.
+offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals with
+[vitest-evals](https://vitest-evals.sentry.dev/docs/) against a real model through
+the eval bridge. Sign in once with `node apps/bridge/src/evals/eval-bridge.ts sign-in`.
+Each case runs one engine turn. Gates fail the test; scorers are informational.
+Pass a filename filter (e.g. `boss-loot`) or `--tagsFilter gear` to select cases.
+Set `WISP_EVAL_GRADE=1` to include the answer-quality judge in the same run.
+Scoring an existing report is not supported.
+
+The JSON report is saved to `apps/agent/eval-replies/results.json`. To keep
+multiple runs, give each run a distinct `--outputFile.json` path, relative to
+`apps/agent`, and open them with
+`pnpm --filter @wisp/agent exec vitest-evals serve eval-replies/`.
+Prompt edits still need gameplay evaluation before claiming better answers.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
 Compressed snapshots and patches continue through the reusable lane after the
@@ -411,7 +419,7 @@ The same projection rebuilds event history, while SQLite preserves complete
 canonical text and panel parts independently of streaming previews coalesced at
 600 ms intervals. Previews continue for the entire reply; completion and accepted
 panels publish immediately.
-Component contracts live in `packages/protocol/src/ui-schema.ts` and
+Component contracts live in `apps/agent/src/contract/ui-schema.ts` and
 `reply-presentation.ts`; adding a component extends that contract and its native
 renderer. The historical NDJSON reader is isolated in `legacy-reply.ts` and is
 used only for saved replies from earlier versions.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dungeonLootInput } from '@wisp/protocol/game-inspection';
+import { dungeonLootInput } from '@wisp/agent/contract/game-inspection';
 import { dungeonLoot } from '../src/integrations/dungeon-loot.ts';
 import generated from '../src/integrations/dungeon-loot.json' with { type: 'json' };
 

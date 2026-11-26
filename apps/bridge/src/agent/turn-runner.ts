@@ -1,13 +1,13 @@
 import { applyEvent, type Chat } from '../chat/events.ts';
 import { ReplyProjection } from '../reply/reply-stream.ts';
-import type { ReplyPresentation } from '@wisp/protocol/reply-presentation';
+import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import { endSession, sendChatTurn, type AgentEngine } from './agent-session.ts';
 import { beginTurn, settleTurn } from '../chat/chat-lifecycle.ts';
 import { turnInput, characterIdentity, rememberTurnQuests } from '../chat/context.ts';
 import { chooseChatModel, resolveDefaultModel } from '../chat/chat-model.ts';
 import { generateConversationTitle } from '../chat/conversation-title.ts';
 import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
-import { safeErrorMessage } from '@wisp/protocol/model-errors';
+import { safeErrorMessage } from '@wisp/agent/contract/model-errors';
 import { errorMessage } from '../errors.ts';
 import { Effect } from 'effect';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';

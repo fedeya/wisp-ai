@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
-import { grade, judgeModel, qualityScorer, type Run } from '../evals/quality-scorer.ts';
+import { gradeAnswer, judgeModel, qualityPrompt } from '../evals/judges/quality-scorer.ts';
 
 test('the quality grader asks the eval model for structured grades over the eval bridge', async () => {
   const requests: Record<string, any>[] = [];
@@ -48,18 +48,14 @@ test('the quality grader asks the eval model for structured grades over the eval
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   try {
-    const run: Run = {
-      label: 'test',
-      name: 'find-upgrades',
-      prompt: 'find upgrades for me',
-      seconds: 1,
-      steps: 2,
-      reply: 'Get Spidersilk Boots.',
-      presented: [],
-      results: [{ tool: 'wow__search_armor', input: {}, output: { items: [] } }],
-    };
-    const graded = await grade(qualityScorer(judgeModel(origin, 'eval-token', 'gpt-5.4')), run);
-    expect(graded).toMatchObject({ ...grades, quality: 0.8 });
+    const { output } = await gradeAnswer(
+      judgeModel(origin, 'eval-token', 'gpt-5.4'),
+      qualityPrompt('find-upgrades', 'find upgrades for me', 'Get Spidersilk Boots.', [
+        { name: 'wow__search_armor', arguments: {}, status: 'ok', result: { items: [] } },
+      ]),
+      AbortSignal.timeout(5000),
+    );
+    expect(output).toEqual(grades);
     const request = requests.at(-1)!;
     expect(request.url).toBe('/model/responses');
     expect(request.authorization).toBe('Bearer eval-token');

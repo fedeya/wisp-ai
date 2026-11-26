@@ -1,6 +1,6 @@
 // Offline migration only. The live renderer accepts structured references exclusively.
 import { linkedReferences } from '../chat/references.ts';
-import { referenceSchema, type RichReference } from '@wisp/protocol/rich-reference';
+import { referenceSchema, type RichReference } from '@wisp/agent/contract/rich-reference';
 import type { Chat } from '../chat/events.ts';
 
 // Preserve the legacy migration's interpretation; live replies transport source

@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  vitest-evals@0.18.1>ai:peer: '-'
+
 importers:
 
   .:
@@ -316,6 +319,9 @@ importers:
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest-evals:
+        specifier: 0.18.1
+        version: 0.18.1(tinyrainbow@3.2.0)(vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(zod@4.6.7)
 
   apps/bridge:
     dependencies:
@@ -2265,6 +2271,12 @@ packages:
       oxc-transform-react:
         optional: true
 
+  '@vitest-evals/core@0.18.1':
+    resolution: {integrity: sha512-xls3rsp2o1p3y230HJSDQK/Mk0T+UQw4dOuifM+KgJBb7i+9TIJYuXBU1zP1xqGbsV6jFcga7sTyRmEGUx9kbg==}
+
+  '@vitest-evals/report-ui@0.18.1':
+    resolution: {integrity: sha512-f0xyyyoUPHAl+aAwvNYPydlZmI0WVpuNT0IwtQppR0oXgSpX8dgMCuM3vY+iopGz/Eu5D0YdmyWN1mBvIckVsg==}
+
   '@vitest/mocker@5.1.0':
     resolution: {integrity: sha512-5umB9/jlWcqVS6fsrFmv5Gdnpu6wAUio/lEOwAmvB7v+lFo/IW2B9FhAD0p19GCULTgMzLCdUmuCDCnAzWgppQ==}
     peerDependencies:
@@ -3934,6 +3946,10 @@ packages:
     resolution: {integrity: sha512-jBrmx4lYmaC9k/mgPbylxs7kBUxHtD8256up+HjLaDFfXScKJQyil+SWXSvhAtT7XHo+yTVlpB81PGmHP8oLSQ==}
     engines: {node: ^20.0.0 || >=22.0.0}
 
+  tinyrainbow@3.2.0:
+    resolution: {integrity: sha512-LgO3D9yZJjApUiuUfl9iFAwrtaX4+lok3wJIqttGoKCHlWUqHqbQpnxCf82L8FjgKsh4iGo78hqJwgL8F6To2A==}
+    engines: {node: '>=14.0.0'}
+
   tldts-core@7.4.20:
     resolution: {integrity: sha512-C630TWXZCZmLq0F2bW4QqwnaaxCQ/svpAqvJwnC4JvgEM5ohhBnGsEzTLSOXcN+xjz+kEaHS5uoWIw2klnqd0A==}
     deprecated: Partial release, see https://github.com/remusao/tldts/issues/2735. Use >=7.4.22.
@@ -4083,6 +4099,17 @@ packages:
       tsx:
         optional: true
       yaml:
+        optional: true
+
+  vitest-evals@0.18.1:
+    resolution: {integrity: sha512-KlBlJ0SB6gpB4o1boCg55hOQre0SiWHZq1sW5IfNw7c389RPKoOC6ENdcOjvL7Q2xQjb15rPaviBf4am1r1Z4Q==}
+    hasBin: true
+    peerDependencies:
+      tinyrainbow: '>=2 <4'
+      vitest: '>=5 <6'
+      zod: '>=3 <5'
+    peerDependenciesMeta:
+      zod:
         optional: true
 
   vitest@5.1.0:
@@ -5453,6 +5480,14 @@ snapshots:
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+
+  '@vitest-evals/core@0.18.1':
+    dependencies:
+      zod: 4.6.7
+
+  '@vitest-evals/report-ui@0.18.1':
+    dependencies:
+      '@vitest-evals/core': 0.18.1
 
   '@vitest/mocker@5.1.0(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
     dependencies:
@@ -7010,6 +7045,8 @@ snapshots:
 
   tinypool@2.2.0: {}
 
+  tinyrainbow@3.2.0: {}
+
   tldts-core@7.4.20: {}
 
   tldts@7.4.19:
@@ -7127,6 +7164,15 @@ snapshots:
       jiti: 2.7.0
       tsx: 4.23.15
       yaml: 2.9.1
+
+  vitest-evals@0.18.1(tinyrainbow@3.2.0)(vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(zod@4.6.7):
+    dependencies:
+      '@vitest-evals/core': 0.18.1
+      '@vitest-evals/report-ui': 0.18.1
+      tinyrainbow: 3.2.0
+      vitest: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+    optionalDependencies:
+      zod: 4.6.7
 
   vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)):
     dependencies:

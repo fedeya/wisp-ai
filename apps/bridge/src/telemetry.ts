@@ -4,7 +4,7 @@ import { PostHog } from 'posthog-node';
 import path from 'node:path';
 import { z } from 'zod';
 import { everlootTools, publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
-import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/protocol/reply-presentation';
+import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/agent/contract/reply-presentation';
 import { providerId } from '@wisp/protocol/providers';
 import { modelFailureKinds } from './models/model-failures.ts';
 

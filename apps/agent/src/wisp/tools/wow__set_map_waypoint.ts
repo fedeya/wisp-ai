@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { waypointInput } from '@wisp/protocol/game-actions';
+import { waypointInput } from '../../contract/game-actions.ts';
 export default enabledTool(
   'set_map_waypoint',
   defineTool({

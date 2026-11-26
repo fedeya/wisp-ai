@@ -8,7 +8,7 @@ import { queryCharacterSections } from '../src/chat/context.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { SnapshotGate } from '../src/addon/snapshots.ts';
-import { PRESENT_UI_TOOL } from '@wisp/protocol/reply-presentation';
+import { PRESENT_UI_TOOL } from '@wisp/agent/contract/reply-presentation';
 import type { UsageTelemetry } from '../src/telemetry.ts';
 import { ModelFailures, httpFailureKind } from '../src/models/model-failures.ts';
 

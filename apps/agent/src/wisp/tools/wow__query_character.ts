@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
-import { characterSections } from '@wisp/protocol/agent-rpc';
+import { characterSections } from '../../contract/agent-rpc.ts';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(

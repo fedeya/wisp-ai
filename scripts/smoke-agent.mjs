@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { Effect } from 'effect';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const root = process.env.WISP_RESOURCE_ROOT || repository;
 const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/bridge');
@@ -15,7 +16,8 @@ await mkdir(dir, { recursive: true });
 const load = (p) => import(pathToFileURL(path.join(bridge, p)).href);
 const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
   { NativeVault } = await load('src/auth/secret-vault.ts'),
-  { proxyModel } = await load('src/models/model-proxy.ts'),
+  { createModelProxy } = await load('src/models/model-proxy.ts'),
+  { bridgeLogging } = await load('src/logger.ts'),
   { TheWoWDB } = await load('src/integrations/thewowdb.ts'),
   { searchPublicWeb } = await load('src/integrations/search/public-web-search.ts'),
   { applyEvent } = await load('src/chat/events.ts'),
@@ -44,12 +46,14 @@ const simulator = new Simulator(root);
 const dataRoot = process.env.WISP_DATA_DIR || root;
 const config = JSON.parse(await readFile(path.join(dataRoot, 'config.local.json'), 'utf8')),
   model = config.model || 'gpt-6.1-sol';
-const auth = new ChatGPTAuth(
-  path.join(dataRoot, 'runtime'),
-  new NativeVault(
-    process.env.WISP_DESKTOP_EXE ||
-      path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
-  ),
+const auth = Effect.runSync(
+  ChatGPTAuth.make(
+    path.join(dataRoot, 'runtime'),
+    new NativeVault(
+      process.env.WISP_DESKTOP_EXE ||
+        path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
+    ),
+  ).pipe(Effect.provide(bridgeLogging)),
 );
 await auth.load();
 const t = auth.saved.profiles.find((p) => p.id === auth.saved.activeId)?.tokens;
@@ -64,6 +68,7 @@ const scopedAuth = {
     return fetch(url, { ...init, headers, redirect: 'error' });
   },
 };
+const proxyModel = Effect.runSync(createModelProxy(scopedAuth).pipe(Effect.provide(bridgeLogging)));
 const capabilities = new CapabilitySettings(path.join(dir, 'capabilities.json'));
 capabilities.agentFile = path.join(dir, 'agent-capabilities.json');
 await capabilities.load();
@@ -122,7 +127,7 @@ const server = createServer(async (req, res) => {
           }
         });
       }
-      await proxyModel(req, res, scopedAuth);
+      await proxyModel(req, res);
       return;
     }
     let raw = '';
@@ -151,7 +156,9 @@ const server = createServer(async (req, res) => {
       };
       call.kind = 'training';
     } else if (req.url === '/inspect' && addonFixtures) {
-      const { inspectionSchema } = await import('../packages/protocol/dist/game-inspection.js');
+      const { inspectionSchema } = await import(
+        pathToFileURL(require.resolve('@wisp/agent/contract/game-inspection')).href
+      );
       const inspection = inspectionSchema.parse(data.inspection);
       if (inspection.kind === 'questie_quest' || inspection.kind === 'questie_chain') {
         assert.equal(inspection.args.questId, 600001);
@@ -216,7 +223,7 @@ const engine = createAgentEngine({
   token,
   // The session log stays in memory for the run, as in the engine's tests.
   history: new MemoryHistory(),
-  logger: { info: () => {}, warn: (data, message) => console.warn(message, data) },
+  logging: bridgeLogging,
 });
 const report = { model, tests: [] };
 let session;

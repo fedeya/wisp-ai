@@ -1,9 +1,9 @@
 import type { Chat } from './chat.ts';
 export type { Chat, Message, Activity } from './chat.ts';
 import { ReplyProjection } from '../reply/reply-stream.ts';
-import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/protocol/reply-presentation';
-import { recordContextUsage } from '@wisp/protocol/context-usage';
-import { safeErrorMessage } from '@wisp/protocol/model-errors';
+import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/agent/contract/reply-presentation';
+import { recordContextUsage } from '@wisp/agent/contract/context-usage';
+import { safeErrorMessage } from '@wisp/agent/contract/model-errors';
 import { z } from 'zod';
 const streamEvent = z.object({ type: z.string(), data: z.record(z.string(), z.unknown()) });
 function toolPreview(value: unknown, limit: number): string | undefined {

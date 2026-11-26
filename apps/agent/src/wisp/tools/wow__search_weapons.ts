@@ -1,5 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
-import { weaponSearchInput } from '@wisp/protocol/game-inspection';
+import { weaponSearchInput } from '../../contract/game-inspection.ts';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
