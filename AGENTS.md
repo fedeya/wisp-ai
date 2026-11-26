@@ -13,7 +13,7 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 | Path                 | Package           | What it is                                                                                        |
 | -------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
 | `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging |
-| `apps/agent`         | `@wisp/agent`     | Eve agent runtime: model connections, tools, skills and instructions in `agent/`                  |
+| `apps/agent`         | `@wisp/agent`     | Agent runtime on the AI SDK and Effect, run in the bridge: models, tools, skills and instructions |
 | `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                     |
 | `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                     |
 | `packages/protocol`  | `@wisp/protocol`  | Shared zod schemas and types for the wire protocol, desktop, settings and addon helpers           |
@@ -26,7 +26,7 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 
 ## Commands
 
-Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
+Run from the repository root. Toolchain: Node 26.13.1+ and pnpm 12.18.0
 (`mise install` uses [mise.toml](mise.toml), which also pins Rust, Go, protoc and PowerShell 7).
 
 | Command                                         | Does                                                                                        |
@@ -35,7 +35,7 @@ Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 | `pnpm build`                                    | Turbo build of all workspaces (not the native host or installer)                            |
 | `pnpm check`                                    | `format:check`, `lint`, `typecheck` and `typecheck:root`                                    |
 | `pnpm format` / `pnpm format:check`             | oxfmt, StyLua (`addon`, `tests`, `.busted`, `.luacheckrc`), Prettier                        |
-| `pnpm lint`                                     | oxlint `--deny-warnings`, then `pnpm lint:addon` (Luacheck)                                 |
+| `pnpm lint`                                     | oxlint with `@cloudflare/oxlint-config` (rules still being adopted warn), then Luacheck     |
 | `pnpm test`                                     | All Vitest suites and Busted specs                                                          |
 | `pnpm test:core`                                | TypeScript suites except desktop UI and addon                                               |
 | `pnpm test:integration`                         | `tests/` (`@wisp/tests`)                                                                    |
@@ -43,7 +43,7 @@ Run from the repository root. Toolchain: Node 24.22.1+ and pnpm 12.18.0
 | `pnpm test:ui`                                  | Desktop React tests (CI runs `pnpm ui:build` first)                                         |
 | `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                                                |
 | `pnpm start`                                    | Run the bridge                                                                              |
-| `pnpm agent`                                    | Agent dev server (`eve dev`)                                                                |
+| `pnpm --filter @wisp/agent eval`                | Agent evals against a real model (sign in once with `apps/bridge/src/evals/eval-bridge.ts`) |
 | `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
 | `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
 | `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |
@@ -75,10 +75,23 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
 
+## Learning more about Effect
+
+This repository uses the Effect Typescript library.
+
+Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
+**completely**, and follow the links in the file when required.
+
+If you need to learn more about particular Effect apis and concepts that the
+guide doesn't cover, search through the source code in `node_modules/effect/src`.
+
+The root `package.json` declares `effect` so that `node_modules/effect` exists
+despite `hoist: false`; keep it on the same version as the workspaces.
+
 ## Conventions observed in the code
 
 - **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
-  (transport, snapshots, panels), `agent/` (Eve process, agent server, turns),
+  (transport, snapshots, panels), `agent/` (engine wiring, agent server, turns, model history),
   `auth/`, `chat/`, `reply/`, `models/`, `integrations/` (search, MCP,
   simulation, TheWoWDB), `desktop/`, `routines/`, `db/` and `migrations/`.
   Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,

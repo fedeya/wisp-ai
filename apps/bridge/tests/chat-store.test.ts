@@ -55,7 +55,7 @@ test('imports complete rich history once and retains byte-for-byte legacy backup
       {
         ...chat(),
         characterKey: '["Forever","Realm","Mage"]',
-        eveId: 'session',
+        agentSession: 'session',
         modelSettings: { model: 'luna', effort: 'high' },
         futureMetadata: { keep: true },
         messages: [
@@ -316,7 +316,7 @@ test('installation import replaces an empty workspace and snapshots WAL data wit
     await writeFile(path.join(f.root, 'config.local.json'), JSON.stringify({ wow: 'test' }));
     sourceStore = new ChatStore(path.join(source, 'runtime/wisp.sqlite'), () => {});
     await sourceStore.load();
-    const original = { ...chat(), eveId: 'source-session', status: 'working' as const };
+    const original = { ...chat(), agentSession: 'source-session', status: 'working' as const };
     await sourceStore.flush([original]);
     await writeFile(
       path.join(source, 'runtime/chats.json'),
@@ -336,7 +336,7 @@ test('installation import replaces an empty workspace and snapshots WAL data wit
     const imported = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
     try {
       const chats = await imported.load();
-      expect(chats[0].eveId).toBeUndefined();
+      expect(chats[0].agentSession).toBeUndefined();
       expect(chats[0].status).toBe('interrupted');
       expect(chats[0].messages).toEqual(original.messages);
     } finally {
@@ -345,7 +345,7 @@ test('installation import replaces an empty workspace and snapshots WAL data wit
     expect(
       inspect(
         path.join(source, 'runtime/wisp.sqlite'),
-        (db) => db.prepare('SELECT eve_id FROM chat_instance_state').get()!.eve_id,
+        (db) => db.prepare('SELECT agent_session FROM chat_instance_state').get()!.agent_session,
       ),
     ).toBe('source-session');
   } finally {

@@ -1,6 +1,5 @@
 import { applyEvent, type Chat, type Message } from './events.ts';
 import { ReplyProjection } from '../reply/reply-stream.ts';
-import { visibleUserText } from './context.ts';
 export function rebuildHistory(
   chat: Chat,
   events: { type: string; data: Record<string, unknown> }[],
@@ -19,7 +18,7 @@ export function rebuildHistory(
       if (text) {
         parts.beginTurn();
         const original = users[userIndex++];
-        if (!original || original.text !== visibleUserText(text)) {
+        if (!original || original.text !== text) {
           return null;
         }
         rebuilt.messages.push({ ...original, id: original.id || chat.id + '-user-' + userIndex });

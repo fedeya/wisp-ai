@@ -18,7 +18,7 @@ export const ROUTINE_INSTRUCTION_MAX_LENGTH = 280;
 
 export interface AddonSnapshotInputs {
   state: SessionState;
-  /** Whether Eve is ready to answer. */
+  /** Whether the agent is ready to answer. */
   connected: boolean;
   bridgeVersion: string;
   expectedAddonVersion: string | undefined;
@@ -26,7 +26,7 @@ export interface AddonSnapshotInputs {
   appUpdateVersion: string | null;
   /** Resolved feature flags, by name. */
   features: Record<string, boolean>;
-  /** Context window Eve reported for its configured model, if any. */
+  /** Context window of the default model, if its catalog reports one. */
   contextWindowTokens: number | undefined;
   defaultModel: string;
   /** Panels, routines and runs of the current character; empty when none is known. */

@@ -190,7 +190,10 @@ export const chatInstanceState = sqliteTable(
     revision: integer().notNull(),
     historyRevision: integer('history_revision').notNull(),
     owner: text().notNull(),
+    // Written by versions that ran Eve. Kept, always null now, so an older version
+    // can still read this database after a downgrade and start fresh sessions.
     eveId: text('eve_id'),
+    agentSession: text('agent_session'),
     unread: integer({ mode: 'boolean' }),
     modelSettings: text('model_settings'),
     modelRequestId: text('model_request_id'),
@@ -205,5 +208,91 @@ export const chatInstanceState = sqliteTable(
     check('instance_model', sql`${t.modelSettings} IS NULL OR json_valid(${t.modelSettings})`),
     check('instance_usage', sql`${t.usage} IS NULL OR json_valid(${t.usage})`),
     check('instance_ui', sql`${t.lastUIResult} IS NULL OR json_valid(${t.lastUIResult})`),
+  ],
+);
+
+/**
+ * The agent session of a chat: the model-facing conversation the agent
+ * resumes on each turn. A chat keeps one session when its model changes; each
+ * message records the model that wrote it, and provider-native data
+ * (reasoning signatures, encrypted reasoning, item IDs) is only replayed to
+ * that model.
+ *
+ * `chat_id` has no foreign key: a session starts on the chat's first turn,
+ * before the chat's debounced save reaches this database. The chat store
+ * deletes a chat's sessions with the chat, and startup removes sessions whose
+ * chat was never saved.
+ */
+export const agentSessions = sqliteTable(
+  'agent_sessions',
+  {
+    id: text().primaryKey().notNull(),
+    chatId: text('chat_id').notNull(),
+    /** The model slug of the latest turn (`connection:<id>:<model>` for connections). */
+    model: text().notNull(),
+    /** How `agent_entries.data` is encoded (`wisp-1`), so a later format can migrate older rows. */
+    format: text().notNull(),
+    /** The Wisp version that started the session. */
+    wispVersion: text('wisp_version').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    // Totals the providers reported for this session's model calls.
+    tokensInput: integer('tokens_input').notNull().default(0),
+    tokensOutput: integer('tokens_output').notNull().default(0),
+    tokensReasoning: integer('tokens_reasoning').notNull().default(0),
+    tokensCacheRead: integer('tokens_cache_read').notNull().default(0),
+    tokensCacheWrite: integer('tokens_cache_write').notNull().default(0),
+  },
+  (t) => [
+    index('agent_sessions_chat').on(t.chatId),
+    check(
+      'agent_session_tokens',
+      sql`${t.tokensInput} >= 0 AND ${t.tokensOutput} >= 0 AND ${t.tokensReasoning} >= 0 AND ${t.tokensCacheRead} >= 0 AND ${t.tokensCacheWrite} >= 0`,
+    ),
+  ],
+);
+
+/**
+ * A session's log, in order. `data` is an entry in Wisp's session format
+ * (`agent_sessions.format`, `wisp-1`: `@wisp/agent/session-message`),
+ * plain JSON that does not depend on any model library; `type` repeats its
+ * `type`:
+ *
+ * - `user`: what the player wrote.
+ * - `synthetic`: what Wisp added to a turn for the model, as data: saved
+ *   memory (`kind: 'memory'`), the game and chat context (`context`) and the
+ *   chat's earlier messages when a session starts mid-chat (`history`).
+ * - `assistant`: one model step, its tool calls with their results.
+ * - `compaction`: `{ keptFrom, summary? }`. The model reads the latest one's
+ *   summary, then the entries from `keptFrom` on; no summary means
+ *   summarizing failed and the turn went on with the recent entries only.
+ *
+ * `model` is the model of the turn that wrote the entry. `seq` is the exact
+ * order the model reads. `id` (a UUID v7) names an entry for records outside
+ * the log, such as where a forked session branched off. Entries are only
+ * appended: nothing is replaced, and compaction never deletes messages.
+ */
+export const agentEntries = sqliteTable(
+  'agent_entries',
+  {
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => agentSessions.id, { onDelete: 'cascade' }),
+    seq: integer().notNull(),
+    id: text().notNull(),
+    type: text().$type<'user' | 'synthetic' | 'assistant' | 'compaction'>().notNull(),
+    /** The model of the turn that wrote the entry. */
+    model: text().notNull(),
+    createdAt: integer('created_at').notNull(),
+    data: text().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.sessionId, t.seq] }),
+    uniqueIndex('agent_entries_id').on(t.id),
+    index('agent_entries_type').on(t.sessionId, t.type, t.seq),
+    check('agent_entry_seq', sql`${t.seq} >= 0`),
+    check('agent_entry_type', sql`${t.type} IN ('user','synthetic','assistant','compaction')`),
+    check('agent_entry_data_type', sql`json_extract(${t.data}, '$.type') = ${t.type}`),
+    check('agent_entry_json', sql`json_valid(${t.data}) AND json_type(${t.data}) = 'object'`),
   ],
 );

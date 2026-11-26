@@ -2,6 +2,7 @@ import { integrationContext, type CapabilityView } from '@wisp/protocol/capabili
 import type { Chat, Message } from './events.ts';
 import { linkedReferences } from '@wisp/protocol/references';
 import { z } from 'zod';
+import type { TurnInput } from '@wisp/agent/engine';
 import { replyContent } from '../reply/reply-content.ts';
 export { conversationTitle } from './conversation-title.ts';
 
@@ -252,36 +253,37 @@ export function characterProfile(value: unknown): CharacterProfile | undefined {
 export function characterIdentity(value: unknown): string | undefined {
   return characterProfile(value)?.key;
 }
-// JSON escapes the tag delimiters so user text and game strings cannot close a block.
-function tagged(name: string, data: unknown) {
-  const json = JSON.stringify(data)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/&/g, '\\u0026');
-  return `<${name}>\n${json}\n</${name}>`;
-}
+/** A player's turn: their text and the game and chat context the model reads with it. */
 export function turnInput(
   text: string,
   context: unknown,
   chat: Pick<Chat, 'id' | 'title' | 'titleGenerated' | 'lastUIResult' | 'proactive' | 'routineId'>,
   capabilities?: CapabilityView[],
-) {
+): TurnInput {
   const references = linkedReferences(text);
-  return [
-    tagged('game_context', basicGameContext(context)),
-    ...(capabilities ? [tagged('integrations_context', integrationContext(capabilities))] : []),
-    tagged('conversation_context', {
-      id: chat.id,
-      title: chat.title,
-      automatic: chat.proactive === true,
-      routineId: chat.routineId,
-    }),
-    ...(references.length ? [tagged('linked_references', references)] : []),
-    ...(chat.lastUIResult ? [tagged('last_ui_result', chat.lastUIResult)] : []),
-    tagged('user_message', text),
-  ].join('\n\n');
+  return {
+    text,
+    context: [
+      { name: 'game_context', data: basicGameContext(context) },
+      ...(capabilities
+        ? [{ name: 'integrations_context', data: integrationContext(capabilities) }]
+        : []),
+      {
+        name: 'conversation_context',
+        data: {
+          id: chat.id,
+          title: chat.title,
+          automatic: chat.proactive === true,
+          routineId: chat.routineId,
+        },
+      },
+      ...(references.length ? [{ name: 'linked_references', data: references }] : []),
+      ...(chat.lastUIResult ? [{ name: 'last_ui_result', data: chat.lastUIResult }] : []),
+    ],
+  };
 }
-export function withConversationHistory(input: string, messages: Message[]): string {
+/** The turn with the chat's recent visible messages, for a session that starts mid-chat. */
+export function withConversationHistory(input: TurnInput, messages: Message[]): TurnInput {
   const currentUser = messages.findLastIndex((message) => message.role === 'user');
   const history = messages
     .slice(0, currentUser < 0 ? messages.length : currentUser)
@@ -290,30 +292,11 @@ export function withConversationHistory(input: string, messages: Message[]): str
         return [];
       }
       const content = message.role === 'assistant' ? replyContent(message) : message;
-      return content?.role === message.role && content.text.trim() ? [content] : [];
+      return content?.role === message.role && content.text.trim()
+        ? [{ role: message.role, text: content.text }]
+        : [];
     })
     .slice(-12)
     .map((message) => ({ role: message.role, text: message.text.slice(0, 2000) }));
-  if (!history.length) {
-    return input;
-  }
-  const block = tagged('historical_conversation', history);
-  return input.replace('<user_message>', block + '\n\n<user_message>');
-}
-export function visibleUserText(input: string) {
-  const match =
-    /^<game_context>\n[^\n]*\n<\/game_context>\n\n(?:<integrations_context>\n[^\n]*\n<\/integrations_context>\n\n)?<conversation_context>\n[^\n]*\n<\/conversation_context>\n\n(?:<linked_references>\n[^\n]*\n<\/linked_references>\n\n)?(?:<last_ui_result>\n[^\n]*\n<\/last_ui_result>\n\n)?(?:<historical_conversation>\n[^\n]*\n<\/historical_conversation>\n\n)?<user_message>\n([^\n]*)\n<\/user_message>$/.exec(
-      input,
-    );
-  if (match) {
-    try {
-      const value = JSON.parse(match[1]);
-      if (typeof value === 'string') {
-        return value;
-      }
-    } catch {
-      // Not valid JSON: fall through and return the raw text.
-    }
-  }
-  return input;
+  return history.length ? { ...input, history } : input;
 }

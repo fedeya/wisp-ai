@@ -9,7 +9,12 @@ import { isEmptyDraft } from './sessions.ts';
 import { cancelRunningCalls } from './chat-lifecycle.ts';
 import { ApplicationDatabase, type ApplicationOrm } from '../db/application-database.ts';
 import { writeMigrationBackup } from '../db/private-file.ts';
-import { chats as chatTable, messages as messageTable, chatInstanceState } from '../db/schema.ts';
+import {
+  agentSessions,
+  chats as chatTable,
+  messages as messageTable,
+  chatInstanceState,
+} from '../db/schema.ts';
 import {
   encodeChat,
   decodeChat,
@@ -294,6 +299,8 @@ export class ChatStore {
         if (result.changes !== 1) {
           throw Error('Conversation changed in another process. Restart Wisp before saving.');
         }
+        // Sessions have no foreign key to their chat (they start before it is saved).
+        orm.delete(agentSessions).where(eq(agentSessions.chatId, chat.row.id)).run();
       }
       for (const { chat, old, history } of changed) {
         if (!old) {

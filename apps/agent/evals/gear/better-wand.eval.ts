@@ -1,23 +1,13 @@
-import { defineEval } from 'eve/evals';
-import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
-import { commonChecks } from '../checks.ts';
-import { saveTurn } from '../report.ts';
-
-const prompt = 'hay alguna varita mejor que la mía que pueda conseguir?';
+import { defineEval } from '../harness.ts';
+import { calledTool, maxToolCalls, notCalledTool, replied } from '../checks.ts';
+import { fedrathStubs } from '../fixtures/fedrath.ts';
 
 export default defineEval({
   description:
     'A wand question in Spanish on an English client uses the weapon search instead of guessing names; it keeps one non-English case in the suite.',
   tags: ['gear', 'tiers'],
-  async test(t) {
-    const session = await t.session({ stubs: fedrathStubs() });
-    const started = performance.now();
-    const turn = await session.send(playerMessage(prompt));
-    await saveTurn('better-wand', prompt, turn, performance.now() - started);
-    turn.expectOk();
-    commonChecks(t, turn);
-    t.calledTool('wow__search_weapons', { input: { weaponType: 'wands' } });
-    t.notCalledTool('thewowdb__search_database').soft();
-    t.maxToolCalls(10).soft();
-  },
+  question: 'hay alguna varita mejor que la mía que pueda conseguir?',
+  stubs: fedrathStubs(),
+  gates: [replied(), calledTool('wow__search_weapons', { input: { weaponType: 'wands' } })],
+  scorers: [notCalledTool('thewowdb__search_database'), maxToolCalls(10)],
 });

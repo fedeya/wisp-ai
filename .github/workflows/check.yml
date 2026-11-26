@@ -176,7 +176,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.22.1'
+          node-version: '26.13.1'
           cache: pnpm
       # Historical release lockfiles may predate the build-script allowlist.
       - run: pnpm install --frozen-lockfile --ignore-scripts

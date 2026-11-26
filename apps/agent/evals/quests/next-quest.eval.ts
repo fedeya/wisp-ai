@@ -1,22 +1,13 @@
-import { defineEval } from 'eve/evals';
-import { fedrathStubs, playerMessage } from '../fixtures/fedrath.ts';
+import { defineEval } from '../harness.ts';
+import { calledTool, notCalledTool, replied } from '../checks.ts';
+import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { questStubs } from '../fixtures/world.ts';
-import { commonChecks } from '../checks.ts';
-import { saveTurn } from '../report.ts';
-
-const prompt = 'what quests should I do now?';
 
 export default defineEval({
   description: 'Next-quest advice reads the quest log and recommends one suitable quest.',
   tags: ['tiers'],
-  async test(t) {
-    const session = await t.session({ stubs: [...questStubs(), ...fedrathStubs()] });
-    const started = performance.now();
-    const turn = await session.send(playerMessage(prompt));
-    await saveTurn('next-quest', prompt, turn, performance.now() - started);
-    turn.expectOk();
-    commonChecks(t, turn);
-    t.calledTool('wow__query_character');
-    t.notCalledTool('web__web_search').soft();
-  },
+  question: 'what quests should I do now?',
+  stubs: [...questStubs(), ...fedrathStubs()],
+  gates: [replied(), calledTool('wow__query_character')],
+  scorers: [notCalledTool('web__web_search')],
 });

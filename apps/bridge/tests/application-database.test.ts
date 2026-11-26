@@ -16,7 +16,7 @@ import { databaseScope } from './database-fixture.ts';
 
 const chat = () => ({
   ...newChat('history', 'game'),
-  eveId: 'engine',
+  agentSession: 'engine',
   messages: [{ role: 'user' as const, text: 'Keep history 🧙' }],
 });
 
@@ -53,7 +53,7 @@ test(
       // The destination's own instance identity does not resume the source engine.
       const history = await target.load();
       expect(history[0].messages).toEqual(chat().messages);
-      expect(history[0].eveId).toBeUndefined();
+      expect(history[0].agentSession).toBeUndefined();
       await target.flush([]);
       await target.close();
       await expect(copyDatabaseSnapshot(source.file, targetFile)).rejects.toMatchObject({

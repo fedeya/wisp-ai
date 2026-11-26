@@ -80,16 +80,16 @@
     "@wisp/agent": "workspace:*",
     "@wisp/protocol": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5",
-    "eve": "1.0.0-rc.6",
     "hono": "4.13.15",
     "jose": "6.2.15",
     "pino": "10.4.0",
     "posthog-node": "5.68.2",
+    "uuid": "14.0.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@ai-sdk/openai": "4.0.110",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "drizzle-kit": "1.0.0-rc.5",
     "typescript": "5.9.3",
     "vitest": "5.1.0"
