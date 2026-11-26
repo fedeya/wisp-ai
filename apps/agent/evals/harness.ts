@@ -1,33 +1,24 @@
-// Runs one eval as a real engine turn: fixture stubs answer game and
-// integration tools, gates must pass and scorers are tracked as warnings.
 import { isDeepStrictEqual } from 'node:util';
-import { createAgentEngine, type EngineEvent, type ToolStubOutcome } from '../src/engine.ts';
+import { createHarness, toJsonValue } from 'vitest-evals';
+import type { TranscriptEvent } from 'vitest-evals';
+import { recordContextUsage } from '../src/contract/context-usage.ts';
+import { createAgentEngine } from '../src/engine.ts';
+import type { ToolStubOutcome } from '../src/engine.ts';
 import { agentHost } from '../src/host/agent-host.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
-import { eventsView, type Check, type TurnView } from './checks.ts';
 import { playerMessage } from './fixtures/fedrath.ts';
 
-/** Answers a tool from a fixture; the first stub whose tool and `match` fit wins. */
 export interface ToolStub {
   id: string;
   tool: string;
-  /** Input fields that must equal `const`. */
   match?: Record<string, { const: unknown }>;
   outcome: ToolStubOutcome;
 }
 
-export interface EvalDefinition {
-  description: string;
-  tags?: string[];
-  /** What the player asks; it is sent with the fixture character's game context. */
+export interface WispInput {
   question: string;
   stubs: ToolStub[];
-  /** Hard requirements: the eval fails when one does not hold. */
-  gates: Check[];
-  /** Soft requirements: reported when one does not hold. */
-  scorers?: Check[];
 }
-export const defineEval = (definition: EvalDefinition) => definition;
 
 function matches(stub: ToolStub, tool: string, input: unknown) {
   if (stub.tool !== tool) {
@@ -39,58 +30,76 @@ function matches(stub: ToolStub, tool: string, input: unknown) {
   );
 }
 
-export interface EvalOutcome {
-  /** failed: a gate or the turn failed; scored: only scorers missed. */
-  verdict: 'passed' | 'scored' | 'failed';
-  failed: string[];
-  soft: string[];
-  turn?: TurnView;
-  steps: number;
-  error?: string;
-}
-
-export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> {
-  const host = agentHost();
-  if (!host) {
-    throw Error('Start the eval bridge before running evals.');
-  }
-  const engine = createAgentEngine({
-    origin: () => host.origin,
-    token: host.token,
-    // Each eval is a single new turn; nothing is resumed.
-    history: new MemoryHistory(),
-    logger: { info: () => {}, warn: () => {} },
-    stub: (tool, input) => definition.stubs.find((stub) => matches(stub, tool, input))?.outcome,
-  });
-  try {
-    const run = engine.send(
-      engine.newSessionId(),
-      playerMessage(definition.question),
-      AbortSignal.timeout(300_000),
-      'eval',
-    );
-    const events: EngineEvent[] = [];
-    for await (const event of run.events) {
-      events.push(event);
+export const wispHarness = createHarness<WispInput, { reply: string }>({
+  name: 'wisp',
+  async run({ input, signal }) {
+    const host = agentHost();
+    if (!host) {
+      throw new Error('Start the eval bridge before running evals.');
     }
-    const result = await run.result;
-    const turn = eventsView(events);
-    const failed = definition.gates.filter((check) => !check.test(turn)).map(({ name }) => name);
-    const soft = (definition.scorers ?? [])
-      .filter((check) => !check.test(turn))
-      .map(({ name }) => name);
-    const error =
-      result.status === 'completed' ? undefined : (result.error?.message ?? 'cancelled');
-    return {
-      verdict: failed.length || error ? 'failed' : soft.length ? 'scored' : 'passed',
-      failed,
-      soft,
-      turn,
-      // The engine records usage once per model step.
-      steps: events.filter((event) => event.type === 'usage.recorded').length,
-      error,
-    };
-  } finally {
-    await engine.close();
-  }
-}
+    const engine = createAgentEngine({
+      origin: () => host.origin,
+      token: host.token,
+      history: new MemoryHistory(),
+      logger: { info: () => {}, warn: () => {} },
+      stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
+    });
+    try {
+      const timeout = AbortSignal.timeout(300_000);
+      const turn = engine.send(
+        engine.newSessionId(),
+        playerMessage(input.question),
+        signal ? AbortSignal.any([signal, timeout]) : timeout,
+        'eval',
+      );
+      const events: TranscriptEvent[] = [
+        { type: 'message', role: 'user', content: input.question },
+      ];
+      const texts: string[] = [];
+      const chat: Parameters<typeof recordContextUsage>[0] = {};
+      let steps = 0;
+      for await (const event of turn.events) {
+        const { type, data } = event;
+        if (type === 'content.completed' && data.kind === 'text') {
+          const content = String(data.value);
+          texts.push(content);
+          events.push({ type: 'message', role: 'assistant', content });
+        } else if (type === 'call.requested') {
+          const args = toJsonValue(data.input);
+          events.push({
+            type: 'tool_call',
+            id: String(data.callId),
+            name: (data.capability as { name: string }).name,
+            arguments: args && typeof args === 'object' && !Array.isArray(args) ? args : undefined,
+          });
+        } else if (type === 'call.settled') {
+          events.push({
+            type: 'tool_result',
+            toolCallId: String(data.callId),
+            content: toJsonValue(data.output),
+            error: data.outcome === 'failed' ? (data.error as { message: string }) : undefined,
+          });
+        } else if (type === 'usage.recorded') {
+          steps++;
+          recordContextUsage(chat, event);
+        }
+      }
+      const result = await turn.result;
+      return {
+        events,
+        output: { reply: texts.join('\n\n') },
+        usage: chat.usage && {
+          inputTokens: chat.usage.inputTokens,
+          outputTokens: chat.usage.outputTokens,
+        },
+        artifacts: { steps },
+        errors:
+          result.status === 'completed'
+            ? []
+            : [new Error(result.error?.message ?? `Turn ${result.status}`)],
+      };
+    } finally {
+      await engine.close();
+    }
+  },
+});

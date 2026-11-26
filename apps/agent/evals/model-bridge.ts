@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -16,32 +16,40 @@ function bridgeScript() {
   }
 }
 
-export async function startModelBridge() {
-  const child: ChildProcess = spawn(process.execPath, [bridgeScript(), 'serve'], {
+export async function startModelBridge(fixtures: NodeJS.ProcessEnv) {
+  const child = spawn(process.execPath, [bridgeScript(), 'serve'], {
+    env: { ...process.env, ...fixtures },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
   let errors = '';
-  child.stderr!.setEncoding('utf8').on('data', (data: string) => (errors += data));
-  const first = await new Promise<string>((resolve, reject) => {
-    const lines = createInterface({ input: child.stdout! });
-    lines.once('line', resolve);
-    child.once('exit', (code) =>
-      reject(new Error((errors.trim() || 'Eval bridge exited') + ' (code ' + code + ')')),
-    );
+  child.stderr.setEncoding('utf8').on('data', (data: string) => (errors += data));
+  const closed = new Promise<void>((resolve) => {
+    child.once('close', () => resolve());
   });
-  const { url, token, model } = JSON.parse(first) as { url: string; token: string; model: string };
-  // grade.ts sends model requests to the eval bridge directly.
-  process.env.WOW_BRIDGE_URL = url;
-  process.env.WOW_BRIDGE_TOKEN = token;
-  return {
-    url,
-    token,
-    model,
-    close: async () => {
-      if (child.exitCode === null) {
-        child.kill();
-      }
-    },
+  const close = async () => {
+    child.kill();
+    await closed;
   };
+  const lines = createInterface({ input: child.stdout });
+  try {
+    const first = await new Promise<string>((resolve, reject) => {
+      lines.once('line', resolve);
+      child.once('error', reject);
+      child.once('close', (code) =>
+        reject(new Error((errors.trim() || 'Eval bridge exited') + ' (code ' + code + ')')),
+      );
+    });
+    const { url, token, model } = JSON.parse(first) as {
+      url: string;
+      token: string;
+      model: string;
+    };
+    return { url, token, model, close };
+  } catch (error) {
+    await close();
+    throw error;
+  } finally {
+    lines.close();
+  }
 }

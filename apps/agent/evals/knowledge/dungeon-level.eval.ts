@@ -1,9 +1,9 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { expects, notCalledTool, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 
-export default defineEval({
+wispEval('dungeon-level', {
   description:
     'A dungeon-level question answers from the dungeon list and does not read loot it was not asked for.',
   tags: ['tiers'],

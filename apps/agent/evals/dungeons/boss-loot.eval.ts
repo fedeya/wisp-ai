@@ -1,9 +1,9 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { expects, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 
-export default defineEval({
+wispEval('boss-loot', {
   description:
     'A level 21 mage asks about one boss; the agent reads that boss in full and points out the sword he could train for.',
   tags: ['dungeons', 'gear'],

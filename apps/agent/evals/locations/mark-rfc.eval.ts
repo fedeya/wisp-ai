@@ -1,9 +1,9 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { calledTool, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs, mapStubs } from '../fixtures/world.ts';
 
-export default defineEval({
+wispEval('mark-rfc', {
   description: 'A map request resolves the destination and places one waypoint.',
   tags: ['tiers'],
   question: 'can you mark the Ragefire Chasm entrance on my map?',

@@ -1,8 +1,8 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { calledTool, maxToolCalls, notCalledTool, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 
-export default defineEval({
+wispEval('better-wand', {
   description:
     'A wand question in Spanish on an English client uses the weapon search instead of guessing names; it keeps one non-English case in the suite.',
   tags: ['gear', 'tiers'],

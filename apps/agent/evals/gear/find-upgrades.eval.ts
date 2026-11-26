@@ -1,8 +1,8 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { calledTool, expects, maxToolCalls, notCalledTool, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 
-export default defineEval({
+wispEval('find-upgrades', {
   description: 'A level 21 mage asks for upgrades; the agent searches real candidates per slot.',
   tags: ['gear', 'tiers'],
   question: 'find upgrades for me',

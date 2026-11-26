@@ -3,19 +3,8 @@
 import { generateText, Output, wrapLanguageModel } from 'ai';
 import { z } from 'zod';
 import { connectionModel } from '../src/models/connection-model.ts';
+import type { TurnView } from './checks.ts';
 import { criteria, scenarios } from './quality.ts';
-
-export interface Run {
-  label: string;
-  name: string;
-  prompt: string;
-  seconds: number;
-  steps: number;
-  reply: string;
-  presented: unknown[];
-  results?: unknown[];
-}
-export type Scores = Record<keyof typeof criteria, number>;
 
 const GRADER = `You grade answers from Wisp, an in-game World of Warcraft assistant.
 Judge only against the FACTS, the TOOL RESULTS the agent read and the GOOD ANSWER description, not your own game knowledge: a detail is supported when the facts or a tool result state it, and anything else counts as unsupported.
@@ -24,8 +13,8 @@ Score each criterion 0, 1 or 2 using its definition. Be strict and consistent. I
 
 // Tool results the grader reads, trimmed so a long run fits its context.
 const RESULT_CHARS = 60_000;
-function toolResults(run: Run) {
-  const text = JSON.stringify(run.results ?? []);
+function toolResults(results: TurnView['toolCalls']) {
+  const text = JSON.stringify(results);
   return text.length > RESULT_CHARS ? text.slice(0, RESULT_CHARS) + '…(truncated)' : text;
 }
 
@@ -56,34 +45,37 @@ export function judgeModel(origin: string, token: string, model: string) {
   });
 }
 
-/** Grades one saved answer; quality is the share of rubric points it earned. */
-export function qualityScorer(model: ReturnType<typeof judgeModel>) {
-  return async (run: Run) => {
-    const scenario = scenarios[run.name];
-    if (!scenario) {
-      throw new Error('No quality facts for scenario ' + run.name);
-    }
-    const { output } = await generateText({
-      model,
-      instructions: GRADER,
-      prompt: JSON.stringify({
-        FACTS: scenario.facts,
-        GOOD_ANSWER: scenario.goodAnswer,
-        CRITERIA: criteria,
-        QUESTION: run.prompt,
-        TOOL_RESULTS: toolResults(run),
-        PRESENTED: run.presented,
-        ANSWER: run.reply,
-      }),
-      output: Output.object({ schema: grades }),
-    });
-    return {
-      ...output,
-      quality: keys.reduce((sum, key) => sum + output[key], 0) / (keys.length * 2),
-    };
+/** Quality is the share of rubric points the answer earned. */
+export async function scoreQuality(
+  model: ReturnType<typeof judgeModel>,
+  name: string,
+  question: string,
+  turn: TurnView,
+  signal: AbortSignal,
+) {
+  const scenario = scenarios[name];
+  if (!scenario) {
+    throw new Error('No quality facts for scenario ' + name);
+  }
+  const { output } = await generateText({
+    model,
+    abortSignal: signal,
+    instructions: GRADER,
+    prompt: JSON.stringify({
+      FACTS: scenario.facts,
+      GOOD_ANSWER: scenario.goodAnswer,
+      CRITERIA: criteria,
+      QUESTION: question,
+      TOOL_RESULTS: toolResults(turn.toolCalls.filter((call) => call.name !== 'wisp__present_ui')),
+      PRESENTED: turn.toolCalls
+        .filter((call) => call.name === 'wisp__present_ui')
+        .map((call) => call.input),
+      ANSWER: turn.reply,
+    }),
+    output: Output.object({ schema: grades }),
+  });
+  return {
+    ...output,
+    quality: keys.reduce((sum, key) => sum + output[key], 0) / (keys.length * 2),
   };
-}
-
-export function grade(scorer: ReturnType<typeof qualityScorer>, run: Run) {
-  return scorer(run);
 }

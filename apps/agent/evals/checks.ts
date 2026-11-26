@@ -2,7 +2,8 @@
 // Deferred tools run through tool_call, and the engine reports each call as the
 // tool it ran, so checks see that tool, not the proxy.
 import { isDeepStrictEqual } from 'node:util';
-import type { EngineEvent } from '../src/engine.ts';
+import { toolCalls } from 'vitest-evals';
+import type { HarnessRun } from 'vitest-evals';
 
 export interface ToolCall {
   name: string;
@@ -24,28 +25,19 @@ export interface Check {
   test: (turn: TurnView) => boolean;
 }
 
-/** The view of a turn from the events the bridge would receive. */
-export function eventsView(events: EngineEvent[]): TurnView {
-  const texts: string[] = [];
-  const toolCalls: ToolCall[] = [];
-  const calls = new Map<string, ToolCall>();
-  for (const { type, data } of events) {
-    if (type === 'content.completed' && data.kind === 'text') {
-      texts.push(String(data.value));
-    } else if (type === 'call.requested') {
-      const call = { name: String((data.capability as { name: string }).name), input: data.input };
-      calls.set(String(data.callId), call);
-      toolCalls.push(call);
-    } else if (type === 'call.settled' && data.outcome === 'completed') {
-      const call = calls.get(String(data.callId));
-      if (call) {
-        call.output = data.output;
-      }
-    }
-  }
-  const reply = texts.join('\n\n');
-  const panels = toolCalls.filter((call) => call.name === 'wisp__present_ui');
-  return { reply, toolCalls, presented: reply + JSON.stringify(panels.map((call) => call.input)) };
+export function turnView(run: HarnessRun<{ reply: string }>): TurnView {
+  const reply = run.output.reply;
+  const calls = toolCalls(run).map((call) => ({
+    name: call.name,
+    input: call.arguments,
+    ...(call.status === 'ok' && { output: call.result }),
+  }));
+  const panels = calls.filter((call) => call.name === 'wisp__present_ui');
+  return {
+    reply,
+    toolCalls: calls,
+    presented: reply + JSON.stringify(panels.map((call) => call.input)),
+  };
 }
 
 // Whether every field of `expected` appears, recursively, in `actual`.

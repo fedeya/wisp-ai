@@ -1,9 +1,9 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { calledTool, expects, notCalledTool, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 
-export default defineEval({
+wispEval('raid-loot', {
   description:
     'A raid-wide loot question stays within the response cap: the tool answers a per-boss summary, not every item.',
   tags: ['dungeons'],

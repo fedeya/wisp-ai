@@ -1,9 +1,9 @@
-import { defineEval } from '../harness.ts';
+import { wispEval } from '../case.ts';
 import { expects, maxToolCalls, notCalledTool, replied } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
 
-export default defineEval({
+wispEval('wailing-caverns', {
   description:
     'A level 21 mage asks whether Wailing Caverns is worth it; the agent resolves the abbreviation, reads its loot and weighs the level fit and the upgrades.',
   tags: ['dungeons', 'gear'],
