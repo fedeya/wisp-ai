@@ -5,7 +5,7 @@ import path from 'node:path';
 import { Effect, FileSystem, PlatformError } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { readSkills } from '../src/wisp/content.ts';
-import * as AuthoredContent from '../src/wisp/wisp-agent.ts';
+import * as Wisp from '../src/wisp/wisp-agent.ts';
 
 test('skills are the folders with a SKILL.md; other entries are skipped', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-skills-'));
@@ -56,13 +56,13 @@ test('content retries a failed read and shares the successful load across turns'
       }),
   });
   const program = Effect.gen(function* () {
-    const { content } = yield* AuthoredContent.WispAgent;
+    const { content } = yield* Wisp.WispAgent;
     expect(yield* Effect.flip(content)).toMatchObject({ _tag: 'HostError' });
     const loaded = yield* Effect.all([content, content], { concurrency: 2 });
     expect(loaded[0]).toEqual({ system: 'Instructions', skills: [] });
     expect(loaded[1]).toBe(loaded[0]);
     expect(yield* content).toBe(loaded[0]);
   });
-  await Effect.runPromise(program.pipe(Effect.provide(AuthoredContent.layer), Effect.provide(fs)));
+  await Effect.runPromise(program.pipe(Effect.provide(Wisp.layer), Effect.provide(fs)));
   expect(reads).toBe(2);
 });
