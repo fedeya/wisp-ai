@@ -1,6 +1,7 @@
 import { hasToolCall, isStepCount, tool, type StopCondition, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { AuthoredSkill } from '../wisp/content.ts';
+import { modelInputSchema } from './model-schema.ts';
 import type { ToolDefinition } from './tool.ts';
 
 export type ToolStubOutcome = { response: unknown } | { throw: { message: string } };
@@ -123,7 +124,7 @@ export function assembleTools(options: {
     const toModelOutput = definition.toModelOutput;
     tools[name] = tool({
       description: definition.description,
-      inputSchema: definition.inputSchema,
+      inputSchema: modelInputSchema(definition.inputSchema),
       execute: async (input: unknown, context) => {
         const fixture = stub?.(name, input);
         if (fixture) {
@@ -173,10 +174,12 @@ export function assembleTools(options: {
     tools[TOOL_CALL] = tool({
       description:
         'Run a deferred tool found with tool_search. Pass its exact name and an input object matching its schema.',
-      inputSchema: z.object({
-        name: z.string().min(1),
-        input: z.record(z.string(), z.unknown()).default({}),
-      }),
+      inputSchema: modelInputSchema(
+        z.object({
+          name: z.string().min(1),
+          input: z.record(z.string(), z.unknown()).default({}),
+        }),
+      ),
       execute: async ({ name, input }, context) => {
         const target = callable.get(name);
         if (!target) {
