@@ -1,6 +1,6 @@
-import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
+import { COMPACTION_THRESHOLD } from '@wisp/agent/contract/context-usage';
 import type { CapabilityView } from '@wisp/protocol/capabilities';
-import type { Panel } from '@wisp/protocol/panels';
+import type { Panel } from '@wisp/agent/contract/panels';
 import {
   describeRoutineTrigger,
   routineEvents,

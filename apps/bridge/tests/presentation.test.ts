@@ -3,7 +3,7 @@ import {
   replyPresentation,
   PRESENT_UI_TOOL,
   SKIP_TIP_TOOL,
-} from '@wisp/protocol/reply-presentation';
+} from '@wisp/agent/contract/reply-presentation';
 import { applyEvent } from '../src/chat/events.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { ReplyProjection } from '../src/reply/reply-stream.ts';

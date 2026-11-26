@@ -1,5 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
-import { databaseSearch } from '@wisp/protocol/database';
+import { databaseSearch } from '../../contract/database.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 

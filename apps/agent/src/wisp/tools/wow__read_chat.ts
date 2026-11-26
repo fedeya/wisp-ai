@@ -1,5 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
-import { chatHistoryInput } from '@wisp/protocol/game-inspection';
+import { chatHistoryInput } from '../../contract/game-inspection.ts';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 

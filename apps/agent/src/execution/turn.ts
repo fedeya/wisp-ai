@@ -1,6 +1,6 @@
 import { streamText } from 'ai';
 import { Cause, Deferred, Effect, Exit, Stream, type Scope } from 'effect';
-import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
+import { COMPACTION_THRESHOLD } from '../contract/context-usage.ts';
 import type { EngineConfig } from '../host/engine-config.ts';
 import type { SessionModels } from '../models/session-models.ts';
 import type { ReplayTarget } from '../session/replay.ts';

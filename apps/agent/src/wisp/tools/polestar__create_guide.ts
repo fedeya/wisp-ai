@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { guideInput } from '@wisp/protocol/game-actions';
+import { guideInput } from '../../contract/game-actions.ts';
 export default enabledTool(
   'create_guide',
   defineTool({

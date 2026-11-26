@@ -4,7 +4,7 @@ import {
   type RpcEndpoint,
   type RpcInput,
   type RpcOutput,
-} from '@wisp/protocol/agent-rpc';
+} from '../contract/agent-rpc.ts';
 import { agentHost } from './agent-host.ts';
 export function bridgeOrigin() {
   return new URL(agentHost()?.origin || process.env.WOW_BRIDGE_URL || 'http://127.0.0.1:43187')

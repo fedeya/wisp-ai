@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { COMPACTION_THRESHOLD } from '@wisp/protocol/context-usage';
+import { COMPACTION_THRESHOLD } from '@wisp/agent/contract/context-usage';
 import type { Routine, RoutineRun } from '@wisp/protocol/routines';
 import {
   buildAddonSnapshot,

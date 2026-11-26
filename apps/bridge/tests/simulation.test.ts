@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { Simulator } from '../src/integrations/simulation/simulator.ts';
-import { simulationInput, simulationNeedsLiveState } from '@wisp/protocol/simulation';
+import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import type { ClassMetadata } from '../src/integrations/simulation/adapters/types.ts';
 import { adapters } from '../src/integrations/simulation/adapters/index.ts';
 const simulator = new Simulator(process.cwd());

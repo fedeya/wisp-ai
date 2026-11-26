@@ -1,7 +1,7 @@
 // Historical NDJSON replies only. New replies use text and presentation tools.
 import { z } from 'zod';
-import { uiNode, validateNode, type UINode } from '@wisp/protocol/ui-schema';
-import { referenceSchema, type ReferenceCatalog } from '@wisp/protocol/rich-reference';
+import { uiNode, validateNode, type UINode } from '@wisp/agent/contract/ui-schema';
+import { referenceSchema, type ReferenceCatalog } from '@wisp/agent/contract/rich-reference';
 import { conversationTitle } from '../chat/conversation-title.ts';
 import type { ReplyPart } from '../chat/chat.ts';
 const keySchema = z

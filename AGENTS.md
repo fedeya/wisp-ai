@@ -10,19 +10,19 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 
 ## Workspaces
 
-| Path                 | Package           | What it is                                                                                        |
-| -------------------- | ----------------- | ------------------------------------------------------------------------------------------------- |
-| `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging |
-| `apps/agent`         | `@wisp/agent`     | Agent runtime on the AI SDK and Effect, run in the bridge: models, tools, skills and instructions |
-| `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                     |
-| `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                     |
-| `packages/protocol`  | `@wisp/protocol`  | Shared zod schemas and types for the agent RPC, desktop, settings and addon helpers               |
-| `packages/releases`  | `@wisp/releases`  | Release channel/version helpers shared by desktop, web, scripts                                   |
-| `packages/game-data` | `@wisp/game-data` | Generates game data files (e.g. `addon/WispAI/Data/`) from Forever’s game tables on wago.tools    |
-| `addon/WispAI`       | `@wisp/addon`     | The WoW addon (Lua 5.1); sources must be listed in `WispAI.toc`                                   |
-| `simulator/`         | —                 | Checked-in metadata and license for the pinned WoWSims simulator (not a workspace)                |
-| `scripts/`           | `@wisp/scripts`   | Build, staging, packaging and release scripts (`.ts` run directly with `node`, some `.ps1`)       |
-| `tests/`             | `@wisp/tests`     | Cross-component integration tests and repository-wide checks                                      |
+| Path                 | Package           | What it is                                                                                                        |
+| -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging                 |
+| `apps/agent`         | `@wisp/agent`     | Agent runtime on the AI SDK and Effect, run in the bridge: models, tools, skills and instructions                 |
+| `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                                     |
+| `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                                     |
+| `packages/protocol`  | `@wisp/protocol`  | Zod schemas the desktop and bridge share (providers, capabilities, features, routines, search), and addon helpers |
+| `packages/releases`  | `@wisp/releases`  | Release channel/version helpers shared by desktop, web, scripts                                                   |
+| `packages/game-data` | `@wisp/game-data` | Generates game data files (e.g. `addon/WispAI/Data/`) from Forever’s game tables on wago.tools                    |
+| `addon/WispAI`       | `@wisp/addon`     | The WoW addon (Lua 5.1); sources must be listed in `WispAI.toc`                                                   |
+| `simulator/`         | —                 | Checked-in metadata and license for the pinned WoWSims simulator (not a workspace)                                |
+| `scripts/`           | `@wisp/scripts`   | Build, staging, packaging and release scripts (`.ts` run directly with `node`, some `.ps1`)                       |
+| `tests/`             | `@wisp/tests`     | Cross-component integration tests and repository-wide checks                                                      |
 
 ## Commands
 
@@ -101,11 +101,13 @@ despite `hoist: false`; keep it on the same version as the workspaces.
   Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,
   `logger.ts`, `app-paths.ts`) stay at the root. Package export names do not
   follow file moves.
-- **Shared schemas:** shapes more than one workspace uses are zod schemas in
-  `packages/protocol/src/`, imported via subpaths like `@wisp/protocol/model-errors`.
-  Add or change a shape there rather than redefining it in an app. Shapes only
-  one app uses live in that app, such as the addon's packets, mailbox frames and
-  downlink in `apps/bridge/src/addon/`.
+- **Shared schemas:** shapes are zod schemas owned by the workspace that defines
+  the contract. The desktop–bridge contract is in `packages/protocol/src/`
+  (`@wisp/protocol/providers`); what the agent asks of its host, such as tool
+  inputs, game inspections and presentation, is in `apps/agent/src/contract/`
+  (`@wisp/agent/contract/game-inspection`), which the bridge implements; the
+  addon's packets, mailbox frames and downlink are in `apps/bridge/src/addon/`.
+  Change a shape where it lives rather than redefining it in another app.
 - **Package boundaries:** `tests/package-boundaries.test.ts` requires every
   workspace to declare each package it imports in its own `package.json`
   (nothing is hoisted). Unit tests import their package's source; integration

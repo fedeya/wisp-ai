@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { inspectionSchema } from './game-inspection.js';
-import { actionSchema } from './game-actions.js';
-import { panelInput } from './panels.js';
-import { routineInput } from './routines.js';
-import { simulationInput } from './simulation.js';
-import { databaseRequest } from './database.js';
-import { wowheadQuery } from './search.js';
-import { providerId } from './providers.js';
-import { replyPresentation } from './reply-presentation.js';
+import { inspectionSchema } from './game-inspection.ts';
+import { actionSchema } from './game-actions.ts';
+import { panelInput } from './panels.ts';
+import { routineInput } from '@wisp/protocol/routines';
+import { simulationInput } from './simulation.ts';
+import { databaseRequest } from './database.ts';
+import { wowheadQuery } from '@wisp/protocol/search';
+import { providerId } from '@wisp/protocol/providers';
+import { replyPresentation } from './reply-presentation.ts';
 
 export const characterSections = z
   .array(

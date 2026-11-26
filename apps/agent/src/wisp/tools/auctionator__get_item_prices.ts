@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { itemPricesInput } from '@wisp/protocol/game-inspection';
+import { itemPricesInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'get_item_prices',
   defineTool({

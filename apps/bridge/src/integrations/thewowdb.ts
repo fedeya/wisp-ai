@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const API = 'https://thewowdb.com/api/v1/forever/';
-import { databaseRequest } from '@wisp/protocol/database';
+import { databaseRequest } from '@wisp/agent/contract/database';
 type JsonRecord = Record<string, unknown>;
 type CacheEntry = { data: JsonRecord; etag?: string; expiresAt: number; fetchedAt: string };
 
