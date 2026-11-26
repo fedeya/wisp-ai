@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { Effect } from 'effect';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { runBridgeEffect } from './capture-logs.ts';
@@ -98,7 +99,7 @@ test('actions run without a character identity and add the expected character wh
     agentSession: 'known',
     characterKey: JSON.stringify(['WoW Forever', '', 'Fedrath']),
   };
-  const request = vi.fn(async (_input: { action?: unknown }) => ({ status: 'completed' }));
+  const request = vi.fn((_input: { action?: unknown }) => Effect.succeed({ status: 'completed' }));
   const server = await serve({ getChats: () => [unknown, known], pending: { request } as never });
   const waypoint = {
     kind: 'set_waypoint',
@@ -121,12 +122,11 @@ test('actions run without a character identity and add the expected character wh
 test('agent server aborts game requests when the agent hangs up', async () => {
   const chat = workingChat();
   let seen: AbortSignal | undefined;
-  const request = vi.fn(
-    (_input: unknown, signal: AbortSignal) =>
-      new Promise((_resolve, reject) => {
-        seen = signal;
-        signal.addEventListener('abort', () => reject(Error('aborted')));
-      }),
+  const request = vi.fn(() =>
+    Effect.promise((signal) => {
+      seen = signal;
+      return new Promise(() => {});
+    }),
   );
   const server = await serve({ getChats: () => [chat], pending: { request } as never });
   try {

@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { Effect } from 'effect';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { runBridgeEffect } from './capture-logs.ts';
@@ -30,13 +31,15 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
   };
   rememberTurnQuests(chat, snapshot);
   let allowed = true;
-  const request = vi.fn(async (_input: unknown) => ({
-    capturedAt: 130,
-    sections: {
-      talents: { status: 'available', data: { unspentPoints: 1 } },
-      quests: { status: 'available', data: { quests: [], count: 0 } },
-    },
-  }));
+  const request = vi.fn((_input: unknown) =>
+    Effect.succeed({
+      capturedAt: 130,
+      sections: {
+        talents: { status: 'available', data: { unspentPoints: 1 } },
+        quests: { status: 'available', data: { quests: [], count: 0 } },
+      },
+    }),
+  );
   // Other service dependencies are not used by the state endpoint under test.
   const handler = runBridgeEffect(
     createAgentHandler({
@@ -69,15 +72,19 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
     expect(result.sections.quests.data.quests[0].title).toBe('Cached delivery');
     expect(result.sections.quests.data.quests[0].rewardXP).toBe(850);
     expect(result.sections.talents.data.unspentPoints).toBe(1);
-    expect(request).toHaveBeenLastCalledWith(
-      { chat: 'chat', session: 'addon', agent: true, sections: ['talents'] },
-      expect.any(AbortSignal),
-    );
+    expect(request).toHaveBeenLastCalledWith({
+      chat: 'chat',
+      session: 'addon',
+      agent: true,
+      sections: ['talents'],
+    });
     await (await read(['quests'], true)).json();
-    expect(request).toHaveBeenLastCalledWith(
-      { chat: 'chat', session: 'addon', agent: true, sections: ['quests'] },
-      expect.any(AbortSignal),
-    );
+    expect(request).toHaveBeenLastCalledWith({
+      chat: 'chat',
+      session: 'addon',
+      agent: true,
+      sections: ['quests'],
+    });
     allowed = false;
     const denied = await read(['quests']);
     expect(denied.status).toBe(503);

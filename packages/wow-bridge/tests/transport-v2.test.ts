@@ -1,4 +1,5 @@
 import { test, vi } from 'vitest';
+import { Effect, Exit, Scope } from 'effect';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -62,9 +63,11 @@ async function fixture(
     (report) => slow.push(report),
   );
   const hello = { type: 'hello', session: 'v2', seq: 1, at: 1, transportVersion: 2 };
+  const scope = Scope.makeUnsafe();
   return {
     root,
     bridge,
+    start: () => Effect.runPromise(Scope.provide(bridge.start(), scope)),
     file,
     payload,
     original,
@@ -89,7 +92,8 @@ async function fixture(
       return frames;
     },
     async close() {
-      await bridge.stop();
+      await Effect.runPromise(Scope.close(scope, Exit.void));
+      if (!bridge.stopped) await bridge.stop();
       assert.ok(path.resolve(root).startsWith(base + path.sep));
       await rm(root, { recursive: true, force: true });
     },
@@ -147,7 +151,7 @@ test('initial scan baselines a cached hello and fresh hello retry preserves nego
     const frames = encodeMessage(Buffer.from(JSON.stringify(f.hello)), UPLINK_KIND, 77);
     assert.equal(frames.length, 1, 'fixture must exercise the first already-published message');
     await writeFile(f.file, replaceUplink(f.original, frames[0]));
-    await f.bridge.start();
+    await f.start();
     assert.equal(f.packets.length, 0, 'persisted hello cannot establish a stale session');
     await f.bridge.read(f.file, false);
     assert.equal(f.packets.length, 0, 'an unchanged persisted frame stays suppressed');
@@ -188,7 +192,7 @@ test('cached single-frame user operations are not replayed and fresh user data c
     );
     assert.equal(rest.length, 0, 'fixture must be a complete single-frame user operation');
     await writeFile(f.file, replaceUplink(f.original, frame));
-    await f.bridge.start();
+    await f.start();
     await f.bridge.read(f.file, false);
     assert.equal(f.packets.length, 0);
     await f.send({ ...say, seq: 2 }, 10, true);
@@ -210,7 +214,7 @@ test('cached single-frame user operations are not replayed and fresh user data c
 test('unversioned messages cannot negotiate or take ownership of an active Wisp session', async () => {
   const f = await fixture();
   try {
-    await f.bridge.start();
+    await f.start();
     await f.send({ type: 'hello', session: 'unversioned', seq: 1, at: 1 });
     assert.equal(f.packets.length, 0);
     await f.send(f.hello, 10);
@@ -276,7 +280,7 @@ test('only fully decoded, CRC-valid, schema-valid v2 application messages reach 
 test('readiness is reasserted after a game save loses it, then repair stops once acknowledged', async () => {
   const f = await fixture();
   try {
-    await f.bridge.start();
+    await f.start();
     const [helloFrame] = await f.send(f.hello);
     await f.bridge.publish({ rev: 8, text: 'bulk '.repeat(2000) });
     assert.ok((await readFile(f.payload, 'utf8')).includes('bulk '.repeat(2000)));
@@ -319,7 +323,7 @@ test('bulk publish is not announced until its file replacement succeeds', async 
 type TransportFixture = Awaited<ReturnType<typeof fixture>>;
 let ackSequence = 1000;
 async function mailbox(f: TransportFixture, bulkAvailable = false) {
-  await f.bridge.start();
+  await f.start();
   await f.send({ ...f.hello, mailboxVersion: 1, bulkAvailable });
 }
 async function acknowledge(
@@ -547,7 +551,7 @@ test('resynchronization discards a failed delta and delivers a fresh full latest
 test('unrelated B-lane state cannot negotiate or block a fresh mailbox hello and its response', async () => {
   const f = await fixture();
   try {
-    await f.bridge.start();
+    await f.start();
     const unrelated = f.original.replace(
       /^WispAI_B(\d{3}):[^\r\n]*/gm,
       (_, id: string) => 'WispAI_B' + id + ': ' + (Number(id) % 3 ? 'disabled' : 'enabled'),
@@ -617,7 +621,7 @@ test('bulk selection uses observed transfer costs and reserves scarce slots for 
 test('compact-capable peers transfer checked state with header-only ACKs and no application dispatch', async () => {
   const f = await fixture();
   try {
-    await f.bridge.start();
+    await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
     const snapshot = { rev: 1, session: 'v2', text: 'Compacto 🚀 '.repeat(100) };
     await f.bridge.publish(snapshot);
@@ -665,7 +669,7 @@ test(
   async () => {
     const f = await fixture();
     try {
-      await f.bridge.start();
+      await f.start();
       await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: true });
       const snapshot = {
         rev: 1,
@@ -691,7 +695,7 @@ test(
 test('a file caught mid-rewrite is never replaced and its pending frame is restored afterwards', async () => {
   const f = await fixture();
   try {
-    await f.bridge.start();
+    await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
     await f.bridge.publish({ rev: 1, text: 'x' });
     const pending = readDownlink(await readFile(f.file, 'utf8'))!;
@@ -715,7 +719,7 @@ test('matching first-attempt ACKs update fragment RTT independently from bulk la
   const f = await fixture();
   const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
   try {
-    await f.bridge.start();
+    await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
     await f.bridge.publish({ rev: 1, text: 'x' });
     let frame = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
@@ -740,7 +744,7 @@ test('a compact bulk confirmation updates both its latency and slot budget witho
   const f = await fixture();
   const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
   try {
-    await f.bridge.start();
+    await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: true });
     await f.bridge.publish({
       rev: 1,
@@ -816,7 +820,7 @@ test('another game window keeps the bridge until its heartbeat finds the first o
 test('an active session rereads only its own state file between full folder walks', async () => {
   const f = await fixture();
   try {
-    await f.bridge.start();
+    await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true });
     assert.equal(f.packets.length, 1);
     const scan = vi.spyOn(f.bridge, 'scan');

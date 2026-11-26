@@ -1,4 +1,5 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
+import { Effect, Exit, Scope } from 'effect';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -69,13 +70,14 @@ test('a failing folder watcher is dropped and rewatched instead of ending the br
   await mkdir(character, { recursive: true });
   await writeFile(path.join(character, 'AddOns.txt'), 'WispAI: enabled\n');
   const errors: unknown[] = [];
+  const scope = Scope.makeUnsafe();
   const bridge = new DiskTransport(
     root,
     () => {},
     (error) => errors.push(error),
   );
   try {
-    await bridge.start();
+    await Effect.runPromise(Scope.provide(bridge.start(), scope));
     const first = bridge.watchers.get(character);
     assert.ok(first, 'the character folder is watched');
     // Without a listener this 'error' would be an uncaught exception.
@@ -86,8 +88,33 @@ test('a failing folder watcher is dropped and rewatched instead of ending the br
     const second = bridge.watchers.get(character);
     assert.ok(second && second !== first, 'the next scan watches the folder again');
   } finally {
-    await bridge.stop();
+    await Effect.runPromise(Scope.close(scope, Exit.void));
     assert.equal(bridge.watchers.size, 0);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a failed baseline scan releases watchers already opened in the connection scope', async () => {
+  const base = path.resolve('runtime');
+  await mkdir(base, { recursive: true });
+  const root = await mkdtemp(path.join(base, 'transport-start-'));
+  try {
+    const character = path.join(root, 'WTF', 'Account', 'ACCOUNT', 'Realm', 'Hero');
+    await mkdir(character, { recursive: true });
+    await writeFile(path.join(character, 'AddOns.txt'), 'WispAI: enabled\n');
+    const bridge = new DiskTransport(root, () => {});
+    const scan = bridge.scan.bind(bridge);
+    vi.spyOn(bridge, 'scan').mockImplementation(async (baseline) => {
+      await scan(baseline);
+      expect(bridge.watchers.size).toBe(1);
+      throw Error('baseline scan failed');
+    });
+    await expect(Effect.runPromise(Effect.scoped(bridge.start()))).rejects.toThrow(
+      'baseline scan failed',
+    );
+    expect(bridge.stopped).toBe(true);
+    expect(bridge.watchers.size).toBe(0);
+  } finally {
     await rm(root, { recursive: true, force: true });
   }
 });

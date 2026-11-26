@@ -4,12 +4,12 @@ import { errorMessage } from '../errors.ts';
 import { createPublishScheduler } from './publish-scheduler.ts';
 import type { SessionState } from '../session-state.ts';
 import type { SnapshotGate } from './snapshots.ts';
-import type { DiskTransport } from '@wisp/wow-bridge/transport';
+import type { Connection } from '@wisp/wow-bridge';
 
 export interface SnapshotPublisherDependencies {
   state: SessionState;
   snapshots: SnapshotGate;
-  transport: () => Pick<DiskTransport, 'publish'> | undefined;
+  transport: () => Pick<Connection, 'publish'> | undefined;
   /** Everything the snapshot shows besides `state`, read at publish time. */
   inputs: () => Omit<AddonSnapshotInputs, 'state'>;
 }

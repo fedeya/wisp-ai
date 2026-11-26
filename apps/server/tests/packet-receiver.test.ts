@@ -268,7 +268,7 @@ test("changing models keeps the chat's agent session and its visible conversatio
 
 test('reload interrupts old turns, rejects outstanding reads and clears character-specific commands', async () => {
   const f = fixture();
-  const request = f.pending.request({ chat: 'old', session: 'one' });
+  const request = Effect.runPromise(f.pending.request({ chat: 'old', session: 'one' }));
   const rejection = expect(request).rejects.toThrow('reloaded');
   f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 1 }));
   await rejection;
@@ -287,7 +287,7 @@ test('reload interrupts old turns, rejects outstanding reads and clears characte
 
 test('deleting an active conversation cancels its requests and prevents delayed messages from recreating it', async () => {
   const f = fixture();
-  const request = f.pending.request({ chat: 'old', session: 'one' });
+  const request = Effect.runPromise(f.pending.request({ chat: 'old', session: 'one' }));
   const rejection = expect(request).rejects.toThrow('deleted');
   f.receive(packetSchema.parse({ type: 'delete', session: 'one', chat: 'old', seq: 2, at: 2 }));
   await rejection;

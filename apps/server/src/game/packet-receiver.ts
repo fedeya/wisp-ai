@@ -8,7 +8,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MemoryView, SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
-import type { DiskTransport } from '@wisp/wow-bridge/transport';
+import type { Connection } from '@wisp/wow-bridge';
 import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
@@ -40,7 +40,7 @@ interface ReceiverDependencies {
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryStore: MemoryStore;
-  transport: () => Pick<DiskTransport, 'resetSession' | 'setCursor'> | undefined;
+  transport: () => Pick<Connection, 'resetSession' | 'setCursor'> | undefined;
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
@@ -437,11 +437,13 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           chat.status = 'working';
           changed();
           try {
-            const result = await pending.request({
-              chat: chat.id,
-              session: state.activeTransport,
-              action,
-            });
+            const result = await runPromise(
+              pending.request({
+                chat: chat.id,
+                session: state.activeTransport,
+                action,
+              }),
+            );
             chat.lastUIResult = result;
             const value = result as {
               status?: string;

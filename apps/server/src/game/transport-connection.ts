@@ -1,18 +1,18 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { Effect } from 'effect';
+import { Effect, Exit, Scope } from 'effect';
+import type { Connection, WowBridge } from '@wisp/wow-bridge';
 import type { Packet } from '@wisp/wow-bridge/protocol';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
-import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { SessionState } from '../session-state.ts';
 import type { SnapshotGate } from './snapshots.ts';
-import { DiskTransport, type SlowDownlink } from '@wisp/wow-bridge/transport';
+import type { SlowDownlink } from '@wisp/wow-bridge/transport';
 
 export interface TransportConnectionDependencies {
   state: SessionState;
-  pending: Pick<GameRequests, 'cancelAll'>;
+  bridge: WowBridge['Service'];
   integrationState: Pick<IntegrationState, 'reset'>;
   snapshots: Pick<SnapshotGate, 'invalidate'>;
   capabilitySettings: Pick<CapabilitySettings, 'publish'>;
@@ -26,7 +26,7 @@ export interface TransportConnectionDependencies {
 
 export interface TransportConnection {
   /** The running transport, if WoW is connected. */
-  current(): DiskTransport | undefined;
+  current(): Connection | undefined;
   /**
    * Run `work` after every earlier transport operation has settled, so
    * connects and disconnects never interleave. A failed earlier operation does
@@ -46,9 +46,12 @@ export interface TransportConnection {
 export const createTransportConnection = Effect.fnUntraced(function* (
   deps: TransportConnectionDependencies,
 ): Effect.fn.Return<TransportConnection> {
-  const runFork = Effect.runForkWith(yield* Effect.context<never>());
-  const { state, pending, integrationState, snapshots, capabilitySettings, changed } = deps;
-  let transport: DiskTransport | undefined;
+  const context = yield* Effect.context<never>();
+  const runFork = Effect.runForkWith(context);
+  const runPromise = Effect.runPromiseWith(context);
+  const { state, bridge, integrationState, snapshots, capabilitySettings, changed } = deps;
+  let transport: Connection | undefined;
+  let connectionScope: Scope.Closeable | undefined;
   let transportWork = Promise.resolve();
 
   function logError(error: unknown) {
@@ -82,18 +85,19 @@ export const createTransportConnection = Effect.fnUntraced(function* (
   }
 
   async function disconnect() {
-    const previous = transport;
+    const previous = connectionScope;
+    connectionScope = undefined;
     transport = undefined;
     state.activeTransport = '';
     state.firstReadyRevision = 0;
     state.currentCharacterKey = undefined;
     state.routinePresence = undefined;
     state.memoryViewRequest = undefined;
-    pending.cancelAll('The connection to WoW changed. Try again after reconnecting.');
+    bridge.requests.cancelAll('The connection to WoW changed. Try again after reconnecting.');
     integrationState.reset();
     snapshots.invalidate();
     changed();
-    await previous?.stop();
+    if (previous) await runPromise(Scope.close(previous, Exit.void));
     await capabilitySettings.publish().catch(logError);
   }
 
@@ -104,18 +108,25 @@ export const createTransportConnection = Effect.fnUntraced(function* (
       if (save) throw Error('The Wisp addon is missing from the selected WoW folder.');
       return;
     }
-    const next = new DiskTransport(
-      wow,
-      (packet) => {
-        if (transport === next) deps.receive(packet);
-      },
-      logError,
-      logHeldOff,
-      logSlowDownlink,
-    );
-    transport = next;
+    const scope = Scope.makeUnsafe();
+    connectionScope = scope;
     try {
-      await next.start();
+      transport = await runPromise(
+        Scope.provide(
+          bridge.open({
+            wow,
+            receive: (packet, connection) => {
+              if (connectionScope !== scope) return;
+              transport = connection;
+              deps.receive(packet);
+            },
+            onError: logError,
+            onHeldOff: logHeldOff,
+            onSlowDownlink: logSlowDownlink,
+          }),
+          scope,
+        ),
+      );
       if (save) await deps.saveWow(wow);
     } catch (error) {
       await disconnect();

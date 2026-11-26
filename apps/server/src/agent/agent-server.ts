@@ -21,7 +21,7 @@ import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { MemoryStore } from './memory-store.ts';
-import type { GameRequests } from '@wisp/wow-bridge/game-requests';
+import type { GameRequest, GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
@@ -480,36 +480,39 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       // is sent only when the turn knew who was playing.
       const stateRequest = !inspection && !action ? rpcRequests.state.parse(raw) : undefined;
       const abort = signal();
+      const requestGame = (input: GameRequest) =>
+        abort.aborted
+          ? Promise.reject(new Error('Game request cancelled'))
+          : runPromise(pending.request(input), { signal: abort });
       if (stateRequest) {
         return queryCharacterSections(
           chat,
           stateRequest.sections,
           async (sections) =>
             rpcResponses.state.parse(
-              await pending.request(
-                { chat: chat.id, session: currentTransport(), sections, agent: true },
-                abort,
-              ),
+              await requestGame({
+                chat: chat.id,
+                session: currentTransport(),
+                sections,
+                agent: true,
+              }),
             ),
           stateRequest.refresh,
         );
       }
       const request = (gameInspection = inspection as unknown) =>
-        pending.request(
-          {
-            chat: chat.id,
-            session: currentTransport(),
-            agent: true,
-            ...(action
-              ? {
-                  action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
-                }
-              : gameInspection
-                ? { inspection: gameInspection }
-                : {}),
-          },
-          abort,
-        );
+        requestGame({
+          chat: chat.id,
+          session: currentTransport(),
+          agent: true,
+          ...(action
+            ? {
+                action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
+              }
+            : gameInspection
+              ? { inspection: gameInspection }
+              : {}),
+        });
       const everlootAllowed = (tool: Everloot.LookupTool) =>
         capabilitySettings.enabled('mcp:' + Everloot.name) &&
         capabilitySettings.enabled('mcp_tool:' + Everloot.name + ':' + tool);
