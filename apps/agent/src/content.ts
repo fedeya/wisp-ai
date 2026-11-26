@@ -23,18 +23,30 @@ export async function readInstructions(root = agentContentRoot()) {
   return readFile(path.join(root, 'instructions.md'), 'utf8');
 }
 
-/** Reads every `skills/<name>/SKILL.md`; the frontmatter name must match its folder. */
+/**
+ * Reads every `skills/<name>/SKILL.md`; the frontmatter name must match its folder.
+ * Entries are listed by name only: the packaged engine reads these files from
+ * pkg's snapshot, whose readdir ignores `withFileTypes`.
+ */
 export async function readSkills(root = agentContentRoot()): Promise<AuthoredSkill[]> {
   const directory = path.join(root, 'skills');
-  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(
+    (await readdir(directory)).map(async (name) => {
+      try {
+        return { name, file: await readFile(path.join(directory, name, 'SKILL.md'), 'utf8') };
+      } catch (error) {
+        // A file, or a folder without SKILL.md, is not a skill.
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT' || code === 'ENOTDIR') return undefined;
+        throw error;
+      }
+    }),
+  );
   const skills = await Promise.all(
-    entries
-      .filter((entry) => entry.isDirectory())
+    files
+      .filter((entry) => entry !== undefined)
       .map(async (entry) => {
-        const text = (await readFile(path.join(directory, entry.name, 'SKILL.md'), 'utf8')).replace(
-          /\r\n/g,
-          '\n',
-        );
+        const text = entry.file.replace(/\r\n/g, '\n');
         const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text);
         if (!match) {
           throw Error('Skill without frontmatter: ' + entry.name);

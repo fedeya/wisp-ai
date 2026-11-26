@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
@@ -19,9 +18,9 @@ if (mode === '--version') {
     throw Error('SQLite is unavailable in the packaged engine.');
   }
   db.close();
-  const content = process.env.WISP_AGENT_CONTENT;
-  const skills = readdirSync(path.join(content, 'skills'));
-  if (!existsSync(path.join(content, 'instructions.md')) || !skills.length) {
+  const { readInstructions, readSkills } = await import('./agent-content.mjs');
+  const [instructions, skills] = await Promise.all([readInstructions(), readSkills()]);
+  if (!instructions.trim() || !skills.length) {
     throw Error('The agent instructions or skills are missing from the packaged engine.');
   }
   console.log(
