@@ -1,5 +1,5 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
-import type { Packet } from '../wow-bridge/protocol.ts';
+import type { Packet } from '@wisp/wow-bridge/protocol';
 import { selectionValues } from '@wisp/agent/contract/ui-schema';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
 import { randomUUID } from 'node:crypto';
@@ -8,8 +8,8 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MemoryView, SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
-import type { DiskTransport } from '../wow-bridge/transport.ts';
-import type { GameRequests } from '../wow-bridge/game-requests.ts';
+import type { Connection } from '@wisp/wow-bridge';
+import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
@@ -40,7 +40,7 @@ interface ReceiverDependencies {
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryStore: MemoryStore;
-  transport: () => Pick<DiskTransport, 'resetSession' | 'setCursor'> | undefined;
+  transport: () => Pick<Connection, 'resetSession' | 'setCursor'> | undefined;
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
@@ -437,11 +437,13 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           chat.status = 'working';
           changed();
           try {
-            const result = await pending.request({
-              chat: chat.id,
-              session: state.activeTransport,
-              action,
-            });
+            const result = await runPromise(
+              pending.request({
+                chat: chat.id,
+                session: state.activeTransport,
+                action,
+              }),
+            );
             chat.lastUIResult = result;
             const value = result as {
               status?: string;

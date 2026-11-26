@@ -3,7 +3,7 @@ import {
   createPublishScheduler,
   PUBLISH_COALESCE_MS,
   PUBLISH_MIN_INTERVAL_MS,
-} from '../src/wow-bridge/publish-scheduler.ts';
+} from '../src/game/publish-scheduler.ts';
 
 beforeEach(() => {
   vi.useFakeTimers({ now: 0 });

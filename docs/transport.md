@@ -8,14 +8,14 @@ directions; a finite bank of load-on-demand helpers can accelerate large replies
 
 ## Ownership and framing
 
-| Owner                                                  | Source                                                         |
-| ------------------------------------------------------ | -------------------------------------------------------------- |
-| Host scheduling, helper publication and bulk selection | [bridge transport](../apps/server/src/wow-bridge/transport.ts) |
-| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../apps/server/src/wow-bridge/mailbox.ts)      |
-| Full snapshots, patches and transport acknowledgements | [downlink contract](../apps/server/src/wow-bridge/downlink.ts) |
-| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)       |
-| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)         |
-| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua)   |
+| Owner                                                  | Source                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------ |
+| Host scheduling, helper publication and bulk selection | [bridge transport](../packages/wow-bridge/src/transport.ts)  |
+| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/wow-bridge/src/mailbox.ts)       |
+| Full snapshots, patches and transport acknowledgements | [downlink contract](../packages/wow-bridge/src/downlink.ts)  |
+| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)     |
+| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)       |
+| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua) |
 
 | Direction                          | Frame kind                           | Frame bytes | Payload bytes |
 | ---------------------------------- | ------------------------------------ | ----------- | ------------- |
@@ -112,8 +112,7 @@ The maintained regression suites execute production Lua with explicit native
 API mocks and exercise the host against temporary state files:
 
 ```sh
-pnpm exec vitest run --config packages/protocol/vitest.config.ts packages/protocol/tests/mailbox.test.ts packages/protocol/tests/downlink.test.ts
-pnpm exec vitest run --config apps/server/vitest.config.ts apps/server/tests/transport.test.ts apps/server/tests/transport-v2.test.ts
+pnpm exec turbo run test --filter=@wisp/wow-bridge
 pnpm exec vitest run --config tests/vitest.config.ts tests/addon/
 pnpm test:addon
 ```

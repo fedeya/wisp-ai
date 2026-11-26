@@ -8,7 +8,7 @@ import {
   type RoutineRun,
 } from '@wisp/protocol/routines';
 import { projectChats } from '../chat/chat-projection.ts';
-import type { GameRequests } from '../wow-bridge/game-requests.ts';
+import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { SessionState } from '../session-state.ts';
 
 /** Longest routine trigger text shown on the addon's Routines page. */

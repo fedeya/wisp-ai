@@ -1,5 +1,5 @@
 import { characterLabel } from '@wisp/protocol/character-key';
-import { Effect, Exit, Scope } from 'effect';
+import { Context, Effect, Exit, Layer, Scope } from 'effect';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
@@ -14,7 +14,7 @@ import { readJson, writeJson } from './json-file.ts';
 import { loadBridgeConfig } from './bridge-config.ts';
 import { z } from 'zod';
 import { createAgentHandler } from './agent/agent-server.ts';
-import { GameRequests } from './wow-bridge/game-requests.ts';
+import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
@@ -33,8 +33,8 @@ import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './integrations/capabilities.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
-import { SnapshotGate } from './wow-bridge/snapshots.ts';
-import { PUBLISH_MIN_INTERVAL_MS } from './wow-bridge/publish-scheduler.ts';
+import { SnapshotGate } from './game/snapshots.ts';
+import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
@@ -53,7 +53,7 @@ import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
 import { TheWoWDB } from './integrations/thewowdb.ts';
 import { Simulator } from './integrations/simulation/simulator.ts';
 import { appPaths, retireLegacyEngine } from './app-paths.ts';
-import { addonVersionFromToc } from './wow-bridge/addon-version.ts';
+import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
@@ -87,6 +87,7 @@ export const makeServer = Effect.fn('Server.make')(
   function* (options: ServerOptions, requestStop: () => void) {
     const context = yield* Effect.context<never>();
     const runFork = Effect.runForkWith(context);
+    const runPromise = Effect.runPromiseWith(context);
     // Checked by everything that starts work, so nothing new begins while resources close.
     let shutdownRequested = false;
     const ROOT =
@@ -246,15 +247,20 @@ export const makeServer = Effect.fn('Server.make')(
       },
     });
     yield* releaseRuntimeResource(() => publisher.stop());
-    const pending = new GameRequests(changed, {
-      onTimeout: (timeout) =>
-        runFork(
-          Effect.logWarning('WoW did not answer a request').pipe(
-            Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
-          ),
-        ),
-    });
-    yield* releaseRuntimeResource(() => pending.cancelAll('Bridge stopped'));
+    const bridge = Context.get(
+      yield* Layer.build(
+        WowBridge.layer(changed, {
+          onTimeout: (timeout) =>
+            runFork(
+              Effect.logWarning('WoW did not answer a request').pipe(
+                Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
+              ),
+            ),
+        }),
+      ),
+      WowBridge.WowBridge,
+    );
+    const pending = bridge.requests;
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
@@ -280,11 +286,13 @@ export const makeServer = Effect.fn('Server.make')(
       if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
         throw Error('Connect WoW and enable Character readings first.');
       }
-      return pending.request({
-        chat,
-        session: state.activeTransport,
-        sections: ['character', 'talents', 'spells', 'gear'],
-      });
+      return runPromise(
+        pending.request({
+          chat,
+          session: state.activeTransport,
+          sections: ['character', 'talents', 'spells', 'gear'],
+        }),
+      );
     }
     function changed() {
       publisher.changed();
@@ -378,7 +386,7 @@ export const makeServer = Effect.fn('Server.make')(
     };
     const transport: TransportConnection = yield* createTransportConnection({
       state,
-      pending,
+      bridge,
       integrationState,
       snapshots,
       capabilitySettings,

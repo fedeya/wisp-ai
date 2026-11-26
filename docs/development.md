@@ -305,7 +305,7 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 | Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
 | Local Wisp server             | [entrypoint](../apps/server/src/main.ts), [runtime](../apps/server/src/runtime.ts)            |
 | Desktop HTTP API              | [API](../apps/server/src/api)                                                                 |
-| WoW bridge                    | [addon transport](../apps/server/src/wow-bridge)                                              |
+| WoW bridge                    | [addon transport](../packages/wow-bridge/src)                                                 |
 | Agent engine                  | [engine.ts](../apps/agent/src/engine.ts)                                                      |
 | Agent tools and behavior      | [definitions](../apps/agent/src/wisp), [instructions](../apps/agent/src/wisp/instructions.md) |
 | Shared contracts              | [protocol](../packages/protocol/src)                                                          |

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { Deferred, Effect } from 'effect';
 
 export interface GameRequest {
   chat: string;
@@ -10,9 +11,7 @@ export interface GameRequest {
   agent?: boolean;
 }
 interface PendingRequest extends GameRequest {
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-  dispose: () => void;
+  finish: (result: Effect.Effect<unknown, Error>) => void;
 }
 
 /** How long new agent game requests fail at once after one timed out, unless WoW answers first. */
@@ -30,7 +29,7 @@ export interface GameTimeout {
   addonSilent: boolean;
   waitedMs: number;
 }
-interface GameRequestOptions {
+export interface GameRequestOptions {
   now?: () => number;
   onTimeout?: (timeout: GameTimeout) => void;
 }
@@ -43,6 +42,7 @@ export class GameRequests {
   private onTimeout: (timeout: GameTimeout) => void;
   private lastHeardAt = 0;
   private unresponsiveSince?: number;
+  private closed = false;
   /** IDs of recently timed-out requests, kept only to recognize a late answer. */
   private timedOut = new Map<string, { session: string; chat: string }>();
   constructor(changed: () => void, options: GameRequestOptions = {}) {
@@ -56,56 +56,68 @@ export class GameRequests {
     this.lastHeardAt = this.now();
   }
 
-  request(input: GameRequest, signal?: AbortSignal, timeout = 30_000): Promise<unknown> {
-    if (signal?.aborted) {
-      return Promise.reject(new Error('Game request cancelled'));
-    }
-    // One timeout means the whole game channel is stuck: every game tool waits on it.
-    // Fail the agent's next ones at once instead of making the player wait 30 seconds each.
-    // Requests the player starts (a settings button, a simulation) are always sent.
-    if (
-      input.agent &&
-      this.unresponsiveSince !== undefined &&
-      this.now() - this.unresponsiveSince < UNRESPONSIVE_MS
-    ) {
-      return Promise.reject(new Error(UNRESPONSIVE_MESSAGE));
-    }
-    const startedAt = this.now();
-    let id = randomUUID();
-    const previousIds: string[] = [];
-    return new Promise((resolve, reject) => {
-      const finish = (operation: () => void) => {
+  request(input: GameRequest, timeout = 30_000): Effect.Effect<unknown, Error> {
+    return Effect.gen({ self: this }, function* () {
+      if (this.closed) {
+        return yield* Effect.fail(new Error('Bridge stopped'));
+      }
+      // A timeout backs off agent tools on the whole channel. Player requests still go through.
+      if (
+        input.agent &&
+        this.unresponsiveSince !== undefined &&
+        this.now() - this.unresponsiveSince < UNRESPONSIVE_MS
+      ) {
+        return yield* Effect.fail(new Error(UNRESPONSIVE_MESSAGE));
+      }
+      const startedAt = this.now();
+      const reply = yield* Deferred.make<unknown, Error>();
+      let id = randomUUID();
+      const previousIds: string[] = [];
+
+      const remove = () => {
+        if (!this.pending.delete(id)) return false;
         for (const previous of previousIds) {
           this.recoveryIds.delete(previous);
         }
-        this.pending.get(id)?.dispose();
-        this.pending.delete(id);
         this.changed();
-        operation();
+        return true;
       };
-      const abort = () => finish(() => reject(new Error('Game request cancelled')));
-      // A lost read can be repeated safely. A fresh ID lets the addon's
-      // deduplication distinguish recovery from a retransmitted action.
-      let retries = 0;
-      const retry =
-        !input.action && (input.sections || input.inspection)
-          ? setInterval(() => {
-              const request = this.pending.get(id);
-              if (!request || retries >= 2) {
-                return;
-              }
-              this.pending.delete(id);
+
+      const request: PendingRequest = {
+        ...input,
+        finish: (result) => {
+          if (remove()) Deferred.doneUnsafe(reply, result);
+        },
+      };
+      yield* Effect.acquireRelease(
+        Effect.sync(() => {
+          this.pending.set(id, request);
+        }),
+        () => Effect.sync(remove),
+      );
+      this.changed();
+
+      // Recover only reads. The addon deduplicates by ID, so each retry needs a new one.
+      if (!input.action && (input.sections || input.inspection)) {
+        const retry = Effect.sleep(timeout / 3).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              if (!this.pending.delete(id)) return;
               previousIds.push(id);
               id = randomUUID();
               for (const previous of previousIds) {
                 this.recoveryIds.set(previous, id);
               }
-              retries++;
               this.pending.set(id, request);
               this.changed();
-            }, timeout / 3)
-          : undefined;
-      const timer = setTimeout(() => {
+            }),
+          ),
+        );
+        yield* Effect.andThen(retry, retry).pipe(Effect.forkScoped({ startImmediately: true }));
+      }
+
+      const expire = Effect.sync(() => {
+        if (!this.pending.has(id)) return;
         const timedOutAt = this.now();
         this.unresponsiveSince = timedOutAt;
         this.onTimeout({
@@ -121,30 +133,25 @@ export class GameRequests {
           if (this.timedOut.size <= 64) break;
           this.timedOut.delete(oldest);
         }
-        finish(() => reject(new Error(input.agent ? AGENT_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE)));
-      }, timeout);
-      signal?.addEventListener('abort', abort, { once: true });
-      this.pending.set(id, {
-        ...input,
-        resolve: (value) => finish(() => resolve(value)),
-        reject: (error) => finish(() => reject(error)),
-        dispose: () => {
-          clearTimeout(timer);
-          clearInterval(retry);
-          signal?.removeEventListener('abort', abort);
-        },
+        request.finish(
+          Effect.fail(new Error(input.agent ? AGENT_TIMEOUT_MESSAGE : TIMEOUT_MESSAGE)),
+        );
       });
-      this.changed();
-    });
+      yield* Effect.sleep(timeout).pipe(
+        Effect.andThen(expire),
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      return yield* Deferred.await(reply);
+    }).pipe(Effect.scoped);
   }
   receive(requestId: string, session: string, chat: string | undefined, value: unknown) {
     const request = this.pending.get(this.recoveryIds.get(requestId) || requestId);
     if (request?.session === session && request.chat === chat) {
       this.unresponsiveSince = undefined;
-      request.resolve(value);
+      request.finish(Effect.succeed(value));
       return true;
     }
-    // A valid answer to a request that already timed out: its promise stays
+    // A valid answer to a request that already timed out: its result stays
     // rejected, but WoW is answering again, so stop failing new requests.
     const late = this.timedOut.get(requestId);
     if (late?.session === session && late.chat === chat) {
@@ -157,13 +164,17 @@ export class GameRequests {
     // A new window or reconnection starts with a fresh channel.
     this.unresponsiveSince = undefined;
     for (const request of this.pending.values()) {
-      request.reject(new Error(reason));
+      request.finish(Effect.fail(new Error(reason)));
     }
+  }
+  close() {
+    this.closed = true;
+    this.cancelAll('Bridge stopped');
   }
   cancelChat(chat: string) {
     for (const request of this.pending.values()) {
       if (request.chat === chat) {
-        request.reject(new Error('Conversation deleted'));
+        request.finish(Effect.fail(new Error('Conversation deleted')));
       }
     }
   }

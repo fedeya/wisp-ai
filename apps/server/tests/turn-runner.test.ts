@@ -7,7 +7,7 @@ import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/chat/context.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { SnapshotGate } from '../src/wow-bridge/snapshots.ts';
+import { SnapshotGate } from '../src/game/snapshots.ts';
 import { PRESENT_UI_TOOL } from '@wisp/agent/contract/reply-presentation';
 import type { UsageTelemetry } from '../src/telemetry.ts';
 import { ModelFailures, httpFailureKind } from '../src/models/model-failures.ts';

@@ -3,6 +3,7 @@ import { readdir, readFile, mkdir, writeFile, rename, rm } from 'node:fs/promise
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { Effect, Schedule } from 'effect';
 import { luaJson, packetSchema, type Packet } from './protocol.ts';
 import {
   MailboxDecoder,
@@ -113,12 +114,10 @@ export class DiskTransport {
   private acknowledgedSnapshot?: PublishedSnapshot;
   private downlink?: DownlinkTransfer;
   private publicationEpoch = 0;
-  private controlTimer?: ReturnType<typeof setInterval>;
   private controlWriting?: Promise<void>;
   private lastControlWriteAt = 0;
   stopped = false;
   published = '';
-  timer?: ReturnType<typeof setInterval>;
   nextSlot = 1;
   peerRevision = 0;
   writing = Promise.resolve();
@@ -157,28 +156,33 @@ export class DiskTransport {
     this.onHeldOff = onHeldOff;
     this.onSlowDownlink = onSlowDownlink;
   }
-  async start() {
-    await this.scan(true);
-    if (this.stopped) return;
-    let lastScanAt = Date.now();
-    this.timer = setInterval(() => {
-      if (this.scans) return;
-      // Folder watchers deliver most changes; this tick is the fallback.
-      // Walking every character folder and rereading every state file each
-      // second costs I/O that grows with the number of characters, so once a
-      // game session is active only its file is reread every second and the
-      // full walk (new characters, character switches) runs less often.
-      const active = this.activeFile;
-      const work =
-        !active || Date.now() - lastScanAt >= FULL_SCAN_INTERVAL_MS
-          ? ((lastScanAt = Date.now()), this.scan(false))
-          : this.read(active, false);
-      this.scans = work.catch(this.onError).finally(() => {
-        this.scans = undefined;
-      });
-    }, 1000);
-    this.controlTimer = setInterval(() => {
-      if (this.activeFile && this.controlPending()) {
+  start() {
+    return Effect.gen({ self: this }, function* () {
+      yield* Effect.addFinalizer(() => Effect.promise(() => this.stop()));
+      // A baseline scan may create watchers before it finishes.
+      yield* Effect.tryPromise({ try: () => this.scan(true), catch: (error) => error }).pipe(
+        Effect.uninterruptible,
+      );
+      if (this.stopped) return;
+      let lastScanAt = Date.now();
+      yield* Effect.sync(() => {
+        if (this.scans) return;
+        // Folder watchers deliver most changes; this tick is the fallback.
+        // Walking every character folder and rereading every state file each
+        // second costs I/O that grows with the number of characters, so once a
+        // game session is active only its file is reread every second and the
+        // full walk (new characters, character switches) runs less often.
+        const active = this.activeFile;
+        const now = Date.now();
+        const fullScan = !active || now - lastScanAt >= FULL_SCAN_INTERVAL_MS;
+        if (fullScan) lastScanAt = now;
+        const work = fullScan ? this.scan(false) : this.read(active, false);
+        this.scans = work.catch(this.onError).finally(() => {
+          this.scans = undefined;
+        });
+      }).pipe(Effect.schedule(Schedule.fixed(1000)), Effect.forkScoped({ uninterruptible: false }));
+      yield* Effect.sync(() => {
+        if (!this.activeFile || !this.controlPending()) return;
         const transfer = this.downlink;
         if (transfer && Date.now() - transfer.lastProgressAt > 5000) {
           // A lost final ACK or an interrupted receiver must not pin the lane
@@ -192,8 +196,8 @@ export class DiskTransport {
           this.frameTransfer(transfer);
         }
         void this.read(this.activeFile, false).catch(this.onError);
-      }
-    }, 150);
+      }).pipe(Effect.schedule(Schedule.fixed(150)), Effect.forkScoped({ uninterruptible: false }));
+    });
   }
   async scan(baseline: boolean) {
     const account = path.join(this.wow, 'WTF', 'Account');
@@ -780,8 +784,6 @@ export class DiskTransport {
   }
   async stop() {
     this.stopped = true;
-    clearInterval(this.timer);
-    clearInterval(this.controlTimer);
     for (const watcher of this.watchers.values()) {
       watcher.close();
     }

@@ -1,9 +1,24 @@
 import { test, expect, vi } from 'vitest';
-import { GameRequests, UNRESPONSIVE_MS } from '../src/wow-bridge/game-requests.ts';
+import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import { GameRequests, UNRESPONSIVE_MS, type GameRequest } from '../src/game-requests.ts';
+import { layer, WowBridge } from '../src/wow-bridge.ts';
+
+function runRequest(
+  requests: GameRequests,
+  input: GameRequest,
+  signal?: AbortSignal,
+  timeout?: number,
+) {
+  return Effect.runPromise(requests.request(input, timeout), { signal });
+}
 
 test('responses are scoped to both transport session and conversation', async () => {
   const requests = new GameRequests(() => {});
-  const result = requests.request({ chat: 'chat', session: 'one', inspection: { kind: 'target' } });
+  const result = runRequest(requests, {
+    chat: 'chat',
+    session: 'one',
+    inspection: { kind: 'target' },
+  });
   const [{ id }] = requests.snapshot();
   expect(requests.receive(id, 'two', 'chat', { wrong: true })).toBe(false);
   expect(requests.receive(id, 'one', 'other', { wrong: true })).toBe(false);
@@ -14,16 +29,16 @@ test('responses are scoped to both transport session and conversation', async ()
 
 test('reload, deletion and HTTP cancellation reject requests and release their timers', async () => {
   const requests = new GameRequests(() => {});
-  const reload = requests.request({ chat: 'a', session: 'one' });
-  const deleted = requests.request({ chat: 'b', session: 'one' });
+  const reload = runRequest(requests, { chat: 'a', session: 'one' });
+  const deleted = runRequest(requests, { chat: 'b', session: 'one' });
   const rejectedReload = expect(reload).rejects.toThrow('Reload');
   const rejectedDeleted = expect(deleted).rejects.toThrow('deleted');
   requests.cancelChat('b');
   requests.cancelAll('Reload');
   await Promise.all([rejectedReload, rejectedDeleted]);
   const abort = new AbortController();
-  const cancelled = requests.request({ chat: 'c', session: 'two' }, abort.signal);
-  const rejectedCancelled = expect(cancelled).rejects.toThrow('cancelled');
+  const cancelled = runRequest(requests, { chat: 'c', session: 'two' }, abort.signal);
+  const rejectedCancelled = expect(cancelled).rejects.toThrow('interrupt');
   abort.abort();
   await rejectedCancelled;
   expect(requests.snapshot()).toEqual([]);
@@ -33,7 +48,7 @@ test('timeout removes a request before a late game response can settle it', asyn
   vi.useFakeTimers();
   try {
     const requests = new GameRequests(() => {});
-    const result = requests.request({ chat: 'chat', session: 'one' }, undefined, 50);
+    const result = runRequest(requests, { chat: 'chat', session: 'one' }, undefined, 50);
     const rejected = expect(result).rejects.toThrow('did not respond');
     const [{ id }] = requests.snapshot();
     await vi.advanceTimersByTimeAsync(50);
@@ -45,12 +60,65 @@ test('timeout removes a request before a late game response can settle it', asyn
   }
 });
 
+test('interrupting a retried read clears its aliases, retries and timeout', async () => {
+  vi.useFakeTimers();
+  try {
+    const onTimeout = vi.fn();
+    const requests = new GameRequests(() => {}, { onTimeout });
+    const abort = new AbortController();
+    const read = runRequest(
+      requests,
+      { chat: 'chat', session: 'one', sections: ['gear'] },
+      abort.signal,
+    );
+    const rejected = expect(read).rejects.toThrow('interrupt');
+    const [{ id: original }] = requests.snapshot();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const [{ id: retry }] = requests.snapshot();
+    expect(retry).not.toBe(original);
+    abort.abort();
+    await rejected;
+    expect(requests.snapshot()).toEqual([]);
+    expect(requests.receive(original, 'one', 'chat', {})).toBe(false);
+    expect(requests.receive(retry, 'one', 'chat', {})).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(onTimeout).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('closing the bridge layer rejects outstanding game requests', async () => {
+  const scope = Scope.makeUnsafe();
+  try {
+    const context = Effect.runSync(
+      Layer.buildWithScope(
+        layer(() => {}),
+        scope,
+      ),
+    );
+    const { requests } = Context.get(context, WowBridge);
+    const pending = runRequest(requests, { chat: 'chat', session: 'one', sections: ['gear'] });
+    const rejected = expect(pending).rejects.toThrow('Bridge stopped');
+    expect(requests.snapshot()).toHaveLength(1);
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await rejected;
+    expect(requests.snapshot()).toEqual([]);
+    await expect(runRequest(requests, { chat: 'chat', session: 'one' })).rejects.toThrow(
+      'Bridge stopped',
+    );
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
+
 test('lost reads recover with fresh IDs within the original deadline; actions never retry', async () => {
   vi.useFakeTimers();
   try {
     const changed = vi.fn();
     const requests = new GameRequests(changed);
-    const result = requests.request({ chat: 'chat', session: 'one', sections: ['character'] });
+    const result = runRequest(requests, { chat: 'chat', session: 'one', sections: ['character'] });
     const [{ id: first }] = requests.snapshot();
     await vi.advanceTimersByTimeAsync(10_000);
     const [{ id: second }] = requests.snapshot();
@@ -60,7 +128,7 @@ test('lost reads recover with fresh IDs within the original deadline; actions ne
     expect(requests.receive(second, 'one', 'chat', {})).toBe(false);
     expect(await result).toEqual({ xp: 100 });
     expect(vi.getTimerCount()).toBe(0);
-    const action = requests.request({ chat: 'chat', session: 'one', action: { kind: 'test' } });
+    const action = runRequest(requests, { chat: 'chat', session: 'one', action: { kind: 'test' } });
     const [{ id }] = requests.snapshot();
     const rejected = expect(action).rejects.toThrow('did not respond');
     await vi.advanceTimersByTimeAsync(29_000);
@@ -83,7 +151,7 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
       onTimeout: (timeout) => timeouts.push(timeout),
     });
     requests.heard();
-    const first = requests.request({
+    const first = runRequest(requests, {
       chat: 'chat',
       session: 'one',
       agent: true,
@@ -97,7 +165,7 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
 
     // The next read in the same turn does not wait another 30 seconds.
     await expect(
-      requests.request({
+      runRequest(requests, {
         chat: 'chat',
         session: 'one',
         agent: true,
@@ -108,7 +176,7 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
 
     // A minute later the channel is tried again; an answer clears the state.
     clock += UNRESPONSIVE_MS;
-    const retried = requests.request({
+    const retried = runRequest(requests, {
       chat: 'chat',
       session: 'one',
       agent: true,
@@ -118,7 +186,7 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
     requests.heard();
     expect(requests.receive(id, 'one', 'chat', { ok: true })).toBe(true);
     expect(await retried).toEqual({ ok: true });
-    const after = requests.request({
+    const after = runRequest(requests, {
       chat: 'chat',
       session: 'one',
       agent: true,
@@ -141,7 +209,7 @@ test('a timeout reports whether the addon kept talking while the request waited'
       now: () => clock,
       onTimeout: (timeout) => timeouts.push(timeout),
     });
-    const action = requests.request({
+    const action = runRequest(requests, {
       chat: 'chat',
       session: 'one',
       agent: true,
@@ -156,7 +224,7 @@ test('a timeout reports whether the addon kept talking while the request waited'
     expect(timeouts).toEqual([{ kind: 'action', addonSilent: false, waitedMs: 30_000 }]);
     // A reconnection starts over instead of failing the new window's requests.
     requests.cancelAll('reconnected');
-    const fresh = requests.request({
+    const fresh = runRequest(requests, {
       chat: 'chat',
       session: 'two',
       agent: true,
@@ -175,7 +243,7 @@ test('a valid late answer to a timed-out read lets new requests through again', 
   try {
     let clock = 1_000_000;
     const requests = new GameRequests(() => {}, { now: () => clock });
-    const read = requests.request({
+    const read = runRequest(requests, {
       chat: 'chat',
       session: 'one',
       agent: true,
@@ -188,20 +256,20 @@ test('a valid late answer to a timed-out read lets new requests through again', 
     clock += 30_000;
     await vi.advanceTimersByTimeAsync(20_000);
     await rejected;
-    await expect(requests.request({ chat: 'chat', session: 'one', agent: true })).rejects.toThrow(
-      'was not sent',
-    );
+    await expect(
+      runRequest(requests, { chat: 'chat', session: 'one', agent: true }),
+    ).rejects.toThrow('was not sent');
 
     // Answers from the wrong window or conversation do not count.
     expect(requests.receive(first, 'two', 'chat', {})).toBe(false);
     expect(requests.receive(first, 'one', 'other', {})).toBe(false);
-    await expect(requests.request({ chat: 'chat', session: 'one', agent: true })).rejects.toThrow(
-      'was not sent',
-    );
+    await expect(
+      runRequest(requests, { chat: 'chat', session: 'one', agent: true }),
+    ).rejects.toThrow('was not sent');
 
     // WoW answers the original ID late: the rejected read stays rejected, new ones are sent.
     expect(requests.receive(retried, 'one', 'chat', { late: true })).toBe(false);
-    const next = requests.request({
+    const next = runRequest(requests, {
       chat: 'chat',
       session: 'one',
       agent: true,
@@ -220,7 +288,11 @@ test('requests the player starts are still sent while WoW is unresponsive, with 
   try {
     let clock = 1_000_000;
     const requests = new GameRequests(() => {}, { now: () => clock });
-    const settings = requests.request({ chat: 'chat', session: 'one', action: { kind: 'test' } });
+    const settings = runRequest(requests, {
+      chat: 'chat',
+      session: 'one',
+      action: { kind: 'test' },
+    });
     const rejected = expect(settings).rejects.toThrow(
       'WoW did not respond in time. Open Wisp and try again.',
     );
@@ -229,15 +301,15 @@ test('requests the player starts are still sent while WoW is unresponsive, with 
     await rejected;
 
     // The agent's next call fails at once; the player's next click is sent.
-    await expect(requests.request({ chat: 'chat', session: 'one', agent: true })).rejects.toThrow(
-      'was not sent',
-    );
-    const simulation = requests.request({ chat: 'sim', session: 'one', sections: ['gear'] });
+    await expect(
+      runRequest(requests, { chat: 'chat', session: 'one', agent: true }),
+    ).rejects.toThrow('was not sent');
+    const simulation = runRequest(requests, { chat: 'sim', session: 'one', sections: ['gear'] });
     const [{ id }] = requests.snapshot();
     expect(requests.receive(id, 'one', 'sim', { ok: true })).toBe(true);
     expect(await simulation).toEqual({ ok: true });
     // Its answer shows WoW is back, so the agent's calls go through again.
-    const agent = requests.request({ chat: 'chat', session: 'one', agent: true });
+    const agent = runRequest(requests, { chat: 'chat', session: 'one', agent: true });
     expect(requests.snapshot()).toHaveLength(1);
     requests.cancelAll('done');
     await expect(agent).rejects.toThrow('done');
