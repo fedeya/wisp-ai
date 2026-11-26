@@ -58,7 +58,7 @@ test.each([
   'apps/agent/src/wisp/instructions.md',
   'apps/agent/src/wisp/skills/example/SKILL.md',
   'addon/WispAI/Core.lua',
-  'packages/protocol/src/mailbox.ts',
+  'apps/bridge/src/addon/mailbox.ts',
   'scripts/build-engine.ts',
   'simulator/manifest.json',
 ])('%s still requires packaging, including in a mixed push', (file) => {

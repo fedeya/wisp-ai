@@ -62,7 +62,9 @@
     "./runtime-resources": "./src/runtime-resources.ts",
     "./chat": "./src/chat/chat.ts",
     "./model-connections": "./src/models/model-connections.ts",
-    "./web-search": "./src/integrations/search/web-search.ts"
+    "./web-search": "./src/integrations/search/web-search.ts",
+    "./mailbox": "./src/addon/mailbox.ts",
+    "./downlink": "./src/addon/downlink.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",

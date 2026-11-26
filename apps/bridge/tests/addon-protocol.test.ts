@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { luaJson, packetSchema } from '../src/protocol.ts';
+import { luaJson, packetSchema } from '../src/addon/protocol.ts';
 const message = {
   type: 'say',
   chat: 'chat',

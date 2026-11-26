@@ -11,8 +11,8 @@ directions; a finite bank of load-on-demand helpers can accelerate large replies
 | Owner                                                  | Source                                                       |
 | ------------------------------------------------------ | ------------------------------------------------------------ |
 | Host scheduling, helper publication and bulk selection | [bridge transport](../apps/bridge/src/addon/transport.ts)    |
-| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/protocol/src/mailbox.ts)         |
-| Full snapshots, patches and transport acknowledgements | [downlink contract](../packages/protocol/src/downlink.ts)    |
+| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../apps/bridge/src/addon/mailbox.ts)         |
+| Full snapshots, patches and transport acknowledgements | [downlink contract](../apps/bridge/src/addon/downlink.ts)    |
 | Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)     |
 | Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)       |
 | Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua) |

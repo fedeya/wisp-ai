@@ -1,5 +1,5 @@
 // Offline migration only. The live renderer accepts structured references exclusively.
-import { linkedReferences } from '@wisp/protocol/references';
+import { linkedReferences } from '../chat/references.ts';
 import { referenceSchema, type RichReference } from '@wisp/protocol/rich-reference';
 import type { Chat } from '../chat/events.ts';
 

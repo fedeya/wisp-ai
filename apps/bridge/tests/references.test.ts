@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { linkedReferences } from '@wisp/protocol/references';
+import { linkedReferences } from '../src/chat/references.ts';
 import { turnInput } from '../src/chat/context.ts';
 test('user-linked skills retain their verified identity and exact localized label in model context', () => {
   const text =

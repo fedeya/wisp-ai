@@ -1,13 +1,7 @@
 import { test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import {
-  DOWNLINK_HELPERS,
-  DOWNLINK_KIND,
-  FIRST,
-  LAST,
-  encodeFrame,
-} from '../../packages/protocol/src/mailbox.ts';
+import { DOWNLINK_HELPERS, DOWNLINK_KIND, FIRST, LAST, encodeFrame } from '@wisp/bridge/mailbox';
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 
