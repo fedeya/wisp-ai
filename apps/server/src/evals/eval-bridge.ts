@@ -6,7 +6,7 @@
 //   node apps/server/src/evals/eval-bridge.ts serve     prints {"url","token"} and serves
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
@@ -87,42 +87,6 @@ async function serve(
         res
           .writeHead(200, { 'content-type': 'application/json' })
           .end(JSON.stringify({ entries: [] }));
-        return;
-      }
-      // Fixture item sources (WISP_EVAL_ITEM_SOURCES), answered for the
-      // requested IDs only, as the real bridge composes them.
-      if (
-        req.method === 'POST' &&
-        url.pathname === '/fixture-inspection' &&
-        process.env.WISP_EVAL_ITEM_SOURCES
-      ) {
-        let raw = '';
-        for await (const chunk of req) {
-          raw += chunk;
-        }
-        const inspection = JSON.parse(raw).inspection as {
-          kind?: string;
-          args?: { itemIds?: number[] };
-        };
-        if (inspection?.kind === 'item_sources') {
-          const known = JSON.parse(await readFile(process.env.WISP_EVAL_ITEM_SOURCES, 'utf8'));
-          const items = [...new Set(inspection.args?.itemIds ?? [])].map(
-            (itemId) => known[itemId] ?? { itemId, sourceKnown: false, sourcesStatus: 'available' },
-          );
-          res.writeHead(200, { 'content-type': 'application/json' }).end(
-            JSON.stringify({
-              status: 'available',
-              items,
-              priceStatus: 'available',
-              realm: 'Vorn',
-              note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
-            }),
-          );
-          return;
-        }
-        res
-          .writeHead(503, { 'content-type': 'text/plain' })
-          .end('Not available in evals: stub this inspection tool.');
         return;
       }
       if (req.method === 'POST' && url.pathname === '/model/responses') {

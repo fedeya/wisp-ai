@@ -404,7 +404,7 @@ const prices: Record<number, number> = {
 
 // Per-item answers in the shape the bridge's item_sources returns: only names,
 // zones, quest levels and evidence, never details production cannot see. The
-// eval bridge serves these for the requested IDs only.
+// eval GameAccess returns these for the requested IDs only.
 const relationKinds: Record<string, string> = {
   dropped_by: 'drops',
   drops_from: 'drops',

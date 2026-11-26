@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Effect } from 'effect';
-import { gameReading, unavailableGameAccess } from '../../src/host/game-access.ts';
+import { unavailableGameAccess } from '../../src/host/game-access.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -13,10 +13,11 @@ import { createAgentEngine } from '../../src/engine.ts';
 import type { ToolStubOutcome } from '../../src/engine.ts';
 import { agentHost } from '../../src/host/agent-host.ts';
 import { MemoryHistory } from '../../src/session/memory-history.ts';
-import { playerMessage } from '../fixtures/fedrath.ts';
+import { itemSourcesFixture, playerMessage } from '../fixtures/fedrath.ts';
 import { gameItemReadings } from '../fixtures/dungeon-loot.ts';
 
 const lootItems = gameItemReadings();
+const itemSources = itemSourcesFixture();
 
 export interface ToolStub {
   id: string;
@@ -74,22 +75,19 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
               };
             });
           }
-          return Effect.tryPromise({
-            try: async (signal) => {
-              const response = await fetch(new URL('/fixture-inspection', host.origin), {
-                method: 'POST',
-                headers: {
-                  authorization: 'Bearer ' + host.token,
-                  'content-type': 'application/json',
-                },
-                body: JSON.stringify({ inspection }),
-                signal,
-              });
-              if (!response.ok) throw new Error(await response.text());
-              return gameReading.parse(await response.json());
-            },
-            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
-          });
+          if (inspection.kind === 'item_sources') {
+            return Effect.sync(() => ({
+              status: 'available',
+              items: [...new Set(inspection.args.itemIds)].map(
+                (itemId) =>
+                  itemSources[itemId] ?? { itemId, sourceKnown: false, sourcesStatus: 'available' },
+              ),
+              priceStatus: 'available',
+              realm: 'Vorn',
+              note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
+            }));
+          }
+          return Effect.fail(new Error('Not available in evals: stub this inspection tool.'));
         },
       },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,

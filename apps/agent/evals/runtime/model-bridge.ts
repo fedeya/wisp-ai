@@ -16,9 +16,8 @@ function bridgeScript() {
   }
 }
 
-export async function startModelBridge(fixtures: NodeJS.ProcessEnv) {
+export async function startModelBridge() {
   const child = spawn(process.execPath, [bridgeScript(), 'serve'], {
-    env: { ...process.env, ...fixtures },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
