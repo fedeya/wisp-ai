@@ -170,6 +170,9 @@ the `AgentCapabilities` tag directly.
 
 ## Contributor skills and PRs
 
+For TypeScript service signatures, discriminated handlers, and schema boundaries,
+load [TypeScript Contracts](.agents/skills/typescript-contracts/SKILL.md).
+
 Project skills live in `.agents/skills/`; [its README](.agents/skills/README.md)
 says which skill fits which area (Base UI, React Router, Testing Library, Tauri
 events, Vite, Vitest, Zustand, React/Next.js). When creating or updating a pull
