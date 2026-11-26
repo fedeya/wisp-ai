@@ -218,3 +218,12 @@ test('linked items count only where the answer does not turn them down', () => {
   expect(visibleText(turn)).toContain('Skip Azure Silk Hood because');
   expect(recommendedItemIds(turn).sort()).toEqual([11288, 3065].sort());
 });
+
+test('a comparison turns down only the item it is compared against', () => {
+  const crafted = /Azure Silk Hood/i;
+  const vendor = /Blessed Apprentice Boots/i;
+  const answer = 'Buy Azure Silk Hood instead of Blessed Apprentice Boots.';
+  expect(recommendedByName(answer, crafted)).toEqual([answer]);
+  expect(recommendedByName(answer, vendor)).toEqual([]);
+  expect(recommendedByName('Skip Azure Silk Hood, you cannot get it.', crafted)).toEqual([]);
+});

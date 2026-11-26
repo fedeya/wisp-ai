@@ -130,11 +130,15 @@ export function craftOnlyItems(turn: TurnView): Set<number> {
 // Sentences or table rows that name an item without turning it down, so
 // "Skip Azure Silk Hood, you can't get it" does not count as recommending it.
 const TURNED_DOWN =
-  /\b(skip|avoid|don['’]?t|do not|can['’]?t|cannot|won['’]?t|unavailable|out of reach|not available|without|needs? Tailoring|requires? Tailoring|instead of)\b/i;
+  /\b(skip|avoid|don['’]?t|do not|can['’]?t|cannot|won['’]?t|unavailable|out of reach|not available|without|needs? Tailoring|requires? Tailoring)\b/i;
+// In "Buy A instead of B" only B is turned down, so only the part before the
+// comparison can recommend an item.
+const PREFERRED_TO = /\b(?:instead of|rather than|in place of)\b/i;
 export function recommendedByName(reply: string, names: RegExp): string[] {
-  return reply
-    .split(/\n|(?<=[.!?])\s+/)
-    .filter((sentence) => names.test(sentence) && !TURNED_DOWN.test(sentence));
+  return reply.split(/\n|(?<=[.!?])\s+/).filter((sentence) => {
+    const [kept = ''] = sentence.split(PREFERRED_TO);
+    return names.test(kept) && !TURNED_DOWN.test(kept);
+  });
 }
 
 /** Scorers every eval shares; the harness adds them to each eval's own. */

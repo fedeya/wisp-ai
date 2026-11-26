@@ -34,7 +34,7 @@ export default defineEval({
     expects(
       'recommends gear from a quest, vendor or drop',
       (turn) =>
-        OBTAINABLE_NAMES.test(visibleText(turn)) ||
+        recommendedByName(visibleText(turn), OBTAINABLE_NAMES).length > 0 ||
         recommendedItemIds(turn).some((id) => OBTAINABLE.includes(id)),
     ),
   ],
