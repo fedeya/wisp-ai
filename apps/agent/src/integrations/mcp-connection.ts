@@ -6,7 +6,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { mcpDefinition } from '@wisp/protocol/mcp-setup';
-import { Deferred, Effect, Exit, Fiber } from 'effect';
+import { Cause, Deferred, Duration, Effect, Exit, Fiber } from 'effect';
 import type { Scope } from 'effect';
 import type { z } from 'zod';
 
@@ -22,6 +22,7 @@ function makeTransport(
   server: z.infer<typeof mcpDefinition>,
   secret: string | undefined,
   env: Record<string, string>,
+  redirect?: RequestRedirect,
 ) {
   return Effect.try({
     try: (): Transport => {
@@ -79,32 +80,26 @@ function makeTransport(
       }
       const headers: Record<string, string> = secret ? { authorization: 'Bearer ' + secret } : {};
       const url = new URL(server.url!);
+      const requestInit = { headers, ...(redirect !== undefined ? { redirect } : {}) };
       return server.transport === 'sse'
         ? new SSEClientTransport(url, {
-            requestInit: { headers },
+            requestInit,
             eventSourceInit: {
               fetch: (url, init) =>
                 fetch(url, {
                   ...init,
+                  ...(redirect !== undefined ? { redirect } : {}),
                   headers: { ...headers, ...Object.fromEntries(new Headers(init?.headers)) },
                 }),
             },
           })
-        : new StreamableHTTPClientTransport(url, { requestInit: { headers } });
+        : new StreamableHTTPClientTransport(url, { requestInit });
     },
     catch: connectionError,
   });
 }
 
-const discoverTools = Effect.fn('McpConnection.discoverTools')(function* (
-  client: Client,
-  transport: Transport,
-) {
-  yield* Effect.tryPromise({
-    try: (signal) => client.connect(transport, { signal }),
-    catch: connectionError,
-  });
-
+const discoverTools = Effect.fn('McpConnection.discoverTools')(function* (client: Client) {
   const tools: Tool[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < 10; page++) {
@@ -125,7 +120,10 @@ const discoverTools = Effect.fn('McpConnection.discoverTools')(function* (
   return tools;
 }, Effect.timeout('15 seconds'));
 
-const open = Effect.fn('McpConnection.open')(function* (transport: Transport) {
+const open = Effect.fn('McpConnection.open')(function* (
+  transport: Transport,
+  toolsTtl?: Duration.Input,
+) {
   const client = yield* Effect.acquireRelease(
     Effect.sync(() => new Client({ name: 'WispAI', version: '0.2.0' }, { capabilities: {} })),
     (client, exit) => {
@@ -136,8 +134,19 @@ const open = Effect.fn('McpConnection.open')(function* (transport: Transport) {
       return Exit.isFailure(exit) ? Effect.ignore(close) : Effect.orDie(close);
     },
   );
-  return { client, tools: yield* discoverTools(client, transport) };
-});
+  yield* Effect.tryPromise({
+    try: (signal) => client.connect(transport, { signal }),
+    catch: connectionError,
+  });
+  const listTools =
+    toolsTtl !== undefined
+      ? yield* Effect.cachedWithTTL(discoverTools(client), (exit) =>
+          Exit.isSuccess(exit) ? toolsTtl : Duration.zero,
+        )
+      : yield* Effect.cached(discoverTools(client));
+  const tools = yield* listTools;
+  return { client, tools, listTools };
+}, Effect.timeout('15 seconds'));
 
 function probe<E>(transport: Effect.Effect<Transport, E>) {
   return Effect.scoped(
@@ -148,7 +157,7 @@ function probe<E>(transport: Effect.Effect<Transport, E>) {
   );
 }
 
-type Connected = { client: Client; tools: Tool[] };
+type Connected = Effect.Success<ReturnType<typeof open>>;
 type OpenError = Effect.Error<ReturnType<typeof open>>;
 
 export interface Connection<E> {
@@ -160,6 +169,7 @@ export interface Connection<E> {
 function make<E>(input: {
   scope: Scope.Scope;
   transport: Effect.Effect<Transport, E>;
+  toolsTtl?: Duration.Input;
   onClosed: () => void;
 }): Connection<E> {
   const ready = Deferred.makeUnsafe<Connected, E | OpenError>();
@@ -172,13 +182,19 @@ function make<E>(input: {
     // The same fiber opens the client and owns its scope until the connection closes.
     const use = Effect.scoped(
       input.transport.pipe(
-        Effect.flatMap(open),
+        Effect.flatMap((transport) => open(transport, input.toolsTtl)),
         Effect.tap((client) => Deferred.succeed(ready, client)),
         Effect.andThen(Effect.never),
       ),
     ).pipe(
       Effect.onExit((exit) =>
-        Effect.sync(input.onClosed).pipe(Effect.ensuring(Deferred.done(ready, exit))),
+        Effect.sync(input.onClosed).pipe(
+          Effect.ensuring(
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+              ? Deferred.fail(ready, new McpConnectionError('MCP connection is unavailable'))
+              : Deferred.done(ready, exit),
+          ),
+        ),
       ),
     );
     lifetime = yield* Effect.forkIn(use, input.scope, { startImmediately: true });

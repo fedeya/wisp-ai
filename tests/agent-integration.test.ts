@@ -27,6 +27,7 @@ test(
       JSON.stringify({
         enabled: {
           ...Object.fromEntries(defaultCapabilities().map((capability) => [capability.id, false])),
+          'mcp:everloot': false,
           'tool:get_settings': true,
           'tool:get_quest': true,
           'tool:query_character': true,

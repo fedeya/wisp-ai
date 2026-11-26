@@ -1,9 +1,8 @@
 import type { z } from 'zod';
-import { readFile } from 'node:fs/promises';
-import { writeJson } from '../../json-file.ts';
-import { Effect, Exit, Scope, Semaphore } from 'effect';
-import type { SecretVault } from '../../auth/secret-vault.ts';
+import { Effect, Exit, Scope, Semaphore, type Duration } from 'effect';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
+import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import type { Capability } from '@wisp/protocol/capabilities';
 import { McpConnection, McpConnectionError } from './mcp-connection.ts';
 import type { Connection } from './mcp-connection.ts';
 export { mcpDefinition, mcpSetup };
@@ -13,6 +12,31 @@ export type MCPDefinition = z.infer<typeof mcpDefinition> & {
   envKeys?: string[];
 };
 type Setup = z.infer<typeof mcpSetup>;
+
+export interface McpStorage {
+  readConfig(): Promise<string | undefined>;
+  writeConfig(servers: Record<string, MCPDefinition>): Promise<void>;
+  readSecret(key: string): Promise<string>;
+  writeSecret(key: string, value: string): Promise<void>;
+}
+
+export interface McpToolGroup {
+  namespace: string;
+  description: string;
+  allow?: readonly string[];
+  provided?: Record<string, unknown>;
+}
+
+export interface BundledMcp {
+  definition: MCPDefinition;
+  capabilities: readonly Capability[];
+  redirect?: RequestRedirect;
+  toolsTtl?: Duration.Input;
+  callTimeoutMs?: number;
+  /** Only the tools in the curated allowlists are trusted to be read-only. */
+  trustedReadOnly?: boolean;
+  toolGroups: readonly (McpToolGroup & { allow: readonly string[] })[];
+}
 
 class McpConfigurationError extends Error {
   readonly _tag = 'McpConfigurationError';
@@ -26,7 +50,24 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 const configurationError = (cause: unknown) => new McpConfigurationError(message(cause), { cause });
 const vaultError = (cause: unknown) => new McpVaultError(message(cause), { cause });
 
-function make(file: string, root: string, vault: SecretVault) {
+function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] = []) {
+  const builtIns = new Map(bundled.map((profile) => [profile.definition.name, profile]));
+  const reservedNames = new Set(
+    bundled.flatMap(({ definition, toolGroups }) => [
+      definition.name,
+      ...toolGroups.map(({ namespace }) => namespace.replace(/-/g, '_')),
+    ]),
+  );
+  function customName(key: string) {
+    const parsed = name.parse(key);
+    if (reservedNames.has(parsed)) throw Error('MCP name is reserved: ' + parsed);
+    return parsed;
+  }
+  function parseSetup(input: Setup) {
+    const setup = mcpSetup.parse(input);
+    customName(setup.server.name);
+    return setup;
+  }
   let servers: Record<string, MCPDefinition> = {};
   let closed = false;
   const connectionScope = Scope.makeUnsafe('parallel');
@@ -39,16 +80,11 @@ function make(file: string, root: string, vault: SecretVault) {
   }
 
   const load = Effect.fn('McpManager.load')(function* () {
+    if (!storage) return;
     const text = yield* Effect.tryPromise({
-      try: () => readFile(file, 'utf8'),
+      try: () => storage.readConfig(),
       catch: configurationError,
-    }).pipe(
-      Effect.catch((error) =>
-        error.cause instanceof Error && 'code' in error.cause && error.cause.code === 'ENOENT'
-          ? Effect.succeed(undefined)
-          : Effect.fail(error),
-      ),
-    );
+    });
     if (text === undefined) {
       return;
     }
@@ -59,7 +95,7 @@ function make(file: string, root: string, vault: SecretVault) {
           Object.entries(raw.servers || {}).map(([key, s]) => [
             key,
             {
-              ...mcpDefinition.parse({ ...s, name: key }),
+              ...mcpDefinition.parse({ ...s, name: customName(key) }),
               tools: Array.isArray(s.tools) ? (s.tools as MCPDefinition['tools']) : [],
               hasToken: s.hasToken === true,
               envKeys: Array.isArray(s.envKeys) ? (s.envKeys as string[]) : [],
@@ -77,17 +113,22 @@ function make(file: string, root: string, vault: SecretVault) {
   }
 
   function readSecret(key: string) {
-    return Effect.tryPromise({ try: () => vault.read(key), catch: vaultError });
+    return Effect.tryPromise({
+      try: async () => (await storage?.readSecret(key)) ?? '',
+      catch: vaultError,
+    });
   }
 
   function writeSecret(key: string, value: string) {
-    return Effect.tryPromise({ try: () => vault.write(key, value), catch: vaultError });
+    if (!storage) return Effect.fail(new McpVaultError('MCP credential storage is unavailable'));
+    return Effect.tryPromise({ try: () => storage.writeSecret(key, value), catch: vaultError });
   }
 
   const transportFor = Effect.fn('McpManager.transportFor')(function* (
     server: MCPDefinition,
     token?: string,
     providedEnv?: Record<string, string>,
+    redirect?: RequestRedirect,
   ) {
     let secret = token;
     if (secret === undefined) {
@@ -105,7 +146,7 @@ function make(file: string, root: string, vault: SecretVault) {
         catch: vaultError,
       });
     }
-    return yield* McpConnection.makeTransport(root, server, secret, env ?? {});
+    return yield* McpConnection.makeTransport(root, server, secret, env ?? {}, redirect);
   });
 
   const connections = new Map<string, Connection<Effect.Error<ReturnType<typeof transportFor>>>>();
@@ -122,7 +163,7 @@ function make(file: string, root: string, vault: SecretVault) {
 
   const test = Effect.fn('McpManager.test')(function* (input: Setup) {
     const parsed = yield* Effect.try({
-      try: () => mcpSetup.parse(input),
+      try: () => parseSetup(input),
       catch: configurationError,
     });
     return yield* probe(parsed);
@@ -130,7 +171,7 @@ function make(file: string, root: string, vault: SecretVault) {
 
   const save = Effect.fn('McpManager.save')(function* (input: Setup) {
     const parsed = yield* Effect.try({
-      try: () => mcpSetup.parse(input),
+      try: () => parseSetup(input),
       catch: configurationError,
     });
     const tested = yield* probe(parsed);
@@ -162,14 +203,17 @@ function make(file: string, root: string, vault: SecretVault) {
 
   const persist = Effect.fn('McpManager.persist')(function* (next: Record<string, MCPDefinition>) {
     yield* Effect.tryPromise({
-      try: () => writeJson(file, { servers: next }),
+      try: () => {
+        if (!storage) throw Error('MCP configuration storage is unavailable');
+        return storage.writeConfig(next);
+      },
       catch: configurationError,
     });
     servers = next;
   });
 
   const setEnabled = Effect.fn('McpManager.setEnabled')(function* (key: string, enabled: boolean) {
-    yield* Effect.try({ try: () => name.parse(key), catch: configurationError });
+    yield* Effect.try({ try: () => customName(key), catch: configurationError });
     if (typeof enabled !== 'boolean') {
       return yield* Effect.fail(new McpConfigurationError('Invalid MCP switch'));
     }
@@ -186,7 +230,7 @@ function make(file: string, root: string, vault: SecretVault) {
   }, exclusive);
 
   const remove = Effect.fn('McpManager.remove')(function* (key: string) {
-    yield* Effect.try({ try: () => name.parse(key), catch: configurationError });
+    yield* Effect.try({ try: () => customName(key), catch: configurationError });
     const next = { ...servers };
     delete next[key];
     yield* persist(next);
@@ -197,7 +241,8 @@ function make(file: string, root: string, vault: SecretVault) {
 
   const getConnection = Effect.fn('McpManager.getConnection')(
     function* (key: string) {
-      const server = servers[key];
+      const profile = builtIns.get(key);
+      const server = profile?.definition ?? servers[key];
       if (closed || !server?.enabled) {
         return yield* Effect.fail(new McpConnectionError('MCP connection is unavailable'));
       }
@@ -207,7 +252,8 @@ function make(file: string, root: string, vault: SecretVault) {
       }
       const connection = McpConnection.make({
         scope: connectionScope,
-        transport: transportFor(server),
+        transport: transportFor(server, undefined, undefined, profile?.redirect),
+        toolsTtl: profile?.toolsTtl,
         onClosed: () => {
           if (connections.get(key) === connection) {
             connections.delete(key);
@@ -225,20 +271,54 @@ function make(file: string, root: string, vault: SecretVault) {
     return getConnection(key).pipe(Effect.flatMap((connection) => connection.awaitReady));
   }
 
-  const disconnectConnection = Effect.fn('McpManager.disconnect')(function* (key: string) {
+  const discover = Effect.fn('McpManager.discover')(function* (key: string) {
+    const entry = yield* getConnection(key);
+    const connected = yield* entry.awaitReady;
+    return yield* connected.listTools.pipe(Effect.tapError(() => disconnectConnection(key, entry)));
+  });
+
+  const call = Effect.fn('McpManager.call')(function* (
+    key: string,
+    toolName: string,
+    input: Record<string, unknown>,
+    check: (tool: Tool) => void,
+    timeout = builtIns.get(key)?.callTimeoutMs ?? 60_000,
+  ) {
+    const entry = yield* getConnection(key);
+    const { client, listTools } = yield* entry.awaitReady;
+    const tools = yield* listTools.pipe(Effect.tapError(() => disconnectConnection(key, entry)));
+    yield* Effect.try({
+      try: () => {
+        if (connections.get(key) !== entry) throw Error('MCP connection is unavailable');
+        const tool = tools.find((tool) => tool.name === toolName);
+        if (!tool) throw Error('Unknown MCP tool');
+        check(tool);
+      },
+      catch: configurationError,
+    });
+    return yield* Effect.tryPromise({
+      try: (signal) =>
+        client.callTool({ name: toolName, arguments: input }, undefined, { signal, timeout }),
+      catch: (cause) => new McpConnectionError(message(cause), { cause }),
+    }).pipe(Effect.tapError(() => disconnectConnection(key, entry)));
+  });
+
+  const disconnectConnection = Effect.fn('McpManager.disconnect')(function* (
+    key: string,
+    expected?: Connection<Effect.Error<ReturnType<typeof transportFor>>>,
+  ) {
     const connection = yield* cacheUpdates.withPermit(
       Effect.sync(() => {
         const connection = connections.get(key);
-        if (connection) {
-          connections.delete(key);
-        }
+        if (!connection || (expected && expected !== connection)) return;
+        connections.delete(key);
         return connection;
       }),
     );
     if (connection) {
       yield* connection.close;
     }
-  });
+  }, Effect.uninterruptible);
 
   function disconnect(key: string) {
     return exclusive(disconnectConnection(key));
@@ -259,12 +339,15 @@ function make(file: string, root: string, vault: SecretVault) {
       return servers;
     },
     list,
+    bundled,
     load,
     test,
     save,
     setEnabled,
     remove,
     connect,
+    discover,
+    call,
     disconnect,
     close,
   };

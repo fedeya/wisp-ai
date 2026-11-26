@@ -9,7 +9,7 @@ import {
   type DesktopRouteReply,
 } from '@wisp/protocol/desktop-routes';
 import type { Status } from '@wisp/protocol/desktop';
-import type { McpManager } from '../integrations/mcp/mcp-manager.ts';
+import type { McpManager } from '@wisp/agent/mcp-manager';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';

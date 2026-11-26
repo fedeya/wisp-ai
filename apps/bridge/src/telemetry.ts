@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { PostHog } from 'posthog-node';
 import path from 'node:path';
 import { z } from 'zod';
-import { everlootTools, publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
+import { publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
+import * as Everloot from '@wisp/agent/everloot';
 import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/agent/contract/reply-presentation';
 import { providerId } from '@wisp/protocol/providers';
 import { modelFailureKinds } from './models/model-failures.ts';
@@ -47,14 +48,8 @@ for (const slot of ['character', 'preferences']) {
   builtinTools.set(slot + '__save_memory', 'memory');
   builtinTools.set(slot + '__remove_memory', 'memory');
 }
-for (const tool of everlootTools) {
-  const connection =
-    tool === 'search_knowledge'
-      ? 'everloot-search'
-      : tool === 'recent_changes'
-        ? 'everloot-changes'
-        : 'everloot';
-  builtinTools.set(connection + '__' + tool, 'everloot');
+for (const { namespace, allow } of Everloot.profile.toolGroups) {
+  for (const tool of allow) builtinTools.set(namespace + '__' + tool, Everloot.name);
 }
 const preferencesSchema = z.object({ enabled: z.boolean(), installationId: z.uuid() });
 const versionSchema = z

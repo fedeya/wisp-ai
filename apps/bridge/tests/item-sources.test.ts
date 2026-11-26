@@ -1,26 +1,19 @@
 import { expect, test } from 'vitest';
 import { itemSources } from '../src/integrations/item-sources.ts';
+import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 
 function everloot(edges: Record<number, unknown[]>, failing: number[] = []) {
   const calls: number[] = [];
-  const fetcher = (async (_url: string, init: RequestInit) => {
-    const args = JSON.parse(String(init.body)).params.arguments;
-    calls.push(args.id);
-    if (failing.includes(args.id)) {
-      return new Response('down', { status: 502 });
+  const readEverloot: EverlootLookup = async (tool, args) => {
+    expect(tool).toBe('entity_relations');
+    const id = Number(args.id);
+    calls.push(id);
+    if (failing.includes(id)) {
+      throw Error('Everloot unavailable');
     }
-    return new Response(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        result: {
-          content: [],
-          structuredContent: { page: { kind: 'item', id: args.id, edges: edges[args.id] ?? [] } },
-        },
-      }),
-    );
-  }) as unknown as typeof fetch;
-  return { fetcher, calls };
+    return { page: { kind: 'item', id, edges: edges[id] ?? [] } };
+  };
+  return { readEverloot, calls };
 }
 
 const names = {
@@ -39,7 +32,7 @@ const names = {
 };
 
 test('sources for several items are read together and named in one game request', async () => {
-  const { fetcher, calls } = everloot({
+  const { readEverloot, calls } = everloot({
     4320: [
       { rel: 'created_by', toKind: 'spell', toId: 3855, evidence: 'client' },
       { rel: 'same_icon', toKind: 'icon', toId: 132539, evidence: 'client' },
@@ -64,7 +57,7 @@ test('sources for several items are read together and named in one game request'
       reads.push(inspection);
       return names;
     },
-    { everloot: true, questie: true, auctionator: true, fetch: fetcher },
+    { everloot: true, questie: true, auctionator: true, readEverloot },
   );
   expect(calls.sort((a, b) => a - b)).toEqual([2589, 4320, 15700]);
   expect(reads).toEqual([
@@ -105,22 +98,22 @@ test('sources for several items are read together and named in one game request'
 });
 
 test('Everloot failures or a disabled integration still return prices', async () => {
-  const { fetcher } = everloot({}, [4320]);
+  const { readEverloot } = everloot({}, [4320]);
   const failed = await itemSources([4320], async () => names, {
     everloot: true,
     questie: true,
     auctionator: true,
-    fetch: fetcher,
+    readEverloot,
   });
   expect(failed.items[0]).toMatchObject({ sourcesStatus: 'unavailable', sourceKnown: false });
   expect(failed.items[0]!.auction).toEqual({ unitPriceCopper: 7000, ageDays: 0 });
 
-  const { fetcher: unused, calls } = everloot({});
+  const { readEverloot: unused, calls } = everloot({});
   const disabled = await itemSources([4320], async () => names, {
     everloot: false,
     questie: true,
     auctionator: true,
-    fetch: unused,
+    readEverloot: unused,
   });
   expect(calls).toEqual([]);
   expect(disabled.items[0]).toMatchObject({ sourcesStatus: 'disabled' });
@@ -128,7 +121,7 @@ test('Everloot failures or a disabled integration still return prices', async ()
 });
 
 test('disabled Questie and Auctionator settings keep their reads out of the game request', async () => {
-  const { fetcher } = everloot({
+  const { readEverloot } = everloot({
     2589: [{ rel: 'dropped_by', toKind: 'npc', toId: 2266, evidence: 'observed', installs: 3 }],
   });
   const reads: unknown[] = [];
@@ -138,7 +131,7 @@ test('disabled Questie and Auctionator settings keep their reads out of the game
       reads.push(inspection);
       return { status: 'available', data: { npcs: [], quests: [], spells: [] } };
     },
-    { everloot: true, questie: false, auctionator: false, fetch: fetcher },
+    { everloot: true, questie: false, auctionator: false, readEverloot },
   );
   expect(reads).toEqual([
     {
@@ -151,26 +144,17 @@ test('disabled Questie and Auctionator settings keep their reads out of the game
 });
 
 test('relations beyond the Everloot per-relation limit are reported', async () => {
-  const fetcher = (async () =>
-    new Response(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        result: {
-          structuredContent: {
-            page: {
-              edges: [{ rel: 'dropped_by', toKind: 'npc', toId: 1, evidence: 'observed' }],
-              notShown: 7,
-            },
-          },
-        },
-      }),
-    )) as unknown as typeof fetch;
+  const readEverloot = async () => ({
+    page: {
+      edges: [{ rel: 'dropped_by', toKind: 'npc', toId: 1, evidence: 'observed' }],
+      notShown: 7,
+    },
+  });
   const result = await itemSources([2589], async () => names, {
     everloot: true,
     questie: true,
     auctionator: true,
-    fetch: fetcher,
+    readEverloot,
   });
   expect(result.items[0]).toMatchObject({ sourceKnown: true, moreSourcesNotShown: 7 });
 });

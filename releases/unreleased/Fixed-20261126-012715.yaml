@@ -1,0 +1,3 @@
+kind: Fixed
+body: Simultaneous chats now share MCP connections, preventing duplicate connections to the same server.
+time: 2026-11-26T01:27:15.788784-03:00

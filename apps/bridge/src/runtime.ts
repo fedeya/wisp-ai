@@ -10,7 +10,7 @@ import { readCharacterNames } from './db/character-keys.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './desktop/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
-import { readJson } from './json-file.ts';
+import { readJson, writeJson } from './json-file.ts';
 import { loadBridgeConfig } from './bridge-config.ts';
 import { z } from 'zod';
 import { createAgentHandler } from './agent/agent-server.ts';
@@ -38,8 +38,8 @@ import { PUBLISH_MIN_INTERVAL_MS } from './addon/publish-scheduler.ts';
 import { createSnapshotPublisher } from './addon/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './addon/snapshot-publisher.ts';
 import { PanelStore } from './addon/panels.ts';
-import { McpManager } from './integrations/mcp/mcp-manager.ts';
-import { McpRelay } from './integrations/mcp/mcp-relay.ts';
+import { McpManager } from '@wisp/agent/mcp-manager';
+import * as Everloot from '@wisp/agent/everloot';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
 import { startDesktopServer } from './desktop/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
@@ -141,7 +141,22 @@ export const makeBridge = Effect.fn('Bridge.make')(
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
     const vault = options.vault || new NativeVault(paths.desktopExecutable);
-    const mcpManager = McpManager.make(mcpFile, ROOT, vault);
+    const mcpManager = McpManager.make(
+      ROOT,
+      {
+        async readConfig() {
+          try {
+            return await readFile(mcpFile, 'utf8');
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+        },
+        writeConfig: (servers) => writeJson(mcpFile, { servers }),
+        readSecret: (key) => vault.read(key),
+        writeSecret: (key, value) => vault.write(key, value),
+      },
+      [Everloot.profile],
+    );
     yield* Effect.addFinalizer(() => mcpManager.close());
     yield* mcpManager.load();
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
@@ -177,13 +192,6 @@ export const makeBridge = Effect.fn('Bridge.make')(
     mcpCapabilities.refreshCatalog();
     yield* mcpCapabilities.applySavedSettings();
     yield* startup(() => capabilitySettings.publish());
-    const mcpRelay = yield* McpRelay.make(
-      mcpManager,
-      (name, tool) =>
-        capabilitySettings.enabled('mcp:' + name) &&
-        (!tool || capabilitySettings.enabled('mcp_tool:' + name + ':' + tool)),
-    );
-    yield* releaseRuntimeResource(() => mcpRelay.close());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
       runFork(
         Effect.logError('Conversation save failed').pipe(
@@ -256,7 +264,16 @@ export const makeBridge = Effect.fn('Bridge.make')(
       token,
       history: agentHistory,
       capabilitiesFile: () => capabilitySettings.agentFile,
-      mcpConfigFile: () => mcpFile,
+      mcp: {
+        manager: mcpManager,
+        allowed: (server, tool) =>
+          capabilitySettings.enabled('mcp:' + server) &&
+          (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
+        readOnly: (session) =>
+          state.chats.some(
+            (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
+          ),
+      },
       logging: bridgeLogging,
     });
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
@@ -269,7 +286,6 @@ export const makeBridge = Effect.fn('Bridge.make')(
         sections: ['character', 'talents', 'spells', 'gear'],
       });
     }
-    mcpRelay.readOnlyMode = () => state.chats.some((c) => c.proactive && c.status === 'working');
     function changed() {
       publisher.changed();
       if (!shutdownRequested) {
@@ -380,7 +396,7 @@ export const makeBridge = Effect.fn('Bridge.make')(
         auth,
         connections,
         webSearch,
-        mcpRelay,
+        mcpManager,
         capabilitySettings,
         routineStore,
         panelStore,

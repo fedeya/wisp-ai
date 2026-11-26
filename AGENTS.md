@@ -114,9 +114,9 @@ despite `hoist: false`; keep it on the same version as the workspaces.
   scope. Closing must cancel an in-flight open and wait for cleanup. Keep slow
   I/O outside the cache lock, and only evict the entry that actually closed.
 - **Keep adapters thin.** Separate transport and session handling from domain
-  operations. For an MCP relay, the SDK owns HTTP sessions and streaming; the
-  tool operations own permission checks and forwarding. Keep upstream tool
-  schemas intact when forwarding them.
+  operations. The agent owns MCP connections and tool execution; the host
+  provides settings storage, access to the vault, and the current turn's
+  policy. Keep upstream tool schemas intact except for arguments fixed by Wisp.
 
 ### Effect service layers
 

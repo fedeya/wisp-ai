@@ -23,10 +23,10 @@ description: Use when writing, refactoring, reviewing, or testing Effect v4 code
   exports the `AgentCapabilities` tag and a separate `layerFromFile`. The
   [`engine`](../../../apps/agent/src/engine.ts) selects that implementation
   and supplies `NodeFileSystem.layer`.
-- **SDK callback:** the [MCP relay](../../../apps/bridge/src/integrations/mcp/mcp-relay.ts)
-  captures the Effect context before invoking operations from Promise-based
-  SDK callbacks.
-- **Resource lifetime:** [`McpConnection.make`](../../../apps/bridge/src/integrations/mcp/mcp-connection.ts)
+- **SDK callback:** the [turn toolbox](../../../apps/agent/src/tools/turn-toolbox.ts)
+  captures the Effect context before running MCP operations from Promise-based
+  tool callbacks.
+- **Resource lifetime:** [`McpConnection.make`](../../../apps/agent/src/integrations/mcp-connection.ts)
   runs the client in an owned scope. Closing interrupts the connection fiber;
   the scope releases the client.
 
