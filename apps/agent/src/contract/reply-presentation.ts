@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { uiNode, validateNode } from './ui-schema.js';
-import { referenceSchema } from './rich-reference.js';
+import { uiNode, validateNode } from './ui-schema.ts';
+import { referenceSchema } from './rich-reference.ts';
 
 export const PRESENT_UI_TOOL = 'wisp__present_ui';
 export const SKIP_TIP_TOOL = 'wisp__skip_tip';

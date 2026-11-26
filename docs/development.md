@@ -411,7 +411,7 @@ The same projection rebuilds event history, while SQLite preserves complete
 canonical text and panel parts independently of streaming previews coalesced at
 600 ms intervals. Previews continue for the entire reply; completion and accepted
 panels publish immediately.
-Component contracts live in `packages/protocol/src/ui-schema.ts` and
+Component contracts live in `apps/agent/src/contract/ui-schema.ts` and
 `reply-presentation.ts`; adding a component extends that contract and its native
 renderer. The historical NDJSON reader is isolated in `legacy-reply.ts` and is
 used only for saved replies from earlier versions.

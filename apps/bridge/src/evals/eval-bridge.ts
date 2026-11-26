@@ -12,7 +12,7 @@ import path from 'node:path';
 import { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { NativeVault } from '../auth/secret-vault.ts';
 import { proxyModel } from '../models/model-proxy.ts';
-import { dungeonLootInput } from '@wisp/protocol/game-inspection';
+import { dungeonLootInput } from '@wisp/agent/contract/game-inspection';
 import { dungeonLoot } from '../integrations/dungeon-loot.ts';
 
 const dataDir = path.resolve(

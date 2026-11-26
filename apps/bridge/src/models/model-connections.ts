@@ -18,7 +18,7 @@ import { createProviderModel } from '@wisp/agent/providers';
 import { modelReasoningEfforts } from '@wisp/agent/reasoning';
 import { modelToolSupport } from '@wisp/agent/tool-support';
 import { modelContextWindow } from '@wisp/agent/context-windows';
-import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
+import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from '../chat/chat-model.ts';

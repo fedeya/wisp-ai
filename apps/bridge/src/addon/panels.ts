@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { readPanels, savePanels } from '../db/product-store.ts';
 import { ApplicationDatabase } from '../db/application-database.ts';
-import { panelContent, panelInput, type Panel } from '@wisp/protocol/panels';
+import { panelContent, panelInput, type Panel } from '@wisp/agent/contract/panels';
 export class PanelStore {
   readonly database: ApplicationDatabase;
   panels: Panel[] = [];

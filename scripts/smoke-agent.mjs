@@ -151,7 +151,9 @@ const server = createServer(async (req, res) => {
       };
       call.kind = 'training';
     } else if (req.url === '/inspect' && addonFixtures) {
-      const { inspectionSchema } = await import('../packages/protocol/dist/game-inspection.js');
+      const { inspectionSchema } = await import(
+        pathToFileURL(require.resolve('@wisp/agent/contract/game-inspection')).href
+      );
       const inspection = inspectionSchema.parse(data.inspection);
       if (inspection.kind === 'questie_quest' || inspection.kind === 'questie_chain') {
         assert.equal(inspection.args.questId, 600001);

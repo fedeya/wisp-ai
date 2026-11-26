@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
-import { storedItemInput } from '@wisp/protocol/game-inspection';
+import { storedItemInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'find_item',
   defineTool({

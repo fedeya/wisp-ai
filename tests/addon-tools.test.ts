@@ -23,7 +23,7 @@ import {
   objectLocationsInput,
   polestarGuideInput,
   inspectionSchema,
-} from '@wisp/protocol/game-inspection';
+} from '@wisp/agent/contract/game-inspection';
 import { integrationContext } from '@wisp/protocol/capabilities';
 
 test('item and spell references can opt into cooldown readings', () => {

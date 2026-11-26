@@ -1,7 +1,7 @@
 import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { guideGoal, guideInput } from '@wisp/protocol/game-actions';
+import { guideGoal, guideInput } from '@wisp/agent/contract/game-actions';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');

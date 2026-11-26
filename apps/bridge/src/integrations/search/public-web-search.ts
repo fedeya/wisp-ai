@@ -1,6 +1,6 @@
 import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
 import { readCompletedResponse } from '../../models/response-stream.ts';
-import { normalizeModelError, safeErrorMessage } from '@wisp/protocol/model-errors';
+import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
 
 import { resolveWebSearch, type WebSearchInput } from '@wisp/protocol/search';
 import { z } from 'zod';

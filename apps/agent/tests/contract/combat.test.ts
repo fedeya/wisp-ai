@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { combatInput, inspectionSchema } from '../src/game-inspection.ts';
+import { combatInput, inspectionSchema } from '../../src/contract/game-inspection.ts';
 test('combat schema defaults to the latest death and bounds reads', () => {
   assert.deepEqual(combatInput.parse({}), {
     view: 'deaths',

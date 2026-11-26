@@ -1,7 +1,7 @@
 import type { createAgentEngine, TurnInput } from '@wisp/agent/engine';
 import type { Chat } from '../chat/events.ts';
 import { withConversationHistory } from '../chat/context.ts';
-import { resetContextUsage } from '@wisp/protocol/context-usage';
+import { resetContextUsage } from '@wisp/agent/contract/context-usage';
 
 export type AgentEngine = Pick<
   ReturnType<typeof createAgentEngine>,

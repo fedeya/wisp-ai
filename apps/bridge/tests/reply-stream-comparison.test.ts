@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { uiNode, validateNode } from '@wisp/protocol/ui-schema';
+import { uiNode, validateNode } from '@wisp/agent/contract/ui-schema';
 import { LegacyReplyStream as ReplyStream } from '../src/reply/legacy-reply.ts';
 const sample = {
   id: 'sim',

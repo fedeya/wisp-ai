@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { uiNode } from '@wisp/protocol/ui-schema';
-import { referenceSchema } from '@wisp/protocol/rich-reference';
+import { uiNode } from '@wisp/agent/contract/ui-schema';
+import { referenceSchema } from '@wisp/agent/contract/rich-reference';
 export const chatStatus = z.enum([
   'idle',
   'working',
