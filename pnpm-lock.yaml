@@ -453,7 +453,7 @@ importers:
         version: link:../../packages/wow-bridge
       drizzle-orm:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
+        version: 1.0.0-rc.5(@effect/sql-sqlite-node@4.1.3(effect@4.1.3))(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
       effect:
         specifier: 4.1.3
         version: 4.1.3
@@ -543,16 +543,22 @@ importers:
 
   packages/db:
     dependencies:
+      '@effect/sql-sqlite-node':
+        specifier: 4.1.3
+        version: 4.1.3(effect@4.1.3)
       drizzle-orm:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
+        version: 1.0.0-rc.5(@effect/sql-sqlite-node@4.1.3(effect@4.1.3))(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
+      effect:
+        specifier: 4.1.3
+        version: 4.1.3
     devDependencies:
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
       drizzle-kit:
         specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7))
+        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(@effect/sql-sqlite-node@4.1.3(effect@4.1.3))(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -1015,6 +1021,11 @@ packages:
     peerDependenciesMeta:
       redis:
         optional: true
+
+  '@effect/sql-sqlite-node@4.1.3':
+    resolution: {integrity: sha512-JFRfEbzlkSXarL9B1GnRPpQIaEwIyLReLcIASnrV3OkmRNBVbTbe3UCbKFaE/hUrlvmKIXqxsO/5xqxL9N6hog==}
+    peerDependencies:
+      effect: ^4.1.3
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -4700,6 +4711,10 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  '@effect/sql-sqlite-node@4.1.3(effect@4.1.3)':
+    dependencies:
+      effect: 4.1.3
+
   '@emnapi/runtime@1.11.3':
     dependencies:
       tslib: 2.9.1
@@ -5936,12 +5951,13 @@ snapshots:
       domelementtype: 3.0.0
       domhandler: 6.0.1
 
-  drizzle-kit@1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)):
+  drizzle-kit@1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(@effect/sql-sqlite-node@4.1.3(effect@4.1.3))(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)):
     optionalDependencies:
-      drizzle-orm: 1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
+      drizzle-orm: 1.0.0-rc.5(@effect/sql-sqlite-node@4.1.3(effect@4.1.3))(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
 
-  drizzle-orm@1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7):
+  drizzle-orm@1.0.0-rc.5(@effect/sql-sqlite-node@4.1.3(effect@4.1.3))(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7):
     optionalDependencies:
+      '@effect/sql-sqlite-node': 4.1.3(effect@4.1.3)
       '@libsql/client': 0.18.0
       effect: 4.1.3
       sql.js: 1.15.2

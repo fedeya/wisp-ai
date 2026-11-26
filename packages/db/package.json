@@ -14,6 +14,7 @@
     "./migrate": "./src/migrate.ts",
     "./private-file": "./src/private-file.ts",
     "./schema": "./src/schema.ts",
+    "./sql-database": "./src/sql-database.ts",
     "./sync-rows": "./src/sync-rows.ts"
   },
   "scripts": {
@@ -22,7 +23,9 @@
     "test": "cd ../.. && vitest run --config packages/db/vitest.config.ts"
   },
   "dependencies": {
-    "drizzle-orm": "1.0.0-rc.5"
+    "@effect/sql-sqlite-node": "4.1.3",
+    "drizzle-orm": "1.0.0-rc.5",
+    "effect": "4.1.3"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
