@@ -3,13 +3,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import definition from '../src/wisp/tools/web_fetch.ts';
-import type { WebFetchInput } from '../src/web-fetch.ts';
-import { WebFetchPages } from '../src/web-fetch-pages.ts';
+import type { WebFetchInput } from '../src/integrations/web/web-fetch.ts';
+import { WebFetchPages } from '../src/integrations/web/web-fetch-pages.ts';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';
-import { publicWebAddresses } from '../src/public-web-tunnel.ts';
-import { publicWebTunnel } from '../src/public-web-tunnel.ts';
+import { publicWebAddresses } from '../src/integrations/web/public-web-tunnel.ts';
+import { publicWebTunnel } from '../src/integrations/web/public-web-tunnel.ts';
 import { request } from 'node:http';
-import { capabilityEnabled } from '../src/capabilities.ts';
+import { capabilityEnabled } from '../src/host/capabilities.ts';
 
 // The tool as the engine offers it: absent while its capability is off.
 const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) =>
@@ -20,7 +20,7 @@ const { impitFetch, impitOptions, dnsLookup } = vi.hoisted(() => ({
   impitOptions: vi.fn(),
   dnsLookup: vi.fn(),
 }));
-vi.mock('../src/impit-client.ts', () => ({
+vi.mock('../src/integrations/web/impit-client.ts', () => ({
   impitClient(options: unknown) {
     impitOptions(options);
     return { fetch: impitFetch };

@@ -10,7 +10,7 @@ export function agentContentRoot() {
   if (process.env.WISP_AGENT_CONTENT) {
     return process.env.WISP_AGENT_CONTENT;
   }
-  return fileURLToPath(new URL('./wisp/', import.meta.url));
+  return fileURLToPath(new URL('./', import.meta.url));
 }
 
 export interface AuthoredSkill {
@@ -42,24 +42,22 @@ export async function readSkills(root = agentContentRoot()): Promise<AuthoredSki
       }
     }),
   );
-  const skills = await Promise.all(
-    files
-      .filter((entry) => entry !== undefined)
-      .map(async (entry) => {
-        const text = entry.file.replace(/\r\n/g, '\n');
-        const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text);
-        if (!match) {
-          throw Error('Skill without frontmatter: ' + entry.name);
-        }
-        const field = (key: string) =>
-          new RegExp('^' + key + ':\\s*(.+)$', 'm').exec(match[1]!)?.[1]?.trim();
-        const name = field('name');
-        const description = field('description');
-        if (name !== entry.name || !description) {
-          throw Error('Skill frontmatter must name its folder and describe it: ' + entry.name);
-        }
-        return { name, description, instructions: match[2]!.trim() };
-      }),
-  );
+  const skills = files
+    .filter((entry) => entry !== undefined)
+    .map((entry) => {
+      const text = entry.file.replace(/\r\n/g, '\n');
+      const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text);
+      if (!match) {
+        throw Error('Skill without frontmatter: ' + entry.name);
+      }
+      const field = (key: string) =>
+        new RegExp('^' + key + ':\\s*(.+)$', 'm').exec(match[1]!)?.[1]?.trim();
+      const name = field('name');
+      const description = field('description');
+      if (name !== entry.name || !description) {
+        throw Error('Skill frontmatter must name its folder and describe it: ' + entry.name);
+      }
+      return { name, description, instructions: match[2]!.trim() };
+    });
   return skills.sort((a, b) => a.name.localeCompare(b.name));
 }

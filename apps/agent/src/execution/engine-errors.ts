@@ -1,5 +1,6 @@
 import { APICallError, RetryError } from 'ai';
 import { Effect, Schema } from 'effect';
+import { HistoryError } from '../session/session-history.ts';
 
 /**
  * A call to the engine's host failed: Wisp's content, the session's model
@@ -32,6 +33,28 @@ export class CompactionFailed extends Schema.TaggedError<CompactionFailed>()(
   'CompactionFailed',
   {},
 ) {}
+
+/** Why a turn failed: a host call, the model, or the session's log. */
+export type TurnError = HostError | ModelError | HistoryError;
+
+/** The error behind a turn's failure, as the bridge classifies it. */
+export const turnCause = (failure: unknown) =>
+  failure instanceof HostError || failure instanceof ModelError || failure instanceof HistoryError
+    ? failure.cause
+    : failure instanceof CompactionFailed
+      ? new Error('Compaction failed.')
+      : failure;
+
+export function errorText(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  if (error === null || error === undefined) return 'The response failed.';
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'The response failed.';
+  }
+}
 
 function reasonFor(status: number | undefined): ModelError['reason'] {
   if (status === 400 || status === 413 || status === 422) return 'rejected';

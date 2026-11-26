@@ -1,12 +1,11 @@
 import { Context, Effect, Layer } from 'effect';
-import { localMemory, memorySlots } from './agent-memory.ts';
+import { localMemory, memorySlots } from '../wisp/agent-memory.ts';
 import { toolOffered } from './enabled-tool.ts';
-import { EngineConfig } from './engine-config.ts';
-import { hostCall } from './engine-errors.ts';
-import type { HostError } from './engine-errors.ts';
-import { Mcp } from './mcp-tools.ts';
+import { EngineConfig } from '../host/engine-config.ts';
+import { hostCall, type HostError } from '../execution/engine-errors.ts';
+import { Mcp } from '../integrations/mcp-tools.ts';
 import type { ToolDefinition } from './tool.ts';
-import { authoredTools } from './tools.ts';
+import { authoredTools } from '../wisp/tool-registry.ts';
 import { authored, stubbed } from './turn-tools.ts';
 import type { DeferredTool } from './turn-tools.ts';
 

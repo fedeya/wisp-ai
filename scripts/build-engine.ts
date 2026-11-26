@@ -51,7 +51,7 @@ export async function buildEngine() {
       install: 'apps/bridge/scripts/install.ts',
       'migrate-desktop': 'apps/bridge/scripts/migrate-desktop.ts',
       // The self-test reads the agent's content with the code the bridge uses.
-      'agent-content': 'apps/agent/src/content.ts',
+      'agent-content': 'apps/agent/src/wisp/content.ts',
     },
     outdir: directory,
     outExtension: { '.js': '.mjs' },

@@ -1,5 +1,5 @@
 import { Context, Layer, Logger, References } from 'effect';
-import type { ToolStub } from './turn-tools.ts';
+import type { ToolStub } from '../tools/turn-tools.ts';
 
 export interface EngineLogger {
   info: (data: object, message: string) => void;

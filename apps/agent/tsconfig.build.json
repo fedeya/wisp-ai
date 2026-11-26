@@ -8,9 +8,9 @@
     "rewriteRelativeImportExtensions": true
   },
   "include": [
-    "src/context-windows.ts",
-    "src/providers.ts",
-    "src/reasoning.ts",
-    "src/tool-support.ts"
+    "src/models/context-windows.ts",
+    "src/models/providers.ts",
+    "src/models/reasoning.ts",
+    "src/models/tool-support.ts"
   ]
 }

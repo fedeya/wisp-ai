@@ -1,5 +1,5 @@
 import { test, expect, vi, afterEach } from 'vitest';
-import { agentRPC } from '../src/agent-rpc.ts';
+import { agentRPC } from '../src/host/agent-rpc.ts';
 import { rpcRequests } from '@wisp/protocol/agent-rpc';
 afterEach(() => vi.unstubAllGlobals());
 test('strict domain schemas accept their RPC session envelope without accepting unrelated fields', () => {

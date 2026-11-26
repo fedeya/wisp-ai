@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { agentRPC } from './agent-rpc.ts';
-import { capabilityEnabled } from './capabilities.ts';
-import { defineTool, type ToolDefinition } from './tool.ts';
+import { agentRPC } from '../host/agent-rpc.ts';
+import { capabilityEnabled } from '../host/capabilities.ts';
+import { defineTool, type ToolDefinition } from '../tools/tool.ts';
 
 export type MemorySlot = 'preferences' | 'character';
 export const memorySlots: readonly MemorySlot[] = ['preferences', 'character'];

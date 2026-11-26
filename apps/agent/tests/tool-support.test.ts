@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { modelToolSupport } from '../src/tool-support.ts';
+import { modelToolSupport } from '../src/models/tool-support.ts';
 
 test.each([
   ['google', 'gemini-2.5-flash', true],

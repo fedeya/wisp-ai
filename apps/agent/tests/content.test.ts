@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { readSkills } from '../src/content.ts';
+import { readSkills } from '../src/wisp/content.ts';
 
 test('skills are the folders with a SKILL.md; other entries are skipped', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-skills-'));

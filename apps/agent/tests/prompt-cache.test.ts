@@ -5,8 +5,8 @@ import { z } from 'zod';
 import { generateText } from 'ai';
 import type { LanguageModelV4Prompt } from '@ai-sdk/provider';
 
-import { connectionModel } from '../src/connection-model.ts';
-import { withAnthropicCache } from '../src/prompt-cache.ts';
+import { connectionModel } from '../src/models/connection-model.ts';
+import { withAnthropicCache } from '../src/models/prompt-cache.ts';
 
 const cached = { anthropic: { cacheControl: { type: 'ephemeral' } } };
 /** The parts of an Anthropic Messages request these tests read. */
