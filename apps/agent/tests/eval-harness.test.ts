@@ -161,9 +161,21 @@ test('name checks read panel text line by line, after the reply', () => {
         name: 'wisp__present_ui',
         input: {
           nodes: [
-            { type: 'text', text: 'Buy Azure Silk Hood' },
-            { text: "Skip Spidersilk Boots, you can't get them" },
-            { kind: 'table', rows: [['Azure Silk Belt', 'Skip: requires Tailoring']] },
+            { id: 'a', kind: 'text', text: 'Buy Azure Silk Hood' },
+            { id: 'b', kind: 'text', text: "Skip Spidersilk Boots, you can't get them" },
+            {
+              id: 'c',
+              kind: 'table',
+              columns: [{ label: 'Item' }, { label: 'Note' }],
+              rows: [['Azure Silk Belt', 'Skip: requires Tailoring']],
+            },
+            // A button shows its label; its prompt is the player's next question.
+            {
+              id: 'd',
+              kind: 'button',
+              label: 'Other options?',
+              action: { kind: 'ask', prompt: 'Can I get Azure Silk Belt?' },
+            },
           ],
         },
       },
@@ -171,6 +183,8 @@ test('name checks read panel text line by line, after the reply', () => {
   };
   const text = visibleText(turn);
   expect(text.startsWith(turn.reply)).toBe(true);
+  expect(text).toContain('Other options?');
+  expect(text).not.toContain('Can I get');
   expect(recommendedByName(text, /Azure Silk (Hood|Belt)|Spidersilk Boots/i)).toEqual([
     'Buy Azure Silk Hood',
   ]);

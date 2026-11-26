@@ -86,36 +86,72 @@ function references(turn: TurnView): Record<string, Reference> {
   return all;
 }
 
+// The fields of a present_ui node (contract/ui-schema.ts) that the addon
+// displays. Hidden fields, such as a button's ask prompt or node IDs, are not
+// part of the answer.
+type PanelNode = {
+  kind?: string;
+  title?: string;
+  text?: string;
+  label?: string;
+  value?: unknown;
+  detail?: string;
+  reference?: string;
+  winnerLabel?: string;
+  columns?: Array<{ label?: string }>;
+  rows?: string[][];
+  items?: Array<{ label?: string; detail?: string }>;
+  options?: Array<{ value?: string; label?: string }>;
+};
+function displayed(node: PanelNode, refs: Record<string, Reference>): string[] {
+  const texts = [node.title];
+  switch (node.kind) {
+    case 'text':
+      texts.push(node.text);
+      break;
+    case 'table':
+      texts.push((node.columns ?? []).map((column) => column.label).join(' | '));
+      // A table row stays one line, so a cell that turns an item down still
+      // applies to the item named in another cell.
+      texts.push(...(node.rows ?? []).map((row) => row.join(' | ')));
+      break;
+    case 'comparison':
+      texts.push(...(node.items ?? []).flatMap((item) => [item.label, item.detail]));
+      texts.push(node.winnerLabel);
+      break;
+    case 'stat':
+      texts.push(node.label, String(node.value ?? ''), node.detail);
+      break;
+    case 'reference':
+      texts.push(node.reference ? refs[node.reference]?.label : undefined);
+      break;
+    case 'select':
+      texts.push(node.label, node.options?.find((option) => option.value === node.value)?.label);
+      break;
+    case 'button':
+    case 'toggle':
+    case 'slider':
+    case 'progress':
+      texts.push(node.label);
+      break;
+  }
+  return texts.filter((text): text is string => Boolean(text));
+}
+
 /**
- * What the player reads: the reply, then each text of its present_ui panels on
- * its own line (a table row as one line), with [[ref:key]] links and reference
- * cards shown by their labels, so sentence checks such as recommendedByName see
- * a linked item together with the words around it.
+ * What the player reads: the reply, then each displayed text of its present_ui
+ * panels on its own line (a table row as one line), with [[ref:key]] links and
+ * reference cards shown by their labels, so sentence checks such as
+ * recommendedByName see a linked item together with the words around it.
  */
 export function visibleText(turn: TurnView): string {
   const refs = references(turn);
   const texts: string[] = [turn.reply];
-  const collect = (value: unknown): void => {
-    if (typeof value === 'string') {
-      texts.push(value);
-    } else if (Array.isArray(value) && value.every((cell) => typeof cell === 'string')) {
-      // A table row stays one line, so a cell that turns an item down still
-      // applies to the item named in another cell.
-      texts.push(value.join(' | '));
-    } else if (Array.isArray(value)) {
-      value.forEach(collect);
-    } else if (value && typeof value === 'object') {
-      const node = value as { kind?: string; reference?: string };
-      if (node.kind === 'reference' && node.reference) {
-        texts.push(refs[node.reference]?.label ?? '');
-      }
-      Object.values(value).forEach(collect);
-    }
-  };
   for (const call of turn.toolCalls) {
     if (call.name === 'wisp__present_ui') {
       // Only the panel is shown; the reference catalog is not text.
-      collect((call.input as { nodes?: unknown }).nodes);
+      const { nodes } = call.input as { nodes?: PanelNode[] };
+      texts.push(...(nodes ?? []).flatMap((node) => displayed(node, refs)));
     }
   }
   return texts
