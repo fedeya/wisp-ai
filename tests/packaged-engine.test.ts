@@ -194,7 +194,13 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         JSON.stringify({ wow, model: 'offline-fixture' }),
       );
       const chats = [
-        { id: 'fixture', agentSession: 'old-session', status: 'working', messages: [] },
+        {
+          id: 'fixture',
+          eveId: 'eve-session',
+          agentSession: 'old-session',
+          status: 'working',
+          messages: [],
+        },
       ];
       await writeFile(path.join(previous, 'runtime/chats.json'), JSON.stringify(chats));
       await exec(engine, ['scripts/migrate-desktop.ts', previous], {
