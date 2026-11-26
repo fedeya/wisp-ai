@@ -26,15 +26,8 @@ describeEval(
       const presented = presentedText(result);
       expect.soft(result.output.reply.trim()).not.toBe('');
       expect.soft(toolCalls(result).map((call) => call.name)).toContain('wow__query_character');
-      expect
-        .soft(
-          /^\W*no\b/i.test(presented) ||
-            /(doesn['’]?t|does not|won['’]?t|will not|not)\b[^.]{0,80}\b(rank|Civilian)/i.test(
-              presented,
-            ),
-          'says world kills do not raise the rank',
-        )
-        .toBe(true);
+      // Whether the answer gets the rank rule right is left to the
+      // unsupported-claim judge, whose facts state it: the wording varies.
       expect.soft(presented, 'points to battlegrounds').toMatch(/battleground/i);
       expect.soft(presented, 'points to Honor').toMatch(/honor/i);
     });
