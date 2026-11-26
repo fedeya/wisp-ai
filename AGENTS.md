@@ -92,6 +92,30 @@ guide doesn't cover, search through the source code in `node_modules/effect/src`
 The root `package.json` declares `effect` so that `node_modules/effect` exists
 despite `hoist: false`; keep it on the same version as the workspaces.
 
+### Effect patterns for the bridge
+
+- **Compose Effects before running them.** Internal operations return Effects
+  so callers can compose them with `yield*`. Run the composed operation at the
+  process entry point or at a boundary that expects a `Promise`, such as an HTTP
+  handler or SDK callback. Capture the caller's Effect context when a callback
+  runs later. Avoid a Promise wrapper that runs each method separately.
+- **Use small factories for stateful modules.** A module can expose
+  `Module.make(...)` and return an object of operations, with state private to
+  the factory. If construction only captures dependencies, keep it synchronous
+  and make I/O explicit in operations such as `start` and `close`. Use named
+  `Effect.fn` for operations that benefit from tracing. Use `Context.Service`
+  and `Layer` when Effect should provide the dependency or own its lifecycle.
+- **Give each resource one owner.** For a keyed connection cache, the manager
+  decides when to reuse, replace, or invalidate an entry; the connection owns
+  the handshake, timeout, and cleanup. Register cleanup before starting work
+  that can fail, share a single in-flight open per key, and tie that work to a
+  scope. Closing must cancel an in-flight open and wait for cleanup. Keep slow
+  I/O outside the cache lock, and only evict the entry that actually closed.
+- **Keep adapters thin.** Separate transport and session handling from domain
+  operations. For an MCP relay, the SDK owns HTTP sessions and streaming; the
+  tool operations own permission checks and forwarding. Keep upstream tool
+  schemas intact when forwarding them.
+
 ## Conventions observed in the code
 
 - **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
