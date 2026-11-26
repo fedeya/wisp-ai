@@ -141,9 +141,9 @@ export const makeBridge = Effect.fn('Bridge.make')(
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
     const vault = options.vault || new NativeVault(paths.desktopExecutable);
-    const mcpManager = new McpManager(mcpFile, ROOT, vault);
-    yield* releaseRuntimeResource(() => mcpManager.close());
-    yield* startup(() => mcpManager.load());
+    const mcpManager = McpManager.make(mcpFile, ROOT, vault);
+    yield* Effect.addFinalizer(() => mcpManager.close());
+    yield* mcpManager.load();
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
       isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
       enabledFeatures: () => features.enabledNames(),
@@ -175,9 +175,9 @@ export const makeBridge = Effect.fn('Bridge.make')(
     });
     const mcpCapabilities = createMcpCapabilities(mcpManager, capabilitySettings);
     mcpCapabilities.refreshCatalog();
-    yield* startup(() => mcpCapabilities.applySavedSettings());
+    yield* mcpCapabilities.applySavedSettings();
     yield* startup(() => capabilitySettings.publish());
-    const mcpRelay = new McpRelay(
+    const mcpRelay = yield* McpRelay.make(
       mcpManager,
       (name, tool) =>
         capabilitySettings.enabled('mcp:' + name) &&
@@ -476,7 +476,7 @@ export const makeBridge = Effect.fn('Bridge.make')(
       };
     }
     let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
-    const desktopApp = createDesktopApp({
+    const desktopApp = yield* createDesktopApp({
       auth,
       connections,
       webSearch,
