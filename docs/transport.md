@@ -11,10 +11,12 @@ directions; a finite bank of load-on-demand helpers can accelerate large replies
 The server opens a scoped [`WowBridge` connection](../packages/wow-bridge/src/wow-bridge.ts)
 for the selected WoW directory. It consumes `events` in order, submits game
 operations through `request`, publishes the current addon view through `publish`,
-and reads `status` for readiness. The connection joins that view with pending
-requests and consumes game results and transport acknowledgments internally.
-Ordinary application events use a bounded queue; view updates replace one
-another. One writer fiber handles the filesystem writes for the connection.
+and reads `status` for readiness. The connection adds pending requests and
+receipt acknowledgments to the view. It acknowledges reliable events after they
+enter the bounded server queue, and reannounces the ACK for a retry without
+enqueuing the event again. Game results are settled and acknowledged within the
+bridge. View updates replace one another, and one writer fiber handles the
+filesystem writes for the connection.
 
 The next migration is an agent-owned `GameAccess` service with `readCharacter`,
 `inspectGame`, and `runGameAction` operations. Each operation should return an

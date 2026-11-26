@@ -55,7 +55,7 @@ test('the connection publishes and resolves game requests without routing them t
     target = file,
   ) {
     const body = Buffer.from(
-      JSON.stringify({ ...packet, at: ++sequence, seq: sequence, transportVersion: 2 }),
+      JSON.stringify({ at: ++sequence, seq: sequence, ...packet, transportVersion: 2 }),
     );
     const frames = encodeMessage(body, UPLINK_KIND, 1, wireSequence);
     wireSequence += frames.length;
@@ -96,7 +96,8 @@ test('the connection publishes and resolves game requests without routing them t
     await vi.waitFor(() => expect(events).toHaveLength(1), { timeout: 2500 });
     expect(events[0]).toMatchObject({ type: 'hello', session: 'one' });
     expect(events[0]).not.toHaveProperty('nextSlot');
-    const view = { v: 1, session: 'one', connected: true, acks: [1] };
+    expect(events[0]).not.toHaveProperty('seq');
+    const view = { v: 1, session: 'one', connected: true };
     await Effect.runPromise(connection.publish(view));
     const call = {
       session: 'one',
@@ -124,6 +125,31 @@ test('the connection publishes and resolves game requests without routing them t
     expect(revision).toBeGreaterThan(0);
     await send({ type: 'poll', session: 'one', nextSlot: 2, receivedRev: revision });
     await vi.waitFor(() => expect(connection.status().ready).toBe(true));
+
+    const say = {
+      type: 'say',
+      session: 'one',
+      seq: 42,
+      chat: 'chat',
+      text: 'Hello',
+      messageId: 'message',
+    };
+    await send(say);
+    const acknowledged = await vi.waitFor(async () => {
+      const data = await readFile(payload, 'utf8');
+      expect(data).toContain('"acks":[1,2,42]');
+      return data;
+    });
+    // The same application packet has a fresh mailbox frame sequence when retried.
+    await send(say);
+    await vi.waitFor(async () => {
+      const data = await readFile(payload, 'utf8');
+      expect(data).toContain('"acks":[1,2,42]');
+      expect(data).not.toBe(acknowledged);
+    });
+    expect(events.filter((event) => event.type === 'say')).toEqual([
+      expect.objectContaining({ chat: 'chat', messageId: 'message', text: 'Hello' }),
+    ]);
 
     const removed = Effect.runPromise(connection.request({ ...call, chat: 'removed' }));
     const deleted = expect(removed).rejects.toThrow('Conversation deleted');

@@ -36,11 +36,9 @@ export interface SessionState {
   memoryViewRequest?: string;
   modelCatalog: AccountModel[];
   modelCatalogError?: string;
-  acknowledgments: number[];
   capabilityAcks: Record<string, string>;
   capabilityError?: { requestId?: string; message: string };
   routinePresence?: RoutinePresence;
-  handled: Set<string>;
   deletedChatIds: Set<string>;
 }
 export function createSessionState(chats: Chat[] = []): SessionState {
@@ -50,9 +48,7 @@ export function createSessionState(chats: Chat[] = []): SessionState {
     activeChat: '',
     inlineChat: '',
     modelCatalog: [],
-    acknowledgments: [],
     capabilityAcks: {},
-    handled: new Set(),
     deletedChatIds: new Set(),
   };
 }

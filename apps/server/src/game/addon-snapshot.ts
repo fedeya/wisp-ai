@@ -67,7 +67,6 @@ export function buildAddonSnapshot(inputs: AddonSnapshotInputs) {
       defaultModel: inputs.defaultModel,
       error: state.modelCatalogError,
     },
-    acks: state.acknowledgments,
     questRevision: state.questRevision || 0,
     characterRevision: state.characterRevision || 0,
     activeChat: state.activeChat,

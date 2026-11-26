@@ -9,22 +9,22 @@ import {
   UPLINK_KIND,
 } from './wire/mailbox.ts';
 import { luaJson } from './wire/protocol.ts';
+import { logTransportError } from './logging.ts';
+
+function sharedFile<T>(operation: Effect.Effect<T, PlatformError>) {
+  return operation.pipe(
+    Effect.retry({
+      schedule: Schedule.recurs(8).pipe(
+        Schedule.addDelay(({ attempt }) => Effect.succeed(4 * attempt)),
+      ),
+      while: (error) => ['Busy', 'PermissionDenied', 'NotFound'].includes(error.reason._tag),
+    }),
+  );
+}
 
 export const make = Effect.fnUntraced(function* (wow: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-
-  function sharedFile<T>(operation: Effect.Effect<T, PlatformError>) {
-    return operation.pipe(
-      Effect.retry({
-        schedule: Schedule.recurs(8).pipe(
-          Schedule.addDelay(({ attempt }) => Effect.succeed(4 * attempt)),
-        ),
-        while: (error) => ['Busy', 'PermissionDenied', 'NotFound'].includes(error.reason._tag),
-      }),
-    );
-  }
-
   const read = (file: string) => sharedFile(fs.readFileString(file));
   const watch = (directory: string) =>
     fs
@@ -37,7 +37,13 @@ export const make = Effect.fnUntraced(function* (wow: string) {
         if (depth > 4) return;
         const entries = yield* fs
           .readDirectoryEntries(directory)
-          .pipe(Effect.orElseSucceed(() => []));
+          .pipe(
+            Effect.catch((error) =>
+              error.reason._tag === 'NotFound'
+                ? Effect.succeed([])
+                : logTransportError(error).pipe(Effect.as([])),
+            ),
+          );
         for (const entry of entries) {
           const file = path.join(directory, entry.name);
           if (entry.type === 'Directory') {
@@ -65,14 +71,15 @@ export const make = Effect.fnUntraced(function* (wow: string) {
     const temporary = file + '.wisp-control.tmp';
     return yield* Effect.gen(function* () {
       yield* fs.writeFileString(temporary, replaceDownlink(original, frame));
-      if (!isCurrent()) return false;
-      // Avoid overwriting packets and unrelated settings changed by the game.
-      const latest = yield* read(file);
-      if (latest !== original || !isCurrent()) return false;
+      // Recheck on every rename attempt: WoW can save while a retry waits.
       return yield* sharedFile(
-        Effect.suspend(() =>
-          isCurrent() ? fs.rename(temporary, file).pipe(Effect.as(true)) : Effect.succeed(false),
-        ),
+        Effect.gen(function* () {
+          if (!isCurrent()) return false;
+          const latest = yield* fs.readFileString(file);
+          if (latest !== original || !isCurrent()) return false;
+          yield* fs.rename(temporary, file);
+          return true;
+        }),
       );
     }).pipe(
       Effect.onExit((exit) =>

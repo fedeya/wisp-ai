@@ -1,30 +1,17 @@
-import {
-  Cause,
-  Clock,
-  Effect,
-  FiberSet,
-  Random,
-  Schema,
-  Schedule,
-  Semaphore,
-  Stream,
-} from 'effect';
-import { packetSchema, parseDownlinkAck, type Packet } from './wire/protocol.ts';
+import { Cause, Clock, Effect, FiberSet, Random, Schedule, Semaphore, Stream } from 'effect';
+import { decodeUplink, type Packet } from './wire/protocol.ts';
 import {
   MailboxDecoder,
   UPLINK_KIND,
   COMPACT_ACK_KIND,
   LAST,
   decodeFrame,
-  inflateMessage,
   readUplink,
 } from './wire/mailbox.ts';
 import { makeWriter } from './writer.ts';
 import * as AddonFiles from './addon-files.ts';
 import { makeDelivery } from './delivery.ts';
 import { logTransportError } from './logging.ts';
-
-const decodePacket = Schema.decodeUnknownSync(packetSchema);
 
 /**
  * A game window that sent anything this recently keeps the bridge: another window's
@@ -36,15 +23,20 @@ export const ACTIVE_SESSION_MS = 150_000;
 /** How often the fallback tick walks every character folder once a session is active. */
 export const FULL_SCAN_INTERVAL_MS = 5000;
 
+interface Uplink {
+  lock: Semaphore.Semaphore;
+  decoder: MailboxDecoder;
+  baselinePending: boolean;
+  busy: boolean;
+  observed?: { frame: Buffer; at: number };
+}
+
 export class DiskConnection {
-  private reads = new Map<string, Semaphore.Semaphore>();
-  private mailboxDecoders = new Map<string, MailboxDecoder>();
+  private readonly uplinks = new Map<string, Uplink>();
   private window?: { file: string; session: string };
   private activeAt = 0;
   /** Wall-clock time of the last message from the active window. */
   private activeSeenAt = 0;
-  private uplinkBusy = new Map<string, boolean>();
-  private uplinkObserved = new Map<string, { frame: Buffer; at: number }>();
   stopped = false;
   readonly watchers = new Set<string>();
   private readonly files: AddonFiles.AddonFiles;
@@ -80,8 +72,8 @@ export class DiskConnection {
       writer: options.writer,
       activeFile: () => this.window?.file,
       stopped: () => this.stopped,
-      uplinkBusy: (file) => this.uplinkBusy.get(file),
-      uplinkObservedAt: (file) => this.uplinkObserved.get(file)?.at,
+      uplinkBusy: (file) => this.uplinks.get(file)?.busy,
+      uplinkObservedAt: (file) => this.uplinks.get(file)?.observed?.at,
       now: () => this.now(),
       nextGeneration: () => options.random.nextIntUnsafe() >>> 0 || 1,
     });
@@ -156,8 +148,9 @@ export class DiskConnection {
     return this.files.scan((file, directory) =>
       Effect.gen({ self: this }, function* () {
         if (this.stopped) return;
+        // An early watch event must not dispatch the persisted startup frame.
+        yield* this.read(file, baseline).pipe(Effect.catch(logTransportError));
         this.watchDirectory(directory, file);
-        yield* this.read(file, baseline);
       }),
     );
   }
@@ -191,71 +184,66 @@ export class DiskConnection {
   read(file: string, baseline: boolean) {
     return Effect.suspend(() => {
       if (this.stopped) return Effect.void;
-      let lock = this.reads.get(file);
-      if (!lock) {
-        lock = Semaphore.makeUnsafe(1);
-        this.reads.set(file, lock);
+      let uplink = this.uplinks.get(file);
+      if (!uplink) {
+        uplink = {
+          lock: Semaphore.makeUnsafe(1),
+          decoder: new MailboxDecoder(UPLINK_KIND),
+          baselinePending: baseline,
+          busy: false,
+        };
+        this.uplinks.set(file, uplink);
       }
-      return lock.withPermit(this.readCurrent(file, baseline));
+      return uplink.lock.withPermit(this.readCurrent(file, uplink));
     });
   }
-  private readCurrent(file: string, baseline: boolean) {
+  private readCurrent(file: string, uplink: Uplink) {
     return Effect.gen({ self: this }, function* () {
       if (this.stopped) {
         return;
       }
-      const text = yield* this.files.read(file).pipe(Effect.orElseSucceed(() => undefined));
-      if (this.stopped || text === undefined) return;
-      const mailboxFrame = readUplink(text);
-      let mailboxDecoder = this.mailboxDecoders.get(file);
-      if (!mailboxDecoder) {
-        mailboxDecoder = new MailboxDecoder(UPLINK_KIND);
-        this.mailboxDecoders.set(file, mailboxDecoder);
-      }
-      if (baseline) {
+      const text = yield* this.files
+        .read(file)
+        .pipe(
+          Effect.catch((error) =>
+            error.reason._tag === 'NotFound' ? Effect.succeed(undefined) : Effect.fail(error),
+          ),
+        );
+      if (this.stopped) return;
+      const mailboxFrame = text === undefined ? null : readUplink(text);
+      if (uplink.baselinePending) {
         // State files persist across host restarts and addon downgrades. Never
         // replay an on-disk operation merely because it fits in a single frame.
-        if (mailboxFrame) {
-          mailboxDecoder.baseline(mailboxFrame);
-        }
+        if (mailboxFrame) uplink.decoder.baseline(mailboxFrame);
+        uplink.baselinePending = false;
         return;
       }
+      if (text === undefined) return;
       const compact = mailboxFrame && decodeFrame(mailboxFrame.subarray(0, 16));
-      if (compact?.kind === COMPACT_ACK_KIND) {
+      if (mailboxFrame && compact?.kind === COMPACT_ACK_KIND) {
         if (file === this.window?.file && this.delivery.reusable() && this.delivery.compact()) {
-          this.uplinkBusy.set(file, false);
-          if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame!)) {
-            this.uplinkObserved.set(file, { frame: mailboxFrame!, at: this.now() });
+          uplink.busy = false;
+          if (!uplink.observed?.frame.equals(mailboxFrame)) {
+            uplink.observed = { frame: mailboxFrame, at: this.now() };
           }
           yield* this.delivery.acceptCompactAck(compact);
         }
       } else if (mailboxFrame) {
         const parsed = decodeFrame(mailboxFrame);
         if (parsed?.kind === UPLINK_KIND) {
-          if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame)) {
-            this.uplinkObserved.set(file, { frame: mailboxFrame, at: this.now() });
+          if (!uplink.observed?.frame.equals(mailboxFrame)) {
+            uplink.observed = { frame: mailboxFrame, at: this.now() };
           }
-          this.uplinkBusy.set(file, !(parsed.flags & LAST));
-          const message = mailboxDecoder.add(mailboxFrame);
+          uplink.busy = !(parsed.flags & LAST);
+          const message = uplink.decoder.add(mailboxFrame);
           if (message) {
-            let value: unknown;
-            let packet: Packet | undefined;
-            try {
-              value = JSON.parse(inflateMessage(message).toString('utf8'));
-              const ack = message.flags === 0 && parseDownlinkAck(value);
-              if (ack) {
-                if (file === this.window?.file && this.delivery.reusable()) {
-                  yield* this.delivery.acceptAck(ack).pipe(Effect.catch(logTransportError));
-                }
-              } else {
-                packet = decodePacket(value);
+            const incoming = decodeUplink(message);
+            if (incoming?.kind === 'ack') {
+              if (file === this.window?.file && this.delivery.reusable()) {
+                yield* this.delivery.acceptAck(incoming.ack);
               }
-            } catch {
-              // Corrupt, oversized or schema-invalid messages wait for the game's
-              // existing application-level resend; never dispatch partial data.
-            }
-            if (packet?.transportVersion === 2) {
-              yield* this.packets.withPermit(this.receivePacket(file, packet));
+            } else if (incoming?.kind === 'packet' && incoming.packet.transportVersion === 2) {
+              yield* this.packets.withPermit(this.receivePacket(file, incoming.packet));
             }
           }
         }
@@ -316,9 +304,9 @@ export class DiskConnection {
   get readiness() {
     return this.delivery.readiness();
   }
-  publishView<View extends { session: string; connected: boolean }>(view: View) {
+  publishView<View extends { session: string; connected: boolean }>(view: View, force: boolean) {
     return Effect.suspend(() =>
-      this.session === view.session ? this.delivery.publishView(view) : Effect.void,
+      this.session === view.session ? this.delivery.publishView(view, force) : Effect.void,
     );
   }
   publish(snapshot: unknown) {
@@ -338,7 +326,7 @@ export class DiskConnection {
     return Effect.gen({ self: this }, function* () {
       this.stopped = true;
       yield* FiberSet.clear(this.fibers);
-      yield* Effect.forEach(this.reads.values(), (lock) => lock.withPermit(Effect.void), {
+      yield* Effect.forEach(this.uplinks.values(), ({ lock }) => lock.withPermit(Effect.void), {
         discard: true,
         concurrency: 'unbounded',
       });

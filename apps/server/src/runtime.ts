@@ -359,7 +359,6 @@ export const makeServer = Effect.fn('Server.make')(
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
       run,
-      flushAcknowledgment: publisher.flush,
       adoptCharacter,
       interrupt: run.interrupt,
       cancel: run.cancel,

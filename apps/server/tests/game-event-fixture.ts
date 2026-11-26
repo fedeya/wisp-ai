@@ -5,7 +5,16 @@ import { Schema } from 'effect';
 const decodePacket = Schema.decodeUnknownSync(packetSchema);
 
 export function gameEvent(input: unknown): GameEvent {
-  const packet = decodePacket(input);
-  if (packet.type === 'state_result') throw Error('Game results are consumed by the bridge');
-  return packet;
+  const {
+    seq: _seq,
+    nextSlot: _nextSlot,
+    receivedRev: _receivedRev,
+    transportVersion: _transportVersion,
+    mailboxVersion: _mailboxVersion,
+    compactAck: _compactAck,
+    bulkAvailable: _bulkAvailable,
+    ...event
+  } = decodePacket(input);
+  if (event.type === 'state_result') throw Error('Game results are consumed by the bridge');
+  return event;
 }

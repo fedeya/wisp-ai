@@ -1,5 +1,6 @@
 import { Option, Schema, SchemaGetter } from 'effect';
 import { SLOT_COUNT } from '@wisp/protocol/addon-helpers';
+import { inflateMessage, type MailboxMessage } from './mailbox.ts';
 
 export { BIT_COUNT, SLOT_COUNT, luaJson } from '@wisp/protocol/addon-helpers';
 export const PREFIX = 'WispAI';
@@ -147,4 +148,20 @@ const decodeAck = Schema.decodeUnknownOption(downlinkAckSchema, { onExcessProper
 
 export function parseDownlinkAck(value: unknown): DownlinkAck | null {
   return Option.getOrNull(decodeAck(value));
+}
+
+const decodePacket = Schema.decodeUnknownOption(packetSchema);
+
+export function decodeUplink(message: MailboxMessage) {
+  let value: unknown;
+  try {
+    value = JSON.parse(inflateMessage(message).toString('utf8'));
+  } catch {
+    // Partial and corrupt messages are retried by the addon.
+    return undefined;
+  }
+  const ack = message.flags === 0 ? parseDownlinkAck(value) : null;
+  if (ack) return { kind: 'ack' as const, ack };
+  const packet = Option.getOrUndefined(decodePacket(value));
+  if (packet) return { kind: 'packet' as const, packet };
 }

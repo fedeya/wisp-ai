@@ -62,7 +62,6 @@ test('keeps the payload key order the snapshot gate signs', () => {
     'features',
     'contextPolicy',
     'modelCatalog',
-    'acks',
     'questRevision',
     'characterRevision',
     'activeChat',

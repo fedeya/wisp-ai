@@ -216,7 +216,16 @@ export function makeDelivery(options: DeliveryOptions) {
     ) {
       return;
     }
-    const { body } = prepareDownlink(snapshot.value, confirmed?.value);
+    const prepared = yield* Effect.try(() =>
+      prepareDownlink(snapshot.value, confirmed?.value),
+    ).pipe(Effect.catch((error) => logTransportError(error.cause).pipe(Effect.as(undefined))));
+    if (!current(version)) return;
+    if (!prepared) {
+      // Repeating an invalid or oversized snapshot cannot make it encodable.
+      latest = undefined;
+      return;
+    }
+    const { body } = prepared;
     const startedAt = now();
     let route: Route = { kind: 'fragment' };
     if (
@@ -354,6 +363,16 @@ export function makeDelivery(options: DeliveryOptions) {
     if (current(version)) publishedJson = json;
   });
 
+  function needsControlRepair(file: string, text: string) {
+    const frame = pendingFrame();
+    return (
+      file === options.activeFile() &&
+      frame &&
+      now() - lastControlWriteAt >= 150 &&
+      !readDownlink(text)?.equals(frame.bytes)
+    );
+  }
+
   return {
     reusable: () => peer.reusable,
     compact: () => peer.compact,
@@ -416,24 +435,18 @@ export function makeDelivery(options: DeliveryOptions) {
         }),
       ),
     repairControl: (file: string, text: string) =>
-      submit((version) =>
-        Effect.suspend(() => {
-          const frame = pendingFrame();
-          if (
-            file !== options.activeFile() ||
-            !frame ||
-            readDownlink(text)?.equals(frame.bytes) ||
-            now() - lastControlWriteAt < 150
-          ) {
-            return Effect.void;
-          }
-          return writeFrame(version);
-        }),
+      Effect.suspend(() =>
+        needsControlRepair(file, text)
+          ? submit((version) =>
+              needsControlRepair(file, text) ? writeFrame(version) : Effect.void,
+            )
+          : Effect.void,
       ).pipe(Effect.catch(logTransportError)),
     publishSnapshot: (snapshot: unknown) => submit((version) => publish(version, snapshot)),
-    publishView: (view: { connected: boolean }) =>
+    publishView: (view: { connected: boolean }, force: boolean) =>
       submit((version) =>
         Effect.gen(function* () {
+          if (force) revisions.invalidate();
           const snapshot = revisions.next(view);
           if (!snapshot) return;
           if (view.connected && !readyRevision) readyRevision = snapshot.rev;

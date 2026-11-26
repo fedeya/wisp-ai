@@ -28,7 +28,6 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const interrupt = vi.fn();
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
-  const flushAcknowledgment = vi.fn();
   const receive = runBridgeEffect(
     createPacketReceiver({
       state,
@@ -48,11 +47,10 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       interrupt,
       runtime: 'unused',
       changed: () => {},
-      flushAcknowledgment,
       ...overrides,
     }),
   );
-  return { state, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
+  return { state, receive, cancel, end, interrupt, run, models };
 }
 
 test('Stop during first-turn model preparation prevents engine dispatch', async () => {
@@ -153,7 +151,7 @@ test('leaving a new empty conversation discards it while keeping conversations w
   expect(f.state.chats.map((chat) => chat.id)).toEqual(['old', 'used', 'next']);
 });
 
-test('interactive receipt requests an immediate acknowledgement publish, including duplicate retries', () => {
+test('a player message starts a turn with the original chat message ID', () => {
   const f = fixture();
   const packet = gameEvent({
     type: 'say',
@@ -165,10 +163,13 @@ test('interactive receipt requests an immediate acknowledgement publish, includi
     messageId: 'message',
   });
   f.receive(packet);
-  f.receive(packet);
-  expect(f.flushAcknowledgment).toHaveBeenCalledTimes(2);
-  expect(f.state.acknowledgments).toContain(11);
   expect(f.run).toHaveBeenCalledTimes(1);
+  expect(f.run).toHaveBeenCalledWith(
+    expect.objectContaining({ id: 'old' }),
+    'Hello',
+    'message',
+    undefined,
+  );
 });
 
 test('quest sync primes turn context but a new addon session cannot reuse its revision', () => {

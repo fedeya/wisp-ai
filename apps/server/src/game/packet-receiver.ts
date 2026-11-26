@@ -47,7 +47,6 @@ interface ReceiverDependencies {
   cancel?: (chat: Chat) => void;
   runtime: string;
   changed: () => void;
-  flushAcknowledgment?: () => void;
   /** Records a character's name and moves its pre-GUID data before the packet is handled. */
   adoptCharacter?: (character: CharacterProfile) => Effect.Effect<void>;
   now?: () => number;
@@ -126,24 +125,11 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       integrationState.reset();
       state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
       state.memoryView = undefined;
-      state.acknowledgments = [];
-      state.handled.clear();
       void refreshModelCatalog();
     }
     packet = { ...packet, context: contextCache.resolve(packet.context) };
     state.questRevision = contextCache.revision;
     state.characterRevision = contextCache.characterRevision;
-    if (
-      packet.type !== 'poll' &&
-      !packet.heartbeat &&
-      !state.acknowledgments.includes(packet.seq)
-    ) {
-      state.acknowledgments.push(packet.seq);
-      state.acknowledgments = state.acknowledgments.slice(-32);
-    }
-    if (packet.messageId) {
-      deps.flushAcknowledgment?.();
-    }
     if (integrationState.receive(packet.integrations) && integrationState.report) {
       deps.telemetry?.game(integrationState.report.version);
     }
@@ -163,14 +149,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.heartbeat && !newTransport) {
       return;
     }
-    const packetKey = packet.session + ':' + packet.seq;
-    if (state.handled.has(packetKey)) {
-      if (packet.type !== 'poll') {
-        changed();
-      }
-      return;
-    }
-    state.handled.add(packetKey);
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;

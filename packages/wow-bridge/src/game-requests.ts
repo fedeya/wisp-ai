@@ -112,7 +112,13 @@ export class GameRequests {
       this.changed();
 
       // Recover only reads. The addon deduplicates by ID, so each retry needs a new one.
-      if (!input.action && (input.sections || input.inspection)) {
+      const kind =
+        input.action !== undefined
+          ? 'action'
+          : input.inspection !== undefined
+            ? 'inspection'
+            : 'state';
+      if (kind === 'inspection' || (kind === 'state' && input.sections)) {
         const retry = Effect.sleep(timeout / 3).pipe(
           Effect.andThen(
             Effect.gen({ self: this }, function* () {
@@ -136,7 +142,7 @@ export class GameRequests {
         const timedOutAt = this.now();
         this.unresponsiveSince = timedOutAt;
         const timeoutDetails = {
-          kind: input.action ? 'action' : input.inspection ? 'inspection' : 'state',
+          kind,
           addonSilent: this.lastHeardAt <= startedAt,
           waitedMs: timedOutAt - startedAt,
         };
@@ -181,6 +187,8 @@ export class GameRequests {
   cancelAll(reason: string) {
     // A new window or reconnection starts with a fresh channel.
     this.unresponsiveSince = undefined;
+    this.lastHeardAt = 0;
+    this.timedOut.clear();
     for (const request of this.pending.values()) {
       request.finish(Effect.fail(new Error(reason)));
     }

@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { Effect, type FileSystem } from 'effect';
+import { systemError } from 'effect/PlatformError';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -14,6 +15,7 @@ import {
   COMPACT_DOWNLINK_KIND,
   COMPRESSED,
   MailboxDecoder,
+  MAX_DECODED_BYTES,
   UPLINK_HELPERS,
   UPLINK_KIND,
   encodeMessage,
@@ -519,6 +521,26 @@ test('publications coalesce without replacing unacknowledged data and patches us
   }
 });
 
+test('an oversized waiting view is reported once and the next valid view still arrives', async () => {
+  const f = await fixture();
+  try {
+    await f.send({ ...f.hello, mailboxVersion: 1, bulkAvailable: false });
+    const first = { rev: 1, text: 'first' };
+    await Effect.runPromise(f.bridge.publish(first));
+    await Effect.runPromise(f.bridge.publish({ rev: 2, text: 'x'.repeat(MAX_DECODED_BYTES) }));
+    expect((await drainMailbox(f)).state).toStrictEqual(first);
+    expect(f.errors).toEqual([{ error: 'Downlink state exceeds decoded limit' }]);
+
+    const latest = { rev: 3, text: 'latest' };
+    await Effect.runPromise(f.bridge.publish(latest));
+    expect((await drainMailbox(f, first)).state).toStrictEqual(latest);
+    expect(f.bridge.peerRevision).toBe(3);
+    expect(f.errors).toHaveLength(1);
+  } finally {
+    await f.close();
+  }
+});
+
 test('resynchronization discards a failed delta and delivers a fresh full latest snapshot', async () => {
   const f = await fixture();
   try {
@@ -845,6 +867,35 @@ test('an abandoned control write removes its temporary copy', async () => {
     expect(reads, 'the write reached its second read').toBeGreaterThanOrEqual(2);
     await expect(readFile(f.file + '.wisp-control.tmp')).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readFile(f.file, 'utf8'), 'the changed file was not replaced').toBe(before);
+  } finally {
+    await f.close();
+  }
+});
+
+test('a control rename retry does not overwrite an intervening game save', async () => {
+  let target: string | undefined;
+  let renameAttempts = 0;
+  const savedByGame = 'WispAI: enabled\r\nGame: enabled\r\n';
+  const f = await fixture(undefined, undefined, (fs) => ({
+    ...fs,
+    rename: (from, to) =>
+      Effect.suspend(() => {
+        if (to !== target || ++renameAttempts > 1) return fs.rename(from, to);
+        return fs
+          .writeFileString(to, savedByGame)
+          .pipe(
+            Effect.andThen(
+              Effect.fail(systemError({ _tag: 'Busy', module: 'FileSystem', method: 'rename' })),
+            ),
+          );
+      }),
+  }));
+  try {
+    await f.send({ ...f.hello, mailboxVersion: 1 });
+    target = f.file;
+    await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'reply' }));
+    expect(renameAttempts).toBe(1);
+    expect(await readFile(f.file, 'utf8')).toBe(savedByGame);
   } finally {
     await f.close();
   }

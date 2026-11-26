@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openTransport } from './transport-fixture.ts';
 import { captureLogs } from './log-fixture.ts';
+import { encodeMessage, replaceUplink, UPLINK_KIND } from '../src/wire/mailbox.ts';
 test('a failed payload write can retry the same snapshot after the filesystem recovers', async () => {
   await mkdir(path.resolve('runtime'), { recursive: true });
   const root = await mkdtemp(path.resolve('runtime', 'transport-retry-'));
@@ -92,6 +93,53 @@ test('a failing folder watcher is dropped and rewatched instead of ending the br
   } finally {
     await close();
     expect(bridge.watchers.size).toBe(0);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a failed startup read does not turn a persisted hello into a live event', async () => {
+  const base = path.resolve('runtime');
+  await mkdir(base, { recursive: true });
+  const root = await mkdtemp(path.join(base, 'transport-baseline-'));
+  const file = path.join(root, 'WTF/Account/Account/Realm/Hero/AddOns.txt');
+  const receive = vi.fn();
+  const logs = captureLogs();
+  const denied = systemError({
+    _tag: 'PermissionDenied',
+    module: 'FileSystem',
+    method: 'readFileString',
+  });
+  let readable = false;
+  const { bridge, close } = await openTransport(
+    [root, receive],
+    (fs) => ({
+      ...fs,
+      readFileString: (name, encoding) =>
+        name === file && !readable ? Effect.fail(denied) : fs.readFileString(name, encoding),
+    }),
+    logs.layer,
+  );
+  const hello = { type: 'hello', session: 'old', seq: 1, at: 1, transportVersion: 2 };
+  try {
+    await mkdir(path.dirname(file), { recursive: true });
+    const [frame] = encodeMessage(Buffer.from(JSON.stringify(hello)), UPLINK_KIND, 1);
+    await writeFile(file, replaceUplink('', frame));
+    await Effect.runPromise(bridge.start().pipe(Effect.provide(logs.layer)));
+    expect(logs.entries('transport.failed')).toContainEqual({ error: denied.message });
+    readable = true;
+    await Effect.runPromise(bridge.read(file, false));
+    expect(receive).not.toHaveBeenCalled();
+    const [fresh] = encodeMessage(
+      Buffer.from(JSON.stringify({ ...hello, seq: 2, at: 2 })),
+      UPLINK_KIND,
+      1,
+      1,
+    );
+    await writeFile(file, replaceUplink(await readFile(file, 'utf8'), fresh));
+    await Effect.runPromise(bridge.read(file, false));
+    expect(receive).toHaveBeenCalledExactlyOnceWith({ ...hello, seq: 2, at: 2 });
+  } finally {
+    await close();
     await rm(root, { recursive: true, force: true });
   }
 });

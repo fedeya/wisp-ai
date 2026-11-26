@@ -7,6 +7,7 @@ import { DiskConnection } from './connection.ts';
 import { logTransportError } from './logging.ts';
 
 type WireFields =
+  | 'seq'
   | 'nextSlot'
   | 'receivedRev'
   | 'transportVersion'
@@ -33,7 +34,6 @@ export interface GameCall {
 export interface GameView {
   readonly session: string;
   readonly connected: boolean;
-  readonly acks: number[];
 }
 
 export interface Connection {
@@ -63,7 +63,21 @@ const openConnection = Effect.fn('WowBridge.open')(function* (wowDirectory: stri
   const notify = () => Queue.offerUnsafe(updates, undefined);
   const requests = yield* GameRequests.make(notify);
   let closed = false;
-  const resultAcks = new Set<number>();
+  // Keep delivery history for the whole session: the addon can retry an old
+  // sequence even after it has fallen out of the on-wire ACK window.
+  const received = new Set<number>();
+  const acks: number[] = [];
+  let republishAcks = false;
+
+  function acknowledge(sequence: number) {
+    if (acks.includes(sequence)) {
+      republishAcks = true;
+    } else {
+      acks.push(sequence);
+      if (acks.length > 32) acks.shift();
+    }
+    notify();
+  }
 
   const disk: DiskConnection = yield* DiskConnection.make(
     wowDirectory,
@@ -71,6 +85,7 @@ const openConnection = Effect.fn('WowBridge.open')(function* (wowDirectory: stri
       Effect.gen(function* () {
         requests.heard();
         const {
+          seq,
           nextSlot,
           receivedRev,
           transportVersion: _transportVersion,
@@ -83,22 +98,27 @@ const openConnection = Effect.fn('WowBridge.open')(function* (wowDirectory: stri
         if (nextSlot !== undefined) {
           yield* disk.setCursor(nextSlot, receivedRev ?? 0).pipe(Effect.catch(logTransportError));
         }
-        if (event.type === 'state_result') {
-          resultAcks.add(event.seq);
-          if (resultAcks.size > 32) {
-            const oldest = resultAcks.values().next();
-            if (!oldest.done) resultAcks.delete(oldest.value);
-          }
-          requests.receive(event.requestId, event.session, event.chat, event.data);
-          notify();
+        const reliable = event.type !== 'poll' && !event.heartbeat;
+        if (reliable && received.has(seq)) {
+          acknowledge(seq);
           return;
         }
-        if (event.type === 'delete') requests.cancelChat(event.chat);
-        yield* Queue.offer(events, event);
+        if (event.type === 'state_result') {
+          requests.receive(event.requestId, event.session, event.chat, event.data);
+        } else {
+          if (!(yield* Queue.offer(events, event))) return;
+          if (event.type === 'delete') requests.cancelChat(event.chat);
+        }
+        if (reliable) {
+          received.add(seq);
+          acknowledge(seq);
+        }
       }),
     () => {
       latestView = undefined;
-      resultAcks.clear();
+      received.clear();
+      acks.length = 0;
+      republishAcks = false;
       requests.cancelAll('The addon reloaded or the character changed. Query again.');
     },
   );
@@ -106,18 +126,21 @@ const openConnection = Effect.fn('WowBridge.open')(function* (wowDirectory: stri
   const refresh = Effect.gen(function* () {
     const view = latestView;
     if (!view || view.session !== disk.session) return;
-    const acks = [...new Set([...view.acks, ...resultAcks])];
-    yield* disk.publishView({ ...view, acks, requests: requests.snapshot() }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : Effect.gen(function* () {
-              yield* logTransportError(Cause.squash(cause));
-              yield* Effect.sleep(400);
-              notify();
-            }),
-      ),
-    );
+    const force = republishAcks;
+    republishAcks = false;
+    yield* disk
+      .publishView({ ...view, acks: [...acks], requests: requests.snapshot() }, force)
+      .pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.gen(function* () {
+                yield* logTransportError(Cause.squash(cause));
+                yield* Effect.sleep(400);
+                notify();
+              }),
+        ),
+      );
   });
   yield* Effect.andThen(Queue.take(updates), refresh).pipe(
     Effect.forever,
