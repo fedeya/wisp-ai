@@ -1,5 +1,6 @@
 import { characterLabel } from '@wisp/protocol/character-key';
-import { RuntimeResources } from './runtime-resources.ts';
+import { Effect, Exit, Scope } from 'effect';
+import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
@@ -67,9 +68,9 @@ export interface BridgeOptions {
 /**
  * Composition root of the bridge: loads stores and settings, wires the
  * in-process agent engine, the addon transport, the agent and desktop servers, and returns
- * `{ state, receive, stop }`.
+ * `{ state, receive }` in the caller's scope.
  *
- * Cleanup is registered with `resources.defer` and runs in reverse (LIFO), so
+ * Cleanup is registered on the scope and runs in reverse (LIFO), so
  * the registration order below is the shutdown order read bottom-up. Orderings
  * that matter:
  * - The publish and integration timers and the desktop server stop first,
@@ -80,34 +81,34 @@ export interface BridgeOptions {
  *   drain, and turns drain before the publisher stops, chats are flushed and
  *   the database closes (last).
  */
-export async function startBridge(options: BridgeOptions = {}) {
-  const resources = new RuntimeResources();
-  // Set by stop() or a desktop stop request; checked by everything that
-  // starts work, so nothing new begins while resources close.
-  let shutdownRequested = false;
-  try {
+const makeBridge = Effect.fn('Bridge.make')(
+  function* (options: BridgeOptions, stop: () => Promise<void>) {
+    // Checked by everything that starts work, so nothing new begins while resources close.
+    let shutdownRequested = false;
     const ROOT =
       options.resourceRoot ||
       process.env.WISP_RESOURCE_ROOT ||
       fileURLToPath(new URL('../../../', import.meta.url));
     const paths = appPaths(ROOT, options.dataDirectory);
-    const [bridgeVersion, expectedAddonVersion] = await Promise.all([
-      readJson(path.join(ROOT, 'package.json'), z.object({ version: z.string().min(1) }), () => ({
-        version: 'unknown',
-      }))
-        .then((metadata) => metadata.version)
-        .catch(() => 'unknown'),
-      readFile(path.join(ROOT, 'addon/WispAI/WispAI.toc'), 'utf8').then(
-        addonVersionFromToc,
-        () => undefined,
-      ),
-    ]);
+    const [bridgeVersion, expectedAddonVersion] = yield* startup(() =>
+      Promise.all([
+        readJson(path.join(ROOT, 'package.json'), z.object({ version: z.string().min(1) }), () => ({
+          version: 'unknown',
+        }))
+          .then((metadata) => metadata.version)
+          .catch(() => 'unknown'),
+        readFile(path.join(ROOT, 'addon/WispAI/WispAI.toc'), 'utf8').then(
+          addonVersionFromToc,
+          () => undefined,
+        ),
+      ]),
+    );
     const runtime = paths.runtime;
     const simulator = new Simulator(ROOT, runtime);
-    await mkdir(runtime, { recursive: true });
+    yield* startup(() => mkdir(runtime, { recursive: true }));
     const databaseFile = applicationDatabaseFile(runtime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
-    resources.defer(() => applicationDatabase.close());
+    yield* releaseRuntimeResource(() => applicationDatabase.close());
     const memoryStore = new MemoryStore(applicationDatabase);
     async function memorySnapshot(identity: string | undefined) {
       const preferences = (await memoryStore.read('preferences', 'local-player')).map((entry) => ({
@@ -122,41 +123,43 @@ export async function startBridge(options: BridgeOptions = {}) {
         : [];
       return { status: 'available', entries: [...preferences, ...character] };
     }
-    const config = await loadBridgeConfig(paths.config);
-    const features = await Features.start({
-      channel: featureChannel(bridgeVersion, process.env.WISP_RELEASE_BUILD === '1'),
-      overrides: config.get().features ?? {},
-      saveOverrides: (overrides) => config.update({ features: overrides }),
-      onChange: () => featuresChanged(),
-    });
+    const config = yield* startup(() => loadBridgeConfig(paths.config));
+    const features = yield* startup(() =>
+      Features.start({
+        channel: featureChannel(bridgeVersion, process.env.WISP_RELEASE_BUILD === '1'),
+        overrides: config.get().features ?? {},
+        saveOverrides: (overrides) => config.update({ features: overrides }),
+        onChange: () => featuresChanged(),
+      }),
+    );
     const mcpConfig = config.get().mcpConfig;
     const mcpFile = mcpConfig
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
     const vault = options.vault || new NativeVault(paths.desktopExecutable);
     const mcpManager = new McpManager(mcpFile, ROOT, vault);
-    await mcpManager.load();
-    resources.defer(() => mcpManager.close());
+    yield* releaseRuntimeResource(() => mcpManager.close());
+    yield* startup(() => mcpManager.load());
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
       isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
       enabledFeatures: () => features.enabledNames(),
     });
-    resources.defer(() => telemetry.close());
+    yield* releaseRuntimeResource(() => telemetry.close());
     const auth = new ChatGPTAuth(runtime, vault);
-    await auth.load();
+    yield* startup(() => auth.load());
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
-    await connections.load();
+    yield* startup(() => connections.load());
     const modelFailures = new ModelFailures();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
-    await webSearch.load();
-    resources.defer(() => auth.cancel());
+    yield* startup(() => webSearch.load());
+    yield* releaseRuntimeResource(() => auth.cancel());
     const database = new TheWoWDB();
     const panelStore = new PanelStore(applicationDatabase);
-    await panelStore.load();
+    yield* startup(() => panelStore.load());
     const routineStore = new RoutineStore(applicationDatabase);
-    await routineStore.load();
+    yield* startup(() => routineStore.load());
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
-    await capabilitySettings.load();
+    yield* startup(() => capabilitySettings.load());
     capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
     capabilitySettings.features = features.values();
     const integrationState = new IntegrationState(capabilitySettings);
@@ -168,23 +171,23 @@ export async function startBridge(options: BridgeOptions = {}) {
     });
     const mcpCapabilities = createMcpCapabilities(mcpManager, capabilitySettings);
     mcpCapabilities.refreshCatalog();
-    await mcpCapabilities.applySavedSettings();
-    await capabilitySettings.publish();
+    yield* startup(() => mcpCapabilities.applySavedSettings());
+    yield* startup(() => capabilitySettings.publish());
     const mcpRelay = new McpRelay(
       mcpManager,
       (name, tool) =>
         capabilitySettings.enabled('mcp:' + name) &&
         (!tool || capabilitySettings.enabled('mcp_tool:' + name + ':' + tool)),
     );
-    resources.defer(() => mcpRelay.close());
+    yield* releaseRuntimeResource(() => mcpRelay.close());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
       logger.error(
         { event: 'chat.save_failed', error: errorMessage(error) },
         'Conversation save failed',
       ),
     );
-    const state = createSessionState(await chatStore.load());
-    resources.defer(async () => {
+    const state = createSessionState(yield* startup(() => chatStore.load()));
+    yield* releaseRuntimeResource(async () => {
       try {
         await chatStore.flush(state.chats);
       } finally {
@@ -230,12 +233,12 @@ export async function startBridge(options: BridgeOptions = {}) {
       },
       logger,
     });
-    resources.defer(() => publisher.stop());
+    yield* releaseRuntimeResource(() => publisher.stop());
     const pending = new GameRequests(changed, {
       onTimeout: (timeout) =>
         logger.warn({ event: 'game.request_timeout', ...timeout }, 'WoW did not answer a request'),
     });
-    resources.defer(() => pending.cancelAll('Bridge stopped'));
+    yield* releaseRuntimeResource(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
@@ -297,7 +300,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isCurrent: (chat) => state.chats.includes(chat),
       flushSnapshot: publisher.flush,
     });
-    resources.defer(async () => {
+    yield* releaseRuntimeResource(async () => {
       state.chats.forEach(run.interrupt);
       await run.drain();
     });
@@ -311,7 +314,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isStopping: () => shutdownRequested,
       isReady: () => engineReady,
     });
-    resources.defer(stopRoutineScheduler);
+    yield* releaseRuntimeResource(stopRoutineScheduler);
     const adoptCharacter = createCharacterAdoption({
       database: applicationDatabase,
       panelStore,
@@ -363,7 +366,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       isStopping: () => shutdownRequested,
       logger,
     });
-    resources.defer(() => transport.serialize(transport.disconnect));
+    yield* releaseRuntimeResource(() => transport.serialize(transport.disconnect));
     const server = createServer(
       createAgentHandler({
         logger,
@@ -393,13 +396,13 @@ export async function startBridge(options: BridgeOptions = {}) {
         changed,
       }),
     );
-    resources.defer(() => closeServer(server));
-    const agentPort = await listenOnLoopback(server, options.agentPort ?? 43187);
+    yield* releaseRuntimeResource(() => closeServer(server));
+    yield* releaseRuntimeResource(() => engine.close());
+    const agentPort = yield* startup(() => listenOnLoopback(server, options.agentPort ?? 43187));
     const agentOrigin = 'http://127.0.0.1:' + agentPort;
-    await writeFile(path.join(runtime, 'bridge.pid'), String(process.pid));
+    yield* startup(() => writeFile(path.join(runtime, 'bridge.pid'), String(process.pid)));
     setAgentHost({ origin: agentOrigin, token, capabilitiesFile: capabilitySettings.agentFile });
-    resources.defer(() => engine.close());
-    resources.defer(() => accounts.drain());
+    yield* releaseRuntimeResource(() => accounts.drain());
     void Promise.all([
       retireLegacyEngine(paths.legacyEngine),
       rm(path.join(runtime, 'eve.log'), { force: true }),
@@ -410,14 +413,16 @@ export async function startBridge(options: BridgeOptions = {}) {
       ),
     );
     // Histories no conversation refers to belong to deleted chats or reset sessions.
-    await agentHistory
-      .prune()
-      .catch((error: unknown) =>
-        logger.warn(
-          { event: 'agent.history_prune_failed', error: errorMessage(error) },
-          'Could not prune agent history',
+    yield* startup(() =>
+      agentHistory
+        .prune()
+        .catch((error: unknown) =>
+          logger.warn(
+            { event: 'agent.history_prune_failed', error: errorMessage(error) },
+            'Could not prune agent history',
+          ),
         ),
-      );
+    );
     const engineStartup = engine.preload().then(
       () => {
         engineReady = true;
@@ -521,8 +526,10 @@ export async function startBridge(options: BridgeOptions = {}) {
         );
       },
     });
-    const desktopServer = await startDesktopServer(runtime, desktopApp, options.desktopPort);
-    resources.defer(() => closeServer(desktopServer));
+    const desktopServer = yield* startup(() =>
+      startDesktopServer(runtime, desktopApp, options.desktopPort),
+    );
+    yield* releaseRuntimeResource(() => closeServer(desktopServer));
     const transportStartup =
       options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
         ? Promise.resolve()
@@ -542,7 +549,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         changed();
       }
     }, 30000);
-    resources.defer(() => clearInterval(integrationHealth));
+    yield* releaseRuntimeResource(() => clearInterval(integrationHealth));
     // Snapshots publish from changed(); this tick only polls what has no event:
     // the addon's acknowledged revision, and a publish that is still dirty
     // because the transport was missing or its last write failed.
@@ -554,18 +561,37 @@ export async function startBridge(options: BridgeOptions = {}) {
       { event: 'bridge.started', version: bridgeVersion, channel: features.channel },
       'Wisp started',
     );
-    resources.defer(() => clearInterval(publish));
-    function stop() {
-      shutdownRequested = true;
-      pending.cancelAll('Bridge stopped');
-      state.chats.forEach(run.interrupt);
-      return resources.close();
-    }
-    await Promise.all([engineStartup, transportStartup]);
-    return { state, receive, stop };
+    yield* releaseRuntimeResource(() => clearInterval(publish));
+    // Prevent new work before draining resources on shutdown.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        shutdownRequested = true;
+        pending.cancelAll('Bridge stopped');
+        state.chats.forEach(run.interrupt);
+      }),
+    );
+    yield* startup(() => Promise.all([engineStartup, transportStartup]));
+    return { state, receive };
+  },
+  // The existing Promise-based acquisitions cannot be interrupted safely.
+  Effect.uninterruptible,
+);
+
+function startup<A>(operation: () => Promise<A>) {
+  return Effect.tryPromise({ try: operation, catch: (error) => error });
+}
+
+export async function startBridge(options: BridgeOptions = {}) {
+  const resources = new RuntimeResources();
+  const stop = () => resources.close();
+  try {
+    const bridge = await Effect.runPromise(
+      makeBridge(options, stop).pipe(Scope.provide(resources.scope)),
+    );
+    return { ...bridge, stop };
   } catch (error) {
     await resources
-      .close()
+      .close(Exit.fail(error))
       .catch((cleanupError) =>
         logger.error(
           { event: 'bridge.cleanup_failed', error: errorMessage(cleanupError) },

@@ -1,24 +1,31 @@
+import { Cause, Effect, Exit, Scope } from 'effect';
+
+export function releaseRuntimeResource(dispose: () => void | Promise<unknown>) {
+  return Effect.addFinalizer(() =>
+    Effect.tryPromise({
+      try: async () => dispose(),
+      catch: (error) => error,
+    }).pipe(Effect.orDie),
+  );
+}
+
+/** Promise boundary for callers that start and stop the bridge outside Effect. */
 export class RuntimeResources {
-  private cleanup: (() => void | Promise<unknown>)[] = [];
+  readonly scope = Scope.makeUnsafe();
   private closing?: Promise<void>;
+
   defer(dispose: () => void | Promise<unknown>) {
-    this.cleanup.push(dispose);
+    Effect.runSync(releaseRuntimeResource(dispose).pipe(Scope.provide(this.scope)));
   }
-  close(): Promise<void> {
-    return (this.closing ??= this.dispose());
-  }
-  private async dispose() {
-    const errors: unknown[] = [];
-    for (const cleanup of this.cleanup.reverse()) {
-      try {
-        await cleanup();
-      } catch (error) {
-        errors.push(error);
+
+  close(exit: Exit.Exit<unknown, unknown> = Exit.void): Promise<void> {
+    return (this.closing ??= Effect.runPromiseExit(Scope.close(this.scope, exit)).then((result) => {
+      if (Exit.isFailure(result)) {
+        const errors = result.cause.reasons
+          .filter(Cause.isDieReason)
+          .map((reason) => reason.defect);
+        throw new AggregateError(errors, 'Runtime cleanup failed');
       }
-    }
-    this.cleanup = [];
-    if (errors.length) {
-      throw new AggregateError(errors, 'Runtime cleanup failed');
-    }
+    }));
   }
 }
