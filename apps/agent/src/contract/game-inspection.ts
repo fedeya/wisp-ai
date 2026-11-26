@@ -1,5 +1,23 @@
 import { z } from 'zod';
 import { settingsRead } from './settings.ts';
+
+export const characterSections = z
+  .array(
+    z.enum([
+      'character',
+      'location',
+      'group',
+      'talents',
+      'spells',
+      'quests',
+      'gear',
+      'bags',
+      'pvp',
+    ]),
+  )
+  .min(1)
+  .max(9);
+
 export const npcLocationsInput = z
   .strictObject({
     mode: z.enum(['npc', 'class_trainers', 'services']).default('npc'),

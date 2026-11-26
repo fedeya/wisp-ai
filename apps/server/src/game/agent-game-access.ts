@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { GameAccess, gameReading } from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
 import { inspectionSchema } from '@wisp/agent/contract/game-inspection';
@@ -55,8 +55,7 @@ interface Dependencies {
 
 const asError = (cause: unknown) =>
   cause instanceof Error ? cause : new Error(errorMessage(cause));
-const parseReading = (value: unknown) =>
-  Effect.try({ try: () => gameReading.parse(value), catch: asError });
+const parseReading = Schema.decodeUnknownEffect(gameReading);
 
 export function make(deps: Dependencies) {
   const { capabilitySettings } = deps;

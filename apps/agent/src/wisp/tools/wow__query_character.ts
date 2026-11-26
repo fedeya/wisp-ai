@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
-import { characterSections } from '../../host/game-access.ts';
+import { characterSections } from '../../contract/game-inspection.ts';
 import { readCharacter } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(

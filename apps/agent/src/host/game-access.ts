@@ -1,27 +1,10 @@
-import { Context, Effect } from 'effect';
-import { z } from 'zod';
+import { Context, Effect, Schema } from 'effect';
+import type { z } from 'zod';
 import type { actionSchema } from '../contract/game-actions.ts';
-import type { inspectionSchema } from '../contract/game-inspection.ts';
+import type { characterSections, inspectionSchema } from '../contract/game-inspection.ts';
 
-export const characterSections = z
-  .array(
-    z.enum([
-      'character',
-      'location',
-      'group',
-      'talents',
-      'spells',
-      'quests',
-      'gear',
-      'bags',
-      'pvp',
-    ]),
-  )
-  .min(1)
-  .max(9);
-
-export const gameReading = z.record(z.string(), z.unknown());
-export type GameReading = z.infer<typeof gameReading>;
+export const gameReading = Schema.Record(Schema.String, Schema.Unknown);
+export type GameReading = typeof gameReading.Type;
 export type GameInspection = z.input<typeof inspectionSchema>;
 export type GameAction = z.input<typeof actionSchema>;
 export type CharacterSections = z.infer<typeof characterSections>;
