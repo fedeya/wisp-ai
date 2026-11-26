@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { dungeonLootInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'dungeon_loot',
@@ -11,11 +10,6 @@ export default enabledTool(
     inputSchema: dungeonLootInput,
     label: { start: () => 'Reading dungeon loot', complete: () => 'Read dungeon loot' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'dungeon_loot', args } },
-        ctx.abortSignal,
-        60_000,
-      ),
+      ctx.host('inspect', { inspection: { kind: 'dungeon_loot', args } }, 60_000),
   }),
 );

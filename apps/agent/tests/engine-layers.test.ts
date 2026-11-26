@@ -58,7 +58,19 @@ function engineLayer(
         ),
       ),
     ),
-    Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of({ origin: () => '', token: '' }))),
+    Layer.provide(
+      Layer.succeed(
+        EngineConfig,
+        EngineConfig.of({
+          calls: {
+            selectedModel: () => Promise.reject(Error('Not used')),
+            call: () => Promise.reject(Error('Not used')),
+          },
+          origin: () => '',
+          token: '',
+        }),
+      ),
+    ),
   );
 }
 
@@ -199,7 +211,19 @@ test("Effect's logs reach the host logger with their annotations", async () => {
       yield* Effect.logWarning('Compaction failed').pipe(
         Effect.annotateLogs({ event: 'agent.compaction_failed' }),
       );
-    }).pipe(Effect.provide(hostLayer({ origin: () => '', token: '', logger }))),
+    }).pipe(
+      Effect.provide(
+        hostLayer({
+          calls: {
+            selectedModel: () => Promise.reject(Error('Not used')),
+            call: () => Promise.reject(Error('Not used')),
+          },
+          origin: () => '',
+          token: '',
+          logger,
+        }),
+      ),
+    ),
   );
   expect(lines).toEqual([
     ['info', {}, 'Turn started'],

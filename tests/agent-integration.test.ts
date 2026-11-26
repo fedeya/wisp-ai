@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine, type TurnInput } from '@wisp/agent/engine';
+import type { AgentHostCalls } from '@wisp/agent/contract/host-calls';
 import { MemoryHistory } from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { newChat } from '@wisp/bridge/chat-lifecycle';
@@ -39,54 +40,12 @@ test(
     let activeProjection: ReplyProjection | undefined;
     const text = 'Offline integration passed.';
     const model = createServer(async (req, res) => {
-      if (req.url?.startsWith('/session-model?')) {
-        res.writeHead(200, { 'content-type': 'application/json' }).end(
-          JSON.stringify({
-            model: 'offline-test',
-            effort: 'provider-default',
-            contextWindow: 128000,
-          }),
-        );
-        return;
-      }
       let body = '';
       for await (const chunk of req) {
         body += chunk;
       }
       if (req.headers.authorization !== 'Bearer offline-token') {
         res.writeHead(401).end();
-        return;
-      }
-      if (req.url === '/present') {
-        try {
-          const data = JSON.parse(body) as { callId: string; presentation: unknown };
-          const accepted = await activeProjection!.acceptPresentation(
-            data.callId,
-            data.presentation,
-            AbortSignal.timeout(10000),
-          );
-          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(accepted));
-        } catch (error) {
-          res.writeHead(503).end((error as Error).message);
-        }
-        return;
-      }
-      if (req.url === '/inspect') {
-        const request = JSON.parse(body);
-        toolCalls.push(request);
-        const result =
-          request.inspection.kind === 'questie_quest'
-            ? {
-                status: 'available',
-                data: {
-                  status: 'available',
-                  questId: 166,
-                  data: { name: 'The Defias Brotherhood' },
-                  reference: { kind: 'quest', id: 166 },
-                },
-              }
-            : { status: 'completed', data: { settings: [], verified: true } };
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
       requests.push(JSON.parse(body));
@@ -207,7 +166,44 @@ test(
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
     setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
     const history = new MemoryHistory();
+    // The bridge's side of the agent's calls: the session's model, presentation and game inspections.
+    const calls: AgentHostCalls = {
+      selectedModel: async () => ({
+        model: 'offline-test',
+        effort: 'provider-default',
+        contextWindow: 128000,
+      }),
+      call: async (session, call, input, signal) => {
+        if (call === 'present') {
+          const data = input as unknown as { callId: string; presentation: unknown };
+          return (await activeProjection!.acceptPresentation(
+            data.callId,
+            data.presentation,
+            signal,
+          )) as never;
+        }
+        if (call !== 'inspect') throw Error('Unexpected host call: ' + call);
+        const request = { agentSession: session, ...input } as unknown as {
+          inspection: { kind: string };
+        };
+        toolCalls.push(request);
+        return (
+          request.inspection.kind === 'questie_quest'
+            ? {
+                status: 'available',
+                data: {
+                  status: 'available',
+                  questId: 166,
+                  data: { name: 'The Defias Brotherhood' },
+                  reference: { kind: 'quest', id: 166 },
+                },
+              }
+            : { status: 'completed', data: { settings: [], verified: true } }
+        ) as never;
+      },
+    };
     const engine = createAgentEngine({
+      calls,
       origin: () => origin,
       token: 'offline-token',
       history,

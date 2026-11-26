@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { startBridge, type BridgeOptions } from '../src/runtime.ts';
+import { wowheadQuery } from '@wisp/protocol/search';
 import { packetSchema } from '../src/addon/protocol.ts';
 import { UPLINK_KIND, encodeMessage, replaceUplink } from '../src/addon/mailbox.ts';
 import { statusSchema } from '@wisp/protocol/desktop';
@@ -170,7 +171,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
     bridge = await startBridge(f.options);
-    const { origin, token: agentToken } = agentHost()!;
+    expect(agentHost()?.token).toBeTruthy();
     const identity = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
@@ -195,25 +196,21 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     chat.status = 'working';
     chat.modelSettings = { model: `connection:${id}:local`, effort: 'provider-default' };
     bridge.state.chats.push(chat);
-    const agent = async (route: string, body?: unknown) => {
-      const r = await actualFetch(origin + route, {
-        method: body ? 'POST' : 'GET',
-        headers: { authorization: 'Bearer ' + agentToken, 'content-type': 'application/json' },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      expect(r.ok).toBe(true);
-      return r.json();
-    };
-    expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
-    expect(
-      await agent('/wowhead', { agentSession: 'eve-search', query: 'Frost Nova' }),
-    ).toMatchObject({ status: 'available', provider: 'Exa' });
+    const signal = () => new AbortController().signal;
+    const model = () => bridge!.agent.selectedModel('eve-search', signal());
+    // The web search tool validates its input; the bridge receives it with defaults.
+    const search = (query: object) =>
+      bridge!.agent.call('eve-search', 'wowhead', wowheadQuery.parse(query), signal());
+    expect((await model()).webSearchAvailable).toBe(true);
+    expect(await search({ query: 'Frost Nova' })).toMatchObject({
+      status: 'available',
+      provider: 'Exa',
+    });
     chat.status = 'done';
     await desktop('/search/save', { provider: 'auto', apiKey: 'private-exa-key' });
     chat.status = 'working';
-    expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
-    const result = await agent('/wowhead', {
-      agentSession: 'eve-search',
+    expect((await model()).webSearchAvailable).toBe(true);
+    const result = await search({
       query: 'Frost Nova',
       depth: 'deep',
       maxResults: 7,
@@ -248,7 +245,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     );
     await desktop('/search/remove-exa', {});
     chat.status = 'working';
-    expect((await agent('/session-model?session=eve-search')).webSearchAvailable).toBe(true);
+    expect((await model()).webSearchAvailable).toBe(true);
   } finally {
     await bridge?.stop();
     vi.unstubAllGlobals();
@@ -306,18 +303,16 @@ test('occupied bridge ports fall back to free ones that the clients can reach', 
   let bridge: Awaited<ReturnType<typeof startBridge>> | undefined;
   try {
     bridge = await startBridge({ ...f.options, agentPort: port, desktopPort: port });
-    const { origin: WOW_BRIDGE_URL, token: WOW_BRIDGE_TOKEN } = agentHost()!;
+    const { origin: WOW_BRIDGE_URL } = agentHost()!;
     const agentPort = Number(new URL(WOW_BRIDGE_URL!).port);
     const desktop = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
     expect(new Set([port, agentPort, desktop.port]).size).toBe(3);
 
-    const agentResponse = await fetch(WOW_BRIDGE_URL + '/session-model?session=missing', {
-      headers: { authorization: 'Bearer ' + WOW_BRIDGE_TOKEN },
-    });
-    expect(agentResponse.status).toBe(503);
-    expect(await agentResponse.text()).toBe('No model selected for this turn.');
+    await expect(
+      bridge.agent.selectedModel('missing', new AbortController().signal),
+    ).rejects.toThrow('No model selected for this turn.');
 
     const desktopResponse = await fetch('http://127.0.0.1:' + desktop.port + '/status', {
       headers: { authorization: 'Bearer ' + desktop.token },

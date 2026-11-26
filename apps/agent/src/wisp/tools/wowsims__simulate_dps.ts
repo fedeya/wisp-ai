@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { simulationInput } from '../../contract/simulation.ts';
 export default enabledTool(
   'simulate_dps',
@@ -16,7 +15,6 @@ export default enabledTool(
           ? 'Ran WoWSims DPS simulation'
           : 'Requested a WoWSims DPS simulation',
     },
-    execute: (args, ctx) =>
-      agentRPC('simulate', { agentSession: ctx.session.id, ...args }, ctx.abortSignal, 85000),
+    execute: (args, ctx) => ctx.host('simulate', args, 85000),
   }),
 );

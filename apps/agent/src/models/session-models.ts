@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { LanguageModel } from 'ai';
 import { Context, Effect, Layer } from 'effect';
-import type { z } from 'zod';
-import { selectedModel } from '../contract/agent-rpc.ts';
+import type { SelectedModel } from '../contract/host-calls.ts';
 import { capabilityEnabled } from '../host/capabilities.ts';
 import { connectionModel } from './connection-model.ts';
 import { EngineConfig } from '../host/engine-config.ts';
 import { hostCall, type HostError } from '../execution/engine-errors.ts';
 
-/** The model a session runs on, as the bridge's chat settings choose it. */
-export type SelectedModel = z.infer<typeof selectedModel>;
+export type { SelectedModel } from '../contract/host-calls.ts';
 
 /** Which model each session uses, and that model for the AI SDK. */
 export class SessionModels extends Context.Service<
@@ -23,24 +21,12 @@ export class SessionModels extends Context.Service<
   static readonly layer = Layer.effect(
     SessionModels,
     Effect.gen(function* () {
-      const { origin, token } = yield* EngineConfig;
+      const { origin, token, calls } = yield* EngineConfig;
       return SessionModels.of({
         selected: (session) =>
-          hostCall(async (signal) => {
-            const response = await fetch(
-              origin() + '/session-model?session=' + encodeURIComponent(session),
-              {
-                headers: { authorization: 'Bearer ' + token },
-                signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
-              },
-            );
-            if (!response.ok) {
-              throw Error(
-                (await response.text()) || 'Could not load model settings for this conversation.',
-              );
-            }
-            return selectedModel.parse(await response.json());
-          }).pipe(Effect.withSpan('SessionModels.selected')),
+          hostCall((signal) =>
+            calls.selectedModel(session, AbortSignal.any([signal, AbortSignal.timeout(15_000)])),
+          ).pipe(Effect.withSpan('SessionModels.selected')),
         model: (session, selected, cache) =>
           connectionModel(
             selected,

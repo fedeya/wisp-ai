@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { questInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'get_quest',
@@ -31,11 +30,6 @@ export default enabledTool(
         return name ? `Read quest details for “${name}”` : `Read details for quest #${questId}`;
       },
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'questie_quest', args } },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => ctx.host('inspect', { inspection: { kind: 'questie_quest', args } }),
   }),
 );

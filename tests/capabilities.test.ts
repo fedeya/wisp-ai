@@ -75,7 +75,8 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
     await settings.set('memory:preferences', false);
     const memory = localMemory('preferences');
     assert.equal(
-      await memory.scope('session', new AbortController().signal),
+      // A disabled slot answers before it asks the host anything.
+      await memory.scope(() => Promise.reject(Error('No host call expected'))),
       null,
       'disabled memory must not be recalled',
     );

@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import type { SessionHost } from '../contract/host-calls.ts';
 
 /** What a tool receives besides its input. */
 export interface ToolContext {
@@ -7,6 +8,8 @@ export interface ToolContext {
   abortSignal: AbortSignal;
   /** The model's id for this call. */
   callId: string;
+  /** Calls to the host (the bridge) for this session, cancelled with the call. */
+  host: SessionHost;
 }
 
 /** A tool result shaped for the model, in the AI SDK tool-result form. */

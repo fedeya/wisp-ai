@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { settingsUpdate } from '../../contract/settings.ts';
 export default enabledTool(
   'update_settings',
@@ -20,11 +19,6 @@ export default enabledTool(
         return completed ? 'Updated settings' : 'Tried to update settings';
       },
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'action',
-        { agentSession: ctx.session.id, action: { kind: 'update_settings', args } },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => ctx.host('action', { action: { kind: 'update_settings', args } }),
   }),
 );

@@ -10,7 +10,6 @@
   "type": "module",
   "exports": {
     "./package.json": "./package.json",
-    "./agent-rpc": "./src/host/agent-rpc.ts",
     "./agent-host": "./src/host/agent-host.ts",
     "./agent-memory": "./src/wisp/agent-memory.ts",
     "./enabled-tool": "./src/tools/enabled-tool.ts",

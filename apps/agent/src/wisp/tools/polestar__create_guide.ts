@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { guideInput } from '../../contract/game-actions.ts';
 export default enabledTool(
   'create_guide',
@@ -16,11 +15,6 @@ export default enabledTool(
           ? 'Opened Polestar guide'
           : 'Tried to build a Polestar guide',
     },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'action',
-        { agentSession: ctx.session.id, action: { kind: 'polestar_guide', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => ctx.host('action', { action: { kind: 'polestar_guide', args } }),
   }),
 );

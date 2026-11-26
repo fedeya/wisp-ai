@@ -1,4 +1,5 @@
 import { Context, Layer, Logger, References } from 'effect';
+import type { AgentHostCalls } from '../contract/host-calls.ts';
 import type { ToolStub } from '../tools/turn-tools.ts';
 
 export interface EngineLogger {
@@ -8,7 +9,9 @@ export interface EngineLogger {
 
 /** What the engine needs from its host. */
 export interface EngineHost {
-  /** The bridge's loopback agent endpoint and its token. */
+  /** What the agent asks of the bridge: plain calls, since it runs in the bridge's process. */
+  readonly calls: AgentHostCalls;
+  /** The bridge's loopback endpoint for the model proxy and the MCP relay, and its token. */
   readonly origin: () => string;
   readonly token: string;
   /** Player-configured MCP servers (`mcp.json`). */

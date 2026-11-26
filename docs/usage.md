@@ -154,7 +154,7 @@ WoW character readings, inventory, progression, references, settings, maps and m
 Desktop **Integrations** groups tools by category and shows which addons WoW has detected. Open **Manage** for tool controls, **Setup instructions** for an addon you need to install or update, or **Add MCP** to connect a server.
 Desktop and WoW **Settings > Integrations** share the same optional capability controls. Each capability group has a master switch and individual tools. Disabling a parent
 preserves child preferences. Enabled and available capabilities are projected into
-the agent's tools each turn; the bridge enforces the same checks on game/RPC calls.
+the agent's tools each turn; the bridge enforces the same checks when tools call it.
 
 - **Questie:** installed QuestieDB Forever NPC locations, with optional Questie trainer/service indexes. Missing, incompatible and partial providers are distinguished. No addon source is modified.
 - **TheWoWDB / Wowhead / Everloot:** primary Forever catalog, scoped fallback search, and complementary MCP observations respectively. Configured network sources are not claimed to be online until a request succeeds.

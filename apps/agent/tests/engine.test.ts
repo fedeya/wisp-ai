@@ -13,6 +13,7 @@ import {
   type Entry,
   type TurnInput,
 } from '../src/engine.ts';
+import type { AgentHostCalls } from '../src/contract/host-calls.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
 import { gate } from './gate.ts';
 
@@ -110,15 +111,7 @@ async function fixture(
     }
     const json = (value: unknown) =>
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(value));
-    if (req.url?.startsWith('/session-model?')) {
-      json({ model: 'offline-test', effort: 'provider-default', contextWindow });
-    } else if (req.url === '/inspect') {
-      inspections.push(JSON.parse(body));
-      setTimeout(
-        () => json({ status: 'completed', data: { settings: [], verified: true } }),
-        options.inspectDelayMs ?? 0,
-      );
-    } else {
+    {
       const request = JSON.parse(body) as Item;
       requests.push(request);
       const item = plan(requests.length, request);
@@ -157,7 +150,22 @@ async function fixture(
     history.entries(session).filter(({ entry }) => entry.type !== 'compaction');
   const compactionsOf = (session: string) =>
     history.entries(session).filter(({ entry }) => entry.type === 'compaction');
+  // The bridge's side of the agent's calls: the session's model and game inspections.
+  const calls: AgentHostCalls = {
+    selectedModel: async () => ({
+      model: 'offline-test',
+      effort: 'provider-default',
+      contextWindow,
+    }),
+    call: async (session, call, input) => {
+      if (call !== 'inspect') throw Error('Unexpected host call: ' + call);
+      inspections.push({ agentSession: session, ...input } as Item);
+      await new Promise((resolve) => setTimeout(resolve, options.inspectDelayMs ?? 0));
+      return { status: 'completed', data: { settings: [], verified: true } } as never;
+    },
+  };
   const engine = createAgentEngine({
+    calls,
     origin: () => origin,
     token: 'offline-token',
     history,

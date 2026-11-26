@@ -18,6 +18,7 @@ import { logTokens, recordUsage, stepUsage } from './usage.ts';
 
 interface TurnDependencies {
   stub: EngineConfig['Service']['stub'];
+  calls: EngineConfig['Service']['calls'];
   history: SessionHistory['Service'];
   wisp: WispAgent['Service'];
   models: SessionModels['Service'];
@@ -36,7 +37,7 @@ const scopeSignal = Effect.acquireRelease(
 // One turn: prepare, maybe compact, then the AI SDK tool loop until the model
 // stops calling tools, a tool ends the turn, or the step budget runs out.
 export const runTurn = Effect.fn('AgentEngine.turn')(function* (
-  { stub, history, wisp, models, toolbox }: TurnDependencies,
+  { stub, calls, history, wisp, models, toolbox }: TurnDependencies,
   session: string,
   chatId: string,
   input: TurnInput,
@@ -78,6 +79,7 @@ export const runTurn = Effect.fn('AgentEngine.turn')(function* (
   const assembled = assembleTools({
     session,
     signal,
+    calls,
     direct: tools.direct,
     deferred: tools.deferred,
     skills: content.skills,

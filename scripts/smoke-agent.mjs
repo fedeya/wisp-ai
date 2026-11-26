@@ -213,7 +213,24 @@ setAgentHost({
   token,
   capabilitiesFile: capabilities.agentFile,
 });
+// The agent calls its host directly; here the fixture bridge above answers them.
+const fixtureCall = async (route, body, signal) => {
+  const response = await fetch('http://127.0.0.1:43197' + route, {
+    method: body ? 'POST' : 'GET',
+    headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+    signal,
+  });
+  if (!response.ok) throw Error(await response.text());
+  return response.json();
+};
 const engine = createAgentEngine({
+  calls: {
+    call: (session, call, input, signal) =>
+      fixtureCall('/' + call, { agentSession: session, ...input }, signal),
+    selectedModel: (session, signal) =>
+      fixtureCall('/session-model?session=' + encodeURIComponent(session), undefined, signal),
+  },
   origin: () => 'http://127.0.0.1:43197',
   token,
   // The session log stays in memory for the run, as in the engine's tests.
