@@ -3,12 +3,12 @@ import { runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ApplicationDatabase } from '../src/application-database.ts';
-import { RoutineStore } from '../src/routines/routine-store.ts';
+import { makeRoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createRoutineGate, routineFingerprint } from '../src/routines/routine-gate.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { databaseScope, promised } from './database-fixture.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 
 function context(xp: number, x = 0.5) {
@@ -72,12 +72,13 @@ test('usage limits pause routines with growing backoff until a run succeeds', ()
 
 test('the scheduler skips unchanged quiet intervals and stops after a usage limit', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-gate-'));
-  const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
+  const scope = databaseScope();
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   let stop: (() => Promise<void>) | undefined;
   try {
     vi.setSystemTime(1_000_000);
-    const store = new RoutineStore(database);
+    const routines = makeRoutineStore(await scope.open(path.join(root, 'wisp.sqlite')));
+    const store = promised(routines);
     await store.mutate('mage', {
       operation: 'save',
       routine: routineDefinition.parse({
@@ -107,7 +108,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     stop = runBridgeEffect(
       startRoutineScheduler({
         state,
-        routineStore: store,
+        routineStore: routines,
         capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
         isStopping: () => false,
         isReady: () => true,
@@ -139,7 +140,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     // Same XP, zone and quests: the next interval is dropped without a model turn.
     await minute();
     expect(runs).toBe(1);
-    expect(store.history()).toHaveLength(1);
+    expect(await store.history()).toHaveLength(1);
 
     // Editing the routine evaluates the new instruction even with the same state.
     await store.mutate('mage', {
@@ -167,7 +168,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     present(400);
     await vi.advanceTimersByTimeAsync(3000);
     expect(runs).toBe(4);
-    expect(store.history().at(-1)?.status).toBe('error');
+    expect((await store.history()).at(-1)?.status).toBe('error');
 
     // Further intervals wait out the 30-minute pause.
     for (let i = 0; i < 5; i++) {
@@ -178,7 +179,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
   } finally {
     await stop?.();
     vi.useRealTimers();
-    await database.close();
+    await scope.close();
     await rm(root, { recursive: true, force: true });
   }
 });

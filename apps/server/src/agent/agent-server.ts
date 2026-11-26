@@ -58,7 +58,7 @@ interface AgentDependencies {
   currentTransport: () => string;
   defaultModel: () => string;
   readSimulationCharacter: (chat?: string) => Promise<unknown>;
-  memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
+  memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, unknown>;
   setMemoryView: (view: MemoryView) => void;
   changed: () => void;
   presentReply: (
@@ -353,9 +353,11 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       throw Error('A fresh character identity is required');
     }
     const input = routineInput.parse(data.input);
-    const routines = ['save', 'pause', 'resume', 'remove'].includes(input.operation)
-      ? await routineStore.mutate(chat.characterKey, input, chat.id)
-      : routineStore.list(chat.characterKey);
+    const routines = await runPromise(
+      ['save', 'pause', 'resume', 'remove'].includes(input.operation)
+        ? routineStore.mutate(chat.characterKey, input, chat.id)
+        : routineStore.list(chat.characterKey),
+    );
     changed();
     return input.operation === 'catalog'
       ? {
@@ -368,11 +370,13 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       : input.operation === 'get'
         ? {
             routine: routines.find((r) => r.id === input.id) || null,
-            runs: routineStore.history({
-              characterKey: chat.characterKey,
-              routineId: input.id,
-              limit: 20,
-            }),
+            runs: await runPromise(
+              routineStore.history({
+                characterKey: chat.characterKey,
+                routineId: input.id,
+                limit: 20,
+              }),
+            ),
           }
         : { routines };
   });
@@ -386,10 +390,11 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       throw Error('A fresh character identity is required');
     }
     const input = panelInput.parse(data.input);
-    const panels =
+    const panels = await runPromise(
       input.operation === 'save' || input.operation === 'remove'
-        ? await panelStore.mutate(chat.characterKey, input)
-        : panelStore.list(chat.characterKey);
+        ? panelStore.mutate(chat.characterKey, input)
+        : panelStore.list(chat.characterKey),
+    );
     changed();
     return input.operation === 'get'
       ? { panel: panels.find((p) => p.id === input.id) || null }
@@ -421,7 +426,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     }
     let entries;
     if (data.operation === 'list') {
-      entries = await memoryStore.read(data.slot, owner);
+      entries = await runPromise(memoryStore.read(data.slot, owner));
     } else if (data.operation === 'save' || data.operation === 'remove') {
       if (
         typeof data.key !== 'string' ||
@@ -429,13 +434,15 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       ) {
         throw new Error('Invalid memory entry');
       }
-      entries = await memoryStore.update(
-        data.slot,
-        owner,
-        data.key,
-        data.operation === 'save' ? data.text : undefined,
+      entries = await runPromise(
+        memoryStore.update(
+          data.slot,
+          owner,
+          data.key,
+          data.operation === 'save' ? data.text : undefined,
+        ),
       );
-      const snapshot = await memorySnapshot(chat.characterKey);
+      const snapshot = await runPromise(memorySnapshot(chat.characterKey));
       if (chat.owner === currentTransport()) {
         setMemoryView(snapshot);
       }

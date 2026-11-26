@@ -1,4 +1,5 @@
 import { Effect } from 'effect';
+import { errorMessage } from '../errors.ts';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { createPublishScheduler } from './publish-scheduler.ts';
 import type { SessionState } from '../session-state.ts';
@@ -8,7 +9,7 @@ export interface SnapshotPublisherDependencies {
   state: SessionState;
   transport: () => Pick<Connection, 'publish'> | undefined;
   /** Everything the snapshot shows besides `state`, read at publish time. */
-  inputs: () => Omit<AddonSnapshotInputs, 'state'>;
+  inputs: Effect.Effect<Omit<AddonSnapshotInputs, 'state'>, unknown>;
 }
 
 export interface SnapshotPublisher {
@@ -36,7 +37,22 @@ export const createSnapshotPublisher = Effect.fnUntraced(function* (
       return;
     }
     dirty = false;
-    runFork(transport.publish(buildAddonSnapshot({ state, ...deps.inputs() })));
+    runFork(
+      deps.inputs.pipe(
+        Effect.flatMap((inputs) => transport.publish(buildAddonSnapshot({ state, ...inputs }))),
+        Effect.catch((error) =>
+          Effect.logWarning('Addon snapshot inputs could not be read').pipe(
+            Effect.annotateLogs({ event: 'snapshot.inputs_failed', error: errorMessage(error) }),
+            Effect.andThen(
+              Effect.sync(() => {
+                dirty = true;
+                scheduler.schedule();
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   return {

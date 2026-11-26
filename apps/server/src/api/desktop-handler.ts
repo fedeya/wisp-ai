@@ -35,7 +35,7 @@ interface DesktopDependencies {
   routineStore: RoutineStore;
   accountOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   updateModel: (model: string) => Promise<void>;
-  getStatus: () => Status;
+  getStatus: () => Effect.Effect<Status, unknown>;
   getChats: () => Chat[];
   currentCharacterKey: () => string | undefined;
   sendPanelCommand: (command: PanelCommand) => void;
@@ -77,7 +77,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await next();
       c.header('cache-control', 'no-store');
     })
-    .get('/status', (c) => c.json(deps.getStatus()))
+    .get('/status', async (c) => c.json(await runPromise(deps.getStatus())))
     .get('/auth/models', async (c) =>
       c.json(await accountOperation(async () => ({ models: await connections.models() }))),
     )
@@ -169,11 +169,11 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     })
     .post('/panels/action', json(routes['/panels/action'].input), async (c) => {
       const { characterKey, id, action } = c.req.valid('json');
-      if (!panelStore.list(characterKey).some((p) => p.id === id)) {
+      if (!(await runPromise(panelStore.list(characterKey))).some((p) => p.id === id)) {
         throw Error('Panel not found');
       }
       if (action === 'remove') {
-        await panelStore.mutate(characterKey, { operation: 'remove', id });
+        await runPromise(panelStore.mutate(characterKey, { operation: 'remove', id }));
       } else {
         if (characterKey !== deps.currentCharacterKey()) {
           throw Error('Log into this character first');
@@ -185,13 +185,15 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     })
     .post('/routines/action', json(routes['/routines/action'].input), async (c) => {
       const { characterKey, operation, id } = c.req.valid('json');
-      await routineStore.mutate(characterKey, { operation, id });
+      await runPromise(routineStore.mutate(characterKey, { operation, id }));
       deps.changed();
       return c.json(ok);
     })
     .post('/routines/open', json(routes['/routines/open'].input), async (c) => {
       const key = deps.currentCharacterKey();
-      const run = key ? routineStore.getRun(c.req.valid('json').id, key) : undefined;
+      const run = key
+        ? await runPromise(routineStore.getRun(c.req.valid('json').id, key))
+        : undefined;
       const chat = run && chatFor(run.id);
       if (!run || !chat) {
         throw Error('Log into the character first; the conversation must still exist');

@@ -6,16 +6,21 @@ import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import { IntegrationState } from '../src/integrations/integration-state.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
-import { RoutineStore } from '../src/routines/routine-store.ts';
-import { ApplicationDatabase } from '../src/application-database.ts';
-import { PanelStore } from '../src/panels/panel-store.ts';
+import type { MemoryStore } from '../src/agent/memory-store.ts';
+import type { RoutineStore } from '../src/routines/routine-store.ts';
+import type { PanelStore } from '../src/panels/panel-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { gameEvent } from './game-event-fixture.ts';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
+/** A store these tests never reach; any call fails the test. */
+function unusedStore<T extends object>(): T {
+  return new Proxy({} as T, {
+    get: (_target, name) => () => Effect.die(Error('Unexpected store call: ' + String(name))),
+  });
+}
+
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
-  const database = new ApplicationDatabase('unused');
   const chat = { ...newChat('old', 'one'), agentSession: 'eve', status: 'working' as const };
   const state = createSessionState([chat]);
   state.activeTransport = 'one';
@@ -28,7 +33,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const interrupt = vi.fn();
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
-  const receive = runBridgeEffect(
+  const receivePacket = runBridgeEffect(
     createPacketReceiver({
       state,
       request: () => Effect.void,
@@ -37,12 +42,12 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       engine: { end },
       cancel,
       models: { models },
-      routineStore: new RoutineStore(database),
-      panelStore: new PanelStore(database),
-      memoryStore: new MemoryStore(database),
+      routineStore: unusedStore<RoutineStore>(),
+      panelStore: unusedStore<PanelStore>(),
+      memoryStore: unusedStore<MemoryStore>(),
       refreshModelCatalog: async () => {},
       setCapability: () => Effect.void,
-      memorySnapshot: async () => ({ status: 'available', entries: [] }),
+      memorySnapshot: () => Effect.succeed({ status: 'available', entries: [] }),
       run,
       interrupt,
       runtime: 'unused',
@@ -50,6 +55,8 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       ...overrides,
     }),
   );
+  const receive = (packet: Parameters<typeof receivePacket>[0]) =>
+    runBridgeEffect(receivePacket(packet));
   return { state, receive, cancel, end, interrupt, run, models };
 }
 
@@ -305,7 +312,7 @@ test('a new character key is adopted before the packet that reports it is handle
       calls.push('adopt');
     }),
   );
-  const observe = vi.fn(async () => void calls.push('observe'));
+  const observe = vi.fn(() => Effect.sync(() => void calls.push('observe')));
   const capabilitySettings = new CapabilitySettings('unused');
   vi.spyOn(capabilitySettings, 'enabled').mockReturnValue(true);
   const f = fixture({

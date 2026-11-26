@@ -1,19 +1,26 @@
 import { and, eq } from 'drizzle-orm';
+import { Effect } from 'effect';
 import type { Panel } from '@wisp/agent/contract/panels';
-import type { ApplicationOrm } from '@wisp/db/database';
+import type { SqlExecutor } from '@wisp/db/sql-database';
 import { panels } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
 
-export function readPanels(db: ApplicationOrm): Panel[] {
-  return db
+export const readPanels = (db: SqlExecutor) =>
+  db
     .select()
     .from(panels)
     .orderBy(panels.sortIndex)
     .all()
-    .map(({ sortIndex: _sortIndex, content, ...row }) => ({ ...JSON.parse(content), ...row }));
-}
+    .pipe(
+      Effect.map((rows) =>
+        rows.map(({ sortIndex: _sortIndex, content, ...row }): Panel => ({
+          ...JSON.parse(content),
+          ...row,
+        })),
+      ),
+    );
 
-export function savePanels(db: ApplicationOrm, value: Panel[]) {
+export const savePanels = Effect.fnUntraced(function* (db: SqlExecutor, value: Panel[]) {
   const next = value.map(({ characterKey, id, title, updatedAt, ...content }, sortIndex) => ({
     characterKey,
     id,
@@ -22,8 +29,8 @@ export function savePanels(db: ApplicationOrm, value: Panel[]) {
     sortIndex,
     content: JSON.stringify(content),
   }));
-  syncRows(
-    db.select().from(panels).all(),
+  yield* syncRows(
+    yield* db.select().from(panels).all(),
     next,
     (r) => JSON.stringify([r.characterKey, r.id]),
     (r) =>
@@ -38,4 +45,4 @@ export function savePanels(db: ApplicationOrm, value: Panel[]) {
         .where(and(eq(panels.characterKey, r.characterKey), eq(panels.id, r.id)))
         .run(),
   );
-}
+});

@@ -1,6 +1,7 @@
 import type { Routine, RoutineRun } from '@wisp/protocol/routines';
 import { and, eq } from 'drizzle-orm';
-import type { ApplicationOrm } from '@wisp/db/database';
+import { Effect } from 'effect';
+import type { SqlExecutor } from '@wisp/db/sql-database';
 import { routines, routineRuns } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
 export type RoutineRow = typeof routines.$inferSelect;
@@ -67,8 +68,8 @@ export function decodeRun({
   };
 }
 
-export function importRoutines(
-  db: ApplicationOrm,
+export const importRoutines = Effect.fnUntraced(function* (
+  db: SqlExecutor,
   value: { routines: Routine[]; runs: RoutineRun[] },
 ) {
   const nextRoutines = value.routines.map(
@@ -83,8 +84,8 @@ export function importRoutines(
       content: JSON.stringify(content),
     }),
   );
-  syncRows(
-    db.select().from(routines).all(),
+  yield* syncRows(
+    yield* db.select().from(routines).all(),
     nextRoutines,
     (r) => JSON.stringify([r.characterKey, r.id]),
     (r) =>
@@ -128,12 +129,12 @@ export function importRoutines(
       extras: JSON.stringify(extras),
     }),
   );
-  syncRows(
-    db.select().from(routineRuns).all(),
+  yield* syncRows(
+    yield* db.select().from(routineRuns).all(),
     nextRuns,
     (r) => r.id,
     (r) =>
       db.insert(routineRuns).values(r).onConflictDoUpdate({ target: routineRuns.id, set: r }).run(),
     (r) => db.delete(routineRuns).where(eq(routineRuns.id, r.id)).run(),
   );
-}
+});

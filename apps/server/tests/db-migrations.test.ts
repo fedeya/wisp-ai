@@ -1,18 +1,17 @@
 import { test, expect } from 'vitest';
+import { Effect } from 'effect';
 import { mkdtemp, rm, readFile, readdir, cp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { execFile } from 'node:child_process';
-import { setTimeout as delay } from 'node:timers/promises';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
-import { ApplicationDatabase } from '../src/application-database.ts';
 import { migrateDatabase, migrationsFolder } from '@wisp/db/migrate';
+import { chatStoreAt, databaseScope } from './database-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { ChatStore } from '../src/chat/chat-store.ts';
 
 const migrations = (await readdir(migrationsFolder)).length;
 
@@ -51,7 +50,7 @@ test('the official Drizzle migrator creates the complete schema and shares its j
       ...newChat('existing', 'game'),
       messages: [{ role: 'user' as const, text: 'Keep this 🧙' }],
     };
-    const store = new ChatStore(file, () => {});
+    const store = chatStoreAt(file, () => {});
     try {
       await store.load();
       await store.flush([chat]);
@@ -180,20 +179,39 @@ test('startup succeeds when another connection commits after Drizzle reads the e
   }
 });
 
-test('startup retries WAL activation while another connection holds a read lock', async () => {
+test('startup retries WAL activation while another process holds a read lock', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-wal-'));
   const file = path.join(root, 'wisp.sqlite');
-  const reader = new DatabaseSync(file);
-  const database = new ApplicationDatabase(file);
-  reader.exec('BEGIN; SELECT count(*) FROM sqlite_schema;');
-  const release = delay(250).then(() => reader.exec('COMMIT;'));
+  const scope = databaseScope();
+  // The reader is another process: in this one, SQLite's busy wait would block
+  // the thread that has to release the lock.
+  const reader = spawn(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import { DatabaseSync } from 'node:sqlite';
+      const db = new DatabaseSync(process.argv[1]);
+      db.exec('BEGIN; SELECT count(*) FROM sqlite_schema;');
+      console.log('locked');
+      setTimeout(() => { db.exec('COMMIT;'); db.close(); }, 250);`,
+      file,
+    ],
+    { stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true },
+  );
+  const exited = new Promise((resolve) => reader.once('exit', resolve));
   try {
-    await database.initialize();
-    expect(database.connection.prepare('PRAGMA journal_mode').get()?.journal_mode).toBe('wal');
+    await new Promise<void>((resolve, reject) => {
+      reader.stdout.once('data', () => resolve());
+      reader.once('error', reject);
+    });
+    const { db } = await scope.open(file);
+    expect(await Effect.runPromise(db.$client`PRAGMA journal_mode`)).toEqual([
+      { journal_mode: 'wal' },
+    ]);
   } finally {
-    await release;
-    await database.close();
-    reader.close();
+    await exited;
+    await scope.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
@@ -206,10 +224,13 @@ test('three processes can migrate and import the same database simultaneously', 
     ];
     await writeFile(path.join(root, 'chats.json'), JSON.stringify(legacy));
     const source = `
-      import { ChatStore } from '@wisp/server/chat-store';
-      const store = new ChatStore(process.argv[1], (error) => { throw error; });
-      try { console.log(JSON.stringify((await store.load()).map(c => c.id))); }
-      finally { await store.close(); }
+      import { Effect } from 'effect';
+      import { openChatStore } from '@wisp/server/chat-store';
+      const ids = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+        const store = yield* openChatStore(process.argv[1], { onError: (error) => { throw error; } });
+        return (yield* store.load()).map((c) => c.id);
+      })));
+      console.log(JSON.stringify(ids));
     `;
     const settled = await Promise.allSettled(
       [1, 2, 3].map(() =>

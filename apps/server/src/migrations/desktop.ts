@@ -2,8 +2,10 @@ import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/pro
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore, conversationInstanceId } from '../chat/chat-store.ts';
-import { ApplicationDatabase } from '../application-database.ts';
+import { Effect } from 'effect';
+import * as Sql from '@wisp/db/sql-database';
+import { makeChatStore, conversationInstanceId } from '../chat/chat-store.ts';
+import { importProductData } from './product-json.ts';
 import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
@@ -175,27 +177,28 @@ export async function migrateDesktop(
     }
   }
   // The copied database is authoritative when both formats are present.
-  const database = new ApplicationDatabase(databaseFile);
-  try {
-    if (sourceDatabase) {
-      const store = new ChatStore(database, () => {}, undefined, {
-        inheritInstanceId: conversationInstanceId(path.join(source, 'runtime')),
-      });
-      try {
-        const chats = await store.load();
-        // Model histories start over; the visible conversations carry over.
-        for (const chat of chats) {
-          delete chat.agentSession;
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const database = yield* Sql.make(databaseFile);
+        if (sourceDatabase) {
+          const store = yield* makeChatStore(database, {
+            onError: () => {},
+            inheritInstanceId: conversationInstanceId(path.join(source, 'runtime')),
+          });
+          yield* Effect.gen(function* () {
+            const chats = yield* store.load();
+            // Model histories start over; the visible conversations carry over.
+            for (const chat of chats) {
+              delete chat.agentSession;
+            }
+            yield* store.flush(chats);
+          }).pipe(Effect.ensuring(store.close()));
         }
-        await store.flush(chats);
-      } finally {
-        await store.close();
-      }
-    }
-    await database.initializeProducts();
-  } finally {
-    await database.close();
-  }
+        yield* importProductData(databaseFile, database.db);
+      }),
+    ),
+  );
   if (localAppData) {
     const hash = createHash('sha256').update(source).digest('hex');
     const secrets = path.join(localAppData, 'WispAI', 'Secrets', hash);

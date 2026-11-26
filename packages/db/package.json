@@ -10,7 +10,6 @@
   "exports": {
     "./package.json": "./package.json",
     "./application-file": "./src/application-file.ts",
-    "./database": "./src/database.ts",
     "./migrate": "./src/migrate.ts",
     "./private-file": "./src/private-file.ts",
     "./schema": "./src/schema.ts",

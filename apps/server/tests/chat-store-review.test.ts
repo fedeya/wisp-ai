@@ -6,15 +6,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { chatStoreAt } from './database-fixture.ts';
 import { preparePrivateDatabase } from '@wisp/db/private-file';
 
-test('startup reads messages, private state and revisions from one snapshot during a concurrent commit', async () => {
+test('startup reads messages, private state and revisions while writers wait, then detects their commit', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-startup-snapshot-'));
   const file = path.join(root, 'wisp.sqlite');
-  const seed = new ChatStore(file, () => {});
-  const reader = new ChatStore(file, () => {});
+  const seed = chatStoreAt(file, () => {});
+  const reader = chatStoreAt(file, () => {});
   let writer: DatabaseSync | undefined;
   const prepare = DatabaseSync.prototype.prepare;
   let intercepted: ReturnType<typeof vi.spyOn> | undefined;
@@ -28,8 +28,11 @@ test('startup reads messages, private state and revisions from one snapshot duri
     };
     await seed.flush([original]);
     await seed.close();
-    writer = new DatabaseSync(file, { timeout: 5000 });
-    let committed = false;
+    // No busy wait: a writer that cannot take the lock fails at once instead of
+    // blocking the thread the reader runs on.
+    writer = new DatabaseSync(file, { timeout: 0 });
+    let blocked = false;
+    let attempted = false;
     intercepted = vi.spyOn(DatabaseSync.prototype, 'prepare').mockImplementation(function (
       this: DatabaseSync,
       query: string,
@@ -39,23 +42,14 @@ test('startup reads messages, private state and revisions from one snapshot duri
         const all = statement.all;
         vi.spyOn(statement, 'all').mockImplementation((...parameters) => {
           const result = Reflect.apply(all, statement, parameters);
-          if (!committed) {
-            committed = true;
-            writer!.exec('BEGIN IMMEDIATE');
-            writer!
-              .prepare("UPDATE messages SET text='Concurrent message' WHERE chat_id='chat'")
-              .run();
-            writer!
-              .prepare(
-                "UPDATE chats SET title='Concurrent title', revision=revision+1 WHERE id='chat'",
-              )
-              .run();
-            writer!
-              .prepare(
-                "UPDATE chat_instance_state SET agent_session='new-session', history_revision=1, revision=revision+1 WHERE chat_id='chat'",
-              )
-              .run();
-            writer!.exec('COMMIT');
+          if (!attempted) {
+            attempted = true;
+            try {
+              writer!.exec('BEGIN IMMEDIATE');
+              writer!.exec('ROLLBACK');
+            } catch {
+              blocked = true;
+            }
           }
           return result;
         });
@@ -64,7 +58,18 @@ test('startup reads messages, private state and revisions from one snapshot duri
     });
     const loaded = await reader.load();
     intercepted.mockRestore();
-    expect(committed).toBe(true);
+    expect([attempted, blocked]).toEqual([true, true]);
+    writer.exec('BEGIN IMMEDIATE');
+    writer.prepare("UPDATE messages SET text='Concurrent message' WHERE chat_id='chat'").run();
+    writer
+      .prepare("UPDATE chats SET title='Concurrent title', revision=revision+1 WHERE id='chat'")
+      .run();
+    writer
+      .prepare(
+        "UPDATE chat_instance_state SET agent_session='new-session', history_revision=1, revision=revision+1 WHERE chat_id='chat'",
+      )
+      .run();
+    writer.exec('COMMIT');
     expect(loaded[0].title).toBe('Original');
     expect(loaded[0].agentSession).toBe('old-session');
     expect(loaded[0].messages[0].text).toBe('Original message');
@@ -87,8 +92,8 @@ test('startup reads messages, private state and revisions from one snapshot duri
 test('preparing private file permissions never truncates an existing database', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-private-open-'));
   const file = path.join(root, 'wisp.sqlite');
-  const seed = new ChatStore(file, () => {});
-  const reader = new ChatStore(file, () => {});
+  const seed = chatStoreAt(file, () => {});
+  const reader = chatStoreAt(file, () => {});
   try {
     await seed.load();
     const chat = {
@@ -117,7 +122,8 @@ test.runIf(process.platform !== 'win32').each(['new', 'existing'])(
       const source = `
         import { chmod, stat } from 'node:fs/promises';
         import { DatabaseSync } from 'node:sqlite';
-        import { ChatStore } from '@wisp/server/chat-store';
+        import { Effect } from 'effect';
+        import { openChatStore } from '@wisp/server/chat-store';
         import { newChat } from '@wisp/server/chat-lifecycle';
         process.umask(0o022);
         const file = process.argv[1];
@@ -127,13 +133,15 @@ test.runIf(process.platform !== 'win32').each(['new', 'existing'])(
           existing.exec('PRAGMA journal_mode=WAL; CREATE TABLE permission_probe(value TEXT);');
           for (const suffix of ['', '-wal', '-shm']) await chmod(file + suffix, 0o644);
         }
-        const store = new ChatStore(file, (error) => { throw error; });
         try {
-          await store.load();
-          await store.flush([{ ...newChat('chat', 'game'), messages: [{role:'user',text:'Private'}] }]);
+          await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+            const store = yield* openChatStore(file, { onError: (error) => { throw error; } });
+            yield* store.load();
+            yield* store.flush([{ ...newChat('chat', 'game'), messages: [{role:'user',text:'Private'}] }]);
+          })));
           const modes = await Promise.all(['', '-wal', '-shm'].map(async suffix => (await stat(file + suffix)).mode & 0o777));
           console.log(JSON.stringify(modes));
-        } finally { await store.close(); existing?.close(); }
+        } finally { existing?.close(); }
       `;
       const { stdout } = await promisify(execFile)(
         process.execPath,

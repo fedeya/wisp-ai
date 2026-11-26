@@ -20,6 +20,7 @@ interface SchedulerDependencies {
 }
 export const startRoutineScheduler = Effect.fnUntraced(function* (deps: SchedulerDependencies) {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed } = deps;
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
@@ -51,12 +52,12 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
     }
     dispatchingRoutine = true;
     dispatch = (async () => {
-      const claimed = await routineStore.claim(presence.identity);
+      const claimed = await runPromise(routineStore.claim(presence.identity));
       if (!claimed) {
         return;
       }
       if (isStopping()) {
-        await routineStore.defer(claimed.run.id, claimed.event);
+        await runPromise(routineStore.defer(claimed.run.id, claimed.event));
         return;
       }
       const fingerprint = routineFingerprint(presence.context, state.questRevision);
@@ -66,7 +67,7 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
         claimed.routine.updatedAt,
       ]);
       if (gate.unchanged(quietKey, claimed.event.event, fingerprint)) {
-        await routineStore.skip(claimed.run.id);
+        await runPromise(routineStore.skip(claimed.run.id));
         return;
       }
       const chat = createChat(claimed.run.id);
@@ -79,15 +80,13 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
         state.chats.some((c) => c !== chat && c.status === 'working') ||
         !state.routinePresence?.ready ||
         !capabilitySettings.enabled('tool:manage_routine') ||
-        !routineStore
-          .list(presence.identity)
-          .some(
-            (r) =>
-              r.id === claimed.routine.id && r.enabled && r.updatedAt === claimed.routine.updatedAt,
-          )
+        !(await runPromise(routineStore.list(presence.identity))).some(
+          (r) =>
+            r.id === claimed.routine.id && r.enabled && r.updatedAt === claimed.routine.updatedAt,
+        )
       ) {
         state.chats = state.chats.filter((c) => c !== chat);
-        await routineStore.defer(chat.id, claimed.event);
+        await runPromise(routineStore.defer(chat.id, claimed.event));
         return;
       }
       await run(
@@ -121,7 +120,7 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
         fingerprint,
         status === 'error' && (deps.usageLimited ?? endedOnUsageLimit)(chat),
       );
-      await routineStore.finish(chat.id, status, summary);
+      await runPromise(routineStore.finish(chat.id, status, summary));
     })()
       .catch((error: unknown) => {
         runFork(

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { databaseScope } from './database-fixture.ts';
-import { PanelStore } from '../src/panels/panel-store.ts';
+import { databaseScope, promised } from './database-fixture.ts';
+import { makePanelStore } from '../src/panels/panel-store.ts';
 import { panelContent } from '@wisp/agent/contract/panels';
 const example = {
   id: 'materials',
@@ -21,8 +21,7 @@ test('persistent panels isolate characters, survive restart and update by ID wit
   const scope = databaseScope();
   try {
     const file = path.join(root, 'wisp.sqlite'),
-      store = new PanelStore(scope.open(file));
-    await store.load();
+      store = promised(makePanelStore(await scope.open(file)));
     await store.mutate('mage', { operation: 'save', panel: panelContent.parse(example) });
     await store.mutate('warrior', {
       operation: 'save',
@@ -32,16 +31,14 @@ test('persistent panels isolate characters, survive restart and update by ID wit
       operation: 'save',
       panel: panelContent.parse({ ...example, title: 'Updated materials' }),
     });
-    const next = new PanelStore(scope.open(file));
-    await next.load();
-    assert.equal(next.list('mage').length, 1);
-    assert.equal(next.list('mage')[0].title, 'Updated materials');
-    assert.equal(next.list('warrior')[0].title, 'Other character');
+    const next = promised(makePanelStore(await scope.open(file)));
+    assert.equal((await next.list('mage')).length, 1);
+    assert.equal((await next.list('mage'))[0].title, 'Updated materials');
+    assert.equal((await next.list('warrior'))[0].title, 'Other character');
     await next.mutate('mage', { operation: 'remove', id: 'materials' });
-    assert.equal(next.list('warrior').length, 1);
-    const reopened = new PanelStore(scope.open(file));
-    await reopened.load();
-    assert.equal(reopened.panels.length, 1);
+    assert.equal((await next.list('warrior')).length, 1);
+    const reopened = promised(makePanelStore(await scope.open(file)));
+    assert.equal((await reopened.all()).length, 1);
   } finally {
     await scope.close();
     await rm(root, { recursive: true, force: true });

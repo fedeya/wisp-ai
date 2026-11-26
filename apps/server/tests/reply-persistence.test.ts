@@ -3,23 +3,23 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { ReplyProjection } from '../src/reply/reply-stream.ts';
+import { chatStoreAt } from './database-fixture.ts';
 import { applyEvent } from '../src/chat/events.ts';
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-reply-source-'));
   const file = path.join(root, 'wisp.sqlite'),
     legacy = path.join(root, 'chats.json');
-  const stores: ChatStore[] = [];
+  const stores: ReturnType<typeof chatStoreAt>[] = [];
   return {
     file,
     legacy,
     store() {
-      const store = new ChatStore(file, () => {});
+      const store = chatStoreAt(file, () => {});
       stores.push(store);
       return store;
     },

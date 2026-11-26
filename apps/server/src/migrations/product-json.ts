@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { savedRoutine, routineRun } from '@wisp/protocol/routines';
 import { panelContent } from '@wisp/agent/contract/panels';
 import { memoryEntry } from '@wisp/agent/contract/agent-rpc';
-import type { ApplicationOrm } from '@wisp/db/database';
+import { Effect, Schema } from 'effect';
+import type { SqlExecutor } from '@wisp/db/sql-database';
 import { writeMigrationBackup } from '@wisp/db/private-file';
 import {
   routines,
@@ -26,11 +27,17 @@ const savedPanel = panelContent.safeExtend({
 });
 const marker = 'product-json-import-v1';
 
-/** Imports routines, panels and memory from their pre-SQLite JSON files once, keeping backups. */
-export async function importProductData(file: string, db: ApplicationOrm) {
-  if (db.select().from(metadata).where(eq(metadata.key, marker)).get()) {
-    return;
-  }
+/** The JSON product files could not be read or do not match what the database expects. */
+export class ProductImportFailed extends Schema.TaggedError<ProductImportFailed>()(
+  'ProductImportFailed',
+  { message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const imported = (db: SqlExecutor) =>
+  db.select().from(metadata).where(eq(metadata.key, marker)).get().pipe(Effect.map(Boolean));
+
+/** Reads and validates the pre-SQLite JSON files, and writes a backup of each one. */
+async function readProductFiles(root: string) {
   const sources: { file: string; original: Buffer }[] = [];
   const read = async (file: string) => {
     try {
@@ -44,7 +51,6 @@ export async function importProductData(file: string, db: ApplicationOrm) {
       throw error;
     }
   };
-  const root = path.dirname(file);
   const rawRoutines = await read(path.join(root, 'routines.json'));
   const routineData = z
     .object({ routines: z.array(savedRoutine), runs: z.array(routineRun) })
@@ -98,37 +104,56 @@ export async function importProductData(file: string, db: ApplicationOrm) {
     const backup = file.replace(/\.json$/, `.pre-sqlite-${digest}.json`);
     await writeMigrationBackup(backup, original);
   }
-  db.transaction(
-    () => {
-      if (db.select().from(metadata).where(eq(metadata.key, marker)).get()) {
+  const { routines: _routines, runs: _runs, ...routineExtensions } = rawRoutines ?? {};
+  return { sources, routineData, importedPanels, memories, routineExtensions };
+}
+
+/** Imports routines, panels and memory from their pre-SQLite JSON files once, keeping backups. */
+export const importProductData = Effect.fn('ProductJson.import')(function* (
+  file: string,
+  db: SqlExecutor,
+) {
+  if (yield* imported(db)) {
+    return;
+  }
+  const root = path.dirname(file);
+  const data = yield* Effect.tryPromise({
+    try: () => readProductFiles(root),
+    catch: (cause) =>
+      new ProductImportFailed({
+        message: cause instanceof Error ? cause.message : String(cause),
+        cause,
+      }),
+  });
+  yield* db.transaction((tx) =>
+    Effect.gen(function* () {
+      if (yield* imported(tx)) {
         return;
       }
-      if (
-        [routines, routineRuns, panels, memoryScopes, memoryEntries].some((table) =>
-          db.select().from(table).get(),
-        )
-      ) {
-        throw Error('Uninitialized product database already contains data');
+      for (const table of [routines, routineRuns, panels, memoryScopes, memoryEntries]) {
+        if (yield* tx.select().from(table).get()) {
+          const message = 'Uninitialized product database already contains data';
+          return yield* new ProductImportFailed({ message, cause: Error(message) });
+        }
       }
-      importRoutines(db, routineData);
-      savePanels(db, importedPanels);
-      for (const memory of memories) {
-        saveMemory(db, memory.slot, memory.owner, memory.entries, memory.extras);
+      yield* importRoutines(tx, data.routineData);
+      yield* savePanels(tx, data.importedPanels);
+      for (const memory of data.memories) {
+        yield* saveMemory(tx, memory.slot, memory.owner, memory.entries, memory.extras);
       }
-      const { routines: _routines, runs: _runs, ...routineExtensions } = rawRoutines ?? {};
-      db.insert(metadata)
+      yield* tx
+        .insert(metadata)
         .values({
           key: marker,
           value: JSON.stringify({
-            sources: sources.map(({ file, original }) => ({
+            sources: data.sources.map(({ file, original }) => ({
               file: path.relative(root, file),
               sha256: createHash('sha256').update(original).digest('hex'),
             })),
-            routineExtensions,
+            routineExtensions: data.routineExtensions,
           }),
         })
         .run();
-    },
-    { behavior: 'immediate' },
+    }),
   );
-}
+});

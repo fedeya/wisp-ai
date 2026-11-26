@@ -7,7 +7,8 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
-import { ChatStore, conversationInstanceId } from '@wisp/server/chat-store';
+import { Effect, Exit, Scope } from 'effect';
+import { openChatStore, conversationInstanceId } from '@wisp/server/chat-store';
 import { newChat } from '@wisp/server/chat-lifecycle';
 import { migrationsFolder } from '@wisp/db/migrate';
 
@@ -20,7 +21,18 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
     const previous = path.join(root, 'previous');
     const destination = path.join(root, 'imported');
     await mkdir(path.join(previous, 'runtime'), { recursive: true });
-    const source = new ChatStore(path.join(previous, 'runtime/wisp.sqlite'), () => {});
+    const scope = Effect.runSync(Scope.make());
+    const store = await Effect.runPromise(
+      openChatStore(path.join(previous, 'runtime/wisp.sqlite'), { onError: () => {} }).pipe(
+        Scope.provide(scope),
+      ),
+    );
+    const source = {
+      file: store.file,
+      load: () => Effect.runPromise(store.load()),
+      flush: (chats: Parameters<typeof store.flush>[0]) => Effect.runPromise(store.flush(chats)),
+      close: () => Effect.runPromise(Scope.close(scope, Exit.void)),
+    };
     try {
       await source.load();
       const chat = {

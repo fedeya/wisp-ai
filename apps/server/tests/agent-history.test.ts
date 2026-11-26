@@ -5,12 +5,12 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import type { Entry } from '@wisp/agent/session-message';
 import { version } from 'uuid';
-import { databaseScope } from './database-fixture.ts';
-import { AGENT_MESSAGE_FORMAT, AgentHistory } from '../src/agent/agent-history.ts';
-import { ChatStore } from '../src/chat/chat-store.ts';
+import { databaseScope, chatStoreAt, promised } from './database-fixture.ts';
+import { AGENT_MESSAGE_FORMAT, makeAgentHistory } from '../src/agent/agent-history.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { agentEntries, agentSessions } from '@wisp/db/schema';
-import type { ApplicationDatabase } from '../src/application-database.ts';
+import { DatabaseSync } from 'node:sqlite';
+import { drizzle } from 'drizzle-orm/node-sqlite';
 
 const user = (text: string): Entry => ({ type: 'user', content: [{ type: 'text', text }] });
 const answer = (text: string): Entry => ({
@@ -28,8 +28,12 @@ async function fixture() {
   const scope = databaseScope();
   const file = path.join(directory, 'wisp.sqlite');
   let clock = 1000;
-  const database = scope.open(file) as ApplicationDatabase;
-  const history = new AgentHistory(database, { wispVersion: '9.9.9', now: () => clock });
+  const history = promised(
+    makeAgentHistory(await scope.open(file), { wispVersion: '9.9.9', now: () => clock }),
+  );
+  // A second, synchronous connection for inspecting rows the store wrote.
+  const client = new DatabaseSync(file);
+  const database = { orm: drizzle({ client }) };
   return {
     file,
     scope,
@@ -46,6 +50,7 @@ async function fixture() {
         .all()
         .filter((row) => (row.type === 'compaction') === (type === 'compactions')).length,
     async close() {
+      client.close();
       await scope.close();
       await rm(directory, { recursive: true, force: true });
     },
@@ -76,7 +81,9 @@ test('agent history appends entries as JSON with their model and never replaces 
     );
     await f.history.append('s', [step], 'gpt');
     await f.history.append('s', [answer('Answer')], 'claude');
-    const loaded = await new AgentHistory(f.scope.open(f.file)).load('s');
+    const loaded = await promised(
+      makeAgentHistory(await f.scope.open(f.file), { wispVersion: '9.9.9' }),
+    ).load('s');
     expect(loaded).toEqual({
       rows: [
         { seq: 0, model: 'gpt', data: { type: 'synthetic', kind: 'memory', text: 'Mage' } },
@@ -213,7 +220,7 @@ test('ending a session or deleting its chat removes its history; prune drops the
     expect(f.count('messages')).toBe(3);
     expect(f.count('compactions')).toBe(3);
 
-    const chats = new ChatStore(f.scope.open(f.file), () => {});
+    const chats = chatStoreAt(f.file, () => {});
     await chats.load();
     const gone = { ...newChat('gone', 'game'), agentSession: 'deleted', title: 'Gone' };
     await chats.flush([{ ...newChat('chat', 'game'), agentSession: 'kept', title: 'Kept' }, gone]);

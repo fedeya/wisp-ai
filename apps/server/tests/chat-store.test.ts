@@ -3,8 +3,8 @@ import { mkdtemp, readFile, writeFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { chatStoreAt } from './database-fixture.ts';
 import { migrateDesktop } from '../src/migrations/desktop.ts';
 
 function chat(id = 'chat') {
@@ -14,9 +14,9 @@ async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-sqlite-'));
   const file = path.join(root, 'wisp.sqlite');
   const legacy = path.join(root, 'chats.json');
-  const stores: ChatStore[] = [];
+  const stores: ReturnType<typeof chatStoreAt>[] = [];
   const store = () => {
-    const next = new ChatStore(file, (error) => {
+    const next = chatStoreAt(file, (error) => {
       throw error;
     });
     stores.push(next);
@@ -311,10 +311,10 @@ test('installation import replaces an empty workspace and snapshots WAL data wit
   const f = await fixture();
   const source = path.join(f.root, 'old');
   const destination = path.join(f.root, 'new');
-  let sourceStore: ChatStore | undefined;
+  let sourceStore: ReturnType<typeof chatStoreAt> | undefined;
   try {
     await writeFile(path.join(f.root, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    sourceStore = new ChatStore(path.join(source, 'runtime/wisp.sqlite'), () => {});
+    sourceStore = chatStoreAt(path.join(source, 'runtime/wisp.sqlite'), () => {});
     await sourceStore.load();
     const original = { ...chat(), agentSession: 'source-session', status: 'working' as const };
     await sourceStore.flush([original]);
@@ -323,7 +323,7 @@ test('installation import replaces an empty workspace and snapshots WAL data wit
       '{stale JSON must not override SQLite',
     );
     await writeFile(path.join(source, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    const empty = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
+    const empty = chatStoreAt(path.join(destination, 'runtime/wisp.sqlite'), () => {});
     await empty.load();
     await empty.close();
     await writeFile(path.join(destination, 'runtime/chatgpt-host.json'), 'new host');
@@ -333,7 +333,7 @@ test('installation import replaces an empty workspace and snapshots WAL data wit
     expect(await readFile(path.join(destination, 'runtime/chatgpt-host.json'), 'utf8')).toBe(
       'old host',
     );
-    const imported = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
+    const imported = chatStoreAt(path.join(destination, 'runtime/wisp.sqlite'), () => {});
     try {
       const chats = await imported.load();
       expect(chats[0].agentSession).toBeUndefined();

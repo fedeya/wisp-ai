@@ -1,13 +1,14 @@
 import { test, expect, vi } from 'vitest';
+import { Effect } from 'effect';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ApplicationDatabase } from '../src/application-database.ts';
-import { RoutineStore } from '../src/routines/routine-store.ts';
+import { makeRoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { databaseScope, promised } from './database-fixture.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 
 function signal() {
@@ -20,14 +21,15 @@ function signal() {
 
 test('pausing while claim awaits dispatch blocks a run even with the same updatedAt', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
-  const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
+  const scope = databaseScope();
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   const releaseClaim = signal();
   let stop: (() => Promise<void>) | undefined;
   try {
     const start = 1000000;
     vi.setSystemTime(start);
-    const store = new RoutineStore(database);
+    const routines = makeRoutineStore(await scope.open(path.join(root, 'wisp.sqlite')));
+    const store = promised(routines);
     await store.mutate('mage', {
       operation: 'save',
       routine: routineDefinition.parse({
@@ -39,16 +41,20 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
       }),
     });
     await store.observe('mage', { event: 'bags_changed', values: {} });
-    const claim = store.claim.bind(store);
+    const claim = routines.claim;
     const claimed = signal();
-    using claimSpy = vi.spyOn(store, 'claim').mockImplementationOnce(async (...args) => {
-      const result = await claim(...args);
-      expect(result?.routine.updatedAt).toBe(start);
-      expect(result?.routine.enabled).toBe(true);
-      claimed.resolve();
-      await releaseClaim.promise;
-      return result;
-    });
+    using claimSpy = vi.spyOn(routines, 'claim').mockImplementationOnce((...args) =>
+      claim(...args).pipe(
+        Effect.tap((result) =>
+          Effect.promise(async () => {
+            expect(result?.routine.updatedAt).toBe(start);
+            expect(result?.routine.enabled).toBe(true);
+            claimed.resolve();
+            await releaseClaim.promise;
+          }),
+        ),
+      ),
+    );
     const state = createSessionState();
     state.activeTransport = 'session';
     state.currentCharacterKey = 'mage';
@@ -70,7 +76,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     stop = runBridgeEffect(
       startRoutineScheduler({
         state,
-        routineStore: store,
+        routineStore: routines,
         capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
         isStopping: () => false,
         isReady: () => true,
@@ -80,24 +86,24 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     );
     await vi.advanceTimersByTimeAsync(3000);
     await claimed.promise;
-    expect(store.history()).toHaveLength(1);
-    expect(store.history()[0].status).toBe('running');
+    expect(await store.history()).toHaveLength(1);
+    expect((await store.history())[0].status).toBe('running');
     await store.mutate('mage', { operation: 'pause', id: 'review' });
-    expect(store.list('mage')[0]).toMatchObject({ enabled: false, updatedAt: start });
+    expect((await store.list('mage'))[0]).toMatchObject({ enabled: false, updatedAt: start });
     releaseClaim.resolve();
     await settled.promise;
     expect(run).not.toHaveBeenCalled();
     expect(state.chats).toEqual([]);
-    expect(store.history()).toEqual([]);
-    expect(store.list('mage')[0].enabled).toBe(false);
+    expect(await store.history()).toEqual([]);
+    expect((await store.list('mage'))[0].enabled).toBe(false);
     expect(logs('routine.dispatch_failed')).toEqual([]);
     expect(claimSpy).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(3000);
     expect(run).not.toHaveBeenCalled();
-    expect(store.history()).toEqual([]);
+    expect(await store.history()).toEqual([]);
     expect(state.chats).toEqual([]);
-    expect(store.list('mage')[0].enabled).toBe(false);
+    expect((await store.list('mage'))[0].enabled).toBe(false);
 
     await store.mutate('mage', { operation: 'resume', id: 'review' });
     await store.observe('mage', { event: 'bags_changed', values: {} });
@@ -105,22 +111,22 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     await stop();
     expect(run).toHaveBeenCalledTimes(1);
     expect(state.chats).toHaveLength(1);
-    expect(store.history()).toHaveLength(1);
-    expect(store.history()[0].status).toBe('done');
-    expect(store.list('mage')[0].enabled).toBe(true);
+    expect(await store.history()).toHaveLength(1);
+    expect((await store.history())[0].status).toBe('done');
+    expect((await store.list('mage'))[0].enabled).toBe(true);
     expect(logs('routine.dispatch_failed')).toEqual([]);
   } finally {
     releaseClaim.resolve();
     await stop?.();
     vi.useRealTimers();
-    await database.close();
+    await scope.close();
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test('a 65-second automatic turn yields to the next routine without overlapping turns', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
-  const database = new ApplicationDatabase(path.join(root, 'wisp.sqlite'));
+  const scope = databaseScope();
   vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
   const releaseA = signal();
   const releaseB = signal();
@@ -128,7 +134,8 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
   try {
     const start = 1000000;
     vi.setSystemTime(start);
-    const store = new RoutineStore(database);
+    const routines = makeRoutineStore(await scope.open(path.join(root, 'wisp.sqlite')));
+    const store = promised(routines);
     for (const id of ['a', 'b']) {
       await store.mutate('mage', {
         operation: 'save',
@@ -162,7 +169,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     stop = runBridgeEffect(
       startRoutineScheduler({
         state,
-        routineStore: store,
+        routineStore: routines,
         capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
         isStopping: () => false,
         isReady: () => true,
@@ -187,7 +194,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     await vi.advanceTimersByTimeAsync(3000);
     await startedA.promise;
     expect(selected).toEqual(['a']);
-    expect(store.history()[0].startedAt).toBe(start + 60000);
+    expect((await store.history())[0].startedAt).toBe(start + 60000);
 
     await vi.advanceTimersByTimeAsync(65000);
     expect(selected).toEqual(['a']);
@@ -196,24 +203,24 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     state.routinePresence = { ...state.routinePresence, at: Date.now() };
     releaseA.resolve();
     await settledA.promise;
-    expect(store.history()[0].finishedAt).toBe(start + 125000);
+    expect((await store.history())[0].finishedAt).toBe(start + 125000);
 
     await vi.advanceTimersByTimeAsync(1000);
     await startedB.promise;
     expect(selected).toEqual(['a', 'b']);
     expect(active).toBe(1);
     expect(maxActive).toBe(1);
-    expect(store.history().map((run) => run.routineId)).toEqual(['a', 'b']);
+    expect((await store.history()).map((run) => run.routineId)).toEqual(['a', 'b']);
     releaseB.resolve();
     await stop();
-    expect(store.history().map((run) => run.status)).toEqual(['done', 'done']);
+    expect((await store.history()).map((run) => run.status)).toEqual(['done', 'done']);
     expect(logs('routine.dispatch_failed')).toEqual([]);
   } finally {
     releaseA.resolve();
     releaseB.resolve();
     await stop?.();
     vi.useRealTimers();
-    await database.close();
+    await scope.close();
     await rm(root, { recursive: true, force: true });
   }
 });

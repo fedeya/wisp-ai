@@ -32,15 +32,15 @@ function setup() {
       remove: vi.fn(async () => {}),
     },
     panelStore: {
-      list: vi.fn(() => [{ id: 'materials' }]),
-      mutate: vi.fn(async () => []),
+      list: vi.fn(() => Effect.succeed([{ id: 'materials' }])),
+      mutate: vi.fn(() => Effect.succeed([])),
     },
     accountOperation: vi.fn(async <T>(operation: () => Promise<T>) => {
       queue.push('account');
       return operation();
     }),
     updateModel: vi.fn(async () => {}),
-    getStatus: () => status,
+    getStatus: () => Effect.succeed(status),
     getChats: () => [],
     currentCharacterKey: () => 'mage',
     sendPanelCommand: vi.fn(),

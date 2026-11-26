@@ -2,17 +2,17 @@ import { test, expect } from 'vitest';
 import { mkdtemp, readFile, writeFile, readdir, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import {
   applicationDatabaseFile,
   copyDatabaseSnapshot,
   findApplicationDatabase,
 } from '@wisp/db/application-file';
-import { MemoryStore } from '../src/agent/memory-store.ts';
-import { PanelStore } from '../src/panels/panel-store.ts';
-import { RoutineStore } from '../src/routines/routine-store.ts';
-import { databaseScope } from './database-fixture.ts';
+import { makeMemoryStore } from '../src/agent/memory-store.ts';
+import { makePanelStore } from '../src/panels/panel-store.ts';
+import { makeRoutineStore } from '../src/routines/routine-store.ts';
+import { databaseScope, chatStoreAt, promised } from './database-fixture.ts';
+import { makeChatStore } from '../src/chat/chat-store.ts';
 
 const chat = () => ({
   ...newChat('history', 'game'),
@@ -22,7 +22,7 @@ const chat = () => ({
 
 test('JSON installations initialize the canonical application database and retain the source', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-canonical-database-'));
-  const store = new ChatStore(applicationDatabaseFile(root), () => {});
+  const store = chatStoreAt(applicationDatabaseFile(root), () => {});
   try {
     const original = chat();
     const bytes = JSON.stringify([original], null, 2);
@@ -42,9 +42,9 @@ test(
   { timeout: 30_000 },
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'wisp-database-snapshot-'));
-    const source = new ChatStore(applicationDatabaseFile(path.join(root, 'source')), () => {});
+    const source = chatStoreAt(applicationDatabaseFile(path.join(root, 'source')), () => {});
     const targetFile = applicationDatabaseFile(path.join(root, 'target'));
-    const target = new ChatStore(targetFile, () => {});
+    const target = chatStoreAt(targetFile, () => {});
     try {
       await source.load();
       await source.flush([chat()]);
@@ -59,7 +59,7 @@ test(
       await expect(copyDatabaseSnapshot(source.file, targetFile)).rejects.toMatchObject({
         code: 'EEXIST',
       });
-      const reopened = new ChatStore(targetFile, () => {});
+      const reopened = chatStoreAt(targetFile, () => {});
       try {
         expect(await reopened.load()).toEqual([]);
       } finally {
@@ -93,35 +93,26 @@ test('a failed snapshot preserves its source and does not publish an empty datab
   }
 });
 
-test('all stores reuse the runtime connection and only its owner closes it', async () => {
+test('all stores share the runtime connection and only its scope closes it', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-shared-connection-'));
   const scope = databaseScope();
-  const database = scope.open(applicationDatabaseFile(root));
-  const chats = new ChatStore(database, () => {});
   try {
-    await Promise.all([
-      database.initialize(),
-      database.initialize(),
-      database.initializeProducts(),
-    ]);
-    const connection = database.connection;
-    const memory = new MemoryStore(database),
-      panels = new PanelStore(database),
-      routines = new RoutineStore(database);
+    const database = await scope.open(applicationDatabaseFile(root));
+    const chats = promised(await scope.run(makeChatStore(database, { onError: () => {} })));
+    const memory = promised(makeMemoryStore(database)),
+      panels = promised(makePanelStore(database)),
+      routines = promised(makeRoutineStore(database));
     await chats.load();
     await chats.flush([chat()]);
-    await panels.load();
-    await routines.load();
+    expect(await panels.all()).toEqual([]);
+    await routines.recover();
     await memory.update('character', 'mage', 'goal', 'Preserve this');
     await chats.close();
     await memory.update('character', 'mage', 'another', 'Still open');
-    expect(database.connection).toBe(connection);
     expect(await memory.read('character', 'mage')).toHaveLength(2);
-    await database.close();
-    expect(() => connection.prepare('SELECT 1')).toThrow();
-    await expect(memory.read('character', 'mage')).rejects.toThrow('closed');
+    await scope.close();
+    await expect(memory.read('character', 'mage')).rejects.toThrow();
   } finally {
-    await chats.close();
     await scope.close();
     await rm(root, { recursive: true, force: true });
   }

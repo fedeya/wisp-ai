@@ -40,7 +40,6 @@
     "./agent-server": "./src/agent/agent-server.ts",
     "./desktop-handler": "./src/api/desktop-handler.ts",
     "./chat-store": "./src/chat/chat-store.ts",
-    "./db/application-database": "./src/application-database.ts",
     "./chat-lifecycle": "./src/chat/chat-lifecycle.ts",
     "./chat-projection": "./src/chat/chat-projection.ts",
     "./session-state": "./src/session-state.ts",
@@ -53,7 +52,8 @@
     "./runtime-resources": "./src/runtime-resources.ts",
     "./chat": "./src/chat/chat.ts",
     "./model-connections": "./src/models/model-connections.ts",
-    "./web-search": "./src/integrations/search/web-search.ts"
+    "./web-search": "./src/integrations/search/web-search.ts",
+    "./product-json": "./src/migrations/product-json.ts"
   },
   "scripts": {
     "start": "node src/main.ts",

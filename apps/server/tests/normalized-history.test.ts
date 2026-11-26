@@ -3,8 +3,8 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { chatStoreAt } from './database-fixture.ts';
 import type { Chat } from '../src/chat/chat.ts';
 
 function history(): Chat {
@@ -34,12 +34,12 @@ function history(): Chat {
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-normalized-'));
   const file = path.join(root, 'wisp.sqlite');
-  const stores: ChatStore[] = [];
+  const stores: ReturnType<typeof chatStoreAt>[] = [];
   return {
     root,
     file,
     store(instanceId?: string) {
-      const store = new ChatStore(file, () => {}, undefined, { instanceId });
+      const store = chatStoreAt(file, () => {}, undefined, { instanceId });
       stores.push(store);
       return store;
     },

@@ -1,14 +1,12 @@
 import { Effect } from 'effect';
-import type { ApplicationDatabase } from '../application-database.ts';
+import type { SqlDatabase } from '@wisp/db/sql-database';
 import { adoptCharacterKey, saveCharacterName } from './character-keys.ts';
 import { errorMessage } from '../errors.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
 import type { Chat } from './chat.ts';
 import type { CharacterProfile } from './context.ts';
 
 interface CharacterAdoptionDependencies {
-  database: Pick<ApplicationDatabase, 'transactionSync'>;
-  panelStore: Pick<PanelStore, 'refresh'>;
+  database: SqlDatabase['Service'];
   chats: () => Chat[];
   changed: () => void;
 }
@@ -18,25 +16,31 @@ interface CharacterAdoptionDependencies {
  * its name for labels and move what was saved under its pre-GUID keys to it.
  * GUID keys never change, so this happens once per character.
  *
- * Runs synchronously, so the packet that reported the character, and
- * everything after it, already sees the data under the GUID key.
+ * The receiver waits for it before handling anything else, so the packet that
+ * reported the character, and everything after it, already sees the data
+ * under the GUID key.
  */
-export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
+export function createCharacterAdoption({
+  database: { db },
+  ...deps
+}: CharacterAdoptionDependencies) {
   const seen = new Map<string, string>();
-  return Effect.fnUntraced(function* (character: CharacterProfile) {
-    if (!character.guid) return;
-    const label = JSON.stringify([character.name, character.realm]);
-    if (seen.get(character.key) === label) return;
-    try {
-      const merged = deps.database.transactionSync((db) => {
-        saveCharacterName(db, character.key, character);
-        return adoptCharacterKey(
-          db,
-          character.key,
-          character,
-          deps.chats().map((chat) => chat.characterKey),
-        );
-      });
+  return Effect.fnUntraced(
+    function* (character: CharacterProfile) {
+      if (!character.guid) return;
+      const label = JSON.stringify([character.name, character.realm]);
+      if (seen.get(character.key) === label) return;
+      const merged = yield* db.transaction((tx) =>
+        Effect.gen(function* () {
+          yield* saveCharacterName(tx, character.key, character);
+          return yield* adoptCharacterKey(
+            tx,
+            character.key,
+            character,
+            deps.chats().map((chat) => chat.characterKey),
+          );
+        }),
+      );
       seen.set(character.key, label);
       for (const chat of deps.chats()) {
         if (chat.characterKey && merged.includes(chat.characterKey)) {
@@ -44,16 +48,16 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
         }
       }
       if (merged.length) {
-        deps.panelStore.refresh();
         yield* Effect.logInfo('Saved character data moved to its GUID key').pipe(
           Effect.annotateLogs({ event: 'character.keys_merged', count: merged.length }),
         );
       }
       deps.changed();
-    } catch (error) {
-      yield* Effect.logWarning('Could not move saved character data').pipe(
+    },
+    Effect.catch((error) =>
+      Effect.logWarning('Could not move saved character data').pipe(
         Effect.annotateLogs({ event: 'character.keys_merge_failed', error: errorMessage(error) }),
-      );
-    }
-  });
+      ),
+    ),
+  );
 }

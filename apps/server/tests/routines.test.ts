@@ -2,8 +2,10 @@ import { test, expect } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { RoutineStore } from '../src/routines/routine-store.ts';
-import { databaseScope } from './database-fixture.ts';
+import { Effect } from 'effect';
+import { makeRoutineStore } from '../src/routines/routine-store.ts';
+import { importProductData } from '../src/migrations/product-json.ts';
+import { databaseScope, promised } from './database-fixture.ts';
 import {
   routineDefinition,
   routineInput,
@@ -25,15 +27,25 @@ const definition = () =>
     ],
     cooldownSeconds: 60,
   });
+type Store = ReturnType<typeof promised<ReturnType<typeof makeRoutineStore>>>;
 async function fixture(
-  work: (store: RoutineStore, file: string, openStore: () => RoutineStore) => Promise<void>,
+  work: (
+    store: Store,
+    file: string,
+    openStore: (options?: { importLegacy?: boolean }) => Promise<Store>,
+  ) => Promise<void>,
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routines-'));
   const scope = databaseScope();
   try {
     const file = path.join(root, 'wisp.sqlite');
-    const openStore = () => new RoutineStore(scope.open(file));
-    await work(openStore(), file, openStore);
+    // importLegacy runs what startup does first: import the legacy JSON once.
+    const openStore = async ({ importLegacy = false } = {}) => {
+      const database = await scope.open(file);
+      if (importLegacy) await Effect.runPromise(importProductData(file, database.db));
+      return promised(makeRoutineStore(database));
+    };
+    await work(promised(makeRoutineStore(await scope.open(file))), file, openStore);
   } finally {
     await scope.close();
     await rm(root, { recursive: true, force: true });
@@ -80,8 +92,8 @@ test('pending events survive restart, coalesce, respect cooldown and stay charac
     expect(await store.claim('mage', start)).toBeNull();
     await store.observe('mage', { event: 'level_up', values: { level: 24 } }, start);
     await store.observe('mage', { event: 'level_up', values: { level: 26 } }, start + 1);
-    const restored = openStore();
-    await restored.load();
+    const restored = await openStore();
+    await restored.recover();
     const claims = await Promise.all([
       restored.claim('mage', start + 2),
       restored.claim('mage', start + 2),
@@ -96,9 +108,9 @@ test('pending events survive restart, coalesce, respect cooldown and stay charac
     const second = (await restored.claim('mage', start + 60002))!;
     expect(second.run.id).not.toBe(first.run.id);
     expect(second.previous).toEqual(['Train the verified spell.']);
-    const again = openStore();
-    await again.load();
-    expect(again.history().at(-1)?.status).toBe('interrupted');
+    const again = await openStore();
+    await again.recover();
+    expect((await again.history()).at(-1)?.status).toBe('interrupted');
     expect(await again.claim('mage', start + 200000)).toBeNull();
   }));
 
@@ -128,16 +140,17 @@ test.each([
       path.join(path.dirname(file), 'routines.json'),
       JSON.stringify({ routines: seededRoutines, runs: [] }),
     );
+    await openStore({ importLegacy: true });
     for (const id of order) {
       const claimed = (await store.claim('mage', now))!;
       expect(claimed.routine.id).toBe(id);
       await store.finish(claimed.run.id, 'no_tip', '', now);
     }
     expect(await store.claim('mage', now)).toBeNull();
-    expect(store.list().map((routine) => routine.id)).toEqual(savedOrder);
-    const restored = openStore();
-    await restored.load();
-    expect(restored.list().map((routine) => routine.id)).toEqual(savedOrder);
+    expect((await store.list()).map((routine) => routine.id)).toEqual(savedOrder);
+    const restored = await openStore();
+    await restored.recover();
+    expect((await restored.list()).map((routine) => routine.id)).toEqual(savedOrder);
   }),
 );
 test('pause clears pending work; intervals coalesce offline time; once waits for a useful result', async () =>
@@ -156,11 +169,11 @@ test('pause clears pending work; intervals coalesce offline time; once waits for
     expect(await store.claim('mage', start + 500000)).toBeNull();
     const silent = (await store.claim('mage', start + 900000))!;
     await store.finish(silent.run.id, 'no_tip', '', start + 900001);
-    expect(store.list('mage')[0].enabled).toBe(true);
+    expect((await store.list('mage'))[0].enabled).toBe(true);
     const useful = (await store.claim('mage', start + 9999999))!;
     await store.finish(useful.run.id, 'done', 'Goal reached', start + 10000000);
     expect(await store.claim('mage', start + 19999999)).toBeNull();
-    expect(store.list('mage')[0].enabled).toBe(false);
+    expect((await store.list('mage'))[0].enabled).toBe(false);
     await expect(store.mutate('other', { operation: 'remove', id: routine.id })).rejects.toThrow(
       'not found',
     );
@@ -178,8 +191,8 @@ test('dispatch deferred by a new user turn restores the pending one-shot without
     await store.observe('mage', { event: 'level_up', values: { level: 24 } }, now);
     const claimed = (await store.claim('mage', now + 1))!;
     await store.defer(claimed.run.id, claimed.event);
-    expect(store.history()).toHaveLength(0);
-    expect(store.list('mage')[0].enabled).toBe(true);
+    expect(await store.history()).toHaveLength(0);
+    expect((await store.list('mage'))[0].enabled).toBe(true);
     expect(await store.claim('mage', now + 2)).not.toBeNull();
   }));
 
@@ -209,5 +222,5 @@ test('overdue routines alternate when each run outlasts its interval and cooldow
       await store.finish(claimed.run.id, 'no_tip', '', now + 65000);
     }
     expect(selected).toEqual(['a', 'b', 'a', 'b']);
-    expect(store.list('mage').map((routine) => routine.id)).toEqual(['a', 'b']);
+    expect((await store.list('mage')).map((routine) => routine.id)).toEqual(['a', 'b']);
   }));

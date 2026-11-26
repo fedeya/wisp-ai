@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { databaseScope } from './database-fixture.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
+import { databaseScope, promised } from './database-fixture.ts';
+import { makeMemoryStore } from '../src/agent/memory-store.ts';
 import { characterIdentity } from '../src/chat/context.ts';
 
 test(
@@ -15,7 +15,7 @@ test(
     const scope = databaseScope();
     try {
       const file = path.join(directory, 'wisp.sqlite');
-      const store = new MemoryStore(scope.open(file));
+      const store = promised(makeMemoryStore(await scope.open(file)));
       await Promise.all([
         store.update(
           'character',
@@ -27,7 +27,7 @@ test(
         store.update('character', 'warrior', 'guide', 'Following Guide B'),
         store.update('preferences', 'local-player', 'pace', 'Prefers exploration'),
       ]);
-      const restarted = new MemoryStore(scope.open(file));
+      const restarted = promised(makeMemoryStore(await scope.open(file)));
       assert.equal((await restarted.read('character', 'mage')).length, 2);
       assert.equal((await restarted.read('character', 'warrior'))[0].text, 'Following Guide B');
       await restarted.update('character', 'mage', 'guide', 'Stopped following Guide A');
@@ -36,7 +36,10 @@ test(
         1,
       );
       await restarted.update('character', 'mage', 'guide');
-      assert.equal((await new MemoryStore(scope.open(file)).read('character', 'mage')).length, 1);
+      assert.equal(
+        (await promised(makeMemoryStore(await scope.open(file))).read('character', 'mage')).length,
+        1,
+      );
       assert.equal(
         (await restarted.read('preferences', 'local-player'))[0].text,
         'Prefers exploration',
