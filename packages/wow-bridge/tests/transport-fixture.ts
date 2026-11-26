@@ -6,6 +6,7 @@ import { DiskConnection } from '../src/connection.ts';
 export async function openTransport(
   args: Parameters<typeof DiskConnection.make>,
   overrideFs?: (fs: FileSystem.FileSystem) => FileSystem.FileSystem,
+  logs?: Layer.Layer<never>,
 ) {
   const scope = Scope.makeUnsafe();
   const fs = overrideFs
@@ -18,7 +19,7 @@ export async function openTransport(
     const bridge = await Effect.runPromise(
       DiskConnection.make(...args).pipe(
         Scope.provide(scope),
-        Effect.provide(Layer.merge(fs, NodePath.layer)),
+        Effect.provide(Layer.mergeAll(fs, NodePath.layer, logs ?? Layer.empty)),
       ),
     );
     return { bridge, close };

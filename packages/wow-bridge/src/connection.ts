@@ -21,7 +21,8 @@ import {
 } from './wire/mailbox.ts';
 import { makeWriter } from './writer.ts';
 import * as AddonFiles from './addon-files.ts';
-import { makeDelivery, type SlowDownlink } from './delivery.ts';
+import { makeDelivery } from './delivery.ts';
+import { logTransportError } from './logging.ts';
 
 const decodePacket = Schema.decodeUnknownSync(packetSchema);
 
@@ -52,8 +53,7 @@ export class DiskConnection {
   private readonly writer: Effect.Success<ReturnType<typeof makeWriter>>;
   private readonly runBackground: (effect: Effect.Effect<void>) => unknown;
   private readonly receive: (packet: Packet) => void | Effect.Effect<void>;
-  private readonly onError: (error: unknown) => void;
-  private readonly onHeldOff: (session: string) => void;
+  private readonly heldOff = new Set<string>();
   private readonly onSessionChanged: () => void;
   private readonly delivery: ReturnType<typeof makeDelivery>;
   private readonly packets = Semaphore.makeUnsafe(1);
@@ -66,9 +66,6 @@ export class DiskConnection {
     writer: Effect.Success<ReturnType<typeof makeWriter>>;
     runBackground: (effect: Effect.Effect<void>) => unknown;
     receive: (packet: Packet) => void | Effect.Effect<void>;
-    onError: (error: unknown) => void;
-    onHeldOff: (session: string) => void;
-    onSlowDownlink: (report: SlowDownlink) => void;
     onSessionChanged: () => void;
   }) {
     this.files = options.files;
@@ -77,8 +74,6 @@ export class DiskConnection {
     this.writer = options.writer;
     this.runBackground = options.runBackground;
     this.receive = options.receive;
-    this.onError = options.onError;
-    this.onHeldOff = options.onHeldOff;
     this.onSessionChanged = options.onSessionChanged;
     this.delivery = makeDelivery({
       files: this.files,
@@ -89,17 +84,12 @@ export class DiskConnection {
       uplinkObservedAt: (file) => this.uplinkObserved.get(file)?.at,
       now: () => this.now(),
       nextGeneration: () => options.random.nextIntUnsafe() >>> 0 || 1,
-      onError: options.onError,
-      onSlowDownlink: options.onSlowDownlink,
     });
   }
 
   static readonly make = Effect.fnUntraced(function* (
     wow: string,
     receive: (packet: Packet) => void | Effect.Effect<void>,
-    onError: (error: unknown) => void = console.error,
-    onHeldOff: (session: string) => void = () => {},
-    onSlowDownlink: (report: SlowDownlink) => void = () => {},
     onSessionChanged: () => void = () => {},
   ) {
     const files = yield* AddonFiles.make(wow);
@@ -116,9 +106,6 @@ export class DiskConnection {
       writer,
       runBackground,
       receive,
-      onError,
-      onHeldOff,
-      onSlowDownlink,
       onSessionChanged,
     });
     yield* Effect.addFinalizer(() => connection.stop());
@@ -151,14 +138,14 @@ export class DiskConnection {
       });
       this.runBackground(
         poll.pipe(
-          Effect.catch((error) => Effect.sync(() => this.onError(error))),
+          Effect.catch(logTransportError),
           Effect.schedule(Schedule.fixed(1000)),
           Effect.asVoid,
         ),
       );
       this.runBackground(
         control.pipe(
-          Effect.catch((error) => Effect.sync(() => this.onError(error))),
+          Effect.catch(logTransportError),
           Effect.schedule(Schedule.fixed(150)),
           Effect.asVoid,
         ),
@@ -187,15 +174,11 @@ export class DiskConnection {
     }
     this.watchers.add(dir);
     const watch = this.files.watch(dir).pipe(
-      Stream.runForEach(() =>
-        this.read(file, false).pipe(
-          Effect.catch((error) => Effect.sync(() => this.onError(error))),
-        ),
-      ),
+      Stream.runForEach(() => this.read(file, false).pipe(Effect.catch(logTransportError))),
       Effect.catchCause((cause) =>
-        Effect.sync(() => {
-          if (!this.stopped && !Cause.hasInterruptsOnly(cause)) this.onError(Cause.squash(cause));
-        }),
+        !this.stopped && !Cause.hasInterruptsOnly(cause)
+          ? logTransportError(Cause.squash(cause))
+          : Effect.void,
       ),
       Effect.ensuring(
         Effect.sync(() => {
@@ -262,9 +245,7 @@ export class DiskConnection {
               const ack = message.flags === 0 && parseDownlinkAck(value);
               if (ack) {
                 if (file === this.window?.file && this.delivery.reusable()) {
-                  yield* this.delivery
-                    .acceptAck(ack)
-                    .pipe(Effect.catch((error) => Effect.sync(() => this.onError(error))));
+                  yield* this.delivery.acceptAck(ack).pipe(Effect.catch(logTransportError));
                 }
               } else {
                 packet = decodePacket(value);
@@ -296,7 +277,13 @@ export class DiskConnection {
           !packet.takeover &&
           this.now() - this.activeSeenAt < ACTIVE_SESSION_MS
         ) {
-          this.onHeldOff(packet.session);
+          // Report each waiting window once, not on every heartbeat.
+          if (!this.heldOff.has(packet.session) && this.heldOff.size < 32) {
+            this.heldOff.add(packet.session);
+            yield* Effect.logInfo(
+              'Another game window is connected; its heartbeat did not take the bridge',
+            ).pipe(Effect.annotateLogs({ event: 'transport.heartbeat_held_off' }));
+          }
           return;
         }
         // Change the session seen by request() before waiting on disk I/O.

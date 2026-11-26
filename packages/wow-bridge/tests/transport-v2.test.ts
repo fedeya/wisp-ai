@@ -5,7 +5,7 @@ import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deflateSync } from 'node:zlib';
 import { ACTIVE_SESSION_MS, type DiskConnection } from '../src/connection.ts';
-import { SLOW_DOWNLINK_MS, preferBulkDelivery, type SlowDownlink } from '../src/delivery.ts';
+import { SLOW_DOWNLINK_MS, preferBulkDelivery } from '../src/delivery.ts';
 import type { Packet } from '../src/wire/protocol.ts';
 import {
   DOWNLINK_HELPERS,
@@ -26,6 +26,7 @@ import {
 } from '../src/wire/mailbox.ts';
 import { applyDownlink } from '../src/wire/downlink.ts';
 import { openTransport } from './transport-fixture.ts';
+import { captureLogs } from './log-fixture.ts';
 
 async function fixture(
   receive: (packet: Packet, bridge: DiskConnection) => void = () => {},
@@ -44,10 +45,8 @@ async function fixture(
     'Tail: enabled',
   ].join('\r\n');
   await writeFile(file, original);
-  const errors: unknown[] = [];
+  const logs = captureLogs();
   const packets: Packet[] = [];
-  const heldOff: string[] = [];
-  const slow: SlowDownlink[] = [];
   const { bridge, close } = await openTransport(
     [
       root,
@@ -55,11 +54,9 @@ async function fixture(
         packets.push(packet);
         receive(packet, bridge);
       },
-      (error) => errors.push(error),
-      (session) => heldOff.push(session),
-      (report) => slow.push(report),
     ],
     overrideFs,
+    logs.layer,
   );
   const hello = { type: 'hello', session: 'v2', seq: 1, at: 1, transportVersion: 2 };
   return {
@@ -70,9 +67,15 @@ async function fixture(
     payload,
     original,
     packets,
-    errors,
-    heldOff,
-    slow,
+    get errors() {
+      return logs.entries('transport.failed');
+    },
+    get heldOff() {
+      return logs.entries('transport.heartbeat_held_off');
+    },
+    get slow() {
+      return logs.entries('transport.downlink_');
+    },
     hello,
     async send(packet: unknown, firstSequence = 0, compressed = false, target = file) {
       const raw = Buffer.from(JSON.stringify(packet));
@@ -85,7 +88,7 @@ async function fixture(
       );
       for (const frame of frames) {
         await writeFile(target, replaceUplink(await readFile(target, 'utf8'), frame));
-        await Effect.runPromise(bridge.read(target, false));
+        await Effect.runPromise(bridge.read(target, false).pipe(Effect.provide(logs.layer)));
       }
       return frames;
     },
@@ -779,7 +782,7 @@ test('another game window keeps the bridge until its heartbeat finds the first o
     const heartbeat = { type: 'hello', seq: 1, transportVersion: 2, heartbeat: true };
     await f.send({ ...heartbeat, session: 'b', at: 2 }, 10, false, other);
     expect(sessions(), 'a heartbeat cannot take an active window').toStrictEqual(['v2:hello']);
-    expect(f.heldOff).toStrictEqual(['b']);
+    expect(f.heldOff).toHaveLength(1);
 
     // The active window still owns replies: its next message is delivered.
     await f.send({ type: 'poll', session: 'v2', seq: 2, at: 3, transportVersion: 2 }, 20);
@@ -875,7 +878,7 @@ test('a reply the game has not read for 10 seconds is reported once, then again 
     expect((await drainMailbox(f)).state).toStrictEqual(snapshot);
     expect(f.slow.length).toBe(2);
     expect(f.slow[1]!.phase).toBe('delivered');
-    expect(f.slow[1]!.ageMs).toBeGreaterThan(f.slow[0]!.ageMs);
+    expect(f.slow[1]!.ageMs).toBeGreaterThan(Number(f.slow[0]!.ageMs));
     // A prompt reply after that is not reported.
     await Effect.runPromise(f.bridge.publish({ rev: 2, text: 'rápido' }));
     await drainMailbox(f, snapshot);

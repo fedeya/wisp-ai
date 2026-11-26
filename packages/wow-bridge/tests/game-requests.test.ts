@@ -1,6 +1,7 @@
 import { test, expect, vi } from 'vitest';
 import { Effect } from 'effect';
 import { GameRequests, UNRESPONSIVE_MS, type GameRequest } from '../src/game-requests.ts';
+import { captureLogs } from './log-fixture.ts';
 
 function makeRequests(...args: Parameters<typeof GameRequests.make>) {
   return Effect.runSync(GameRequests.make(...args));
@@ -11,8 +12,11 @@ function runRequest(
   input: GameRequest,
   signal?: AbortSignal,
   timeout?: number,
+  logs = captureLogs(),
 ) {
-  return Effect.runPromise(requests.request(input, timeout), { signal });
+  return Effect.runPromise(requests.request(input, timeout).pipe(Effect.provide(logs.layer)), {
+    signal,
+  });
 }
 
 test('responses are scoped to both transport session and conversation', async () => {
@@ -66,13 +70,15 @@ test('timeout removes a request before a late game response can settle it', asyn
 test('interrupting a retried read clears its aliases, retries and timeout', async () => {
   vi.useFakeTimers();
   try {
-    const onTimeout = vi.fn();
-    const requests = makeRequests(() => {}, { onTimeout });
+    const logs = captureLogs();
+    const requests = makeRequests(() => {});
     const abort = new AbortController();
     const read = runRequest(
       requests,
       { chat: 'chat', session: 'one', sections: ['gear'] },
       abort.signal,
+      undefined,
+      logs,
     );
     const rejected = expect(read).rejects.toThrow('interrupt');
     const [{ id: original }] = requests.snapshot();
@@ -86,7 +92,7 @@ test('interrupting a retried read clears its aliases, retries and timeout', asyn
     expect(requests.receive(retry, 'one', 'chat', {})).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(onTimeout).not.toHaveBeenCalled();
+    expect(logs.entries('game.request_timeout')).toEqual([]);
   } finally {
     vi.useRealTimers();
   }
@@ -124,23 +130,30 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
   vi.useFakeTimers();
   try {
     let clock = 1_000_000;
-    const timeouts: unknown[] = [];
+    const logs = captureLogs();
     const requests = makeRequests(() => {}, {
       now: () => clock,
-      onTimeout: (timeout) => timeouts.push(timeout),
     });
     requests.heard();
-    const first = runRequest(requests, {
-      chat: 'chat',
-      session: 'one',
-      agent: true,
-      sections: ['gear'],
-    });
+    const first = runRequest(
+      requests,
+      {
+        chat: 'chat',
+        session: 'one',
+        agent: true,
+        sections: ['gear'],
+      },
+      undefined,
+      undefined,
+      logs,
+    );
     const firstRejected = expect(first).rejects.toThrow('Do not call game tools again');
     clock += 30_000;
     await vi.advanceTimersByTimeAsync(30_000);
     await firstRejected;
-    expect(timeouts).toEqual([{ kind: 'state', addonSilent: true, waitedMs: 30_000 }]);
+    expect(logs.entries('game.request_timeout')).toEqual([
+      { kind: 'state', addonSilent: true, waitedMs: 30_000 },
+    ]);
 
     // The next read in the same turn does not wait another 30 seconds.
     await expect(
@@ -183,24 +196,31 @@ test('a timeout reports whether the addon kept talking while the request waited'
   vi.useFakeTimers();
   try {
     let clock = 1_000_000;
-    const timeouts: { addonSilent: boolean }[] = [];
+    const logs = captureLogs();
     const requests = makeRequests(() => {}, {
       now: () => clock,
-      onTimeout: (timeout) => timeouts.push(timeout),
     });
-    const action = runRequest(requests, {
-      chat: 'chat',
-      session: 'one',
-      agent: true,
-      action: { kind: 'test' },
-    });
+    const action = runRequest(
+      requests,
+      {
+        chat: 'chat',
+        session: 'one',
+        agent: true,
+        action: { kind: 'test' },
+      },
+      undefined,
+      undefined,
+      logs,
+    );
     const rejected = expect(action).rejects.toThrow('did not respond');
     clock += 10_000;
     requests.heard();
     clock += 20_000;
     await vi.advanceTimersByTimeAsync(30_000);
     await rejected;
-    expect(timeouts).toEqual([{ kind: 'action', addonSilent: false, waitedMs: 30_000 }]);
+    expect(logs.entries('game.request_timeout')).toEqual([
+      { kind: 'action', addonSilent: false, waitedMs: 30_000 },
+    ]);
     // A reconnection starts over instead of failing the new window's requests.
     requests.cancelAll('reconnected');
     const fresh = runRequest(requests, {

@@ -1,12 +1,10 @@
 import { Cause, Context, Effect, FileSystem, Layer, Path, Queue, Stream } from 'effect';
 import type { Scope } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
-import { GameRequests, type GameRequest, type GameTimeout } from './game-requests.ts';
+import { GameRequests, type GameRequest } from './game-requests.ts';
 import type { Packet } from './wire/protocol.ts';
 import { DiskConnection } from './connection.ts';
-import type { SlowDownlink } from './delivery.ts';
-
-export type { SlowDownlink } from './delivery.ts';
+import { logTransportError } from './logging.ts';
 
 type WireFields =
   | 'nextSlot'
@@ -51,32 +49,19 @@ export interface Connection {
   };
 }
 
-interface ConnectionOptions {
-  readonly onError: (error: unknown) => void;
-  readonly onHeldOff: (session: string) => void;
-  readonly onSlowDownlink: (report: SlowDownlink) => void;
-  readonly onTimeout: (timeout: GameTimeout) => void;
-}
-
 export class WowBridge extends Context.Service<
   WowBridge,
   {
-    readonly open: (
-      wowDirectory: string,
-      options: ConnectionOptions,
-    ) => Effect.Effect<Connection, PlatformError, Scope.Scope>;
+    readonly open: (wowDirectory: string) => Effect.Effect<Connection, PlatformError, Scope.Scope>;
   }
 >()('@wisp/wow-bridge/WowBridge') {}
 
-const openConnection = Effect.fn('WowBridge.open')(function* (
-  wowDirectory: string,
-  options: ConnectionOptions,
-) {
+const openConnection = Effect.fn('WowBridge.open')(function* (wowDirectory: string) {
   const events = yield* Effect.acquireRelease(Queue.bounded<GameEvent>(64), Queue.shutdown);
   const updates = yield* Effect.acquireRelease(Queue.sliding<void>(1), Queue.shutdown);
   let latestView: GameView | undefined;
   const notify = () => Queue.offerUnsafe(updates, undefined);
-  const requests = yield* GameRequests.make(notify, { onTimeout: options.onTimeout });
+  const requests = yield* GameRequests.make(notify);
   let closed = false;
   const resultAcks = new Set<number>();
 
@@ -96,9 +81,7 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
         } = packet;
         // An initial hello may carry cursors from the old host, as it did before this API.
         if (nextSlot !== undefined) {
-          yield* disk
-            .setCursor(nextSlot, receivedRev ?? 0)
-            .pipe(Effect.catch((error) => Effect.sync(() => options.onError(error))));
+          yield* disk.setCursor(nextSlot, receivedRev ?? 0).pipe(Effect.catch(logTransportError));
         }
         if (event.type === 'state_result') {
           resultAcks.add(event.seq);
@@ -113,9 +96,6 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
         if (event.type === 'delete') requests.cancelChat(event.chat);
         yield* Queue.offer(events, event);
       }),
-    options.onError,
-    options.onHeldOff,
-    options.onSlowDownlink,
     () => {
       latestView = undefined;
       resultAcks.clear();
@@ -132,7 +112,7 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
         Cause.hasInterruptsOnly(cause)
           ? Effect.failCause(cause)
           : Effect.gen(function* () {
-              options.onError(Cause.squash(cause));
+              yield* logTransportError(Cause.squash(cause));
               yield* Effect.sleep(400);
               notify();
             }),
@@ -187,8 +167,8 @@ export const layer = Layer.effect(
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     return {
-      open: (wowDirectory, options) =>
-        openConnection(wowDirectory, options).pipe(
+      open: (wowDirectory) =>
+        openConnection(wowDirectory).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
           Effect.provideService(Path.Path, path),
         ),

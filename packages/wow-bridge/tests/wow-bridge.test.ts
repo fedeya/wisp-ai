@@ -6,6 +6,7 @@ import * as NodePath from '@effect/platform-node/NodePath';
 import { Deferred, Effect, Exit, FileSystem, Layer, Scope, Stream } from 'effect';
 import { encodeMessage, readUplink, replaceUplink, UPLINK_KIND } from '../src/wire/mailbox.ts';
 import { layer, WowBridge, type GameEvent } from '../src/wow-bridge.ts';
+import { captureLogs } from './log-fixture.ts';
 
 test('the connection publishes and resolves game requests without routing them through the host', async () => {
   const runtime = path.resolve('runtime');
@@ -16,7 +17,7 @@ test('the connection publishes and resolves game requests without routing them t
   const payload = path.join(root, 'Interface/AddOns/WispAI_Payload/Payload.lua');
   const scope = Scope.makeUnsafe();
   const close = () => Effect.runPromise(Scope.close(scope, Exit.void));
-  const errors: unknown[] = [];
+  const logs = captureLogs();
   const events: GameEvent[] = [];
   const lastRead = new Map<string, Buffer | null>();
   const writeStarted = Deferred.makeUnsafe<void>();
@@ -79,12 +80,7 @@ test('the connection publishes and resolves game requests without routing them t
     const connection = await Effect.runPromise(
       Effect.gen(function* () {
         const bridge = yield* WowBridge;
-        const connection = yield* bridge.open(root, {
-          onError: (error) => errors.push(error),
-          onTimeout: vi.fn(),
-          onHeldOff: vi.fn(),
-          onSlowDownlink: vi.fn(),
-        });
+        const connection = yield* bridge.open(root);
         yield* connection.events.pipe(
           Stream.runForEach((event) => Effect.sync(() => events.push(event))),
           Effect.forkScoped(),
@@ -93,6 +89,7 @@ test('the connection publishes and resolves game requests without routing them t
       }).pipe(
         Scope.provide(scope),
         Effect.provide(layer.pipe(Layer.provide([observeReads, NodePath.layer]))),
+        Effect.provide(logs.layer),
       ),
     );
     await send({ type: 'hello', session: 'one', nextSlot: 1 });
@@ -166,7 +163,7 @@ test('the connection publishes and resolves game requests without routing them t
       readyPublished: false,
       ready: false,
     });
-    expect(errors).toEqual([]);
+    expect(logs.entries('transport.failed')).toEqual([]);
   } finally {
     await Effect.runPromise(Deferred.succeed(releaseWrite, undefined));
     await close();

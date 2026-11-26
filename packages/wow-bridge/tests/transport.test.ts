@@ -4,6 +4,7 @@ import { systemError, type PlatformError } from 'effect/PlatformError';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { openTransport } from './transport-fixture.ts';
+import { captureLogs } from './log-fixture.ts';
 test('a failed payload write can retry the same snapshot after the filesystem recovers', async () => {
   await mkdir(path.resolve('runtime'), { recursive: true });
   const root = await mkdtemp(path.resolve('runtime', 'transport-retry-'));
@@ -66,16 +67,17 @@ test('a failing folder watcher is dropped and rewatched instead of ending the br
   const character = path.join(root, 'WTF', 'Account', 'ACCOUNT', 'Realm', 'Hero');
   await mkdir(character, { recursive: true });
   await writeFile(path.join(character, 'AddOns.txt'), 'WispAI: enabled\n');
-  const errors: unknown[] = [];
+  const logs = captureLogs();
   const failed = Deferred.makeUnsafe<never, PlatformError>();
   let attempts = 0;
   const { bridge, close } = await openTransport(
-    [root, () => {}, (error) => errors.push(error)],
+    [root, () => {}],
     (fs) => ({
       ...fs,
       watch: (dir, options) =>
         ++attempts === 1 ? Stream.fromEffect(Deferred.await(failed)) : fs.watch(dir, options),
     }),
+    logs.layer,
   );
   try {
     await Effect.runPromise(bridge.start());
@@ -83,7 +85,7 @@ test('a failing folder watcher is dropped and rewatched instead of ending the br
     const error = systemError({ _tag: 'NotFound', module: 'FileSystem', method: 'watch' });
     await Effect.runPromise(Deferred.fail(failed, error));
     await vi.waitFor(() => expect(bridge.watchers.has(character)).toBe(false));
-    expect(errors).toEqual([error]);
+    expect(logs.entries('transport.failed')).toEqual([{ error: error.message }]);
     await Effect.runPromise(bridge.scan(false));
     expect(attempts).toBe(2);
     expect(bridge.watchers.has(character)).toBe(true);

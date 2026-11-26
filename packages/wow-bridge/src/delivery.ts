@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
 import type { AddonFiles } from './addon-files.ts';
+import { logTransportError } from './logging.ts';
 import { prepareDownlink } from './wire/downlink.ts';
 import {
   COMPACT_DOWNLINK_KIND,
@@ -80,19 +81,6 @@ function afterAck(transfer: InFlight, ack: DownlinkAck) {
   return ack.b ? 'wait' : 'useFragments';
 }
 
-/** What the bridge knows about a snapshot that is taking long to reach the game. */
-export interface SlowDownlink {
-  phase: 'stalled' | 'delivered';
-  revision: number;
-  ageMs: number;
-  restarts: number;
-  bulk: boolean;
-  frames: number;
-  frame: number;
-  uplinkQuietMs?: number;
-  uplinkBusy: boolean;
-}
-
 export const SLOW_DOWNLINK_MS = 10_000;
 
 export interface DownlinkCosts {
@@ -119,8 +107,6 @@ interface DeliveryOptions {
   uplinkObservedAt: (file: string) => number | undefined;
   now: () => number;
   nextGeneration: () => number;
-  onError: (error: unknown) => void;
-  onSlowDownlink: (report: SlowDownlink) => void;
 }
 
 export function makeDelivery(options: DeliveryOptions) {
@@ -145,7 +131,6 @@ export function makeDelivery(options: DeliveryOptions) {
     bulkStarts: 0,
   };
 
-  const onError = (error: unknown) => Effect.sync(() => options.onError(error));
   const current = (version: number) => version === epoch && !options.stopped();
 
   // Serialize delivery work. A window change can invalidate it while I/O is in flight.
@@ -256,11 +241,16 @@ export function makeDelivery(options: DeliveryOptions) {
     yield* writeFrame(version);
   });
 
-  function report(phase: SlowDownlink['phase'], transfer: InFlight) {
+  function report(phase: 'stalled' | 'delivered', transfer: InFlight) {
     const file = options.activeFile();
     const observed = file ? options.uplinkObservedAt(file) : undefined;
-    try {
-      options.onSlowDownlink({
+    return Effect.logInfo(
+      phase === 'stalled'
+        ? 'A reply is taking long to reach the game'
+        : 'A slow reply reached the game',
+    ).pipe(
+      Effect.annotateLogs({
+        event: `transport.downlink_${phase}`,
         phase,
         revision: transfer.snapshot.revision,
         ageMs: now() - transfer.startedAt,
@@ -270,26 +260,24 @@ export function makeDelivery(options: DeliveryOptions) {
         frame: transfer.kind === 'fragment' ? transfer.index : 0,
         uplinkQuietMs: observed === undefined ? undefined : now() - observed,
         uplinkBusy: Boolean(file && options.uplinkBusy(file)),
-      });
-    } catch (error) {
-      options.onError(error);
-    }
+      }),
+    );
   }
 
-  function confirm(transfer: InFlight, revision: number) {
+  const confirm = Effect.fnUntraced(function* (transfer: InFlight, revision: number) {
     const applied = revision === transfer.snapshot.revision ? transfer.snapshot : latest;
     if (applied?.revision !== revision || revision < transfer.snapshot.revision) return false;
     if (transfer.kind === 'bulk') {
       peer.slot = Math.max(peer.slot, Math.min(1024, transfer.slot + 1));
     }
-    if (transfer.stallReported || now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
-      report('delivered', transfer);
-    }
     peer.revision = Math.max(peer.revision, revision);
     confirmed = applied;
     sending = { kind: 'idle' };
+    if (transfer.stallReported || now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
+      yield* report('delivered', transfer);
+    }
     return true;
-  }
+  });
 
   const acknowledge = Effect.fnUntraced(function* (
     version: number,
@@ -326,7 +314,7 @@ export function makeDelivery(options: DeliveryOptions) {
         yield* startLatest(version);
         break;
       case 'confirm':
-        if (confirm(transfer, ack.a[2])) yield* startLatest(version);
+        if ((yield* confirm(transfer, ack.a[2])) && current(version)) yield* startLatest(version);
         break;
       case 'useFragments':
         begin(transfer, { kind: 'fragment' });
@@ -412,13 +400,14 @@ export function makeDelivery(options: DeliveryOptions) {
         }),
       ),
     restartStalledTransfer: () =>
-      submit(() =>
-        Effect.sync(() => {
+      submit((version) =>
+        Effect.gen(function* () {
           if (!inFlight(sending) || now() - sending.progressedAt <= 5000) return;
           sending.restarts++;
           if (!sending.stallReported && now() - sending.startedAt >= SLOW_DOWNLINK_MS) {
             sending.stallReported = true;
-            report('stalled', sending);
+            yield* report('stalled', sending);
+            if (!current(version) || !inFlight(sending)) return;
           }
           begin(
             sending,
@@ -440,7 +429,7 @@ export function makeDelivery(options: DeliveryOptions) {
           }
           return writeFrame(version);
         }),
-      ).pipe(Effect.catch(onError)),
+      ).pipe(Effect.catch(logTransportError)),
     publishSnapshot: (snapshot: unknown) => submit((version) => publish(version, snapshot)),
     publishView: (view: { connected: boolean }) =>
       submit((version) =>
@@ -475,9 +464,10 @@ export function makeDelivery(options: DeliveryOptions) {
             peer.reusable &&
             inFlight(sending) &&
             revision === sending.snapshot.revision &&
-            confirm(sending, revision)
+            (yield* confirm(sending, revision)) &&
+            current(version)
           ) {
-            yield* startLatest(version).pipe(Effect.catch(onError));
+            yield* startLatest(version).pipe(Effect.catch(logTransportError));
           }
         }),
       ),

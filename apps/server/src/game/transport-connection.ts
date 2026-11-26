@@ -1,5 +1,5 @@
 import { Effect, Exit, FileSystem, Path, Scope, Semaphore, Stream } from 'effect';
-import type { Connection, GameCall, GameEvent, SlowDownlink, WowBridge } from '@wisp/wow-bridge';
+import type { Connection, GameCall, GameEvent, WowBridge } from '@wisp/wow-bridge';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
 import type { IntegrationState } from '../integrations/integration-state.ts';
@@ -59,28 +59,6 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     );
   }
 
-  // Logged once per waiting window, not on every 60-second heartbeat.
-  const heldOff = new Set<string>();
-  function logHeldOff(session: string) {
-    if (heldOff.has(session) || heldOff.size >= 32) return;
-    heldOff.add(session);
-    runFork(
-      Effect.logInfo(
-        'Another game window is connected; its heartbeat did not take the bridge',
-      ).pipe(Effect.annotateLogs({ event: 'transport.heartbeat_held_off' })),
-    );
-  }
-
-  function logSlowDownlink(report: SlowDownlink) {
-    runFork(
-      Effect.logInfo(
-        report.phase === 'stalled'
-          ? 'A reply is taking long to reach the game'
-          : 'A slow reply reached the game',
-      ).pipe(Effect.annotateLogs({ event: `transport.downlink_${report.phase}`, ...report })),
-    );
-  }
-
   const disconnect = Effect.gen(function* () {
     const previous = connectionScope;
     connectionScope = undefined;
@@ -116,19 +94,7 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     const scope = yield* Scope.make();
     connectionScope = scope;
     yield* Effect.gen(function* () {
-      const connection = yield* bridge
-        .open(wow, {
-          onError: logError,
-          onHeldOff: logHeldOff,
-          onSlowDownlink: logSlowDownlink,
-          onTimeout: (timeout) =>
-            runFork(
-              Effect.logWarning('WoW did not answer a request').pipe(
-                Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
-              ),
-            ),
-        })
-        .pipe(Scope.provide(scope));
+      const connection = yield* bridge.open(wow).pipe(Scope.provide(scope));
       transport = connection;
       wowDirectory = wow;
       yield* connection.events.pipe(
