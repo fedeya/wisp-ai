@@ -1,56 +1,71 @@
 import type { FeatureFlag } from '@wisp/protocol/features';
-import { readFile } from 'node:fs/promises';
+import { Context, Effect, FileSystem, Layer, Schema } from 'effect';
+import { HostError } from '../execution/engine-errors.ts';
 import { agentHost } from './agent-host.ts';
-const capabilitiesFile = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE;
-export async function readCapabilityFlags(file?: string): Promise<Record<string, boolean>> {
-  if (!file) {
-    return {};
-  }
-  try {
-    const data = JSON.parse(await readFile(file, 'utf8'));
-    if (
-      !data ||
-      typeof data.enabled !== 'object' ||
-      Array.isArray(data.enabled) ||
-      data.enabled === null ||
-      Object.values(data.enabled).some((value) => typeof value !== 'boolean')
-    ) {
-      throw new Error('Invalid capability settings; the file was preserved');
-    }
-    return data.enabled;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {};
-    }
-    throw error;
-  }
+import { readSettings } from './read-settings.ts';
+
+/** Pure queries over the capability switches from one read. */
+export interface CapabilitySnapshot {
+  readonly enabled: (id: string, defaultEnabled?: boolean) => boolean;
+  readonly disabledMcpTools: (connection: string) => string[];
 }
-export async function capabilityEnabled(id: string, defaultEnabled = true): Promise<boolean> {
-  const flags = await readCapabilityFlags(capabilitiesFile());
-  return flags[id] ?? defaultEnabled;
+
+function snapshot(flags: Readonly<Partial<Record<string, boolean>>>): CapabilitySnapshot {
+  return {
+    enabled(id, defaultEnabled = true) {
+      const value = flags[id];
+      return typeof value === 'boolean' ? value : defaultEnabled;
+    },
+    disabledMcpTools(connection) {
+      const prefix = 'mcp_tool:' + connection + ':';
+      return Object.entries(flags)
+        .filter(([id, enabled]) => enabled === false && id.startsWith(prefix))
+        .map(([id]) => id.slice(prefix.length));
+    },
+  };
 }
-export async function connectionTools(name: string, tools: readonly string[]): Promise<string[]> {
-  const flags = await readCapabilityFlags(capabilitiesFile());
-  return tools.filter((tool) => flags['mcp_tool:' + name + ':' + tool] !== false);
-}
-/**
- * Whether the bridge turned a feature flag on. The bridge resolves flags and
- * publishes them next to the capability switches; unknown flags are off.
- */
-export async function featureEnabled(name: FeatureFlag): Promise<boolean> {
-  return (await readFeatureFlags(capabilitiesFile()))[name] === true;
-}
-async function readFeatureFlags(file?: string): Promise<Record<string, boolean>> {
-  if (!file) {
-    return {};
+
+const hasCapabilityFlags = Schema.is(
+  Schema.Struct({ enabled: Schema.Record(Schema.String, Schema.Boolean) }),
+);
+const hasFeatureFlags = Schema.is(
+  Schema.Struct({ features: Schema.Record(Schema.String, Schema.Unknown) }),
+);
+
+/** The settings published by the bridge. Reads see updates without restarting the agent. */
+export class AgentCapabilities extends Context.Service<
+  AgentCapabilities,
+  {
+    readonly read: Effect.Effect<CapabilitySnapshot, HostError>;
+    readonly featureEnabled: (flag: FeatureFlag) => Effect.Effect<boolean, HostError>;
   }
-  try {
-    const { features } = JSON.parse(await readFile(file, 'utf8'));
-    return features && typeof features === 'object' && !Array.isArray(features) ? features : {};
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {};
-    }
-    throw error;
-  }
+>()('@wisp/agent/AgentCapabilities') {}
+
+export function layerFromFile(
+  file = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE,
+) {
+  return Layer.effect(
+    AgentCapabilities,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const document = readSettings(fs, file);
+
+      const read = Effect.gen(function* () {
+        const data = yield* document;
+        if (data === undefined) return snapshot({});
+        if (!hasCapabilityFlags(data)) {
+          return yield* new HostError({
+            cause: new Error('Invalid capability settings; the file was preserved'),
+          });
+        }
+        return snapshot(data.enabled);
+      });
+
+      return AgentCapabilities.of({
+        read,
+        featureEnabled: (flag) =>
+          Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),
+      });
+    }),
+  );
 }

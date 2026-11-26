@@ -1,6 +1,8 @@
 import { Cause, Context, Effect, Exit, Layer, Logger, ManagedRuntime, Queue, Stream } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { v7 as uuidv7 } from 'uuid';
 import { EngineConfig, type EngineHost } from './host/engine-config.ts';
+import * as Capabilities from './host/capabilities.ts';
 import { Mcp } from './integrations/mcp-tools.ts';
 import { SessionModels } from './models/session-models.ts';
 import { compactHistory } from './execution/compaction.ts';
@@ -154,6 +156,8 @@ export function createAgentEngine(options: EngineOptions) {
           TurnToolbox.layer.pipe(Layer.provide(Mcp.layer)),
         ),
       ),
+      Layer.provide(Capabilities.layerFromFile(host.capabilitiesFile)),
+      Layer.provide(NodeFileSystem.layer),
       Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(host))),
       Layer.provideMerge(logging),
     ),

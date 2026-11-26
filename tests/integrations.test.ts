@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Effect } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import { AgentCapabilities, layerFromFile } from '@wisp/agent/capabilities';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '../apps/bridge/src/integrations/integration-state.ts';
 import { integrationContext, defaultCapabilities } from '@wisp/protocol/capabilities';
@@ -24,7 +27,12 @@ test('integration availability and master switches govern real tool definitions 
       inputSchema: z.object({}),
       execute: () => null,
     });
-    const resolve = async (_ctx: unknown) => ((await toolOffered(definition)) ? definition : null);
+    const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
+      Effect.provide(layerFromFile()),
+      Effect.provide(NodeFileSystem.layer),
+    );
+    const resolve = async (_ctx: unknown) =>
+      toolOffered(definition, await Effect.runPromise(readCapabilities)) ? definition : null;
     await settings.publish();
     assert.equal(await resolve({} as never), null, 'unreported addons are not offered');
     assert.equal(
