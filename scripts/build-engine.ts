@@ -47,11 +47,11 @@ export async function buildEngine() {
   await build({
     absWorkingDir: root,
     entryPoints: {
-      bridge: 'apps/bridge/src/main.ts',
-      install: 'apps/bridge/scripts/install.ts',
-      'migrate-desktop': 'apps/bridge/scripts/migrate-desktop.ts',
+      server: 'apps/server/src/main.ts',
+      install: 'apps/server/scripts/install.ts',
+      'migrate-desktop': 'apps/server/scripts/migrate-desktop.ts',
       // The self-test reads the agent's content with the code the bridge uses.
-      'agent-content': 'apps/agent/src/wisp/content.ts',
+      'agent-content': 'scripts/engine-content.ts',
     },
     outdir: directory,
     outExtension: { '.js': '.mjs' },
@@ -65,7 +65,7 @@ export async function buildEngine() {
     },
   });
   await cp(path.join(root, 'scripts/engine-entry.mjs'), path.join(directory, 'engine.mjs'));
-  await cp(path.join(root, 'apps/bridge/src/db/migrations'), path.join(directory, 'migrations'), {
+  await cp(path.join(root, 'packages/db/src/migrations'), path.join(directory, 'migrations'), {
     recursive: true,
   });
   await writeFile(

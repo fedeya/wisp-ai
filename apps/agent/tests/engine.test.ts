@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
+import { Effect, Logger, References } from 'effect';
+import { unavailableGameAccess } from '../src/host/game-access.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,6 +12,7 @@ import {
   createAgentEngine,
   searchTools,
   type EngineEvent,
+  type EngineOptions,
   type Entry,
   type TurnInput,
 } from '../src/engine.ts';
@@ -80,6 +83,7 @@ async function fixture(
   options: {
     appendFails?: (count: number) => boolean;
     beforeAppend?: (entries: readonly Entry[]) => Promise<void>;
+    logging?: EngineOptions['logging'];
     /** Game reads answer after this long, for a turn stopped while a tool runs. */
     inspectDelayMs?: number;
   } = {},
@@ -92,6 +96,7 @@ async function fixture(
     JSON.stringify({
       enabled: {
         ...Object.fromEntries(defaultCapabilities().map((capability) => [capability.id, false])),
+        'mcp:everloot': false,
         'tool:get_settings': true,
         'tool:query_character': true,
       },
@@ -112,12 +117,6 @@ async function fixture(
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(value));
     if (req.url?.startsWith('/session-model?')) {
       json({ model: 'offline-test', effort: 'provider-default', contextWindow });
-    } else if (req.url === '/inspect') {
-      inspections.push(JSON.parse(body));
-      setTimeout(
-        () => json({ status: 'completed', data: { settings: [], verified: true } }),
-        options.inspectDelayMs ?? 0,
-      );
     } else {
       const request = JSON.parse(body) as Item;
       requests.push(request);
@@ -161,7 +160,19 @@ async function fixture(
     origin: () => origin,
     token: 'offline-token',
     history,
-    logger: { info: () => {}, warn: () => {} },
+    gameAccess: {
+      ...unavailableGameAccess,
+      readSettings: (agentSession, args) =>
+        Effect.gen(function* () {
+          inspections.push({ agentSession, inspection: { kind: 'settings', args } });
+          if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
+          return {
+            status: 'available' as const,
+            data: { applications: [], options: [], verified: true },
+          };
+        }),
+    },
+    logging: options.logging,
   });
   async function send(
     session: string,
@@ -513,6 +524,7 @@ test(
   'a turn whose step cannot be logged fails with the store error',
   { timeout: 60_000 },
   async () => {
+    const logs: string[] = [];
     const f = await fixture(
       (count) =>
         count === 1
@@ -520,7 +532,15 @@ test(
           : message(count, 'Should not be reached.'),
       undefined,
       // The player's message logs; the first step does not.
-      { appendFails: (count) => count === 2 },
+      {
+        appendFails: (count) => count === 2,
+        logging: Logger.layer([
+          Logger.make(({ logLevel, fiber }) => {
+            const { event } = fiber.getRef(References.CurrentLogAnnotations);
+            if (typeof event === 'string') logs.push(`${logLevel}: ${event}`);
+          }),
+        ]),
+      },
     );
     try {
       const turn = await f.send(f.engine.newSessionId(), 'Which addons do I have?');
@@ -528,6 +548,7 @@ test(
         status: 'failed',
         error: { message: 'The disk is full.' },
       });
+      expect(logs).toContain('Warn: agent.turn_failed');
       expect(f.requests).toHaveLength(1);
     } finally {
       await f.close();

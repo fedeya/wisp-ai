@@ -1,6 +1,6 @@
-import { Context, Effect, Layer } from 'effect';
-import { hostCall, type HostError } from '../execution/engine-errors.ts';
-import { readInstructions, readSkills, type AuthoredSkill } from './content.ts';
+import { Context, Duration, Effect, Exit, FileSystem, Layer } from 'effect';
+import type { HostError } from '../execution/engine-errors.ts';
+import { readContent, type AuthoredSkill } from './content.ts';
 import { SKILL } from '../tools/turn-tools.ts';
 
 export interface WispContent {
@@ -31,24 +31,26 @@ export function systemPrompt(instructions: string, skills: AuthoredSkill[]) {
   ].join('\n\n');
 }
 
-let content: Promise<WispContent> | undefined;
-/** Wisp's instructions and skills (src/wisp), read once. */
-export function wispContent() {
-  content ??= Promise.all([readInstructions(), readSkills()]).then(([instructions, skills]) => ({
-    system: systemPrompt(instructions, skills),
-    skills,
-  }));
-  content.catch(() => (content = undefined));
-  return content;
-}
-
-/** Wisp's instructions and skills, read once per process. */
+/** Wisp's instructions and skills, cached after the first successful load. */
 export class WispAgent extends Context.Service<
   WispAgent,
   { readonly content: Effect.Effect<WispContent, HostError> }
->()('@wisp/agent/WispAgent') {
-  static readonly layer = Layer.succeed(
-    WispAgent,
-    WispAgent.of({ content: hostCall(() => wispContent()) }),
-  );
-}
+>()('@wisp/agent/WispAgent') {}
+
+export const layer = Layer.effect(
+  WispAgent,
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const load = readContent().pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.map(({ instructions, skills }) => ({
+        system: systemPrompt(instructions, skills),
+        skills,
+      })),
+    );
+    const content = yield* Effect.cachedWithTTL(load, (exit) =>
+      Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
+    );
+    return WispAgent.of({ content });
+  }),
+);

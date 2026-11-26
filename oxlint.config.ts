@@ -29,7 +29,7 @@ export default defineConfig({
         'no-restricted-imports': [
           'error',
           {
-            patterns: ['@wisp/bridge', '@wisp/bridge/*'],
+            patterns: ['@wisp/server', '@wisp/server/*'],
           },
         ],
       },
@@ -41,8 +41,8 @@ export default defineConfig({
           'error',
           {
             patterns: [
-              '@wisp/bridge',
-              '@wisp/bridge/*',
+              '@wisp/server',
+              '@wisp/server/*',
               '@wisp/agent',
               '@wisp/agent/*',
               '@wisp/desktop',

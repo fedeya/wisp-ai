@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, access, mkdir, rm, readdir } from 'node:f
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { installerBuildVersion } from './installer-version.ts';
-import { addonVersionFromToc } from '../apps/bridge/src/addon/addon-version.ts';
+import { addonVersionFromToc } from '../apps/server/src/game/addon-version.ts';
 import { addonReleaseVersion } from './addon-release-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {

@@ -75,10 +75,8 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
       rows.push([value(-2) as string | number, value(-1)]);
       lua.lua_pop(L, 1);
     }
-    if (
-      rows.length &&
-      rows.every(([key]) => typeof key === 'number' && key >= 1 && key <= rows.length)
-    ) {
+    // WoW SerializeJSON also represents an empty Lua table as an array.
+    if (rows.every(([key]) => typeof key === 'number' && key >= 1 && key <= rows.length)) {
       return rows.sort(([a], [b]) => Number(a) - Number(b)).map(([, child]) => child);
     }
     return Object.fromEntries(rows);

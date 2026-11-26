@@ -2,7 +2,9 @@ import { Context, Effect, Layer } from 'effect';
 import { localMemory, memorySlots } from '../wisp/agent-memory.ts';
 import { toolOffered } from './enabled-tool.ts';
 import { EngineConfig } from '../host/engine-config.ts';
-import { hostCall, type HostError } from '../execution/engine-errors.ts';
+import { AgentCapabilities } from '../host/capabilities.ts';
+import { GameAccess } from '../host/game-access.ts';
+import type { HostError } from '../execution/engine-errors.ts';
 import { Mcp } from '../integrations/mcp-tools.ts';
 import type { ToolDefinition } from './tool.ts';
 import { authoredTools } from '../wisp/tool-registry.ts';
@@ -31,32 +33,35 @@ export class TurnToolbox extends Context.Service<
     TurnToolbox,
     Effect.gen(function* () {
       const { stub } = yield* EngineConfig;
+      const settings = yield* AgentCapabilities;
       const mcp = yield* Mcp;
-
-      const own = (session: string) =>
-        hostCall(async (signal) => {
-          const direct: Record<string, ToolDefinition> = {};
-          const deferred: DeferredTool[] = [];
-          const memory: string[] = [];
-          for (const [name, tool] of Object.entries(authoredTools)) {
-            if (!(await toolOffered(tool))) continue;
-            if (tool.deferred) deferred.push(authored(name, tool, stub));
-            else direct[name] = tool;
-          }
-          for (const slot of memorySlots) {
-            const slotMemory = localMemory(slot);
-            if (!(await slotMemory.scope(session, signal))) continue;
-            Object.assign(direct, slotMemory.tools());
-            const recalled = await slotMemory.recall(session, signal);
-            if (recalled) memory.push(recalled);
-          }
-          return { direct, deferred, memory: memory.join('\n\n') };
-        });
+      const gameAccess = yield* GameAccess;
 
       const tools = Effect.fn('TurnToolbox.tools')(function* (session: string) {
-        const turn = yield* own(session);
-        for (const tool of yield* mcp.tools) {
-          turn.deferred.push({
+        const capabilities = yield* settings.read;
+        const direct: Record<string, ToolDefinition> = {};
+        const deferred: DeferredTool[] = [];
+        const memory: string[] = [];
+        const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+        for (const [name, tool] of Object.entries(authoredTools)) {
+          if (!toolOffered(tool, capabilities)) continue;
+          const bound: ToolDefinition = {
+            ...tool,
+            execute: (input, ctx) =>
+              tool.execute(input, { ...ctx, gameAccess, runEffect: runPromise }),
+          };
+          if (tool.deferred) deferred.push(authored(name, bound, stub));
+          else direct[name] = bound;
+        }
+        for (const slot of memorySlots) {
+          const slotMemory = localMemory(slot);
+          if (!(yield* slotMemory.scope(session, capabilities))) continue;
+          Object.assign(direct, slotMemory.tools());
+          const recalled = yield* slotMemory.recall(session);
+          if (recalled) memory.push(recalled);
+        }
+        for (const tool of yield* mcp.tools(session, capabilities)) {
+          deferred.push({
             name: tool.name,
             description: tool.description,
             inputSchema: tool.inputSchema,
@@ -64,14 +69,20 @@ export class TurnToolbox extends Context.Service<
               const fixture = stub?.(tool.name, input);
               return fixture
                 ? Promise.resolve().then(() => stubbed(fixture))
-                : tool.call(
-                    input && typeof input === 'object' ? (input as Record<string, unknown>) : {},
-                    ctx.signal,
+                : runPromise(
+                    tool
+                      .call(
+                        input && typeof input === 'object'
+                          ? (input as Record<string, unknown>)
+                          : {},
+                      )
+                      .pipe(Effect.mapError((error) => error.cause)),
+                    { signal: ctx.signal },
                   );
             },
           });
         }
-        return turn;
+        return { direct, deferred, memory: memory.join('\n\n') };
       });
 
       return TurnToolbox.of({ tools });

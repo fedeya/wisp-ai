@@ -7,7 +7,7 @@ import {
   DOWNLINK_HELPERS,
   decodeFrame,
   encodeFrame,
-} from '@wisp/bridge/mailbox';
+} from '@wisp/wow-bridge/mailbox';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');

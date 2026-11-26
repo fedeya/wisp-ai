@@ -18,8 +18,8 @@ if (mode === '--version') {
     throw Error('SQLite is unavailable in the packaged engine.');
   }
   db.close();
-  const { readInstructions, readSkills } = await import('./agent-content.mjs');
-  const [instructions, skills] = await Promise.all([readInstructions(), readSkills()]);
+  const { loadAgentContent } = await import('./agent-content.mjs');
+  const { instructions, skills } = await loadAgentContent();
   if (!instructions.trim() || !skills.length) {
     throw Error('The agent instructions or skills are missing from the packaged engine.');
   }
@@ -38,7 +38,7 @@ if (mode === '--version') {
   await import('./npm/bin/npx-cli.js');
 } else {
   const commands = {
-    'src/main.ts': './bridge.mjs',
+    'src/main.ts': './server.mjs',
     'scripts/install.ts': './install.mjs',
     'scripts/migrate-desktop.ts': './migrate-desktop.mjs',
   };

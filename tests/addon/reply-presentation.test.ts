@@ -1,10 +1,10 @@
 import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { applyEvent } from '@wisp/bridge/events';
-import { ReplyProjection } from '@wisp/bridge/reply-stream';
-import { replyContent } from '../../apps/bridge/src/reply/reply-content.ts';
+import { newChat } from '@wisp/server/chat-lifecycle';
+import { applyEvent } from '@wisp/server/events';
+import { ReplyProjection } from '@wisp/server/reply-stream';
+import { replyContent } from '../../apps/server/src/reply/reply-content.ts';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');

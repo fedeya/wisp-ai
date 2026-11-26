@@ -134,7 +134,7 @@ export function dungeonLoot(
     tables: ['AreaTable', 'Map'],
     credits:
       'Loot facts from AtlasLoot Classic Forever by Sliccer (CurseForge project 1422985, GPL-2.0-or-later), release pinned in build.json.',
-    output: { format: 'json', path: 'apps/bridge/src/integrations/dungeon-loot.json' },
+    output: { format: 'json', path: 'apps/agent/src/wisp/dungeon-loot.json' },
     async build(tables) {
       const [areaRows, maps] = await Promise.all([tables.read('AreaTable'), tables.read('Map')]);
       const areas = new Map(areaRows.map((row) => [num(row, 'ID'), str(row, 'AreaName_lang')]));

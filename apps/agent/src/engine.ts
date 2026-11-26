@@ -1,12 +1,10 @@
-import { Cause, Context, Effect, Exit, Layer, ManagedRuntime, Queue, Stream } from 'effect';
+import { Cause, Context, Effect, Exit, Layer, Logger, ManagedRuntime, Queue, Stream } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { v7 as uuidv7 } from 'uuid';
-import {
-  EngineConfig,
-  hostLayer,
-  type EngineHost,
-  type EngineLogger,
-} from './host/engine-config.ts';
-import { Mcp } from './integrations/mcp-tools.ts';
+import { EngineConfig, type EngineHost } from './host/engine-config.ts';
+import * as Capabilities from './host/capabilities.ts';
+import * as Mcp from './integrations/mcp-tools.ts';
+import * as Everloot from './integrations/everloot.ts';
 import { SessionModels } from './models/session-models.ts';
 import { compactHistory } from './execution/compaction.ts';
 import {
@@ -22,15 +20,11 @@ import type { Emit, EngineEvent } from './execution/turn-events.ts';
 import type { TurnInput } from './execution/turn-input.ts';
 import { SessionHistory, type HistoryError, type HistoryStore } from './session/session-history.ts';
 import { TurnToolbox } from './tools/turn-toolbox.ts';
-import { WispAgent } from './wisp/wisp-agent.ts';
+import { GameAccess, unavailableGameAccess } from './host/game-access.ts';
+import * as Wisp from './wisp/wisp-agent.ts';
 
 export type { ModelMessage } from 'ai';
-export {
-  EngineConfig,
-  hostLayer,
-  type EngineHost,
-  type EngineLogger,
-} from './host/engine-config.ts';
+export { EngineConfig, type EngineHost } from './host/engine-config.ts';
 export { Mcp } from './integrations/mcp-tools.ts';
 export { SessionModels, type SelectedModel } from './models/session-models.ts';
 export { compactionSplit, estimateTokens } from './execution/compaction.ts';
@@ -76,7 +70,9 @@ export interface EngineResult {
 
 export interface EngineOptions extends EngineHost {
   history: HistoryStore;
-  logger: EngineLogger;
+  gameAccess?: GameAccess['Service'];
+  /** Hosts can supply their own Effect logging layer; otherwise the engine is silent. */
+  logging?: Layer.Layer<never>;
 }
 
 /** A program's events as a stream that ends with it, or fails with its error. */
@@ -106,7 +102,7 @@ export class AgentEngine extends Context.Service<
     Effect.gen(function* () {
       const { stub } = yield* EngineConfig;
       const history = yield* SessionHistory;
-      const wisp = yield* WispAgent;
+      const wisp = yield* Wisp.WispAgent;
       const models = yield* SessionModels;
       const toolbox = yield* TurnToolbox;
       const turnDependencies = { stub, history, wisp, models, toolbox };
@@ -152,18 +148,27 @@ const aborted = (signal: AbortSignal) =>
  * cancellation enters here, as an AbortSignal that interrupts its stream.
  */
 export function createAgentEngine(options: EngineOptions) {
-  const { history, ...host } = options;
+  const {
+    history,
+    gameAccess = unavailableGameAccess,
+    logging = Logger.layer([]),
+    ...host
+  } = options;
   const runtime = ManagedRuntime.make(
     AgentEngine.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           SessionHistory.layer(history),
-          WispAgent.layer,
+          Wisp.layer,
           SessionModels.layer,
-          TurnToolbox.layer.pipe(Layer.provide(Mcp.layer)),
+          TurnToolbox.layer.pipe(Layer.provide(Mcp.layer([Everloot.profile]))),
         ),
       ),
-      Layer.provideMerge(hostLayer(host)),
+      Layer.provide(Capabilities.layerFromFile(host.capabilitiesFile)),
+      Layer.provide(Layer.succeed(GameAccess, gameAccess)),
+      Layer.provide(NodeFileSystem.layer),
+      Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(host))),
+      Layer.provideMerge(logging),
     ),
   );
 

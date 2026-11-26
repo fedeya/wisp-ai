@@ -1,18 +1,20 @@
-import { Context, Layer, Logger, References } from 'effect';
+import { Context } from 'effect';
 import type { ToolStub } from '../tools/turn-tools.ts';
-
-export interface EngineLogger {
-  info: (data: object, message: string) => void;
-  warn: (data: object, message: string) => void;
-}
+import type { McpManager } from '../integrations/mcp-manager.ts';
 
 /** What the engine needs from its host. */
 export interface EngineHost {
   /** The bridge's loopback agent endpoint and its token. */
   readonly origin: () => string;
   readonly token: string;
-  /** Player-configured MCP servers (`mcp.json`). */
-  readonly mcpConfigFile?: () => string | undefined;
+  /** The bridge's published capability and feature settings. */
+  readonly capabilitiesFile?: () => string | undefined;
+  /** The shared MCP service and the host's live policy for each turn. */
+  readonly mcp?: {
+    readonly manager: McpManager;
+    readonly allowed: (server: string, tool?: string) => boolean;
+    readonly readOnly: (session: string) => boolean;
+  };
   /** Evals answer tools from fixtures: a stub result replaces the tool's own. */
   readonly stub?: ToolStub;
 }
@@ -20,29 +22,3 @@ export interface EngineHost {
 export class EngineConfig extends Context.Service<EngineConfig, EngineHost>()(
   '@wisp/agent/EngineConfig',
 ) {}
-
-const text = (message: unknown) =>
-  Array.isArray(message) ? message.map(String).join(' ') : String(message);
-
-/**
- * Effect's logs, written to the host's logger: the message, with the log
- * annotations (`event`, `error`, ...) as its structured data. Warnings and
- * worse go to `warn`.
- */
-export const hostLogger = (logger: EngineLogger) =>
-  Logger.layer([
-    Logger.make(({ message, logLevel, fiber }) => {
-      const data = { ...fiber.getRef(References.CurrentLogAnnotations) };
-      if (logLevel === 'Warn' || logLevel === 'Error' || logLevel === 'Fatal') {
-        logger.warn(data, text(message));
-      } else {
-        logger.info(data, text(message));
-      }
-    }),
-  ]);
-
-/** The engine's configuration and logging for a host. */
-export const hostLayer = (host: EngineHost & { logger: EngineLogger }) => {
-  const { logger, ...config } = host;
-  return Layer.merge(Layer.succeed(EngineConfig, EngineConfig.of(config)), hostLogger(logger));
-};

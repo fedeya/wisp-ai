@@ -99,3 +99,7 @@ const guides: Readonly<Partial<Record<string, IntegrationGuide>>> = {
 export function integrationGuide(id: string): IntegrationGuide | undefined {
   return guides[id];
 }
+
+export function integrationGuideLinks() {
+  return Object.values(guides).flatMap((guide) => guide?.link?.url ?? []);
+}

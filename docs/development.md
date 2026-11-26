@@ -71,9 +71,9 @@ exports. This lets a package typecheck before its own build has produced `dist/`
 | `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
 Use `pnpm test:addon`, `pnpm test:core`, `pnpm test:integration` or `pnpm test:ui`
-for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp/bridge`
+for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp/server`
 (or `@wisp/agent`, `@wisp/protocol`, `@wisp/releases`, `@wisp/scripts`, `@wisp/web`).
-For a file, run `pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/routines.test.ts`.
+For a file, run `pnpm exec turbo run test --filter=@wisp/server -- apps/server/tests/routines.test.ts`.
 `pnpm test:watch` watches the task graph and rebuilds dependencies before rerunning tests.
 The root integration task includes addon Lua sources and transport fixtures as
 inputs, so addon changes also rerun the cross-language transport tests.
@@ -85,7 +85,7 @@ see the CI workflow for their build prerequisites and command. Simulator and nat
 tests keep their existing skips when the required binaries are absent.
 
 CI runs the general TypeScript suites on Ubuntu, excluding
-`apps/bridge/tests/simulation.test.ts`. A separate Windows job runs that complete
+`apps/server/tests/simulation.test.ts`. A separate Windows job runs that complete
 file against the pinned simulator, so engine tests do not silently skip on Linux.
 On `main`, Windows release runs the validation workflow in parallel with packaging
 and installer verification. Nightly publication waits for both to pass. The release
@@ -205,7 +205,7 @@ The native host sets `WISP_TELEMETRY_RELEASE=1` only in release builds without
 `WISP_PAYLOAD_ROOT` or an external `DO_NOT_TRACK=1`. Source bridge runs default to
 disabled.
 
-`apps/bridge/src/telemetry.ts` reads the native preference before each send and
+`apps/server/src/telemetry.ts` reads the native preference before each send and
 reports `chat_completed`, `tool_executed`, `web_search_finished`, `game_connected`,
 `game_connection_finished` and daily `app_active`.
 Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
@@ -220,7 +220,7 @@ endpoints or connection names. Failed and timed-out chats add `failure_kind` whe
 a model request that the bridge proxied for that chat failed during the turn.
 The agent names its session in an `x-wisp-session` header that the bridge
 does not forward, so concurrent chats on one connection keep their own
-failures (`apps/bridge/src/models/model-failures.ts`). It comes from the provider's
+failures (`apps/server/src/models/model-failures.ts`). It comes from the provider's
 HTTP status (`bad_request`, `auth`, `not_found`, `rate_limited`, `provider_error`,
 `http_other`) or the kind of thrown error (`network`, `timeout`, or
 `wisp_rejected` when the bridge refused the request), never from the provider's
@@ -296,30 +296,35 @@ pnpm install-addon "E:\Blizzard\World of Warcraft\_forever_"
 pnpm start
 ```
 
-Replace the example with the folder containing `Wow.exe`. Installation updates `config.local.json`; fully restart WoW on first install. `start` builds the protocol and launches the bridge, but provides no sign-in UI. It needs Wisp authorization, a configured data root and the native credential helper: set `WISP_DESKTOP_EXE` or use the release executable under `apps/desktop/src-tauri/target/release/`. Stop the desktop bridge first to avoid port/data conflicts. See [data-root configuration](usage.md#local-data-and-deletion).
+Replace the example with the folder containing `Wow.exe`. Installation updates `config.local.json`; fully restart WoW on first install. `start` builds the protocol and launches the local Wisp server, but provides no sign-in UI. It needs Wisp authorization, a configured data root and the native credential helper: set `WISP_DESKTOP_EXE` or use the release executable under `apps/desktop/src-tauri/target/release/`. Stop the server started by Desktop first to avoid port/data conflicts. See [data-root configuration](usage.md#local-data-and-deletion).
 
 ## Source map
 
 | Area                          | Entry points                                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
 | Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
-| Bridge and agent engine       | [main.ts](../apps/bridge/src/main.ts), [engine.ts](../apps/agent/src/engine.ts)               |
+| Local Wisp server             | [entrypoint](../apps/server/src/main.ts), [runtime](../apps/server/src/runtime.ts)            |
+| Desktop HTTP API              | [API](../apps/server/src/api)                                                                 |
+| WoW bridge                    | [addon transport](../packages/wow-bridge/src)                                                 |
+| Agent engine                  | [engine.ts](../apps/agent/src/engine.ts)                                                      |
 | Agent tools and behavior      | [definitions](../apps/agent/src/wisp), [instructions](../apps/agent/src/wisp/instructions.md) |
 | Shared contracts              | [protocol](../packages/protocol/src)                                                          |
 | Game UI, readings and actions | [addon](../addon/WispAI)                                                                      |
 
-The bridge owns accounts, persistence and tool execution, and runs the agent in process. It prefers loopback **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+The Wisp server runs alongside Desktop. It composes the agent, storage, the WoW bridge and the Desktop API in one backend process. The WoW bridge exchanges data with the addon; the `game/` module connects that transport to Wisp's state and workflows. Desktop goes through its native host to call the API.
 
-The agent runs inside the bridge on the [AI SDK](https://ai-sdk.dev), with each
+The server prefers loopback **43187** for the agent RPC/model endpoint and **43190** for the Desktop API. If a preferred port is occupied, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+
+The agent runs inside the server on the [AI SDK](https://ai-sdk.dev), with each
 turn run as an [Effect](https://effect.website) program:
 
 ```text
 apps/agent/src/
-  engine.ts     AgentEngine: service wiring and the bridge-facing API
+  engine.ts     AgentEngine: service wiring and the in-process entrypoint
   execution/    Turn execution, stream events, and compaction
   session/      Session log and replay
   models/       Model selection and provider adapters
-  host/         Agent configuration and bridge RPC
+  host/         Agent configuration and host RPC
   tools/        Per-turn toolbox and AI SDK tool assembly
   integrations/ MCP and web fetching
   wisp/         Instructions, skills, memory, and authored tools
@@ -359,7 +364,7 @@ schemas and enforceable constraints in code.
 execution, permission denial and follow-up turns with the real agent and an
 offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals with
 [vitest-evals](https://vitest-evals.sentry.dev/docs/) against a real model through
-the eval bridge. Sign in once with `node apps/bridge/src/evals/eval-bridge.ts sign-in`.
+the eval bridge. Sign in once with `node apps/server/src/evals/eval-bridge.ts sign-in`.
 Each case runs one engine turn. Gates fail the test; scorers are informational.
 Pass a filename filter (e.g. `boss-loot`) or `--tagsFilter gear` to select cases.
 Set `WISP_EVAL_GRADE=1` to add the binary answer judges (one Pass/Fail verdict per
@@ -425,11 +430,11 @@ Component contracts live in `apps/agent/src/contract/ui-schema.ts` and
 renderer. The historical NDJSON reader is isolated in `legacy-reply.ts` and is
 used only for saved replies from earlier versions.
 
-The bridge entrypoint only starts the runtime and handles process signals.
+The server entrypoint starts the runtime and handles process signals.
 `runtime.ts` composes services; `packet-receiver.ts` owns game-session coordination,
 `turn-runner.ts` executes agent turns, `game-requests.ts` scopes pending game reads,
 and the agent and desktop handlers expose their respective HTTP contracts.
-Dependencies and ports can be supplied to `startBridge` for isolated integration tests.
+Dependencies and ports can be supplied to `startServer` for isolated integration tests.
 
 - Shared Zod schemas define requests, responses and persisted conversation data.
   Validate external data before using it; derive TypeScript types from schemas.
@@ -465,6 +470,6 @@ Vitest projects and native tests must pass before packaging and signing.
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
 implement its adapter and readiness checks together in a provider file under
 `addon/WispAI/Integrations/`, register it in `WispAI.toc` and the shared
-`Integrations.lua` coordinator / `apps/bridge/src/integrations/integration-state.ts`, and test
+`Integrations.lua` coordinator / `apps/server/src/integrations/integration-state.ts`, and test
 missing/incompatible providers and disabled-tool admission. Integrations supply
 tools; reply panels and automatic suggestions remain separate features.

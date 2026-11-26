@@ -11,52 +11,6 @@ export const capabilitySchema = z.object({
   defaultEnabled: z.boolean().optional(),
 });
 export type Capability = z.infer<typeof capabilitySchema>;
-export const everlootTools = [
-  'search_knowledge',
-  'item_page',
-  'npc_page',
-  'object_page',
-  'quest_page',
-  'vendor_page',
-  'world_map_near',
-  'entity_relations',
-  'item_categories',
-  'talent_tree',
-  'talent_plan',
-  'class_races',
-  'profession_path',
-  'recipe_thresholds',
-  'market_value',
-  'auction_history',
-  'coverage',
-  'recent_changes',
-];
-const everlootDescriptions: Record<string, [string, string]> = {
-  search_knowledge: ['Search Everloot', 'Search Forever game information.'],
-  item_page: ['Item details', 'Look up an item in Everloot.'],
-  npc_page: ['NPC details', 'Look up an NPC in Everloot.'],
-  object_page: ['Object details', 'Look up a world object in Everloot.'],
-  quest_page: ['Quest details', 'Look up a quest in Everloot.'],
-  vendor_page: ['Vendor details', 'Look up a vendor and their stock.'],
-  world_map_near: ['Nearby locations', 'Find locations near a point on the map.'],
-  entity_relations: [
-    'Related game data',
-    'Find connections between items, NPCs, objects and quests.',
-  ],
-  item_categories: ['Item categories', 'Browse categories of items.'],
-  talent_tree: ['Talent trees', 'Look up a class’s talent trees.'],
-  talent_plan: ['Talent plans', 'Look up talent build information.'],
-  class_races: ['Classes and races', 'Look up which races can play a class.'],
-  profession_path: ['Profession leveling', 'Look up progression information for a profession.'],
-  recipe_thresholds: [
-    'Recipe skill levels',
-    'Look up the skill levels at which recipes change difficulty.',
-  ],
-  market_value: ['Market prices', 'Look up recorded market prices.'],
-  auction_history: ['Auction history', 'Look up past auction observations.'],
-  coverage: ['Data coverage', 'Check which game data Everloot has.'],
-  recent_changes: ['Game updates', 'Look up recent Forever changes.'],
-};
 export const toolDescriptions: Record<string, [string, string]> = {
   manage_routine: [
     'Routines',
@@ -338,21 +292,6 @@ export function defaultCapabilities(): Capability[] {
       description:
         'Remember the guide and goals you’re following with this character. Turning this off keeps your saved notes.',
     },
-    {
-      id: 'mcp:everloot',
-      name: 'Everloot',
-      group: 'integrations',
-      kind: 'mcp',
-      description: 'Look up Forever drops, vendors, professions and market history.',
-    },
-    ...everlootTools.map((name) => ({
-      id: 'mcp_tool:everloot:' + name,
-      name: everlootDescriptions[name][0],
-      toolName: name,
-      group: 'integrations' as const,
-      parent: 'mcp:everloot',
-      description: everlootDescriptions[name][1],
-    })),
   ];
 }
 

@@ -1,4 +1,6 @@
 import { test, expect } from 'vitest';
+import { Effect } from 'effect';
+import { unavailableGameAccess } from '@wisp/agent/game-access';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,12 +9,12 @@ import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine, type TurnInput } from '@wisp/agent/engine';
 import { MemoryHistory } from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { applyEvent } from '@wisp/bridge/events';
-import { ReplyProjection } from '@wisp/bridge/reply-stream';
-import { turnInput } from '@wisp/bridge/context';
-import { rebuildHistory } from '../apps/bridge/src/chat/history.ts';
-import { replyContent } from '../apps/bridge/src/reply/reply-content.ts';
+import { newChat } from '@wisp/server/chat-lifecycle';
+import { applyEvent } from '@wisp/server/events';
+import { ReplyProjection } from '@wisp/server/reply-stream';
+import { turnInput } from '@wisp/server/context';
+import { rebuildHistory } from '../apps/server/src/chat/history.ts';
+import { replyContent } from '../apps/server/src/reply/reply-content.ts';
 
 type Item = Record<string, unknown>;
 
@@ -27,6 +29,7 @@ test(
       JSON.stringify({
         enabled: {
           ...Object.fromEntries(defaultCapabilities().map((capability) => [capability.id, false])),
+          'mcp:everloot': false,
           'tool:get_settings': true,
           'tool:get_quest': true,
           'tool:query_character': true,
@@ -69,24 +72,6 @@ test(
         } catch (error) {
           res.writeHead(503).end((error as Error).message);
         }
-        return;
-      }
-      if (req.url === '/inspect') {
-        const request = JSON.parse(body);
-        toolCalls.push(request);
-        const result =
-          request.inspection.kind === 'questie_quest'
-            ? {
-                status: 'available',
-                data: {
-                  status: 'available',
-                  questId: 166,
-                  data: { name: 'The Defias Brotherhood' },
-                  reference: { kind: 'quest', id: 166 },
-                },
-              }
-            : { status: 'completed', data: { settings: [], verified: true } };
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
       requests.push(JSON.parse(body));
@@ -205,13 +190,37 @@ test(
     });
     await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
-    setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
+    setAgentHost({ origin, token: 'offline-token' });
     const history = new MemoryHistory();
     const engine = createAgentEngine({
       origin: () => origin,
       token: 'offline-token',
+      capabilitiesFile: () => flags,
       history,
-      logger: { info: () => {}, warn: () => {} },
+      gameAccess: {
+        ...unavailableGameAccess,
+        readSettings: (agentSession, args) =>
+          Effect.sync(() => {
+            toolCalls.push({ agentSession, inspection: { kind: 'settings', args } });
+            return {
+              status: 'available' as const,
+              data: { applications: [], options: [], verified: true },
+            };
+          }),
+        readQuestieQuest: (agentSession, args) =>
+          Effect.sync(() => {
+            toolCalls.push({ agentSession, inspection: { kind: 'questie_quest', args } });
+            return {
+              status: 'available',
+              data: {
+                status: 'available',
+                questId: 166,
+                data: { name: 'The Defias Brotherhood' },
+                reference: { kind: 'quest', id: 166 },
+              },
+            } as const;
+          }),
+      },
     });
     const session = engine.newSessionId();
     const send = (input: TurnInput) =>
@@ -319,7 +328,7 @@ test(
         expect.objectContaining({ inspection: expect.objectContaining({ kind: 'settings' }) }),
       ]);
       expect(JSON.parse(String(output(4, 'tool-call-4')))).toMatchObject({
-        status: 'completed',
+        status: 'available',
         data: { verified: true },
       });
 

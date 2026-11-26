@@ -1,5 +1,5 @@
 import { test } from 'vitest';
-import { adapters } from '../../apps/bridge/src/integrations/simulation/adapters/index.ts';
+import { adapters } from '../../apps/server/src/integrations/simulation/adapters/index.ts';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -52,7 +52,7 @@ test('native executable reuse ignores external runtime payload but invalidates e
     await project(root);
     const original = await nativeBuildKey(root, context);
     await put(root, 'apps/agent/src/wisp/tools/example.ts', 'new agent tool');
-    await put(root, 'apps/bridge/src/main.ts', 'updated bridge');
+    await put(root, 'apps/server/src/main.ts', 'updated bridge');
     await put(root, 'addon/WispAI/UI/Window.lua', 'updated addon');
     await put(root, 'apps/desktop/src-tauri/resources/payload/BUILD.json', 'new release commit');
     await put(root, 'apps/desktop/src-tauri/target/release/wisp.exe', 'old build output');

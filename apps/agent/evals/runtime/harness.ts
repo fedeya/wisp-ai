@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
+import { Effect, Schema } from 'effect';
+import { inspectionResults, unavailableGameAccess } from '../../src/host/game-access.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -11,7 +13,11 @@ import { createAgentEngine } from '../../src/engine.ts';
 import type { ToolStubOutcome } from '../../src/engine.ts';
 import { agentHost } from '../../src/host/agent-host.ts';
 import { MemoryHistory } from '../../src/session/memory-history.ts';
-import { playerMessage } from '../fixtures/fedrath.ts';
+import { itemSourcesFixture, playerMessage } from '../fixtures/fedrath.ts';
+import { gameItemReadings } from '../fixtures/dungeon-loot.ts';
+
+const lootItems = gameItemReadings();
+const itemSources = itemSourcesFixture();
 
 /**
  * A rule for one input field: equal to `const`, a string matching a regular
@@ -60,7 +66,38 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
       origin: () => host.origin,
       token: host.token,
       history: new MemoryHistory(),
-      logger: { info: () => {}, warn: () => {} },
+      gameAccess: {
+        ...unavailableGameAccess,
+        itemSources: (_session, args) =>
+          Effect.sync(() => ({
+            status: 'available',
+            items: [...new Set(args.itemIds)].map(
+              (itemId) =>
+                itemSources[itemId] ?? {
+                  itemId,
+                  sourceKnown: false,
+                  sourcesStatus: 'available',
+                },
+            ),
+            priceStatus: 'available',
+            realm: 'Vorn',
+            note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
+          })),
+        readGearCandidates: (_session, args) =>
+          Effect.sync(() => {
+            const found = args.itemIds.map((id) => lootItems[id]).filter(Boolean);
+            return {
+              status: 'available',
+              data: {
+                status: 'available',
+                items: found.filter((entry) => entry.kind === 'item').map((entry) => entry.reading),
+                other: found
+                  .filter((entry) => entry.kind === 'other')
+                  .map((entry) => entry.reading),
+              },
+            };
+          }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(inspectionResults.gear_candidates))),
+      },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });
     try {

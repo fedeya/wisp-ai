@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGame } from '../../tools/game-tool.ts';
 import { flightPathsInput } from '../../contract/game-inspection.ts';
 
 export default enabledTool(
@@ -12,10 +12,6 @@ export default enabledTool(
     inputSchema: flightPathsInput,
     label: { start: () => 'Checking flight paths', complete: () => 'Checked flight paths' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'flight_paths', args } },
-        ctx.abortSignal,
-      ),
+      runGame(ctx, (game) => game.readFlightPaths(ctx.session.id, args)),
   }),
 );

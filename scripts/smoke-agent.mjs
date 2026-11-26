@@ -5,9 +5,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { Effect } from 'effect';
+import { smokeGameAccess } from './smoke-game-access.ts';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const root = process.env.WISP_RESOURCE_ROOT || repository;
-const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/bridge');
+const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/server');
 const require = createRequire(path.join(bridge, 'package.json'));
 const dir =
   process.env.WISP_SMOKE_DIR || path.resolve(repository, '../../work', 'agent-smoke-' + Date.now());
@@ -15,7 +17,8 @@ await mkdir(dir, { recursive: true });
 const load = (p) => import(pathToFileURL(path.join(bridge, p)).href);
 const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
   { NativeVault } = await load('src/auth/secret-vault.ts'),
-  { proxyModel } = await load('src/models/model-proxy.ts'),
+  { createModelProxy } = await load('src/models/model-proxy.ts'),
+  { bridgeLogging } = await load('src/logger.ts'),
   { TheWoWDB } = await load('src/integrations/thewowdb.ts'),
   { searchPublicWeb } = await load('src/integrations/search/public-web-search.ts'),
   { applyEvent } = await load('src/chat/events.ts'),
@@ -40,16 +43,23 @@ const simulationSnapshot = process.env.WISP_SMOKE_CHARACTER
   ? JSON.parse(await readFile(process.env.WISP_SMOKE_CHARACTER, 'utf8'))
   : undefined;
 const researchMode = process.env.WISP_SMOKE_RESEARCH === '1';
+const { gameAccess, reads: gameReads } = smokeGameAccess({
+  addonFixtures,
+  researchMode,
+  simulationSnapshot,
+});
 const simulator = new Simulator(root);
 const dataRoot = process.env.WISP_DATA_DIR || root;
 const config = JSON.parse(await readFile(path.join(dataRoot, 'config.local.json'), 'utf8')),
   model = config.model || 'gpt-6.1-sol';
-const auth = new ChatGPTAuth(
-  path.join(dataRoot, 'runtime'),
-  new NativeVault(
-    process.env.WISP_DESKTOP_EXE ||
-      path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
-  ),
+const auth = Effect.runSync(
+  ChatGPTAuth.make(
+    path.join(dataRoot, 'runtime'),
+    new NativeVault(
+      process.env.WISP_DESKTOP_EXE ||
+        path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
+    ),
+  ).pipe(Effect.provide(bridgeLogging)),
 );
 await auth.load();
 const t = auth.saved.profiles.find((p) => p.id === auth.saved.activeId)?.tokens;
@@ -64,6 +74,7 @@ const scopedAuth = {
     return fetch(url, { ...init, headers, redirect: 'error' });
   },
 };
+const proxyModel = Effect.runSync(createModelProxy(scopedAuth).pipe(Effect.provide(bridgeLogging)));
 const capabilities = new CapabilitySettings(path.join(dir, 'capabilities.json'));
 capabilities.agentFile = path.join(dir, 'agent-capabilities.json');
 await capabilities.load();
@@ -122,7 +133,7 @@ const server = createServer(async (req, res) => {
           }
         });
       }
-      await proxyModel(req, res, scopedAuth);
+      await proxyModel(req, res);
       return;
     }
     let raw = '';
@@ -134,51 +145,10 @@ const server = createServer(async (req, res) => {
     let value;
     const call = { endpoint: req.url, operation: data.operation };
     rpc.push(call);
-    if (req.url === '/inspect' && researchMode && data.inspection?.kind === 'training') {
-      // Deliberately reproduce the catalog-miss boundary. No names, levels or
-      // facts about the real character are fabricated; web and model are live.
-      value = {
-        status: 'available',
-        source: 'Synthetic catalog-miss fixture',
-        data: {
-          class: 'MAGE',
-          spells: [],
-          total: 0,
-          unresolvedNames: 0,
-          version: 'forever',
-          note: 'Synthetic empty catalog result for this regression. Missing coverage is not proof of absence; investigate acquisition and availability with external sources.',
-        },
-      };
-      call.kind = 'training';
-    } else if (req.url === '/inspect' && addonFixtures) {
-      const { inspectionSchema } = await import(
-        pathToFileURL(require.resolve('@wisp/agent/contract/game-inspection')).href
-      );
-      const inspection = inspectionSchema.parse(data.inspection);
-      if (inspection.kind === 'questie_quest' || inspection.kind === 'questie_chain') {
-        assert.equal(inspection.args.questId, 600001);
-      }
-      if (inspection.kind === 'object_locations') {
-        assert.equal(inspection.args.objectId, 99);
-        assert.equal(inspection.args.mapId, 1454);
-      }
-      if (inspection.kind === 'stored_item') {
-        assert.equal(inspection.args.itemId, 123);
-      }
-      if (inspection.kind === 'item_prices') {
-        assert.deepEqual(inspection.args.itemIds, [123, 999]);
-      }
-      value = addonFixtures.inspections[inspection.kind];
-      if (!value) {
-        throw Error('No synthetic fixture for ' + inspection.kind);
-      }
-      call.kind = inspection.kind;
-    } else if (req.url === '/database') {
+    if (req.url === '/database') {
       value = await database.query(args);
     } else if (req.url === '/simulate' && simulationSnapshot) {
       value = await simulator.run(simulationSnapshot, args);
-    } else if (req.url === '/state' && simulationSnapshot) {
-      value = simulationSnapshot;
     } else if (req.url === '/wowhead') {
       call.query = args.query;
       value = await searchPublicWeb(args, scopedAuth, model);
@@ -207,7 +177,7 @@ const server = createServer(async (req, res) => {
   }
 });
 await new Promise((r) => server.listen(43197, '127.0.0.1', r));
-// The agent runs in this process against the isolated fixture bridge above.
+// Game reads use the in-process fixtures; remaining RPCs use the isolated server.
 setAgentHost({
   origin: 'http://127.0.0.1:43197',
   token,
@@ -216,11 +186,12 @@ setAgentHost({
 const engine = createAgentEngine({
   origin: () => 'http://127.0.0.1:43197',
   token,
+  gameAccess,
   // The session log stays in memory for the run, as in the engine's tests.
   history: new MemoryHistory(),
-  logger: { info: () => {}, warn: (data, message) => console.warn(message, data) },
+  logging: bridgeLogging,
 });
-const report = { model, tests: [] };
+const report = { model, tests: [], gameReads };
 let session;
 try {
   session = engine.newSessionId();
@@ -289,6 +260,7 @@ try {
       'agent must consult the catalog and then investigate the web',
     );
     assert.ok(result.calls.includes('web_fetch'), 'agent must inspect original source evidence');
+    assert.ok(gameReads.includes('training'), 'the training tool must read the catalog fixture');
     report.scenario =
       'Synthetic catalog miss; real model, production tools, live database and global web search. No WoW session or game state.';
     // Save the answer and search dossiers for a human semantic review rather
@@ -357,7 +329,7 @@ try {
       'Volvé a consultar syndicator__find_item para itemId=123. Si la integración está apagada, decímelo sin usar otras fuentes ni tools.',
     );
     assert.ok(!result.calls.includes('syndicator__find_item'));
-    assert.equal(rpc.filter((call) => call.endpoint === '/inspect').length, 5);
+    assert.deepEqual([...gameReads].sort(), Object.keys(addonFixtures.inspections).sort());
   } else if (simulationSnapshot) {
     const result = await run(
       'current-level DPS simulation',

@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { auctionInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'inspect_auctions',
@@ -10,11 +10,6 @@ export default enabledTool(
       'Reads existing auction results already loaded while the auction house is open. Optional item ID filters that partial result set; it does not search or scan. All prices are copper. Does not bid, buy, post or cancel. For realm market values/history outside the AH use Everloot market_value/auction_history with freshness and coverage checks.',
     inputSchema: auctionInput,
     label: { start: () => 'Reading auction results', complete: () => 'Read auction results' },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'auctions', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => runGame(ctx, (game) => game.readAuctions(ctx.session.id, args)),
   }),
 );

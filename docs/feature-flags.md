@@ -12,7 +12,7 @@ code, and the channel decides at runtime whether it runs.
 The bridge is the only place flags are evaluated, through
 [OpenFeature](https://openfeature.dev) (`@openfeature/web-sdk`, the static-context
 SDK, because the bridge serves a single player and reads values synchronously).
-Its provider, `ChannelFeatureProvider` in `apps/bridge/src/features.ts`, decides
+Its provider, `ChannelFeatureProvider` in `apps/server/src/features.ts`, decides
 each flag in this order:
 
 1. The player's override, saved as `features` in the bridge config and changed
@@ -58,8 +58,11 @@ addon for the name by hand.
 | ------- | ------------------------------------------------------------------------------------------------------- |
 | Bridge  | `features.enabled('combat_coach')`                                                                      |
 | Desktop | `useFeature('combat_coach')` (from `apps/desktop/src/features.tsx`)                                     |
-| Agent   | `await featureEnabled('combat_coach')`                                                                  |
+| Agent   | `yield* capabilities.featureEnabled('combat_coach')`                                                    |
 | Addon   | `ns.Core.FeatureEnabled("combat_coach")`, and `ns.Core.OnFeaturesChanged(listener)` to react to changes |
+
+In the agent, use `const capabilities = yield* AgentCapabilities` to access
+the service from `apps/agent/src/host/capabilities.ts`.
 
 A tool that belongs to the feature goes in `toolFeatures` in
 `packages/protocol/src/capabilities.ts` (`coach: 'combat_coach'`). While the flag

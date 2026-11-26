@@ -3,12 +3,12 @@ import { createInterface } from 'node:readline';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-// Starts the bridge's eval model server (apps/bridge/src/evals/eval-bridge.ts),
+// Starts the bridge's eval model server (apps/server/src/evals/eval-bridge.ts),
 // which uses a separate ChatGPT sign-in, and points the agent at it.
 function bridgeScript() {
   for (let dir = process.cwd(); ; dir = path.dirname(dir)) {
     if (existsSync(path.join(dir, 'pnpm-workspace.yaml'))) {
-      return path.join(dir, 'apps', 'bridge', 'src', 'evals', 'eval-bridge.ts');
+      return path.join(dir, 'apps', 'server', 'src', 'evals', 'eval-bridge.ts');
     }
     if (path.dirname(dir) === dir) {
       throw new Error('Run evals from inside the Wisp repository.');
@@ -16,9 +16,8 @@ function bridgeScript() {
   }
 }
 
-export async function startModelBridge(fixtures: NodeJS.ProcessEnv) {
+export async function startModelBridge() {
   const child = spawn(process.execPath, [bridgeScript(), 'serve'], {
-    env: { ...process.env, ...fixtures },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
