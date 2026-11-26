@@ -12,7 +12,7 @@ export function connectionModel(
   selected: z.infer<typeof selectedModel>,
   origin: string,
   token: string,
-  webSearchEnabled: () => Promise<boolean>,
+  webSearchEnabled: (signal?: AbortSignal) => Promise<boolean>,
   cacheKey?: string,
   sessionId?: string,
 ) {
@@ -58,7 +58,7 @@ export function connectionModel(
         if (!native) {
           return filterWebSearch(
             subscriptionCallOptions(withCacheKey(params, cacheKey)),
-            selected.webSearchAvailable !== false && (await webSearchEnabled()),
+            selected.webSearchAvailable !== false && (await webSearchEnabled(params.abortSignal)),
           );
         }
         params = applyModelReasoning(params, selected.provider!, selected.effort);
@@ -80,7 +80,7 @@ export function connectionModel(
         }
         return filterWebSearch(
           params,
-          selected.webSearchAvailable === true && (await webSearchEnabled()),
+          selected.webSearchAvailable === true && (await webSearchEnabled(params.abortSignal)),
         );
       },
     },

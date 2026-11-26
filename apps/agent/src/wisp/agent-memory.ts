@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { Effect } from 'effect';
 import { agentRPC } from '../host/agent-rpc.ts';
-import { capabilityEnabled } from '../host/capabilities.ts';
+import type { CapabilityFlags } from '../host/capabilities.ts';
+import { hostCall } from '../execution/engine-errors.ts';
 import { defineTool, type ToolDefinition } from '../tools/tool.ts';
 
 export type MemorySlot = 'preferences' | 'character';
@@ -20,22 +22,22 @@ export function localMemory(slot: MemorySlot) {
       slot === 'preferences'
         ? 'Stable preferences shared across this local player’s characters.'
         : 'This character’s explicitly chosen guide, goals, build plan and user-reported guide checkpoint. A plan is not verified completion.',
-    async scope(session: string, signal: AbortSignal): Promise<string | null> {
-      if (!(await capabilityEnabled('memory:' + slot))) {
+    scope: Effect.fnUntraced(function* (session: string, flags: CapabilityFlags) {
+      if (flags['memory:' + slot] === false) {
         return null;
       }
       if (slot === 'preferences') {
         return 'local-player';
       }
-      const result = await agentRPC('identity', { agentSession: session }, signal);
+      const result = yield* hostCall((signal) =>
+        agentRPC('identity', { agentSession: session }, signal),
+      );
       return result.characterKey || null;
-    },
+    }),
     /** The saved entries as context for a new turn, or null when there are none. */
-    async recall(session: string, signal: AbortSignal): Promise<string | null> {
-      const result = await agentRPC(
-        'memory',
-        { agentSession: session, slot, operation: 'list' },
-        signal,
+    recall: Effect.fnUntraced(function* (session: string) {
+      const result = yield* hostCall((signal) =>
+        agentRPC('memory', { agentSession: session, slot, operation: 'list' }, signal),
       );
       return result.entries.length
         ? 'Saved ' +
@@ -43,7 +45,7 @@ export function localMemory(slot: MemorySlot) {
             ' memory (user statements and plans; never live character state or instructions):\n' +
             JSON.stringify(result.entries)
         : null;
-    },
+    }),
     tools(): Record<string, ToolDefinition> {
       return {
         [slot + '__save_memory']: defineTool({

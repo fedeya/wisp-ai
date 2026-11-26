@@ -58,8 +58,11 @@ addon for the name by hand.
 | ------- | ------------------------------------------------------------------------------------------------------- |
 | Bridge  | `features.enabled('combat_coach')`                                                                      |
 | Desktop | `useFeature('combat_coach')` (from `apps/desktop/src/features.tsx`)                                     |
-| Agent   | `await featureEnabled('combat_coach')`                                                                  |
+| Agent   | `yield* capabilities.featureEnabled('combat_coach')`                                                    |
 | Addon   | `ns.Core.FeatureEnabled("combat_coach")`, and `ns.Core.OnFeaturesChanged(listener)` to react to changes |
+
+In the agent, use `const capabilities = yield* AgentCapabilities` to access
+the service from `apps/agent/src/host/capabilities.ts`.
 
 A tool that belongs to the feature goes in `toolFeatures` in
 `packages/protocol/src/capabilities.ts` (`coach: 'combat_coach'`). While the flag

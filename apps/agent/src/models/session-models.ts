@@ -3,7 +3,7 @@ import type { LanguageModel } from 'ai';
 import { Context, Effect, Layer } from 'effect';
 import type { z } from 'zod';
 import { selectedModel } from '../contract/agent-rpc.ts';
-import { capabilityEnabled } from '../host/capabilities.ts';
+import { AgentCapabilities } from '../host/capabilities.ts';
 import { connectionModel } from './connection-model.ts';
 import { EngineConfig } from '../host/engine-config.ts';
 import { hostCall, type HostError } from '../execution/engine-errors.ts';
@@ -24,6 +24,12 @@ export class SessionModels extends Context.Service<
     SessionModels,
     Effect.gen(function* () {
       const { origin, token } = yield* EngineConfig;
+      const capabilities = yield* AgentCapabilities;
+      const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+      const webSearchEnabled = capabilities.read.pipe(
+        Effect.map((flags) => flags['tool:web_search'] !== false),
+        Effect.mapError((error) => error.cause),
+      );
       return SessionModels.of({
         selected: (session) =>
           hostCall(async (signal) => {
@@ -46,7 +52,7 @@ export class SessionModels extends Context.Service<
             selected,
             origin(),
             token,
-            () => capabilityEnabled('tool:web_search'),
+            (signal) => runPromise(webSearchEnabled, { signal }),
             cache
               ? 'wisp-' + createHash('sha256').update(session).digest('hex').slice(0, 32)
               : undefined,

@@ -255,6 +255,7 @@ export const makeBridge = Effect.fn('Bridge.make')(
       origin: () => agentOrigin,
       token,
       history: agentHistory,
+      capabilitiesFile: () => capabilitySettings.agentFile,
       mcpConfigFile: () => mcpFile,
       logging: bridgeLogging,
     });
@@ -404,7 +405,7 @@ export const makeBridge = Effect.fn('Bridge.make')(
     const agentPort = yield* startup(() => listenOnLoopback(server, options.agentPort ?? 43187));
     const agentOrigin = 'http://127.0.0.1:' + agentPort;
     yield* startup(() => writeFile(path.join(runtime, 'bridge.pid'), String(process.pid)));
-    setAgentHost({ origin: agentOrigin, token, capabilitiesFile: capabilitySettings.agentFile });
+    setAgentHost({ origin: agentOrigin, token });
     yield* releaseRuntimeResource(() => accounts.drain());
     void Promise.all([
       retireLegacyEngine(paths.legacyEngine),

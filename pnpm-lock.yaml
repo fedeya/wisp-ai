@@ -638,6 +638,9 @@ importers:
       '@wisp/protocol':
         specifier: workspace:*
         version: link:../packages/protocol
+      effect:
+        specifier: 4.1.3
+        version: 4.1.3
       fengari:
         specifier: 0.1.5
         version: 0.1.5

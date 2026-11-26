@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Effect } from 'effect';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
-import { capabilityEnabled, connectionTools } from '@wisp/agent/capabilities';
+import { AgentCapabilities } from '@wisp/agent/capabilities';
+import { HostError } from '@wisp/agent/engine';
 import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';
 import { localMemory } from '@wisp/agent/agent-memory';
 import { mcpConnections } from '@wisp/agent/mcp-tools';
@@ -13,6 +15,12 @@ import { filterWebSearch } from '@wisp/agent/model-tools';
 
 // Tool names are <connection>__<tool>; a connection name must keep them legal function names.
 const CONNECTION_NAME = /^[a-z][a-z0-9-]*$/;
+
+const readFlags = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
+  Effect.provide(AgentCapabilities.layer()),
+);
+const readConnections = (configFile?: string) =>
+  Effect.runPromise(Effect.flatMap(readFlags, (flags) => mcpConnections(flags, () => configFile)));
 
 test('settings persist, filter real tool/MCP definitions, and preserve child settings when an MCP is off', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-capabilities-'));
@@ -27,26 +35,21 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
       execute: () => null,
     });
     assert.equal(tool.capability, 'tool:search_database');
-    assert.equal(await toolOffered(tool), true);
+    assert.equal(toolOffered(tool, await Effect.runPromise(readFlags)), true);
     await Promise.all([
       settings.set('tool:search_database', false),
       settings.set('mcp_tool:everloot:market_value', false),
     ]);
     assert.equal(
-      await toolOffered(tool),
+      toolOffered(tool, await Effect.runPromise(readFlags)),
       false,
       'disabled tools must be removed from the agent, not only hidden in the UI',
     );
-    assert.equal(await capabilityEnabled('tool:search_database'), false);
-    const connection = await mcpConnections();
+    const connection = await readConnections();
     assert.deepEqual(Object.keys(connection), ['everloot', 'everloot-search', 'everloot-changes']);
     assert.ok(Object.keys(connection).every((name) => CONNECTION_NAME.test(name)));
     assert.equal(connection.everloot!.allow!.includes('market_value'), false);
-    assert.ok(
-      (await connectionTools('everloot', ['auction_history', 'market_value'])).includes(
-        'auction_history',
-      ),
-    );
+    assert.ok(connection.everloot!.allow!.includes('auction_history'));
     assert.equal(connection['everloot-search']!.provided?.version, 'forever');
     assert.equal(connection['everloot-changes']!.provided?.game, 'forever');
     for (const definition of Object.values(connection)) {
@@ -58,7 +61,7 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
       );
     }
     await settings.set('mcp:everloot', false);
-    assert.deepEqual(await mcpConnections(), {});
+    assert.deepEqual(await readConnections(), {});
     assert.equal(
       settings.snapshot().find((entry) => entry.id === 'mcp_tool:everloot:auction_history')
         ?.effective,
@@ -75,15 +78,24 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
     await settings.set('memory:preferences', false);
     const memory = localMemory('preferences');
     assert.equal(
-      await memory.scope('session', new AbortController().signal),
+      await Effect.runPromise(Effect.flatMap(readFlags, (flags) => memory.scope('session', flags))),
       null,
       'disabled memory must not be recalled',
     );
     await assert.rejects(settings.set('unknown:tool', false));
     await writeFile(settings.file, '{broken json');
     await assert.rejects(
-      capabilityEnabled('tool:search_database'),
+      Effect.runPromise(readFlags),
+      (error) => error instanceof HostError && error.cause instanceof SyntaxError,
       'corrupt settings must never silently re-enable tools',
+    );
+    await writeFile(settings.file, JSON.stringify({ enabled: { 'tool:search_database': 'off' } }));
+    await assert.rejects(
+      Effect.runPromise(readFlags),
+      (error) =>
+        error instanceof HostError &&
+        error.cause instanceof Error &&
+        error.cause.message === 'Invalid capability settings; the file was preserved',
     );
   } finally {
     if (previous === undefined) {
@@ -140,9 +152,12 @@ test('a fresh install has no custom MCP connections until configured', async () 
   try {
     process.env.WOW_MCP_CONFIG = path.join(directory, 'mcp.json');
     await withoutEverloot(async () => {
-      assert.deepEqual(await mcpConnections(process.env.WOW_MCP_CONFIG), {});
+      assert.deepEqual(await readConnections(process.env.WOW_MCP_CONFIG), {});
       await writeFile(process.env.WOW_MCP_CONFIG!, 'invalid JSON');
-      await assert.rejects(mcpConnections(process.env.WOW_MCP_CONFIG), SyntaxError);
+      await assert.rejects(
+        readConnections(process.env.WOW_MCP_CONFIG),
+        (error) => error instanceof HostError && error.cause instanceof SyntaxError,
+      );
     });
   } finally {
     if (previous === undefined) {
@@ -171,7 +186,7 @@ test('custom MCP connections use legal names and the configured bridge origin', 
       process.env.WOW_MCP_CONFIG,
       JSON.stringify({ servers: { my_tools: { enabled: true, description: 'Test' } } }),
     );
-    const connections = await mcpConnections(process.env.WOW_MCP_CONFIG);
+    const connections = await readConnections(process.env.WOW_MCP_CONFIG);
     assert.deepEqual(Object.keys(connections), ['my-tools']);
     assert.match(Object.keys(connections)[0]!, CONNECTION_NAME);
     assert.equal(connections['my-tools']!.url, 'http://127.0.0.1:49521/mcp/my_tools');

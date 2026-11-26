@@ -205,11 +205,12 @@ test(
     });
     await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
-    setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
+    setAgentHost({ origin, token: 'offline-token' });
     const history = new MemoryHistory();
     const engine = createAgentEngine({
       origin: () => origin,
       token: 'offline-token',
+      capabilitiesFile: () => flags,
       history,
     });
     const session = engine.newSessionId();

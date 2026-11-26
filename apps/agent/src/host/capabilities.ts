@@ -1,56 +1,52 @@
 import type { FeatureFlag } from '@wisp/protocol/features';
+import { Context, Effect, Layer, Schema } from 'effect';
 import { readFile } from 'node:fs/promises';
+import { HostError, hostCall } from '../execution/engine-errors.ts';
 import { agentHost } from './agent-host.ts';
-const capabilitiesFile = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE;
-export async function readCapabilityFlags(file?: string): Promise<Record<string, boolean>> {
-  if (!file) {
-    return {};
+
+export type CapabilityFlags = Readonly<Record<string, boolean>>;
+
+const hasCapabilityFlags = Schema.is(
+  Schema.Struct({ enabled: Schema.Record(Schema.String, Schema.Boolean) }),
+);
+const hasFeatureFlags = Schema.is(
+  Schema.Struct({ features: Schema.Record(Schema.String, Schema.Unknown) }),
+);
+
+/** The settings published by the bridge. Reads see updates without restarting the agent. */
+export class AgentCapabilities extends Context.Service<
+  AgentCapabilities,
+  {
+    readonly read: Effect.Effect<CapabilityFlags, HostError>;
+    readonly featureEnabled: (flag: FeatureFlag) => Effect.Effect<boolean, HostError>;
   }
-  try {
-    const data = JSON.parse(await readFile(file, 'utf8'));
-    if (
-      !data ||
-      typeof data.enabled !== 'object' ||
-      Array.isArray(data.enabled) ||
-      data.enabled === null ||
-      Object.values(data.enabled).some((value) => typeof value !== 'boolean')
-    ) {
-      throw new Error('Invalid capability settings; the file was preserved');
-    }
-    return data.enabled;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {};
-    }
-    throw error;
-  }
-}
-export async function capabilityEnabled(id: string, defaultEnabled = true): Promise<boolean> {
-  const flags = await readCapabilityFlags(capabilitiesFile());
-  return flags[id] ?? defaultEnabled;
-}
-export async function connectionTools(name: string, tools: readonly string[]): Promise<string[]> {
-  const flags = await readCapabilityFlags(capabilitiesFile());
-  return tools.filter((tool) => flags['mcp_tool:' + name + ':' + tool] !== false);
-}
-/**
- * Whether the bridge turned a feature flag on. The bridge resolves flags and
- * publishes them next to the capability switches; unknown flags are off.
- */
-export async function featureEnabled(name: FeatureFlag): Promise<boolean> {
-  return (await readFeatureFlags(capabilitiesFile()))[name] === true;
-}
-async function readFeatureFlags(file?: string): Promise<Record<string, boolean>> {
-  if (!file) {
-    return {};
-  }
-  try {
-    const { features } = JSON.parse(await readFile(file, 'utf8'));
-    return features && typeof features === 'object' && !Array.isArray(features) ? features : {};
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {};
-    }
-    throw error;
+>()('@wisp/agent/AgentCapabilities') {
+  static layer(file = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE) {
+    const document = hostCall(async (signal): Promise<unknown> => {
+      const path = file();
+      if (!path) return { enabled: {} };
+      try {
+        return JSON.parse(await readFile(path, { encoding: 'utf8', signal }));
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { enabled: {} };
+        throw error;
+      }
+    });
+
+    const read = Effect.gen(function* () {
+      const data = yield* document;
+      if (!hasCapabilityFlags(data)) {
+        return yield* new HostError({
+          cause: new Error('Invalid capability settings; the file was preserved'),
+        });
+      }
+      return data.enabled;
+    });
+
+    return Layer.succeed(AgentCapabilities, {
+      read,
+      featureEnabled: (flag) =>
+        Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),
+    });
   }
 }

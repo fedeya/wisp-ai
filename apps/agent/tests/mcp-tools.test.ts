@@ -3,15 +3,24 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Effect } from 'effect';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { setAgentHost } from '../src/host/agent-host.ts';
-import { McpTools } from '../src/integrations/mcp-tools.ts';
+import { AgentCapabilities } from '../src/host/capabilities.ts';
+import { mcpConnections, McpTools } from '../src/integrations/mcp-tools.ts';
 import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));
+
+const readConnections = (config: string) =>
+  Effect.runPromise(
+    Effect.flatMap(AgentCapabilities, (settings) =>
+      Effect.flatMap(settings.read, (flags) => mcpConnections(flags, () => config)),
+    ).pipe(Effect.provide(AgentCapabilities.layer())),
+  );
 
 test('closing MCP tools also closes a client whose connection completes after shutdown', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-mcp-tools-'));
@@ -25,12 +34,13 @@ test('closing MCP tools also closes a client whose connection completes after sh
   });
   const close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
   const list = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
-  const mcp = new McpTools(() => config);
+  const mcp = new McpTools();
   try {
     await writeFile(flags, JSON.stringify({ enabled: { 'mcp:everloot': false } }));
     await writeFile(config, JSON.stringify({ servers: { my_tools: { enabled: true } } }));
     setAgentHost({ origin: 'http://127.0.0.1:1', token: 'relay-token', capabilitiesFile: flags });
-    const listing = mcp.tools(() => {});
+    const connections = await readConnections(config);
+    const listing = mcp.tools(connections, () => {});
     await Promise.race([
       connecting.promise,
       listing.then(() => {
@@ -42,7 +52,7 @@ test('closing MCP tools also closes a client whose connection completes after sh
     expect(await listing).toEqual([]);
     expect(close.mock.contexts).toContain(connect.mock.contexts[0]);
     expect(list).not.toHaveBeenCalled();
-    expect(await mcp.tools(() => {})).toEqual([]);
+    expect(await mcp.tools(connections, () => {})).toEqual([]);
     expect(connect).toHaveBeenCalledTimes(1);
   } finally {
     connected.open();
@@ -96,10 +106,12 @@ test('relayed MCP servers become namespaced, filtered tools through the MCP SDK 
     JSON.stringify({ servers: { my_tools: { enabled: true, description: 'Player tools' } } }),
   );
   setAgentHost({ origin, token: 'relay-token', capabilitiesFile: flags });
-  const mcp = new McpTools(() => config);
+  const mcp = new McpTools();
   const errors: string[] = [];
   try {
-    const tools = await mcp.tools((connection) => errors.push(connection));
+    const tools = await mcp.tools(await readConnections(config), (connection) =>
+      errors.push(connection),
+    );
     expect(errors).toEqual([]);
     expect(tools.map((tool) => tool.name)).toEqual(['my-tools__lookup']);
     const [lookup] = tools;
@@ -123,7 +135,7 @@ test('relayed MCP servers become namespaced, filtered tools through the MCP SDK 
       flags,
       JSON.stringify({ enabled: { 'mcp:everloot': false, 'mcp:my_tools': false } }),
     );
-    expect(await mcp.tools(() => {})).toEqual([]);
+    expect(await mcp.tools(await readConnections(config), () => {})).toEqual([]);
   } finally {
     await mcp.close();
     http.close();

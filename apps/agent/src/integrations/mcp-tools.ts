@@ -6,7 +6,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { everlootTools } from '@wisp/protocol/capabilities';
 import { agentHost } from '../host/agent-host.ts';
 import { bridgeOrigin } from '../host/agent-rpc.ts';
-import { capabilityEnabled, connectionTools, readCapabilityFlags } from '../host/capabilities.ts';
+import type { CapabilityFlags } from '../host/capabilities.ts';
 import { EngineConfig } from '../host/engine-config.ts';
 import { hostCall, type HostError } from '../execution/engine-errors.ts';
 
@@ -31,11 +31,11 @@ export interface McpConnection {
 const EVERLOOT_URL = 'https://everloot.app/mcp/public';
 const CACHE_MS = 5 * 60_000;
 
-async function everlootConnections(): Promise<Record<string, McpConnection>> {
-  if (!(await capabilityEnabled('mcp:everloot'))) {
+function everlootConnections(flags: CapabilityFlags): Record<string, McpConnection> {
+  if (flags['mcp:everloot'] === false) {
     return {};
   }
-  const allowed = await connectionTools('everloot', everlootTools);
+  const allowed = everlootTools.filter((tool) => flags['mcp_tool:everloot:' + tool] !== false);
   const connections: Record<string, McpConnection> = {};
   const reference = allowed.filter(
     (name) => !['search_knowledge', 'recent_changes'].includes(name),
@@ -70,13 +70,17 @@ async function everlootConnections(): Promise<Record<string, McpConnection>> {
 }
 
 // Player-configured servers run in the bridge, which relays them over loopback.
-async function externalConnections(configFile?: string): Promise<Record<string, McpConnection>> {
+async function externalConnections(
+  flags: CapabilityFlags,
+  configFile: string | undefined,
+  signal: AbortSignal,
+): Promise<Record<string, McpConnection>> {
   if (!configFile) {
     return {};
   }
   let raw: string;
   try {
-    raw = await readFile(configFile, 'utf8');
+    raw = await readFile(configFile, { encoding: 'utf8', signal });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return {};
@@ -86,16 +90,14 @@ async function externalConnections(configFile?: string): Promise<Record<string, 
   const config = JSON.parse(raw) as {
     servers?: Record<string, { enabled?: boolean; description?: string }>;
   };
-  const flags = await readCapabilityFlags(
-    agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE,
-  );
   const token = agentHost()?.token ?? process.env.WOW_BRIDGE_TOKEN;
   const connections: Record<string, McpConnection> = {};
   for (const [name, server] of Object.entries(config.servers || {})) {
     if (!/^[a-z][a-z0-9_]*$/.test(name)) {
       throw new Error('MCP names must be lowercase identifiers');
     }
-    if (!(await capabilityEnabled('mcp:' + name, server.enabled !== false))) {
+    const enabled = flags['mcp:' + name] ?? server.enabled !== false;
+    if (!enabled) {
       continue;
     }
     const prefix = 'mcp_tool:' + name + ':';
@@ -126,8 +128,11 @@ function withoutProvided(schema: unknown, provided?: Record<string, unknown>) {
 }
 
 /** The enabled MCP connections: bundled Everloot ones and the player's relayed servers. */
-export async function mcpConnections(configFile?: string): Promise<Record<string, McpConnection>> {
-  return { ...(await everlootConnections()), ...(await externalConnections(configFile)) };
+export function mcpConnections(flags: CapabilityFlags, configFile?: () => string | undefined) {
+  return hostCall(async (signal) => ({
+    ...everlootConnections(flags),
+    ...(await externalConnections(flags, configFile?.(), signal)),
+  }));
 }
 
 interface Connected {
@@ -161,10 +166,6 @@ async function connect(connection: McpConnection): Promise<Connected> {
 export class McpTools {
   private current?: { key: string; clients: Map<string, Connected> };
   private closed = false;
-  private configFile: () => string | undefined;
-  constructor(configFile: () => string | undefined) {
-    this.configFile = configFile;
-  }
 
   private async disconnect(clients: Map<string, Connected>, name?: string) {
     const names = name ? [name] : [...clients.keys()];
@@ -224,9 +225,10 @@ export class McpTools {
   }
 
   /** The enabled MCP tools; an unreachable connection is skipped and reported to onError. */
-  async tools(onError: (connection: string, error: unknown) => void): Promise<McpTool[]> {
-    if (this.closed) return [];
-    const connections = await mcpConnections(this.configFile());
+  async tools(
+    connections: Record<string, McpConnection>,
+    onError: (connection: string, error: unknown) => void,
+  ): Promise<McpTool[]> {
     if (this.closed) return [];
     if (!Object.keys(connections).length) {
       await this.drop();
@@ -291,20 +293,23 @@ export class McpTools {
 /** The MCP tools of the enabled connections, with clients kept across turns. */
 export class Mcp extends Context.Service<
   Mcp,
-  { readonly tools: Effect.Effect<readonly McpTool[], HostError> }
+  { readonly tools: (flags: CapabilityFlags) => Effect.Effect<readonly McpTool[], HostError> }
 >()('@wisp/agent/Mcp') {
   static readonly layer = Layer.effect(
     Mcp,
     Effect.gen(function* () {
       const { mcpConfigFile } = yield* EngineConfig;
       const clients = yield* Effect.acquireRelease(
-        Effect.sync(() => new McpTools(mcpConfigFile ?? (() => undefined))),
+        Effect.sync(() => new McpTools()),
         (tools) => Effect.promise(() => tools.close()),
       );
-      const tools = Effect.gen(function* () {
+      const tools = Effect.fn('Mcp.tools')(function* (flags: CapabilityFlags) {
+        const connections = yield* mcpConnections(flags, mcpConfigFile);
         const unavailable: { connection: string; error: unknown }[] = [];
         const listed = yield* hostCall(() =>
-          clients.tools((connection, error) => unavailable.push({ connection, error })),
+          clients.tools(connections, (connection, error) =>
+            unavailable.push({ connection, error }),
+          ),
         );
         // An unreachable connection is left out of this turn, not fatal to it.
         yield* Effect.forEach(
@@ -320,7 +325,7 @@ export class Mcp extends Context.Service<
           { discard: true },
         );
         return listed;
-      }).pipe(Effect.withSpan('Mcp.tools'));
+      });
       return Mcp.of({ tools });
     }),
   );

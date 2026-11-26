@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Effect } from 'effect';
 import definition from '../src/wisp/tools/web_fetch.ts';
 import type { WebFetchInput } from '../src/integrations/web/web-fetch.ts';
 import { WebFetchPages } from '../src/integrations/web/web-fetch-pages.ts';
@@ -9,11 +10,18 @@ import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities
 import { publicWebAddresses } from '../src/integrations/web/public-web-tunnel.ts';
 import { publicWebTunnel } from '../src/integrations/web/public-web-tunnel.ts';
 import { request } from 'node:http';
-import { capabilityEnabled } from '../src/host/capabilities.ts';
+import { AgentCapabilities } from '../src/host/capabilities.ts';
+import { toolOffered } from '../src/tools/enabled-tool.ts';
 
 // The tool as the engine offers it: absent while its capability is off.
-const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) =>
-  !tool.capability || (await capabilityEnabled(tool.capability)) ? tool : null;
+const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) => {
+  const flags = await Effect.runPromise(
+    Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
+      Effect.provide(AgentCapabilities.layer()),
+    ),
+  );
+  return toolOffered(tool, flags) ? tool : null;
+};
 
 const { impitFetch, impitOptions, dnsLookup } = vi.hoisted(() => ({
   impitFetch: vi.fn(),
