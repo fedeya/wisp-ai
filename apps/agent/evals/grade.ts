@@ -25,15 +25,16 @@ async function main() {
   const runs = (await readFile(path.join(dir, 'runs.jsonl'), 'utf8'))
     .trim()
     .split('\n')
-    .map((line) => JSON.parse(line) as Run)
-    .filter((run) => !labels.length || labels.includes(run.label));
-  for (const run of runs) {
+    // The index is the line in runs.jsonl, kept when filtering by label.
+    .map((line, index) => ({ run: JSON.parse(line) as Run, index }))
+    .filter(({ run }) => !labels.length || labels.includes(run.label));
+  for (const { run } of runs) {
     if (!scenarios[run.name]) throw new Error('No facts for scenario ' + run.name);
   }
   const bridge = await startModelBridge();
   const modelName = process.env.WISP_GRADE_MODEL || bridge.model;
   const model = judgeModel(bridge.url, bridge.token, modelName);
-  const queue = runs.flatMap((run, index) =>
+  const queue = runs.flatMap(({ run, index }) =>
     scenarios[run.name]!.judges.map((name) => ({ run, index, name })),
   );
   const verdicts: Verdict[] = [];
