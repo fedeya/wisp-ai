@@ -1,12 +1,12 @@
 import { afterEach } from 'vitest';
-import { createJudge, describeEval } from 'vitest-evals';
+import { describeEval, toolCalls } from 'vitest-evals';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '../src/host/agent-host.ts';
 import { wispHarness } from '../evals/harness.ts';
-import { calledTool, notCalledTool, turnView } from '../evals/checks.ts';
+import { avoidsTool } from '../evals/judges.ts';
 
 afterEach(() => setAgentHost(undefined));
 
@@ -108,23 +108,18 @@ describeEval('Wisp eval adapter', { harness: wispHarness }, (it) => {
         ];
         const result = await run({ question: 'are my nameplates on?', stubs });
         expect(result.errors ?? []).toEqual([]);
-        const turn = turnView(result);
-        expect(
-          calledTool('wow__get_settings', { input: { query: 'nameplates' }, count: 1 }).test(turn),
-        ).toBe(true);
-        const scorer = notCalledTool('wow__get_settings');
-        const judge = createJudge(scorer.name, () => ({ score: scorer.test(turn) ? 1 : 0 }));
         // A missed scorer is recorded without failing the test.
-        await expect(result).toSatisfyJudge(judge, { threshold: null });
+        await expect(result).toSatisfyJudge(avoidsTool('wow__get_settings'), { threshold: null });
         // The deferred call is seen as the tool it ran, with the stubbed output.
-        expect(turn.toolCalls).toEqual([
+        expect(toolCalls(result)).toEqual([
           {
             name: 'wow__get_settings',
-            input: { query: 'nameplates' },
-            output: { settings: [{ id: 'nameplateShowAll', value: true }] },
+            arguments: { query: 'nameplates' },
+            status: 'ok',
+            result: { settings: [{ id: 'nameplateShowAll', value: true }] },
           },
         ]);
-        expect(turn.reply).toBe('Nameplates are on.');
+        expect(result.output.reply).toBe('Nameplates are on.');
         expect(result.artifacts?.steps).toBe(2);
         expect(result.usage).toMatchObject({ inputTokens: 10, outputTokens: 10 });
       } finally {

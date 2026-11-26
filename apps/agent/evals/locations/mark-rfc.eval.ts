@@ -1,12 +1,32 @@
-import { wispEval } from '../case.ts';
-import { calledTool, replied } from '../checks.ts';
+import { describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs, mapStubs } from '../fixtures/world.ts';
+import { wispHarness } from '../harness.ts';
+import { qualityJudges } from '../quality-scorer.ts';
 
-wispEval('mark-rfc', {
-  description: 'A map request resolves the destination and places one waypoint.',
-  tags: ['tiers'],
-  question: 'can you mark the Ragefire Chasm entrance on my map?',
-  stubs: [...mapStubs(), ...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
-  gates: [replied(), calledTool('wow__set_map_waypoint', { count: 1 })],
-});
+const name = 'mark-rfc';
+
+describeEval(
+  name,
+  {
+    harness: wispHarness,
+    judges: qualityJudges(name),
+    judgeThreshold: null,
+  },
+  (it) => {
+    it(
+      'places one waypoint for the Ragefire Chasm entrance',
+      { tags: ['tiers'] },
+      async ({ expect, run }) => {
+        const result = await run({
+          question: 'can you mark the Ragefire Chasm entrance on my map?',
+          stubs: [...mapStubs(), ...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
+        });
+        expect.soft(result.output.reply.trim()).not.toBe('');
+        expect
+          .soft(toolCalls(result).filter((call) => call.name === 'wow__set_map_waypoint'))
+          .toHaveLength(1);
+      },
+    );
+  },
+);

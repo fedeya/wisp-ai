@@ -1,34 +1,49 @@
-import { wispEval } from '../case.ts';
-import { expects, replied } from '../checks.ts';
+import { createJudge, describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
+import { wispHarness } from '../harness.ts';
+import type { WispInput } from '../harness.ts';
+import { presentedText } from '../judges.ts';
+import { qualityJudges } from '../quality-scorer.ts';
 
-wispEval('boss-loot', {
-  description:
-    'A level 21 mage asks about one boss; the agent reads that boss in full and points out the sword he could train for.',
-  tags: ['dungeons', 'gear'],
-  question: 'what does Baron Silverlaine drop? anything for me?',
-  stubs: [...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
-  gates: [
-    replied(),
-    expects('filters the loot by the boss', (turn) =>
-      turn.toolCalls.some(
-        (call) =>
-          call.name === 'wow__dungeon_loot' &&
-          /silverlaine/i.test(String((call.input as { boss?: string }).boss)),
-      ),
-    ),
-    // Wisp names items through registered references, so check those too.
-    expects('names the caster drops', (turn) => /Spellblade|Family Seal/i.test(turn.presented)),
-    expects(
-      'does not name the mace a mage cannot use in its own words',
-      (turn) => !/Baron's Scepter/i.test(turn.reply),
-    ),
-  ],
-  scorers: [
-    expects(
-      'says the sword needs training before he can use it',
-      (turn) => !/Spellblade/i.test(turn.reply) || /train|weapon master|learn/i.test(turn.reply),
-    ),
-  ],
-});
+const name = 'boss-loot';
+const swordTraining = createJudge<WispInput, { reply: string }>(
+  'says the sword needs training before he can use it',
+  ({ output: { reply } }) => ({
+    score: Number(!/Spellblade/i.test(reply) || /train|weapon master|learn/i.test(reply)),
+  }),
+);
+
+describeEval(
+  name,
+  {
+    harness: wispHarness,
+    judges: [swordTraining, ...qualityJudges(name)],
+    judgeThreshold: null,
+  },
+  (it) => {
+    it(
+      'reads one boss and recommends caster loot',
+      { tags: ['dungeons', 'gear'] },
+      async ({ expect, run }) => {
+        const result = await run({
+          question: 'what does Baron Silverlaine drop? anything for me?',
+          stubs: [...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
+        });
+        expect.soft(result.output.reply.trim()).not.toBe('');
+        expect.soft(toolCalls(result), 'filters the loot by the boss').toContainEqual(
+          expect.objectContaining({
+            name: 'wow__dungeon_loot',
+            arguments: expect.objectContaining({ boss: expect.stringMatching(/silverlaine/i) }),
+          }),
+        );
+        expect
+          .soft(presentedText(result), 'names the caster drops')
+          .toMatch(/Spellblade|Family Seal/i);
+        expect
+          .soft(result.output.reply, 'does not recommend the mace a mage cannot use')
+          .not.toMatch(/Baron's Scepter/i);
+      },
+    );
+  },
+);

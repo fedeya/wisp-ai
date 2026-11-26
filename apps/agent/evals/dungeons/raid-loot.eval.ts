@@ -1,25 +1,37 @@
-import { wispEval } from '../case.ts';
-import { calledTool, expects, notCalledTool, replied } from '../checks.ts';
+import { describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
+import { wispHarness } from '../harness.ts';
+import { avoidsTool } from '../judges.ts';
+import { qualityJudges } from '../quality-scorer.ts';
 
-wispEval('raid-loot', {
-  description:
-    'A raid-wide loot question stays within the response cap: the tool answers a per-boss summary, not every item.',
-  tags: ['dungeons'],
-  question: 'what drops in Molten Core? I want to know the bosses and what each one drops',
-  stubs: [...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
-  gates: [
-    replied(),
-    calledTool('wow__dungeon_loot'),
-    expects('each loot result stays under the size cap', (turn) =>
-      turn.toolCalls
-        .filter((call) => call.name === 'wow__dungeon_loot')
-        .every((call) => JSON.stringify(call.output ?? '').length < 45_000),
-    ),
-    expects('names Molten Core bosses from the loot data', (turn) =>
-      /Lucifron|Magmadar|Ragnaros/i.test(turn.reply),
-    ),
-  ],
-  scorers: [notCalledTool('web__web_search')],
-});
+const name = 'raid-loot';
+
+describeEval(
+  name,
+  {
+    harness: wispHarness,
+    judges: [avoidsTool('web__web_search'), ...qualityJudges(name)],
+    judgeThreshold: null,
+  },
+  (it) => {
+    it(
+      'summarizes raid loot by boss within the size cap',
+      { tags: ['dungeons'] },
+      async ({ expect, run }) => {
+        const result = await run({
+          question: 'what drops in Molten Core? I want to know the bosses and what each one drops',
+          stubs: [...dungeonStubs(), ...noLookupStubs(), ...fedrathStubs()],
+        });
+        const loot = toolCalls(result).filter((call) => call.name === 'wow__dungeon_loot');
+        expect.soft(result.output.reply.trim()).not.toBe('');
+        expect.soft(loot).not.toHaveLength(0);
+        for (const call of loot) {
+          const output = call.status === 'ok' ? call.result : undefined;
+          expect.soft(JSON.stringify(output ?? '').length).toBeLessThan(45_000);
+        }
+        expect.soft(result.output.reply).toMatch(/Lucifron|Magmadar|Ragnaros/i);
+      },
+    );
+  },
+);

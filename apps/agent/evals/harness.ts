@@ -1,5 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
-import { createHarness, toJsonValue } from 'vitest-evals';
+import {
+  attachHarnessRunToError,
+  createHarness,
+  normalizeHarnessRun,
+  toJsonValue,
+} from 'vitest-evals';
 import type { TranscriptEvent } from 'vitest-evals';
 import { recordContextUsage } from '../src/contract/context-usage.ts';
 import { createAgentEngine } from '../src/engine.ts';
@@ -85,7 +90,7 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
         }
       }
       const result = await turn.result;
-      return {
+      const report = {
         events,
         output: { reply: texts.join('\n\n') },
         usage: chat.usage && {
@@ -93,11 +98,15 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
           outputTokens: chat.usage.outputTokens,
         },
         artifacts: { steps },
-        errors:
-          result.status === 'completed'
-            ? []
-            : [new Error(result.error?.message ?? `Turn ${result.status}`)],
       };
+      if (result.status !== 'completed') {
+        const error = new Error(result.error?.message ?? `Turn ${result.status}`);
+        throw attachHarnessRunToError(
+          error,
+          normalizeHarnessRun(input, { ...report, errors: [error] }),
+        );
+      }
+      return report;
     } finally {
       await engine.close();
     }
