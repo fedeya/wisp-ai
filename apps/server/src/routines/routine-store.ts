@@ -9,7 +9,7 @@ import {
 } from '@wisp/protocol/routines';
 import type { z } from 'zod';
 import type { ApplicationOrm } from '@wisp/db/database';
-import { ApplicationDatabase } from '../db/application-database.ts';
+import { ApplicationDatabase } from '../application-database.ts';
 import { routines, routineRuns } from '@wisp/db/schema';
 import {
   decodeRoutine,
@@ -17,7 +17,7 @@ import {
   encodeRoutine,
   encodeRun,
   type RoutineRow,
-} from '../db/routine-record.ts';
+} from './routine-record.ts';
 
 interface HistoryOptions {
   characterKey?: string;

@@ -10,7 +10,7 @@ import { AGENT_MESSAGE_FORMAT, AgentHistory } from '../src/agent/agent-history.t
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { agentEntries, agentSessions } from '@wisp/db/schema';
-import type { ApplicationDatabase } from '../src/db/application-database.ts';
+import type { ApplicationDatabase } from '../src/application-database.ts';
 
 const user = (text: string): Entry => ({ type: 'user', content: [{ type: 'text', text }] });
 const answer = (text: string): Entry => ({

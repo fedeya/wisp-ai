@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
-import type { ApplicationDatabase } from '../db/application-database.ts';
-import { adoptCharacterKey, saveCharacterName } from '../db/character-keys.ts';
+import type { ApplicationDatabase } from '../application-database.ts';
+import { adoptCharacterKey, saveCharacterName } from './character-keys.ts';
 import { errorMessage } from '../errors.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { Chat } from './chat.ts';

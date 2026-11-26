@@ -134,9 +134,11 @@ the `AgentCapabilities` tag directly.
   state and workflows, and `api/` serves Desktop.
   Other domains include `agent/` (engine wiring, agent server, turns, model history),
   `auth/`, `chat/`, `reply/`, `models/`, `integrations/` (search, MCP,
-  simulation, TheWoWDB), `panels/`, `routines/`, `db/` and `migrations/`.
+  simulation, TheWoWDB), `panels/`, `routines/` and `migrations/` (one-time data
+  imports). Each domain keeps its own table access next to it (`chat/chat-record.ts`,
+  `routines/routine-record.ts`); the schema and connection live in `@wisp/db`.
   Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,
-  `logger.ts`, `app-paths.ts`) stay at the root. Package export names do not
+  `logger.ts`, `app-paths.ts`, `application-database.ts`) stay at the root. Package export names do not
   follow file moves.
 - **Shared schemas:** shapes are zod schemas owned by the workspace that defines
   the contract. The desktop–bridge contract is in `packages/protocol/src/`
