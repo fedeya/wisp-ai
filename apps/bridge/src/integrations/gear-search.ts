@@ -4,7 +4,7 @@ import {
   type armorSearchInput,
   type weaponSearchInput,
 } from '@wisp/agent/contract/game-inspection';
-import type { EverlootLookup } from '@wisp/agent/mcp-manager';
+import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 
 // Everloot lists at most 100 items per call; one call per quality keeps every
 // slot/type listing checked so far (all under 100 per quality) complete.

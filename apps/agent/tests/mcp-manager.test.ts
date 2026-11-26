@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { McpManager, mcpSetup, type McpStorage } from '../src/integrations/mcp-manager.ts';
 import * as Mcp from '../src/integrations/mcp-tools.ts';
+import * as Everloot from '../src/integrations/everloot.ts';
 import { AgentCapabilities } from '../src/host/capabilities.ts';
 import { EngineConfig } from '../src/host/engine-config.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -39,7 +40,7 @@ function listTools(
   allowed: (name: string, tool?: string) => boolean,
   readOnly: (session: string) => boolean = () => false,
 ) {
-  const layer = Mcp.layer.pipe(
+  const layer = Mcp.layer().pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(EngineConfig, {
@@ -177,7 +178,7 @@ await server.connect(new StdioServerTransport());
 );
 
 test('Everloot model tools and game lookups share one connection and keep Forever arguments fixed', async () => {
-  const manager = McpManager.make();
+  const manager = McpManager.make('.', undefined, [Everloot.profile]);
   using connect = vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
   using discover = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({
     tools: [
@@ -200,11 +201,15 @@ test('Everloot model tools and game lookups share one connection and keep Foreve
     content: [],
     structuredContent: { items: [] },
   });
-  const list = listTools(manager, (_server, tool) => tool !== 'market_value');
+  const list = listTools(
+    manager,
+    (_server, tool) => tool !== 'market_value',
+    () => true,
+  );
   try {
     const [tools, data] = await Promise.all([
       list('manual'),
-      Effect.runPromise(manager.readEverloot('item_categories', { quality: 'rare' }, () => true)),
+      Effect.runPromise(Everloot.read(manager, 'item_categories', { quality: 'rare' }, () => true)),
     ]);
     assert.deepEqual(data, { items: [] });
     assert.deepEqual(
@@ -229,6 +234,10 @@ test('Everloot model tools and game lookups share one connection and keep Foreve
     assert.equal(
       call.mock.contexts.every((client) => client === connect.mock.contexts[0]),
       true,
+    );
+    assert.deepEqual(
+      call.mock.calls.map(([, , options]) => options?.timeout),
+      [15_000, 120_000, 120_000],
     );
     assert.deepEqual(
       call.mock.calls.map(([params]) => params),

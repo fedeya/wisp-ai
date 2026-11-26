@@ -39,6 +39,7 @@ import { createSnapshotPublisher } from './addon/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './addon/snapshot-publisher.ts';
 import { PanelStore } from './addon/panels.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
+import * as Everloot from '@wisp/agent/everloot';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
 import { startDesktopServer } from './desktop/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
@@ -140,18 +141,22 @@ export const makeBridge = Effect.fn('Bridge.make')(
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
     const vault = options.vault || new NativeVault(paths.desktopExecutable);
-    const mcpManager = McpManager.make(ROOT, {
-      async readConfig() {
-        try {
-          return await readFile(mcpFile, 'utf8');
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
+    const mcpManager = McpManager.make(
+      ROOT,
+      {
+        async readConfig() {
+          try {
+            return await readFile(mcpFile, 'utf8');
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          }
+        },
+        writeConfig: (servers) => writeJson(mcpFile, { servers }),
+        readSecret: (key) => vault.read(key),
+        writeSecret: (key, value) => vault.write(key, value),
       },
-      writeConfig: (servers) => writeJson(mcpFile, { servers }),
-      readSecret: (key) => vault.read(key),
-      writeSecret: (key, value) => vault.write(key, value),
-    });
+      [Everloot.profile],
+    );
     yield* Effect.addFinalizer(() => mcpManager.close());
     yield* mcpManager.load();
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {

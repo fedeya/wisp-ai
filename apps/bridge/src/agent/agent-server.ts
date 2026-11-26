@@ -15,7 +15,8 @@ import { wowheadQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
-import type { EverlootLookup, McpManager } from '@wisp/agent/mcp-manager';
+import type { McpManager } from '@wisp/agent/mcp-manager';
+import * as Everloot from '@wisp/agent/everloot';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../addon/panels.ts';
@@ -50,7 +51,7 @@ interface AgentDependencies {
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
   webSearch: WowheadSearch;
-  mcpManager: Pick<McpManager, 'readEverloot'>;
+  mcpManager: Pick<McpManager, 'call'>;
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
@@ -514,12 +515,12 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
           },
           abort,
         );
-      const everlootAllowed = (tool: Parameters<EverlootLookup>[0]) =>
-        capabilitySettings.enabled('mcp:everloot') &&
-        capabilitySettings.enabled('mcp_tool:everloot:' + tool);
-      const readEverloot: EverlootLookup = (tool, args) =>
+      const everlootAllowed = (tool: Everloot.LookupTool) =>
+        capabilitySettings.enabled('mcp:' + Everloot.name) &&
+        capabilitySettings.enabled('mcp_tool:' + Everloot.name + ':' + tool);
+      const readEverloot: Everloot.Lookup = (tool, args) =>
         runPromise(
-          mcpManager.readEverloot(tool, args, () => everlootAllowed(tool)),
+          Everloot.read(mcpManager, tool, args, () => everlootAllowed(tool)),
           {
             signal: abort,
           },

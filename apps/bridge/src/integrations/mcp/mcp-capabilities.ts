@@ -43,7 +43,7 @@ export function mcpCapabilityCatalog(servers: McpServerView[]): Capability[] {
 
 /** Keeps capability settings and the MCP servers they switch on and off in step. */
 export function createMcpCapabilities(
-  mcpManager: Pick<McpManager, 'list' | 'setEnabled' | 'disconnect'>,
+  mcpManager: Pick<McpManager, 'list' | 'setEnabled' | 'disconnect' | 'bundled'>,
   capabilitySettings: CapabilitySettings,
 ) {
   return {
@@ -83,8 +83,9 @@ export function createMcpCapabilities(
         }
         return yield* Effect.fail(result.failure);
       }
-      if (id === 'mcp:everloot' && !enabled) {
-        yield* mcpManager.disconnect('everloot');
+      const bundled = mcpManager.bundled.find(({ definition }) => id === 'mcp:' + definition.name);
+      if (bundled && !enabled) {
+        yield* mcpManager.disconnect(bundled.definition.name);
       }
     }),
   };

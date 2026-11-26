@@ -4,6 +4,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { EngineConfig, type EngineHost } from './host/engine-config.ts';
 import * as Capabilities from './host/capabilities.ts';
 import * as Mcp from './integrations/mcp-tools.ts';
+import * as Everloot from './integrations/everloot.ts';
 import { SessionModels } from './models/session-models.ts';
 import { compactHistory } from './execution/compaction.ts';
 import {
@@ -153,7 +154,7 @@ export function createAgentEngine(options: EngineOptions) {
           SessionHistory.layer(history),
           Wisp.layer,
           SessionModels.layer,
-          TurnToolbox.layer.pipe(Layer.provide(Mcp.layer)),
+          TurnToolbox.layer.pipe(Layer.provide(Mcp.layer([Everloot.profile]))),
         ),
       ),
       Layer.provide(Capabilities.layerFromFile(host.capabilitiesFile)),

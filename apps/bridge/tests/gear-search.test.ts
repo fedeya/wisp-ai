@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { armorSearchInput, weaponSearchInput } from '@wisp/agent/contract/game-inspection';
 import { gearCategory, searchGear, type GearSearch } from '../src/integrations/gear-search.ts';
-import type { EverlootLookup } from '@wisp/agent/mcp-manager';
+import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 
 const armor = (args: unknown): GearSearch => ({
   kind: 'search_armor',

@@ -1,4 +1,4 @@
-import type { EverlootLookup } from '@wisp/agent/mcp-manager';
+import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 
 // How an item is obtained, by Everloot relation. Other relations (reagent for,
 // same icon, set membership) do not say where to get the item.

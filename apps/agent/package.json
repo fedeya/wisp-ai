@@ -30,6 +30,7 @@
     "./content": "./src/wisp/content.ts",
     "./mcp-tools": "./src/integrations/mcp-tools.ts",
     "./mcp-manager": "./src/integrations/mcp-manager.ts",
+    "./everloot": "./src/integrations/everloot.ts",
     "./contract/*": "./src/contract/*.ts"
   },
   "scripts": {

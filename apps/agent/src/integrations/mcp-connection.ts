@@ -22,6 +22,7 @@ function makeTransport(
   server: z.infer<typeof mcpDefinition>,
   secret: string | undefined,
   env: Record<string, string>,
+  redirect?: RequestRedirect,
 ) {
   return Effect.try({
     try: (): Transport => {
@@ -79,20 +80,20 @@ function makeTransport(
       }
       const headers: Record<string, string> = secret ? { authorization: 'Bearer ' + secret } : {};
       const url = new URL(server.url!);
+      const requestInit = { headers, ...(redirect !== undefined ? { redirect } : {}) };
       return server.transport === 'sse'
         ? new SSEClientTransport(url, {
-            requestInit: { headers },
+            requestInit,
             eventSourceInit: {
               fetch: (url, init) =>
                 fetch(url, {
                   ...init,
+                  ...(redirect !== undefined ? { redirect } : {}),
                   headers: { ...headers, ...Object.fromEntries(new Headers(init?.headers)) },
                 }),
             },
           })
-        : new StreamableHTTPClientTransport(url, {
-            requestInit: { headers, ...(server.name === 'everloot' ? { redirect: 'error' } : {}) },
-          });
+        : new StreamableHTTPClientTransport(url, { requestInit });
     },
     catch: connectionError,
   });
@@ -121,7 +122,7 @@ const discoverTools = Effect.fn('McpConnection.discoverTools')(function* (client
 
 const open = Effect.fn('McpConnection.open')(function* (
   transport: Transport,
-  refreshTools = false,
+  toolsTtl?: Duration.Input,
 ) {
   const client = yield* Effect.acquireRelease(
     Effect.sync(() => new Client({ name: 'WispAI', version: '0.2.0' }, { capabilities: {} })),
@@ -137,11 +138,12 @@ const open = Effect.fn('McpConnection.open')(function* (
     try: (signal) => client.connect(transport, { signal }),
     catch: connectionError,
   });
-  const listTools = refreshTools
-    ? yield* Effect.cachedWithTTL(discoverTools(client), (exit) =>
-        Exit.isSuccess(exit) ? Duration.minutes(5) : Duration.zero,
-      )
-    : yield* Effect.cached(discoverTools(client));
+  const listTools =
+    toolsTtl !== undefined
+      ? yield* Effect.cachedWithTTL(discoverTools(client), (exit) =>
+          Exit.isSuccess(exit) ? toolsTtl : Duration.zero,
+        )
+      : yield* Effect.cached(discoverTools(client));
   const tools = yield* listTools;
   return { client, tools, listTools };
 }, Effect.timeout('15 seconds'));
@@ -167,7 +169,7 @@ export interface Connection<E> {
 function make<E>(input: {
   scope: Scope.Scope;
   transport: Effect.Effect<Transport, E>;
-  refreshTools: boolean;
+  toolsTtl?: Duration.Input;
   onClosed: () => void;
 }): Connection<E> {
   const ready = Deferred.makeUnsafe<Connected, E | OpenError>();
@@ -180,7 +182,7 @@ function make<E>(input: {
     // The same fiber opens the client and owns its scope until the connection closes.
     const use = Effect.scoped(
       input.transport.pipe(
-        Effect.flatMap((transport) => open(transport, input.refreshTools)),
+        Effect.flatMap((transport) => open(transport, input.toolsTtl)),
         Effect.tap((client) => Deferred.succeed(ready, client)),
         Effect.andThen(Effect.never),
       ),

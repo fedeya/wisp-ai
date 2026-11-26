@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { itemSources } from '../src/integrations/item-sources.ts';
-import type { EverlootLookup } from '@wisp/agent/mcp-manager';
+import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 
 function everloot(edges: Record<number, unknown[]>, failing: number[] = []) {
   const calls: number[] = [];

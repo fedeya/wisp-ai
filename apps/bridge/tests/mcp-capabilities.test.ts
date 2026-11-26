@@ -54,6 +54,7 @@ test('a capability write failure restores the MCP server switch and preserves th
   const server = mcpDefinition.parse({ name: 'notes', url: 'https://example.com/mcp' });
   const switches: boolean[] = [];
   const manager = {
+    bundled: [],
     list: () => [{ ...server }],
     disconnect: () => Effect.void,
     setEnabled: (_key: string, enabled: boolean) =>
