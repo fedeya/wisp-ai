@@ -130,7 +130,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       state.handled.clear();
       void refreshModelCatalog();
     }
-    packet.context = contextCache.resolve(packet.context);
+    packet = { ...packet, context: contextCache.resolve(packet.context) };
     state.questRevision = contextCache.revision;
     state.characterRevision = contextCache.characterRevision;
     if (

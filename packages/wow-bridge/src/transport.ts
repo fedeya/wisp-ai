@@ -6,6 +6,7 @@ import {
   FileSystem,
   Path,
   Random,
+  Schema,
   Schedule,
   Semaphore,
   Stream,
@@ -25,6 +26,8 @@ import { parseDownlinkAck } from './downlink.ts';
 import { makeWriter } from './writer.ts';
 import { addonFiles } from './addon-files.ts';
 import { OutboundMailbox, type SlowDownlink } from './outbound-mailbox.ts';
+
+const decodePacket = Schema.decodeUnknownSync(packetSchema);
 
 /**
  * A game window that sent anything this recently keeps the bridge: another window's
@@ -292,7 +295,7 @@ export class DiskTransport {
                     .pipe(Effect.catch((error) => Effect.sync(() => this.onError(error))));
                 }
               } else {
-                packet = packetSchema.parse(value);
+                packet = decodePacket(value);
               }
             } catch {
               // Corrupt, oversized or schema-invalid messages wait for the game's
