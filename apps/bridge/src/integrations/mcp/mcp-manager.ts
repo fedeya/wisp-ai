@@ -53,8 +53,10 @@ export class McpManager {
     server: MCPDefinition,
     token?: string,
     providedEnv?: Record<string, string>,
+    onclose?: () => void,
   ): Promise<Connected> {
     const client = new Client({ name: 'WispAI', version: '0.2.0' }, { capabilities: {} });
+    client.onclose = onclose;
     const secret =
       token ??
       (server.hasToken
@@ -244,8 +246,14 @@ export class McpManager {
     }
     let pending = this.clients.get(key);
     if (!pending) {
-      pending = this.open(server).catch((error) => {
-        this.clients.delete(key);
+      const evict = () => {
+        // A disconnected connection may settle after its replacement was cached.
+        if (this.clients.get(key) === pending) {
+          this.clients.delete(key);
+        }
+      };
+      pending = this.open(server, undefined, undefined, evict).catch((error) => {
+        evict();
         throw error;
       });
       this.clients.set(key, pending);
