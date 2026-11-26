@@ -1,7 +1,57 @@
-import { describe, expect, it } from 'vitest';
-import { dungeonLootInput } from '@wisp/agent/contract/game-inspection';
-import { dungeonLoot } from '../src/integrations/dungeon-loot.ts';
-import generated from '../src/integrations/dungeon-loot.json' with { type: 'json' };
+import { describe, expect, it, vi } from 'vitest';
+import { Effect } from 'effect';
+import { dungeonLootInput } from '../src/contract/game-inspection.ts';
+import { unavailableGameAccess } from '../src/host/game-access.ts';
+import { dungeonLoot } from '../src/wisp/dungeon-loot.ts';
+import generated from '../src/wisp/dungeon-loot.json' with { type: 'json' };
+import tool from '../src/wisp/tools/wow__dungeon_loot.ts';
+
+it('runs the loot tool against the catalog, asking GameAccess only for raw items', async () => {
+  const inspectGame = vi.fn<typeof unavailableGameAccess.inspectGame>((_, inspection) => {
+    if (inspection.kind !== 'gear_candidates') {
+      return Effect.fail(new Error('Expected an item read'));
+    }
+    return Effect.succeed({
+      status: 'available',
+      data: { items: inspection.args.itemIds.map((id) => ({ id, name: `Item ${id}` })) },
+    });
+  });
+  const result = await tool.execute(
+    { instanceMapId: 389 },
+    {
+      session: { id: 'turn' },
+      callId: 'loot',
+      abortSignal: new AbortController().signal,
+      gameAccess: { ...unavailableGameAccess, inspectGame },
+      runEffect: Effect.runPromise,
+    },
+  );
+  expect(inspectGame).toHaveBeenCalledExactlyOnceWith('turn', {
+    kind: 'gear_candidates',
+    args: {
+      itemIds: expect.arrayContaining([14149]),
+      minRequiredLevel: 0,
+      maxRequiredLevel: 100,
+      includeOther: true,
+    },
+  });
+  expect(result).toMatchObject({
+    status: 'available',
+    instances: [
+      {
+        name: 'Ragefire Chasm',
+        bosses: expect.arrayContaining([
+          expect.objectContaining({
+            name: 'Taragaman the Hungerer',
+            items: expect.arrayContaining([
+              expect.objectContaining({ id: 14149, name: 'Item 14149' }),
+            ]),
+          }),
+        ]),
+      },
+    ],
+  });
+});
 
 const data = {
   generated: { note: 'test data' },

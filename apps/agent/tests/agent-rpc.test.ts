@@ -36,7 +36,7 @@ test('RPC validates inputs and memory responses instead of trusting JSON casts',
   await expect(
     agentRPC('memory', { agentSession: 'session', slot: 'character', operation: 'list' }),
   ).rejects.toThrow();
-  await expect(agentRPC('state', { agentSession: 'session', sections: [] })).rejects.toThrow();
+  await expect(agentRPC('identity', { agentSession: '' })).rejects.toThrow();
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 test('RPC preserves caller cancellation alongside its timeout', async () => {

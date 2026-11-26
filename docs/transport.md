@@ -18,21 +18,14 @@ enqueuing the event again. Game results are settled and acknowledged within the
 bridge. View updates replace one another, and one writer fiber handles the
 filesystem writes for the connection.
 
-The next migration is an agent-owned `GameAccess` service with `readCharacter`,
-`inspectGame`, and `runGameAction` operations. Each operation should return an
-Effect, take the current turn's agent session, and use the agent's existing
-game input and result contracts. The agent shouldn't need the WoW folder, the
-bridge session ID, or a bridge dependency. The server implementation will
-resolve the agent session to its working chat, apply capability and read-only
-policy, and pass the expected game session and character to the existing
-bridge connection. Cancellation should interrupt the request fiber; tests and
-evals can supply a `GameAccess` implementation without a game connection.
+The agent calls its in-process [`GameAccess` service](../apps/agent/src/host/game-access.ts)
+for `readCharacter`, `inspectGame`, and `runGameAction`. The server resolves the
+agent session to its working chat, applies capability and read-only policy, and
+uses the current bridge connection. Cancelling a tool interrupts its pending
+request. Tests and evals can supply their own implementation without live WoW.
 
-To migrate without changing tool behavior, move the current game HTTP handler
-logic behind that service first, preserving quest caching, inspection routing,
-and action safeguards. Then switch tool callers and remove `/state`, `/inspect`
-and `/action`. Other host RPCs and model streaming still have independent HTTP
-consumers; removing those is separate from `GameAccess`.
+Game tools no longer use the internal `/state`, `/inspect`, and `/action`
+routes. Other host RPCs and model streaming still use the loopback listener.
 
 ## Ownership and framing
 

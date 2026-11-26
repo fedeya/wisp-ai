@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { inspectGame } from '../../tools/game-tool.ts';
 export default enabledTool(
   'inspect_macros',
   defineTool({
@@ -13,11 +13,6 @@ export default enabledTool(
       includeBodies: z.boolean().default(false),
     }),
     label: { start: () => 'Reading macros', complete: () => 'Read macros' },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'macros', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => inspectGame(ctx, { kind: 'macros', args }),
   }),
 );

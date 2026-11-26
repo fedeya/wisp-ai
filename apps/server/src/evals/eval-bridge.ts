@@ -14,8 +14,6 @@ import { bridgeLogging } from '../logger.ts';
 import { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { NativeVault } from '../auth/secret-vault.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
-import { dungeonLootInput } from '@wisp/agent/contract/game-inspection';
-import { dungeonLoot } from '../integrations/dungeon-loot.ts';
 
 const dataDir = path.resolve(
   process.env.WISP_EVAL_DATA_DIR || path.join(os.homedir(), '.wisp-evals'),
@@ -95,7 +93,7 @@ async function serve(
       // requested IDs only, as the real bridge composes them.
       if (
         req.method === 'POST' &&
-        url.pathname === '/inspect' &&
+        url.pathname === '/fixture-inspection' &&
         process.env.WISP_EVAL_ITEM_SOURCES
       ) {
         let raw = '';
@@ -122,38 +120,9 @@ async function serve(
           );
           return;
         }
-        // Dungeon loot runs the real join over the shipped AtlasLoot data;
-        // only the game's item reading comes from the fixture
-        // (WISP_EVAL_GAME_ITEMS: itemId -> gear_candidates reading).
-        if (inspection?.kind === 'dungeon_loot' && process.env.WISP_EVAL_GAME_ITEMS) {
-          const known = JSON.parse(
-            await readFile(process.env.WISP_EVAL_GAME_ITEMS, 'utf8'),
-          ) as Record<string, { kind: 'item' | 'other'; reading: Record<string, unknown> }>;
-          const result = await dungeonLoot(
-            dungeonLootInput.parse(inspection.args),
-            async (candidates) => {
-              const ids = (candidates.args as { itemIds: number[] }).itemIds;
-              const found = ids.map((id) => known[id]).filter((entry) => entry !== undefined);
-              return {
-                status: 'available',
-                data: {
-                  status: 'available',
-                  items: found
-                    .filter((entry) => entry.kind === 'item')
-                    .map((entry) => entry.reading),
-                  other: found
-                    .filter((entry) => entry.kind === 'other')
-                    .map((entry) => entry.reading),
-                },
-              };
-            },
-          );
-          res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
-          return;
-        }
         res
           .writeHead(503, { 'content-type': 'text/plain' })
-          .end('Not available in evals: stub this tool (/inspect).');
+          .end('Not available in evals: stub this inspection tool.');
         return;
       }
       if (req.method === 'POST' && url.pathname === '/model/responses') {

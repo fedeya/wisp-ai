@@ -1,4 +1,6 @@
 import type { z } from 'zod';
+import type { Effect } from 'effect';
+import type { GameAccess } from '../host/game-access.ts';
 
 /** What a tool receives besides its input. */
 export interface ToolContext {
@@ -7,6 +9,8 @@ export interface ToolContext {
   abortSignal: AbortSignal;
   /** The model's id for this call. */
   callId: string;
+  gameAccess?: GameAccess['Service'];
+  runEffect?: <A>(effect: Effect.Effect<A, Error>, options: { signal: AbortSignal }) => Promise<A>;
 }
 
 /** A tool result shaped for the model, in the AI SDK tool-result form. */

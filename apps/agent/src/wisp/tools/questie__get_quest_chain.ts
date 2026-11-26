@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { inspectGame } from '../../tools/game-tool.ts';
 import { questChainInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'get_quest_chain',
@@ -13,11 +13,6 @@ export default enabledTool(
       start: ({ questId }) => `Reading the chain for quest #${questId}`,
       complete: ({ questId }) => `Looked up the chain for quest #${questId}`,
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'questie_chain', args } },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => inspectGame(ctx, { kind: 'questie_chain', args }),
   }),
 );

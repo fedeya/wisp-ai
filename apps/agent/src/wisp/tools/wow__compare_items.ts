@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { compareInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { inspectGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'compare_items',
@@ -10,11 +10,6 @@ export default enabledTool(
       'Reads candidate items and currently equipped items with raw stat differences for matching equipment slots. Specify slot to compare a particular slot. No simulated DPS or stat weights. Two-handed/dual-wield and set effects require separate reasoning; unavailable stats are unknown.',
     inputSchema: compareInput,
     label: { start: () => 'Comparing equipment', complete: () => 'Compared equipment' },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'compare_items', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => inspectGame(ctx, { kind: 'compare_items', args }),
   }),
 );

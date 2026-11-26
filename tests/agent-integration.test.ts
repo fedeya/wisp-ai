@@ -1,4 +1,6 @@
 import { test, expect } from 'vitest';
+import { Effect } from 'effect';
+import { unavailableGameAccess } from '@wisp/agent/game-access';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -70,24 +72,6 @@ test(
         } catch (error) {
           res.writeHead(503).end((error as Error).message);
         }
-        return;
-      }
-      if (req.url === '/inspect') {
-        const request = JSON.parse(body);
-        toolCalls.push(request);
-        const result =
-          request.inspection.kind === 'questie_quest'
-            ? {
-                status: 'available',
-                data: {
-                  status: 'available',
-                  questId: 166,
-                  data: { name: 'The Defias Brotherhood' },
-                  reference: { kind: 'quest', id: 166 },
-                },
-              }
-            : { status: 'completed', data: { settings: [], verified: true } };
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
       requests.push(JSON.parse(body));
@@ -213,6 +197,24 @@ test(
       token: 'offline-token',
       capabilitiesFile: () => flags,
       history,
+      gameAccess: {
+        ...unavailableGameAccess,
+        inspectGame: (agentSession, inspection) =>
+          Effect.sync(() => {
+            toolCalls.push({ agentSession, inspection });
+            return inspection.kind === 'questie_quest'
+              ? {
+                  status: 'available',
+                  data: {
+                    status: 'available',
+                    questId: 166,
+                    data: { name: 'The Defias Brotherhood' },
+                    reference: { kind: 'quest', id: 166 },
+                  },
+                }
+              : { status: 'completed', data: { settings: [], verified: true } };
+          }),
+      },
     });
     const session = engine.newSessionId();
     const send = (input: TurnInput) =>

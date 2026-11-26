@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { inspectGame } from '../../tools/game-tool.ts';
 import { itemPricesInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'get_item_prices',
@@ -13,11 +13,6 @@ export default enabledTool(
       start: () => 'Reading cached auction prices',
       complete: () => 'Read cached auction prices',
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'item_prices', args } },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => inspectGame(ctx, { kind: 'item_prices', args }),
   }),
 );

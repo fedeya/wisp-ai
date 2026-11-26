@@ -3,6 +3,7 @@ import { Effect } from 'effect';
 import type { GameCall } from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { make as makeGameAccess } from '../src/game/agent-game-access.ts';
 import { runBridgeEffect } from './capture-logs.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
@@ -57,6 +58,9 @@ test('agent server rejects bad tokens, unknown routes and oversized bodies', asy
     expect(forbidden.status).toBe(403);
     expect(await forbidden.text()).toBe('Forbidden');
     expect((await server.post('/unknown', {})).status).toBe(404);
+    for (const route of ['/state', '/inspect', '/action']) {
+      expect((await server.post(route, {})).status).toBe(404);
+    }
     expect(
       (await fetch(server.origin + '/identity', { headers: { authorization: 'Bearer test' } }))
         .status,
@@ -101,27 +105,59 @@ test('actions run without a character identity and add the expected character wh
     characterKey: JSON.stringify(['WoW Forever', '', 'Fedrath']),
   };
   const request = vi.fn((_input: GameCall) => Effect.succeed({ status: 'completed' }));
-  const server = await serve({ getChats: () => [unknown, known], requestGame: request });
+  const game = makeGameAccess({
+    getChats: () => [unknown, known, { ...workingChat(true), agentSession: 'automatic' }],
+    requestGame: request,
+    currentTransport: () => 'addon',
+    capabilitySettings: { enabled: () => true },
+    mcpManager: { call: vi.fn() },
+  });
   const waypoint = {
-    kind: 'set_waypoint',
+    kind: 'set_waypoint' as const,
     args: { mapId: 1, x: 50, y: 50, label: 'NPC', source: 'user', navigate: true },
   };
-  try {
-    for (const agentSession of ['eve', 'known']) {
-      const reply = await server.post('/action', { agentSession, action: waypoint });
-      expect(reply.status).toBe(200);
-    }
-    expect(
-      request.mock.calls.map(([input]) =>
-        input.operation.kind === 'act' ? input.operation.action : undefined,
-      ),
-    ).toEqual([waypoint, { ...waypoint, expectedCharacter: { realm: '', name: 'Fedrath' } }]);
-  } finally {
-    await server.close();
+  for (const agentSession of ['eve', 'known']) {
+    await expect(Effect.runPromise(game.runGameAction(agentSession, waypoint))).resolves.toEqual({
+      status: 'completed',
+    });
   }
+  await expect(Effect.runPromise(game.runGameAction('automatic', waypoint))).rejects.toThrow(
+    'Automatic suggestions cannot change',
+  );
+  expect(
+    request.mock.calls.map(([input]) =>
+      input.operation.kind === 'act' ? input.operation.action : undefined,
+    ),
+  ).toEqual([waypoint, { ...waypoint, expectedCharacter: { realm: '', name: 'Fedrath' } }]);
 });
 
-test('agent server aborts game requests when the agent hangs up', async () => {
+test('raw loot reads require the dungeon loot capability', async () => {
+  const chat = workingChat();
+  const requestGame = vi.fn(() => Effect.succeed({ status: 'available', data: {} }));
+  let allowed = false;
+  const game = makeGameAccess({
+    getChats: () => [chat],
+    currentTransport: () => 'addon',
+    requestGame,
+    capabilitySettings: { enabled: (key) => key === 'tool:dungeon_loot' && allowed },
+    mcpManager: { call: vi.fn() },
+  });
+  const inspection = { kind: 'gear_candidates' as const, args: { itemIds: [14149] } };
+  await expect(Effect.runPromise(game.inspectGame('eve', inspection))).rejects.toThrow('disabled');
+  expect(requestGame).not.toHaveBeenCalled();
+  allowed = true;
+  await expect(Effect.runPromise(game.inspectGame('eve', inspection))).resolves.toMatchObject({
+    status: 'available',
+  });
+  expect(requestGame).toHaveBeenCalledExactlyOnceWith({
+    chat: chat.id,
+    session: 'addon',
+    agent: true,
+    operation: { kind: 'inspect', inspection },
+  });
+});
+
+test('interrupting an in-process inspection aborts the pending game request', async () => {
   const chat = workingChat();
   let seen: AbortSignal | undefined;
   const request = vi.fn(() =>
@@ -130,23 +166,26 @@ test('agent server aborts game requests when the agent hangs up', async () => {
       return new Promise(() => {});
     }),
   );
-  const server = await serve({ getChats: () => [chat], requestGame: request });
+  const game = makeGameAccess({
+    getChats: () => [chat],
+    requestGame: request,
+    currentTransport: () => 'addon',
+    capabilitySettings: { enabled: () => true },
+    mcpManager: { call: vi.fn() },
+  });
+  const client = new AbortController();
+  const reply = Effect.runPromiseExit(game.inspectGame('eve', { kind: 'target', args: {} }), {
+    signal: client.signal,
+  });
   try {
-    const client = new AbortController();
-    const reply = server
-      .post(
-        '/inspect',
-        { agentSession: 'eve', inspection: { kind: 'target', args: {} } },
-        { signal: client.signal },
-      )
-      .catch(() => undefined);
     await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
     expect(seen?.aborted).toBe(false);
     client.abort();
-    await reply;
+    expect((await reply)._tag).toBe('Failure');
     await vi.waitFor(() => expect(seen?.aborted).toBe(true));
   } finally {
-    await server.close();
+    client.abort();
+    await reply;
   }
 });
 

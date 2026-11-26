@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGameAction } from '../../tools/game-tool.ts';
 import { waypointInput } from '../../contract/game-actions.ts';
 export default enabledTool(
   'set_map_waypoint',
@@ -16,11 +16,6 @@ export default enabledTool(
           ? 'Marked map'
           : 'Tried to mark the map',
     },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'action',
-        { agentSession: ctx.session.id, action: { kind: 'set_waypoint', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => runGameAction(ctx, { kind: 'set_waypoint', args }),
   }),
 );

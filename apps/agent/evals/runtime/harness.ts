@@ -1,4 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
+import { Effect } from 'effect';
+import { gameReading, unavailableGameAccess } from '../../src/host/game-access.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -12,6 +14,9 @@ import type { ToolStubOutcome } from '../../src/engine.ts';
 import { agentHost } from '../../src/host/agent-host.ts';
 import { MemoryHistory } from '../../src/session/memory-history.ts';
 import { playerMessage } from '../fixtures/fedrath.ts';
+import { gameItemReadings } from '../fixtures/dungeon-loot.ts';
+
+const lootItems = gameItemReadings();
 
 export interface ToolStub {
   id: string;
@@ -49,6 +54,44 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
       origin: () => host.origin,
       token: host.token,
       history: new MemoryHistory(),
+      gameAccess: {
+        ...unavailableGameAccess,
+        inspectGame: (_session, inspection) => {
+          if (inspection.kind === 'gear_candidates') {
+            return Effect.sync(() => {
+              const found = inspection.args.itemIds.map((id) => lootItems[id]).filter(Boolean);
+              return {
+                status: 'available',
+                data: {
+                  status: 'available',
+                  items: found
+                    .filter((entry) => entry.kind === 'item')
+                    .map((entry) => entry.reading),
+                  other: found
+                    .filter((entry) => entry.kind === 'other')
+                    .map((entry) => entry.reading),
+                },
+              };
+            });
+          }
+          return Effect.tryPromise({
+            try: async (signal) => {
+              const response = await fetch(new URL('/fixture-inspection', host.origin), {
+                method: 'POST',
+                headers: {
+                  authorization: 'Bearer ' + host.token,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify({ inspection }),
+                signal,
+              });
+              if (!response.ok) throw new Error(await response.text());
+              return gameReading.parse(await response.json());
+            },
+            catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+          });
+        },
+      },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });
     try {

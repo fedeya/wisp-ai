@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { inspectGame } from '../../tools/game-tool.ts';
 import { storedItemInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'find_item',
@@ -10,11 +10,6 @@ export default enabledTool(
       'Locate a verified item ID using Syndicator public API, including Baganator inventory data. Cached bag, bank, mail, equipped and auction counts across visible characters on the same connected realm and faction; guild storage requires includeGuild=true. Results are cached observations, not proof the item is currently accessible or absent. Use core character/resource reads for fresh bags; never claim to transfer items.',
     inputSchema: storedItemInput,
     label: { start: () => 'Finding stored item', complete: () => 'Checked stored items' },
-    execute: (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'stored_item', args } },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => inspectGame(ctx, { kind: 'stored_item', args }),
   }),
 );

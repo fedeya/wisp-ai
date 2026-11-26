@@ -1,12 +1,10 @@
-import { expectedCharacter } from '@wisp/protocol/character-key';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import { rpcRequests, rpcResponses } from '@wisp/agent/contract/agent-rpc';
-import { actionTools } from '@wisp/agent/contract/game-actions';
+import { rpcRequests } from '@wisp/agent/contract/agent-rpc';
 import { routineInput, routineEvents } from '@wisp/protocol/routines';
 import { panelInput } from '@wisp/agent/contract/panels';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
@@ -15,13 +13,10 @@ import { wowheadQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
-import type { McpManager } from '@wisp/agent/mcp-manager';
-import * as Everloot from '@wisp/agent/everloot';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { MemoryStore } from './memory-store.ts';
-import type { Connection, GameCall } from '@wisp/wow-bridge';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
@@ -32,11 +27,7 @@ import { Effect } from 'effect';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
-import { readLoadedItems, retriesItemLoading } from '../game/item-loading.ts';
-import { searchGear } from '../integrations/gear-search.ts';
-import { dungeonLoot } from '../integrations/dungeon-loot.ts';
-import { itemSources } from '../integrations/item-sources.ts';
-import { characterIdentity, conversationTitle, queryCharacterSections } from '../chat/context.ts';
+import { characterIdentity, conversationTitle } from '../chat/context.ts';
 import type { MemoryView } from '../session-state.ts';
 interface AgentDependencies {
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
@@ -46,12 +37,10 @@ interface AgentDependencies {
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
   webSearch: WowheadSearch;
-  mcpManager: Pick<McpManager, 'call'>;
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryStore: MemoryStore;
-  requestGame: Connection['request'];
   database: TheWoWDB;
   simulator: Simulator;
   getChats: () => Chat[];
@@ -82,48 +71,16 @@ function abortOnHangUp(c: AgentContext) {
   });
   return abort.signal;
 }
-const inspectionTools = {
-  settings: 'get_settings',
-  npc_locations: 'find_npc_locations',
-  questie_quest: 'get_quest',
-  questie_chain: 'get_quest_chain',
-  object_locations: 'find_object_locations',
-  stored_item: 'find_item',
-  item_prices: 'get_item_prices',
-  polestar_guide: 'get_guide_step',
-  reference: 'inspect_reference',
-  progression: 'query_progression',
-  target: 'inspect_target',
-  trainer: 'inspect_trainer',
-  flight_paths: 'inspect_flight_paths',
-  dungeons: 'query_dungeons',
-  training: 'query_training',
-  chat: 'read_chat',
-  combat: 'read_combat',
-  resources: 'query_resources',
-  compare_items: 'compare_items',
-  search_armor: 'search_armor',
-  search_weapons: 'search_weapons',
-  item_sources: 'item_sources',
-  dungeon_loot: 'dungeon_loot',
-  auctions: 'inspect_auctions',
-  macros: 'inspect_macros',
-  map: 'inspect_map',
-  hearthstone: 'inspect_hearthstone',
-} as const;
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
-  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
     connections,
     webSearch,
-    mcpManager,
     capabilitySettings,
     routineStore,
     panelStore,
     memoryStore,
-    requestGame: sendGameRequest,
     database,
     simulator,
     getChats,
@@ -238,9 +195,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
           }
           if (
             chat.proactive &&
-            (route === '/action' ||
-              (route === '/routines' &&
-                !['catalog', 'list', 'get'].includes(operation.input?.operation || '')) ||
+            ((route === '/routines' &&
+              !['catalog', 'list', 'get'].includes(operation.input?.operation || '')) ||
               (route === '/memory' && operation.operation !== 'list') ||
               (route === '/panels' &&
                 ['save', 'remove'].includes(operation.input?.operation || '')))
@@ -461,101 +417,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     return { title };
   });
 
-  // Game reads and actions go to the addon through the pending-request mailbox.
-  const game = (route: '/state' | '/inspect' | '/action') =>
-    tool(route, async ({ raw, chat, signal }) => {
-      const inspection =
-        route === '/inspect' ? rpcRequests.inspect.parse(raw).inspection : undefined;
-      const action = route === '/action' ? rpcRequests.action.parse(raw).action : undefined;
-      const name = action
-        ? actionTools[action.kind]
-        : inspection
-          ? inspectionTools[inspection.kind]
-          : 'query_character';
-      if (!capabilitySettings.enabled('tool:' + name)) {
-        throw new Error('This tool is disabled in Settings');
-      }
-      // A character switch reloads the addon and replaces its transport, which
-      // `tool` already rejects. The expected character is a second check that
-      // is sent only when the turn knew who was playing.
-      const stateRequest = !inspection && !action ? rpcRequests.state.parse(raw) : undefined;
-      const abort = signal();
-      const requestGame = (input: GameCall) =>
-        abort.aborted
-          ? Promise.reject(new Error('Game request cancelled'))
-          : runPromise(sendGameRequest(input), { signal: abort });
-      if (stateRequest) {
-        return queryCharacterSections(
-          chat,
-          stateRequest.sections,
-          async (sections) =>
-            rpcResponses.state.parse(
-              await requestGame({
-                chat: chat.id,
-                session: currentTransport(),
-                operation: { kind: 'read', sections },
-                agent: true,
-              }),
-            ),
-          stateRequest.refresh,
-        );
-      }
-      const request = (gameInspection = inspection as unknown) =>
-        requestGame({
-          chat: chat.id,
-          session: currentTransport(),
-          agent: true,
-          operation: action
-            ? {
-                kind: 'act',
-                action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
-              }
-            : { kind: 'inspect', inspection: gameInspection },
-        });
-      const everlootAllowed = (tool: Everloot.LookupTool) =>
-        capabilitySettings.enabled('mcp:' + Everloot.name) &&
-        capabilitySettings.enabled('mcp_tool:' + Everloot.name + ':' + tool);
-      const readEverloot: Everloot.Lookup = (tool, args) =>
-        runPromise(
-          Everloot.read(mcpManager, tool, args, () => everlootAllowed(tool)),
-          {
-            signal: abort,
-          },
-        );
-      if (inspection?.kind === 'search_armor' || inspection?.kind === 'search_weapons') {
-        if (!everlootAllowed('item_categories')) {
-          throw new Error(
-            'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
-          );
-        }
-        return searchGear(
-          inspection,
-          (candidates) => readLoadedItems(() => request(candidates), abort),
-          readEverloot,
-        );
-      }
-      if (inspection?.kind === 'dungeon_loot') {
-        return dungeonLoot(inspection.args, (candidates) =>
-          readLoadedItems(() => request(candidates), abort),
-        );
-      }
-      if (inspection?.kind === 'item_sources') {
-        return itemSources(inspection.args.itemIds, (names) => request(names), {
-          everloot: everlootAllowed('entity_relations'),
-          questie: capabilitySettings.enabled('integration:questie'),
-          auctionator:
-            capabilitySettings.enabled('integration:auctionator') &&
-            capabilitySettings.enabled('tool:get_item_prices'),
-          readEverloot,
-        });
-      }
-      return inspection && retriesItemLoading(inspection)
-        ? readLoadedItems(() => request(), abort)
-        : request();
-    });
-  game('/state');
-  game('/inspect');
-  game('/action');
   return app;
 });
 // Node listener for the loopback agent server.
