@@ -1,9 +1,6 @@
 import type { TurnInput } from '../../src/engine.ts';
 import type { ToolStub } from '../runtime/harness.ts';
 
-// Stub responses must be plain JSON values.
-const json = (value: unknown) => JSON.parse(JSON.stringify(value));
-
 // A level 21 Horde mage modelled on a real player's gear questions: empty
 // head, neck, shoulder and one ring slot, a few weak pieces and an English
 // client, the language most players use. Item data is illustrative; IDs only need to be consistent here.
@@ -448,7 +445,7 @@ export function itemSourcesFixture() {
 }
 
 export function fedrathStubs(): ToolStub[] {
-  return json([
+  return [
     {
       id: 'character',
       tool: 'wow__query_character',
@@ -561,5 +558,5 @@ export function fedrathStubs(): ToolStub[] {
         response: { status: 'not_found', source: { name: 'TheWoWDB', version: 'forever' } },
       },
     },
-  ]);
+  ];
 }

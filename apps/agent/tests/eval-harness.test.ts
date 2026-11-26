@@ -100,9 +100,15 @@ describeEval('Wisp eval adapter', { harness: wispHarness }, (it) => {
       try {
         const stubs = [
           {
+            id: 'unrelated-settings',
+            tool: 'wow__get_settings',
+            match: { query: /^chat$/ },
+            outcome: { throw: { message: 'Wrong settings fixture' } },
+          },
+          {
             id: 'settings',
             tool: 'wow__get_settings',
-            match: { query: { const: 'nameplates' } },
+            match: { query: /^nameplates$/i },
             outcome: { response: { settings: [{ id: 'nameplateShowAll', value: true }] } },
           },
         ];

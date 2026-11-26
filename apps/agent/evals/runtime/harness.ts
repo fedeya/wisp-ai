@@ -16,7 +16,7 @@ import { playerMessage } from '../fixtures/fedrath.ts';
 export interface ToolStub {
   id: string;
   tool: string;
-  match?: Record<string, { const: unknown }>;
+  match?: Record<string, { const: unknown } | RegExp>;
   outcome: ToolStubOutcome;
 }
 
@@ -30,9 +30,12 @@ function matches(stub: ToolStub, tool: string, input: unknown) {
     return false;
   }
   const fields = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-  return Object.entries(stub.match ?? {}).every(([key, rule]) =>
-    isDeepStrictEqual(fields[key], rule.const),
-  );
+  return Object.entries(stub.match ?? {}).every(([key, rule]) => {
+    const value = fields[key];
+    return rule instanceof RegExp
+      ? typeof value === 'string' && value.search(rule) !== -1
+      : isDeepStrictEqual(value, rule.const);
+  });
 }
 
 export const wispHarness = createHarness<WispInput, { reply: string }>({
