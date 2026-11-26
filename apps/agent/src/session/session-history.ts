@@ -42,13 +42,13 @@ export interface StoredRow {
  */
 export interface HistoryStore {
   /** Called at the start of every turn; the first one starts the session. */
-  begin(session: string, start: SessionStart): Promise<void>;
+  begin(session: string, start: SessionStart): Effect.Effect<void, unknown>;
   /** The latest compaction's summary and the message rows from its `keptFrom` on. */
-  load(session: string): Promise<{ summary?: string; rows: StoredRow[] }>;
+  load(session: string): Effect.Effect<{ summary?: string; rows: StoredRow[] }, unknown>;
   /** Logs entries after the last one. */
-  append(session: string, entries: readonly Entry[], model: string): Promise<void>;
-  addUsage(session: string, usage: TokenUsage): Promise<void>;
-  delete(session: string): Promise<void>;
+  append(session: string, entries: readonly Entry[], model: string): Effect.Effect<void, unknown>;
+  addUsage(session: string, usage: TokenUsage): Effect.Effect<void, unknown>;
+  delete(session: string): Effect.Effect<void, unknown>;
 }
 
 /** Reading or writing a session's log failed. */
@@ -103,8 +103,8 @@ export class SessionHistory extends Context.Service<
 const decodeMessage = Schema.decodeUnknownEffect(Message);
 
 /** A store call, failing with a HistoryError for its operation. */
-const call = <A>(operation: HistoryError['operation'], run: () => Promise<A>) =>
-  Effect.tryPromise({
-    try: run,
-    catch: (cause) => new HistoryError({ operation, cause }),
-  }).pipe(Effect.withSpan('SessionHistory.' + operation));
+const call = <A>(operation: HistoryError['operation'], run: () => Effect.Effect<A, unknown>) =>
+  Effect.suspend(run).pipe(
+    Effect.mapError((cause) => new HistoryError({ operation, cause })),
+    Effect.withSpan('SessionHistory.' + operation),
+  );

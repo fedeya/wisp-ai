@@ -1,3 +1,4 @@
+import { Effect } from 'effect';
 import type { HistoryStore, SessionStart, StoredRow, TokenUsage } from './session-history.ts';
 import type { Entry } from './session-message.ts';
 
@@ -18,47 +19,57 @@ export class MemoryHistory implements HistoryStore {
   >();
   private readonly logs = new Map<string, Logged[]>();
 
-  async begin(session: string, start: SessionStart) {
-    const known = this.sessions.get(session);
-    this.sessions.set(
-      session,
-      known ? { ...known, model: start.model } : { ...start, inputTokens: 0, outputTokens: 0 },
-    );
+  begin(session: string, start: SessionStart) {
+    return Effect.sync(() => {
+      const known = this.sessions.get(session);
+      this.sessions.set(
+        session,
+        known ? { ...known, model: start.model } : { ...start, inputTokens: 0, outputTokens: 0 },
+      );
+    });
   }
 
-  async load(session: string) {
-    const log = this.logs.get(session) ?? [];
-    const latest = log.findLast(({ entry }) => entry.type === 'compaction')?.entry;
-    const keptFrom = latest?.type === 'compaction' ? latest.keptFrom : 0;
-    const rows = log.flatMap(({ entry, model }, seq): StoredRow[] =>
-      entry.type !== 'compaction' && seq >= keptFrom
-        ? [{ seq, model, data: structuredClone(entry) }]
-        : [],
-    );
-    return latest?.type === 'compaction' && latest.summary !== undefined
-      ? { summary: latest.summary, rows }
-      : { rows };
+  load(session: string) {
+    return Effect.sync(() => {
+      const log = this.logs.get(session) ?? [];
+      const latest = log.findLast(({ entry }) => entry.type === 'compaction')?.entry;
+      const keptFrom = latest?.type === 'compaction' ? latest.keptFrom : 0;
+      const rows = log.flatMap(({ entry, model }, seq): StoredRow[] =>
+        entry.type !== 'compaction' && seq >= keptFrom
+          ? [{ seq, model, data: structuredClone(entry) }]
+          : [],
+      );
+      return latest?.type === 'compaction' && latest.summary !== undefined
+        ? { summary: latest.summary, rows }
+        : { rows };
+    });
   }
 
-  async append(session: string, entries: readonly Entry[], model: string) {
-    const log = this.logs.get(session) ?? [];
-    for (const entry of entries) {
-      log.push({ entry: structuredClone(entry), model });
-    }
-    this.logs.set(session, log);
+  append(session: string, entries: readonly Entry[], model: string): Effect.Effect<void, unknown> {
+    return Effect.sync(() => {
+      const log = this.logs.get(session) ?? [];
+      for (const entry of entries) {
+        log.push({ entry: structuredClone(entry), model });
+      }
+      this.logs.set(session, log);
+    });
   }
 
-  async addUsage(session: string, usage: TokenUsage) {
-    const totals = this.sessions.get(session);
-    if (totals) {
-      totals.inputTokens += usage.inputTokens;
-      totals.outputTokens += usage.outputTokens;
-    }
+  addUsage(session: string, usage: TokenUsage) {
+    return Effect.sync(() => {
+      const totals = this.sessions.get(session);
+      if (totals) {
+        totals.inputTokens += usage.inputTokens;
+        totals.outputTokens += usage.outputTokens;
+      }
+    });
   }
 
-  async delete(session: string) {
-    this.logs.delete(session);
-    this.sessions.delete(session);
+  delete(session: string) {
+    return Effect.sync(() => {
+      this.logs.delete(session);
+      this.sessions.delete(session);
+    });
   }
 
   /** Every entry of a session's log, compactions included, with its model. */

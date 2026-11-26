@@ -1,6 +1,7 @@
 import * as SqliteClient from '@effect/sql-sqlite-node/SqliteClient';
 import * as SqliteDrizzle from 'drizzle-orm/effect-sqlite-node';
 import { migrate } from 'drizzle-orm/effect-sqlite-node/migrator';
+import type { SQLiteEffectDatabase } from 'drizzle-orm/sqlite-core/effect';
 import { Context, Effect, Layer, Schedule, Schema } from 'effect';
 import * as Reactivity from 'effect/reactivity/Reactivity';
 import { migrationsFolder } from './migrate.ts';
@@ -15,6 +16,12 @@ export class DatabaseError extends Schema.TaggedError<DatabaseError>()('Database
 export type SqlOrm = SqliteDrizzle.EffectSQLiteNodeDatabase & {
   $client: SqliteClient.SqliteClient;
 };
+
+/** The database or an open transaction on it: queries read the same either way. */
+export type SqlExecutor = SQLiteEffectDatabase<
+  SqliteDrizzle.EffectSQLiteNodeQueryEffectHKT,
+  SqliteDrizzle.EffectSQLiteNodeRunResult
+>;
 
 /** Wisp's SQLite file as an Effect Drizzle database: open, in WAL mode and migrated. */
 export class SqlDatabase extends Context.Service<SqlDatabase, { readonly db: SqlOrm }>()(
