@@ -1,5 +1,5 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
-import type { Packet } from '@wisp/protocol/protocol';
+import type { Packet } from './protocol.ts';
 import { selectionValues } from '@wisp/protocol/ui-schema';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
 import { randomUUID } from 'node:crypto';

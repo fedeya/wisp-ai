@@ -11,7 +11,7 @@ import {
   preferBulkDelivery,
   type SlowDownlink,
 } from '../src/addon/transport.ts';
-import type { Packet } from '@wisp/protocol/protocol';
+import type { Packet } from '../src/addon/protocol.ts';
 import {
   DOWNLINK_HELPERS,
   DOWNLINK_KIND,
@@ -28,8 +28,8 @@ import {
   readUplink,
   replaceUplink,
   inflateMessage,
-} from '@wisp/protocol/mailbox';
-import { applyDownlink } from '@wisp/protocol/downlink';
+} from '../src/addon/mailbox.ts';
+import { applyDownlink } from '../src/addon/downlink.ts';
 
 async function fixture(
   receive: (packet: Packet, bridge: DiskTransport) => void = () => {},

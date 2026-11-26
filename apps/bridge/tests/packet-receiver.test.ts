@@ -10,7 +10,7 @@ import { RoutineStore } from '../src/routines/routine-store.ts';
 import { ApplicationDatabase } from '../src/db/application-database.ts';
 import { PanelStore } from '../src/addon/panels.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { packetSchema } from '@wisp/protocol/protocol';
+import { packetSchema } from '../src/addon/protocol.ts';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {

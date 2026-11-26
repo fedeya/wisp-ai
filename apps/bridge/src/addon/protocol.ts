@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { SLOT_COUNT } from './addon-helpers.js';
+import { SLOT_COUNT } from '@wisp/protocol/addon-helpers';
 
-export { BIT_COUNT, SLOT_COUNT, luaJson } from './addon-helpers.js';
+export { BIT_COUNT, SLOT_COUNT, luaJson } from '@wisp/protocol/addon-helpers';
 export const PREFIX = 'WispAI';
 const identifier = z.string().min(1).max(200);
 const envelope = z.object({

@@ -3,7 +3,7 @@ import { readdir, readFile, mkdir, writeFile, rename, rm } from 'node:fs/promise
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { luaJson, packetSchema, type Packet } from '@wisp/protocol/protocol';
+import { luaJson, packetSchema, type Packet } from './protocol.ts';
 import {
   MailboxDecoder,
   UPLINK_KIND,
@@ -19,8 +19,8 @@ import {
   readUplink,
   readDownlink,
   replaceDownlink,
-} from '@wisp/protocol/mailbox';
-import { parseDownlinkAck, prepareDownlink } from '@wisp/protocol/downlink';
+} from './mailbox.ts';
+import { parseDownlinkAck, prepareDownlink } from './downlink.ts';
 
 interface PublishedSnapshot {
   revision: number;

@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Logger } from 'pino';
-import type { Packet } from '@wisp/protocol/protocol';
+import type { Packet } from './protocol.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
 import type { GameRequests } from './game-requests.ts';

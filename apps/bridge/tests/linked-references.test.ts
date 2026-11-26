@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { linkedReferences } from '../src/references.ts';
+import { linkedReferences } from '../src/chat/references.ts';
 
 test('native map pins, percentage links and zone-only links keep distinct coordinate semantics', () => {
   const native = linkedReferences(

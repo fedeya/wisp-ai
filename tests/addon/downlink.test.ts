@@ -2,7 +2,7 @@ import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { deflateSync, inflateSync } from 'node:zlib';
-import { prepareDownlink, parseDownlinkAck } from '../../packages/protocol/src/downlink.ts';
+import { prepareDownlink, parseDownlinkAck } from '@wisp/bridge/downlink';
 import {
   DOWNLINK_KIND,
   COMPACT_ACK_KIND,
@@ -13,7 +13,7 @@ import {
   encodeFrame,
   encodeMessage,
   inflateMessage,
-} from '../../packages/protocol/src/mailbox.ts';
+} from '@wisp/bridge/mailbox';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
