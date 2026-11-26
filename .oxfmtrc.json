@@ -9,6 +9,7 @@
     "runtime/**",
     ".agents/skills/base-ui/**",
     ".agents/skills/build-review-interface/**",
+    ".agents/skills/effect/**",
     ".agents/skills/error-discovery/**",
     ".agents/skills/eval-audit/**",
     ".agents/skills/evals-start/**",
