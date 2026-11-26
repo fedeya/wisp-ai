@@ -1,6 +1,6 @@
 import { and, eq, like } from 'drizzle-orm';
 import { adoptableKeys, characterName, type CharacterName } from '@wisp/protocol/character-key';
-import type { ApplicationOrm } from './application-database.ts';
+import type { ApplicationOrm } from '@wisp/db/database';
 import {
   chats,
   memoryEntries,
@@ -9,7 +9,7 @@ import {
   panels,
   routineRuns,
   routines,
-} from './schema.ts';
+} from '@wisp/db/schema';
 
 function storedKeys(db: ApplicationOrm) {
   const keys = (rows: { key: string | null }[]) => rows.map((row) => row.key);

@@ -9,7 +9,7 @@ import { createHash } from 'node:crypto';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { ChatStore, conversationInstanceId } from '@wisp/server/chat-store';
 import { newChat } from '@wisp/server/chat-lifecycle';
-import { migrationsFolder } from '@wisp/server/db/migrate';
+import { migrationsFolder } from '@wisp/db/migrate';
 
 const exec = promisify(execFile);
 test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(

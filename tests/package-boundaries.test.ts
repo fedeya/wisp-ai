@@ -12,6 +12,7 @@ test('workspace sources declare their direct package imports', () => {
     'apps/server',
     'apps/desktop',
     'apps/web',
+    'packages/db',
     'packages/protocol',
     'packages/releases',
     'packages/wow-bridge',

@@ -8,8 +8,9 @@ import {
   type routineInput,
 } from '@wisp/protocol/routines';
 import type { z } from 'zod';
-import { ApplicationDatabase, type ApplicationOrm } from '../db/application-database.ts';
-import { routines, routineRuns } from '../db/schema.ts';
+import type { ApplicationOrm } from '@wisp/db/database';
+import { ApplicationDatabase } from '../db/application-database.ts';
+import { routines, routineRuns } from '@wisp/db/schema';
 import {
   decodeRoutine,
   decodeRun,

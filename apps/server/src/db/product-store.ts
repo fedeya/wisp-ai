@@ -7,9 +7,16 @@ import { z } from 'zod';
 import { savedRoutine, routineRun, type Routine, type RoutineRun } from '@wisp/protocol/routines';
 import { panelContent, type Panel } from '@wisp/agent/contract/panels';
 import { memoryEntry } from '@wisp/agent/contract/agent-rpc';
-import type { ApplicationOrm } from './application-database.ts';
-import { writeMigrationBackup } from './private-file.ts';
-import { routines, routineRuns, panels, memoryScopes, memoryEntries, metadata } from './schema.ts';
+import type { ApplicationOrm } from '@wisp/db/database';
+import { writeMigrationBackup } from '@wisp/db/private-file';
+import {
+  routines,
+  routineRuns,
+  panels,
+  memoryScopes,
+  memoryEntries,
+  metadata,
+} from '@wisp/db/schema';
 
 type Orm = ApplicationOrm;
 export type MemorySlot = 'preferences' | 'character';

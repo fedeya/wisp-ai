@@ -8,7 +8,7 @@ import {
   applicationDatabaseFile,
   copyDatabaseSnapshot,
   findApplicationDatabase,
-} from '../src/db/application-file.ts';
+} from '@wisp/db/application-file';
 import { MemoryStore } from '../src/agent/memory-store.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';

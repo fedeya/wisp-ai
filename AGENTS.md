@@ -16,6 +16,7 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 | `apps/agent`          | `@wisp/agent`      | Agent runtime on the AI SDK and Effect, run in the server: models, tools, skills and instructions                 |
 | `apps/desktop`        | `@wisp/desktop`    | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                                     |
 | `apps/web`            | `@wisp/web`        | Next.js website (setup guide, changelog from GitHub Releases)                                                     |
+| `packages/db`         | `@wisp/db`         | SQLite database for the server: Drizzle schema, migrations, opening and migrating the file                        |
 | `packages/protocol`   | `@wisp/protocol`   | Zod schemas the desktop and bridge share (providers, capabilities, features, routines, search), and addon helpers |
 | `packages/releases`   | `@wisp/releases`   | Release channel/version helpers shared by desktop, web, scripts                                                   |
 | `packages/wow-bridge` | `@wisp/wow-bridge` | WoW addon transport, mailbox codecs and pending game requests                                                     |

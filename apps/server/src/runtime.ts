@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { createTransportConnection } from './game/transport-connection.ts';
 import type { TransportConnection } from './game/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
-import { applicationDatabaseFile } from './db/application-file.ts';
+import { applicationDatabaseFile } from '@wisp/db/application-file';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
