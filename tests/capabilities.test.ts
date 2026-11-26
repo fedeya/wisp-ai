@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Effect } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
-import { AgentCapabilities } from '@wisp/agent/capabilities';
+import { AgentCapabilities, layerFromFile } from '@wisp/agent/capabilities';
 import { HostError } from '@wisp/agent/engine';
 import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';
 import { localMemory } from '@wisp/agent/agent-memory';
@@ -18,7 +18,7 @@ import { filterWebSearch } from '@wisp/agent/model-tools';
 const CONNECTION_NAME = /^[a-z][a-z0-9-]*$/;
 
 const readFlags = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
-  Effect.provide(AgentCapabilities.layer()),
+  Effect.provide(layerFromFile()),
   Effect.provide(NodeFileSystem.layer),
 );
 const readConnections = (configFile?: string) =>

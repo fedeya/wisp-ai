@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
-import { AgentCapabilities } from '@wisp/agent/capabilities';
+import { AgentCapabilities, layerFromFile } from '@wisp/agent/capabilities';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '../apps/bridge/src/integrations/integration-state.ts';
 import { integrationContext, defaultCapabilities } from '@wisp/protocol/capabilities';
@@ -28,7 +28,7 @@ test('integration availability and master switches govern real tool definitions 
       execute: () => null,
     });
     const readFlags = Effect.flatMap(AgentCapabilities, (capabilities) => capabilities.read).pipe(
-      Effect.provide(AgentCapabilities.layer()),
+      Effect.provide(layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     );
     const resolve = async (_ctx: unknown) =>

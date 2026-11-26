@@ -10,7 +10,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { setAgentHost } from '../src/host/agent-host.ts';
-import { AgentCapabilities } from '../src/host/capabilities.ts';
+import { AgentCapabilities, layerFromFile } from '../src/host/capabilities.ts';
 import { mcpConnections, McpTools } from '../src/integrations/mcp-tools.ts';
 import { gate } from './gate.ts';
 
@@ -20,7 +20,7 @@ const readConnections = (config: string) =>
   Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) =>
       Effect.flatMap(settings.read, (flags) => mcpConnections(flags, () => config)),
-    ).pipe(Effect.provide(AgentCapabilities.layer()), Effect.provide(NodeFileSystem.layer)),
+    ).pipe(Effect.provide(layerFromFile()), Effect.provide(NodeFileSystem.layer)),
   );
 
 test('closing MCP tools also closes a client whose connection completes after shutdown', async () => {

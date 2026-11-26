@@ -20,31 +20,33 @@ export class AgentCapabilities extends Context.Service<
     readonly read: Effect.Effect<CapabilityFlags, HostError>;
     readonly featureEnabled: (flag: FeatureFlag) => Effect.Effect<boolean, HostError>;
   }
->()('@wisp/agent/AgentCapabilities') {
-  static layer(file = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE) {
-    return Layer.effect(
-      AgentCapabilities,
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const document = readSettings(fs, file);
+>()('@wisp/agent/AgentCapabilities') {}
 
-        const read = Effect.gen(function* () {
-          const data = yield* document;
-          if (data === undefined) return {};
-          if (!hasCapabilityFlags(data)) {
-            return yield* new HostError({
-              cause: new Error('Invalid capability settings; the file was preserved'),
-            });
-          }
-          return data.enabled;
-        });
+export function layerFromFile(
+  file = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE,
+) {
+  return Layer.effect(
+    AgentCapabilities,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const document = readSettings(fs, file);
 
-        return AgentCapabilities.of({
-          read,
-          featureEnabled: (flag) =>
-            Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),
-        });
-      }),
-    );
-  }
+      const read = Effect.gen(function* () {
+        const data = yield* document;
+        if (data === undefined) return {};
+        if (!hasCapabilityFlags(data)) {
+          return yield* new HostError({
+            cause: new Error('Invalid capability settings; the file was preserved'),
+          });
+        }
+        return data.enabled;
+      });
+
+      return AgentCapabilities.of({
+        read,
+        featureEnabled: (flag) =>
+          Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),
+      });
+    }),
+  );
 }

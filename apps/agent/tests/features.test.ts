@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
-import { AgentCapabilities } from '../src/host/capabilities.ts';
+import { AgentCapabilities, layerFromFile } from '../src/host/capabilities.ts';
 
 let directory = '';
 afterEach(async () => {
@@ -24,7 +24,7 @@ const flag = (name: string) => name as never;
 const featureEnabled = (name: string) =>
   Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) => settings.featureEnabled(flag(name))).pipe(
-      Effect.provide(AgentCapabilities.layer()),
+      Effect.provide(layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     ),
   );
