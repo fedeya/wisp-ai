@@ -1,7 +1,8 @@
 // Reusable downlink state messages. Paths use JSON/JavaScript's zero-based indexes.
 import { deflateSync } from 'node:zlib';
-import { Option, Schema } from 'effect';
 import { MAX_DECODED_BYTES, MAX_ENCODED_BYTES } from './mailbox.ts';
+
+export { parseDownlinkAck, type DownlinkAck } from './protocol.ts';
 
 export const MAX_PATCH_OPERATIONS = 4096;
 export const MAX_STATE_DEPTH = 32;
@@ -15,17 +16,6 @@ export type StateOperation =
 export type DownlinkEnvelope =
   | { r: number; s: { [key: string]: Json } }
   | { r: number; b: number; p: StateOperation[] };
-const downlinkAckSchema = Schema.Struct({
-  a: Schema.Tuple([
-    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 0xffffffff })),
-    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff })),
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
-  ]),
-  b: Schema.Boolean,
-  n: Schema.optional(Schema.Boolean),
-});
-export type DownlinkAck = typeof downlinkAckSchema.Type;
-const decodeAck = Schema.decodeUnknownOption(downlinkAckSchema, { onExcessProperty: 'error' });
 const unsafe = new Set(['__proto__', 'constructor', 'prototype']);
 const own = (value: object, key: string | number) => Object.hasOwn(value, key);
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -281,8 +271,4 @@ export function applyDownlink(envelope: unknown, base?: unknown): { [key: string
     throw Error('Downlink revision does not match completed state');
   }
   return result;
-}
-
-export function parseDownlinkAck(value: unknown): DownlinkAck | null {
-  return Option.getOrNull(decodeAck(value));
 }

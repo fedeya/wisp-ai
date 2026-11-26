@@ -1,6 +1,6 @@
 import { Option, Schema } from 'effect';
 import { expect, test } from 'vitest';
-import { luaJson, packetSchema } from '../src/protocol.ts';
+import { luaJson, packetSchema } from '../src/wire/protocol.ts';
 const decodePacket = Schema.decodeUnknownSync(packetSchema);
 const tryDecodePacket = Schema.decodeUnknownOption(packetSchema);
 

@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
-import { Effect, Exit, FileSystem, Layer, Scope, Stream } from 'effect';
-import { encodeMessage, readUplink, replaceUplink, UPLINK_KIND } from '../src/mailbox.ts';
+import { Deferred, Effect, Exit, FileSystem, Layer, Scope, Stream } from 'effect';
+import { encodeMessage, readUplink, replaceUplink, UPLINK_KIND } from '../src/wire/mailbox.ts';
 import { layer, WowBridge, type GameEvent } from '../src/wow-bridge.ts';
 
 test('the connection publishes and resolves game requests without routing them through the host', async () => {
@@ -12,12 +12,16 @@ test('the connection publishes and resolves game requests without routing them t
   await mkdir(runtime, { recursive: true });
   const root = await mkdtemp(path.join(runtime, 'bridge-api-'));
   const file = path.join(root, 'WTF/Account/Account/Realm/Hero/AddOns.txt');
+  const otherFile = path.join(root, 'WTF/Account/Account/Realm/Other/AddOns.txt');
   const payload = path.join(root, 'Interface/AddOns/WispAI_Payload/Payload.lua');
   const scope = Scope.makeUnsafe();
   const close = () => Effect.runPromise(Scope.close(scope, Exit.void));
   const errors: unknown[] = [];
   const events: GameEvent[] = [];
-  let lastRead: Buffer | null = null;
+  const lastRead = new Map<string, Buffer | null>();
+  const writeStarted = Deferred.makeUnsafe<void>();
+  const releaseWrite = Deferred.makeUnsafe<void>();
+  let holdPayload = false;
   const observeReads = Layer.effect(
     FileSystem.FileSystem,
     Effect.map(FileSystem.FileSystem, (fs) => ({
@@ -26,23 +30,37 @@ test('the connection publishes and resolves game requests without routing them t
         fs.readFileString(filename, encoding).pipe(
           Effect.tap((text) =>
             Effect.sync(() => {
-              if (filename === file) lastRead = readUplink(text);
+              if (filename === file || filename === otherFile) {
+                lastRead.set(filename, readUplink(text));
+              }
             }),
           ),
         ),
+      writeFileString: (filename, data, options) => {
+        const write = fs.writeFileString(filename, data, options);
+        return holdPayload && filename === payload + '.tmp'
+          ? Deferred.succeed(writeStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseWrite)),
+              Effect.andThen(write),
+            )
+          : write;
+      },
     })),
   ).pipe(Layer.provide(NodeFileSystem.layer));
   let sequence = 0;
   let wireSequence = 0;
-  async function send(packet: { type: string; session: string } & Record<string, unknown>) {
+  async function send(
+    packet: { type: string; session: string } & Record<string, unknown>,
+    target = file,
+  ) {
     const body = Buffer.from(
       JSON.stringify({ ...packet, at: ++sequence, seq: sequence, transportVersion: 2 }),
     );
     const frames = encodeMessage(body, UPLINK_KIND, 1, wireSequence);
     wireSequence += frames.length;
     for (const frame of frames) {
-      await writeFile(file, replaceUplink(await readFile(file, 'utf8'), frame));
-      await vi.waitFor(() => expect(lastRead).toEqual(frame), { timeout: 2500 });
+      await writeFile(target, replaceUplink(await readFile(target, 'utf8'), frame));
+      await vi.waitFor(() => expect(lastRead.get(target)).toEqual(frame), { timeout: 2500 });
     }
   }
   async function requestId(chat = 'chat') {
@@ -55,7 +73,9 @@ test('the connection publishes and resolves game requests without routing them t
   }
   try {
     await mkdir(path.dirname(file), { recursive: true });
+    await mkdir(path.dirname(otherFile), { recursive: true });
     await writeFile(file, 'WispAI: enabled\n');
+    await writeFile(otherFile, 'WispAI: enabled\n');
     const connection = await Effect.runPromise(
       Effect.gen(function* () {
         const bridge = yield* WowBridge;
@@ -118,15 +138,29 @@ test('the connection publishes and resolves game requests without routing them t
     const next = Effect.runPromise(connection.request(call));
     const reloaded = expect(next).rejects.toThrow('reloaded');
     expect(await requestId()).not.toBe(id);
-    await send({ type: 'hello', session: 'two' });
+    const stoppedView = await readFile(payload, 'utf8');
+    holdPayload = true;
+    const staleView = { ...view, text: 'stale view' };
+    await Effect.runPromise(connection.publish(staleView));
+    await Effect.runPromise(Deferred.await(writeStarted).pipe(Effect.timeout(2500)));
+    await send({ type: 'hello', session: 'two' }, otherFile);
     await reloaded;
     await expect(Effect.runPromise(connection.request(call))).rejects.toThrow(
       'No active connection',
     );
+    expect(connection.status()).toEqual({
+      session: 'two',
+      readyPublished: false,
+      ready: false,
+    });
+    holdPayload = false;
+    await Effect.runPromise(Deferred.succeed(releaseWrite, undefined));
+    await vi.waitFor(() => expect(events.at(-1)?.session).toBe('two'));
     const inFlight = Effect.runPromise(connection.request({ ...call, session: 'two' }));
     const stopped = expect(inFlight).rejects.toThrow('Bridge stopped');
     await close();
     await stopped;
+    expect(await readFile(payload, 'utf8')).toBe(stoppedView);
     expect(connection.status()).toEqual({
       session: undefined,
       readyPublished: false,
@@ -134,6 +168,7 @@ test('the connection publishes and resolves game requests without routing them t
     });
     expect(errors).toEqual([]);
   } finally {
+    await Effect.runPromise(Deferred.succeed(releaseWrite, undefined));
     await close();
     await rm(root, { recursive: true, force: true });
   }

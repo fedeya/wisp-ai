@@ -12,10 +12,10 @@
       "types": "./dist/wow-bridge.d.ts",
       "default": "./dist/wow-bridge.js"
     },
-    "./downlink": "./dist/downlink.js",
-    "./mailbox": "./dist/mailbox.js",
-    "./protocol": "./dist/protocol.js",
-    "./snapshots": "./dist/snapshots.js"
+    "./downlink": "./dist/wire/downlink.js",
+    "./mailbox": "./dist/wire/mailbox.js",
+    "./protocol": "./dist/wire/protocol.js",
+    "./snapshots": "./dist/delivery.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

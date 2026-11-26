@@ -4,13 +4,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deflateSync } from 'node:zlib';
-import { ACTIVE_SESSION_MS, type DiskTransport } from '../src/transport.ts';
-import {
-  SLOW_DOWNLINK_MS,
-  preferBulkDelivery,
-  type SlowDownlink,
-} from '../src/outbound-mailbox.ts';
-import type { Packet } from '../src/protocol.ts';
+import { ACTIVE_SESSION_MS, type DiskConnection } from '../src/connection.ts';
+import { SLOW_DOWNLINK_MS, preferBulkDelivery, type SlowDownlink } from '../src/delivery.ts';
+import type { Packet } from '../src/wire/protocol.ts';
 import {
   DOWNLINK_HELPERS,
   DOWNLINK_KIND,
@@ -27,12 +23,12 @@ import {
   readUplink,
   replaceUplink,
   inflateMessage,
-} from '../src/mailbox.ts';
-import { applyDownlink } from '../src/downlink.ts';
+} from '../src/wire/mailbox.ts';
+import { applyDownlink } from '../src/wire/downlink.ts';
 import { openTransport } from './transport-fixture.ts';
 
 async function fixture(
-  receive: (packet: Packet, bridge: DiskTransport) => void = () => {},
+  receive: (packet: Packet, bridge: DiskConnection) => void = () => {},
   realm = 'realm',
   overrideFs?: (fs: FileSystem.FileSystem) => FileSystem.FileSystem,
 ) {

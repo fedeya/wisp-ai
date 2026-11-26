@@ -72,7 +72,11 @@ export class GameRequests {
     this.lastHeardAt = this.now();
   }
 
-  request(input: GameRequest, timeout = 30_000): Effect.Effect<unknown, Error> {
+  request(
+    input: GameRequest,
+    timeout = 30_000,
+    isActive = () => true,
+  ): Effect.Effect<unknown, Error> {
     return Effect.gen({ self: this }, function* () {
       if (this.closed) {
         return yield* Effect.fail(new Error('Bridge stopped'));
@@ -106,8 +110,11 @@ export class GameRequests {
         },
       };
       yield* Effect.acquireRelease(
-        Effect.sync(() => {
+        Effect.suspend(() => {
+          if (this.closed) return Effect.fail(new Error('Bridge stopped'));
+          if (!isActive()) return Effect.fail(new Error('No active connection for this character'));
           this.pending.set(id, request);
+          return Effect.void;
         }),
         () => Effect.sync(remove),
       );

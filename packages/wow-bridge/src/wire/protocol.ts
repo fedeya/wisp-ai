@@ -1,4 +1,4 @@
-import { Schema, SchemaGetter } from 'effect';
+import { Option, Schema, SchemaGetter } from 'effect';
 import { SLOT_COUNT } from '@wisp/protocol/addon-helpers';
 
 export { BIT_COUNT, SLOT_COUNT, luaJson } from '@wisp/protocol/addon-helpers';
@@ -132,3 +132,19 @@ export const packetSchema = Schema.Union([
   }),
 ]);
 export type Packet = typeof packetSchema.Type;
+
+const downlinkAckSchema = Schema.Struct({
+  a: Schema.Tuple([
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 0xffffffff })),
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff })),
+    nonnegativeInt,
+  ]),
+  b: Schema.Boolean,
+  n: optional(Schema.Boolean),
+});
+export type DownlinkAck = typeof downlinkAckSchema.Type;
+const decodeAck = Schema.decodeUnknownOption(downlinkAckSchema, { onExcessProperty: 'error' });
+
+export function parseDownlinkAck(value: unknown): DownlinkAck | null {
+  return Option.getOrNull(decodeAck(value));
+}

@@ -34,16 +34,22 @@ consumers; removing those is separate from `GameAccess`.
 
 ## Ownership and framing
 
-| Owner                                                  | Source                                                             |
-| ------------------------------------------------------ | ------------------------------------------------------------------ |
-| Inbound frames, polling and active game window         | [bridge transport](../packages/wow-bridge/src/transport.ts)        |
-| Outbound delivery, cursor and bulk selection           | [outbound mailbox](../packages/wow-bridge/src/outbound-mailbox.ts) |
-| Replacing addon files and retrying filesystem I/O      | [addon files](../packages/wow-bridge/src/addon-files.ts)           |
-| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/wow-bridge/src/mailbox.ts)             |
-| Full snapshots, patches and transport acknowledgements | [downlink contract](../packages/wow-bridge/src/downlink.ts)        |
-| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)           |
-| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)             |
-| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua)       |
+| Owner                                                  | Source                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| Active game window, inbound frames and polling         | [connection](../packages/wow-bridge/src/connection.ts)        |
+| Latest view, transfer in flight and confirmed revision | [delivery](../packages/wow-bridge/src/delivery.ts)            |
+| Finding, watching and replacing addon files            | [addon files](../packages/wow-bridge/src/addon-files.ts)      |
+| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/wow-bridge/src/wire/mailbox.ts)   |
+| Full snapshots and patches                             | [downlink codec](../packages/wow-bridge/src/wire/downlink.ts) |
+| Application packet and ACK validation                  | [protocol](../packages/wow-bridge/src/wire/protocol.ts)       |
+| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)      |
+| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)        |
+| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua)  |
+
+When a new view arrives during a reusable transfer, delivery replaces the
+waiting view and keeps sending the current transfer. The final acknowledgment
+sets the patch base and starts the latest waiting view. Changing the active
+window clears those three pieces of state and cancels its pending game requests.
 
 | Direction                          | Frame kind                           | Frame bytes | Payload bytes |
 | ---------------------------------- | ------------------------------------ | ----------- | ------------- |

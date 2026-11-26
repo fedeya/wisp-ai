@@ -1,4 +1,4 @@
-import { Effect, Schedule, type FileSystem, type Path } from 'effect';
+import { Effect, FileSystem, Path, Schedule, Stream } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
 import {
   decodeFrame,
@@ -7,10 +7,13 @@ import {
   readUplink,
   replaceDownlink,
   UPLINK_KIND,
-} from './mailbox.ts';
-import { luaJson } from './protocol.ts';
+} from './wire/mailbox.ts';
+import { luaJson } from './wire/protocol.ts';
 
-export function addonFiles(fs: FileSystem.FileSystem, path: Path.Path, wow: string) {
+export const make = Effect.fnUntraced(function* (wow: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+
   function sharedFile<T>(operation: Effect.Effect<T, PlatformError>) {
     return operation.pipe(
       Effect.retry({
@@ -23,6 +26,30 @@ export function addonFiles(fs: FileSystem.FileSystem, path: Path.Path, wow: stri
   }
 
   const read = (file: string) => sharedFile(fs.readFileString(file));
+  const watch = (directory: string) =>
+    fs
+      .watch(directory)
+      .pipe(Stream.filter((event) => path.basename(event.path).toLowerCase() === 'addons.txt'));
+
+  function scan(visit: (file: string, directory: string) => Effect.Effect<void, PlatformError>) {
+    const walk = (directory: string, depth: number): Effect.Effect<void, PlatformError> =>
+      Effect.gen(function* () {
+        if (depth > 4) return;
+        const entries = yield* fs
+          .readDirectoryEntries(directory)
+          .pipe(Effect.orElseSucceed(() => []));
+        for (const entry of entries) {
+          const file = path.join(directory, entry.name);
+          if (entry.type === 'Directory') {
+            yield* walk(file, depth + 1);
+          } else if (entry.name.toLowerCase() === 'addons.txt') {
+            yield* visit(file, directory);
+          }
+        }
+      });
+    return walk(path.join(wow, 'WTF', 'Account'), 0);
+  }
+
   const writeControl = Effect.fnUntraced(function* (
     file: string,
     frame: Buffer,
@@ -42,8 +69,11 @@ export function addonFiles(fs: FileSystem.FileSystem, path: Path.Path, wow: stri
       // Avoid overwriting packets and unrelated settings changed by the game.
       const latest = yield* read(file);
       if (latest !== original || !isCurrent()) return false;
-      yield* sharedFile(fs.rename(temporary, file));
-      return true;
+      return yield* sharedFile(
+        Effect.suspend(() =>
+          isCurrent() ? fs.rename(temporary, file).pipe(Effect.as(true)) : Effect.succeed(false),
+        ),
+      );
     }).pipe(
       Effect.onExit((exit) =>
         exit._tag === 'Success' && exit.value
@@ -54,18 +84,24 @@ export function addonFiles(fs: FileSystem.FileSystem, path: Path.Path, wow: stri
   });
 
   const payload = path.join(wow, 'Interface', 'AddOns', 'WispAI_Payload', 'Payload.lua');
-  const writePayload = (json: string) => {
+  const writePayload = (json: string, isCurrent: () => boolean) => {
     const temporary = payload + '.tmp';
     return fs.makeDirectory(path.dirname(payload), { recursive: true }).pipe(
       Effect.andThen(fs.writeFileString(temporary, luaJson(json))),
       Effect.andThen(
-        fs
-          .rename(temporary, payload)
-          .pipe(Effect.retry({ times: 5, schedule: Schedule.spaced(30) })),
+        Effect.suspend(() =>
+          isCurrent() ? fs.rename(temporary, payload).pipe(Effect.as(true)) : Effect.succeed(false),
+        ).pipe(Effect.retry({ times: 5, schedule: Schedule.spaced(30) })),
       ),
-      Effect.tapError(() => Effect.ignore(fs.remove(temporary, { force: true }))),
+      Effect.onExit((exit) =>
+        exit._tag === 'Success' && exit.value
+          ? Effect.void
+          : Effect.ignore(fs.remove(temporary, { force: true })),
+      ),
     );
   };
 
-  return { read, writeControl, writePayload };
-}
+  return { read, watch, scan, writeControl, writePayload };
+});
+
+export type AddonFiles = Effect.Success<ReturnType<typeof make>>;

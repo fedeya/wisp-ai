@@ -3,16 +3,13 @@ import {
   Clock,
   Effect,
   FiberSet,
-  FileSystem,
-  Path,
   Random,
   Schema,
   Schedule,
   Semaphore,
   Stream,
 } from 'effect';
-import type { PlatformError } from 'effect/PlatformError';
-import { packetSchema, type Packet } from './protocol.ts';
+import { packetSchema, parseDownlinkAck, type Packet } from './wire/protocol.ts';
 import {
   MailboxDecoder,
   UPLINK_KIND,
@@ -21,11 +18,10 @@ import {
   decodeFrame,
   inflateMessage,
   readUplink,
-} from './mailbox.ts';
-import { parseDownlinkAck } from './downlink.ts';
+} from './wire/mailbox.ts';
 import { makeWriter } from './writer.ts';
-import { addonFiles } from './addon-files.ts';
-import { OutboundMailbox, type SlowDownlink } from './outbound-mailbox.ts';
+import * as AddonFiles from './addon-files.ts';
+import { makeDelivery, type SlowDownlink } from './delivery.ts';
 
 const decodePacket = Schema.decodeUnknownSync(packetSchema);
 
@@ -39,11 +35,10 @@ export const ACTIVE_SESSION_MS = 150_000;
 /** How often the fallback tick walks every character folder once a session is active. */
 export const FULL_SCAN_INTERVAL_MS = 5000;
 
-export class DiskTransport {
+export class DiskConnection {
   private reads = new Map<string, Semaphore.Semaphore>();
   private mailboxDecoders = new Map<string, MailboxDecoder>();
-  private activeFile?: string;
-  private activeSession?: string;
+  private window?: { file: string; session: string };
   private activeAt = 0;
   /** Wall-clock time of the last message from the active window. */
   private activeSeenAt = 0;
@@ -51,48 +46,44 @@ export class DiskTransport {
   private uplinkObserved = new Map<string, { frame: Buffer; at: number }>();
   stopped = false;
   readonly watchers = new Set<string>();
-  private readonly fs: FileSystem.FileSystem;
-  private readonly files: ReturnType<typeof addonFiles>;
-  private readonly path: Path.Path;
+  private readonly files: AddonFiles.AddonFiles;
   private readonly clock: Clock.Clock;
   private readonly fibers: FiberSet.FiberSet;
   private readonly writer: Effect.Success<ReturnType<typeof makeWriter>>;
   private readonly runBackground: (effect: Effect.Effect<void>) => unknown;
-  readonly wow: string;
   private readonly receive: (packet: Packet) => void | Effect.Effect<void>;
   private readonly onError: (error: unknown) => void;
   private readonly onHeldOff: (session: string) => void;
-  private readonly outbound: OutboundMailbox;
+  private readonly onSessionChanged: () => void;
+  private readonly delivery: ReturnType<typeof makeDelivery>;
+  private readonly packets = Semaphore.makeUnsafe(1);
 
   private constructor(options: {
-    fs: FileSystem.FileSystem;
-    path: Path.Path;
+    files: AddonFiles.AddonFiles;
     clock: Clock.Clock;
     random: Random.Random;
     fibers: FiberSet.FiberSet;
     writer: Effect.Success<ReturnType<typeof makeWriter>>;
     runBackground: (effect: Effect.Effect<void>) => unknown;
-    wow: string;
     receive: (packet: Packet) => void | Effect.Effect<void>;
     onError: (error: unknown) => void;
     onHeldOff: (session: string) => void;
     onSlowDownlink: (report: SlowDownlink) => void;
+    onSessionChanged: () => void;
   }) {
-    this.fs = options.fs;
-    this.files = addonFiles(options.fs, options.path, options.wow);
-    this.path = options.path;
+    this.files = options.files;
     this.clock = options.clock;
     this.fibers = options.fibers;
     this.writer = options.writer;
     this.runBackground = options.runBackground;
-    this.wow = options.wow;
     this.receive = options.receive;
     this.onError = options.onError;
     this.onHeldOff = options.onHeldOff;
-    this.outbound = new OutboundMailbox({
+    this.onSessionChanged = options.onSessionChanged;
+    this.delivery = makeDelivery({
       files: this.files,
       writer: options.writer,
-      activeFile: () => this.activeFile,
+      activeFile: () => this.window?.file,
       stopped: () => this.stopped,
       uplinkBusy: (file) => this.uplinkBusy.get(file),
       uplinkObservedAt: (file) => this.uplinkObserved.get(file)?.at,
@@ -109,30 +100,29 @@ export class DiskTransport {
     onError: (error: unknown) => void = console.error,
     onHeldOff: (session: string) => void = () => {},
     onSlowDownlink: (report: SlowDownlink) => void = () => {},
+    onSessionChanged: () => void = () => {},
   ) {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
+    const files = yield* AddonFiles.make(wow);
     const clock = yield* Clock.Clock;
     const random = yield* Random.Random;
     const fibers = yield* FiberSet.make();
     const writer = yield* makeWriter();
     const runBackground = yield* FiberSet.runtime(fibers)();
-    const transport = new DiskTransport({
-      fs,
-      path,
+    const connection = new DiskConnection({
+      files,
       clock,
       random,
       fibers,
       writer,
       runBackground,
-      wow,
       receive,
       onError,
       onHeldOff,
       onSlowDownlink,
+      onSessionChanged,
     });
-    yield* Effect.addFinalizer(() => transport.stop());
-    return transport;
+    yield* Effect.addFinalizer(() => connection.stop());
+    return connection;
   });
 
   private now() {
@@ -147,16 +137,16 @@ export class DiskTransport {
       // Watchers deliver most changes. The fallback polls the active file more
       // frequently than it walks all character directories.
       const poll = Effect.suspend(() => {
-        const active = this.activeFile;
+        const active = this.window?.file;
         const now = this.now();
         if (active && now - lastScanAt < FULL_SCAN_INTERVAL_MS) return this.read(active, false);
         lastScanAt = now;
         return this.scan(false);
       });
       const control = Effect.gen({ self: this }, function* () {
-        const active = this.activeFile;
-        if (!active || !this.outbound.controlPending()) return;
-        yield* this.outbound.restartStalledTransfer();
+        const active = this.window?.file;
+        if (!active || !this.delivery.controlPending()) return;
+        yield* this.delivery.restartStalledTransfer();
         yield* this.read(active, false);
       });
       this.runBackground(
@@ -176,30 +166,13 @@ export class DiskTransport {
     });
   }
   scan(baseline: boolean) {
-    const account = this.path.join(this.wow, 'WTF', 'Account');
-    const walk = (dir: string, depth: number): Effect.Effect<void, PlatformError> =>
+    return this.files.scan((file, directory) =>
       Effect.gen({ self: this }, function* () {
-        if (this.stopped || depth > 4) {
-          return;
-        }
-        const entries = yield* this.fs
-          .readDirectoryEntries(dir)
-          .pipe(Effect.orElseSucceed(() => []));
-        for (const entry of entries) {
-          if (this.stopped) return;
-          const file = this.path.join(dir, entry.name);
-          if (entry.type === 'Directory') {
-            yield* walk(file, depth + 1);
-          } else if (entry.name.toLowerCase() === 'addons.txt') {
-            if (!this.mailboxDecoders.has(file)) {
-              this.mailboxDecoders.set(file, new MailboxDecoder(UPLINK_KIND));
-            }
-            this.watchDirectory(dir, file);
-            yield* this.read(file, baseline);
-          }
-        }
-      });
-    return walk(account, 0);
+        if (this.stopped) return;
+        this.watchDirectory(directory, file);
+        yield* this.read(file, baseline);
+      }),
+    );
   }
   /**
    * Watch a character folder for state-file changes. The watch only speeds up
@@ -213,8 +186,7 @@ export class DiskTransport {
       return;
     }
     this.watchers.add(dir);
-    const watch = this.fs.watch(dir).pipe(
-      Stream.filter((event) => this.path.basename(event.path).toLowerCase() === 'addons.txt'),
+    const watch = this.files.watch(dir).pipe(
       Stream.runForEach(() =>
         this.read(file, false).pipe(
           Effect.catch((error) => Effect.sync(() => this.onError(error))),
@@ -267,12 +239,12 @@ export class DiskTransport {
       }
       const compact = mailboxFrame && decodeFrame(mailboxFrame.subarray(0, 16));
       if (compact?.kind === COMPACT_ACK_KIND) {
-        if (file === this.activeFile && this.outbound.reusable && this.outbound.compact) {
+        if (file === this.window?.file && this.delivery.reusable() && this.delivery.compact()) {
           this.uplinkBusy.set(file, false);
           if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame!)) {
             this.uplinkObserved.set(file, { frame: mailboxFrame!, at: this.now() });
           }
-          yield* this.outbound.acceptCompactAck(compact);
+          yield* this.delivery.acceptCompactAck(compact);
         }
       } else if (mailboxFrame) {
         const parsed = decodeFrame(mailboxFrame);
@@ -289,8 +261,8 @@ export class DiskTransport {
               value = JSON.parse(inflateMessage(message).toString('utf8'));
               const ack = message.flags === 0 && parseDownlinkAck(value);
               if (ack) {
-                if (file === this.activeFile && this.outbound.reusable) {
-                  yield* this.outbound
+                if (file === this.window?.file && this.delivery.reusable()) {
+                  yield* this.delivery
                     .acceptAck(ack)
                     .pipe(Effect.catch((error) => Effect.sync(() => this.onError(error))));
                 }
@@ -302,68 +274,77 @@ export class DiskTransport {
               // existing application-level resend; never dispatch partial data.
             }
             if (packet?.transportVersion === 2) {
-              if (
-                packet.type === 'hello' &&
-                (!this.activeFile || this.activeSession !== packet.session)
-              ) {
-                // Ignore old sessions from inactive historical character files.
-                if (this.activeFile && packet.at < this.activeAt) {
-                  packet = undefined;
-                } else if (
-                  this.activeFile &&
-                  packet.heartbeat &&
-                  !packet.takeover &&
-                  this.now() - this.activeSeenAt < ACTIVE_SESSION_MS
-                ) {
-                  // Another game window's periodic heartbeat never takes a session
-                  // that is still in use; only its player's own request can.
-                  this.onHeldOff(packet.session);
-                  packet = undefined;
-                } else {
-                  this.activeFile = file;
-                  this.activeSession = packet.session;
-                  yield* this.outbound.resetSession(packet);
-                }
-              }
-              if (packet && file === this.activeFile && packet.session === this.activeSession) {
-                this.activeAt = Math.max(this.activeAt, packet.at);
-                this.activeSeenAt = this.now();
-                yield* this.outbound.observe(packet);
-                if (file !== this.activeFile || packet.session !== this.activeSession) return;
-                // Duplicates (application resends) are expected here: the packet
-                // receiver dedupes by session and sequence and re-acknowledges them.
-                const accept = this.receive(packet);
-                if (accept) yield* accept;
-              }
+              yield* this.packets.withPermit(this.receivePacket(file, packet));
             }
           }
         }
       }
-      if (file === this.activeFile) {
-        yield* this.outbound.repairControl(text);
+      if (file === this.window?.file) {
+        yield* this.delivery.repairControl(file, text);
       }
     });
   }
+
+  private receivePacket(file: string, packet: Packet) {
+    return Effect.gen({ self: this }, function* () {
+      if (this.stopped) return;
+      if (packet.type === 'hello' && this.window?.session !== packet.session) {
+        if (this.window && packet.at < this.activeAt) return;
+        if (
+          this.window &&
+          packet.heartbeat &&
+          !packet.takeover &&
+          this.now() - this.activeSeenAt < ACTIVE_SESSION_MS
+        ) {
+          this.onHeldOff(packet.session);
+          return;
+        }
+        // Change the session seen by request() before waiting on disk I/O.
+        this.delivery.reset(packet);
+        this.window = { file, session: packet.session };
+        this.onSessionChanged();
+      }
+      if (this.window?.file !== file || this.window.session !== packet.session) return;
+      this.activeAt = Math.max(this.activeAt, packet.at);
+      this.activeSeenAt = this.now();
+      yield* this.delivery.observe(packet);
+      // Application resends still reach the server, which deduplicates and re-acknowledges.
+      const accept = this.receive(packet);
+      if (accept) yield* accept;
+    });
+  }
+
+  get session() {
+    return this.window?.session;
+  }
   get peerRevision() {
-    return this.outbound.peerRevision;
+    return this.delivery.cursor().revision;
   }
   get nextSlot() {
-    return this.outbound.nextSlot;
+    return this.delivery.cursor().slot;
   }
   get performance() {
-    return this.outbound.performance;
+    return this.delivery.measurements();
+  }
+  get readiness() {
+    return this.delivery.readiness();
+  }
+  publishView<View extends { session: string; connected: boolean }>(view: View) {
+    return Effect.suspend(() =>
+      this.session === view.session ? this.delivery.publishView(view) : Effect.void,
+    );
   }
   publish(snapshot: unknown) {
-    return this.outbound.publish(snapshot);
+    return this.delivery.publishSnapshot(snapshot);
   }
   setCursor(slot: number, receivedRevision: number) {
-    return this.outbound.setCursor(slot, receivedRevision);
+    return this.delivery.setCursor(slot, receivedRevision);
   }
   resetSession() {
-    return this.outbound.resetSession();
+    return Effect.sync(() => this.delivery.reset());
   }
   waitForWrites() {
-    return this.outbound.waitForWrites();
+    return this.delivery.waitForWrites();
   }
 
   private stop() {

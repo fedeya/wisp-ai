@@ -1,13 +1,12 @@
-import { Cause, Clock, Context, Effect, FileSystem, Layer, Path, Queue, Ref, Stream } from 'effect';
+import { Cause, Context, Effect, FileSystem, Layer, Path, Queue, Stream } from 'effect';
 import type { Scope } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
 import { GameRequests, type GameRequest, type GameTimeout } from './game-requests.ts';
-import type { Packet } from './protocol.ts';
-import { SnapshotGate } from './snapshots.ts';
-import { DiskTransport } from './transport.ts';
-import type { SlowDownlink } from './outbound-mailbox.ts';
+import type { Packet } from './wire/protocol.ts';
+import { DiskConnection } from './connection.ts';
+import type { SlowDownlink } from './delivery.ts';
 
-export type { SlowDownlink } from './outbound-mailbox.ts';
+export type { SlowDownlink } from './delivery.ts';
 
 type WireFields =
   | 'nextSlot'
@@ -73,30 +72,18 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
   wowDirectory: string,
   options: ConnectionOptions,
 ) {
-  const clock = yield* Clock.Clock;
   const events = yield* Effect.acquireRelease(Queue.bounded<GameEvent>(64), Queue.shutdown);
   const updates = yield* Effect.acquireRelease(Queue.sliding<void>(1), Queue.shutdown);
-  const latestView = yield* Ref.make<GameView | undefined>(undefined);
-  const snapshots = new SnapshotGate(clock.currentTimeMillisUnsafe());
+  let latestView: GameView | undefined;
   const notify = () => Queue.offerUnsafe(updates, undefined);
   const requests = yield* GameRequests.make(notify, { onTimeout: options.onTimeout });
-  let session: string | undefined;
   let closed = false;
-  let firstReadyRevision = 0;
   const resultAcks = new Set<number>();
 
-  const disk: DiskTransport = yield* DiskTransport.make(
+  const disk: DiskConnection = yield* DiskConnection.make(
     wowDirectory,
     (packet): Effect.Effect<void> =>
       Effect.gen(function* () {
-        if (session !== packet.session) {
-          session = packet.session;
-          firstReadyRevision = 0;
-          resultAcks.clear();
-          snapshots.invalidate();
-          yield* Ref.set(latestView, undefined);
-          requests.cancelAll('The addon reloaded or the character changed. Query again.');
-        }
         requests.heard();
         const {
           nextSlot,
@@ -129,21 +116,22 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
     options.onError,
     options.onHeldOff,
     options.onSlowDownlink,
+    () => {
+      latestView = undefined;
+      resultAcks.clear();
+      requests.cancelAll('The addon reloaded or the character changed. Query again.');
+    },
   );
 
   const refresh = Effect.gen(function* () {
-    const view = yield* Ref.get(latestView);
-    if (!view || view.session !== session) return;
+    const view = latestView;
+    if (!view || view.session !== disk.session) return;
     const acks = [...new Set([...view.acks, ...resultAcks])];
-    const snapshot = snapshots.next({ ...view, acks, requests: requests.snapshot() });
-    if (!snapshot) return;
-    if (view.connected && !firstReadyRevision) firstReadyRevision = snapshot.rev;
-    yield* disk.publish(snapshot).pipe(
+    yield* disk.publishView({ ...view, acks, requests: requests.snapshot() }).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
           ? Effect.failCause(cause)
           : Effect.gen(function* () {
-              snapshots.invalidate();
               options.onError(Cause.squash(cause));
               yield* Effect.sleep(400);
               notify();
@@ -158,8 +146,6 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
   yield* Effect.addFinalizer(() =>
     Effect.sync(() => {
       closed = true;
-      session = undefined;
-      firstReadyRevision = 0;
       requests.close();
     }),
   );
@@ -169,7 +155,7 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
     events: Stream.fromQueue(events),
     request: ({ operation, ...call }) =>
       Effect.suspend(() => {
-        if (closed || !session || call.session !== session) {
+        if (closed || call.session !== disk.session) {
           return Effect.fail(Error('No active connection for this character'));
         }
         const input: GameRequest = {
@@ -180,22 +166,18 @@ const openConnection = Effect.fn('WowBridge.open')(function* (
               ? { inspection: operation.inspection }
               : { action: operation.action }),
         };
-        return requests.request(input);
+        return requests.request(input, undefined, () => call.session === disk.session);
       }),
     publish: (view) =>
-      Effect.suspend(() =>
-        !closed && view.session === session
-          ? Ref.set(latestView, view).pipe(
-              Effect.andThen(Queue.offer(updates, undefined)),
-              Effect.asVoid,
-            )
-          : Effect.void,
-      ),
-    status: () => ({
-      session,
-      readyPublished: firstReadyRevision !== 0,
-      ready: firstReadyRevision !== 0 && disk.peerRevision >= firstReadyRevision,
-    }),
+      Effect.sync(() => {
+        if (closed || view.session !== disk.session) return;
+        latestView = view;
+        notify();
+      }),
+    status: () =>
+      closed
+        ? { session: undefined, readyPublished: false, ready: false }
+        : { session: disk.session, ...disk.readiness },
   } satisfies Connection;
 });
 

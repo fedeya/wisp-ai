@@ -1,10 +1,10 @@
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
 import { Effect, Exit, FileSystem, Layer, Scope } from 'effect';
-import { DiskTransport } from '../src/transport.ts';
+import { DiskConnection } from '../src/connection.ts';
 
 export async function openTransport(
-  args: Parameters<typeof DiskTransport.make>,
+  args: Parameters<typeof DiskConnection.make>,
   overrideFs?: (fs: FileSystem.FileSystem) => FileSystem.FileSystem,
 ) {
   const scope = Scope.makeUnsafe();
@@ -16,7 +16,7 @@ export async function openTransport(
   const close = () => Effect.runPromise(Scope.close(scope, Exit.void));
   try {
     const bridge = await Effect.runPromise(
-      DiskTransport.make(...args).pipe(
+      DiskConnection.make(...args).pipe(
         Scope.provide(scope),
         Effect.provide(Layer.merge(fs, NodePath.layer)),
       ),
