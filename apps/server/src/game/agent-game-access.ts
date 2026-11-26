@@ -1,6 +1,15 @@
-import { inspectionSchema, itemSourcesInput } from '@wisp/agent/contract/game-inspection';
+import {
+  characterSections,
+  inspectionSchema,
+  itemSourcesInput,
+} from '@wisp/agent/contract/game-inspection';
 import { Effect, Schema } from 'effect';
-import { GameAccess, gameReading, itemSourcesResult } from '@wisp/agent/game-access';
+import {
+  GameAccess,
+  gameReading,
+  itemSourcesResult,
+  type GameInspection,
+} from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { McpManager } from '@wisp/agent/mcp-manager';
@@ -42,7 +51,7 @@ const inspectionTools = {
   macros: 'inspect_macros',
   map: 'inspect_map',
   hearthstone: 'inspect_hearthstone',
-} as const;
+} satisfies Record<GameInspection['kind'], string>;
 
 interface Dependencies {
   getChats: () => readonly Chat[];
@@ -99,14 +108,16 @@ export function make(deps: Dependencies) {
     capabilitySettings.enabled('mcp_tool:' + Everloot.name + ':' + tool);
 
   return GameAccess.of({
-    readCharacter: Effect.fn('GameAccess.readCharacter')(function* (session, sections, refresh) {
+    readCharacter: Effect.fn('GameAccess.readCharacter')(function* (session, input, refresh) {
+      const sections = characterSections.safeParse(input);
+      if (!sections.success) return yield* Effect.fail(sections.error);
       const { chat, request } = yield* authorize(session, 'query_character');
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
       return yield* Effect.tryPromise({
         try: (signal) =>
           queryCharacterSections(
             chat,
-            sections,
+            sections.data,
             (sections) =>
               run(request({ kind: 'read', sections }).pipe(Effect.flatMap(parseReading)), {
                 signal,

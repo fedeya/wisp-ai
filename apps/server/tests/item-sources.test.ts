@@ -158,3 +158,27 @@ test('relations beyond the Everloot per-relation limit are reported', async () =
   });
   expect(result.items[0]).toMatchObject({ sourceKnown: true, moreSourcesNotShown: 7 });
 });
+
+test('malformed relations do not hide valid drops, and malformed addon readings fail at the boundary', async () => {
+  const { readEverloot } = everloot({
+    2589: [
+      null,
+      { rel: 'dropped_by', toKind: 'npc', toId: '2266' },
+      { rel: 'dropped_by', toKind: 'npc', toId: 2266 },
+    ],
+  });
+  const options = { everloot: true, questie: true, auctionator: true, readEverloot };
+  const result = await itemSources([2589], async () => names, options);
+  expect(result.items[0]?.drops).toEqual([
+    {
+      kind: 'npc',
+      id: 2266,
+      name: 'Gnoll Brute',
+      zones: ['Westfall'],
+      evidence: 'game files, unconfirmed',
+    },
+  ]);
+  await expect(
+    itemSources([2589], async () => ({ data: { npcs: [{ id: '2266' }] } }), options),
+  ).rejects.toThrow('number');
+});
