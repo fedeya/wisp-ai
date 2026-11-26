@@ -1,8 +1,97 @@
 local helper = require("addon.tests.support")
+local luassert = require("luassert")
 
 local function setup(env)
     setfenv(1, env)
     helper.fixture("addon/tests/wow-ui-stub.lua", env)
+end
+
+for _, case in ipairs({
+    {
+        name = "a split two-byte character",
+        text = string.rep("a", 219) .. "\195\169!",
+        expected = string.rep("a", 219),
+    },
+    {
+        name = "a split three-byte character",
+        text = string.rep("a", 218) .. "\228\184\173!",
+        expected = string.rep("a", 218),
+    },
+    {
+        name = "a split four-byte character",
+        text = string.rep("a", 217) .. "\240\159\152\128!",
+        expected = string.rep("a", 217),
+    },
+    {
+        name = "an exactly fitting two-byte character",
+        text = string.rep("a", 218) .. "\195\169",
+        expected = string.rep("a", 218) .. "\195\169",
+    },
+    {
+        name = "an exactly fitting three-byte character before overflow",
+        text = string.rep("a", 217) .. "\228\184\173!",
+        expected = string.rep("a", 217) .. "\228\184\173",
+    },
+    {
+        name = "an exactly fitting four-byte character before overflow",
+        text = string.rep("a", 216) .. "\240\159\152\128!",
+        expected = string.rep("a", 216) .. "\240\159\152\128",
+    },
+    {
+        name = "short Unicode",
+        text = "\195\169\228\184\173\240\159\152\128",
+        expected = "\195\169\228\184\173\240\159\152\128",
+    },
+    { name = "long ASCII", text = string.rep("a", 221), expected = string.rep("a", 220) },
+    { name = "short ASCII", text = "Train Frost Nova.", expected = "Train Frost Nova." },
+    { name = "empty assistant text", text = "", expected = "Fallback" },
+    {
+        name = "a split literal-pipe escape",
+        text = string.rep("a", 219) .. "|!",
+        expected = string.rep("a", 219),
+    },
+    {
+        name = "a pipe run split after a complete escape",
+        text = string.rep("a", 217) .. "||!",
+        expected = string.rep("a", 217) .. "||",
+    },
+    {
+        name = "exactly fitting pipe escapes",
+        text = string.rep("a", 216) .. "||",
+        expected = string.rep("a", 216) .. "||||",
+    },
+    { name = "short literal pipes", text = "|cffeeeeee|", expected = "||cffeeeeee||" },
+    {
+        name = "stripping and reference replacement",
+        text = "**`[[ref:known]]`** [[ref:missing]]",
+        references = { known = { label = "\228\184\173|" } },
+        expected = "\228\184\173|| Reference",
+    },
+}) do
+    it("the routine toast preserves byte boundaries for " .. case.name, function()
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
+        ns = helper.namespace({
+            chats = {
+                {
+                    id = "run-one",
+                    messages = {
+                        { role = "assistant", text = case.text, references = case.references },
+                    },
+                },
+            },
+            notifications = { { id = "run-one", title = "Fallback" } },
+        })
+        C_Timer.NewTicker = function() end
+        helper.addon("Advice/Advice.lua", env)
+        ns.Advice.InitAdvice()
+        ns.Advice.RefreshAdvice()
+        -- GetText returns the raw Lua bytes passed to the real toast's FontString.
+        local actual = UI_TEST.frames.WispAISuggestion.body:GetText()
+        luassert.are.equal(case.expected, actual)
+        luassert.is_true(#actual <= 220)
+    end)
 end
 
 it(
