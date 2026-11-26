@@ -1,5 +1,5 @@
 import { z } from 'zod';
-// Shared by the bridge's MCP manager and the desktop routes contract.
+// Shared by the agent's MCP manager and the desktop routes contract.
 export const mcpName = z
   .string()
   .regex(/^[a-z][a-z0-9_]{0,47}$/)

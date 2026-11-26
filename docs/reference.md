@@ -27,7 +27,7 @@ In desktop **Tools & MCPs**, choose **Add MCP**:
 
 Stdio receives a limited OS environment plus configured values, not inherited bridge tokens. On Windows, configured secrets use DPAPI; metadata stores only secret-presence flags/key names. Generic MCP OAuth sign-in is not provided: OAuth-only services need a supported token flow or a separately configured adapter. Review the [custom-server trust boundary](usage.md#actions-you-control) before connecting.
 
-For manual source configuration, copy [mcp.example.json](../mcp.example.json) to a local file, replace the example endpoint and enable the entry. Set `mcpConfig` in `config.local.json` to its path relative to the data root; the default is `runtime/mcp.json`. `transport` accepts `http` (default), `sse` or `stdio`; stdio uses `command` and `args`, while `tokenEnv` names an HTTP bearer-token environment variable. Prefer desktop secret fields, keep secrets out of source, and restart after manual edits. Exact fields are in [mcp-manager.ts](../apps/bridge/src/integrations/mcp/mcp-manager.ts).
+For manual source configuration, copy [mcp.example.json](../mcp.example.json) to a local file, replace the example endpoint and enable the entry. Set `mcpConfig` in `config.local.json` to its path relative to the data root; the default is `runtime/mcp.json`. `transport` accepts `http` (default), `sse` or `stdio`; stdio uses `command` and `args`, while `tokenEnv` names an HTTP bearer-token environment variable. Prefer desktop secret fields, keep secrets out of source, and restart after manual edits. Exact fields are in [mcp-setup.ts](../packages/protocol/src/mcp-setup.ts).
 
 ## Experimental local DPS simulations
 

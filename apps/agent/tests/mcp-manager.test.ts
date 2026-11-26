@@ -1,30 +1,81 @@
 import { test, vi } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { McpManager, mcpSetup } from '../src/integrations/mcp/mcp-manager.ts';
+import { McpManager, mcpSetup, type McpStorage } from '../src/integrations/mcp-manager.ts';
+import * as Mcp from '../src/integrations/mcp-tools.ts';
+import { AgentCapabilities } from '../src/host/capabilities.ts';
+import { EngineConfig } from '../src/host/engine-config.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
-import { McpRelay } from '../src/integrations/mcp/mcp-relay.ts';
-import { runBridgeEffect } from './capture-logs.ts';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+
+function makeManager(
+  file: string,
+  root: string,
+  vault: Pick<McpStorage, 'readSecret' | 'writeSecret'>,
+) {
+  return McpManager.make(root, {
+    ...vault,
+    async readConfig() {
+      try {
+        return await readFile(file, 'utf8');
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    },
+    writeConfig: (servers) => writeFile(file, JSON.stringify({ servers })),
+  });
+}
+
+const capabilities = { enabled: () => true, disabledMcpTools: () => [] };
+
+function listTools(
+  manager: McpManager,
+  allowed: (name: string, tool?: string) => boolean,
+  readOnly: (session: string) => boolean = () => false,
+) {
+  const layer = Mcp.layer.pipe(
+    Layer.provide(
+      Layer.merge(
+        Layer.succeed(EngineConfig, {
+          origin: () => '',
+          token: '',
+          mcp: { manager, allowed, readOnly },
+        }),
+        Layer.succeed(AgentCapabilities, {
+          read: Effect.succeed(capabilities),
+          featureEnabled: () => Effect.succeed(false),
+        }),
+      ),
+    ),
+  );
+  return (session: string) =>
+    Effect.runPromise(
+      Effect.flatMap(Mcp.Mcp, (mcp) => mcp.tools(session, capabilities)).pipe(
+        Effect.provide(layer),
+      ),
+    );
+}
+
 test(
-  'stdio MCP setup tests real tools, encrypts through the vault interface and gates relay calls',
+  'stdio MCP settings and agent tools share one manager and enforce live, session-specific policy',
   { timeout: 30000 },
   async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
     const secrets = new Map<string, string>();
     const vault = {
-      read: async (k: string) => secrets.get(k) || '',
-      write: async (k: string, v: string) => {
+      readSecret: async (k: string) => secrets.get(k) || '',
+      writeSecret: async (k: string, v: string) => {
         secrets.set(k, v);
       },
     };
     const file = path.join(root, 'mcp.json');
-    const manager = McpManager.make(file, root, vault);
+    const manager = makeManager(file, root, vault);
     await Effect.runPromise(manager.load());
     const script = path.join(root, 'server.mjs');
     const echoSchema = {
@@ -63,78 +114,49 @@ await server.connect(new StdioServerTransport());
     });
     let serverAllowed = true;
     let toolsAllowed = true;
-    const relay = runBridgeEffect(
-      McpRelay.make(
-        manager,
-        (_name, tool) => serverAllowed && (tool === undefined || toolsAllowed),
-      ),
+    let readOnlySession = 'automatic';
+    const list = listTools(
+      manager,
+      (name, tool) =>
+        name === 'test_server' && serverAllowed && (tool === undefined || toolsAllowed),
+      (session) => session === readOnlySession,
     );
-    const http = createServer(
-      runBridgeEffect(
-        createAgentHandler({ token: 'test', mcpRelay: relay } as Parameters<
-          typeof createAgentHandler
-        >[0]),
-      ),
-    );
-    await new Promise<void>((r) => http.listen(0, '127.0.0.1', r));
-    const port = (http.address() as { port: number }).port;
-    const url = new URL(`http://127.0.0.1:${port}/mcp/test_server`);
-    const authorization = 'Bearer test';
-    const accept = 'application/json, text/event-stream';
-    const transport = new StreamableHTTPClientTransport(url, {
-      requestInit: { headers: { authorization } },
-      fetch: async (input, init) => {
-        const response = await fetch(input, init);
-        if (init?.method === 'POST' && response.status === 200) {
-          assert.match(response.headers.get('content-type') ?? '', /^text\/event-stream/);
-        }
-        return response;
-      },
-    });
-    const client = new Client({ name: 'test', version: '1' }, { capabilities: {} });
     try {
       assert.equal((await Effect.runPromise(manager.save(input))).count, 2);
       assert.ok(!(await readFile(file, 'utf8')).includes('private-test-value'));
       assert.ok(secrets.size > 0);
-      const forbidden = await fetch(url, { headers: { accept } });
-      assert.equal(forbidden.status, 403);
-      assert.equal(await forbidden.text(), 'Forbidden');
-      await client.connect(transport);
-      const sessionId = transport.sessionId;
-      assert.ok(sessionId);
-      const { tools } = await client.listTools();
+      const tools = await list('manual');
       assert.deepEqual(
         tools.map((tool) => tool.name),
-        ['echo', 'write'],
+        ['test-server__echo', 'test-server__write'],
       );
       assert.deepEqual(tools[0].inputSchema, echoSchema);
-      relay.readOnlyMode = () => true;
       assert.deepEqual(
-        (await client.listTools()).tools.map((tool) => tool.name),
-        ['echo'],
+        (await list('automatic')).map((tool) => tool.name),
+        ['test-server__echo'],
       );
-      await assert.rejects(
-        client.callTool({ name: 'write', arguments: {} }),
-        /Only explicitly read-only MCP tools/,
-      );
-      const result = await client.callTool({ name: 'echo', arguments: {} });
-      assert.deepEqual(result.content, [
-        { type: 'text', text: JSON.stringify({ ok: true, bridgeTokenLeaked: false }) },
-      ]);
-      toolsAllowed = false;
-      assert.deepEqual((await client.listTools()).tools, []);
-      await assert.rejects(client.callTool({ name: 'echo', arguments: {} }), /MCP tool disabled/);
-      serverAllowed = false;
-      const disabled = await fetch(url, { headers: { authorization, accept } });
-      assert.equal(disabled.status, 403);
-      assert.equal(await disabled.text(), 'MCP disabled');
-      serverAllowed = true;
-      await transport.terminateSession();
-      const expired = await fetch(url, {
-        headers: { authorization, accept, 'mcp-session-id': sessionId },
+      assert.deepEqual(await Effect.runPromise(tools[0].call({})), {
+        content: [{ type: 'text', text: JSON.stringify({ ok: true, bridgeTokenLeaked: false }) }],
       });
-      assert.equal(expired.status, 404);
-      assert.equal(await expired.text(), 'Unknown MCP session');
+      // A different automatic session must not block a manual write.
+      await Effect.runPromise(tools[1].call({}));
+      readOnlySession = 'manual';
+      await assert.rejects(
+        Effect.runPromise(tools[1].call({})),
+        (error: Error) =>
+          error.cause instanceof Error &&
+          error.cause.message ===
+            'Only explicitly read-only MCP tools are available during automatic advice',
+      );
+      toolsAllowed = false;
+      assert.deepEqual(await list('manual'), []);
+      await assert.rejects(
+        Effect.runPromise(tools[0].call({})),
+        (error: Error) =>
+          error.cause instanceof Error && error.cause.message === 'MCP tool disabled',
+      );
+      serverAllowed = false;
+      assert.deepEqual(await list('manual'), []);
       await Effect.runPromise(manager.setEnabled('test_server', false));
       assert.equal(manager.list()[0].enabled, false);
       await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
@@ -148,20 +170,135 @@ await server.connect(new StdioServerTransport());
       assert.equal(manager.list().length, 0);
       assert.equal(secrets.get('mcp:test_server:env'), '');
     } finally {
-      await client.close().catch(() => {});
-      await relay.close();
       await Effect.runPromise(manager.close());
-      http.close();
       await rm(root, { recursive: true, force: true });
     }
   },
 );
 
+test('Everloot model tools and game lookups share one connection and keep Forever arguments fixed', async () => {
+  const manager = McpManager.make();
+  using connect = vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
+  using discover = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({
+    tools: [
+      'item_categories',
+      'auction_history',
+      'market_value',
+      'search_knowledge',
+      'recent_changes',
+      'get_by_name',
+    ].map((name) => ({
+      name,
+      inputSchema: {
+        type: 'object',
+        properties: { version: { type: 'string' }, query: { type: 'string' } },
+        required: ['version', 'query'],
+      },
+    })),
+  });
+  using call = vi.spyOn(Client.prototype, 'callTool').mockResolvedValue({
+    content: [],
+    structuredContent: { items: [] },
+  });
+  const list = listTools(manager, (_server, tool) => tool !== 'market_value');
+  try {
+    const [tools, data] = await Promise.all([
+      list('manual'),
+      Effect.runPromise(manager.readEverloot('item_categories', { quality: 'rare' }, () => true)),
+    ]);
+    assert.deepEqual(data, { items: [] });
+    assert.deepEqual(
+      tools.map((tool) => tool.name),
+      [
+        'everloot__item_categories',
+        'everloot__auction_history',
+        'everloot-search__search_knowledge',
+        'everloot-changes__recent_changes',
+      ],
+    );
+    const search = tools[2]!;
+    assert.deepEqual(search.inputSchema, {
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
+    });
+    await Effect.runPromise(search.call({ version: 'retail', query: 'mage' }));
+    await Effect.runPromise(tools[3]!.call({ game: 'classic' }));
+    assert.equal(connect.mock.calls.length, 1);
+    assert.equal(discover.mock.calls.length, 1);
+    assert.equal(
+      call.mock.contexts.every((client) => client === connect.mock.contexts[0]),
+      true,
+    );
+    assert.deepEqual(
+      call.mock.calls.map(([params]) => params),
+      [
+        { name: 'item_categories', arguments: { quality: 'rare' } },
+        { name: 'search_knowledge', arguments: { version: 'forever', query: 'mage' } },
+        { name: 'recent_changes', arguments: { game: 'forever' } },
+      ],
+    );
+  } finally {
+    await Effect.runPromise(manager.close());
+  }
+});
+
+test('configured HTTP servers are called directly using the saved token', async () => {
+  const requests: (string | undefined)[] = [];
+  const http = createServer(async (req, res) => {
+    requests.push(req.headers.authorization);
+    const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
+    }));
+    server.setRequestHandler(CallToolRequestSchema, async () => ({
+      content: [{ type: 'text', text: 'found' }],
+    }));
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    await server.connect(transport);
+    await transport.handleRequest(req, res);
+  });
+  const secrets = new Map<string, string>();
+  const manager = McpManager.make('.', {
+    readConfig: async () => undefined,
+    writeConfig: async () => {},
+    readSecret: async (key) => secrets.get(key) ?? '',
+    writeSecret: async (key, value) => {
+      secrets.set(key, value);
+    },
+  });
+  try {
+    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
+    const address = http.address();
+    assert.ok(address && typeof address === 'object');
+    await Effect.runPromise(
+      manager.save(
+        mcpSetup.parse({
+          server: { name: 'http_test', url: `http://127.0.0.1:${address.port}/upstream` },
+          token: 'private-test-token',
+        }),
+      ),
+    );
+    const tools = await listTools(manager, (name) => name === 'http_test')('manual');
+    assert.deepEqual(
+      tools.map((tool) => tool.name),
+      ['http-test__lookup'],
+    );
+    assert.deepEqual(await Effect.runPromise(tools[0]!.call({})), {
+      content: [{ type: 'text', text: 'found' }],
+    });
+    assert.deepEqual([...new Set(requests)], ['Bearer private-test-token']);
+  } finally {
+    await Effect.runPromise(manager.close());
+    http.close();
+  }
+});
+
 test('disabling MCP cancels an opening connection and a later enable opens a fresh client', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const manager = McpManager.make(path.join(root, 'mcp.json'), root, {
-    read: async () => '',
-    write: async () => {},
+  const manager = makeManager(path.join(root, 'mcp.json'), root, {
+    readSecret: async () => '',
+    writeSecret: async () => {},
   });
   let onOpening!: (signal: AbortSignal | undefined) => void;
   const opening = new Promise<AbortSignal | undefined>((resolve) => {
@@ -210,10 +347,7 @@ test('disabling MCP cancels an opening connection and a later enable opens a fre
 });
 
 test('a failed MCP opening releases the client and allows a fresh attempt', async () => {
-  const manager = McpManager.make('mcp.json', '.', {
-    read: async () => '',
-    write: async () => {},
-  });
+  const manager = McpManager.make();
   using connect = vi
     .spyOn(Client.prototype, 'connect')
     .mockRejectedValueOnce(Error('Handshake failed'))
@@ -238,9 +372,9 @@ test('a failed MCP opening releases the client and allows a fresh attempt', asyn
 
 test('concurrent MCP updates preserve both changes after an earlier update fails', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const vault = { read: async () => '', write: async () => {} };
+  const vault = { readSecret: async () => '', writeSecret: async () => {} };
   const file = path.join(root, 'mcp.json');
-  const manager = McpManager.make(file, root, vault);
+  const manager = makeManager(file, root, vault);
   try {
     for (const name of ['first', 'second']) {
       manager.servers[name] = mcpSetup.parse({
@@ -255,7 +389,7 @@ test('concurrent MCP updates preserve both changes after an earlier update fails
       Effect.runPromise(manager.setEnabled('first', false)),
       Effect.runPromise(manager.setEnabled('second', false)),
     ]);
-    const restored = McpManager.make(file, root, vault);
+    const restored = makeManager(file, root, vault);
     await Effect.runPromise(restored.load());
     assert.deepEqual(
       restored.list().map(({ name, enabled }) => [name, enabled]),
@@ -271,11 +405,29 @@ test('concurrent MCP updates preserve both changes after an earlier update fails
   }
 });
 
-test('MCP shutdown waits for client cleanup and rejects new connections', async () => {
-  const manager = McpManager.make('mcp.json', '.', {
-    read: async () => '',
-    write: async () => {},
+test('a missing MCP config loads no custom servers and malformed JSON fails', async () => {
+  let config: string | undefined;
+  const manager = McpManager.make('.', {
+    readConfig: async () => config,
+    writeConfig: async () => {},
+    readSecret: async () => '',
+    writeSecret: async () => {},
   });
+  try {
+    await Effect.runPromise(manager.load());
+    assert.deepEqual(manager.list(), []);
+    config = 'invalid JSON';
+    await assert.rejects(
+      Effect.runPromise(manager.load()),
+      (error: Error) => error.cause instanceof SyntaxError,
+    );
+  } finally {
+    await Effect.runPromise(manager.close());
+  }
+});
+
+test('MCP shutdown waits for client cleanup and rejects new connections', async () => {
+  const manager = McpManager.make();
   let onClosing!: () => void;
   const closing = new Promise<void>((resolve) => {
     onClosing = resolve;

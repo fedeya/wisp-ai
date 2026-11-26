@@ -7,7 +7,7 @@ import {
   createMcpCapabilities,
   mcpCapabilityCatalog,
 } from '../src/integrations/mcp/mcp-capabilities.ts';
-import { mcpDefinition } from '../src/integrations/mcp/mcp-manager.ts';
+import { mcpDefinition } from '@wisp/protocol/mcp-setup';
 
 type Server = Parameters<typeof mcpCapabilityCatalog>[0][number];
 
@@ -55,6 +55,7 @@ test('a capability write failure restores the MCP server switch and preserves th
   const switches: boolean[] = [];
   const manager = {
     list: () => [{ ...server }],
+    disconnect: () => Effect.void,
     setEnabled: (_key: string, enabled: boolean) =>
       Effect.sync(() => {
         switches.push(enabled);

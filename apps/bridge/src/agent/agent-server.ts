@@ -15,7 +15,7 @@ import { wowheadQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
-import type { McpRelay } from '../integrations/mcp/mcp-relay.ts';
+import type { EverlootLookup, McpManager } from '@wisp/agent/mcp-manager';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../addon/panels.ts';
@@ -50,7 +50,7 @@ interface AgentDependencies {
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
   webSearch: WowheadSearch;
-  mcpRelay: McpRelay;
+  mcpManager: Pick<McpManager, 'readEverloot'>;
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
@@ -116,12 +116,13 @@ const inspectionTools = {
   hearthstone: 'inspect_hearthstone',
 } as const;
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
     connections,
     webSearch,
-    mcpRelay,
+    mcpManager,
     capabilitySettings,
     routineStore,
     panelStore,
@@ -180,13 +181,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       proxyConnectionModel(c.env.incoming, c.env.outgoing, connections, deps.modelFailures),
     ),
   );
-  app.all('/mcp/*', async (c) => {
-    try {
-      return await mcpRelay.handle(c.req.raw, c.req.path.slice('/mcp/'.length));
-    } catch {
-      return c.text('MCP connection failed', 503);
-    }
-  });
 
   app.get('/session-model', async (c) => {
     try {
@@ -520,11 +514,18 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
           },
           abort,
         );
+      const everlootAllowed = (tool: Parameters<EverlootLookup>[0]) =>
+        capabilitySettings.enabled('mcp:everloot') &&
+        capabilitySettings.enabled('mcp_tool:everloot:' + tool);
+      const readEverloot: EverlootLookup = (tool, args) =>
+        runPromise(
+          mcpManager.readEverloot(tool, args, () => everlootAllowed(tool)),
+          {
+            signal: abort,
+          },
+        );
       if (inspection?.kind === 'search_armor' || inspection?.kind === 'search_weapons') {
-        if (
-          !capabilitySettings.enabled('mcp:everloot') ||
-          !capabilitySettings.enabled('mcp_tool:everloot:item_categories')
-        ) {
+        if (!everlootAllowed('item_categories')) {
           throw new Error(
             'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
           );
@@ -532,7 +533,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
         return searchGear(
           inspection,
           (candidates) => readLoadedItems(() => request(candidates), abort),
-          { signal: abort },
+          readEverloot,
         );
       }
       if (inspection?.kind === 'dungeon_loot') {
@@ -542,14 +543,12 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       }
       if (inspection?.kind === 'item_sources') {
         return itemSources(inspection.args.itemIds, (names) => request(names), {
-          everloot:
-            capabilitySettings.enabled('mcp:everloot') &&
-            capabilitySettings.enabled('mcp_tool:everloot:entity_relations'),
+          everloot: everlootAllowed('entity_relations'),
           questie: capabilitySettings.enabled('integration:questie'),
           auctionator:
             capabilitySettings.enabled('integration:auctionator') &&
             capabilitySettings.enabled('tool:get_item_prices'),
-          signal: abort,
+          readEverloot,
         });
       }
       return inspection && retriesItemLoading(inspection)

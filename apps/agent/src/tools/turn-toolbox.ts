@@ -52,7 +52,8 @@ export class TurnToolbox extends Context.Service<
           const recalled = yield* slotMemory.recall(session);
           if (recalled) memory.push(recalled);
         }
-        for (const tool of yield* mcp.tools(capabilities)) {
+        const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+        for (const tool of yield* mcp.tools(session, capabilities)) {
           deferred.push({
             name: tool.name,
             description: tool.description,
@@ -61,9 +62,15 @@ export class TurnToolbox extends Context.Service<
               const fixture = stub?.(tool.name, input);
               return fixture
                 ? Promise.resolve().then(() => stubbed(fixture))
-                : tool.call(
-                    input && typeof input === 'object' ? (input as Record<string, unknown>) : {},
-                    ctx.signal,
+                : runPromise(
+                    tool
+                      .call(
+                        input && typeof input === 'object'
+                          ? (input as Record<string, unknown>)
+                          : {},
+                      )
+                      .pipe(Effect.mapError((error) => error.cause)),
+                    { signal: ctx.signal },
                   );
             },
           });

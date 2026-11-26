@@ -1,7 +1,7 @@
 import { defaultCapabilities, type Capability } from '@wisp/protocol/capabilities';
 import { Effect, Result } from 'effect';
 import type { CapabilitySettings } from '../capabilities.ts';
-import type { McpManager } from './mcp-manager.ts';
+import type { McpManager } from '@wisp/agent/mcp-manager';
 
 type McpServerView = ReturnType<McpManager['list']>[number];
 
@@ -43,7 +43,7 @@ export function mcpCapabilityCatalog(servers: McpServerView[]): Capability[] {
 
 /** Keeps capability settings and the MCP servers they switch on and off in step. */
 export function createMcpCapabilities(
-  mcpManager: Pick<McpManager, 'list' | 'setEnabled'>,
+  mcpManager: Pick<McpManager, 'list' | 'setEnabled' | 'disconnect'>,
   capabilitySettings: CapabilitySettings,
 ) {
   return {
@@ -82,6 +82,9 @@ export function createMcpCapabilities(
           yield* mcpManager.setEnabled(server.name, server.enabled);
         }
         return yield* Effect.fail(result.failure);
+      }
+      if (id === 'mcp:everloot' && !enabled) {
+        yield* mcpManager.disconnect('everloot');
       }
     }),
   };

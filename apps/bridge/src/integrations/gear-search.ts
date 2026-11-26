@@ -4,7 +4,7 @@ import {
   type armorSearchInput,
   type weaponSearchInput,
 } from '@wisp/agent/contract/game-inspection';
-import { callEverloot } from './everloot.ts';
+import type { EverlootLookup } from '@wisp/agent/mcp-manager';
 
 // Everloot lists at most 100 items per call; one call per quality keeps every
 // slot/type listing checked so far (all under 100 per quality) complete.
@@ -50,17 +50,11 @@ interface CategoryPage {
 async function listCategory(
   category: Category,
   quality: string,
-  fetcher: typeof fetch,
-  signal?: AbortSignal,
+  readEverloot: EverlootLookup,
 ): Promise<CategoryPage> {
   let content;
   try {
-    content = await callEverloot(
-      'item_categories',
-      { ...category, quality, limit: PAGE },
-      fetcher,
-      signal,
-    );
+    content = await readEverloot('item_categories', { ...category, quality, limit: PAGE });
   } catch (error) {
     throw new Error('Everloot item catalog could not list this category', { cause: error });
   }
@@ -71,7 +65,10 @@ async function listCategory(
     : [];
   return {
     itemIds,
-    total: Number.isInteger(content.total) ? content.total : itemIds.length,
+    total:
+      typeof content.total === 'number' && Number.isInteger(content.total)
+        ? content.total
+        : itemIds.length,
     build: typeof content.build === 'string' ? content.build : undefined,
     label: typeof content.label === 'string' ? content.label : undefined,
     credit: typeof content.credit === 'string' ? content.credit : undefined,
@@ -83,14 +80,12 @@ async function listCategory(
 export async function searchGear(
   search: GearSearch,
   readGame: (inspection: { kind: 'gear_candidates'; args: unknown }) => Promise<unknown>,
-  options: { fetch?: typeof fetch; signal?: AbortSignal } = {},
+  readEverloot: EverlootLookup,
 ) {
   const category = gearCategory(search);
   const qualities = [...new Set(search.args.quality)];
   const pages = await Promise.all(
-    qualities.map((quality) =>
-      listCategory(category, quality, options.fetch ?? fetch, options.signal),
-    ),
+    qualities.map((quality) => listCategory(category, quality, readEverloot)),
   );
   const itemIds = [...new Set(pages.flatMap((page) => page.itemIds))];
   const first = pages.find((page) => page.build);

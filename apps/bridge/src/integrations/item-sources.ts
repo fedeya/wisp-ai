@@ -1,4 +1,4 @@
-import { callEverloot } from './everloot.ts';
+import type { EverlootLookup } from '@wisp/agent/mcp-manager';
 
 // How an item is obtained, by Everloot relation. Other relations (reagent for,
 // same icon, set membership) do not say where to get the item.
@@ -42,18 +42,19 @@ interface SourceNames {
   realm?: string;
 }
 
-async function relations(id: number, fetcher: typeof fetch, signal?: AbortSignal) {
+async function relations(id: number, readEverloot: EverlootLookup) {
   try {
-    const content = await callEverloot(
-      'entity_relations',
-      { kind: 'item', id, direction: 'from', limit: 10 },
-      fetcher,
-      signal,
-    );
-    const edges: Edge[] = Array.isArray(content.page?.edges) ? content.page.edges : [];
+    const content = await readEverloot('entity_relations', {
+      kind: 'item',
+      id,
+      direction: 'from',
+      limit: 10,
+    });
+    const page = content.page as { edges?: Edge[]; notShown?: number } | undefined;
+    const edges = Array.isArray(page?.edges) ? page.edges : [];
     // Everloot caps lines per relation, so an obtain relation is never missing
     // entirely; notShown counts extra lines the agent may want to know about.
-    const notShown = Number.isInteger(content.page?.notShown) ? content.page.notShown : 0;
+    const notShown = Number.isInteger(page?.notShown) ? (page?.notShown ?? 0) : 0;
     return { edges, notShown, status: 'available' as const };
   } catch {
     return { edges: [] as Edge[], notShown: 0, status: 'unavailable' as const };
@@ -69,13 +70,12 @@ export async function itemSources(
     everloot: boolean;
     questie: boolean;
     auctionator: boolean;
-    fetch?: typeof fetch;
-    signal?: AbortSignal;
+    readEverloot: EverlootLookup;
   },
 ) {
   const ids = [...new Set(itemIds)];
   const found = options.everloot
-    ? await Promise.all(ids.map((id) => relations(id, options.fetch ?? fetch, options.signal)))
+    ? await Promise.all(ids.map((id) => relations(id, options.readEverloot)))
     : ids.map(() => ({ edges: [] as Edge[], notShown: 0, status: 'disabled' as const }));
   const wanted = { npc: new Set<number>(), quest: new Set<number>(), spell: new Set<number>() };
   for (const { edges } of found) {

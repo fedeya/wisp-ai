@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { armorSearchInput, weaponSearchInput } from '@wisp/agent/contract/game-inspection';
 import { gearCategory, searchGear, type GearSearch } from '../src/integrations/gear-search.ts';
+import type { EverlootLookup } from '@wisp/agent/mcp-manager';
 
 const armor = (args: unknown): GearSearch => ({
   kind: 'search_armor',
@@ -11,29 +12,20 @@ const weapons = (args: unknown): GearSearch => ({
   args: weaponSearchInput.parse(args),
 });
 
-function catalog(pages: Record<string, { ids: number[]; total?: number }>, sse = false) {
+function catalog(pages: Record<string, { ids: number[]; total?: number }>) {
   const calls: Array<Record<string, unknown>> = [];
-  const fetcher = (async (_url: string, init: RequestInit) => {
-    const body = JSON.parse(String(init.body));
-    const args = body.params.arguments;
+  const readEverloot: EverlootLookup = async (tool, args) => {
+    expect(tool).toBe('item_categories');
     calls.push(args);
-    const page = pages[args.quality] ?? { ids: [] };
-    const json = JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      result: {
-        content: [{ type: 'text', text: 'listing' }],
-        structuredContent: {
-          label: 'found in game files, unconfirmed',
-          build: '1.60.1.70959',
-          items: page.ids.map((itemId) => ({ itemId })),
-          total: page.total ?? page.ids.length,
-        },
-      },
-    });
-    return new Response(sse ? 'event: message\ndata: ' + json + '\n\n' : json);
-  }) as unknown as typeof fetch;
-  return { fetcher, calls };
+    const page = pages[String(args.quality)] ?? { ids: [] };
+    return {
+      label: 'found in game files, unconfirmed',
+      build: '1.60.1.70959',
+      items: page.ids.map((itemId) => ({ itemId })),
+      total: page.total ?? page.ids.length,
+    };
+  };
+  return { readEverloot, calls };
 }
 
 test('gear searches map onto the game-file categories', () => {
@@ -62,7 +54,7 @@ test('gear searches map onto the game-file categories', () => {
 });
 
 test('a search lists every requested quality and reads the merged IDs from the game once', async () => {
-  const { fetcher, calls } = catalog({
+  const { readEverloot, calls } = catalog({
     common: { ids: [1, 2] },
     uncommon: { ids: [2, 3], total: 120 },
     rare: { ids: [4] },
@@ -74,7 +66,7 @@ test('a search lists every requested quality and reads the merged IDs from the g
       reads.push(inspection);
       return { status: 'available', data: { items: [{ id: 3 }] } };
     },
-    { fetch: fetcher },
+    readEverloot,
   );
   expect(calls.map((call) => call.quality)).toEqual(['common', 'uncommon', 'rare']);
   expect(calls[0]).toMatchObject({ class: 'armor', subclass: 'cloth', slot: 'feet', limit: 100 });
@@ -96,8 +88,8 @@ test('a search lists every requested quality and reads the merged IDs from the g
   });
 });
 
-test('empty listings skip the game read, and event-stream replies are accepted', async () => {
-  const { fetcher } = catalog({}, true);
+test('empty listings skip the game read', async () => {
+  const { readEverloot } = catalog({});
   let reads = 0;
   const result = await searchGear(
     weapons({ weaponType: 'wands', quality: ['epic'] }),
@@ -105,16 +97,17 @@ test('empty listings skip the game read, and event-stream replies are accepted',
       reads++;
       return {};
     },
-    { fetch: fetcher },
+    readEverloot,
   );
   expect(reads).toBe(0);
   expect(result).toMatchObject({ data: { items: [] }, catalog: { listed: 0, incomplete: false } });
 });
 
 test('catalog failures surface as tool errors', async () => {
-  const failing = (async () =>
-    new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { isError: true } }))) as never;
+  const failing = async () => {
+    throw Error('Everloot unavailable');
+  };
   await expect(
-    searchGear(weapons({ weaponType: 'staves' }), async () => ({}), { fetch: failing }),
+    searchGear(weapons({ weaponType: 'staves' }), async () => ({}), failing),
   ).rejects.toThrow('Everloot item catalog could not list this category');
 });
