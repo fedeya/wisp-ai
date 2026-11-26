@@ -16,13 +16,13 @@ import { toolOffered } from '../src/tools/enabled-tool.ts';
 
 // The tool as the engine offers it: absent while its capability is off.
 const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) => {
-  const flags = await Effect.runPromise(
+  const capabilities = await Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
       Effect.provide(layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     ),
   );
-  return toolOffered(tool, flags) ? tool : null;
+  return toolOffered(tool, capabilities) ? tool : null;
 };
 
 const { impitFetch, impitOptions, dnsLookup } = vi.hoisted(() => ({

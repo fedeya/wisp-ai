@@ -27,12 +27,12 @@ test('integration availability and master switches govern real tool definitions 
       inputSchema: z.object({}),
       execute: () => null,
     });
-    const readFlags = Effect.flatMap(AgentCapabilities, (capabilities) => capabilities.read).pipe(
+    const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
       Effect.provide(layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     );
     const resolve = async (_ctx: unknown) =>
-      toolOffered(definition, await Effect.runPromise(readFlags)) ? definition : null;
+      toolOffered(definition, await Effect.runPromise(readCapabilities)) ? definition : null;
     await settings.publish();
     assert.equal(await resolve({} as never), null, 'unreported addons are not offered');
     assert.equal(

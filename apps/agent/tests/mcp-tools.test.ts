@@ -19,7 +19,7 @@ afterEach(() => setAgentHost(undefined));
 const readConnections = (config: string) =>
   Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) =>
-      Effect.flatMap(settings.read, (flags) => mcpConnections(flags, () => config)),
+      Effect.flatMap(settings.read, (capabilities) => mcpConnections(capabilities, () => config)),
     ).pipe(Effect.provide(layerFromFile()), Effect.provide(NodeFileSystem.layer)),
   );
 

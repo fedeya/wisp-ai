@@ -53,13 +53,13 @@ test('actual tool definitions follow per-API readiness, parent switches and expi
     settings.agentFile = path.join(directory, 'agent.json');
     process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
     const state = new IntegrationState(settings);
-    const readFlags = Effect.flatMap(AgentCapabilities, (capabilities) => capabilities.read).pipe(
+    const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
       Effect.provide(layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     );
     // A tool as the agent offers it this turn, or null while its capability is off.
     const resolve = async <T extends { capability?: string }>(definition: T) =>
-      toolOffered(definition, await Effect.runPromise(readFlags)) ? definition : null;
+      toolOffered(definition, await Effect.runPromise(readCapabilities)) ? definition : null;
     const report = {
       version: '1.60',
       questie: {

@@ -32,27 +32,27 @@ export class TurnToolbox extends Context.Service<
     TurnToolbox,
     Effect.gen(function* () {
       const { stub } = yield* EngineConfig;
-      const capabilities = yield* AgentCapabilities;
+      const settings = yield* AgentCapabilities;
       const mcp = yield* Mcp;
 
       const tools = Effect.fn('TurnToolbox.tools')(function* (session: string) {
-        const flags = yield* capabilities.read;
+        const capabilities = yield* settings.read;
         const direct: Record<string, ToolDefinition> = {};
         const deferred: DeferredTool[] = [];
         const memory: string[] = [];
         for (const [name, tool] of Object.entries(authoredTools)) {
-          if (!toolOffered(tool, flags)) continue;
+          if (!toolOffered(tool, capabilities)) continue;
           if (tool.deferred) deferred.push(authored(name, tool, stub));
           else direct[name] = tool;
         }
         for (const slot of memorySlots) {
           const slotMemory = localMemory(slot);
-          if (!(yield* slotMemory.scope(session, flags))) continue;
+          if (!(yield* slotMemory.scope(session, capabilities))) continue;
           Object.assign(direct, slotMemory.tools());
           const recalled = yield* slotMemory.recall(session);
           if (recalled) memory.push(recalled);
         }
-        for (const tool of yield* mcp.tools(flags)) {
+        for (const tool of yield* mcp.tools(capabilities)) {
           deferred.push({
             name: tool.name,
             description: tool.description,

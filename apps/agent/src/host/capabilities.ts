@@ -4,7 +4,26 @@ import { HostError } from '../execution/engine-errors.ts';
 import { agentHost } from './agent-host.ts';
 import { readSettings } from './read-settings.ts';
 
-export type CapabilityFlags = Readonly<Record<string, boolean>>;
+/** Pure queries over the capability switches from one read. */
+export interface CapabilitySnapshot {
+  readonly enabled: (id: string, defaultEnabled?: boolean) => boolean;
+  readonly disabledMcpTools: (connection: string) => string[];
+}
+
+function snapshot(flags: Readonly<Partial<Record<string, boolean>>>): CapabilitySnapshot {
+  return {
+    enabled(id, defaultEnabled = true) {
+      const value = flags[id];
+      return typeof value === 'boolean' ? value : defaultEnabled;
+    },
+    disabledMcpTools(connection) {
+      const prefix = 'mcp_tool:' + connection + ':';
+      return Object.entries(flags)
+        .filter(([id, enabled]) => enabled === false && id.startsWith(prefix))
+        .map(([id]) => id.slice(prefix.length));
+    },
+  };
+}
 
 const hasCapabilityFlags = Schema.is(
   Schema.Struct({ enabled: Schema.Record(Schema.String, Schema.Boolean) }),
@@ -17,7 +36,7 @@ const hasFeatureFlags = Schema.is(
 export class AgentCapabilities extends Context.Service<
   AgentCapabilities,
   {
-    readonly read: Effect.Effect<CapabilityFlags, HostError>;
+    readonly read: Effect.Effect<CapabilitySnapshot, HostError>;
     readonly featureEnabled: (flag: FeatureFlag) => Effect.Effect<boolean, HostError>;
   }
 >()('@wisp/agent/AgentCapabilities') {}
@@ -33,13 +52,13 @@ export function layerFromFile(
 
       const read = Effect.gen(function* () {
         const data = yield* document;
-        if (data === undefined) return {};
+        if (data === undefined) return snapshot({});
         if (!hasCapabilityFlags(data)) {
           return yield* new HostError({
             cause: new Error('Invalid capability settings; the file was preserved'),
           });
         }
-        return data.enabled;
+        return snapshot(data.enabled);
       });
 
       return AgentCapabilities.of({

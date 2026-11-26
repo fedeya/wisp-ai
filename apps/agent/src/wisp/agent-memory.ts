@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Effect } from 'effect';
 import { agentRPC } from '../host/agent-rpc.ts';
-import type { CapabilityFlags } from '../host/capabilities.ts';
+import type { CapabilitySnapshot } from '../host/capabilities.ts';
 import { hostCall } from '../execution/engine-errors.ts';
 import { defineTool, type ToolDefinition } from '../tools/tool.ts';
 
@@ -22,8 +22,8 @@ export function localMemory(slot: MemorySlot) {
       slot === 'preferences'
         ? 'Stable preferences shared across this local player’s characters.'
         : 'This character’s explicitly chosen guide, goals, build plan and user-reported guide checkpoint. A plan is not verified completion.',
-    scope: Effect.fnUntraced(function* (session: string, flags: CapabilityFlags) {
-      if (flags['memory:' + slot] === false) {
+    scope: Effect.fnUntraced(function* (session: string, capabilities: CapabilitySnapshot) {
+      if (!capabilities.enabled('memory:' + slot)) {
         return null;
       }
       if (slot === 'preferences') {

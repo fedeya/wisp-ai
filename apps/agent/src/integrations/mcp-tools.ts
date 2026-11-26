@@ -5,7 +5,7 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { everlootTools } from '@wisp/protocol/capabilities';
 import { agentHost } from '../host/agent-host.ts';
 import { bridgeOrigin } from '../host/agent-rpc.ts';
-import type { CapabilityFlags } from '../host/capabilities.ts';
+import type { CapabilitySnapshot } from '../host/capabilities.ts';
 import { EngineConfig } from '../host/engine-config.ts';
 import { readSettings } from '../host/read-settings.ts';
 import { HostError, hostCall } from '../execution/engine-errors.ts';
@@ -31,11 +31,12 @@ export interface McpConnection {
 const EVERLOOT_URL = 'https://everloot.app/mcp/public';
 const CACHE_MS = 5 * 60_000;
 
-function everlootConnections(flags: CapabilityFlags): Record<string, McpConnection> {
-  if (flags['mcp:everloot'] === false) {
+function everlootConnections(capabilities: CapabilitySnapshot): Record<string, McpConnection> {
+  if (!capabilities.enabled('mcp:everloot')) {
     return {};
   }
-  const allowed = everlootTools.filter((tool) => flags['mcp_tool:everloot:' + tool] !== false);
+  const blocked = capabilities.disabledMcpTools('everloot');
+  const allowed = everlootTools.filter((tool) => !blocked.includes(tool));
   const connections: Record<string, McpConnection> = {};
   const reference = allowed.filter(
     (name) => !['search_knowledge', 'recent_changes'].includes(name),
@@ -70,7 +71,10 @@ function everlootConnections(flags: CapabilityFlags): Record<string, McpConnecti
 }
 
 // Player-configured servers run in the bridge, which relays them over loopback.
-function externalConnections(data: unknown, flags: CapabilityFlags): Record<string, McpConnection> {
+function externalConnections(
+  data: unknown,
+  capabilities: CapabilitySnapshot,
+): Record<string, McpConnection> {
   if (data === undefined) {
     return {};
   }
@@ -83,17 +87,13 @@ function externalConnections(data: unknown, flags: CapabilityFlags): Record<stri
     if (!/^[a-z][a-z0-9_]*$/.test(name)) {
       throw new Error('MCP names must be lowercase identifiers');
     }
-    const enabled = flags['mcp:' + name] ?? server.enabled !== false;
-    if (!enabled) {
+    if (!capabilities.enabled('mcp:' + name, server.enabled !== false)) {
       continue;
     }
-    const prefix = 'mcp_tool:' + name + ':';
     connections[name.replace(/_/g, '-')] = {
       url: bridgeOrigin() + '/mcp/' + name,
       description: server.description || name,
-      block: Object.keys(flags)
-        .filter((key) => key.startsWith(prefix) && flags[key] === false)
-        .map((key) => key.slice(prefix.length)),
+      block: capabilities.disabledMcpTools(name),
       ...(token ? { headers: { authorization: 'Bearer ' + token } } : {}),
     };
   }
@@ -116,13 +116,16 @@ function withoutProvided(schema: unknown, provided?: Record<string, unknown>) {
 
 /** The enabled MCP connections: bundled Everloot ones and the player's relayed servers. */
 export const mcpConnections = Effect.fnUntraced(function* (
-  flags: CapabilityFlags,
+  capabilities: CapabilitySnapshot,
   configFile?: () => string | undefined,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const data = yield* readSettings(fs, configFile);
   return yield* Effect.try({
-    try: () => ({ ...everlootConnections(flags), ...externalConnections(data, flags) }),
+    try: () => ({
+      ...everlootConnections(capabilities),
+      ...externalConnections(data, capabilities),
+    }),
     catch: (cause) => new HostError({ cause }),
   });
 });
@@ -285,7 +288,11 @@ export class McpTools {
 /** The MCP tools of the enabled connections, with clients kept across turns. */
 export class Mcp extends Context.Service<
   Mcp,
-  { readonly tools: (flags: CapabilityFlags) => Effect.Effect<readonly McpTool[], HostError> }
+  {
+    readonly tools: (
+      capabilities: CapabilitySnapshot,
+    ) => Effect.Effect<readonly McpTool[], HostError>;
+  }
 >()('@wisp/agent/Mcp') {
   static readonly layer = Layer.effect(
     Mcp,
@@ -296,8 +303,8 @@ export class Mcp extends Context.Service<
         Effect.sync(() => new McpTools()),
         (tools) => Effect.promise(() => tools.close()),
       );
-      const tools = Effect.fn('Mcp.tools')(function* (flags: CapabilityFlags) {
-        const connections = yield* mcpConnections(flags, mcpConfigFile).pipe(
+      const tools = Effect.fn('Mcp.tools')(function* (capabilities: CapabilitySnapshot) {
+        const connections = yield* mcpConnections(capabilities, mcpConfigFile).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
         );
         const unavailable: { connection: string; error: unknown }[] = [];

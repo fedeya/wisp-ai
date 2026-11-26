@@ -24,10 +24,10 @@ export class SessionModels extends Context.Service<
     SessionModels,
     Effect.gen(function* () {
       const { origin, token } = yield* EngineConfig;
-      const capabilities = yield* AgentCapabilities;
+      const settings = yield* AgentCapabilities;
       const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-      const webSearchEnabled = capabilities.read.pipe(
-        Effect.map((flags) => flags['tool:web_search'] !== false),
+      const webSearchEnabled = settings.read.pipe(
+        Effect.map((capabilities) => capabilities.enabled('tool:web_search')),
         Effect.mapError((error) => error.cause),
       );
       return SessionModels.of({

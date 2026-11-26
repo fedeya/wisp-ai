@@ -17,15 +17,15 @@ import { filterWebSearch } from '@wisp/agent/model-tools';
 // Tool names are <connection>__<tool>; a connection name must keep them legal function names.
 const CONNECTION_NAME = /^[a-z][a-z0-9-]*$/;
 
-const readFlags = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
+const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
   Effect.provide(layerFromFile()),
   Effect.provide(NodeFileSystem.layer),
 );
 const readConnections = (configFile?: string) =>
   Effect.runPromise(
-    Effect.flatMap(readFlags, (flags) => mcpConnections(flags, () => configFile)).pipe(
-      Effect.provide(NodeFileSystem.layer),
-    ),
+    Effect.flatMap(readCapabilities, (capabilities) =>
+      mcpConnections(capabilities, () => configFile),
+    ).pipe(Effect.provide(NodeFileSystem.layer)),
   );
 
 test('settings persist, filter real tool/MCP definitions, and preserve child settings when an MCP is off', async () => {
@@ -41,16 +41,19 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
       execute: () => null,
     });
     assert.equal(tool.capability, 'tool:search_database');
-    assert.equal(toolOffered(tool, await Effect.runPromise(readFlags)), true);
+    const initial = await Effect.runPromise(readCapabilities);
+    assert.equal(toolOffered(tool, initial), true);
+    assert.equal(initial.enabled('tool:search_database', false), false);
     await Promise.all([
       settings.set('tool:search_database', false),
       settings.set('mcp_tool:everloot:market_value', false),
     ]);
     assert.equal(
-      toolOffered(tool, await Effect.runPromise(readFlags)),
+      toolOffered(tool, await Effect.runPromise(readCapabilities)),
       false,
       'disabled tools must be removed from the agent, not only hidden in the UI',
     );
+    assert.equal(toolOffered(tool, initial), true, 'a snapshot keeps its original switches');
     const connection = await readConnections();
     assert.deepEqual(Object.keys(connection), ['everloot', 'everloot-search', 'everloot-changes']);
     assert.ok(Object.keys(connection).every((name) => CONNECTION_NAME.test(name)));
@@ -84,20 +87,22 @@ test('settings persist, filter real tool/MCP definitions, and preserve child set
     await settings.set('memory:preferences', false);
     const memory = localMemory('preferences');
     assert.equal(
-      await Effect.runPromise(Effect.flatMap(readFlags, (flags) => memory.scope('session', flags))),
+      await Effect.runPromise(
+        Effect.flatMap(readCapabilities, (capabilities) => memory.scope('session', capabilities)),
+      ),
       null,
       'disabled memory must not be recalled',
     );
     await assert.rejects(settings.set('unknown:tool', false));
     await writeFile(settings.file, '{broken json');
     await assert.rejects(
-      Effect.runPromise(readFlags),
+      Effect.runPromise(readCapabilities),
       (error) => error instanceof HostError && error.cause instanceof SyntaxError,
       'corrupt settings must never silently re-enable tools',
     );
     await writeFile(settings.file, JSON.stringify({ enabled: { 'tool:search_database': 'off' } }));
     await assert.rejects(
-      Effect.runPromise(readFlags),
+      Effect.runPromise(readCapabilities),
       (error) =>
         error instanceof HostError &&
         error.cause instanceof Error &&

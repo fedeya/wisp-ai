@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { Effect } from 'effect';
+import { Effect, FileSystem } from 'effect';
 
+import { AgentCapabilities, layerFromFile } from '../src/host/capabilities.ts';
 import { localMemory } from '../src/wisp/agent-memory.ts';
 
 const signal = () => new AbortController().signal;
@@ -23,9 +24,15 @@ test('memory recalls saved entries and character scope fails closed without iden
     );
   };
   try {
+    const capabilities = await Effect.runPromise(
+      Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
+        Effect.provide(layerFromFile(() => undefined)),
+        Effect.provide(FileSystem.layerNoop({})),
+      ),
+    );
     const memory = localMemory('character');
-    assert.equal(await Effect.runPromise(memory.scope('first', {})), 'mage');
-    assert.equal(await Effect.runPromise(memory.scope('unknown', {})), null);
+    assert.equal(await Effect.runPromise(memory.scope('first', capabilities)), 'mage');
+    assert.equal(await Effect.runPromise(memory.scope('unknown', capabilities)), null);
     assert.match((await Effect.runPromise(memory.recall('new-session')))!, /Guide A/);
     assert.equal(requests.at(-1)?.agentSession, 'new-session');
     assert.equal(requests.at(-1)?.slot, 'character');
@@ -45,7 +52,7 @@ test('memory recalls saved entries and character scope fails closed without iden
     await tools.character__remove_memory!.execute({ key: 'guide' }, ctx('new-session'));
     assert.equal(requests.at(-1)?.operation, 'remove');
     assert.equal(
-      await Effect.runPromise(localMemory('preferences').scope('new-session', {})),
+      await Effect.runPromise(localMemory('preferences').scope('new-session', capabilities)),
       'local-player',
     );
     entries.length = 0;
