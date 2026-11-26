@@ -84,7 +84,7 @@ test('a failed transaction rolls back and the layer closes the connection', asyn
   const exit = await Effect.runPromiseExit(
     Effect.gen(function* () {
       const { db } = yield* Sql.SqlDatabase;
-      yield* db.transaction((tx) =>
+      return yield* db.transaction((tx) =>
         tx
           .insert(metadata)
           .values({ key: 'rolled-back', value: 'x' })

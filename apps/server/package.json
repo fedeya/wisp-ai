@@ -57,7 +57,7 @@
   },
   "scripts": {
     "start": "node src/main.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsc --noEmit",
     "test": "cd ../.. && vitest run --config apps/server/vitest.config.ts",
     "eval:sign-in": "node src/evals/eval-bridge.ts sign-in"
   },
@@ -82,7 +82,6 @@
   "devDependencies": {
     "@ai-sdk/openai": "4.0.110",
     "@types/node": "26.6.6",
-    "typescript": "5.9.3",
     "vitest": "5.1.0"
   }
 }

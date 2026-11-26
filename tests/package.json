@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "cd .. && vitest run --config tests/vitest.config.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "effect-tsgo tsc --noEmit"
   },
   "devDependencies": {
     "@effect/platform-node": "4.1.3",

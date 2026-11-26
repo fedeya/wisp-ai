@@ -11,9 +11,9 @@ const sqliteBusy = 5;
 /** Wisp's SQLite file: opened privately in WAL mode and migrated before first use. */
 export class Database {
   readonly file: string;
-  private client?: DatabaseSync;
-  private db?: ApplicationOrm;
-  private opening?: Promise<void>;
+  private client: DatabaseSync | undefined;
+  private db: ApplicationOrm | undefined;
+  private opening: Promise<void> | undefined;
   private closed = false;
   constructor(file: string) {
     this.file = file;
