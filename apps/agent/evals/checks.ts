@@ -162,14 +162,22 @@ export const commonScorers = (): Check[] => [
 
 /**
  * What the player reads: the reply, then each text of its present_ui panels on
- * its own line, so sentence checks such as recommendedByName work on panels.
+ * its own line (a table row as one line), so sentence checks such as recommendedByName work on panels.
  */
 export function visibleText(turn: TurnView): string {
   const texts: string[] = [turn.reply];
   const collect = (value: unknown): void => {
-    if (typeof value === 'string') texts.push(value);
-    else if (Array.isArray(value)) value.forEach(collect);
-    else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+    if (typeof value === 'string') {
+      texts.push(value);
+    } else if (Array.isArray(value) && value.every((cell) => typeof cell === 'string')) {
+      // A table row stays one line, so a cell that turns an item down still
+      // applies to the item named in another cell.
+      texts.push(value.join(' | '));
+    } else if (Array.isArray(value)) {
+      value.forEach(collect);
+    } else if (value && typeof value === 'object') {
+      Object.values(value).forEach(collect);
+    }
   };
   for (const call of turn.toolCalls) {
     if (call.name === 'wisp__present_ui') collect(call.input);

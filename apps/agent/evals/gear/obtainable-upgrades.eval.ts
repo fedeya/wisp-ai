@@ -8,6 +8,12 @@ const CRAFTED = [7048, 4321, 4314, 4320, 7055, 5240];
 const CRAFTED_NAMES =
   /Azure Silk Hood|Spider Silk Hood|Double-stitched Woolen Shoulders|Spidersilk Boots|Azure Silk Belt|Flame Wand/i;
 
+// Every mage upgrade in the fixture with a drop, quest or vendor source (the
+// agility neck is left out), by ID and by name.
+const OBTAINABLE = [3065, 3647, 5214, 5291, 11288, 12047, 14112, 15700];
+const OBTAINABLE_NAMES =
+  /Blessed Apprentice Boots|Fine Cloth Bracers|Shadow Wand|Sage's Staff|Carved Pearl Ring|Spectral Light Pendant|Woven Silk Shoulders|Seal of the Forsaken/i;
+
 export default defineEval({
   description:
     'From a real chat: Wisp recommended tailoring gear the player could neither make nor buy. Upgrades must come from drops, quests or vendors.',
@@ -28,9 +34,8 @@ export default defineEval({
     expects(
       'recommends gear from a quest, vendor or drop',
       (turn) =>
-        /Seal of the Forsaken|Blessed Apprentice Boots|Woven Silk Shoulders|Fine Cloth Bracers|Spectral Light Pendant/i.test(
-          visibleText(turn),
-        ) || presentedItemIds(turn).some((id) => [15700, 3065, 14112, 3647, 12047].includes(id)),
+        OBTAINABLE_NAMES.test(visibleText(turn)) ||
+        presentedItemIds(turn).some((id) => OBTAINABLE.includes(id)),
     ),
   ],
 });

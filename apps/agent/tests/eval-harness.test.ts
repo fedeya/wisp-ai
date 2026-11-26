@@ -182,6 +182,7 @@ test('name checks read panel text line by line, after the reply', () => {
           blocks: [
             { type: 'text', text: 'Buy Azure Silk Hood' },
             { text: "Skip Spidersilk Boots, you can't get them" },
+            { kind: 'table', rows: [['Azure Silk Belt', 'Skip: requires Tailoring']] },
           ],
         },
       },
@@ -189,7 +190,7 @@ test('name checks read panel text line by line, after the reply', () => {
   };
   const text = visibleText(turn);
   expect(text.startsWith(turn.reply)).toBe(true);
-  expect(recommendedByName(text, /Azure Silk Hood|Spidersilk Boots/i)).toEqual([
+  expect(recommendedByName(text, /Azure Silk (Hood|Belt)|Spidersilk Boots/i)).toEqual([
     'Buy Azure Silk Hood',
   ]);
 });
