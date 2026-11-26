@@ -6,7 +6,8 @@ import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 import { z } from 'zod';
 import type { SecretVault } from './secret-vault.ts';
 import { errorMessage } from '../errors.ts';
-import { bridgeLogger as logger } from '../logger.ts';
+import { Effect } from 'effect';
+import { runBridgeLog } from '../logger.ts';
 import { accountModel, type AccountModel, type AccountModelInput } from '../chat/chat-model.ts';
 import { sendChatGPTCallbackPage } from './chatgpt-callback-page.ts';
 
@@ -568,7 +569,11 @@ export class ChatGPTAuth {
             }
           } catch (error) {
             // The user-facing message below already says revocation was unconfirmed.
-            logger.warn({ event: 'auth.revoke_failed', error: errorMessage(error) });
+            runBridgeLog(
+              Effect.logWarning('Token revocation could not be confirmed').pipe(
+                Effect.annotateLogs({ event: 'auth.revoke_failed', error: errorMessage(error) }),
+              ),
+            );
           }
         }
         profile.tokens = undefined;

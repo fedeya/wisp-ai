@@ -1,6 +1,7 @@
 import { startBridge } from './runtime.ts';
 import { errorMessage } from './errors.ts';
-import { bridgeLogger as logger } from './logger.ts';
+import { Effect } from 'effect';
+import { runBridgeLog } from './logger.ts';
 
 /** How long a crashing bridge may spend releasing SQLite and the agent before it exits. */
 const CRASH_SHUTDOWN_MS = 5000;
@@ -12,9 +13,10 @@ let crashing = false;
 // `.catch` anywhere would take Wisp down without a log line. A rejection is
 // local to the promise that failed: record it and keep serving.
 process.on('unhandledRejection', (reason) => {
-  logger.error(
-    { event: 'bridge.unhandled_rejection', error: errorMessage(reason) },
-    'Unhandled promise rejection',
+  runBridgeLog(
+    Effect.logError('Unhandled promise rejection').pipe(
+      Effect.annotateLogs({ event: 'bridge.unhandled_rejection', error: errorMessage(reason) }),
+    ),
   );
 });
 
@@ -23,9 +25,10 @@ process.on('unhandledRejection', (reason) => {
 // the agent and SQLite when it can, and exits non-zero so the desktop app can start
 // a fresh one.
 process.on('uncaughtException', (error) => {
-  logger.fatal(
-    { event: 'bridge.uncaught_exception', error: errorMessage(error) },
-    'Uncaught exception; stopping the bridge',
+  runBridgeLog(
+    Effect.logFatal('Uncaught exception; stopping the bridge').pipe(
+      Effect.annotateLogs({ event: 'bridge.uncaught_exception', error: errorMessage(error) }),
+    ),
   );
   if (crashing) return;
   crashing = true;
@@ -40,9 +43,10 @@ try {
   const running = bridge;
   const stop = () => {
     void running.stop().catch((error) => {
-      logger.error(
-        { event: 'bridge.shutdown_failed', error: errorMessage(error) },
-        'Bridge shutdown failed',
+      runBridgeLog(
+        Effect.logError('Bridge shutdown failed').pipe(
+          Effect.annotateLogs({ event: 'bridge.shutdown_failed', error: errorMessage(error) }),
+        ),
       );
       process.exitCode = 1;
     });
@@ -50,9 +54,10 @@ try {
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
 } catch (error) {
-  logger.error(
-    { event: 'bridge.startup_failed', error: errorMessage(error) },
-    'Bridge startup failed',
+  runBridgeLog(
+    Effect.logError('Bridge startup failed').pipe(
+      Effect.annotateLogs({ event: 'bridge.startup_failed', error: errorMessage(error) }),
+    ),
   );
   process.exitCode = 1;
 }

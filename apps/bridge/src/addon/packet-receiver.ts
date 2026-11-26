@@ -29,7 +29,8 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/c
 import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
+import { runBridgeLog } from '../logger.ts';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -54,7 +55,6 @@ interface ReceiverDependencies {
   flushAcknowledgment?: () => void;
   /** Records a character's name and moves its pre-GUID data before the packet is handled. */
   adoptCharacter?: (character: CharacterProfile) => void;
-  logger: Pick<Logger, 'info' | 'warn'>;
   now?: () => number;
 }
 export function createPacketReceiver(deps: ReceiverDependencies) {
@@ -76,7 +76,6 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     interrupt,
     runtime,
     changed,
-    logger,
   } = deps;
   const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
@@ -104,13 +103,14 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const beforeIntegrations = JSON.stringify(capabilitySettings.snapshot());
     const newTransport = establishesSession && state.activeTransport !== packet.session;
     if (newTransport) {
-      logger.info(
-        {
-          event: 'transport.session_changed',
-          reason: packet.takeover ? 'takeover' : packet.heartbeat ? 'heartbeat' : packet.type,
-          previousIdleMs: state.activeTransport ? receivedAt - activeSeenAt : undefined,
-        },
-        'Game window connected',
+      runBridgeLog(
+        Effect.logInfo('Game window connected').pipe(
+          Effect.annotateLogs({
+            event: 'transport.session_changed',
+            reason: packet.takeover ? 'takeover' : packet.heartbeat ? 'heartbeat' : packet.type,
+            previousIdleMs: state.activeTransport ? receivedAt - activeSeenAt : undefined,
+          }),
+        ),
       );
       activeSeenAt = receivedAt;
       contextCache = new TurnContextCache();
@@ -162,14 +162,16 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       deps.telemetry?.game(integrationState.report.version);
     }
     if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
-      void capabilitySettings
-        .publish()
-        .catch((error) =>
-          logger.warn(
-            { event: 'integration.update_failed', error: errorMessage(error) },
-            'Integration update failed',
+      void capabilitySettings.publish().catch((error) =>
+        runBridgeLog(
+          Effect.logWarning('Integration update failed').pipe(
+            Effect.annotateLogs({
+              event: 'integration.update_failed',
+              error: errorMessage(error),
+            }),
           ),
-        );
+        ),
+      );
       changed();
     }
     if (packet.heartbeat && !newTransport) {
@@ -186,7 +188,11 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      logger.info('Message delivery: ' + JSON.stringify(delivery));
+      runBridgeLog(
+        Effect.logInfo('Message delivery').pipe(
+          Effect.annotateLogs({ event: 'transport.message_delivery', ...delivery }),
+        ),
+      );
     }
     if (packet.type === 'model_catalog') {
       void refreshModelCatalog();
@@ -245,8 +251,14 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           })
           .safeParse(data);
         if (timing.success) {
-          logger.info(
-            'First text in WoW: ' + JSON.stringify({ ...timing.data, chat: packet.chat }),
+          runBridgeLog(
+            Effect.logInfo('First text in WoW').pipe(
+              Effect.annotateLogs({
+                ...timing.data,
+                event: 'chat.first_text_in_wow',
+                chat: packet.chat,
+              }),
+            ),
           );
         }
         changed();
@@ -265,9 +277,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         path.join(runtime, 'inline-status.json'),
         JSON.stringify(status, null, 2),
       ).catch((error) =>
-        logger.warn(
-          { event: 'addon.inline_status_save_failed', error: errorMessage(error) },
-          'Inline diagnostic save failed',
+        runBridgeLog(
+          Effect.logWarning('Inline diagnostic save failed').pipe(
+            Effect.annotateLogs({
+              event: 'addon.inline_status_save_failed',
+              error: errorMessage(error),
+            }),
+          ),
         ),
       );
       changed();
@@ -300,9 +316,13 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             .observe(identity, event.data)
             .then(changed)
             .catch((error) =>
-              logger.warn(
-                { event: 'routine.event_failed', error: errorMessage(error) },
-                'Routine event failed',
+              runBridgeLog(
+                Effect.logWarning('Routine event failed').pipe(
+                  Effect.annotateLogs({
+                    event: 'routine.event_failed',
+                    error: errorMessage(error),
+                  }),
+                ),
               ),
             );
         }
@@ -321,9 +341,10 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           .mutate(identity, input.data)
           .then(changed)
           .catch((error) =>
-            logger.warn(
-              { event: 'routine.action_failed', error: errorMessage(error) },
-              'Routine action failed',
+            runBridgeLog(
+              Effect.logWarning('Routine action failed').pipe(
+                Effect.annotateLogs({ event: 'routine.action_failed', error: errorMessage(error) }),
+              ),
             ),
           );
       }

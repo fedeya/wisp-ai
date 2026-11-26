@@ -27,7 +27,6 @@ import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { proxyModel } from '../models/model-proxy.ts';
-import type { Logger } from 'pino';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
@@ -43,7 +42,6 @@ export interface MemoryView {
   requestId?: string;
 }
 interface AgentDependencies {
-  logger?: Pick<Logger, 'info'>;
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
   auth: ChatGPTAuth;
@@ -173,7 +171,7 @@ export function createAgentApp(deps: AgentDependencies) {
     };
   app.post(
     '/model/responses',
-    proxy((c) => proxyModel(c.env.incoming, c.env.outgoing, auth, deps.logger, deps.modelFailures)),
+    proxy((c) => proxyModel(c.env.incoming, c.env.outgoing, auth, deps.modelFailures)),
   );
   app.post(
     '/model/connections/*',

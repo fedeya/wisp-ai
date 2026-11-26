@@ -57,7 +57,7 @@ test('SDK streams via bridge, forces private responses, and preserves terminal f
   } as unknown as ChatGPTAuth;
   const failures = new ModelFailures();
   const server = createServer((req, res) => {
-    void proxyModel(req, res, auth, undefined, failures).catch((e) => {
+    void proxyModel(req, res, auth, failures).catch((e) => {
       if (res.headersSent) {
         res.destroy();
       } else {

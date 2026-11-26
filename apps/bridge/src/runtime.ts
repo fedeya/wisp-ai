@@ -25,7 +25,8 @@ import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
-import { bridgeLogger as logger } from './logger.ts';
+import { Effect } from 'effect';
+import { bridgeLogging, runBridgeLog } from './logger.ts';
 import { MemoryStore } from './agent/memory-store.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
@@ -178,9 +179,10 @@ export async function startBridge(options: BridgeOptions = {}) {
     );
     resources.defer(() => mcpRelay.close());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
-      logger.error(
-        { event: 'chat.save_failed', error: errorMessage(error) },
-        'Conversation save failed',
+      runBridgeLog(
+        Effect.logError('Conversation save failed').pipe(
+          Effect.annotateLogs({ event: 'chat.save_failed', error: errorMessage(error) }),
+        ),
       ),
     );
     const state = createSessionState(await chatStore.load());
@@ -228,12 +230,15 @@ export async function startBridge(options: BridgeOptions = {}) {
           requests: pending.snapshot(),
         };
       },
-      logger,
     });
     resources.defer(() => publisher.stop());
     const pending = new GameRequests(changed, {
       onTimeout: (timeout) =>
-        logger.warn({ event: 'game.request_timeout', ...timeout }, 'WoW did not answer a request'),
+        runBridgeLog(
+          Effect.logWarning('WoW did not answer a request').pipe(
+            Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
+          ),
+        ),
     });
     resources.defer(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
@@ -245,7 +250,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       token,
       history: agentHistory,
       mcpConfigFile: () => mcpFile,
-      logger,
+      logging: bridgeLogging,
     });
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
       if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
@@ -271,9 +276,10 @@ export async function startBridge(options: BridgeOptions = {}) {
       void capabilitySettings
         .publish()
         .catch((error) =>
-          logger.warn(
-            { event: 'features.publish_failed', error: errorMessage(error) },
-            'Feature flags could not reach the agent',
+          runBridgeLog(
+            Effect.logWarning('Feature flags could not reach the agent').pipe(
+              Effect.annotateLogs({ event: 'features.publish_failed', error: errorMessage(error) }),
+            ),
           ),
         );
       changed();
@@ -286,7 +292,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       models: connections,
       capabilitySettings,
       changed,
-      logger,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
       defaultModel,
@@ -307,7 +312,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       capabilitySettings,
       run,
       changed,
-      logger,
       isStopping: () => shutdownRequested,
       isReady: () => engineReady,
     });
@@ -317,7 +321,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       panelStore,
       chats: () => state.chats,
       changed,
-      logger,
     });
     const receivePacket = createPacketReceiver({
       telemetry,
@@ -341,7 +344,6 @@ export async function startBridge(options: BridgeOptions = {}) {
       cancel: run.cancel,
       runtime,
       changed,
-      logger,
     });
     const receive: typeof receivePacket = (packet) => {
       const previousSession = state.activeTransport;
@@ -361,12 +363,10 @@ export async function startBridge(options: BridgeOptions = {}) {
       saveWow: (wow) => config.update({ wow }),
       changed,
       isStopping: () => shutdownRequested,
-      logger,
     });
     resources.defer(() => transport.serialize(transport.disconnect));
     const server = createServer(
       createAgentHandler({
-        logger,
         telemetry,
         modelFailures,
         token,
@@ -404,29 +404,36 @@ export async function startBridge(options: BridgeOptions = {}) {
       retireLegacyEngine(paths.legacyEngine),
       rm(path.join(runtime, 'eve.log'), { force: true }),
     ]).catch((error: unknown) =>
-      logger.warn(
-        { event: 'agent.legacy_engine_cleanup_failed', error: errorMessage(error) },
-        'Could not remove the old Eve engine folder',
+      runBridgeLog(
+        Effect.logWarning('Could not remove the old Eve engine folder').pipe(
+          Effect.annotateLogs({
+            event: 'agent.legacy_engine_cleanup_failed',
+            error: errorMessage(error),
+          }),
+        ),
       ),
     );
     // Histories no conversation refers to belong to deleted chats or reset sessions.
-    await agentHistory
-      .prune()
-      .catch((error: unknown) =>
-        logger.warn(
-          { event: 'agent.history_prune_failed', error: errorMessage(error) },
-          'Could not prune agent history',
+    await agentHistory.prune().catch((error: unknown) =>
+      runBridgeLog(
+        Effect.logWarning('Could not prune agent history').pipe(
+          Effect.annotateLogs({
+            event: 'agent.history_prune_failed',
+            error: errorMessage(error),
+          }),
         ),
-      );
+      ),
+    );
     const engineStartup = engine.preload().then(
       () => {
         engineReady = true;
         changed();
       },
       (error: unknown) =>
-        logger.error(
-          { event: 'agent.preload_failed', error: errorMessage(error) },
-          'Agent failed to load',
+        runBridgeLog(
+          Effect.logError('Agent failed to load').pipe(
+            Effect.annotateLogs({ event: 'agent.preload_failed', error: errorMessage(error) }),
+          ),
         ),
     );
     function observeGameConnection() {
@@ -512,9 +519,13 @@ export async function startBridge(options: BridgeOptions = {}) {
         setTimeout(
           () =>
             void stop().catch((error) =>
-              logger.error(
-                { event: 'bridge.shutdown_failed', error: errorMessage(error) },
-                'Bridge shutdown failed',
+              runBridgeLog(
+                Effect.logError('Bridge shutdown failed').pipe(
+                  Effect.annotateLogs({
+                    event: 'bridge.shutdown_failed',
+                    error: errorMessage(error),
+                  }),
+                ),
               ),
             ),
           200,
@@ -531,14 +542,16 @@ export async function startBridge(options: BridgeOptions = {}) {
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
       if (JSON.stringify(capabilitySettings.snapshot()) !== before) {
-        void capabilitySettings
-          .publish()
-          .catch((error) =>
-            logger.warn(
-              { event: 'integration.update_failed', error: errorMessage(error) },
-              'Integration update failed',
+        void capabilitySettings.publish().catch((error) =>
+          runBridgeLog(
+            Effect.logWarning('Integration update failed').pipe(
+              Effect.annotateLogs({
+                event: 'integration.update_failed',
+                error: errorMessage(error),
+              }),
             ),
-          );
+          ),
+        );
         changed();
       }
     }, 30000);
@@ -550,9 +563,14 @@ export async function startBridge(options: BridgeOptions = {}) {
       observeGameConnection();
       publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
-    logger.info(
-      { event: 'bridge.started', version: bridgeVersion, channel: features.channel },
-      'Wisp started',
+    runBridgeLog(
+      Effect.logInfo('Wisp started').pipe(
+        Effect.annotateLogs({
+          event: 'bridge.started',
+          version: bridgeVersion,
+          channel: features.channel,
+        }),
+      ),
     );
     resources.defer(() => clearInterval(publish));
     function stop() {
@@ -564,14 +582,16 @@ export async function startBridge(options: BridgeOptions = {}) {
     await Promise.all([engineStartup, transportStartup]);
     return { state, receive, stop };
   } catch (error) {
-    await resources
-      .close()
-      .catch((cleanupError) =>
-        logger.error(
-          { event: 'bridge.cleanup_failed', error: errorMessage(cleanupError) },
-          'Bridge cleanup failed',
+    await resources.close().catch((cleanupError) =>
+      runBridgeLog(
+        Effect.logError('Bridge cleanup failed').pipe(
+          Effect.annotateLogs({
+            event: 'bridge.cleanup_failed',
+            error: errorMessage(cleanupError),
+          }),
         ),
-      );
+      ),
+    );
     throw error;
   }
 }

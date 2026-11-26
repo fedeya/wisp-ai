@@ -1,4 +1,5 @@
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
+import { runBridgeLog } from '../logger.ts';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { adoptCharacterKey, saveCharacterName } from '../db/character-keys.ts';
 import { errorMessage } from '../errors.ts';
@@ -11,7 +12,6 @@ interface CharacterAdoptionDependencies {
   panelStore: Pick<PanelStore, 'refresh'>;
   chats: () => Chat[];
   changed: () => void;
-  logger: Pick<Logger, 'info' | 'warn'>;
 }
 
 /**
@@ -46,16 +46,18 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
       }
       if (merged.length) {
         deps.panelStore.refresh();
-        deps.logger.info(
-          { event: 'character.keys_merged', count: merged.length },
-          'Saved character data moved to its GUID key',
+        runBridgeLog(
+          Effect.logInfo('Saved character data moved to its GUID key').pipe(
+            Effect.annotateLogs({ event: 'character.keys_merged', count: merged.length }),
+          ),
         );
       }
       deps.changed();
     } catch (error) {
-      deps.logger.warn(
-        { event: 'character.keys_merge_failed', error: errorMessage(error) },
-        'Could not move saved character data',
+      runBridgeLog(
+        Effect.logWarning('Could not move saved character data').pipe(
+          Effect.annotateLogs({ event: 'character.keys_merge_failed', error: errorMessage(error) }),
+        ),
       );
     }
   };

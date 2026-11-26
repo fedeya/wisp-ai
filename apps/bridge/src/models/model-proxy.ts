@@ -11,7 +11,6 @@ import {
   thrownFailureKind,
   type ModelFailures,
 } from './model-failures.ts';
-import type { Logger } from 'pino';
 
 export async function proxyConnectionModel(
   req: IncomingMessage,
@@ -78,7 +77,6 @@ export async function proxyModel(
   req: IncomingMessage,
   res: ServerResponse,
   auth: ChatGPTAuth,
-  logger?: Pick<Logger, 'info'>,
   failures?: ModelFailures,
 ) {
   const abort = new AbortController();
@@ -114,15 +112,7 @@ export async function proxyModel(
       res.end();
       return;
     }
-    if (logger) {
-      await pipeline(
-        Readable.fromWeb(response.body as never),
-        modelTiming(body, started, logger),
-        res,
-      );
-    } else {
-      await pipeline(Readable.fromWeb(response.body as never), res);
-    }
+    await pipeline(Readable.fromWeb(response.body as never), modelTiming(body, started), res);
   });
 }
 /**

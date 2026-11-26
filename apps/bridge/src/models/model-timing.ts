@@ -1,14 +1,11 @@
 import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { createHash } from 'node:crypto';
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
+import { runBridgeLog } from '../logger.ts';
 
 // Forward original chunks immediately; observe metadata without logging content.
-export function modelTiming(
-  body: Record<string, unknown>,
-  started: number,
-  logger: Pick<Logger, 'info'>,
-) {
+export function modelTiming(body: Record<string, unknown>, started: number) {
   const decoder = new StringDecoder('utf8');
   let buffer = '',
     firstTextMs: number | undefined;
@@ -56,21 +53,22 @@ export function modelTiming(
             firstTextMs = Math.round(performance.now() - started);
           }
           if (event.type === 'response.completed') {
-            logger.info(
-              {
-                event: 'model.timing',
-                model: body.model,
-                prefixHash,
-                tools: Array.isArray(body.tools) ? body.tools.length : 0,
-                instructionsChars: instructions.length,
-                firstTextMs,
-                totalMs: Math.round(performance.now() - started),
-                inputTokens: event.response?.usage?.input_tokens,
-                cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
-                promptCacheKey: typeof body.prompt_cache_key === 'string',
-                ...history,
-              },
-              'Model timing',
+            runBridgeLog(
+              Effect.logInfo('Model timing').pipe(
+                Effect.annotateLogs({
+                  event: 'model.timing',
+                  model: body.model,
+                  prefixHash,
+                  tools: Array.isArray(body.tools) ? body.tools.length : 0,
+                  instructionsChars: instructions.length,
+                  firstTextMs,
+                  totalMs: Math.round(performance.now() - started),
+                  inputTokens: event.response?.usage?.input_tokens,
+                  cachedTokens: event.response?.usage?.input_tokens_details?.cached_tokens,
+                  promptCacheKey: typeof body.prompt_cache_key === 'string',
+                  ...history,
+                }),
+              ),
             );
           }
         } catch {

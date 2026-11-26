@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
+import { runBridgeLog } from '../logger.ts';
 import type { Packet } from './protocol.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
@@ -22,7 +23,6 @@ export interface TransportConnectionDependencies {
   saveWow: (wow: string) => Promise<void>;
   changed: () => void;
   isStopping: () => boolean;
-  logger: Pick<Logger, 'error' | 'info'>;
 }
 
 export interface TransportConnection {
@@ -47,14 +47,15 @@ export interface TransportConnection {
 export function createTransportConnection(
   deps: TransportConnectionDependencies,
 ): TransportConnection {
-  const { state, pending, integrationState, snapshots, capabilitySettings, changed, logger } = deps;
+  const { state, pending, integrationState, snapshots, capabilitySettings, changed } = deps;
   let transport: DiskTransport | undefined;
   let transportWork = Promise.resolve();
 
   function logError(error: unknown) {
-    logger.error(
-      { event: 'transport.failed', error: errorMessage(error) },
-      'Game transport failed',
+    runBridgeLog(
+      Effect.logError('Game transport failed').pipe(
+        Effect.annotateLogs({ event: 'transport.failed', error: errorMessage(error) }),
+      ),
     );
   }
 
@@ -63,18 +64,20 @@ export function createTransportConnection(
   function logHeldOff(session: string) {
     if (heldOff.has(session) || heldOff.size >= 32) return;
     heldOff.add(session);
-    logger.info(
-      { event: 'transport.heartbeat_held_off' },
-      'Another game window is connected; its heartbeat did not take the bridge',
+    runBridgeLog(
+      Effect.logInfo(
+        'Another game window is connected; its heartbeat did not take the bridge',
+      ).pipe(Effect.annotateLogs({ event: 'transport.heartbeat_held_off' })),
     );
   }
 
   function logSlowDownlink(report: SlowDownlink) {
-    logger.info(
-      { event: `transport.downlink_${report.phase}`, ...report },
-      report.phase === 'stalled'
-        ? 'A reply is taking long to reach the game'
-        : 'A slow reply reached the game',
+    runBridgeLog(
+      Effect.logInfo(
+        report.phase === 'stalled'
+          ? 'A reply is taking long to reach the game'
+          : 'A slow reply reached the game',
+      ).pipe(Effect.annotateLogs({ event: `transport.downlink_${report.phase}`, ...report })),
     );
   }
 

@@ -1,12 +1,12 @@
-import { test, expect, vi } from 'vitest';
+import { test, expect } from 'vitest';
 import { modelTiming } from '../src/models/model-timing.ts';
+import { captureLogs } from './capture-logs.ts';
 
 test('model observation forwards bytes immediately and logs only timings and cache metadata', async () => {
-  const logger = { info: vi.fn() };
+  const logs = captureLogs();
   const tap = modelTiming(
     { model: 'test', instructions: 'private instructions', tools: [] },
     performance.now(),
-    logger,
   );
   const chunks: Buffer[] = [];
   tap.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -30,8 +30,8 @@ test('model observation forwards bytes immediately and logs only timings and cac
   tap.end(complete);
   await new Promise<void>((resolve) => tap.on('finish', resolve));
   expect(Buffer.concat(chunks)).toEqual(Buffer.concat([delta, complete]));
-  expect(logger.info).toHaveBeenCalledTimes(1);
-  const [record] = logger.info.mock.calls[0]!;
+  expect(logs()).toHaveLength(1);
+  const record = logs()[0]!;
   expect(JSON.stringify(record)).not.toContain('private');
   expect(record.event).toBe('model.timing');
   expect(record.cachedTokens).toBe(2048);
@@ -40,14 +40,12 @@ test('model observation forwards bytes immediately and logs only timings and cac
 });
 
 async function observe(body: Record<string, unknown>) {
-  const logger = { info: vi.fn() };
-  const tap = modelTiming(body, performance.now(), logger);
+  const tap = modelTiming(body, performance.now());
   tap.resume();
   tap.end(
     Buffer.from('data: ' + JSON.stringify({ type: 'response.completed', response: {} }) + '\n\n'),
   );
   await new Promise<void>((resolve) => tap.on('finish', resolve));
-  return logger.info.mock.calls[0]![0];
 }
 
 test('model timing reports where a conversation rewrote earlier history, without content', async () => {
@@ -55,12 +53,17 @@ test('model timing reports where a conversation rewrote earlier history, without
   const call = { type: 'function_call', name: 'wow__query_character', arguments: '{}' };
   const output = { type: 'function_call_output', output: 'private reading' };
   const base = { model: 'test', instructions: 'same', tools: [], prompt_cache_key: 'conv-a' };
+  const logs = captureLogs();
+  const observeLog = async (body: Record<string, unknown>) => {
+    await observe(body);
+    return logs('model.timing').at(-1)!;
+  };
 
-  const first = await observe({ ...base, input: [user] });
+  const first = await observeLog({ ...base, input: [user] });
   expect(first).toMatchObject({ promptCacheKey: true, inputItems: 1 });
   expect(first.historyStable).toBeUndefined();
 
-  const appended = await observe({ ...base, input: [user, call, output] });
+  const appended = await observeLog({ ...base, input: [user, call, output] });
   expect(appended).toMatchObject({
     inputItems: 3,
     previousItems: 1,
@@ -68,7 +71,7 @@ test('model timing reports where a conversation rewrote earlier history, without
     prefixChanged: false,
   });
 
-  const rewritten = await observe({
+  const rewritten = await observeLog({
     ...base,
     input: [user, { ...call, arguments: '{"sections":["gear"]}' }, output],
   });
@@ -79,6 +82,6 @@ test('model timing reports where a conversation rewrote earlier history, without
   });
   expect(JSON.stringify(rewritten)).not.toContain('private');
 
-  const other = await observe({ ...base, prompt_cache_key: 'conv-b', input: [user] });
+  const other = await observeLog({ ...base, prompt_cache_key: 'conv-b', input: [user] });
   expect(other.previousItems).toBeUndefined();
 });

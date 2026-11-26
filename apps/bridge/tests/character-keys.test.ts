@@ -31,7 +31,6 @@ const fedrath = {
   name: 'Fedrath',
   guid: 'Player-1-00A',
 };
-const silent = { info: () => {}, warn: () => {} };
 
 const routine = (id: string, characterKey: string) =>
   savedRoutine.parse({
@@ -203,7 +202,6 @@ test('adoption saves the name, moves in-memory chats and runs once per character
       panelStore: { refresh: () => void refreshes++ },
       chats: () => [chat, other],
       changed: () => void changes++,
-      logger: silent,
     });
     adopt({ ...fedrath, key: oldRealm, guid: undefined });
     expect([refreshes, changes]).toEqual([0, 0]);

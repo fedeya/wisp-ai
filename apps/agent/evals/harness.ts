@@ -59,7 +59,6 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     token: host.token,
     // Each eval is a single new turn; nothing is resumed.
     history: new MemoryHistory(),
-    logger: { info: () => {}, warn: () => {} },
     stub: (tool, input) => definition.stubs.find((stub) => matches(stub, tool, input))?.outcome,
   });
   try {

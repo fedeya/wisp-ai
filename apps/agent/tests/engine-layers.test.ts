@@ -10,7 +10,6 @@ import {
   SessionModels,
   TurnToolbox,
   WispAgent,
-  hostLayer,
 } from '../src/engine.ts';
 import { modelError } from '../src/execution/engine-errors.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
@@ -185,24 +184,4 @@ test('model errors are classified by the status of their last attempt', () => {
   expect(modelError(retried)).toMatchObject({ reason: 'rate-limited', status: 429 });
   expect(modelError(Error('socket hang up'))).toMatchObject({ reason: 'other' });
   expect(modelError(Error('socket hang up'))).not.toHaveProperty('status');
-});
-
-test("Effect's logs reach the host logger with their annotations", async () => {
-  const lines: [string, object, string][] = [];
-  const logger = {
-    info: (data: object, message: string) => lines.push(['info', data, message]),
-    warn: (data: object, message: string) => lines.push(['warn', data, message]),
-  };
-  await Effect.runPromise(
-    Effect.gen(function* () {
-      yield* Effect.logInfo('Turn started');
-      yield* Effect.logWarning('Compaction failed').pipe(
-        Effect.annotateLogs({ event: 'agent.compaction_failed' }),
-      );
-    }).pipe(Effect.provide(hostLayer({ origin: () => '', token: '', logger }))),
-  );
-  expect(lines).toEqual([
-    ['info', {}, 'Turn started'],
-    ['warn', { event: 'agent.compaction_failed' }, 'Compaction failed'],
-  ]);
 });

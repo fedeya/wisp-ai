@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { captureLogs } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
@@ -49,7 +50,6 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
     runtime: 'unused',
     changed: () => {},
     flushAcknowledgment,
-    logger: { info: vi.fn(), warn: vi.fn() },
     ...overrides,
   });
   return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
@@ -88,7 +88,6 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     accountBusy: () => false,
     isCurrent: (candidate) => state.chats.includes(candidate),
     changed: () => {},
-    logger: { info: vi.fn(), error: vi.fn() },
   });
   const { receive } = fixture({
     state,
@@ -342,8 +341,8 @@ test('a new character key is adopted before the packet that reports it is handle
 
 test('a new game window logs why it took the bridge and how long the old one was idle', () => {
   let clock = 1_000_000;
-  const info = vi.fn();
-  const f = fixture({ now: () => clock, logger: { info, warn: vi.fn() } });
+  const logs = captureLogs();
+  const f = fixture({ now: () => clock });
   f.receive(packetSchema.parse({ type: 'poll', session: 'one', seq: 1, at: 1 }));
   clock += 30_000;
   f.receive(
@@ -357,8 +356,7 @@ test('a new game window logs why it took the bridge and how long the old one was
     }),
   );
   expect(f.state.activeTransport).toBe('two');
-  expect(info).toHaveBeenCalledWith(
-    { event: 'transport.session_changed', reason: 'takeover', previousIdleMs: 30_000 },
-    expect.any(String),
+  expect(logs('transport.session_changed')).toContainEqual(
+    expect.objectContaining({ reason: 'takeover', previousIdleMs: 30_000 }),
   );
 });
