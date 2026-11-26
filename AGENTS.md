@@ -116,6 +116,14 @@ despite `hoist: false`; keep it on the same version as the workspaces.
   tool operations own permission checks and forwarding. Keep upstream tool
   schemas intact when forwarding them.
 
+### Effect service layers
+
+Prefer exporting a service's layer separately from its `Context.Service` tag.
+Keep both in the same module when that makes them easy to find. At the runtime
+composition point, use a module namespace import so the implementation reads
+clearly, for example `Capabilities.layerFromFile(...)`. Consumers can import
+the `AgentCapabilities` tag directly.
+
 ## Conventions observed in the code
 
 - **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
