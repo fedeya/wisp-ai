@@ -1,16 +1,19 @@
 import { test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { runBridgeEffect } from './capture-logs.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
   const server = createServer(
-    createAgentHandler({
-      token: 'test',
-      currentTransport: () => 'addon',
-      capabilitySettings: { enabled: () => true },
-      ...deps,
-    } as unknown as Parameters<typeof createAgentHandler>[0]),
+    runBridgeEffect(
+      createAgentHandler({
+        token: 'test',
+        currentTransport: () => 'addon',
+        capabilitySettings: { enabled: () => true },
+        ...deps,
+      } as unknown as Parameters<typeof createAgentHandler>[0]),
+    ),
   );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;

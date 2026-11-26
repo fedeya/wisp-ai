@@ -1,4 +1,4 @@
-import type { Logger } from 'pino';
+import { Effect } from 'effect';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { errorMessage } from '../errors.ts';
 import { createPublishScheduler } from './publish-scheduler.ts';
@@ -12,7 +12,6 @@ export interface SnapshotPublisherDependencies {
   transport: () => Pick<DiskTransport, 'publish'> | undefined;
   /** Everything the snapshot shows besides `state`, read at publish time. */
   inputs: () => Omit<AddonSnapshotInputs, 'state'>;
-  logger: Pick<Logger, 'warn'>;
 }
 
 export interface SnapshotPublisher {
@@ -26,8 +25,11 @@ export interface SnapshotPublisher {
 }
 
 /** Publishes the addon snapshot to the current transport whenever it changes. */
-export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): SnapshotPublisher {
-  const { state, snapshots, logger } = deps;
+export const createSnapshotPublisher = Effect.fnUntraced(function* (
+  deps: SnapshotPublisherDependencies,
+): Effect.fn.Return<SnapshotPublisher> {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const { state, snapshots } = deps;
   let dirty = true;
   const scheduler = createPublishScheduler(() => publish());
 
@@ -46,9 +48,10 @@ export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): Sn
       void transport.publish(snapshot).catch((error) => {
         snapshots.invalidate();
         dirty = true;
-        logger.warn(
-          { event: 'transport.publish_failed', error: errorMessage(error) },
-          'Failed to publish reply',
+        runFork(
+          Effect.logWarning('Failed to publish reply').pipe(
+            Effect.annotateLogs({ event: 'transport.publish_failed', error: errorMessage(error) }),
+          ),
         );
       });
     }
@@ -70,4 +73,4 @@ export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): Sn
     },
     stop: () => scheduler.stop(),
   };
-}
+});

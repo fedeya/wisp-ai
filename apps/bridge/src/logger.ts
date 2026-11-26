@@ -1,13 +1,28 @@
-import pino from 'pino';
+import { Formatter, Logger, Predicate, Record } from 'effect';
 
-const rootLogger = pino({
-  base: null,
-  timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
-  formatters: { level: (label) => ({ level: label.toUpperCase() }) },
-  redact: {
-    paths: ['authorization', 'apiKey', 'token', 'password', 'headers.authorization'],
-    remove: true,
-  },
-});
-
-export const bridgeLogger = rootLogger.child({ component: 'bridge' });
+// Keep the existing bridge.log format and redact credentials from structured fields.
+export const bridgeLogging = Logger.layer([
+  Logger.withConsoleLog(
+    Logger.map(
+      Logger.formatStructured,
+      ({ annotations, level, timestamp, message, cause, spans }) => {
+        const fields = { ...annotations };
+        for (const key of ['authorization', 'apiKey', 'token', 'password']) {
+          delete fields[key];
+        }
+        if (Predicate.isObject(fields.headers) && Object.hasOwn(fields.headers, 'authorization')) {
+          fields.headers = Record.remove(fields.headers, 'authorization');
+        }
+        return Formatter.formatJson({
+          ...fields,
+          level,
+          timestamp,
+          component: 'bridge',
+          msg: message,
+          cause,
+          spans: Object.keys(spans).length > 0 ? spans : undefined,
+        });
+      },
+    ),
+  ),
+]);

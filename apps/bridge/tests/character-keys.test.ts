@@ -1,4 +1,5 @@
 import { test, expect } from 'vitest';
+import { runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -31,7 +32,6 @@ const fedrath = {
   name: 'Fedrath',
   guid: 'Player-1-00A',
 };
-const silent = { info: () => {}, warn: () => {} };
 
 const routine = (id: string, characterKey: string) =>
   savedRoutine.parse({
@@ -203,12 +203,11 @@ test('adoption saves the name, moves in-memory chats and runs once per character
       panelStore: { refresh: () => void refreshes++ },
       chats: () => [chat, other],
       changed: () => void changes++,
-      logger: silent,
     });
-    adopt({ ...fedrath, key: oldRealm, guid: undefined });
+    runBridgeEffect(adopt({ ...fedrath, key: oldRealm, guid: undefined }));
     expect([refreshes, changes]).toEqual([0, 0]);
-    adopt(fedrath);
-    adopt(fedrath);
+    runBridgeEffect(adopt(fedrath));
+    runBridgeEffect(adopt(fedrath));
     expect([chat.characterKey, other.characterKey]).toEqual([current, someoneElse]);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
     expect(readCharacterNames(database.orm)).toEqual({
@@ -221,7 +220,7 @@ test('adoption saves the name, moves in-memory chats and runs once per character
     expect(Object.keys(readCharacterNames(database.orm))).toEqual([current]);
 
     // A rename keeps the key and only updates the saved name.
-    adopt({ ...fedrath, name: 'Fedrath Vorn' });
+    runBridgeEffect(adopt({ ...fedrath, name: 'Fedrath Vorn' }));
     expect(readCharacterNames(database.orm)[current]).toEqual({
       name: 'Fedrath Vorn',
       realm: '',

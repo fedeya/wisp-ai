@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from 'vitest';
+import { Logger, References } from 'effect';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,6 +11,7 @@ import {
   createAgentEngine,
   searchTools,
   type EngineEvent,
+  type EngineOptions,
   type Entry,
   type TurnInput,
 } from '../src/engine.ts';
@@ -80,6 +82,7 @@ async function fixture(
   options: {
     appendFails?: (count: number) => boolean;
     beforeAppend?: (entries: readonly Entry[]) => Promise<void>;
+    logging?: EngineOptions['logging'];
     /** Game reads answer after this long, for a turn stopped while a tool runs. */
     inspectDelayMs?: number;
   } = {},
@@ -161,7 +164,7 @@ async function fixture(
     origin: () => origin,
     token: 'offline-token',
     history,
-    logger: { info: () => {}, warn: () => {} },
+    logging: options.logging,
   });
   async function send(
     session: string,
@@ -513,6 +516,7 @@ test(
   'a turn whose step cannot be logged fails with the store error',
   { timeout: 60_000 },
   async () => {
+    const logs: string[] = [];
     const f = await fixture(
       (count) =>
         count === 1
@@ -520,7 +524,15 @@ test(
           : message(count, 'Should not be reached.'),
       undefined,
       // The player's message logs; the first step does not.
-      { appendFails: (count) => count === 2 },
+      {
+        appendFails: (count) => count === 2,
+        logging: Logger.layer([
+          Logger.make(({ logLevel, fiber }) => {
+            const { event } = fiber.getRef(References.CurrentLogAnnotations);
+            if (typeof event === 'string') logs.push(`${logLevel}: ${event}`);
+          }),
+        ]),
+      },
     );
     try {
       const turn = await f.send(f.engine.newSessionId(), 'Which addons do I have?');
@@ -528,6 +540,7 @@ test(
         status: 'failed',
         error: { message: 'The disk is full.' },
       });
+      expect(logs).toContain('Warn: agent.turn_failed');
       expect(f.requests).toHaveLength(1);
     } finally {
       await f.close();

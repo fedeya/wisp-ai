@@ -9,9 +9,11 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Effect } from 'effect';
+import { bridgeLogging } from '../logger.ts';
 import { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { NativeVault } from '../auth/secret-vault.ts';
-import { proxyModel } from '../models/model-proxy.ts';
+import { createModelProxy } from '../models/model-proxy.ts';
 import { dungeonLootInput } from '@wisp/agent/contract/game-inspection';
 import { dungeonLoot } from '../integrations/dungeon-loot.ts';
 
@@ -22,17 +24,7 @@ const desktop =
   process.env.WISP_DESKTOP_EXE ||
   path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Wisp AI', 'wisp.exe');
 
-async function connect() {
-  await mkdir(dataDir, { recursive: true });
-  // The native vault keeps secrets under WISP_DATA_DIR, apart from the app's.
-  process.env.WISP_DATA_DIR = dataDir;
-  const auth = new ChatGPTAuth(dataDir, new NativeVault(desktop));
-  await auth.load();
-  return auth;
-}
-
-async function signIn() {
-  const auth = await connect();
+async function signIn(auth: ChatGPTAuth) {
   if (auth.state().status === 'connected') {
     console.log('Evals are already signed in to ChatGPT as ' + auth.state().account + '.');
     return;
@@ -54,8 +46,10 @@ async function signIn() {
   }
 }
 
-async function serve() {
-  const auth = await connect();
+async function serve(
+  auth: ChatGPTAuth,
+  proxyModel: Effect.Success<ReturnType<typeof createModelProxy>>,
+) {
   if (auth.state().status !== 'connected') {
     throw new Error(
       'Evals are not signed in to ChatGPT. Run: node apps/bridge/src/evals/eval-bridge.ts sign-in',
@@ -163,7 +157,7 @@ async function serve() {
         return;
       }
       if (req.method === 'POST' && url.pathname === '/model/responses') {
-        await proxyModel(req, res, auth);
+        await proxyModel(req, res);
         return;
       }
       res
@@ -191,11 +185,30 @@ async function serve() {
 }
 
 const command = process.argv[2];
-(command === 'sign-in'
-  ? signIn()
-  : command === 'serve'
-    ? serve()
-    : Promise.reject(new Error('Usage: eval-bridge.ts sign-in | serve'))
+await Effect.runPromise(
+  Effect.gen(function* () {
+    if (command !== 'sign-in' && command !== 'serve') {
+      return yield* Effect.fail(new Error('Usage: eval-bridge.ts sign-in | serve'));
+    }
+    // The native vault keeps secrets under WISP_DATA_DIR, apart from the app's.
+    process.env.WISP_DATA_DIR = dataDir;
+    const auth = yield* ChatGPTAuth.make(dataDir, new NativeVault(desktop));
+    yield* Effect.tryPromise({
+      try: async () => {
+        await mkdir(dataDir, { recursive: true });
+        await auth.load();
+      },
+      catch: (error) => error,
+    });
+    if (command === 'sign-in') {
+      return yield* Effect.tryPromise({ try: () => signIn(auth), catch: (error) => error });
+    }
+    const proxyModel = yield* createModelProxy(auth);
+    return yield* Effect.tryPromise({
+      try: () => serve(auth, proxyModel),
+      catch: (error) => error,
+    });
+  }).pipe(Effect.provide(bridgeLogging)),
 ).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

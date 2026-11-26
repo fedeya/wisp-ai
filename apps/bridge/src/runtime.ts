@@ -21,12 +21,13 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTransportConnection } from './addon/transport-connection.ts';
+import type { TransportConnection } from './addon/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
-import { bridgeLogger as logger } from './logger.ts';
+import { bridgeLogging } from './logger.ts';
 import { MemoryStore } from './agent/memory-store.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
@@ -35,6 +36,7 @@ import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { SnapshotGate } from './addon/snapshots.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './addon/publish-scheduler.ts';
 import { createSnapshotPublisher } from './addon/snapshot-publisher.ts';
+import type { SnapshotPublisher } from './addon/snapshot-publisher.ts';
 import { PanelStore } from './addon/panels.ts';
 import { McpManager } from './integrations/mcp/mcp-manager.ts';
 import { McpRelay } from './integrations/mcp/mcp-relay.ts';
@@ -83,6 +85,8 @@ export interface BridgeOptions {
  */
 const makeBridge = Effect.fn('Bridge.make')(
   function* (options: BridgeOptions, stop: () => Promise<void>) {
+    const context = yield* Effect.context<never>();
+    const runFork = Effect.runForkWith(context);
     // Checked by everything that starts work, so nothing new begins while resources close.
     let shutdownRequested = false;
     const ROOT =
@@ -145,7 +149,7 @@ const makeBridge = Effect.fn('Bridge.make')(
       enabledFeatures: () => features.enabledNames(),
     });
     yield* releaseRuntimeResource(() => telemetry.close());
-    const auth = new ChatGPTAuth(runtime, vault);
+    const auth = yield* ChatGPTAuth.make(runtime, vault);
     yield* startup(() => auth.load());
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     yield* startup(() => connections.load());
@@ -181,9 +185,10 @@ const makeBridge = Effect.fn('Bridge.make')(
     );
     yield* releaseRuntimeResource(() => mcpRelay.close());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
-      logger.error(
-        { event: 'chat.save_failed', error: errorMessage(error) },
-        'Conversation save failed',
+      runFork(
+        Effect.logError('Conversation save failed').pipe(
+          Effect.annotateLogs({ event: 'chat.save_failed', error: errorMessage(error) }),
+        ),
       ),
     );
     const state = createSessionState(yield* startup(() => chatStore.load()));
@@ -206,7 +211,7 @@ const makeBridge = Effect.fn('Bridge.make')(
     // The app update the desktop last reported; the desktop resends it after a restart.
     let appUpdateVersion: string | null = null;
     const snapshots = new SnapshotGate();
-    const publisher = createSnapshotPublisher({
+    const publisher: SnapshotPublisher = yield* createSnapshotPublisher({
       state,
       snapshots,
       transport: () => transport.current(),
@@ -231,12 +236,15 @@ const makeBridge = Effect.fn('Bridge.make')(
           requests: pending.snapshot(),
         };
       },
-      logger,
     });
     yield* releaseRuntimeResource(() => publisher.stop());
     const pending = new GameRequests(changed, {
       onTimeout: (timeout) =>
-        logger.warn({ event: 'game.request_timeout', ...timeout }, 'WoW did not answer a request'),
+        runFork(
+          Effect.logWarning('WoW did not answer a request').pipe(
+            Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
+          ),
+        ),
     });
     yield* releaseRuntimeResource(() => pending.cancelAll('Bridge stopped'));
     const token = randomBytes(32).toString('hex');
@@ -248,7 +256,7 @@ const makeBridge = Effect.fn('Bridge.make')(
       token,
       history: agentHistory,
       mcpConfigFile: () => mcpFile,
-      logger,
+      logging: bridgeLogging,
     });
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
       if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
@@ -274,14 +282,15 @@ const makeBridge = Effect.fn('Bridge.make')(
       void capabilitySettings
         .publish()
         .catch((error) =>
-          logger.warn(
-            { event: 'features.publish_failed', error: errorMessage(error) },
-            'Feature flags could not reach the agent',
+          runFork(
+            Effect.logWarning('Feature flags could not reach the agent').pipe(
+              Effect.annotateLogs({ event: 'features.publish_failed', error: errorMessage(error) }),
+            ),
           ),
         );
       changed();
     }
-    const run = createTurnRunner({
+    const run = yield* createTurnRunner({
       telemetry,
       modelFailures,
       modelProvider: (model) => connections.provider(model),
@@ -289,7 +298,6 @@ const makeBridge = Effect.fn('Bridge.make')(
       models: connections,
       capabilitySettings,
       changed,
-      logger,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
       defaultModel,
@@ -304,13 +312,12 @@ const makeBridge = Effect.fn('Bridge.make')(
       state.chats.forEach(run.interrupt);
       await run.drain();
     });
-    const stopRoutineScheduler = startRoutineScheduler({
+    const stopRoutineScheduler = yield* startRoutineScheduler({
       state,
       routineStore,
       capabilitySettings,
       run,
       changed,
-      logger,
       isStopping: () => shutdownRequested,
       isReady: () => engineReady,
     });
@@ -320,9 +327,8 @@ const makeBridge = Effect.fn('Bridge.make')(
       panelStore,
       chats: () => state.chats,
       changed,
-      logger,
     });
-    const receivePacket = createPacketReceiver({
+    const receivePacket = yield* createPacketReceiver({
       telemetry,
       state,
       engine,
@@ -344,7 +350,6 @@ const makeBridge = Effect.fn('Bridge.make')(
       cancel: run.cancel,
       runtime,
       changed,
-      logger,
     });
     const receive: typeof receivePacket = (packet) => {
       const previousSession = state.activeTransport;
@@ -354,7 +359,7 @@ const makeBridge = Effect.fn('Bridge.make')(
         telemetry.gameConnectionStarted();
       }
     };
-    const transport = createTransportConnection({
+    const transport: TransportConnection = yield* createTransportConnection({
       state,
       pending,
       integrationState,
@@ -364,12 +369,10 @@ const makeBridge = Effect.fn('Bridge.make')(
       saveWow: (wow) => config.update({ wow }),
       changed,
       isStopping: () => shutdownRequested,
-      logger,
     });
     yield* releaseRuntimeResource(() => transport.serialize(transport.disconnect));
     const server = createServer(
-      createAgentHandler({
-        logger,
+      yield* createAgentHandler({
         telemetry,
         modelFailures,
         token,
@@ -407,21 +410,25 @@ const makeBridge = Effect.fn('Bridge.make')(
       retireLegacyEngine(paths.legacyEngine),
       rm(path.join(runtime, 'eve.log'), { force: true }),
     ]).catch((error: unknown) =>
-      logger.warn(
-        { event: 'agent.legacy_engine_cleanup_failed', error: errorMessage(error) },
-        'Could not remove the old Eve engine folder',
+      runFork(
+        Effect.logWarning('Could not remove the old Eve engine folder').pipe(
+          Effect.annotateLogs({
+            event: 'agent.legacy_engine_cleanup_failed',
+            error: errorMessage(error),
+          }),
+        ),
       ),
     );
     // Histories no conversation refers to belong to deleted chats or reset sessions.
-    yield* startup(() =>
-      agentHistory
-        .prune()
-        .catch((error: unknown) =>
-          logger.warn(
-            { event: 'agent.history_prune_failed', error: errorMessage(error) },
-            'Could not prune agent history',
-          ),
+    yield* startup(() => agentHistory.prune()).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning('Could not prune agent history').pipe(
+          Effect.annotateLogs({
+            event: 'agent.history_prune_failed',
+            error: errorMessage(error),
+          }),
         ),
+      ),
     );
     const engineStartup = engine.preload().then(
       () => {
@@ -429,9 +436,10 @@ const makeBridge = Effect.fn('Bridge.make')(
         changed();
       },
       (error: unknown) =>
-        logger.error(
-          { event: 'agent.preload_failed', error: errorMessage(error) },
-          'Agent failed to load',
+        runFork(
+          Effect.logError('Agent failed to load').pipe(
+            Effect.annotateLogs({ event: 'agent.preload_failed', error: errorMessage(error) }),
+          ),
         ),
     );
     function observeGameConnection() {
@@ -517,9 +525,13 @@ const makeBridge = Effect.fn('Bridge.make')(
         setTimeout(
           () =>
             void stop().catch((error) =>
-              logger.error(
-                { event: 'bridge.shutdown_failed', error: errorMessage(error) },
-                'Bridge shutdown failed',
+              runFork(
+                Effect.logError('Bridge shutdown failed').pipe(
+                  Effect.annotateLogs({
+                    event: 'bridge.shutdown_failed',
+                    error: errorMessage(error),
+                  }),
+                ),
               ),
             ),
           200,
@@ -538,14 +550,16 @@ const makeBridge = Effect.fn('Bridge.make')(
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
       if (JSON.stringify(capabilitySettings.snapshot()) !== before) {
-        void capabilitySettings
-          .publish()
-          .catch((error) =>
-            logger.warn(
-              { event: 'integration.update_failed', error: errorMessage(error) },
-              'Integration update failed',
+        void capabilitySettings.publish().catch((error) =>
+          runFork(
+            Effect.logWarning('Integration update failed').pipe(
+              Effect.annotateLogs({
+                event: 'integration.update_failed',
+                error: errorMessage(error),
+              }),
             ),
-          );
+          ),
+        );
         changed();
       }
     }, 30000);
@@ -557,9 +571,12 @@ const makeBridge = Effect.fn('Bridge.make')(
       observeGameConnection();
       publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
-    logger.info(
-      { event: 'bridge.started', version: bridgeVersion, channel: features.channel },
-      'Wisp started',
+    yield* Effect.logInfo('Wisp started').pipe(
+      Effect.annotateLogs({
+        event: 'bridge.started',
+        version: bridgeVersion,
+        channel: features.channel,
+      }),
     );
     yield* releaseRuntimeResource(() => clearInterval(publish));
     // Prevent new work before draining resources on shutdown.
@@ -581,26 +598,31 @@ function startup<A>(operation: () => Promise<A>) {
   return Effect.tryPromise({ try: operation, catch: (error) => error });
 }
 
-export async function startBridge(options: BridgeOptions = {}) {
+export function startBridge(options: BridgeOptions = {}) {
+  return Effect.runPromise(startBridgeEffect(options).pipe(Effect.provide(bridgeLogging)));
+}
+
+export const startBridgeEffect = Effect.fnUntraced(function* (options: BridgeOptions = {}) {
   const resources = new RuntimeResources();
   const stop = () => resources.close();
-  try {
-    const bridge = await Effect.runPromise(
-      makeBridge(options, stop).pipe(Scope.provide(resources.scope)),
-    );
-    return { ...bridge, stop };
-  } catch (error) {
-    await resources
-      .close(Exit.fail(error))
-      .catch((cleanupError) =>
-        logger.error(
-          { event: 'bridge.cleanup_failed', error: errorMessage(cleanupError) },
-          'Bridge cleanup failed',
-        ),
-      );
-    throw error;
-  }
-}
+  const bridge = yield* makeBridge(options, stop).pipe(
+    Scope.provide(resources.scope),
+    Effect.catchDefect((error) => Effect.fail(error)),
+    Effect.onExit((exit) =>
+      Exit.isFailure(exit)
+        ? startup(() => resources.close(exit)).pipe(
+            Effect.catch((error) =>
+              Effect.logError('Bridge cleanup failed').pipe(
+                Effect.annotateLogs({ event: 'bridge.cleanup_failed', error: errorMessage(error) }),
+              ),
+            ),
+          )
+        : Effect.void,
+    ),
+  );
+  return { ...bridge, stop };
+});
+
 function closeServer(server: import('node:http').Server) {
   return new Promise<void>((resolve, reject) => {
     if (!server.listening) {

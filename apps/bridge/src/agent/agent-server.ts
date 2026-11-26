@@ -26,8 +26,8 @@ import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
-import { proxyModel } from '../models/model-proxy.ts';
-import type { Logger } from 'pino';
+import { createModelProxy } from '../models/model-proxy.ts';
+import { Effect } from 'effect';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
@@ -43,7 +43,6 @@ export interface MemoryView {
   requestId?: string;
 }
 interface AgentDependencies {
-  logger?: Pick<Logger, 'info'>;
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
   auth: ChatGPTAuth;
@@ -116,10 +115,10 @@ const inspectionTools = {
   map: 'inspect_map',
   hearthstone: 'inspect_hearthstone',
 } as const;
-export function createAgentApp(deps: AgentDependencies) {
+export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
+  const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
-    auth,
     connections,
     webSearch,
     mcpRelay,
@@ -173,7 +172,7 @@ export function createAgentApp(deps: AgentDependencies) {
     };
   app.post(
     '/model/responses',
-    proxy((c) => proxyModel(c.env.incoming, c.env.outgoing, auth, deps.logger, deps.modelFailures)),
+    proxy((c) => proxyChatGPT(c.env.incoming, c.env.outgoing)),
   );
   app.post(
     '/model/connections/*',
@@ -561,8 +560,8 @@ export function createAgentApp(deps: AgentDependencies) {
   game('/inspect');
   game('/action');
   return app;
-}
+});
 // Node listener for the loopback agent server.
 export function createAgentHandler(deps: AgentDependencies) {
-  return getRequestListener(createAgentApp(deps).fetch);
+  return createAgentApp(deps).pipe(Effect.map((app) => getRequestListener(app.fetch)));
 }

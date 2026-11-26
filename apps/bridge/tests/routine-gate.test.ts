@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -103,28 +104,29 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     const outcomes: Array<'quiet' | 'limit'> = ['quiet', 'quiet', 'quiet', 'limit'];
     const limited = new Set<unknown>();
     let runs = 0;
-    stop = startRoutineScheduler({
-      state,
-      routineStore: store,
-      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-      isStopping: () => false,
-      isReady: () => true,
-      logger: { error: vi.fn() },
-      changed: () => {},
-      // The turn runner classifies limits from error codes; the text may not say so.
-      usageLimited: (chat) => limited.has(chat),
-      run: async (chat) => {
-        const outcome = outcomes[runs++];
-        if (outcome === 'limit') {
-          chat.status = 'error';
-          chat.messages.push({ role: 'system', text: 'Private plan details' });
-          limited.add(chat);
-        } else {
-          chat.status = 'done';
-          chat.tipSkipped = true;
-        }
-      },
-    });
+    stop = runBridgeEffect(
+      startRoutineScheduler({
+        state,
+        routineStore: store,
+        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        isStopping: () => false,
+        isReady: () => true,
+        changed: () => {},
+        // The turn runner classifies limits from error codes; the text may not say so.
+        usageLimited: (chat) => limited.has(chat),
+        run: async (chat) => {
+          const outcome = outcomes[runs++];
+          if (outcome === 'limit') {
+            chat.status = 'error';
+            chat.messages.push({ role: 'system', text: 'Private plan details' });
+            limited.add(chat);
+          } else {
+            chat.status = 'done';
+            chat.tipSkipped = true;
+          }
+        },
+      }),
+    );
     const minute = async (xp = 100) => {
       vi.setSystemTime(Date.now() + 60_000);
       present(xp);

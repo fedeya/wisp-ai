@@ -6,7 +6,7 @@ import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 import { z } from 'zod';
 import type { SecretVault } from './secret-vault.ts';
 import { errorMessage } from '../errors.ts';
-import { bridgeLogger as logger } from '../logger.ts';
+import { Effect } from 'effect';
 import { accountModel, type AccountModel, type AccountModelInput } from '../chat/chat-model.ts';
 import { sendChatGPTCallbackPage } from './chatgpt-callback-page.ts';
 
@@ -60,6 +60,15 @@ export class ChatGPTAuthError extends Error {
   }
 }
 export class ChatGPTAuth {
+  static make = Effect.fnUntraced(function* (
+    runtime: string,
+    vault: SecretVault,
+    options: { fetch?: typeof fetch; now?: () => number } = {},
+  ) {
+    const runFork = Effect.runForkWith(yield* Effect.context<never>());
+    return new ChatGPTAuth(runtime, vault, options, runFork);
+  });
+
   runtime: string;
   vault: SecretVault;
   fetcher: typeof fetch;
@@ -73,20 +82,23 @@ export class ChatGPTAuth {
   private discovery?: Promise<Discovery>;
   private jwks?: ReturnType<typeof createRemoteJWKSet>;
   private refreshes = new Map<string, Promise<string>>();
+  private readonly runFork: typeof Effect.runFork;
   private modelsCache?: {
     id: string;
     models: AccountModel[];
     at: number;
   };
-  constructor(
+  private constructor(
     runtime: string,
     vault: SecretVault,
-    options: { fetch?: typeof fetch; now?: () => number } = {},
+    options: { fetch?: typeof fetch; now?: () => number },
+    runFork: typeof Effect.runFork,
   ) {
     this.runtime = runtime;
     this.vault = vault;
     this.fetcher = options.fetch || fetch;
     this.now = options.now || Date.now;
+    this.runFork = runFork;
   }
   async load() {
     try {
@@ -568,7 +580,11 @@ export class ChatGPTAuth {
             }
           } catch (error) {
             // The user-facing message below already says revocation was unconfirmed.
-            logger.warn({ event: 'auth.revoke_failed', error: errorMessage(error) });
+            this.runFork(
+              Effect.logWarning('Token revocation could not be confirmed').pipe(
+                Effect.annotateLogs({ event: 'auth.revoke_failed', error: errorMessage(error) }),
+              ),
+            );
           }
         }
         profile.tokens = undefined;

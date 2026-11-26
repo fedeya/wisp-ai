@@ -2,7 +2,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createOpenAI } from '@ai-sdk/openai';
-import { proxyConnectionModel, proxyModel } from '../src/models/model-proxy.ts';
+import { createModelProxy, proxyConnectionModel } from '../src/models/model-proxy.ts';
+import { runBridgeEffect } from './capture-logs.ts';
 import { ModelFailures } from '../src/models/model-failures.ts';
 import type { ModelConnections } from '../src/models/model-connections.ts';
 import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
@@ -56,8 +57,9 @@ test('SDK streams via bridge, forces private responses, and preserves terminal f
     },
   } as unknown as ChatGPTAuth;
   const failures = new ModelFailures();
+  const proxyModel = runBridgeEffect(createModelProxy(auth, failures));
   const server = createServer((req, res) => {
-    void proxyModel(req, res, auth, undefined, failures).catch((e) => {
+    void proxyModel(req, res).catch((e) => {
       if (res.headersSent) {
         res.destroy();
       } else {
