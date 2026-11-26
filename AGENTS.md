@@ -83,8 +83,10 @@ Prefer the simplest implementation that fits: keep pure logic as plain
 TypeScript, and don't add a service or layer unless it earns its place. Keep
 cleanup separate from behavior changes so reviewers can verify each on its own.
 
-Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
-**completely**, and follow the links in the file when required.
+When working with Effect, load the [Effect skill](.agents/skills/effect-ts/SKILL.md)
+for local examples and verification guidance. Before writing any Effect code,
+first read `node_modules/effect/AGENTS.md` **completely**, and follow the links
+in the file when required.
 
 If you need to learn more about particular Effect apis and concepts that the
 guide doesn't cover, search through the source code in `node_modules/effect/src`.

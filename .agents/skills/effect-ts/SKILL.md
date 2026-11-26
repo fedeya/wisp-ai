@@ -1,35 +1,39 @@
 ---
 name: effect-ts
-description: Use this skill when setting up a repository that uses the Effect Typescript library.
+description: Use when writing, refactoring, reviewing, or testing Effect v4 code in Wisp, or when setting up Effect. Covers services and layers, typed errors, runtime boundaries, cancellation, and scoped resources.
 ---
 
-# Step 1: Install effect
+# Effect in Wisp
 
-Use the users preferred package manager:
+## Sources of truth
 
-```
-pnpm add effect@latest
-```
+1. Before writing Effect code, read `node_modules/effect/AGENTS.md` completely
+   and follow the linked examples relevant to the task. For APIs the guide
+   doesn't cover, inspect `node_modules/effect/src` at the installed version.
+2. Read the Effect conventions in the root [`AGENTS.md`](../../../AGENTS.md#current-priority-code-quality-with-effect)
+   and the closest implementation in Wisp. Use the installed library for API
+   behavior and Wisp's code and guide for local conventions.
+3. If dependencies are missing, run `pnpm install --frozen-lockfile`. Wisp
+   already pins Effect in the root and in the workspaces that use it. Keep
+   those versions aligned, and declare Effect in each workspace that imports it.
 
-If in a monorepo, install it as a dev dependency at the root, so you can access
-the source code from `node_modules/effect/src`.
+## Pick a local example
 
-```
-pnpm add -D effect@latest
-```
+- **Service and layer:** [`capabilities.ts`](../../../apps/agent/src/host/capabilities.ts)
+  exports the `AgentCapabilities` tag and a separate `layerFromFile`. The
+  [`engine`](../../../apps/agent/src/engine.ts) selects that implementation
+  and supplies `NodeFileSystem.layer`.
+- **SDK callback:** the [MCP relay](../../../apps/bridge/src/integrations/mcp/mcp-relay.ts)
+  captures the Effect context before invoking operations from Promise-based
+  SDK callbacks.
+- **Resource lifetime:** [`McpConnection.make`](../../../apps/bridge/src/integrations/mcp/mcp-connection.ts)
+  runs the client in an owned scope. Closing interrupts the connection fiber;
+  the scope releases the client.
 
-# Step 2: Update AGENTS.md / CLAUDE.md
+## Verify the change
 
-Ensure that the agent instructions contain the following:
-
-```md
-# Learning more about Effect
-
-This repository uses the Effect Typescript library.
-
-Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
-**completely**, and follow the links in the file when required.
-
-If you need to learn more about particular Effect apis and concepts that the
-guide doesn't cover, search through the source code in `node_modules/effect/src`.
-```
+Run typechecks and the relevant tests in the affected workspace. When a test is
+needed, exercise the actual operation and substitute external dependencies with
+test layers where useful. Use real temporary resources when testing platform
+behavior. For resource changes, verify failure and interruption paths as well
+as success, including that cleanup finishes before shutdown returns.
