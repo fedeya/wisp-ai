@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
 import { Effect, Logger, References } from 'effect';
-import { inspectWith, unavailableGameAccess } from '../src/host/game-access.ts';
+import { unavailableGameAccess } from '../src/host/game-access.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -162,15 +162,12 @@ async function fixture(
     history,
     gameAccess: {
       ...unavailableGameAccess,
-      inspectGame: inspectWith(
-        { item_sources: unavailableGameAccess.inspectGame },
-        (agentSession, inspection) =>
-          Effect.gen(function* () {
-            inspections.push({ agentSession, inspection });
-            if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
-            return { status: 'completed', data: { settings: [], verified: true } };
-          }),
-      ),
+      inspectGame: (agentSession, inspection) =>
+        Effect.gen(function* () {
+          inspections.push({ agentSession, inspection });
+          if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
+          return { status: 'completed', data: { settings: [], verified: true } };
+        }),
     },
     logging: options.logging,
   });

@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { Effect } from 'effect';
-import { inspectWith, unavailableGameAccess } from '@wisp/agent/game-access';
+import { unavailableGameAccess } from '@wisp/agent/game-access';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -199,24 +199,21 @@ test(
       history,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: inspectWith(
-          { item_sources: unavailableGameAccess.inspectGame },
-          (agentSession, inspection) =>
-            Effect.sync(() => {
-              toolCalls.push({ agentSession, inspection });
-              return inspection.kind === 'questie_quest'
-                ? {
+        inspectGame: (agentSession, inspection) =>
+          Effect.sync(() => {
+            toolCalls.push({ agentSession, inspection });
+            return inspection.kind === 'questie_quest'
+              ? {
+                  status: 'available',
+                  data: {
                     status: 'available',
-                    data: {
-                      status: 'available',
-                      questId: 166,
-                      data: { name: 'The Defias Brotherhood' },
-                      reference: { kind: 'quest', id: 166 },
-                    },
-                  }
-                : { status: 'completed', data: { settings: [], verified: true } };
-            }),
-        ),
+                    questId: 166,
+                    data: { name: 'The Defias Brotherhood' },
+                    reference: { kind: 'quest', id: 166 },
+                  },
+                }
+              : { status: 'completed', data: { settings: [], verified: true } };
+          }),
       },
     });
     const session = engine.newSessionId();

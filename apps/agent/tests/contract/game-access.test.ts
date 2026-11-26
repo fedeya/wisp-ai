@@ -1,9 +1,14 @@
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { expect, expectTypeOf, test } from 'vitest';
-import { inspectWith, type ItemSourcesResult } from '../../src/host/game-access.ts';
+import {
+  GameAccess,
+  itemSourcesResult,
+  unavailableGameAccess,
+  type ItemSourcesResult,
+} from '../../src/host/game-access.ts';
 
-const request = { kind: 'item_sources' as const, args: { itemIds: [14149] } };
-const unexpected = () => Effect.fail(new Error('Unexpected raw inspection'));
+const input = { itemIds: [14149] };
+const decode = Schema.decodeUnknownEffect(itemSourcesResult);
 
 test('item source inspections return a typed and validated item list', async () => {
   const result: ItemSourcesResult = {
@@ -12,8 +17,11 @@ test('item source inspections return a typed and validated item list', async () 
     priceStatus: 'unavailable',
     note: 'No known sources',
   };
-  const inspect = inspectWith({ item_sources: () => Effect.succeed(result) }, unexpected);
-  const reading = inspect('turn', request);
+  const game = GameAccess.of({
+    ...unavailableGameAccess,
+    itemSources: () => Effect.succeed(result).pipe(Effect.tap(decode)),
+  });
+  const reading = game.itemSources('turn', input);
   expectTypeOf(reading).toEqualTypeOf<Effect.Effect<ItemSourcesResult, Error>>();
   expect((await Effect.runPromise(reading)).items).toEqual(result.items);
 });
@@ -25,12 +33,10 @@ test('item source inspections reject an object with malformed items', async () =
     priceStatus: 'unavailable',
     note: 'No known sources',
   };
-  const inspect = inspectWith(
-    {
-      // @ts-expect-error A typed handler cannot return an item with a string ID.
-      item_sources: () => Effect.succeed(malformed),
-    },
-    unexpected,
-  );
-  await expect(Effect.runPromise(inspect('turn', request))).rejects.toThrow('number');
+  const game = GameAccess.of({
+    ...unavailableGameAccess,
+    // @ts-expect-error Runtime validation must not hide a wrong producer type.
+    itemSources: () => Effect.succeed(malformed).pipe(Effect.tap(decode)),
+  });
+  await expect(Effect.runPromise(game.itemSources('turn', input))).rejects.toThrow('number');
 });

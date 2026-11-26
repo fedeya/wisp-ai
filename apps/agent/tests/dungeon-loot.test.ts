@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Effect } from 'effect';
 import { dungeonLootInput } from '../src/contract/game-inspection.ts';
-import {
-  inspectWith,
-  unavailableGameAccess,
-  type GameInspection,
-} from '../src/host/game-access.ts';
+import { unavailableGameAccess, type GameInspection } from '../src/host/game-access.ts';
 import { dungeonLoot } from '../src/wisp/dungeon-loot.ts';
 import generated from '../src/wisp/dungeon-loot.json' with { type: 'json' };
 import tool from '../src/wisp/tools/wow__dungeon_loot.ts';
@@ -28,7 +24,7 @@ it('runs the loot tool against the catalog, asking GameAccess only for raw items
       abortSignal: new AbortController().signal,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: inspectWith({ item_sources: unavailableGameAccess.inspectGame }, inspectGame),
+        inspectGame,
       },
       runEffect: Effect.runPromise,
     },

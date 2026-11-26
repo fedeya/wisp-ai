@@ -326,7 +326,6 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
   z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
   z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
-  z.object({ kind: z.literal('item_sources'), args: itemSourcesInput }),
   z.object({ kind: z.literal('gear_candidates'), args: gearCandidatesInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
