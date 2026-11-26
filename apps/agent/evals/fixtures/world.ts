@@ -381,6 +381,40 @@ export function pvpStubs(): ToolStub[] {
 // Rune of Teleportation: the catalog finds the item and Questie places its
 // vendor, Horthus, in Orgrimmar (the item's vendor comes from item sources).
 export function runeStubs(): ToolStub[] {
+  // The shape addon/WispAI/Integrations/Questie.lua returns for an NPC lookup.
+  const horthus = {
+    response: {
+      status: 'available',
+      version: 'forever',
+      source: { name: 'QuestieDB Forever', url: 'https://github.com/Questie/QuestieDB' },
+      mapId: 1454,
+      zone: 'Orgrimmar',
+      locations: [
+        {
+          npcId: 3335,
+          name: 'Horthus',
+          subName: 'Reagents',
+          mapId: 1454,
+          zone: 'Orgrimmar',
+          x: 45.4,
+          y: 56.6,
+          reference: {
+            kind: 'map',
+            mapId: 1454,
+            x: 45.4,
+            y: 56.6,
+            label: 'Horthus',
+            source: 'QuestieDB Forever',
+          },
+        },
+      ],
+      total: 1,
+      truncated: false,
+      skippedUnverifiedFrames: 0,
+      unmappedAreas: 0,
+      note: 'Database spawn positions, not live sightings or guaranteed active phases. Coordinates are percentages on the verified native map. Missing coverage is unknown, not absence. No waypoint was placed.',
+    },
+  };
   return json([
     {
       id: 'rune-search',
@@ -395,22 +429,16 @@ export function runeStubs(): ToolStub[] {
       },
     },
     {
-      id: 'horthus',
+      id: 'horthus-by-name',
       tool: 'questie__find_npc_locations',
       match: { name: { pattern: '[Hh]orthus' } },
-      outcome: {
-        response: {
-          provider: 'QuestieDB Forever',
-          npcs: [
-            {
-              id: 3335,
-              name: 'Horthus',
-              subName: 'Reagents',
-              locations: [{ mapId: 1454, map: 'Orgrimmar', x: 45.4, y: 56.6 }],
-            },
-          ],
-        },
-      },
+      outcome: horthus,
+    },
+    {
+      id: 'horthus-by-id',
+      tool: 'questie__find_npc_locations',
+      match: { npcId: { const: 3335 } },
+      outcome: horthus,
     },
   ]);
 }
