@@ -14,6 +14,10 @@ allowBuilds:
 # Package boundaries stay explicit; undeclared transitive imports are not hoisted.
 hoist: false
 
+overrides:
+  # Wisp uses its own eval and judge adapters; the optional AI SDK integration is unused.
+  'vitest-evals@0.18.1>ai:peer': '-'
+
 # Optional native archive codecs from just-bash are not used by Wisp.
 ignoredOptionalDependencies:
   - '@mongodb-js/zstd'

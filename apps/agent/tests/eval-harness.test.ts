@@ -1,11 +1,12 @@
-import { afterEach, expect, test } from 'vitest';
+import { afterEach } from 'vitest';
+import { describeEval, toolCalls } from 'vitest-evals';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '../src/host/agent-host.ts';
-import { defineEval, runEval } from '../evals/harness.ts';
-import { calledTool, expects, maxToolCalls, notCalledTool, replied } from '../evals/checks.ts';
+import { avoidsTool } from '../evals/judges/tool-calls.ts';
+import { wispHarness } from '../evals/runtime/harness.ts';
 
 afterEach(() => setAgentHost(undefined));
 
@@ -77,72 +78,60 @@ async function fakeModel() {
   return { server, origin: 'http://127.0.0.1:' + (server.address() as { port: number }).port };
 }
 
-test(
-  'evals run a real engine turn with gates, soft scorers and stubs',
-  {
-    timeout: 60_000,
-  },
-  async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), 'wisp-eval-harness-'));
-    const flags = path.join(directory, 'capabilities.json');
-    await writeFile(
-      flags,
-      JSON.stringify({
-        enabled: { 'mcp:everloot': false, 'memory:preferences': false, 'memory:character': false },
-      }),
-    );
-    const { server, origin } = await fakeModel();
-    setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
-    try {
-      const stubs = [
-        {
-          id: 'settings',
-          tool: 'wow__get_settings',
-          match: { query: { const: 'nameplates' } },
-          outcome: { response: { settings: [{ id: 'nameplateShowAll', value: true }] } },
-        },
-      ];
-      const passing = await runEval(
-        defineEval({
-          description: 'reads settings',
-          question: 'are my nameplates on?',
-          stubs,
-          gates: [
-            replied(),
-            calledTool('wow__get_settings', { input: { query: 'nameplates' }, count: 1 }),
-            expects('reports the setting', (turn) => /Nameplates are on/.test(turn.reply)),
-          ],
-          // Tracked, not required: a soft miss scores the run but does not fail it.
-          scorers: [maxToolCalls(5), notCalledTool('wow__get_settings')],
+describeEval('Wisp eval adapter', { harness: wispHarness }, (it) => {
+  it(
+    'reports a real engine turn with stubbed tools',
+    { timeout: 60_000 },
+    async ({ expect, run }) => {
+      const directory = await mkdtemp(path.join(tmpdir(), 'wisp-eval-harness-'));
+      const flags = path.join(directory, 'capabilities.json');
+      await writeFile(
+        flags,
+        JSON.stringify({
+          enabled: {
+            'mcp:everloot': false,
+            'memory:preferences': false,
+            'memory:character': false,
+          },
         }),
       );
-      expect(passing.verdict).toBe('scored');
-      expect(passing.failed).toEqual([]);
-      expect(passing.soft).toEqual(['did not call wow__get_settings']);
-      // The deferred call is seen as the tool it ran, with the stubbed output.
-      expect(passing.turn?.toolCalls).toEqual([
-        {
-          name: 'wow__get_settings',
-          input: { query: 'nameplates' },
-          output: { settings: [{ id: 'nameplateShowAll', value: true }] },
-        },
-      ]);
-      expect(passing.turn?.reply).toBe('Nameplates are on.');
-      expect(passing.steps).toBe(2);
-
-      const failing = await runEval(
-        defineEval({
-          description: 'expects a different tool',
-          question: 'are my nameplates on?',
-          stubs,
-          gates: [replied(), calledTool('wow__query_character')],
-        }),
-      );
-      expect(failing.verdict).toBe('failed');
-      expect(failing.failed).toEqual(['called wow__query_character']);
-    } finally {
-      server.close();
-      await rm(directory, { recursive: true, force: true });
-    }
-  },
-);
+      const { server, origin } = await fakeModel();
+      setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
+      try {
+        const stubs = [
+          {
+            id: 'unrelated-settings',
+            tool: 'wow__get_settings',
+            match: { query: /^chat$/ },
+            outcome: { throw: { message: 'Wrong settings fixture' } },
+          },
+          {
+            id: 'settings',
+            tool: 'wow__get_settings',
+            match: { query: /^nameplates$/i },
+            outcome: { response: { settings: [{ id: 'nameplateShowAll', value: true }] } },
+          },
+        ];
+        const result = await run({ question: 'are my nameplates on?', stubs });
+        expect(result.errors ?? []).toEqual([]);
+        // A missed scorer is recorded without failing the test.
+        await expect(result).toSatisfyJudge(avoidsTool('wow__get_settings'), { threshold: null });
+        // The deferred call is seen as the tool it ran, with the stubbed output.
+        expect(toolCalls(result)).toEqual([
+          {
+            name: 'wow__get_settings',
+            arguments: { query: 'nameplates' },
+            status: 'ok',
+            result: { settings: [{ id: 'nameplateShowAll', value: true }] },
+          },
+        ]);
+        expect(result.output.reply).toBe('Nameplates are on.');
+        expect(result.artifacts?.steps).toBe(2);
+        expect(result.usage).toMatchObject({ inputTokens: 10, outputTokens: 10 });
+      } finally {
+        server.close();
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+});
