@@ -31,6 +31,17 @@ fn channel_allows(nightly: bool, current: &semver::Version, remote: &semver::Ver
                 || (current.pre.as_str().starts_with("nightly.") && remote != current))
     }
 }
+/// Whether installing `remote` would go back to an older version, which only a
+/// return to Stable offers. Such an update never installs by itself.
+fn is_downgrade(current: &str, remote: &str) -> bool {
+    match (
+        current.parse::<semver::Version>(),
+        remote.parse::<semver::Version>(),
+    ) {
+        (Ok(current), Ok(remote)) => remote < current,
+        _ => false,
+    }
+}
 fn read_channel(data: &std::path::Path) -> Result<String, String> {
     match std::fs::read_to_string(data.join("update-channel.txt")) {
         Ok(value) if value == "stable" || value == "nightly" => Ok(value),
@@ -47,6 +58,8 @@ const BUSY_TURN: &str = "Wait for the active turn before stopping Wisp";
 /// Returned when an automatic install finds a reply running or WoW open; the
 /// app retries later.
 const AUTOMATIC_BUSY: &str = "Wisp is busy; the update will install later.";
+/// Returned when an automatic install would go back to an older version.
+const AUTOMATIC_DOWNGRADE: &str = "Wisp does not install an older version by itself.";
 
 /// Whether a WoW client is running. The bridge's `gameConnected` stays set after
 /// the game exits, so automatic updates ask Windows for the process instead.
@@ -227,9 +240,13 @@ pub async fn check_update(
         .check()
         .await
         .map_err(|e| e.to_string())?;
-    let details = update
-        .as_ref()
-        .map(|u| json!({"version": u.version, "notes": u.body}));
+    let details = update.as_ref().map(|u| {
+        json!({
+            "version": u.version,
+            "notes": u.body,
+            "downgrade": is_downgrade(&u.current_version, &u.version),
+        })
+    });
     if update.as_ref().map(|u| &u.version) != updates.prepared_version().as_ref() {
         updates.clear_download();
     }
@@ -308,6 +325,9 @@ pub async fn install_update(
     let automatic = automatic.unwrap_or(false);
     let _operation = updates.begin()?;
     let mut update = updates.pending_update()?;
+    if automatic && is_downgrade(&update.current_version, &update.version) {
+        return Err(AUTOMATIC_DOWNGRADE.into());
+    }
     update.timeout = Some(Duration::from_secs(30 * 60));
     let host = app.state::<Host>();
     super::update_trace::begin(&host.data);
@@ -385,6 +405,16 @@ mod tests {
         assert!(allowed(false, "0.1.1-nightly.10.1", "0.1.0"));
         assert!(!allowed(false, "0.1.1", "0.1.0"));
         assert!(!allowed(false, "0.1.0", "0.1.0"));
+    }
+
+    #[test]
+    fn only_older_versions_are_downgrades() {
+        assert!(is_downgrade("0.3.3-nightly.120.1", "0.3.2"));
+        assert!(is_downgrade("0.3.2", "0.3.2-nightly.5.1"));
+        assert!(!is_downgrade("0.3.2-nightly.120.1", "0.3.2"));
+        assert!(!is_downgrade("0.3.2", "0.3.3-nightly.1.1"));
+        assert!(!is_downgrade("0.3.2", "0.3.3"));
+        assert!(!is_downgrade("not a version", "0.3.2"));
     }
 
     #[test]

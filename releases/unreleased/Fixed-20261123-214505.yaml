@@ -1,0 +1,3 @@
+kind: Fixed
+body: Wisp's replies no longer run a heading or list into the previous sentence when they mix text with a card or table.
+time: 2026-11-23T21:45:05.0944864-03:00

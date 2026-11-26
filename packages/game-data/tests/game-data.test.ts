@@ -167,8 +167,13 @@ describe('generated files', () => {
         new URL(`../../../${dataset.output.path}`, import.meta.url),
         'utf8',
       );
-      expect(file).toContain(`(dataset "${dataset.name}")`);
-      expect(file).toContain(`build ${pinned.build} game tables`);
+      if (dataset.output.format === 'json') {
+        const { generated } = JSON.parse(file);
+        expect(generated).toMatchObject({ dataset: dataset.name, build: pinned.build });
+      } else {
+        expect(file).toContain(`(dataset "${dataset.name}")`);
+        expect(file).toContain(`build ${pinned.build} game tables`);
+      }
     }
   });
 });

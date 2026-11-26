@@ -377,7 +377,7 @@ end
 -- Reads many candidate IDs at once (for example a category listing) and keeps
 -- the wearable-by-level ones, each compared with its weakest matching slot.
 local function itemSummary(id)
-    local name, link, quality, itemLevel, requiredLevel, _, _, _, equipLocation =
+    local name, link, quality, itemLevel, requiredLevel, _, _, _, equipLocation, _, _, classID, subclassID =
         C_Item.GetItemInfo(id)
     if not name then
         if C_Item.RequestLoadItemDataByID then
@@ -393,8 +393,79 @@ local function itemSummary(id)
         itemLevel = itemLevel,
         requiredLevel = requiredLevel,
         equipLocation = equipLocation,
+        classID = classID,
+        subclassID = subclassID,
         stats = C_Item.GetItemStats and C_Item.GetItemStats(link) or nil,
     }
+end
+-- The weapon and armor skills the player has, or nil when the skill list
+-- cannot be read whole (no API, or a collapsed header hides some lines).
+local function knownSkills()
+    if not (C_SkillInfo and C_SkillInfo.GetNumSkillLines and C_SkillInfo.GetSkillLineInfo) then
+        return nil
+    end
+    local known = {}
+    for index = 1, C_SkillInfo.GetNumSkillLines() do
+        local info = C_SkillInfo.GetSkillLineInfo(index)
+        if info and info.isHeader and info.isCollapsed then
+            return nil
+        elseif info and not info.isHeader and info.skillID then
+            known[info.skillID] = true
+        end
+    end
+    return known
+end
+-- usable: the player can equip it now; trainable: the class can learn the
+-- skill it needs (from trainableAtLevel); class_cannot_use: never for this
+-- class. nil when the item's type or the player's skills are unknown.
+local function proficiency(item, playerClass, known)
+    local data = ns.Data.ItemProficiencies
+    if not data or not item.classID or not item.subclassID then
+        return nil
+    end
+    local bySubclass = data.subclasses[item.classID]
+    local skill = bySubclass and bySubclass[item.subclassID]
+    if not skill then
+        return "usable"
+    end
+    local minLevel = data.skills[skill] and data.skills[skill][playerClass]
+    if minLevel == nil then
+        return "class_cannot_use"
+    elseif not known then
+        return nil
+    elseif known[skill] then
+        return "usable"
+    end
+    return "trainable", math.max(minLevel, 1)
+end
+-- Class sets and some other gear name their classes in the tooltip
+-- ("Classes: Priest"); the client tables do not carry that for classic items.
+-- false when the line names other classes only, nil when it cannot be read.
+local function classAllowed(link, classNames)
+    if not link or not ITEM_CLASSES_ALLOWED then
+        return nil
+    end
+    local lines = tooltip(link)
+    if not lines then
+        return nil
+    end
+    local pattern = "^"
+        .. ITEM_CLASSES_ALLOWED:gsub("%%s", "\001")
+            :gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+            :gsub("\001", "(.+)")
+        .. "$"
+    for _, line in ipairs(lines) do
+        local classes = line.left and line.left:match(pattern)
+        if classes then
+            for name in classes:gmatch("[^,]+") do
+                if classNames[name:match("^%s*(.-)%s*$")] then
+                    return true
+                end
+            end
+            return false
+        end
+    end
+    return true
 end
 -- An occupied slot whose item is not cached yet is unknown, not empty: the
 -- comparison waits for it instead of treating it as item level zero.
@@ -426,9 +497,26 @@ function inspectors.gear_candidates(args)
     assert(C_Item and C_Item.GetItemInfo, "Item API is unavailable")
     local maxLevel = args.maxRequiredLevel or UnitLevel("player")
     local minLevel = args.minRequiredLevel or 0
-    local ranked, loadingIds, equippedLoading = {}, {}, {}
+    local ranked, other, loadingIds, equippedLoading = {}, {}, {}, {}
     local counts =
         { requested = #args.itemIds, tooHighLevel = 0, tooLowLevel = 0, notEquipment = 0 }
+    local className, playerClass
+    if UnitClass then
+        className, playerClass = UnitClass("player")
+    end
+    local classNames = {}
+    for _, name in ipairs({
+        className or false,
+        LOCALIZED_CLASS_NAMES_MALE and playerClass and LOCALIZED_CLASS_NAMES_MALE[playerClass]
+            or false,
+        LOCALIZED_CLASS_NAMES_FEMALE and playerClass and LOCALIZED_CLASS_NAMES_FEMALE[playerClass]
+            or false,
+    }) do
+        if name then
+            classNames[name] = true
+        end
+    end
+    local known = knownSkills()
     for _, id in ipairs(args.itemIds) do
         local item = itemSummary(id)
         local slots = item and equipmentSlots[item.equipLocation]
@@ -436,12 +524,16 @@ function inspectors.gear_candidates(args)
             loadingIds[#loadingIds + 1] = id
         elseif not slots then
             counts.notEquipment = counts.notEquipment + 1
+            if args.includeOther then
+                other[#other + 1] = { id = id, name = item.name, quality = item.quality }
+            end
         elseif (item.requiredLevel or 0) > maxLevel then
             counts.tooHighLevel = counts.tooHighLevel + 1
         elseif (item.requiredLevel or 0) < minLevel then
             counts.tooLowLevel = counts.tooLowLevel + 1
         else
             local target, uncachedID = weakestSlot(slots)
+            local link = item.link
             item.link = nil
             if target then
                 local equipped = target.equipped
@@ -458,6 +550,14 @@ function inspectors.gear_candidates(args)
                 item.equipped = { id = uncachedID, status = "loading" }
                 equippedLoading[uncachedID] = true
             end
+            item.proficiency, item.trainableAtLevel = proficiency(item, playerClass, known)
+            if
+                item.proficiency ~= "class_cannot_use"
+                and classAllowed(link, classNames) == false
+            then
+                item.proficiency, item.trainableAtLevel = "class_cannot_use", nil
+            end
+            item.classID, item.subclassID = nil, nil
             ranked[#ranked + 1] = item
         end
     end
@@ -476,9 +576,10 @@ function inspectors.gear_candidates(args)
     return {
         status = #loadingIds > 0 and "loading" or "available",
         items = ranked,
+        other = args.includeOther and other or nil,
         counts = counts,
         loadingIds = #loadingIds > 0 and loadingIds or nil,
-        note = "Every match, ordered by item level gain over the weakest matching equipped slot; the order is not a recommendation or stat weighting. Armor/weapon proficiency is not checked. loadingIds were not in the client cache yet.",
+        note = "Every match, ordered by item level gain over the weakest matching equipped slot; the order is not a recommendation or stat weighting. proficiency: usable (the character can equip it), trainable (the class can learn the weapon or armor skill at a trainer from trainableAtLevel), class_cannot_use; missing when unknown. loadingIds were not in the client cache yet.",
     }
 end
 function inspectors.auctions(args)

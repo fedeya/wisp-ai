@@ -4,30 +4,40 @@
   "private": true,
   "license": "GPL-3.0-only",
   "files": [
-    "agent",
     "src",
     "dist"
   ],
   "type": "module",
   "exports": {
     "./package.json": "./package.json",
-    "./agent-rpc": "./src/agent-rpc.ts",
-    "./agent-memory": "./src/agent-memory.ts",
-    "./enabled-tool": "./src/enabled-tool.ts",
-    "./model-tools": "./src/model-tools.ts",
-    "./capabilities": "./src/capabilities.ts",
-    "./providers": "./dist/providers.js",
-    "./connection-model": "./src/connection-model.ts",
-    "./reasoning": "./dist/reasoning.js",
-    "./tool-support": "./dist/tool-support.js",
-    "./context-windows": "./dist/context-windows.js"
+    "./agent-rpc": "./src/host/agent-rpc.ts",
+    "./agent-host": "./src/host/agent-host.ts",
+    "./agent-memory": "./src/wisp/agent-memory.ts",
+    "./enabled-tool": "./src/tools/enabled-tool.ts",
+    "./model-tools": "./src/models/model-tools.ts",
+    "./capabilities": "./src/host/capabilities.ts",
+    "./providers": "./dist/models/providers.js",
+    "./connection-model": "./src/models/connection-model.ts",
+    "./reasoning": "./dist/models/reasoning.js",
+    "./tool-support": "./dist/models/tool-support.js",
+    "./context-windows": "./dist/models/context-windows.js",
+    "./tool": "./src/tools/tool.ts",
+    "./tools": "./src/wisp/tool-registry.ts",
+    "./engine": "./src/engine.ts",
+    "./session-history": "./src/session/session-history.ts",
+    "./session-message": "./src/session/session-message.ts",
+    "./memory-history": "./src/session/memory-history.ts",
+    "./content": "./src/wisp/content.ts",
+    "./mcp-tools": "./src/integrations/mcp-tools.ts",
+    "./mcp-manager": "./src/integrations/mcp-manager.ts",
+    "./everloot": "./src/integrations/everloot.ts",
+    "./contract/*": "./src/contract/*.ts"
   },
   "scripts": {
-    "dev": "eve dev",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "cd ../.. && vitest run --config apps/agent/vitest.config.ts",
-    "eval": "eve eval"
+    "eval": "vitest run --config vitest.evals.config.ts"
   },
   "dependencies": {
     "@ai-sdk/alibaba": "2.0.85",
@@ -50,21 +60,24 @@
     "@ai-sdk/togetherai": "3.0.88",
     "@ai-sdk/xai": "5.0.40",
     "@ai-sdk/zai": "3.0.49",
+    "@effect/platform-node": "4.1.3",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@openrouter/ai-sdk-provider": "3.1.0",
     "@wisp/protocol": "workspace:*",
     "ai": "7.0.164",
-    "eve": "1.0.0-rc.6",
+    "effect": "4.1.3",
     "impit": "0.14.8",
     "ipaddr.js": "2.5.0",
-    "just-bash": "3.6.0",
     "linkedom": "0.18.15",
     "turndown": "7.2.5",
+    "uuid": "14.0.3",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@types/turndown": "5.0.6",
     "typescript": "5.9.3",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "vitest-evals": "0.18.1"
   }
 }

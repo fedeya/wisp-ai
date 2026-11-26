@@ -5,39 +5,42 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { appPaths, prepareEngine } from '@wisp/bridge/app-paths';
-import { migrateDesktop } from '@wisp/bridge/desktop-migration';
+import { fileURLToPath } from 'node:url';
+import { appPaths, retireLegacyEngine } from '@wisp/server/app-paths';
+import { migrateDesktop } from '@wisp/server/desktop-migration';
 import { createHash } from 'node:crypto';
 
-test('packaged engine retires legacy source and dependencies while preserving Eve sessions', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wisp-engine-upgrade-'));
-  const previous = process.env.WISP_ENGINE_EXECUTABLE;
+test('startup retires the Eve engine folder of a separate data folder only', async () => {
+  const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-engine-retire-'));
   try {
-    await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: '@wisp/agent' }));
-    for (const name of ['src', 'agent', 'dist', 'node_modules', '.eve']) {
-      await mkdir(path.join(root, name));
-      await writeFile(path.join(root, name, 'marker'), name);
-    }
-    process.env.WISP_ENGINE_EXECUTABLE = 'packaged-engine';
-    await prepareEngine(root, root);
-    assert.equal(await readFile(path.join(root, '.eve/marker'), 'utf8'), '.eve');
-    for (const name of ['src', 'agent', 'dist', 'node_modules', 'package.json']) {
-      await assert.rejects(readFile(path.join(root, name)), { code: 'ENOENT' });
-    }
+    const root = path.join(temporary, 'resources'),
+      data = path.join(temporary, 'user');
+    const paths = appPaths(root, data);
+    assert.equal(paths.legacyEngine, path.join(data, 'engine'));
+    assert.equal(paths.config, path.join(data, 'config.local.json'));
+    assert.equal(appPaths(root, '').legacyEngine, undefined);
+    await mkdir(path.join(paths.legacyEngine!, '.eve/.workflow-data'), { recursive: true });
+    await writeFile(path.join(paths.legacyEngine!, '.eve/.workflow-data/run.json'), '{}');
+    await mkdir(paths.runtime, { recursive: true });
+    await writeFile(path.join(paths.runtime, 'wisp.sqlite'), 'keep');
+    await retireLegacyEngine(paths.legacyEngine);
+    await assert.rejects(readFile(path.join(paths.legacyEngine!, '.eve/.workflow-data/run.json')), {
+      code: 'ENOENT',
+    });
+    assert.equal(await readFile(path.join(paths.runtime, 'wisp.sqlite'), 'utf8'), 'keep');
+    // Only a folder named engine is ever removed.
+    await retireLegacyEngine(paths.runtime);
+    assert.equal(await readFile(path.join(paths.runtime, 'wisp.sqlite'), 'utf8'), 'keep');
+    await retireLegacyEngine(undefined);
   } finally {
-    if (previous === undefined) {
-      delete process.env.WISP_ENGINE_EXECUTABLE;
-    } else {
-      process.env.WISP_ENGINE_EXECUTABLE = previous;
-    }
-    await rm(root, { recursive: true, force: true });
+    await rm(temporary, { recursive: true, force: true });
   }
 });
 
 test('the installed bridge can import native adapters from node_modules without TypeScript stripping', async () => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-native-import-'));
   try {
-    const source = appPaths(process.cwd()).agent;
+    const source = path.dirname(fileURLToPath(import.meta.resolve('@wisp/agent/package.json')));
     const installed = path.join(temporary, 'node_modules/@wisp/agent');
     await mkdir(installed, { recursive: true });
     await cp(path.join(source, 'dist'), path.join(installed, 'dist'), { recursive: true });
@@ -74,76 +77,6 @@ test('the installed bridge can import native adapters from node_modules without 
     await rm(temporary, { recursive: true, force: true });
   }
 });
-test('installed resources stay separate from writable engine and conversation state', async () => {
-  const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-paths-'));
-  try {
-    const root = path.join(temporary, 'resources'),
-      data = path.join(temporary, 'user');
-    for (const name of ['src', 'agent', 'dist', 'node_modules']) {
-      await mkdir(path.join(root, name), { recursive: true });
-    }
-    await writeFile(
-      path.join(root, 'package.json'),
-      '{"dependencies":{"fixture-package":"1.0.0"}}',
-    );
-    await mkdir(path.join(root, 'node_modules/fixture-package'));
-    await writeFile(path.join(root, 'agent/agent.ts'), 'first');
-    await writeFile(path.join(root, 'dist/reasoning.js'), 'export const fixture = true;');
-    const paths = appPaths(root, data);
-    await prepareEngine(root, paths.engine);
-    await mkdir(path.join(paths.engine, '.eve'));
-    await writeFile(path.join(paths.engine, '.eve/history'), 'keep');
-    await writeFile(path.join(root, 'agent/agent.ts'), 'updated');
-    await writeFile(path.join(paths.engine, 'agent/retired-tool.ts'), 'old tool');
-    await prepareEngine(root, paths.engine);
-    assert.equal(await readFile(path.join(paths.engine, 'agent/agent.ts'), 'utf8'), 'updated');
-    await assert.rejects(readFile(path.join(paths.engine, 'agent/retired-tool.ts')), /ENOENT/);
-    assert.equal(await readFile(path.join(paths.engine, '.eve/history'), 'utf8'), 'keep');
-    assert.equal(
-      await readFile(path.join(paths.engine, 'dist/reasoning.js'), 'utf8'),
-      'export const fixture = true;',
-    );
-    assert.equal(
-      await realpath(path.join(paths.engine, 'node_modules/fixture-package')),
-      await realpath(path.join(root, 'node_modules/fixture-package')),
-    );
-    assert.equal(paths.config, path.join(data, 'config.local.json'));
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
-test('deployed agent uses its production dependency directory without losing Eve history', async () => {
-  const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-deployed-agent-'));
-  try {
-    const payload = path.join(temporary, 'payload');
-    const agent = path.join(payload, 'node_modules/@wisp/agent');
-    const engine = path.join(temporary, 'user/engine');
-    await mkdir(path.join(agent, 'agent'), { recursive: true });
-    await mkdir(path.join(agent, 'src'));
-    await mkdir(path.join(agent, 'dist'));
-    await writeFile(
-      path.join(agent, 'package.json'),
-      '{"name":"@wisp/agent","dependencies":{"fixture-package":"1.0.0"}}',
-    );
-    await mkdir(path.join(payload, 'node_modules/fixture-package'));
-    await writeFile(path.join(agent, 'agent/agent.ts'), 'production definition');
-    await mkdir(path.join(engine, '.eve'), { recursive: true });
-    await writeFile(path.join(engine, '.eve/history'), 'existing sessions');
-    await prepareEngine(agent, engine);
-    assert.equal(
-      await readFile(path.join(engine, 'agent/agent.ts'), 'utf8'),
-      'production definition',
-    );
-    assert.equal(
-      await realpath(path.join(engine, 'node_modules/fixture-package')),
-      await realpath(path.join(payload, 'node_modules/fixture-package')),
-    );
-    assert.equal(await readFile(path.join(engine, '.eve/history'), 'utf8'), 'existing sessions');
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
-
 test('migration imports explicit user data, leaves the old installation intact and refuses to overwrite', async () => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-migrate-'));
   try {

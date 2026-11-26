@@ -1,8 +1,14 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { Effect, FileSystem } from 'effect';
 
-import { localMemory } from '../src/agent-memory.ts';
-test('native Eve memory recalls on a new session and character scope fails closed without identity', async () => {
+import { AgentCapabilities, layerFromFile } from '../src/host/capabilities.ts';
+import { localMemory } from '../src/wisp/agent-memory.ts';
+
+const signal = () => new AbortController().signal;
+const ctx = (id: string) => ({ session: { id }, abortSignal: signal(), callId: 'call' });
+
+test('memory recalls saved entries and character scope fails closed without identity', async () => {
   const originalFetch = globalThis.fetch;
   const entries = [{ key: 'guide', text: 'Guide A', updatedAt: '2026-11-07' }];
   const requests: Record<string, unknown>[] = [];
@@ -12,52 +18,45 @@ test('native Eve memory recalls on a new session and character scope fails close
     return new Response(
       JSON.stringify(
         String(url).endsWith('/identity')
-          ? { characterKey: data.eveSession === 'unknown' ? null : 'mage' }
+          ? { characterKey: data.agentSession === 'unknown' ? null : 'mage' }
           : { entries },
       ),
     );
   };
   try {
+    const capabilities = await Effect.runPromise(
+      Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
+        Effect.provide(layerFromFile(() => undefined)),
+        Effect.provide(FileSystem.layerNoop({})),
+      ),
+    );
     const memory = localMemory('character');
-    assert.equal(typeof memory.scope, 'function');
-    const scope = memory.scope as (ctx: any) => Promise<string | null>;
-    assert.equal(
-      await scope({ session: { id: 'first' }, abortSignal: new AbortController().signal }),
-      'mage',
-    );
-    assert.equal(
-      await scope({ session: { id: 'unknown' }, abortSignal: new AbortController().signal }),
-      null,
-    );
-    const recalled = await memory.provider.recall['turn.started']({
-      session: { id: 'new-session' },
-      abortSignal: new AbortController().signal,
-    } as never);
-    assert.match(JSON.stringify(recalled), /Guide A/);
-    assert.equal(requests.at(-1)?.eveSession, 'new-session');
+    assert.equal(await Effect.runPromise(memory.scope('first', capabilities)), 'mage');
+    assert.equal(await Effect.runPromise(memory.scope('unknown', capabilities)), null);
+    assert.match((await Effect.runPromise(memory.recall('new-session')))!, /Guide A/);
+    assert.equal(requests.at(-1)?.agentSession, 'new-session');
     assert.equal(requests.at(-1)?.slot, 'character');
-    const tools = await memory.provider.tools!({
-      session: { id: 'new-session' },
-      abortSignal: new AbortController().signal,
-    } as never);
-    await (tools!.save_memory as any).execute({ key: 'guide', text: 'Guide B' });
+    const tools = memory.tools();
+    assert.deepEqual(Object.keys(tools), ['character__save_memory', 'character__remove_memory']);
+    await tools.character__save_memory!.execute(
+      { key: 'guide', text: 'Guide B' },
+      ctx('new-session'),
+    );
     assert.deepEqual(requests.at(-1), {
-      eveSession: 'new-session',
+      agentSession: 'new-session',
       slot: 'character',
       operation: 'save',
       key: 'guide',
       text: 'Guide B',
     });
-    await (tools!.remove_memory as any).execute({ key: 'guide' });
+    await tools.character__remove_memory!.execute({ key: 'guide' }, ctx('new-session'));
     assert.equal(requests.at(-1)?.operation, 'remove');
-    const preferences = localMemory('preferences');
     assert.equal(
-      await (preferences.scope as any)({
-        session: { id: 'new-session' },
-        abortSignal: new AbortController().signal,
-      }),
+      await Effect.runPromise(localMemory('preferences').scope('new-session', capabilities)),
       'local-player',
     );
+    entries.length = 0;
+    assert.equal(await Effect.runPromise(memory.recall('new-session')), null);
   } finally {
     globalThis.fetch = originalFetch;
   }

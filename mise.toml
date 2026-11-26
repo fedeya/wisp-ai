@@ -6,7 +6,7 @@
 # PowerShell 5.1 turns redirected native stderr into errors and stops them.
 # Lua 5.1 + LuaRocks for Busted/Luacheck are not managed here; see docs/development.md.
 [tools]
-node = "24.22.1"
+node = "26.13.1"
 pnpm = "12.18.0"
 rust = "stable"
 go = "1.25.14"

@@ -1249,9 +1249,17 @@ test('integration cards expose availability, master and child switches through t
   );
 });
 
+const everlootCapability = {
+  id: 'mcp:everloot',
+  name: 'Everloot',
+  group: 'integrations',
+  kind: 'mcp',
+  description: 'Look up Forever drops, vendors, professions and market history.',
+} as const;
+
 test('built-in capabilities stay out of integrations and memory has separate controls', async () => {
   const { defaultCapabilities } = await import('@wisp/protocol/capabilities');
-  status.integrations = defaultCapabilities().map((entry) => ({
+  status.integrations = [...defaultCapabilities(), everlootCapability].map((entry) => ({
     ...entry,
     enabled: true,
     effective: true,
@@ -1280,7 +1288,7 @@ test('built-in capabilities stay out of integrations and memory has separate con
 
 test('integration categories preserve a search when returning from addon setup', async () => {
   const { defaultCapabilities } = await import('@wisp/protocol/capabilities');
-  status.integrations = defaultCapabilities().map((entry) => {
+  status.integrations = [...defaultCapabilities(), everlootCapability].map((entry) => {
     const missing = entry.id === 'integration:questie';
     return {
       ...entry,

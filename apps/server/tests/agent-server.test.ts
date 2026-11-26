@@ -1,0 +1,199 @@
+import { test, expect, vi } from 'vitest';
+import { createServer } from 'node:http';
+import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { runBridgeEffect } from './capture-logs.ts';
+import { newChat } from '../src/chat/chat-lifecycle.ts';
+
+async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
+  const server = createServer(
+    runBridgeEffect(
+      createAgentHandler({
+        token: 'test',
+        currentTransport: () => 'addon',
+        capabilitySettings: { enabled: () => true },
+        ...deps,
+      } as unknown as Parameters<typeof createAgentHandler>[0]),
+    ),
+  );
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
+  const post = (route: string, body: unknown, init: RequestInit = {}) =>
+    fetch(origin + route, {
+      method: 'POST',
+      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+      body: typeof body === 'string' ? body : JSON.stringify(body),
+      ...init,
+    });
+  return {
+    origin,
+    post,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      }),
+  };
+}
+
+const workingChat = (proactive = false) => ({
+  ...newChat('chat', 'addon'),
+  status: 'working' as const,
+  agentSession: 'eve',
+  characterKey: 'Realm-Name',
+  proactive,
+});
+
+test('agent server rejects bad tokens, unknown routes and oversized bodies', async () => {
+  const chat = workingChat();
+  const server = await serve({ getChats: () => [chat] });
+  try {
+    const forbidden = await fetch(server.origin + '/identity', {
+      method: 'POST',
+      headers: { authorization: 'Bearer wrong' },
+      body: '{}',
+    });
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.text()).toBe('Forbidden');
+    expect((await server.post('/unknown', {})).status).toBe(404);
+    expect(
+      (await fetch(server.origin + '/identity', { headers: { authorization: 'Bearer test' } }))
+        .status,
+    ).toBe(404);
+    const large = await server.post('/identity', { agentSession: 'eve', pad: 'x'.repeat(40000) });
+    expect(large.status).toBe(503);
+    expect(await large.text()).toBe('Request is too large');
+    const identity = await server.post('/identity', { agentSession: 'eve' });
+    expect(identity.status).toBe(200);
+    expect(await identity.json()).toEqual({ characterKey: 'Realm-Name' });
+  } finally {
+    await server.close();
+  }
+});
+
+test('agent server refuses changes from automatic suggestions and reports the reason', async () => {
+  const chat = workingChat(true);
+  const server = await serve({ getChats: () => [chat] });
+  try {
+    const refused = await server.post('/memory', {
+      agentSession: 'eve',
+      slot: 'character',
+      operation: 'save',
+      key: 'k',
+      text: 't',
+    });
+    expect(refused.status).toBe(503);
+    expect(await refused.text()).toMatch(/Automatic suggestions cannot change/);
+    const missing = await server.post('/identity', { agentSession: 'other' });
+    expect(missing.status).toBe(503);
+    expect(await missing.text()).toBe('No active connection for this character');
+  } finally {
+    await server.close();
+  }
+});
+
+test('actions run without a character identity and add the expected character when known', async () => {
+  const unknown = { ...workingChat(), characterKey: undefined };
+  const known = {
+    ...workingChat(),
+    agentSession: 'known',
+    characterKey: JSON.stringify(['WoW Forever', '', 'Fedrath']),
+  };
+  const request = vi.fn(async (_input: { action?: unknown }) => ({ status: 'completed' }));
+  const server = await serve({ getChats: () => [unknown, known], pending: { request } as never });
+  const waypoint = {
+    kind: 'set_waypoint',
+    args: { mapId: 1, x: 50, y: 50, label: 'NPC', source: 'user', navigate: true },
+  };
+  try {
+    for (const agentSession of ['eve', 'known']) {
+      const reply = await server.post('/action', { agentSession, action: waypoint });
+      expect(reply.status).toBe(200);
+    }
+    expect(request.mock.calls.map(([input]) => input.action)).toEqual([
+      waypoint,
+      { ...waypoint, expectedCharacter: { realm: '', name: 'Fedrath' } },
+    ]);
+  } finally {
+    await server.close();
+  }
+});
+
+test('agent server aborts game requests when the agent hangs up', async () => {
+  const chat = workingChat();
+  let seen: AbortSignal | undefined;
+  const request = vi.fn(
+    (_input: unknown, signal: AbortSignal) =>
+      new Promise((_resolve, reject) => {
+        seen = signal;
+        signal.addEventListener('abort', () => reject(Error('aborted')));
+      }),
+  );
+  const server = await serve({ getChats: () => [chat], pending: { request } as never });
+  try {
+    const client = new AbortController();
+    const reply = server
+      .post(
+        '/inspect',
+        { agentSession: 'eve', inspection: { kind: 'target', args: {} } },
+        { signal: client.signal },
+      )
+      .catch(() => undefined);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledOnce());
+    expect(seen?.aborted).toBe(false);
+    client.abort();
+    await reply;
+    await vi.waitFor(() => expect(seen?.aborted).toBe(true));
+  } finally {
+    await server.close();
+  }
+});
+
+test('web search reports its depth, provider and outcome without the query', async () => {
+  const chat = workingChat();
+  const search = vi
+    .fn()
+    .mockResolvedValueOnce({
+      status: 'available',
+      source: 'Web',
+      version: 'unspecified',
+      query: 'private query',
+      provider: 'Exa',
+      sources: [{ url: 'https://example.com/a' }, { url: 'https://example.com/b' }],
+    })
+    .mockRejectedValueOnce(Error('Private provider failure'));
+  const telemetry = { webSearch: vi.fn() };
+  const server = await serve({
+    getChats: () => [chat],
+    defaultModel: () => 'model',
+    telemetry,
+    webSearch: { search, available: () => true },
+  });
+  try {
+    const found = await server.post('/wowhead', {
+      agentSession: 'eve',
+      query: 'private query',
+      depth: 'deep',
+    });
+    expect(found.status).toBe(200);
+    expect(telemetry.webSearch).toHaveBeenLastCalledWith({
+      depth: 'deep',
+      provider: 'Exa',
+      outcome: 'available',
+      duration: expect.any(Number),
+      resultCount: 2,
+    });
+    expect(
+      (await server.post('/wowhead', { agentSession: 'eve', query: 'private query' })).status,
+    ).toBe(503);
+    expect(telemetry.webSearch).toHaveBeenLastCalledWith({
+      depth: 'standard',
+      provider: undefined,
+      outcome: 'failed',
+      duration: expect.any(Number),
+      resultCount: 0,
+    });
+    expect(JSON.stringify(telemetry.webSearch.mock.calls)).not.toContain('private');
+  } finally {
+    await server.close();
+  }
+});

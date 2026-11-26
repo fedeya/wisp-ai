@@ -1,0 +1,24 @@
+import { defineTool } from '@wisp/agent/tool';
+import { databaseEntity } from '../../contract/database.ts';
+import { enabledTool } from '@wisp/agent/enabled-tool';
+import { agentRPC } from '@wisp/agent/agent-rpc';
+
+export default enabledTool(
+  'get_database_entity',
+  defineTool({
+    deferred: false,
+    description:
+      'Get a verified Forever item, spell, quest, NPC or zone from the primary TheWoWDB catalog. Use IDs verified by search or user/game references. Returns structured facts, source links, attribution and build. Does not prove the character owns/knows/completed anything. Resolve native map IDs separately with wow__inspect_map.',
+    inputSchema: databaseEntity,
+    label: {
+      start: ({ kind }) => 'Reading Forever ' + kind + ' data',
+      complete: ({ kind }) => 'Read Forever ' + kind + ' data',
+    },
+    execute: (args, ctx) =>
+      agentRPC(
+        'database',
+        { agentSession: ctx.session.id, operation: 'get', ...args },
+        ctx.abortSignal,
+      ),
+  }),
+);

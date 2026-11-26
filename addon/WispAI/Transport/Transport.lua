@@ -208,6 +208,10 @@ end
 local seq, queue, awaiting = 0, {}, {}
 local transmitting
 local transportStarted, unavailableLogged = false, false
+-- Nothing else restarts the transport, so a start that waits for the player's
+-- GUID retries on its own; packets sent meanwhile stay queued.
+local START_RETRY_SECONDS = 1
+local startRetryPending = false
 local deliveries, reports = {}, {}
 local acknowledgedReport
 local acknowledgmentUntil = 0
@@ -628,7 +632,7 @@ local function receive()
     if queue[1] and queue[1].index > 1 then
         return
     end
-    -- The hello can be acknowledged before Eve is ready. Keep reading until
+    -- The hello can be acknowledged before the agent is ready. Keep reading until
     -- startup completes, even after that acknowledgement clears the outbox.
     local waiting = not ns.connected or next(awaiting) ~= nil or partialDownlink ~= nil
     local firstTextWaiting = false
@@ -943,7 +947,14 @@ function ns.Transport.StartTransport()
     -- Cold login can expose the Lua files before UnitGUID is ready.
     character = UnitGUID("player")
     if not character then
-        return unavailable("the active character GUID is not ready")
+        if not startRetryPending then
+            startRetryPending = true
+            C_Timer.After(START_RETRY_SECONDS, function()
+                startRetryPending = false
+                ns.Transport.StartTransport()
+            end)
+        end
+        return unavailable("the active character GUID is not ready", "Retrying.")
     end
     initializeCRC()
     reusable = supportsMailbox ~= nil and supportsMailbox ~= false

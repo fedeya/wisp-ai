@@ -4,7 +4,7 @@
 
 ## Prerequisites and checks
 
-Use **Node 24.22.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json).
+Use **Node 26.13.1+** and **pnpm 12.18.0**, pinned in [package.json](../package.json).
 [mise](https://mise.jdx.dev) installs the same versions CI uses from [mise.toml](../mise.toml),
 along with Rust, Go, protoc and PowerShell 7 (`pwsh`) for the native host, the simulator and the
 `scripts/*.ps1` helpers.
@@ -36,8 +36,7 @@ builds hash the declared build variables. GitHub Actions persists `.turbo` by OS
 The repository uses one pnpm lockfile. Root dependencies are shared development
 tools. Core tests, addon tests and build scripts declare their own dependencies in
 `tests`, `addon` and `scripts`. Optional native archive codecs from just-bash are
-excluded explicitly, following Eve's own optional-engine setup; installs do not
-need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
+excluded explicitly; installs do not need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
 `turbo prune @wisp/web` can export an isolated web workspace from the same lockfile.
 
 ### Contributor skills
@@ -72,9 +71,9 @@ exports. This lets a package typecheck before its own build has produced `dist/`
 | `pnpm test:watch`       | Watch all projects; Lua source and fixture changes rerun addon tests          |
 
 Use `pnpm test:addon`, `pnpm test:core`, `pnpm test:integration` or `pnpm test:ui`
-for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp/bridge`
+for a suite. To test one component, run `pnpm exec turbo run test --filter=@wisp/server`
 (or `@wisp/agent`, `@wisp/protocol`, `@wisp/releases`, `@wisp/scripts`, `@wisp/web`).
-For a file, run `pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/routines.test.ts`.
+For a file, run `pnpm exec turbo run test --filter=@wisp/server -- apps/server/tests/routines.test.ts`.
 `pnpm test:watch` watches the task graph and rebuilds dependencies before rerunning tests.
 The root integration task includes addon Lua sources and transport fixtures as
 inputs, so addon changes also rerun the cross-language transport tests.
@@ -86,7 +85,7 @@ see the CI workflow for their build prerequisites and command. Simulator and nat
 tests keep their existing skips when the required binaries are absent.
 
 CI runs the general TypeScript suites on Ubuntu, excluding
-`apps/bridge/tests/simulation.test.ts`. A separate Windows job runs that complete
+`apps/server/tests/simulation.test.ts`. A separate Windows job runs that complete
 file against the pinned simulator, so engine tests do not silently skip on Linux.
 On `main`, Windows release runs the validation workflow in parallel with packaging
 and installer verification. Nightly publication waits for both to pass. The release
@@ -144,9 +143,9 @@ Run these commands from the repository root; `.busted` selects `addon/tests/`.
 cover TypeScript suites. Tests exchanging frames between Lua and TypeScript live
 in `tests/addon/` and still use Fengari.
 
-Root integration tests also launch the real Eve agent against a local model fixture. This checks
-agent compilation, dependency resolution, model middleware and streamed replies without
-credentials or external inference. Runtime tests exercise startup, shutdown, persistence
+Root integration tests also run the in-process agent against a local model fixture. This checks
+tool registration, skills, model middleware and streamed replies without credentials or
+external inference. Runtime tests exercise startup, shutdown, persistence
 and partial-startup cleanup in temporary data directories.
 
 ## Build and run on Windows
@@ -168,18 +167,19 @@ pnpm build:desktop
 
 `pnpm package:windows` is an alias. Output in `dist/` includes the unsigned per-user installer, SHA-256 checksum and build metrics. Packaged resources include Node/npm, the bridge, agent, protocol, addon and simulator; updates preserve user data. See [packaging code](../scripts/build-desktop.ts), [staging](../scripts/stage-desktop.ts) and the [release workflow](../.github/workflows/release.yml) for resource verification and cache details. Stable promotions create draft releases for review before publication.
 
-Windows installers package the bridge, addon installation/migration commands,
-Eve's production server and npm into `payload/wisp-engine.exe`. Dependencies are
-read from its embedded virtual filesystem; the installer does not extract an
-application `node_modules` tree. `payload/runtime/node.exe` remains bundled for
-user-configured external MCP programs. Development staging keeps the source-based
-layout and Eve development server.
+Windows installers package the bridge (with the in-process agent and its
+tools), addon installation/migration commands, the agent's instructions and
+skills, the native TLS addon used by `web_fetch` and npm into
+`payload/wisp-engine.exe`. Dependencies are read from its embedded virtual
+filesystem; the installer does not extract an application `node_modules` tree.
+`payload/runtime/node.exe` remains bundled for user-configured external MCP
+programs. Development staging keeps the source-based layout.
 
 `pnpm package:engine` builds just `dist/wisp-engine.exe` and runs the packaged
 integration checks. Those tests relocate the executable to a temporary directory,
-remove Node from the child process PATH, complete a streamed model turn and a
-real tool call against local fixtures, restart Eve to verify session persistence,
-and run a local npm executable offline. They reject loose dependency extraction.
+remove Node from the child process PATH, check that the agent's instructions
+and skills are bundled, import committed database history and run a local npm
+executable offline. They reject loose dependency extraction.
 The installer CI additionally checks the native host, installation, upgrades and
 preservation of user data.
 
@@ -203,10 +203,9 @@ The public PostHog ingestion token and US endpoint match the website project.
 
 The native host sets `WISP_TELEMETRY_RELEASE=1` only in release builds without
 `WISP_PAYLOAD_ROOT` or an external `DO_NOT_TRACK=1`. Source bridge runs default to
-disabled. Eve's own analytics remain disabled with `DO_NOT_TRACK=1` in child
-processes; this does not override Wisp's separately managed user preference.
+disabled.
 
-`apps/bridge/src/telemetry.ts` reads the native preference before each send and
+`apps/server/src/telemetry.ts` reads the native preference before each send and
 reports `chat_completed`, `tool_executed`, `web_search_finished`, `game_connected`,
 `game_connection_finished` and daily `app_active`.
 Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and
@@ -219,9 +218,9 @@ answers (from `@wisp/protocol/providers`, for example `anthropic` or
 `compatible`) or `chatgpt` for the subscription sign-in, never model ids,
 endpoints or connection names. Failed and timed-out chats add `failure_kind` when
 a model request that the bridge proxied for that chat failed during the turn.
-The agent names its Eve session in an `x-wisp-session` header that the bridge
+The agent names its session in an `x-wisp-session` header that the bridge
 does not forward, so concurrent chats on one connection keep their own
-failures (`apps/bridge/src/models/model-failures.ts`). It comes from the provider's
+failures (`apps/server/src/models/model-failures.ts`). It comes from the provider's
 HTTP status (`bad_request`, `auth`, `not_found`, `rate_limited`, `provider_error`,
 `http_other`) or the kind of thrown error (`network`, `timeout`, or
 `wisp_rejected` when the bridge refused the request), never from the provider's
@@ -297,37 +296,85 @@ pnpm install-addon "E:\Blizzard\World of Warcraft\_forever_"
 pnpm start
 ```
 
-Replace the example with the folder containing `Wow.exe`. Installation updates `config.local.json`; fully restart WoW on first install. `start` builds the protocol and launches the bridge, but provides no sign-in UI. It needs Wisp authorization, a configured data root and the native credential helper: set `WISP_DESKTOP_EXE` or use the release executable under `apps/desktop/src-tauri/target/release/`. Stop the desktop bridge first to avoid port/data conflicts. See [data-root configuration](usage.md#local-data-and-deletion).
+Replace the example with the folder containing `Wow.exe`. Installation updates `config.local.json`; fully restart WoW on first install. `start` builds the protocol and launches the local Wisp server, but provides no sign-in UI. It needs Wisp authorization, a configured data root and the native credential helper: set `WISP_DESKTOP_EXE` or use the release executable under `apps/desktop/src-tauri/target/release/`. Stop the server started by Desktop first to avoid port/data conflicts. See [data-root configuration](usage.md#local-data-and-deletion).
 
 ## Source map
 
-| Area                          | Entry points                                                                                         |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)                |
-| Bridge and agent process      | [main.ts](../apps/bridge/src/main.ts), [agent-process.ts](../apps/bridge/src/agent/agent-process.ts) |
-| Agent tools and behavior      | [definitions](../apps/agent/agent), [instructions](../apps/agent/agent/instructions.md)              |
-| Shared contracts              | [protocol](../packages/protocol/src)                                                                 |
-| Game UI, readings and actions | [addon](../addon/WispAI)                                                                             |
+| Area                          | Entry points                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
+| Local Wisp server             | [entrypoint](../apps/server/src/main.ts), [runtime](../apps/server/src/runtime.ts)            |
+| Desktop HTTP API              | [API](../apps/server/src/api)                                                                 |
+| WoW bridge                    | [addon transport](../apps/server/src/wow-bridge)                                              |
+| Agent engine                  | [engine.ts](../apps/agent/src/engine.ts)                                                      |
+| Agent tools and behavior      | [definitions](../apps/agent/src/wisp), [instructions](../apps/agent/src/wisp/instructions.md) |
+| Shared contracts              | [protocol](../packages/protocol/src)                                                          |
+| Game UI, readings and actions | [addon](../addon/WispAI)                                                                      |
 
-The bridge owns accounts, persistence and tool execution. Eve prefers loopback **43186**, the bridge prefers **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+The Wisp server runs alongside Desktop. It composes the agent, storage, the WoW bridge and the Desktop API in one backend process. The WoW bridge exchanges data with the addon; the `game/` module connects that transport to Wisp's state and workflows. Desktop goes through its native host to call the API.
 
-Shared agent rules live in `apps/agent/agent/instructions.md`. Task procedures
-live in native Eve skills at `apps/agent/agent/skills/<name>/SKILL.md`, with a
-short frontmatter description stating when to use each skill. Eve advertises those
-descriptions and returns the full instructions through `eve__skill`. Eve owns
-how loaded skill results are retained in history and compacted.
+The server prefers loopback **43187** for the agent RPC/model endpoint and **43190** for the Desktop API. If a preferred port is occupied, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
-Specialized tools use Eve's native `deferred: true` definitions. `eve__search`
-returns their names and signatures; `eve__tool({ name, input })` executes them.
+The agent runs inside the server on the [AI SDK](https://ai-sdk.dev), with each
+turn run as an [Effect](https://effect.website) program:
+
+```text
+apps/agent/src/
+  engine.ts     AgentEngine: service wiring and the in-process entrypoint
+  execution/    Turn execution, stream events, and compaction
+  session/      Session log and replay
+  models/       Model selection and provider adapters
+  host/         Agent configuration and host RPC
+  tools/        Per-turn toolbox and AI SDK tool assembly
+  integrations/ MCP and web fetching
+  wisp/         Instructions, skills, memory, and authored tools
+```
+
+`streamText` runs the model and tool steps and stops when the model calls no
+tool, an `endsTurn` tool runs or the step budget ends. Effect owns the turn
+around it: cancellation interrupts it and aborts the provider call, and every
+failure settles the turn once, as a typed error (`HostError`, `ModelError` with
+how the provider refused, `HistoryError`). Each dependency is a service with its
+own layer, so a test can replace any of them; logs go through Effect's logger to
+the bridge's. Only stable Effect modules are used; `effect/ai`
+is still unstable. Shared agent rules live in
+`apps/agent/src/wisp/instructions.md`. Task procedures live in Agent Skills at
+`apps/agent/src/wisp/skills/<name>/SKILL.md`, with a short frontmatter description
+stating when to use each skill. The system prompt lists those descriptions and the
+`skill` tool returns the full instructions. Each session's model history, tool
+calls and results included, is a log in `agent_entries` in `runtime/wisp.sqlite`,
+in Wisp's own format (`wisp-1`, [session-message.ts](../apps/agent/src/session/session-message.ts))
+rather than the AI SDK's, and is sent in full every turn, so providers can reuse
+their prompt cache. A turn logs what the player wrote apart from what Wisp adds
+to it (saved memory, the game and chat context, the chat's earlier messages when
+a session starts mid-chat); the model reads them together as one tagged message. When it nears the model's context window, older turns are
+summarized; the log keeps them.
+
+Tools are listed in [the registry](../apps/agent/src/wisp/tool-registry.ts). Specialized ones are
+`deferred: true`: `tool_search` returns their names, descriptions and input
+schemas, and `tool_call({ name, input })` runs them, so the request's tool list
+never changes. MCP tools, connected through the MCP SDK client, are reached
+the same way.
 Character reads, reference/target inspection, conversation naming and reply
 presentation stay directly listed. Skills and tool discovery do not change permissions: dynamic capability
 definitions and bridge checks remain authoritative. Keep parameter details in tool
 schemas and enforceable constraints in code.
 
-`tests/agent-integration.test.ts` exercises native skill discovery/activation,
-native tool discovery/execution, permission denial and follow-up turns with the
-real Eve agent and an offline model. Prompt edits still need gameplay evaluation
-before claiming better answers.
+`tests/agent-integration.test.ts` exercises skill activation, tool discovery and
+execution, permission denial and follow-up turns with the real agent and an
+offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals with
+[vitest-evals](https://vitest-evals.sentry.dev/docs/) against a real model through
+the eval bridge. Sign in once with `node apps/server/src/evals/eval-bridge.ts sign-in`.
+Each case runs one engine turn. Gates fail the test; scorers are informational.
+Pass a filename filter (e.g. `boss-loot`) or `--tagsFilter gear` to select cases.
+Set `WISP_EVAL_GRADE=1` to include the answer-quality judge in the same run.
+Scoring an existing report is not supported.
+
+The JSON report is saved to `apps/agent/eval-replies/results.json`. To keep
+multiple runs, give each run a distinct `--outputFile.json` path, relative to
+`apps/agent`, and open them with
+`pnpm --filter @wisp/agent exec vitest-evals serve eval-replies/`.
+Prompt edits still need gameplay evaluation before claiming better answers.
 
 Game transport uses Wisp v2 checked frames in addon enable states in both directions.
 Compressed snapshots and patches continue through the reusable lane after the
@@ -356,21 +403,20 @@ serves quests from a private turn-verified reading without a game round trip; mi
 requests fetch only other sections live. Missing/partial readings or `refresh=true`
 fall back to the addon. Automatic conversation titles
 are assigned from the first message before model preparation, without waiting for a response.
-Specialized tools stay in Eve's catalog until found with `eve__search` and
-called through `eve__tool`; task skills load with `eve__skill`. Eve owns their
-history and compaction. Capability flags still control tool availability. Bridge logs record `Message delivery`
+Specialized tools stay out of the request until found with `tool_search` and
+called through `tool_call`; task skills load with `skill`. Capability flags still control tool availability. Bridge logs record `Message delivery`
 and structured `chat.turn_timing` entries for preparation, admission and the first text received by the bridge.
 
 ### Runtime boundaries
 
-Replies stream as ordinary Markdown text. The Eve tool `wisp__present_ui`
+Replies stream as ordinary Markdown text. The agent tool `wisp__present_ui`
 inserts a complete, schema-validated native panel or declares inline entity
 references. Its authenticated `/present` RPC reserves component IDs, immutable
 reference keys and aggregate payload budgets in the active turn before returning
 `{ accepted: true }` to the model. Rejections return actionable tool errors.
 Successful `call.settled` events publish the reserved payload, so cancelled calls
 remain invisible. The bridge projects text and panels into ordered message parts;
-presentation calls stay in Eve diagnostics but never create tool/activity rows.
+presentation calls stay in the model history but never create tool/activity rows.
 Markdown and reference tokens travel unchanged, including in historical NDJSON
 replies. Lua's shared Markdown parser and `ReplyView` own formatting, reference
 resolution and table layout for every text part; the bridge only bounds previews.
@@ -378,16 +424,16 @@ The same projection rebuilds event history, while SQLite preserves complete
 canonical text and panel parts independently of streaming previews coalesced at
 600 ms intervals. Previews continue for the entire reply; completion and accepted
 panels publish immediately.
-Component contracts live in `packages/protocol/src/ui-schema.ts` and
+Component contracts live in `apps/agent/src/contract/ui-schema.ts` and
 `reply-presentation.ts`; adding a component extends that contract and its native
 renderer. The historical NDJSON reader is isolated in `legacy-reply.ts` and is
 used only for saved replies from earlier versions.
 
-The bridge entrypoint only starts the runtime and handles process signals.
+The server entrypoint starts the runtime and handles process signals.
 `runtime.ts` composes services; `packet-receiver.ts` owns game-session coordination,
 `turn-runner.ts` executes agent turns, `game-requests.ts` scopes pending game reads,
 and the agent and desktop handlers expose their respective HTTP contracts.
-Dependencies and ports can be supplied to `startBridge` for isolated integration tests.
+Dependencies and ports can be supplied to `startServer` for isolated integration tests.
 
 - Shared Zod schemas define requests, responses and persisted conversation data.
   Validate external data before using it; derive TypeScript types from schemas.
@@ -423,6 +469,6 @@ Vitest projects and native tests must pass before packaging and signing.
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
 implement its adapter and readiness checks together in a provider file under
 `addon/WispAI/Integrations/`, register it in `WispAI.toc` and the shared
-`Integrations.lua` coordinator / `apps/bridge/src/integrations/integration-state.ts`, and test
+`Integrations.lua` coordinator / `apps/server/src/integrations/integration-state.ts`, and test
 missing/incompatible providers and disabled-tool admission. Integrations supply
 tools; reply panels and automatic suggestions remain separate features.

@@ -70,7 +70,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: '24.22.1'
+          node-version: '26.13.1'
       - name: Determine whether app packaging is needed
         id: inputs
         run: node scripts/release-inputs.ts

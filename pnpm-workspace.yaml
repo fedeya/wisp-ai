@@ -14,8 +14,18 @@ allowBuilds:
 # Package boundaries stay explicit; undeclared transitive imports are not hoisted.
 hoist: false
 
+packageExtensions:
+  # The bridge uses NodeRuntime, not the Redis adapter.
+  '@effect/platform-node@4.1.3':
+    peerDependenciesMeta:
+      redis:
+        optional: true
+
+overrides:
+  # Wisp uses its own eval and judge adapters; the optional AI SDK integration is unused.
+  'vitest-evals@0.18.1>ai:peer': '-'
+
 # Optional native archive codecs from just-bash are not used by Wisp.
-# Eve also excludes these when installing its optional just-bash engine.
 ignoredOptionalDependencies:
   - '@mongodb-js/zstd'
   - node-liblzma

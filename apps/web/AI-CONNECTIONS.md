@@ -7,7 +7,7 @@ and compatible/local endpoints, not a prerequisite for every user.
 Implementation references:
 
 - `packages/protocol/src/providers.ts`: registered provider definitions and models.
-- `apps/agent/src/providers.ts`: native provider adapter dispatch.
+- `apps/agent/src/models/providers.ts`: native provider adapter dispatch.
 - `apps/desktop/src/routes/Connections.tsx`: desktop connection settings and model selection.
 - `apps/desktop/src/components/connections/ConnectionEditor.tsx`: API/local connection forms,
   model discovery, exact IDs, context windows, testing and saving.

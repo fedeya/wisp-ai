@@ -1,0 +1,3 @@
+kind: Fixed
+body: Stopping a question while its AI model is preparing now prevents the question from being sent.
+time: 2026-11-23T23:25:17.023572987+01:00

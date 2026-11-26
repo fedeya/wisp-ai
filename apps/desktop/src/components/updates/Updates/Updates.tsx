@@ -17,7 +17,8 @@ const AUTOMATIC_BUSY = 'Wisp is busy; the update will install later.';
 /** How often a scheduled update checks whether WoW is still running. */
 export const GAME_CHECK_MS = 30 * 1000;
 
-type Release = { version: string; notes: string | null };
+/** `downgrade`: older than the installed version, offered only when returning to Stable. */
+type Release = { version: string; notes: string | null; downgrade?: boolean };
 const updateChannels = [
   { value: 'stable', label: 'Stable' },
   { value: 'nightly', label: 'Nightly' },
@@ -156,9 +157,11 @@ export default function Updates({
   const channelLoaded = savedChannel !== null;
   const canInstall = supported && !!release;
   const available = supported && release ? release.version : null;
+  /** An older version never installs by itself: the user chooses to go back. */
+  const downgrade = release?.downgrade === true;
   /** The version that installs by itself the next time Wisp stays idle. */
   const scheduled =
-    autoInstall && available && prepared === available && autoFailed !== available
+    autoInstall && !downgrade && available && prepared === available && autoFailed !== available
       ? available
       : null;
 
@@ -266,7 +269,7 @@ export default function Updates({
   // Download a found update in the background so the idle install is quick.
   // Each successful check (`lastChecked`) retries a download that failed.
   useEffect(() => {
-    if (!native || !autoInstall || !available || prepared === available) return;
+    if (!native || !autoInstall || downgrade || !available || prepared === available) return;
     let current = true;
     void desktop<string>('download_update')
       .then((version) => {
@@ -277,7 +280,7 @@ export default function Updates({
     return () => {
       current = false;
     };
-  }, [autoInstall, available, getState, lastChecked, prepared, setState]);
+  }, [autoInstall, available, downgrade, getState, lastChecked, prepared, setState]);
 
   // The bridge keeps reporting the game as connected after WoW exits, so ask
   // Windows for the process while an update waits to install.
@@ -367,7 +370,9 @@ export default function Updates({
             <p className="m-0 mt-0.5 text-xs leading-snug text-muted">
               {scheduled
                 ? 'It installs by itself once WoW is closed and Wisp is idle.'
-                : 'See what’s new before installing.'}
+                : downgrade
+                  ? 'It’s older than your version, so it only installs when you choose.'
+                  : 'See what’s new before installing.'}
             </p>
           </div>
         </div>
@@ -502,6 +507,8 @@ export default function Updates({
               installed WoW addon when needed and reminds you to type /reload if WoW is open.
               {scheduled &&
                 ' Downloaded and ready: it installs by itself after 10 minutes with WoW closed and no reply running.'}
+              {downgrade &&
+                ' This version is older than the one installed, so it never installs by itself.'}
             </p>
           </section>
         )}

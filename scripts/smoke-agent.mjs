@@ -1,30 +1,37 @@
-import { mkdir, readFile, writeFile, open } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { spawn, execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { Effect } from 'effect';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const root = process.env.WISP_RESOURCE_ROOT || repository;
-const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/bridge');
+const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/server');
 const require = createRequire(path.join(bridge, 'package.json'));
-const agent = path.dirname(require.resolve('@wisp/agent/package.json'));
-const eve = fileURLToPath(new URL('../../bin/eve.js', pathToFileURL(require.resolve('eve'))));
 const dir =
   process.env.WISP_SMOKE_DIR || path.resolve(repository, '../../work', 'agent-smoke-' + Date.now());
 await mkdir(dir, { recursive: true });
 const load = (p) => import(pathToFileURL(path.join(bridge, p)).href);
 const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
   { NativeVault } = await load('src/auth/secret-vault.ts'),
-  { proxyModel } = await load('src/models/model-proxy.ts'),
+  { createModelProxy } = await load('src/models/model-proxy.ts'),
+  { bridgeLogging } = await load('src/logger.ts'),
   { TheWoWDB } = await load('src/integrations/thewowdb.ts'),
   { searchPublicWeb } = await load('src/integrations/search/public-web-search.ts'),
   { applyEvent } = await load('src/chat/events.ts'),
   { ReplyProjection } = await load('src/reply/reply-stream.ts'),
   { turnInput } = await load('src/chat/context.ts');
-const { Client } = await import(pathToFileURL(require.resolve('eve/client')).href);
+const { createAgentEngine } = await import(
+  pathToFileURL(require.resolve('@wisp/agent/engine')).href
+);
+const { setAgentHost } = await import(
+  pathToFileURL(require.resolve('@wisp/agent/agent-host')).href
+);
+const { MemoryHistory } = await import(
+  pathToFileURL(require.resolve('@wisp/agent/memory-history')).href
+);
 const { Simulator } = await load('src/integrations/simulation/simulator.ts');
 const { CapabilitySettings } = await load('src/integrations/capabilities.ts');
 const addonFixtures =
@@ -39,12 +46,14 @@ const simulator = new Simulator(root);
 const dataRoot = process.env.WISP_DATA_DIR || root;
 const config = JSON.parse(await readFile(path.join(dataRoot, 'config.local.json'), 'utf8')),
   model = config.model || 'gpt-6.1-sol';
-const auth = new ChatGPTAuth(
-  path.join(dataRoot, 'runtime'),
-  new NativeVault(
-    process.env.WISP_DESKTOP_EXE ||
-      path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
-  ),
+const auth = Effect.runSync(
+  ChatGPTAuth.make(
+    path.join(dataRoot, 'runtime'),
+    new NativeVault(
+      process.env.WISP_DESKTOP_EXE ||
+        path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
+    ),
+  ).pipe(Effect.provide(bridgeLogging)),
 );
 await auth.load();
 const t = auth.saved.profiles.find((p) => p.id === auth.saved.activeId)?.tokens;
@@ -59,12 +68,7 @@ const scopedAuth = {
     return fetch(url, { ...init, headers, redirect: 'error' });
   },
 };
-const { prepareEngine } = await load('src/app-paths.ts');
-await prepareEngine(agent, dir);
-for (const file of ['agent/agent.ts', 'src/agent-rpc.ts', 'agent/tools/wow__query_character.ts']) {
-  const p = path.join(dir, file);
-  await writeFile(p, (await readFile(p, 'utf8')).replaceAll('43187', '43197'));
-}
+const proxyModel = Effect.runSync(createModelProxy(scopedAuth).pipe(Effect.provide(bridgeLogging)));
 const capabilities = new CapabilitySettings(path.join(dir, 'capabilities.json'));
 capabilities.agentFile = path.join(dir, 'agent-capabilities.json');
 await capabilities.load();
@@ -123,7 +127,7 @@ const server = createServer(async (req, res) => {
           }
         });
       }
-      await proxyModel(req, res, scopedAuth);
+      await proxyModel(req, res);
       return;
     }
     let raw = '';
@@ -131,7 +135,7 @@ const server = createServer(async (req, res) => {
       raw += b;
     }
     const data = JSON.parse(raw),
-      { eveSession: _session, ...args } = data;
+      { agentSession: _session, ...args } = data;
     let value;
     const call = { endpoint: req.url, operation: data.operation };
     rpc.push(call);
@@ -152,7 +156,9 @@ const server = createServer(async (req, res) => {
       };
       call.kind = 'training';
     } else if (req.url === '/inspect' && addonFixtures) {
-      const { inspectionSchema } = await import('../packages/protocol/dist/game-inspection.js');
+      const { inspectionSchema } = await import(
+        pathToFileURL(require.resolve('@wisp/agent/contract/game-inspection')).href
+      );
       const inspection = inspectionSchema.parse(data.inspection);
       if (inspection.kind === 'questie_quest' || inspection.kind === 'questie_chain') {
         assert.equal(inspection.args.questId, 600001);
@@ -206,39 +212,23 @@ const server = createServer(async (req, res) => {
   }
 });
 await new Promise((r) => server.listen(43197, '127.0.0.1', r));
-const log = await open(path.join(dir, 'eve.log'), 'a');
-const child = spawn(
-  process.execPath,
-  [eve, 'dev', '--no-ui', '--no-default-extensions', '--port', '43196'],
-  {
-    cwd: dir,
-    windowsHide: true,
-    stdio: ['ignore', log.fd, log.fd],
-    env: {
-      ...process.env,
-      WOW_BRIDGE_TOKEN: token,
-      WOW_BRIDGE_URL: 'http://127.0.0.1:43197',
-      WOW_MODEL: model,
-      WOW_MCP_CONFIG: '',
-      WOW_CAPABILITIES_FILE: capabilities.agentFile,
-    },
-  },
-);
-const client = new Client({ baseUrl: 'http://127.0.0.1:43196' }),
-  report = { model, tests: [] };
+// The agent runs in this process against the isolated fixture bridge above.
+setAgentHost({
+  origin: 'http://127.0.0.1:43197',
+  token,
+  capabilitiesFile: capabilities.agentFile,
+});
+const engine = createAgentEngine({
+  origin: () => 'http://127.0.0.1:43197',
+  token,
+  // The session log stays in memory for the run, as in the engine's tests.
+  history: new MemoryHistory(),
+  logging: bridgeLogging,
+});
+const report = { model, tests: [] };
 let session;
 try {
-  let ready = false;
-  for (let i = 0; i < 400; i++) {
-    try {
-      await client.health();
-      ready = true;
-      break;
-    } catch {}
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  assert.ok(ready, 'isolated Eve ready');
-  session = (await client.sessions.create()).session;
+  session = engine.newSessionId();
   const chat = {
       id: 'smoke',
       title: 'Diagnostic',
@@ -250,18 +240,19 @@ try {
     parts = new ReplyProjection();
   const run = async (name, question) => {
     console.log('START ' + name);
-    const d = await session.send(
+    const d = engine.send(
+      session,
       turnInput(
         question,
         simulationSnapshot,
         { id: 'smoke', title: 'Diagnostic', titleGenerated: true },
         capabilities.snapshot(),
       ),
-      { signal: AbortSignal.timeout(300_000) },
+      AbortSignal.timeout(300_000),
     );
     let calls = [];
     const failures = [];
-    for await (const event of d.stream()) {
+    for await (const event of d.events) {
       applyEvent(chat, event, parts);
       if (event.type === 'call.requested') {
         calls.push(event.data.capability?.name);
@@ -272,7 +263,7 @@ try {
         failures.push(event.data.outcome);
       }
     }
-    const r = await d.result();
+    const r = await d.result;
     const row = {
       name,
       status: r.status,
@@ -367,7 +358,7 @@ try {
     assert.ok(result.calls.includes('auctionator__get_item_prices'));
     await capabilities.set('integration:syndicator', false);
     result = await run(
-      'Disabled addon on existing Eve session',
+      'Disabled addon on an existing session',
       'Volvé a consultar syndicator__find_item para itemId=123. Si la integración está apagada, decímelo sin usar otras fuentes ni tools.',
     );
     assert.ok(!result.calls.includes('syndicator__find_item'));
@@ -401,7 +392,7 @@ try {
     );
     assert.ok(
       !result.calls.some((name) => name?.startsWith('thewowdb__')),
-      'disabled integration removed on an existing Eve session',
+      'disabled integration removed on an existing session',
     );
     await capabilities.set('integration:thewowdb', true);
     result = await run(
@@ -411,10 +402,10 @@ try {
     assert.ok(result.calls.includes('thewowdb__get_database_entity'));
     result = await run(
       'Everloot complement',
-      'Para verificar la cobertura: buscá Frost Nova con search_knowledge de la conexión everloot-search de Everloot. Descubrí la herramienta con eve__search y ejecutala con eve__tool aunque TheWoWDB ya tenga el hechizo. Informá si hay coincidencias confirmadas para Forever; no guardes nada en memoria.',
+      'Para verificar la cobertura: buscá Frost Nova con search_knowledge de la conexión everloot-search de Everloot. Descubrí la herramienta con tool_search y ejecutala con tool_call aunque TheWoWDB ya tenga el hechizo. Informá si hay coincidencias confirmadas para Forever; no guardes nada en memoria.',
     );
     assert.ok(
-      result.calls.some((n) => /eve__tool|search_knowledge/.test(n)),
+      result.calls.some((n) => /search_knowledge/.test(n)),
       'real MCP invocation',
     );
     result = await run(
@@ -423,11 +414,11 @@ try {
     );
     assert.ok(result.calls.includes('web__web_search'));
     console.log('START manual compaction');
-    const compact = await session.compact();
-    for await (const event of compact.stream()) {
+    const compact = engine.compact(session, AbortSignal.timeout(300_000));
+    for await (const event of compact.events) {
       applyEvent(chat, event, parts);
     }
-    const cr = await compact.result();
+    const cr = await compact.result;
     console.log(JSON.stringify({ compactionStatus: cr.status, usage: chat.usage }));
     assert.ok(chat.usage?.compactions >= 1, 'real compaction completed');
     result = await run(
@@ -451,13 +442,8 @@ try {
   console.log('PASS ' + dir);
 } finally {
   if (session) {
-    await session.end({ reason: 'Isolated smoke finished' }).catch(() => {});
+    await engine.end(session).catch(() => {});
   }
-  await new Promise((r) =>
-    execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () =>
-      r(),
-    ),
-  );
+  await engine.close();
   await new Promise((r) => server.close(r));
-  await log.close();
 }

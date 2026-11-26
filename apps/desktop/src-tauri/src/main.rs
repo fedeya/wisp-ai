@@ -556,7 +556,7 @@ async fn request_bridge_stop(host: &Host) -> Result<(), String> {
         event = "bridge.stop_requested",
         "Bridge accepted the stop request"
     );
-    // The listener closes before the child releases SQLite and Eve.
+    // The listener closes before the child releases SQLite and the agent.
     while host.child_running()? {
         wait_for_bridge(deadline).await?;
     }
@@ -743,7 +743,7 @@ fn open_logs(app: tauri::AppHandle, host: tauri::State<'_, Host>) -> Result<(), 
 fn read_logs(host: tauri::State<'_, Host>) -> String {
     use std::io::{Read, Seek, SeekFrom};
     let mut output = String::new();
-    for name in ["desktop.log", "bridge.log", "eve.log", "update.log"] {
+    for name in ["desktop.log", "bridge.log", "update.log"] {
         if let Ok(mut file) = fs::File::open(host.data.join("runtime").join(name)) {
             let len = file.metadata().map(|m| m.len()).unwrap_or(0);
             let _ = file.seek(SeekFrom::Start(len.saturating_sub(12000)));
@@ -812,7 +812,7 @@ fn prepare_update() -> Result<(), String> {
     };
     let running = tauri::async_runtime::block_on(host.request("GET", "/status", json!({}))).is_ok();
     tauri::async_runtime::block_on(stop_host(&host))?;
-    // The HTTP listener closes before Eve and persistence finish. Wait for the
+    // The HTTP listener closes before the agent and persistence finish. Wait for the
     // bridge process itself before the installer replaces its runtime files.
     #[cfg(windows)]
     if let Some(pid) = pid.filter(|id| running && *id > 0 && *id <= u32::MAX as u64) {
@@ -902,10 +902,10 @@ fn main() {
             } else {
                 &[
                     "src/main.ts",
-                    "node_modules/@wisp/agent/agent/agent.ts",
+                    "node_modules/@wisp/agent/src/wisp/instructions.md",
                     "scripts/install.ts",
                     "addon/WispAI/WispAI.toc",
-                    "node_modules/eve/bin/eve.js",
+                    "node_modules/effect/package.json",
                 ]
             };
             for name in required {

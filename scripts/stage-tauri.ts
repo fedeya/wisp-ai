@@ -30,7 +30,7 @@ export async function stageTauri({ packaged = false } = {}) {
     const executable = process.env.npm_execpath || 'pnpm';
     const args = [
       '--filter',
-      '@wisp/bridge',
+      '@wisp/server',
       '--prod',
       'deploy',
       '--legacy',
@@ -86,7 +86,7 @@ export async function stageTauri({ packaged = false } = {}) {
     ),
   );
   console.log(
-    'Deployed production bridge, agent and protocol without personal data or desktop build tools.',
+    'Staged the Wisp server and its dependencies without personal data or desktop build tools.',
   );
 }
 
@@ -95,9 +95,9 @@ export async function stageEngine(executable: string) {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const stage = payloadDirectory(root);
   await copyFile(executable, path.join(stage, 'wisp-engine.exe'));
-  const eve = path.dirname(fileURLToPath(import.meta.resolve('eve/package.json')));
-  await copyFile(path.join(eve, 'LICENSE'), path.join(stage, 'EVE-LICENSE.txt'));
-  await copyFile(path.join(eve, 'NOTICE'), path.join(stage, 'EVE-NOTICE.txt'));
+  // The engine bundles Effect, which the agent runs on; ship its license beside it.
+  const effect = path.dirname(fileURLToPath(import.meta.resolve('effect/package.json')));
+  await copyFile(path.join(effect, 'LICENSE'), path.join(stage, 'EFFECT-LICENSE.txt'));
   await writeFile(
     path.join(stage, 'package.json'),
     JSON.stringify({

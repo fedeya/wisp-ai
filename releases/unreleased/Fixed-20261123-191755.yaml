@@ -1,0 +1,3 @@
+kind: Fixed
+body: Wisp now connects after logging in even when the character takes a moment to load, instead of waiting for a later retry.
+time: 2026-11-23T19:17:55.0274733-03:00

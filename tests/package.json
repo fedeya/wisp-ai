@@ -8,13 +8,15 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "24.19.2",
+    "@effect/platform-node": "4.1.3",
+    "@types/node": "26.6.6",
     "@wisp/agent": "workspace:*",
-    "@wisp/bridge": "workspace:*",
     "@wisp/protocol": "workspace:*",
-    "eve": "1.0.0-rc.6",
+    "@wisp/server": "workspace:*",
+    "effect": "4.1.3",
     "fengari": "0.1.5",
     "typescript": "5.9.3",
-    "vitest": "5.1.0"
+    "vitest": "5.1.0",
+    "zod": "4.6.7"
   }
 }
