@@ -83,8 +83,8 @@ export interface BridgeOptions {
  *   drain, and turns drain before the publisher stops, chats are flushed and
  *   the database closes (last).
  */
-const makeBridge = Effect.fn('Bridge.make')(
-  function* (options: BridgeOptions, stop: () => Promise<void>) {
+export const makeBridge = Effect.fn('Bridge.make')(
+  function* (options: BridgeOptions, requestStop: () => void) {
     const context = yield* Effect.context<never>();
     const runFork = Effect.runForkWith(context);
     // Checked by everything that starts work, so nothing new begins while resources close.
@@ -475,6 +475,7 @@ const makeBridge = Effect.fn('Bridge.make')(
         features: features.state(),
       };
     }
+    let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
     const desktopApp = createDesktopApp({
       auth,
       connections,
@@ -522,20 +523,8 @@ const makeBridge = Effect.fn('Bridge.make')(
       },
       requestStop: () => {
         shutdownRequested = true;
-        setTimeout(
-          () =>
-            void stop().catch((error) =>
-              runFork(
-                Effect.logError('Bridge shutdown failed').pipe(
-                  Effect.annotateLogs({
-                    event: 'bridge.shutdown_failed',
-                    error: errorMessage(error),
-                  }),
-                ),
-              ),
-            ),
-          200,
-        );
+        // Let the desktop response reach the caller before we close its listener.
+        desktopStopTimer ??= setTimeout(requestStop, 200);
       },
     });
     const desktopServer = yield* startup(() =>
@@ -583,6 +572,7 @@ const makeBridge = Effect.fn('Bridge.make')(
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
         shutdownRequested = true;
+        clearTimeout(desktopStopTimer);
         pending.cancelAll('Bridge stopped');
         state.chats.forEach(run.interrupt);
       }),
@@ -592,6 +582,7 @@ const makeBridge = Effect.fn('Bridge.make')(
   },
   // The existing Promise-based acquisitions cannot be interrupted safely.
   Effect.uninterruptible,
+  Effect.catchDefect((error) => Effect.fail(error)),
 );
 
 function startup<A>(operation: () => Promise<A>) {
@@ -603,11 +594,19 @@ export function startBridge(options: BridgeOptions = {}) {
 }
 
 export const startBridgeEffect = Effect.fnUntraced(function* (options: BridgeOptions = {}) {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const resources = new RuntimeResources();
   const stop = () => resources.close();
-  const bridge = yield* makeBridge(options, stop).pipe(
+  const bridge = yield* makeBridge(options, () => {
+    void stop().catch((error: unknown) =>
+      runFork(
+        Effect.logError('Bridge shutdown failed').pipe(
+          Effect.annotateLogs({ event: 'bridge.shutdown_failed', error: errorMessage(error) }),
+        ),
+      ),
+    );
+  }).pipe(
     Scope.provide(resources.scope),
-    Effect.catchDefect((error) => Effect.fail(error)),
     Effect.onExit((exit) =>
       Exit.isFailure(exit)
         ? startup(() => resources.close(exit)).pipe(
