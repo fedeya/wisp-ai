@@ -1,12 +1,11 @@
 import { Effect } from 'effect';
-import type { SqlDatabase } from '@wisp/db/sql-database';
+import { SqlDatabase } from '@wisp/db/sql-database';
 import { adoptCharacterKey, saveCharacterName } from './character-keys.ts';
 import { errorMessage } from '../errors.ts';
 import type { Chat } from './chat.ts';
 import type { CharacterProfile } from './context.ts';
 
 interface CharacterAdoptionDependencies {
-  database: SqlDatabase['Service'];
   chats: () => Chat[];
   changed: () => void;
 }
@@ -20,10 +19,10 @@ interface CharacterAdoptionDependencies {
  * reported the character, and everything after it, already sees the data
  * under the GUID key.
  */
-export function createCharacterAdoption({
-  database: { db },
-  ...deps
-}: CharacterAdoptionDependencies) {
+export const createCharacterAdoption = Effect.fnUntraced(function* (
+  deps: CharacterAdoptionDependencies,
+) {
+  const { db } = yield* SqlDatabase;
   const seen = new Map<string, string>();
   return Effect.fnUntraced(
     function* (character: CharacterProfile) {
@@ -60,4 +59,4 @@ export function createCharacterAdoption({
       ),
     ),
   );
-}
+});

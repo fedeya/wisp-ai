@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
 import { mkdtemp, rm, readFile, readdir, cp, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,7 +10,11 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
 import { migrateDatabase, migrationsFolder } from '@wisp/db/migrate';
-import { chatStoreAt, databaseScope } from './database-fixture.ts';
+import * as Sql from '@wisp/db/sql-database';
+import * as Chats from '../src/chat/chat-store.ts';
+
+const chatStorage = (file: string) =>
+  Chats.layer({ onError: () => {} }).pipe(Layer.provideMerge(Sql.layer(file)));
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 const migrations = (await readdir(migrationsFolder)).length;
@@ -50,13 +54,13 @@ test('the official Drizzle migrator creates the complete schema and shares its j
       ...newChat('existing', 'game'),
       messages: [{ role: 'user' as const, text: 'Keep this 🧙' }],
     };
-    const store = chatStoreAt(file, () => {});
-    try {
-      await store.load();
-      await store.flush([chat]);
-    } finally {
-      await store.close();
-    }
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const store = yield* Chats.ChatStore;
+        yield* store.load();
+        yield* store.flush([chat]);
+      }).pipe(Effect.provide(chatStorage(file))),
+    );
     const before = database.prepare('SELECT * FROM chats').all();
     migrate(drizzle({ client: database }), { migrationsFolder });
     expect(database.prepare('SELECT * FROM chats').all()).toEqual(before);
@@ -182,7 +186,6 @@ test('startup succeeds when another connection commits after Drizzle reads the e
 test('startup retries WAL activation while another process holds a read lock', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-drizzle-wal-'));
   const file = path.join(root, 'wisp.sqlite');
-  const scope = databaseScope();
   // The reader is another process: in this one, SQLite's busy wait would block
   // the thread that has to release the lock.
   const reader = spawn(
@@ -205,13 +208,15 @@ test('startup retries WAL activation while another process holds a read lock', a
       reader.stdout.once('data', () => resolve());
       reader.once('error', reject);
     });
-    const { db } = await scope.open(file);
-    expect(await Effect.runPromise(db.$client`PRAGMA journal_mode`)).toEqual([
-      { journal_mode: 'wal' },
-    ]);
+    const journal = await Effect.runPromise(
+      Effect.gen(function* () {
+        const { db } = yield* Sql.SqlDatabase;
+        return yield* db.$client`PRAGMA journal_mode`;
+      }).pipe(Effect.provide(Sql.layer(file))),
+    );
+    expect(journal).toEqual([{ journal_mode: 'wal' }]);
   } finally {
     await exited;
-    await scope.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 });
@@ -224,12 +229,15 @@ test('three processes can migrate and import the same database simultaneously', 
     ];
     await writeFile(path.join(root, 'chats.json'), JSON.stringify(legacy));
     const source = `
-      import { Effect } from 'effect';
-      import { openChatStore } from '@wisp/server/chat-store';
-      const ids = await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-        const store = yield* openChatStore(process.argv[1], { onError: (error) => { throw error; } });
+      import { Effect, Layer } from 'effect';
+      import * as Sql from '@wisp/db/sql-database';
+      import * as Chats from '@wisp/server/chat-store';
+      const storage = Chats.layer({ onError: (error) => { throw error; } })
+        .pipe(Layer.provideMerge(Sql.layer(process.argv[1])));
+      const ids = await Effect.runPromise(Effect.gen(function* () {
+        const store = yield* Chats.ChatStore;
         return (yield* store.load()).map((c) => c.id);
-      })));
+      }).pipe(Effect.provide(storage)));
       console.log(JSON.stringify(ids));
     `;
     const settled = await Promise.allSettled(

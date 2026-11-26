@@ -2,9 +2,9 @@ import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/pro
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
 import * as Sql from '@wisp/db/sql-database';
-import { makeChatStore, conversationInstanceId } from '../chat/chat-store.ts';
+import * as Chats from '../chat/chat-store.ts';
 import { importProductData } from './product-json.ts';
 import {
   copyDatabaseSnapshot,
@@ -177,27 +177,23 @@ export async function migrateDesktop(
     }
   }
   // The copied database is authoritative when both formats are present.
+  const storage = Chats.layer({
+    onError: () => {},
+    inheritInstanceId: Chats.conversationInstanceId(path.join(source, 'runtime')),
+  }).pipe(Layer.provideMerge(Sql.layer(databaseFile)));
   await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const database = yield* Sql.make(databaseFile);
-        if (sourceDatabase) {
-          const store = yield* makeChatStore(database, {
-            onError: () => {},
-            inheritInstanceId: conversationInstanceId(path.join(source, 'runtime')),
-          });
-          yield* Effect.gen(function* () {
-            const chats = yield* store.load();
-            // Model histories start over; the visible conversations carry over.
-            for (const chat of chats) {
-              delete chat.agentSession;
-            }
-            yield* store.flush(chats);
-          }).pipe(Effect.ensuring(store.close()));
+    Effect.gen(function* () {
+      if (sourceDatabase) {
+        const store = yield* Chats.ChatStore;
+        const chats = yield* store.load();
+        // Model histories start over; the visible conversations carry over.
+        for (const chat of chats) {
+          delete chat.agentSession;
         }
-        yield* importProductData(databaseFile, database.db);
-      }),
-    ),
+        yield* store.flush(chats);
+      }
+      yield* importProductData();
+    }).pipe(Effect.provide(storage)),
   );
   if (localAppData) {
     const hash = createHash('sha256').update(source).digest('hex');

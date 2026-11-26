@@ -1,57 +1,66 @@
 import { test } from 'vitest';
+import { it } from '@effect/vitest';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { databaseScope, promised } from './database-fixture.ts';
-import { makeMemoryStore } from '../src/agent/memory-store.ts';
+import { Effect } from 'effect';
+import { MemoryStore } from '../src/agent/memory-store.ts';
 import { characterIdentity } from '../src/chat/context.ts';
+import { reopen, testStorage } from './storage-fixture.ts';
 
-test(
+it.live(
   'memory survives new store instances, isolates characters, and serializes concurrent updates',
-  { timeout: 30_000 },
-  async () => {
-    const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-memory-'));
-    const scope = databaseScope();
-    try {
-      const file = path.join(directory, 'wisp.sqlite');
-      const store = promised(makeMemoryStore(await scope.open(file)));
-      await Promise.all([
-        store.update(
-          'character',
-          'mage',
-          'guide',
-          'Following Guide A, chapter 2; reported by the user.',
-        ),
-        store.update('character', 'mage', 'goal', 'Explore Durotar'),
-        store.update('character', 'warrior', 'guide', 'Following Guide B'),
-        store.update('preferences', 'local-player', 'pace', 'Prefers exploration'),
-      ]);
-      const restarted = promised(makeMemoryStore(await scope.open(file)));
-      assert.equal((await restarted.read('character', 'mage')).length, 2);
-      assert.equal((await restarted.read('character', 'warrior'))[0].text, 'Following Guide B');
-      await restarted.update('character', 'mage', 'guide', 'Stopped following Guide A');
-      assert.equal(
-        (await restarted.read('character', 'mage')).filter((entry) => entry.key === 'guide').length,
-        1,
+  () =>
+    Effect.gen(function* () {
+      const store = yield* MemoryStore;
+      yield* Effect.all(
+        [
+          store.update(
+            'character',
+            'mage',
+            'guide',
+            'Following Guide A, chapter 2; reported by the user.',
+          ),
+          store.update('character', 'mage', 'goal', 'Explore Durotar'),
+          store.update('character', 'warrior', 'guide', 'Following Guide B'),
+          store.update('preferences', 'local-player', 'pace', 'Prefers exploration'),
+        ],
+        { concurrency: 'unbounded' },
       );
-      await restarted.update('character', 'mage', 'guide');
-      assert.equal(
-        (await promised(makeMemoryStore(await scope.open(file))).read('character', 'mage')).length,
-        1,
+      yield* reopen(
+        Effect.gen(function* () {
+          const restarted = yield* MemoryStore;
+          assert.equal((yield* restarted.read('character', 'mage')).length, 2);
+          assert.equal(
+            (yield* restarted.read('character', 'warrior'))[0].text,
+            'Following Guide B',
+          );
+          yield* restarted.update('character', 'mage', 'guide', 'Stopped following Guide A');
+          const guides = (yield* restarted.read('character', 'mage')).filter(
+            (entry) => entry.key === 'guide',
+          );
+          assert.equal(guides.length, 1);
+          yield* restarted.update('character', 'mage', 'guide');
+          assert.equal(
+            (yield* restarted.read('preferences', 'local-player'))[0].text,
+            'Prefers exploration',
+          );
+          const rejected = yield* Effect.flip(
+            restarted.update('character', 'mage', '../escape', 'bad'),
+          );
+          assert.equal(rejected.reason._tag, 'MemoryRejected');
+          const oversized = yield* Effect.flip(
+            restarted.update('character', 'mage', 'oversized', 'x'.repeat(1001)),
+          );
+          assert.equal(oversized.reason._tag, 'MemoryRejected');
+        }),
       );
-      assert.equal(
-        (await restarted.read('preferences', 'local-player'))[0].text,
-        'Prefers exploration',
+      const afterRestart = yield* reopen(
+        Effect.gen(function* () {
+          return yield* (yield* MemoryStore).read('character', 'mage');
+        }),
       );
-      await assert.rejects(restarted.update('character', 'mage', '../escape', 'bad'));
-      await assert.rejects(restarted.update('character', 'mage', 'oversized', 'x'.repeat(1001)));
-    } finally {
-      assert.ok(directory.startsWith(path.join(tmpdir(), 'wow-wisp-memory-')));
-      await scope.close();
-      await rm(directory, { recursive: true, force: true });
-    }
-  },
+      assert.equal(afterRestart.length, 1);
+    }).pipe(Effect.provide(testStorage())),
+  30_000,
 );
 test('character memory identity distinguishes characters and rejects missing identity', () => {
   const context = (name: string) => ({

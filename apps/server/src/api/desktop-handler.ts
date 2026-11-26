@@ -14,8 +14,8 @@ import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
-import type { RoutineStore } from '../routines/routine-store.ts';
+import { PanelStore } from '../panels/panel-store.ts';
+import { RoutineStore } from '../routines/routine-store.ts';
 import type { Chat } from '../chat/events.ts';
 import { openChat, isWorking } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
@@ -31,8 +31,6 @@ interface DesktopDependencies {
   webSearch: WebSearch;
   capabilitySettings: CapabilitySettings;
   mcpManager: McpManager;
-  panelStore: PanelStore;
-  routineStore: RoutineStore;
   accountOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   updateModel: (model: string) => Promise<void>;
   getStatus: () => Effect.Effect<Status, unknown>;
@@ -59,16 +57,11 @@ const json = <T extends z.ZodType>(schema: T) =>
 const ok = { ok: true } as const;
 export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDependencies) {
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-  const {
-    auth,
-    connections,
-    webSearch,
-    capabilitySettings,
-    mcpManager,
-    panelStore,
-    routineStore,
-    accountOperation,
-  } = deps;
+  /** Runs a route's Effect here, at the HTTP boundary; failures reach the error handler. */
+  const respond = <A>(effect: Effect.Effect<A, unknown>) => runPromise(effect);
+  const panelStore = yield* PanelStore;
+  const routineStore = yield* RoutineStore;
+  const { auth, connections, webSearch, capabilitySettings, mcpManager, accountOperation } = deps;
   const chatFor = (id: string) => deps.getChats().find((chat) => chat.id === id);
   return new Hono()
     .onError((error, c) => c.json({ error: errorMessage(error) }, 400))
@@ -77,7 +70,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await next();
       c.header('cache-control', 'no-store');
     })
-    .get('/status', async (c) => c.json(await runPromise(deps.getStatus())))
+    .get('/status', (c) => respond(deps.getStatus().pipe(Effect.map((status) => c.json(status)))))
     .get('/auth/models', async (c) =>
       c.json(await accountOperation(async () => ({ models: await connections.models() }))),
     )
@@ -167,45 +160,56 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       );
       return c.json(ok);
     })
-    .post('/panels/action', json(routes['/panels/action'].input), async (c) => {
-      const { characterKey, id, action } = c.req.valid('json');
-      if (!(await runPromise(panelStore.list(characterKey))).some((p) => p.id === id)) {
-        throw Error('Panel not found');
-      }
-      if (action === 'remove') {
-        await runPromise(panelStore.mutate(characterKey, { operation: 'remove', id }));
-      } else {
-        if (characterKey !== deps.currentCharacterKey()) {
-          throw Error('Log into this character first');
-        }
-        deps.sendPanelCommand({ seq: Date.now(), id, characterKey, action });
-      }
-      deps.changed();
-      return c.json(ok);
-    })
-    .post('/routines/action', json(routes['/routines/action'].input), async (c) => {
-      const { characterKey, operation, id } = c.req.valid('json');
-      await runPromise(routineStore.mutate(characterKey, { operation, id }));
-      deps.changed();
-      return c.json(ok);
-    })
-    .post('/routines/open', json(routes['/routines/open'].input), async (c) => {
-      const key = deps.currentCharacterKey();
-      const run = key
-        ? await runPromise(routineStore.getRun(c.req.valid('json').id, key))
-        : undefined;
-      const chat = run && chatFor(run.id);
-      if (!run || !chat) {
-        throw Error('Log into the character first; the conversation must still exist');
-      }
-      if (isWorking(chat)) {
-        throw Error('Wait for the routine to finish');
-      }
-      openChat(chat);
-      deps.openRoutine(run.id);
-      deps.changed();
-      return c.json(ok);
-    })
+    .post('/panels/action', json(routes['/panels/action'].input), (c) =>
+      respond(
+        Effect.gen(function* () {
+          const { characterKey, id, action } = c.req.valid('json');
+          if (!(yield* panelStore.list(characterKey)).some((panel) => panel.id === id)) {
+            return yield* Effect.fail(Error('Panel not found'));
+          }
+          if (action === 'remove') {
+            yield* panelStore.mutate(characterKey, { operation: 'remove', id });
+          } else if (characterKey !== deps.currentCharacterKey()) {
+            return yield* Effect.fail(Error('Log into this character first'));
+          } else {
+            deps.sendPanelCommand({ seq: Date.now(), id, characterKey, action });
+          }
+          deps.changed();
+          return c.json(ok);
+        }),
+      ),
+    )
+    .post('/routines/action', json(routes['/routines/action'].input), (c) =>
+      respond(
+        Effect.gen(function* () {
+          const { characterKey, operation, id } = c.req.valid('json');
+          yield* routineStore.mutate(characterKey, { operation, id });
+          deps.changed();
+          return c.json(ok);
+        }),
+      ),
+    )
+    .post('/routines/open', json(routes['/routines/open'].input), (c) =>
+      respond(
+        Effect.gen(function* () {
+          const key = deps.currentCharacterKey();
+          const run = key ? yield* routineStore.getRun(c.req.valid('json').id, key) : undefined;
+          const chat = run && chatFor(run.id);
+          if (!run || !chat) {
+            return yield* Effect.fail(
+              Error('Log into the character first; the conversation must still exist'),
+            );
+          }
+          if (isWorking(chat)) {
+            return yield* Effect.fail(Error('Wait for the routine to finish'));
+          }
+          openChat(chat);
+          deps.openRoutine(run.id);
+          deps.changed();
+          return c.json(ok);
+        }),
+      ),
+    )
     .post('/simulator/character', async (c) => c.json(await deps.readSimulationCharacter()))
     .post('/app-update', json(routes['/app-update'].input), (c) => {
       deps.setAppUpdate(c.req.valid('json').version);

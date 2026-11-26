@@ -1,6 +1,7 @@
-import type { Routine, RoutineRun } from '@wisp/protocol/routines';
+import { routineRun, savedRoutine, type Routine, type RoutineRun } from '@wisp/protocol/routines';
 import { and, eq } from 'drizzle-orm';
 import { Effect } from 'effect';
+import { decodeRecord } from '@wisp/db/repository';
 import type { SqlExecutor } from '@wisp/db/sql-database';
 import { routines, routineRuns } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
@@ -21,9 +22,8 @@ export function encodeRoutine(
     content: JSON.stringify(content),
   };
 }
-export function decodeRoutine({ sortIndex: _sortIndex, content, ...row }: RoutineRow): Routine {
-  return { ...JSON.parse(content), ...row };
-}
+export const decodeRoutine = ({ sortIndex: _sortIndex, content, ...row }: RoutineRow) =>
+  decodeRecord<Routine>('routine', savedRoutine, () => ({ ...JSON.parse(content), ...row }));
 export function encodeRun(
   {
     id,
@@ -53,20 +53,13 @@ export function encodeRun(
     extras: JSON.stringify(extras),
   };
 }
-export function decodeRun({
-  sortIndex: _sortIndex,
-  extras,
-  finishedAt,
-  summary,
-  ...row
-}: RunRow): RoutineRun {
-  return {
+export const decodeRun = ({ sortIndex: _sortIndex, extras, finishedAt, summary, ...row }: RunRow) =>
+  decodeRecord<RoutineRun>('routine run', routineRun, () => ({
     ...JSON.parse(extras),
     ...row,
     ...(finishedAt === null ? {} : { finishedAt }),
     ...(summary === null ? {} : { summary }),
-  };
-}
+  }));
 
 export const importRoutines = Effect.fnUntraced(function* (
   db: SqlExecutor,

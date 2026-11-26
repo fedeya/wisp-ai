@@ -1,15 +1,15 @@
+import { Effect, Schedule } from 'effect';
 import type { SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
-import type { RoutineStore } from './routine-store.ts';
+import { RoutineStore, type ClaimedRoutine } from './routine-store.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
-import { Effect } from 'effect';
+
 interface SchedulerDependencies {
   state: SessionState;
-  routineStore: RoutineStore;
   capabilitySettings: CapabilitySettings;
   isStopping: () => boolean;
   isReady: () => boolean;
@@ -18,124 +18,141 @@ interface SchedulerDependencies {
   /** Whether a finished routine chat failed on a usage limit; tests replace it. */
   usageLimited?: (chat: Chat) => boolean;
 }
+
+const TICK = '3 seconds';
+
+type Presence = NonNullable<SessionState['routinePresence']>;
+
+const runStatus = (chat: Chat) =>
+  chat.status === 'interrupted'
+    ? 'interrupted'
+    : chat.status === 'error'
+      ? 'error'
+      : chat.status === 'cancelled'
+        ? 'cancelled'
+        : chat.tipSkipped
+          ? 'no_tip'
+          : 'done';
+
+const prompt = ({ routine, event, previous }: ClaimedRoutine) =>
+  'Run this user-requested routine as read-only advice. Verify current state; the event may have been delayed. Routine instruction: ' +
+  routine.instruction +
+  '\nTrigger data: ' +
+  JSON.stringify(event) +
+  '\nPrevious recommendations (historical, not current state): ' +
+  JSON.stringify(previous);
+
+/**
+ * Every few seconds, runs the routine that is due for the character in game,
+ * one at a time and only while the player is idle in a ready session. Runs in
+ * the caller's scope: closing it lets a routine that already started finish.
+ */
 export const startRoutineScheduler = Effect.fnUntraced(function* (deps: SchedulerDependencies) {
-  const runFork = Effect.runForkWith(yield* Effect.context<never>());
-  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed } = deps;
-  const createChat = (id: string) => {
-    const chat = newChat(id, state.activeTransport);
-    state.chats.push(chat);
-    return chat;
-  };
-  let dispatchingRoutine = false;
-  let dispatch: Promise<void> | undefined;
+  const routines = yield* RoutineStore;
+  const { state, capabilitySettings, isStopping, isReady, changed } = deps;
+  const usageLimited = deps.usageLimited ?? endedOnUsageLimit;
   const gate = createRoutineGate();
-  const timer = setInterval(() => {
+
+  const presentPlayer = (): Presence | undefined => {
     if (
-      dispatchingRoutine ||
       gate.paused() ||
       isStopping() ||
       !isReady() ||
       !capabilitySettings.enabled('tool:manage_routine') ||
-      state.chats.some((c) => c.status === 'working')
+      state.chats.some((chat) => chat.status === 'working')
     ) {
-      return;
+      return undefined;
     }
     const presence = state.routinePresence;
+    return presence?.ready &&
+      presence.session === state.activeTransport &&
+      presence.identity === state.currentCharacterKey &&
+      Date.now() - presence.at <= 45000
+      ? presence
+      : undefined;
+  };
+
+  // The claimed routine is still the one the player saved, and nothing else runs.
+  const stillCurrent = Effect.fnUntraced(function* (
+    presence: Presence,
+    claimed: ClaimedRoutine,
+    chat: Chat,
+  ) {
     if (
-      !presence?.ready ||
       presence.session !== state.activeTransport ||
-      presence.identity !== state.currentCharacterKey ||
-      Date.now() - presence.at > 45000
+      state.chats.some((other) => other !== chat && other.status === 'working') ||
+      !state.routinePresence?.ready ||
+      !capabilitySettings.enabled('tool:manage_routine')
     ) {
+      return false;
+    }
+    return (yield* routines.list(presence.identity)).some(
+      (routine) =>
+        routine.id === claimed.routine.id &&
+        routine.enabled &&
+        routine.updatedAt === claimed.routine.updatedAt,
+    );
+  });
+
+  const dispatch = Effect.fn('RoutineScheduler.dispatch')(function* (presence: Presence) {
+    const claimed = yield* routines.claim(presence.identity);
+    if (!claimed) {
       return;
     }
-    dispatchingRoutine = true;
-    dispatch = (async () => {
-      const claimed = await runPromise(routineStore.claim(presence.identity));
-      if (!claimed) {
-        return;
-      }
-      if (isStopping()) {
-        await runPromise(routineStore.defer(claimed.run.id, claimed.event));
-        return;
-      }
-      const fingerprint = routineFingerprint(presence.context, state.questRevision);
-      const quietKey = JSON.stringify([
-        presence.identity,
-        claimed.routine.id,
-        claimed.routine.updatedAt,
-      ]);
-      if (gate.unchanged(quietKey, claimed.event.event, fingerprint)) {
-        await runPromise(routineStore.skip(claimed.run.id));
-        return;
-      }
-      const chat = createChat(claimed.run.id);
-      chat.routineId = claimed.routine.id;
-      chat.proactive = true;
-      chat.titleGenerated = true;
-      chat.title = claimed.routine.title + ' · ' + new Date(claimed.run.startedAt).toLocaleString();
-      if (
-        presence.session !== state.activeTransport ||
-        state.chats.some((c) => c !== chat && c.status === 'working') ||
-        !state.routinePresence?.ready ||
-        !capabilitySettings.enabled('tool:manage_routine') ||
-        !(await runPromise(routineStore.list(presence.identity))).some(
-          (r) =>
-            r.id === claimed.routine.id && r.enabled && r.updatedAt === claimed.routine.updatedAt,
-        )
-      ) {
-        state.chats = state.chats.filter((c) => c !== chat);
-        await runPromise(routineStore.defer(chat.id, claimed.event));
-        return;
-      }
-      await run(
-        chat,
-        'Run this user-requested routine as read-only advice. Verify current state; the event may have been delayed. Routine instruction: ' +
-          claimed.routine.instruction +
-          '\nTrigger data: ' +
-          JSON.stringify(claimed.event) +
-          '\nPrevious recommendations (historical, not current state): ' +
-          JSON.stringify(claimed.previous),
-        undefined,
-        presence.context,
-      );
-      const summary = chat.messages
-        .filter((m) => m.role === 'assistant' || m.role === 'system')
-        .map((m) => m.text)
-        .join('\n');
-      const status =
-        chat.status === 'interrupted'
-          ? 'interrupted'
-          : chat.status === 'error'
-            ? 'error'
-            : chat.status === 'cancelled'
-              ? 'cancelled'
-              : chat.tipSkipped
-                ? 'no_tip'
-                : 'done';
-      gate.finished(
-        quietKey,
-        status,
-        fingerprint,
-        status === 'error' && (deps.usageLimited ?? endedOnUsageLimit)(chat),
-      );
-      await runPromise(routineStore.finish(chat.id, status, summary));
-    })()
-      .catch((error: unknown) => {
-        runFork(
-          Effect.logError('Routine dispatch failed').pipe(
-            Effect.annotateLogs({ event: 'routine.dispatch_failed', error: errorMessage(error) }),
+    if (isStopping()) {
+      return yield* routines.defer(claimed.run.id, claimed.event);
+    }
+    const fingerprint = routineFingerprint(presence.context, state.questRevision);
+    const quietKey = JSON.stringify([
+      presence.identity,
+      claimed.routine.id,
+      claimed.routine.updatedAt,
+    ]);
+    if (gate.unchanged(quietKey, claimed.event.event, fingerprint)) {
+      return yield* routines.skip(claimed.run.id);
+    }
+    const chat = newChat(claimed.run.id, state.activeTransport);
+    state.chats.push(chat);
+    chat.routineId = claimed.routine.id;
+    chat.proactive = true;
+    chat.titleGenerated = true;
+    chat.title = claimed.routine.title + ' · ' + new Date(claimed.run.startedAt).toLocaleString();
+    if (!(yield* stillCurrent(presence, claimed, chat))) {
+      state.chats = state.chats.filter((other) => other !== chat);
+      return yield* routines.defer(chat.id, claimed.event);
+    }
+    yield* Effect.tryPromise({
+      try: () => deps.run(chat, prompt(claimed), undefined, presence.context),
+      catch: (error) => error,
+    });
+    const summary = chat.messages
+      .filter((message) => message.role === 'assistant' || message.role === 'system')
+      .map((message) => message.text)
+      .join('\n');
+    const status = runStatus(chat);
+    gate.finished(quietKey, status, fingerprint, status === 'error' && usageLimited(chat));
+    yield* routines.finish(chat.id, status, summary);
+  });
+
+  const tick = Effect.suspend(() => {
+    const presence = presentPlayer();
+    return presence
+      ? dispatch(presence).pipe(
+          Effect.catch((error) =>
+            Effect.logError('Routine dispatch failed').pipe(
+              Effect.annotateLogs({ event: 'routine.dispatch_failed', error: errorMessage(error) }),
+            ),
           ),
-        );
-      })
-      .finally(() => {
-        dispatchingRoutine = false;
-        changed();
-      });
-  }, 3000);
-  return async () => {
-    clearInterval(timer);
-    await dispatch;
-  };
+          // A routine that started finishes even when the scheduler stops.
+          Effect.uninterruptible,
+          Effect.ensuring(Effect.sync(changed)),
+        )
+      : Effect.void;
+  });
+
+  // Ticks keep a fixed rhythm; a routine that outlasts one is followed by the next tick at once.
+  yield* Effect.sleep(TICK).pipe(
+    Effect.andThen(tick.pipe(Effect.repeat(Schedule.fixed(TICK)))),
+    Effect.forkScoped,
+  );
 });

@@ -24,14 +24,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTransportConnection } from './game/transport-connection.ts';
 import type { TransportConnection } from './game/transport-connection.ts';
-import { makeChatStore } from './chat/chat-store.ts';
+import * as Chats from './chat/chat-store.ts';
 import { applicationDatabaseFile } from '@wisp/db/application-file';
 import * as Sql from '@wisp/db/sql-database';
 import { importProductData } from './migrations/product-json.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogging } from './logger.ts';
-import { makeMemoryStore } from './agent/memory-store.ts';
+import * as Memories from './agent/memory-store.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './integrations/capabilities.ts';
@@ -39,13 +39,13 @@ import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
-import { makePanelStore } from './panels/panel-store.ts';
+import * as Panels from './panels/panel-store.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
 import { startDesktopServer } from './api/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
-import { makeRoutineStore } from './routines/routine-store.ts';
+import * as Routines from './routines/routine-store.ts';
 import { ModelConnections } from './models/model-connections.ts';
 import { createModelCatalogRefresh } from './models/model-catalog.ts';
 import { resolveDefaultModel } from './chat/chat-model.ts';
@@ -60,7 +60,7 @@ import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine } from '@wisp/agent/engine';
-import { makeAgentHistory } from './agent/agent-history.ts';
+import * as AgentHistories from './agent/agent-history.ts';
 
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 
@@ -118,9 +118,31 @@ export const makeServer = Effect.fn('Server.make')(
     yield* startup(() => mkdir(runtime, { recursive: true }));
     const databaseFile = applicationDatabaseFile(runtime);
     // Opened first so its finalizer runs last: everything that saves closes before it.
-    const appDatabase = yield* Sql.make(databaseFile);
-    yield* importProductData(databaseFile, appDatabase.db);
-    const memoryStore = makeMemoryStore(appDatabase);
+    // Built first so it closes last: everything that saves closes before the database.
+    const storage = yield* Layer.build(
+      Layer.mergeAll(
+        Routines.layer,
+        Panels.layer,
+        Memories.layer,
+        AgentHistories.layer({ wispVersion: bridgeVersion }),
+        Chats.layer({
+          onError: (error) =>
+            runFork(
+              Effect.logError('Conversation save failed').pipe(
+                Effect.annotateLogs({ event: 'chat.save_failed', error: errorMessage(error) }),
+              ),
+            ),
+        }),
+      ).pipe(Layer.provideMerge(Sql.layer(databaseFile))),
+    );
+    const withStorage = Effect.provide(storage);
+    yield* importProductData().pipe(withStorage);
+    const { db: appDb } = Context.get(storage, Sql.SqlDatabase);
+    const memoryStore = Context.get(storage, Memories.MemoryStore);
+    const panelStore = Context.get(storage, Panels.PanelStore);
+    const routineStore = Context.get(storage, Routines.RoutineStore);
+    const chatStore = Context.get(storage, Chats.ChatStore);
+    const agentHistory = Context.get(storage, AgentHistories.AgentHistory);
     const memorySnapshot = Effect.fnUntraced(function* (identity: string | undefined) {
       const preferences = (yield* memoryStore.read('preferences', 'local-player')).map((entry) => ({
         ...entry,
@@ -180,8 +202,6 @@ export const makeServer = Effect.fn('Server.make')(
     yield* startup(() => webSearch.load());
     yield* releaseRuntimeResource(() => auth.cancel());
     const database = new TheWoWDB();
-    const panelStore = makePanelStore(appDatabase);
-    const routineStore = makeRoutineStore(appDatabase);
     yield* routineStore.recover();
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
     yield* startup(() => capabilitySettings.load());
@@ -198,20 +218,9 @@ export const makeServer = Effect.fn('Server.make')(
     mcpCapabilities.refreshCatalog();
     yield* mcpCapabilities.applySavedSettings();
     yield* startup(() => capabilitySettings.publish());
-    const chatStore = yield* makeChatStore(appDatabase, {
-      onError: (error) =>
-        runFork(
-          Effect.logError('Conversation save failed').pipe(
-            Effect.annotateLogs({ event: 'chat.save_failed', error: errorMessage(error) }),
-          ),
-        ),
-    });
     const state = createSessionState(yield* chatStore.load());
     yield* Effect.addFinalizer(() =>
-      Effect.suspend(() => chatStore.flush(state.chats)).pipe(
-        Effect.ensuring(chatStore.close()),
-        Effect.orDie,
-      ),
+      Effect.suspend(() => chatStore.flush(state.chats)).pipe(Effect.orDie),
     );
     const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
     // The default follows the providers the player connected, not one vendor's model.
@@ -259,7 +268,6 @@ export const makeServer = Effect.fn('Server.make')(
     );
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
-    const agentHistory = makeAgentHistory(appDatabase, { wispVersion: bridgeVersion });
     let engineReady = false;
     const engine = createAgentEngine({
       origin: () => agentOrigin,
@@ -333,21 +341,18 @@ export const makeServer = Effect.fn('Server.make')(
       state.chats.forEach(run.interrupt);
       await run.drain();
     });
-    const stopRoutineScheduler = yield* startRoutineScheduler({
+    yield* startRoutineScheduler({
       state,
-      routineStore,
       capabilitySettings,
       run,
       changed,
       isStopping: () => shutdownRequested,
       isReady: () => engineReady,
-    });
-    yield* releaseRuntimeResource(stopRoutineScheduler);
-    const adoptCharacter = createCharacterAdoption({
-      database: appDatabase,
+    }).pipe(withStorage);
+    const adoptCharacter = yield* createCharacterAdoption({
       chats: () => state.chats,
       changed,
-    });
+    }).pipe(withStorage);
     const receivePacket = yield* createPacketReceiver({
       telemetry,
       state,
@@ -356,9 +361,6 @@ export const makeServer = Effect.fn('Server.make')(
       integrationState,
       capabilitySettings,
       models: connections,
-      routineStore,
-      panelStore,
-      memoryStore,
       refreshModelCatalog,
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
@@ -368,7 +370,7 @@ export const makeServer = Effect.fn('Server.make')(
       cancel: run.cancel,
       runtime,
       changed,
-    });
+    }).pipe(withStorage);
     const receive = Effect.fnUntraced(function* (packet: Parameters<typeof receivePacket>[0]) {
       const previousSession = state.activeTransport;
       observeGameConnection();
@@ -398,9 +400,6 @@ export const makeServer = Effect.fn('Server.make')(
         webSearch,
         mcpManager,
         capabilitySettings,
-        routineStore,
-        panelStore,
-        memoryStore,
         requestGame: transport.request,
         database,
         simulator,
@@ -414,7 +413,7 @@ export const makeServer = Effect.fn('Server.make')(
           state.memoryView = view;
         },
         changed,
-      }),
+      }).pipe(withStorage),
     );
     yield* releaseRuntimeResource(() => closeServer(server));
     yield* releaseRuntimeResource(() => engine.close());
@@ -466,7 +465,7 @@ export const makeServer = Effect.fn('Server.make')(
       );
     }
     const desktopStatus = Effect.fn('Server.desktopStatus')(function* () {
-      const characters = yield* readCharacterNames(appDatabase.db);
+      const characters = yield* readCharacterNames(appDb);
       return {
         ready: engineReady,
         gameConnected: transport.gameConnected(),
@@ -499,8 +498,6 @@ export const makeServer = Effect.fn('Server.make')(
       webSearch,
       capabilitySettings,
       mcpManager,
-      panelStore,
-      routineStore,
       accountOperation: accounts.run,
       readSimulationCharacter,
       setCapability: mcpCapabilities.setCapability,
@@ -547,7 +544,7 @@ export const makeServer = Effect.fn('Server.make')(
         // Let the desktop response reach the caller before we close its listener.
         desktopStopTimer ??= setTimeout(requestStop, 200);
       },
-    });
+    }).pipe(withStorage);
     const desktopServer = yield* startup(() =>
       startDesktopServer(runtime, desktopApp, options.desktopPort),
     );

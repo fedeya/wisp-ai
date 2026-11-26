@@ -11,9 +11,9 @@ import type { Chat } from '../chat/events.ts';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
-import type { RoutineStore } from '../routines/routine-store.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from '../agent/memory-store.ts';
+import { RoutineStore } from '../routines/routine-store.ts';
+import { PanelStore } from '../panels/panel-store.ts';
+import { MemoryStore } from '../agent/memory-store.ts';
 import {
   characterIdentity,
   characterProfile,
@@ -35,9 +35,6 @@ interface ReceiverDependencies {
   integrationState: IntegrationState;
   capabilitySettings: CapabilitySettings;
   models: Pick<ModelCatalog, 'models'>;
-  routineStore: RoutineStore;
-  panelStore: PanelStore;
-  memoryStore: MemoryStore;
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, unknown>;
@@ -55,6 +52,9 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const routineStore = yield* RoutineStore;
+  const panelStore = yield* PanelStore;
+  const memoryStore = yield* MemoryStore;
   const {
     state,
     engine,
@@ -62,9 +62,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     integrationState,
     capabilitySettings,
     models,
-    routineStore,
-    panelStore,
-    memoryStore,
     refreshModelCatalog,
     setCapability,
     memorySnapshot,
@@ -517,48 +514,51 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       const identity = characterIdentity(packet.context),
         transportSession = state.activeTransport;
       state.memoryViewRequest = packet.requestId;
-      void (async () => {
-        if (packet.type !== 'memory_list') {
-          if (packet.slot !== 'preferences' && packet.slot !== 'character') {
-            throw new Error('Invalid memory scope');
-          }
-          const owner = packet.slot === 'preferences' ? 'local-player' : identity;
-          if (!owner || typeof packet.key !== 'string') {
-            throw new Error('A fresh character identity and memory key are required');
-          }
-          if (packet.type === 'memory_save' && typeof packet.text !== 'string') {
-            throw new Error('Memory text is required');
-          }
-          await runPromise(
-            memoryStore.update(
-              packet.slot,
-              owner,
-              packet.key,
-              packet.type === 'memory_save' ? packet.text : undefined,
-            ),
+      const current = () =>
+        state.activeTransport === transportSession && state.memoryViewRequest === packet.requestId;
+      const change = Effect.gen(function* () {
+        if (packet.type === 'memory_list') return;
+        if (packet.slot !== 'preferences' && packet.slot !== 'character') {
+          return yield* Effect.fail(Error('Invalid memory scope'));
+        }
+        const owner = packet.slot === 'preferences' ? 'local-player' : identity;
+        if (!owner || typeof packet.key !== 'string') {
+          return yield* Effect.fail(
+            Error('A fresh character identity and memory key are required'),
           );
         }
-        const snapshot = await runPromise(memorySnapshot(identity));
-        if (
-          state.activeTransport === transportSession &&
-          state.memoryViewRequest === packet.requestId
-        ) {
-          state.memoryView = { ...snapshot, requestId: packet.requestId };
+        if (packet.type === 'memory_save' && typeof packet.text !== 'string') {
+          return yield* Effect.fail(Error('Memory text is required'));
         }
-      })()
-        .catch((error) => {
-          if (
-            state.activeTransport === transportSession &&
-            state.memoryViewRequest === packet.requestId
-          ) {
-            state.memoryView = {
-              status: 'unavailable',
-              error: error.message,
-              requestId: packet.requestId,
-            };
-          }
-        })
-        .finally(changed);
+        yield* memoryStore.update(
+          packet.slot,
+          owner,
+          packet.key,
+          packet.type === 'memory_save' ? packet.text : undefined,
+        );
+      });
+      runFork(
+        change.pipe(
+          Effect.andThen(memorySnapshot(identity)),
+          Effect.tap((snapshot) =>
+            Effect.sync(() => {
+              if (current()) state.memoryView = { ...snapshot, requestId: packet.requestId };
+            }),
+          ),
+          Effect.catch((error) =>
+            Effect.sync(() => {
+              if (current()) {
+                state.memoryView = {
+                  status: 'unavailable',
+                  error: errorMessage(error),
+                  requestId: packet.requestId,
+                };
+              }
+            }),
+          ),
+          Effect.ensuring(Effect.sync(changed)),
+        ),
+      );
       changed();
       return;
     }

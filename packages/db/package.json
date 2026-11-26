@@ -12,6 +12,7 @@
     "./application-file": "./src/application-file.ts",
     "./migrate": "./src/migrate.ts",
     "./private-file": "./src/private-file.ts",
+    "./repository": "./src/repository.ts",
     "./schema": "./src/schema.ts",
     "./sql-database": "./src/sql-database.ts",
     "./sync-rows": "./src/sync-rows.ts"

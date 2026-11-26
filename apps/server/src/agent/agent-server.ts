@@ -18,9 +18,9 @@ import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
-import type { RoutineStore } from '../routines/routine-store.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from './memory-store.ts';
+import { RoutineStore } from '../routines/routine-store.ts';
+import { PanelStore } from '../panels/panel-store.ts';
+import { MemoryStore } from './memory-store.ts';
 import type { Connection, GameCall } from '@wisp/wow-bridge';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
@@ -48,9 +48,6 @@ interface AgentDependencies {
   webSearch: WowheadSearch;
   mcpManager: Pick<McpManager, 'call'>;
   capabilitySettings: CapabilitySettings;
-  routineStore: RoutineStore;
-  panelStore: PanelStore;
-  memoryStore: MemoryStore;
   requestGame: Connection['request'];
   database: TheWoWDB;
   simulator: Simulator;
@@ -114,15 +111,15 @@ const inspectionTools = {
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
+  const routineStore = yield* RoutineStore;
+  const panelStore = yield* PanelStore;
+  const memoryStore = yield* MemoryStore;
   const {
     token,
     connections,
     webSearch,
     mcpManager,
     capabilitySettings,
-    routineStore,
-    panelStore,
-    memoryStore,
     requestGame: sendGameRequest,
     database,
     simulator,
@@ -344,114 +341,120 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
   knowledge('/database');
   knowledge('/wowhead');
 
-  tool('/routines', async ({ raw, chat }) => {
-    const data = rpcRequests.routines.parse(raw);
-    if (!capabilitySettings.enabled('tool:manage_routine')) {
-      throw Error('Routines are disabled');
-    }
-    if (!chat.characterKey) {
-      throw Error('A fresh character identity is required');
-    }
-    const input = routineInput.parse(data.input);
-    const routines = await runPromise(
-      ['save', 'pause', 'resume', 'remove'].includes(input.operation)
-        ? routineStore.mutate(chat.characterKey, input, chat.id)
-        : routineStore.list(chat.characterKey),
-    );
-    changed();
-    return input.operation === 'catalog'
-      ? {
-          events: routineEvents,
-          interval: { minimumSeconds: 60, onlineOnly: true },
-          filters: ['eq', 'ne', 'gte', 'lte', 'contains', 'multiple_of'],
-          semantics:
-            'Triggers OR; filters AND; events coalesce during combat/busy/cooldown. No arbitrary code.',
-        }
-      : input.operation === 'get'
-        ? {
-            routine: routines.find((r) => r.id === input.id) || null,
-            runs: await runPromise(
-              routineStore.history({
-                characterKey: chat.characterKey,
-                routineId: input.id,
-                limit: 20,
-              }),
-            ),
-          }
-        : { routines };
-  });
+  /** A tool whose work is an Effect: it runs here, at the HTTP boundary. */
+  const effectTool = (route: string, handle: (call: ToolCall) => Effect.Effect<unknown, unknown>) =>
+    tool(route, (call) => runPromise(Effect.suspend(() => handle(call))));
 
-  tool('/panels', async ({ raw, chat }) => {
-    const data = rpcRequests.panels.parse(raw);
-    if (!capabilitySettings.enabled('tool:manage_panel')) {
-      throw Error('Persistent panels are disabled');
-    }
-    if (!chat.characterKey) {
-      throw Error('A fresh character identity is required');
-    }
-    const input = panelInput.parse(data.input);
-    const panels = await runPromise(
-      input.operation === 'save' || input.operation === 'remove'
-        ? panelStore.mutate(chat.characterKey, input)
-        : panelStore.list(chat.characterKey),
-    );
-    changed();
-    return input.operation === 'get'
-      ? { panel: panels.find((p) => p.id === input.id) || null }
-      : input.operation === 'list'
-        ? {
-            panels: panels.map((p) => ({
-              id: p.id,
-              title: p.title,
-              bindings: p.bindings,
-              updatedAt: p.updatedAt,
-            })),
-          }
-        : { panels };
-  });
+  const requireCharacter = (chat: Chat) =>
+    chat.characterKey
+      ? Effect.succeed(chat.characterKey)
+      : Effect.fail(Error('A fresh character identity is required'));
+
+  effectTool('/routines', ({ raw, chat }) =>
+    Effect.gen(function* () {
+      const data = rpcRequests.routines.parse(raw);
+      if (!capabilitySettings.enabled('tool:manage_routine')) {
+        return yield* Effect.fail(Error('Routines are disabled'));
+      }
+      const characterKey = yield* requireCharacter(chat);
+      const input = routineInput.parse(data.input);
+      switch (input.operation) {
+        case 'catalog':
+          return {
+            events: routineEvents,
+            interval: { minimumSeconds: 60, onlineOnly: true },
+            filters: ['eq', 'ne', 'gte', 'lte', 'contains', 'multiple_of'],
+            semantics:
+              'Triggers OR; filters AND; events coalesce during combat/busy/cooldown. No arbitrary code.',
+          };
+        case 'get': {
+          const routines = yield* routineStore.list(characterKey);
+          return {
+            routine: routines.find((routine) => routine.id === input.id) || null,
+            runs: yield* routineStore.history({ characterKey, routineId: input.id, limit: 20 }),
+          };
+        }
+        case 'list':
+          return { routines: yield* routineStore.list(characterKey) };
+        default: {
+          const routines = yield* routineStore.mutate(characterKey, input, chat.id);
+          changed();
+          return { routines };
+        }
+      }
+    }),
+  );
+
+  effectTool('/panels', ({ raw, chat }) =>
+    Effect.gen(function* () {
+      const data = rpcRequests.panels.parse(raw);
+      if (!capabilitySettings.enabled('tool:manage_panel')) {
+        return yield* Effect.fail(Error('Persistent panels are disabled'));
+      }
+      const characterKey = yield* requireCharacter(chat);
+      const input = panelInput.parse(data.input);
+      if (input.operation === 'save' || input.operation === 'remove') {
+        const panels = yield* panelStore.mutate(characterKey, input);
+        changed();
+        return { panels };
+      }
+      const panels = yield* panelStore.list(characterKey);
+      return input.operation === 'get'
+        ? { panel: panels.find((panel) => panel.id === input.id) || null }
+        : input.operation === 'list'
+          ? {
+              panels: panels.map((panel) => ({
+                id: panel.id,
+                title: panel.title,
+                bindings: panel.bindings,
+                updatedAt: panel.updatedAt,
+              })),
+            }
+          : { panels };
+    }),
+  );
 
   tool('/identity', async ({ chat }) => ({ characterKey: chat.characterKey || null }));
 
-  tool('/memory', async ({ raw, chat }) => {
-    const data = rpcRequests.memory.parse(raw);
-    if (data.slot !== 'preferences' && data.slot !== 'character') {
-      throw new Error('Invalid memory scope');
-    }
-    if (!capabilitySettings.enabled('memory:' + data.slot)) {
-      throw new Error('This memory capability is disabled in Settings');
-    }
-    const owner = data.slot === 'preferences' ? 'local-player' : chat.characterKey;
-    if (!owner) {
-      throw new Error('No fresh character identity for this memory');
-    }
-    let entries;
-    if (data.operation === 'list') {
-      entries = await runPromise(memoryStore.read(data.slot, owner));
-    } else if (data.operation === 'save' || data.operation === 'remove') {
+  effectTool('/memory', ({ raw, chat }) =>
+    Effect.gen(function* () {
+      const data = rpcRequests.memory.parse(raw);
+      if (data.slot !== 'preferences' && data.slot !== 'character') {
+        return yield* Effect.fail(Error('Invalid memory scope'));
+      }
+      if (!capabilitySettings.enabled('memory:' + data.slot)) {
+        return yield* Effect.fail(Error('This memory capability is disabled in Settings'));
+      }
+      const owner = data.slot === 'preferences' ? 'local-player' : chat.characterKey;
+      if (!owner) {
+        return yield* Effect.fail(Error('No fresh character identity for this memory'));
+      }
+      if (data.operation === 'list') {
+        return { entries: yield* memoryStore.read(data.slot, owner) };
+      }
+      if (data.operation !== 'save' && data.operation !== 'remove') {
+        return yield* Effect.fail(Error('Invalid memory operation'));
+      }
       if (
         typeof data.key !== 'string' ||
         (data.operation === 'save' && typeof data.text !== 'string')
       ) {
-        throw new Error('Invalid memory entry');
+        return yield* Effect.fail(Error('Invalid memory entry'));
       }
-      entries = await runPromise(
-        memoryStore.update(
-          data.slot,
-          owner,
-          data.key,
-          data.operation === 'save' ? data.text : undefined,
-        ),
+      const entries = yield* memoryStore.update(
+        data.slot,
+        owner,
+        data.key,
+        data.operation === 'save' ? data.text : undefined,
       );
-      const snapshot = await runPromise(memorySnapshot(chat.characterKey));
+      const snapshot = yield* memorySnapshot(chat.characterKey);
       if (chat.owner === currentTransport()) {
         setMemoryView(snapshot);
       }
       changed();
-    } else {
-      throw new Error('Invalid memory operation');
-    }
-    return { entries };
-  });
+      return { entries };
+    }),
+  );
 
   tool('/title', async ({ raw, chat }) => {
     const data = rpcRequests.title.parse(raw);

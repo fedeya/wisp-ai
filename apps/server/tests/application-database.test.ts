@@ -8,11 +8,13 @@ import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
 } from '@wisp/db/application-file';
-import { makeMemoryStore } from '../src/agent/memory-store.ts';
-import { makePanelStore } from '../src/panels/panel-store.ts';
-import { makeRoutineStore } from '../src/routines/routine-store.ts';
-import { databaseScope, chatStoreAt, promised } from './database-fixture.ts';
-import { makeChatStore } from '../src/chat/chat-store.ts';
+import { it } from '@effect/vitest';
+import { Effect, Exit, Layer, Scope } from 'effect';
+import { MemoryStore } from '../src/agent/memory-store.ts';
+import { PanelStore } from '../src/panels/panel-store.ts';
+import { RoutineStore } from '../src/routines/routine-store.ts';
+import { ChatStore } from '../src/chat/chat-store.ts';
+import { chatsAt, storageAt, testDirectory, TestDirectory } from './storage-fixture.ts';
 
 const chat = () => ({
   ...newChat('history', 'game'),
@@ -20,60 +22,63 @@ const chat = () => ({
   messages: [{ role: 'user' as const, text: 'Keep history 🧙' }],
 });
 
-test('JSON installations initialize the canonical application database and retain the source', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wisp-canonical-database-'));
-  const store = chatStoreAt(applicationDatabaseFile(root), () => {});
-  try {
-    const original = chat();
-    const bytes = JSON.stringify([original], null, 2);
-    await writeFile(path.join(root, 'chats.json'), bytes);
-    expect(await findApplicationDatabase(root)).toBeUndefined();
-    expect((await store.load())[0]).toMatchObject(original);
-    expect(await findApplicationDatabase(root)).toBe(path.join(root, 'wisp.sqlite'));
-    expect(await readFile(path.join(root, 'chats.json'), 'utf8')).toBe(bytes);
-  } finally {
-    await store.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+it.live(
+  'JSON installations initialize the canonical application database and retain the source',
+  () =>
+    Effect.gen(function* () {
+      const { root } = yield* TestDirectory;
+      const original = chat();
+      const bytes = JSON.stringify([original], null, 2);
+      yield* Effect.promise(() => writeFile(path.join(root, 'chats.json'), bytes));
+      expect(yield* Effect.promise(() => findApplicationDatabase(root))).toBeUndefined();
+      const store = yield* chatsAt(applicationDatabaseFile(root));
+      expect((yield* store.load())[0]).toMatchObject(original);
+      expect(yield* Effect.promise(() => findApplicationDatabase(root))).toBe(
+        path.join(root, 'wisp.sqlite'),
+      );
+      expect(yield* Effect.promise(() => readFile(path.join(root, 'chats.json'), 'utf8'))).toBe(
+        bytes,
+      );
+    }).pipe(Effect.scoped, Effect.provide(testDirectory)),
+);
 
 test(
   'installation snapshots include live WAL pages, preserve source sessions and never overwrite a destination',
   { timeout: 30_000 },
-  async () => {
-    const root = await mkdtemp(path.join(tmpdir(), 'wisp-database-snapshot-'));
-    const source = chatStoreAt(applicationDatabaseFile(path.join(root, 'source')), () => {});
-    const targetFile = applicationDatabaseFile(path.join(root, 'target'));
-    const target = chatStoreAt(targetFile, () => {});
-    try {
-      await source.load();
-      await source.flush([chat()]);
-      expect((await readFile(source.file + '-wal')).length).toBeGreaterThan(0);
-      await copyDatabaseSnapshot(source.file, targetFile);
-      // The destination's own instance identity does not resume the source engine.
-      const history = await target.load();
-      expect(history[0].messages).toEqual(chat().messages);
-      expect(history[0].agentSession).toBeUndefined();
-      await target.flush([]);
-      await target.close();
-      await expect(copyDatabaseSnapshot(source.file, targetFile)).rejects.toMatchObject({
-        code: 'EEXIST',
-      });
-      const reopened = chatStoreAt(targetFile, () => {});
-      try {
-        expect(await reopened.load()).toEqual([]);
-      } finally {
-        await reopened.close();
-      }
-      expect(
-        (await readdir(path.dirname(targetFile))).some((name) => name.startsWith('.wisp-import-')),
-      ).toBe(false);
-    } finally {
-      await target.close();
-      await source.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  },
+  () =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const { root } = yield* TestDirectory;
+        const source = yield* chatsAt(applicationDatabaseFile(path.join(root, 'source')));
+        const targetFile = applicationDatabaseFile(path.join(root, 'target'));
+        yield* source.load();
+        yield* source.flush([chat()]);
+        expect(
+          (yield* Effect.promise(async () => readFile(source.file + '-wal'))).length,
+        ).toBeGreaterThan(0);
+        yield* Effect.promise(async () => copyDatabaseSnapshot(source.file, targetFile));
+        // The destination's own instance identity does not resume the source engine.
+        const target = yield* chatsAt(targetFile);
+        const history = yield* target.load();
+        expect(history[0].messages).toEqual(chat().messages);
+        expect(history[0].agentSession).toBeUndefined();
+        yield* target.flush([]);
+        yield* target.close();
+        yield* Effect.promise(async () =>
+          expect(copyDatabaseSnapshot(source.file, targetFile)).rejects.toMatchObject({
+            code: 'EEXIST',
+          }),
+        );
+        const reopened = yield* chatsAt(targetFile);
+        expect(yield* reopened.load()).toEqual([]);
+        yield* reopened.close();
+        expect(
+          (yield* Effect.promise(async () => readdir(path.dirname(targetFile)))).some((name) =>
+            name.startsWith('.wisp-import-'),
+          ),
+        ).toBe(false);
+      }).pipe(Effect.scoped, Effect.provide(testDirectory)),
+    ),
 );
 
 test('a failed snapshot preserves its source and does not publish an empty database', async () => {
@@ -93,27 +98,29 @@ test('a failed snapshot preserves its source and does not publish an empty datab
   }
 });
 
-test('all stores share the runtime connection and only its scope closes it', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wisp-shared-connection-'));
-  const scope = databaseScope();
-  try {
-    const database = await scope.open(applicationDatabaseFile(root));
-    const chats = promised(await scope.run(makeChatStore(database, { onError: () => {} })));
-    const memory = promised(makeMemoryStore(database)),
-      panels = promised(makePanelStore(database)),
-      routines = promised(makeRoutineStore(database));
-    await chats.load();
-    await chats.flush([chat()]);
-    expect(await panels.all()).toEqual([]);
-    await routines.recover();
-    await memory.update('character', 'mage', 'goal', 'Preserve this');
-    await chats.close();
-    await memory.update('character', 'mage', 'another', 'Still open');
-    expect(await memory.read('character', 'mage')).toHaveLength(2);
-    await scope.close();
-    await expect(memory.read('character', 'mage')).rejects.toThrow();
-  } finally {
-    await scope.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+it.live('all stores share the runtime connection and only its scope closes it', () =>
+  Effect.gen(function* () {
+    const { root } = yield* TestDirectory;
+    const scope = yield* Scope.make();
+    const context = yield* Layer.build(storageAt(applicationDatabaseFile(root))).pipe(
+      Scope.provide(scope),
+    );
+    const read = Effect.flatMap(MemoryStore, (memory) => memory.read('character', 'mage')).pipe(
+      Effect.provide(context),
+    );
+    yield* Effect.gen(function* () {
+      const chats = yield* ChatStore;
+      const memory = yield* MemoryStore;
+      yield* chats.load();
+      yield* chats.flush([chat()]);
+      expect(yield* (yield* PanelStore).all()).toEqual([]);
+      yield* (yield* RoutineStore).recover();
+      yield* memory.update('character', 'mage', 'goal', 'Preserve this');
+      yield* memory.update('character', 'mage', 'another', 'Still open');
+    }).pipe(Effect.provide(context));
+    expect(yield* read).toHaveLength(2);
+    yield* Scope.close(scope, Exit.void);
+    // Once the connection closes, the stores cannot query it.
+    expect(Exit.isFailure(yield* Effect.exit(read))).toBe(true);
+  }).pipe(Effect.provide(testDirectory)),
+);

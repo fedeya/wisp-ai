@@ -1,5 +1,11 @@
 import { Effect } from 'effect';
-import type { HistoryStore, SessionStart, StoredRow, TokenUsage } from './session-history.ts';
+import type {
+  HistoryStoreError,
+  HistoryStore,
+  SessionStart,
+  StoredRow,
+  TokenUsage,
+} from './session-history.ts';
 import type { Entry } from './session-message.ts';
 
 interface Logged {
@@ -45,7 +51,11 @@ export class MemoryHistory implements HistoryStore {
     });
   }
 
-  append(session: string, entries: readonly Entry[], model: string): Effect.Effect<void, unknown> {
+  append(
+    session: string,
+    entries: readonly Entry[],
+    model: string,
+  ): Effect.Effect<void, HistoryStoreError> {
     return Effect.sync(() => {
       const log = this.logs.get(session) ?? [];
       for (const entry of entries) {

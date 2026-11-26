@@ -1,7 +1,8 @@
 import { and, eq } from 'drizzle-orm';
 import { Effect } from 'effect';
 import type { z } from 'zod';
-import type { memoryEntry } from '@wisp/agent/contract/agent-rpc';
+import { memoryEntry } from '@wisp/agent/contract/agent-rpc';
+import { decodeRecord } from '@wisp/db/repository';
 import type { SqlExecutor } from '@wisp/db/sql-database';
 import { memoryEntries, memoryScopes } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
@@ -20,12 +21,14 @@ export const readMemory = (db: SqlExecutor, slot: MemorySlot, owner: string) =>
     .orderBy(memoryEntries.sortIndex)
     .all()
     .pipe(
-      Effect.map((rows) =>
-        rows.map(
-          ({ slot: _slot, owner: _owner, sortIndex: _sortIndex, extras, ...row }): MemoryEntry => ({
-            ...JSON.parse(extras),
-            ...row,
-          }),
+      Effect.flatMap((rows) =>
+        Effect.forEach(
+          rows,
+          ({ slot: _slot, owner: _owner, sortIndex: _sortIndex, extras, ...row }) =>
+            decodeRecord<MemoryEntry>('memory', memoryEntry, () => ({
+              ...JSON.parse(extras),
+              ...row,
+            })),
         ),
       ),
     );

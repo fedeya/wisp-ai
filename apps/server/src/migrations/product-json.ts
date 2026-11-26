@@ -4,10 +4,9 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { savedRoutine, routineRun } from '@wisp/protocol/routines';
-import { panelContent } from '@wisp/agent/contract/panels';
 import { memoryEntry } from '@wisp/agent/contract/agent-rpc';
 import { Effect, Schema } from 'effect';
-import type { SqlExecutor } from '@wisp/db/sql-database';
+import { SqlDatabase, type SqlExecutor } from '@wisp/db/sql-database';
 import { writeMigrationBackup } from '@wisp/db/private-file';
 import {
   routines,
@@ -18,13 +17,9 @@ import {
   metadata,
 } from '@wisp/db/schema';
 import { saveMemory, type MemoryEntry, type MemorySlot } from '../agent/memory-record.ts';
-import { savePanels } from '../panels/panel-record.ts';
+import { savePanels, savedPanel } from '../panels/panel-record.ts';
 import { importRoutines } from '../routines/routine-record.ts';
 
-const savedPanel = panelContent.safeExtend({
-  characterKey: z.string().min(1),
-  updatedAt: z.number(),
-});
 const marker = 'product-json-import-v1';
 
 /** The JSON product files could not be read or do not match what the database expects. */
@@ -109,10 +104,8 @@ async function readProductFiles(root: string) {
 }
 
 /** Imports routines, panels and memory from their pre-SQLite JSON files once, keeping backups. */
-export const importProductData = Effect.fn('ProductJson.import')(function* (
-  file: string,
-  db: SqlExecutor,
-) {
+export const importProductData = Effect.fn('ProductJson.import')(function* () {
+  const { file, db } = yield* SqlDatabase;
   if (yield* imported(db)) {
     return;
   }

@@ -1,14 +1,13 @@
 import { test, expect, vi } from 'vitest';
 import { Effect } from 'effect';
-import { captureLogs, runBridgeEffect } from './capture-logs.ts';
+import { captureLogs } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { makeRoutineStore } from '../src/routines/routine-store.ts';
-import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
-import { databaseScope, promised } from './database-fixture.ts';
+import { openStorage } from './storage-fixture.ts';
+import { routineStoreOf, startScheduler } from './scheduler-fixture.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 
 function signal() {
@@ -21,15 +20,14 @@ function signal() {
 
 test('pausing while claim awaits dispatch blocks a run even with the same updatedAt', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
-  const scope = databaseScope();
-  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   const releaseClaim = signal();
   let stop: (() => Promise<void>) | undefined;
+  const storage = await openStorage(path.join(root, 'wisp.sqlite'));
   try {
     const start = 1000000;
     vi.setSystemTime(start);
-    const routines = makeRoutineStore(await scope.open(path.join(root, 'wisp.sqlite')));
-    const store = promised(routines);
+    const { routines, store } = routineStoreOf(storage);
     await store.mutate('mage', {
       operation: 'save',
       routine: routineDefinition.parse({
@@ -73,17 +71,14 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     // Arm the interval one tick before the mutation timestamp so save, claim,
     // and pause all happen in the same millisecond without any real-time race.
     vi.setSystemTime(start - 3000);
-    stop = runBridgeEffect(
-      startRoutineScheduler({
-        state,
-        routineStore: routines,
-        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-        isStopping: () => false,
-        isReady: () => true,
-        changed: () => settled.resolve(),
-        run,
-      }),
-    );
+    stop = startScheduler(storage, {
+      state,
+      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+      isStopping: () => false,
+      isReady: () => true,
+      changed: () => settled.resolve(),
+      run,
+    });
     await vi.advanceTimersByTimeAsync(3000);
     await claimed.promise;
     expect(await store.history()).toHaveLength(1);
@@ -119,23 +114,22 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     releaseClaim.resolve();
     await stop?.();
     vi.useRealTimers();
-    await scope.close();
+    await storage.close();
     await rm(root, { recursive: true, force: true });
   }
 });
 
 test('a 65-second automatic turn yields to the next routine without overlapping turns', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-routine-scheduler-'));
-  const scope = databaseScope();
-  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
   const releaseA = signal();
   const releaseB = signal();
   let stop: (() => Promise<void>) | undefined;
+  const storage = await openStorage(path.join(root, 'wisp.sqlite'));
   try {
     const start = 1000000;
     vi.setSystemTime(start);
-    const routines = makeRoutineStore(await scope.open(path.join(root, 'wisp.sqlite')));
-    const store = promised(routines);
+    const { store } = routineStoreOf(storage);
     for (const id of ['a', 'b']) {
       await store.mutate('mage', {
         operation: 'save',
@@ -166,31 +160,28 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     let active = 0;
     let maxActive = 0;
     const logs = captureLogs();
-    stop = runBridgeEffect(
-      startRoutineScheduler({
-        state,
-        routineStore: routines,
-        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-        isStopping: () => false,
-        isReady: () => true,
-        changed: () => settledA.resolve(),
-        run: async (chat) => {
-          selected.push(chat.routineId!);
-          active++;
-          maxActive = Math.max(maxActive, active);
-          chat.status = 'working';
-          if (selected.length === 1) {
-            startedA.resolve();
-            await releaseA.promise;
-          } else {
-            startedB.resolve();
-            await releaseB.promise;
-          }
-          chat.status = 'done';
-          active--;
-        },
-      }),
-    );
+    stop = startScheduler(storage, {
+      state,
+      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+      isStopping: () => false,
+      isReady: () => true,
+      changed: () => settledA.resolve(),
+      run: async (chat) => {
+        selected.push(chat.routineId!);
+        active++;
+        maxActive = Math.max(maxActive, active);
+        chat.status = 'working';
+        if (selected.length === 1) {
+          startedA.resolve();
+          await releaseA.promise;
+        } else {
+          startedB.resolve();
+          await releaseB.promise;
+        }
+        chat.status = 'done';
+        active--;
+      },
+    });
     await vi.advanceTimersByTimeAsync(3000);
     await startedA.promise;
     expect(selected).toEqual(['a']);
@@ -205,7 +196,8 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     await settledA.promise;
     expect((await store.history())[0].finishedAt).toBe(start + 125000);
 
-    await vi.advanceTimersByTimeAsync(1000);
+    // The next tick, at most one interval later, starts B.
+    await vi.advanceTimersByTimeAsync(3000);
     await startedB.promise;
     expect(selected).toEqual(['a', 'b']);
     expect(active).toBe(1);
@@ -220,7 +212,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     releaseB.resolve();
     await stop?.();
     vi.useRealTimers();
-    await scope.close();
+    await storage.close();
     await rm(root, { recursive: true, force: true });
   }
 });

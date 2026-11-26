@@ -21,6 +21,11 @@ export default defineConfig({
   rules: {
     curly: ['error', 'multi-line'],
     'no-var': 'error',
+    // @effect/vitest runs Effect tests through these, like `test`.
+    'vitest/no-standalone-expect': [
+      'error',
+      { additionalTestBlockFunctions: ['it.effect', 'it.live', 'it.effect.each', 'it.live.each'] },
+    ],
   },
   overrides: [
     {

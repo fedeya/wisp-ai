@@ -40,15 +40,29 @@ export interface StoredRow {
  * nothing is replaced, and compaction deletes nothing. The store keeps entries
  * as JSON and reads only what it needs to find the latest compaction.
  */
+/** The store could not read or write a session's log. */
+export class HistoryStoreError extends Schema.TaggedError<HistoryStoreError>()(
+  'HistoryStoreError',
+  { cause: Schema.Defect() },
+) {
+  override get message() {
+    return this.cause instanceof Error ? this.cause.message : String(this.cause);
+  }
+}
+
 export interface HistoryStore {
   /** Called at the start of every turn; the first one starts the session. */
-  begin(session: string, start: SessionStart): Effect.Effect<void, unknown>;
+  begin(session: string, start: SessionStart): Effect.Effect<void, HistoryStoreError>;
   /** The latest compaction's summary and the message rows from its `keptFrom` on. */
-  load(session: string): Effect.Effect<{ summary?: string; rows: StoredRow[] }, unknown>;
+  load(session: string): Effect.Effect<{ summary?: string; rows: StoredRow[] }, HistoryStoreError>;
   /** Logs entries after the last one. */
-  append(session: string, entries: readonly Entry[], model: string): Effect.Effect<void, unknown>;
-  addUsage(session: string, usage: TokenUsage): Effect.Effect<void, unknown>;
-  delete(session: string): Effect.Effect<void, unknown>;
+  append(
+    session: string,
+    entries: readonly Entry[],
+    model: string,
+  ): Effect.Effect<void, HistoryStoreError>;
+  addUsage(session: string, usage: TokenUsage): Effect.Effect<void, HistoryStoreError>;
+  delete(session: string): Effect.Effect<void, HistoryStoreError>;
 }
 
 /** Reading or writing a session's log failed. */
@@ -103,7 +117,10 @@ export class SessionHistory extends Context.Service<
 const decodeMessage = Schema.decodeUnknownEffect(Message);
 
 /** A store call, failing with a HistoryError for its operation. */
-const call = <A>(operation: HistoryError['operation'], run: () => Effect.Effect<A, unknown>) =>
+const call = <A>(
+  operation: HistoryError['operation'],
+  run: () => Effect.Effect<A, HistoryStoreError>,
+) =>
   Effect.suspend(run).pipe(
     Effect.mapError((cause) => new HistoryError({ operation, cause })),
     Effect.withSpan('SessionHistory.' + operation),

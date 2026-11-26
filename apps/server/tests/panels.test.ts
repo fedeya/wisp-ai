@@ -1,10 +1,9 @@
 import { test } from 'vitest';
+import { it } from '@effect/vitest';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { databaseScope, promised } from './database-fixture.ts';
-import { makePanelStore } from '../src/panels/panel-store.ts';
+import { Effect } from 'effect';
+import { PanelStore } from '../src/panels/panel-store.ts';
+import { reopen, testStorage } from './storage-fixture.ts';
 import { panelContent } from '@wisp/agent/contract/panels';
 const example = {
   id: 'materials',
@@ -16,34 +15,39 @@ const example = {
   bindings: [{ nodeId: 'count', source: 'item_count', itemId: 2589, target: 10 }],
   references: {},
 };
-test('persistent panels isolate characters, survive restart and update by ID without duplication', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wow-panels-'));
-  const scope = databaseScope();
-  try {
-    const file = path.join(root, 'wisp.sqlite'),
-      store = promised(makePanelStore(await scope.open(file)));
-    await store.mutate('mage', { operation: 'save', panel: panelContent.parse(example) });
-    await store.mutate('warrior', {
-      operation: 'save',
-      panel: panelContent.parse({ ...example, title: 'Other character' }),
-    });
-    await store.mutate('mage', {
-      operation: 'save',
-      panel: panelContent.parse({ ...example, title: 'Updated materials' }),
-    });
-    const next = promised(makePanelStore(await scope.open(file)));
-    assert.equal((await next.list('mage')).length, 1);
-    assert.equal((await next.list('mage'))[0].title, 'Updated materials');
-    assert.equal((await next.list('warrior'))[0].title, 'Other character');
-    await next.mutate('mage', { operation: 'remove', id: 'materials' });
-    assert.equal((await next.list('warrior')).length, 1);
-    const reopened = promised(makePanelStore(await scope.open(file)));
-    assert.equal((await reopened.all()).length, 1);
-  } finally {
-    await scope.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+it.live(
+  'persistent panels isolate characters, survive restart and update by ID without duplication',
+  () =>
+    Effect.gen(function* () {
+      const store = yield* PanelStore;
+      yield* store.mutate('mage', { operation: 'save', panel: panelContent.parse(example) });
+      yield* store.mutate('warrior', {
+        operation: 'save',
+        panel: panelContent.parse({ ...example, title: 'Other character' }),
+      });
+      yield* store.mutate('mage', {
+        operation: 'save',
+        panel: panelContent.parse({ ...example, title: 'Updated materials' }),
+      });
+      yield* reopen(
+        Effect.gen(function* () {
+          const next = yield* PanelStore;
+          const mage = yield* next.list('mage');
+          assert.equal(mage.length, 1);
+          assert.equal(mage[0].title, 'Updated materials');
+          assert.equal((yield* next.list('warrior'))[0].title, 'Other character');
+          yield* next.mutate('mage', { operation: 'remove', id: 'materials' });
+          assert.equal((yield* next.list('warrior')).length, 1);
+        }),
+      );
+      const reopened = yield* reopen(
+        Effect.gen(function* () {
+          return yield* (yield* PanelStore).all();
+        }),
+      );
+      assert.equal(reopened.length, 1);
+    }).pipe(Effect.provide(testStorage())),
+);
 test('panel schema validates parents, bindings, IDs and excludes stale settings actions', () => {
   assert.throws(() =>
     panelContent.parse({

@@ -1,20 +1,20 @@
-import { test, expect } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
-import path from 'node:path';
-import { tmpdir } from 'node:os';
+import { expect } from 'vitest';
+import { it } from '@effect/vitest';
 import { DatabaseSync } from 'node:sqlite';
-import { makeRoutineStore } from '../src/routines/routine-store.ts';
+import { Effect } from 'effect';
+import { RoutineStore } from '../src/routines/routine-store.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
-import { databaseScope, promised } from './database-fixture.ts';
+import { testStorage, TestDirectory } from './storage-fixture.ts';
 
-test('routine polling and mutations stay bounded with a large silent-run history', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wisp-large-routine-history-'));
-  const scope = databaseScope();
-  const file = path.join(root, 'wisp.sqlite');
-  const store = promised(makeRoutineStore(await scope.open(file)));
-  const client = new DatabaseSync(file);
-  try {
-    await store.recover();
+it.live('routine polling and mutations stay bounded with a large silent-run history', () =>
+  Effect.gen(function* () {
+    const store = yield* RoutineStore;
+    const { file } = yield* TestDirectory;
+    // A second connection writes the old history in bulk and reads query plans.
+    const client = yield* Effect.acquireRelease(
+      Effect.sync(() => new DatabaseSync(file)),
+      (client) => Effect.sync(() => client.close()),
+    );
     const definition = routineDefinition.parse({
       id: 'review',
       title: 'Review',
@@ -22,7 +22,7 @@ test('routine polling and mutations stay bounded with a large silent-run history
       triggers: [{ kind: 'interval', seconds: 60 }],
       cooldownSeconds: 60,
     });
-    await store.mutate('mage', { operation: 'save', routine: definition }, undefined, 100000);
+    yield* store.mutate('mage', { operation: 'save', routine: definition }, undefined, 100000);
     client.exec('BEGIN IMMEDIATE');
     const insert = client.prepare(
       'INSERT INTO routine_runs(id,character_key,routine_id,sort_index,title,started_at,finished_at,event,status,summary,extras) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -43,18 +43,18 @@ test('routine polling and mutations stay bounded with a large silent-run history
       );
     }
     client.exec('COMMIT');
-    expect(await store.claim('mage', 100001)).toBeNull();
-    const claimed = (await store.claim('mage', 200000))!;
+    expect(yield* store.claim('mage', 100001)).toBeNull();
+    const claimed = (yield* store.claim('mage', 200000))!;
     expect(claimed.previous).toEqual(['Summary 5', 'Summary 100', 'Summary 1000']);
-    await store.finish(claimed.run.id, 'done', 'New summary', 200001);
-    const history = await store.history({
+    yield* store.finish(claimed.run.id, 'done', 'New summary', 200001);
+    const history = yield* store.history({
       characterKey: 'mage',
       routineId: 'review',
       includeSilent: false,
       limit: 2,
     });
     expect(history.map((run) => run.summary)).toEqual(['Summary 1000', 'New summary']);
-    expect((await store.getRun('old-3'))!.status).toBe('no_tip');
+    expect((yield* store.getRun('old-3'))!.status).toBe('no_tip');
     // Neither ordering a new run nor looking up previous recommendations sorts the full history.
     const plans = [
       'EXPLAIN QUERY PLAN SELECT max(sort_index) FROM routine_runs',
@@ -71,9 +71,5 @@ test('routine polling and mutations stay bounded with a large silent-run history
     expect(client.prepare("SELECT extras FROM routine_runs WHERE id='old-3'").get()!.extras).toBe(
       '{"keep":true}',
     );
-  } finally {
-    client.close();
-    await scope.close();
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  }).pipe(Effect.scoped, Effect.provide(testStorage())),
+);

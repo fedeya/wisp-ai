@@ -1,9 +1,18 @@
 import { and, eq } from 'drizzle-orm';
 import { Effect } from 'effect';
-import type { Panel } from '@wisp/agent/contract/panels';
+import { z } from 'zod';
+import { panelContent, type Panel } from '@wisp/agent/contract/panels';
+import { decodeRecord } from '@wisp/db/repository';
 import type { SqlExecutor } from '@wisp/db/sql-database';
 import { panels } from '@wisp/db/schema';
 import { syncRows } from '@wisp/db/sync-rows';
+
+/** A panel as it is saved: its content plus who owns it and when it changed. */
+export const savedPanel = panelContent.safeExtend({
+  characterKey: z.string().min(1),
+  updatedAt: z.number(),
+  formerKey: z.string().optional(),
+});
 
 export const readPanels = (db: SqlExecutor) =>
   db
@@ -12,11 +21,10 @@ export const readPanels = (db: SqlExecutor) =>
     .orderBy(panels.sortIndex)
     .all()
     .pipe(
-      Effect.map((rows) =>
-        rows.map(({ sortIndex: _sortIndex, content, ...row }): Panel => ({
-          ...JSON.parse(content),
-          ...row,
-        })),
+      Effect.flatMap((rows) =>
+        Effect.forEach(rows, ({ sortIndex: _sortIndex, content, ...row }) =>
+          decodeRecord<Panel>('panel', savedPanel, () => ({ ...JSON.parse(content), ...row })),
+        ),
       ),
     );
 

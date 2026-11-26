@@ -1,5 +1,8 @@
 import { test, expect, vi } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, Layer } from 'effect';
+import { panelContent } from '@wisp/agent/contract/panels';
+import { PanelStore } from '../src/panels/panel-store.ts';
+import { unusedStores } from './storage-fixture.ts';
 import { createDesktopApp } from '../src/api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 const authState = { status: 'signed_out', revision: 1, profiles: [] };
@@ -31,10 +34,6 @@ function setup() {
       models: vi.fn(async () => [{ slug: 'luna', displayName: 'Luna', efforts: [] }]),
       remove: vi.fn(async () => {}),
     },
-    panelStore: {
-      list: vi.fn(() => Effect.succeed([{ id: 'materials' }])),
-      mutate: vi.fn(() => Effect.succeed([])),
-    },
     accountOperation: vi.fn(async <T>(operation: () => Promise<T>) => {
       queue.push('account');
       return operation();
@@ -50,14 +49,36 @@ function setup() {
     setFeature: vi.fn(async () => {}),
     changed: vi.fn(),
   };
-  const app = Effect.runSync(createDesktopApp(deps as never));
+  const panelStore = {
+    all: vi.fn(() => Effect.succeed([])),
+    list: vi.fn(() =>
+      Effect.succeed(
+        [
+          panelContent.parse({
+            id: 'materials',
+            title: 'Materials',
+            ui: [{ id: 'card', kind: 'card', title: 'Materials' }],
+            references: {},
+            bindings: [],
+          }),
+        ].map((panel) => ({ ...panel, characterKey: 'mage', updatedAt: 0 })),
+      ),
+    ),
+    mutate: vi.fn(() => Effect.succeed([])),
+  };
+  const app = Effect.runSync(
+    createDesktopApp(deps as never).pipe(
+      Effect.provide(Layer.succeed(PanelStore, PanelStore.of(panelStore))),
+      Effect.provide(unusedStores),
+    ),
+  );
   const post = (route: string, body: unknown) =>
     app.request(route, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
     });
-  return { app, deps, post, queue };
+  return { app, deps: { ...deps, panelStore }, post, queue };
 }
 test('status is served uncached', async () => {
   const { app } = setup();

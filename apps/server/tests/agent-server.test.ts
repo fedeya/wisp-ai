@@ -4,6 +4,7 @@ import type { GameCall } from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { runBridgeEffect } from './capture-logs.ts';
+import { unusedStores } from './storage-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
@@ -14,7 +15,7 @@ async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
         currentTransport: () => 'addon',
         capabilitySettings: { enabled: () => true },
         ...deps,
-      } as unknown as Parameters<typeof createAgentHandler>[0]),
+      } as unknown as Parameters<typeof createAgentHandler>[0]).pipe(Effect.provide(unusedStores)),
     ),
   );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));

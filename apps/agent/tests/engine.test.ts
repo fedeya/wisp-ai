@@ -16,6 +16,7 @@ import {
   type TurnInput,
 } from '../src/engine.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
+import { HistoryStoreError } from '../src/session/session-history.ts';
 import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));
@@ -154,7 +155,9 @@ async function fixture(
     override append(session: string, entries: readonly Entry[], model: string) {
       const append = super.append(session, entries, model);
       return Effect.gen(function* () {
-        if (options.appendFails?.(++appends)) return yield* Effect.fail(Error('The disk is full.'));
+        if (options.appendFails?.(++appends)) {
+          return yield* new HistoryStoreError({ cause: Error('The disk is full.') });
+        }
         yield* Effect.promise(async () => options.beforeAppend?.(entries));
         yield* append;
       });
