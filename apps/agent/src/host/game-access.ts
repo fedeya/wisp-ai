@@ -1,18 +1,16 @@
 import { Context, Effect, Schema } from 'effect';
 import type { z } from 'zod';
 import type { actionSchema } from '../contract/game-actions.ts';
-import type {
-  characterSections,
-  inspectionSchema,
-  itemSourcesInput,
-} from '../contract/game-inspection.ts';
+import type { characterSections, itemSourcesInput } from '../contract/game-inspection.ts';
+import type { GameInspection, InspectionResult } from '../contract/game-inspection-results.ts';
+export { decodeInspectionResult } from '../contract/game-inspection-results.ts';
+export type { GameInspection, InspectionResult } from '../contract/game-inspection-results.ts';
 import type { ItemSourcesResult } from '../contract/item-sources-result.ts';
 export type { ItemSourcesResult } from '../contract/item-sources-result.ts';
 export { itemSourcesResult } from '../contract/item-sources-result.ts';
 
 export const gameReading = Schema.Record(Schema.String, Schema.Unknown);
 export type GameReading = typeof gameReading.Type;
-export type GameInspection = z.input<typeof inspectionSchema>;
 export type GameAction = z.input<typeof actionSchema>;
 export type CharacterSections = z.infer<typeof characterSections>;
 export type ItemSourcesInput = z.input<typeof itemSourcesInput>;
@@ -25,7 +23,10 @@ export class GameAccess extends Context.Service<
       sections: CharacterSections,
       refresh?: boolean,
     ) => Effect.Effect<GameReading, Error>;
-    inspectGame: (session: string, inspection: GameInspection) => Effect.Effect<GameReading, Error>;
+    inspectGame: <I extends GameInspection>(
+      session: string,
+      inspection: I,
+    ) => Effect.Effect<InspectionResult<I['kind']>, Error>;
     itemSources: (
       session: string,
       input: ItemSourcesInput,

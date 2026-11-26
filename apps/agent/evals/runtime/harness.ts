@@ -1,6 +1,10 @@
 import { isDeepStrictEqual } from 'node:util';
 import { Effect } from 'effect';
-import { unavailableGameAccess } from '../../src/host/game-access.ts';
+import {
+  decodeInspectionResult,
+  unavailableGameAccess,
+  type GameInspection,
+} from '../../src/host/game-access.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -72,7 +76,8 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
             realm: 'Vorn',
             note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
           })),
-        inspectGame: (_session, inspection) => {
+        inspectGame: <I extends GameInspection>(_session: string, input: I) => {
+          const inspection: GameInspection = input;
           if (inspection.kind === 'gear_candidates') {
             return Effect.sync(() => {
               const found = inspection.args.itemIds.map((id) => lootItems[id]).filter(Boolean);
@@ -88,7 +93,7 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
                     .map((entry) => entry.reading),
                 },
               };
-            });
+            }).pipe(Effect.flatMap(decodeInspectionResult<I['kind']>(input.kind)));
           }
           return Effect.fail(new Error('Not available in evals: stub this inspection tool.'));
         },

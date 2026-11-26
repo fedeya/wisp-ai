@@ -6,6 +6,7 @@ import {
 import { Effect, Schema } from 'effect';
 import {
   GameAccess,
+  decodeInspectionResult,
   gameReading,
   itemSourcesResult,
   type GameInspection,
@@ -153,10 +154,14 @@ export function make(deps: Dependencies) {
         catch: asError,
       }).pipe(Effect.tap(Schema.decodeUnknownEffect(itemSourcesResult)));
     }),
-    inspectGame: Effect.fn('GameAccess.inspectGame')(function* (session, input) {
+    inspectGame: Effect.fn('GameAccess.inspectGame')(function* <I extends GameInspection>(
+      session: string,
+      input: I,
+    ) {
       const parsed = inspectionSchema.safeParse(input);
       if (!parsed.success) return yield* Effect.fail(parsed.error);
       const inspection = parsed.data;
+      const decode = decodeInspectionResult<I['kind']>(input.kind);
       const { request } = yield* authorize(session, inspectionTools[inspection.kind]);
       const inspect = (inspection: unknown) => request({ kind: 'inspect', inspection });
       if (
@@ -164,7 +169,7 @@ export function make(deps: Dependencies) {
         inspection.kind !== 'search_weapons' &&
         !retriesItemLoading(inspection)
       ) {
-        return yield* inspect(inspection).pipe(Effect.flatMap(parseReading));
+        return yield* inspect(inspection).pipe(Effect.flatMap(decode));
       }
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
       return yield* Effect.tryPromise({
@@ -184,13 +189,20 @@ export function make(deps: Dependencies) {
                   'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
                 );
               }
-              return searchGear(inspection, readItems, readEverloot);
+              return searchGear(
+                inspection,
+                async (input) => {
+                  const read = await readItems(input);
+                  return run(decodeInspectionResult('gear_candidates')(read), { signal });
+                },
+                readEverloot,
+              );
             default:
               return readItems(inspection);
           }
         },
         catch: asError,
-      }).pipe(Effect.flatMap(parseReading));
+      }).pipe(Effect.flatMap(decode));
     }),
     runGameAction: Effect.fn('GameAccess.runGameAction')(function* (session, input) {
       const action = yield* Effect.try({ try: () => actionSchema.parse(input), catch: asError });

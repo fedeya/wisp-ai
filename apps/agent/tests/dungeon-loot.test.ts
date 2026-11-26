@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Effect } from 'effect';
 import { dungeonLootInput } from '../src/contract/game-inspection.ts';
-import { unavailableGameAccess, type GameInspection } from '../src/host/game-access.ts';
+import {
+  decodeInspectionResult,
+  unavailableGameAccess,
+  type GameInspection,
+} from '../src/host/game-access.ts';
 import { dungeonLoot } from '../src/wisp/dungeon-loot.ts';
 import generated from '../src/wisp/dungeon-loot.json' with { type: 'json' };
 import tool from '../src/wisp/tools/wow__dungeon_loot.ts';
@@ -24,7 +28,10 @@ it('runs the loot tool against the catalog, asking GameAccess only for raw items
       abortSignal: new AbortController().signal,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame,
+        inspectGame: <I extends GameInspection>(session: string, inspection: I) =>
+          inspectGame(session, inspection).pipe(
+            Effect.flatMap(decodeInspectionResult<I['kind']>(inspection.kind)),
+          ),
       },
       runEffect: Effect.runPromise,
     },
@@ -145,7 +152,10 @@ describe('dungeon loot', () => {
       ],
     };
     const loot = { ...data, data: { instances: [zulGurub] } };
-    const unread = async () => ({ status: 'available', data: {} });
+    const unread: Parameters<typeof dungeonLoot>[1] = async () => ({
+      status: 'available',
+      data: { items: [] },
+    });
     const jeklik = await dungeonLoot({ instanceMapId: 309, boss: 'jeklik' }, unread, loot);
     expect(jeklik.instances![0]!.bosses.map((entry) => [entry.name, entry.source])).toEqual([
       ['High Priestess Jeklik', 'boss'],
@@ -194,7 +204,7 @@ describe('dungeon loot', () => {
         ],
         other: [{ id: 5, name: 'Recipe' }],
       },
-    };
+    } satisfies Awaited<ReturnType<Parameters<typeof dungeonLoot>[1]>>;
     const loot = {
       ...data,
       data: {
@@ -308,7 +318,7 @@ describe('dungeon loot', () => {
     };
     const result = await dungeonLoot(
       { dungeon: "Onyxia's Lair", boss: 'onyxia' },
-      async () => ({ status: 'available', data: {} }),
+      async () => ({ status: 'available', data: { items: [] } }),
       loot,
     );
     expect(result.instances!.map((instance) => instance.name)).toEqual(['Onyxia', 'Onyxias Lair']);
@@ -321,14 +331,14 @@ describe('dungeon loot', () => {
       { dungeon: 'alcaz' },
       async () => {
         read = true;
-        return {};
+        throw new Error('Unexpected game read');
       },
       data,
     );
     expect(read).toBe(false);
     const temple = await dungeonLoot(
       { dungeon: "Temple of Atal'Hakkar" },
-      async () => ({ status: 'available', data: {} }),
+      async () => ({ status: 'available', data: { items: [] } }),
       {
         ...data,
         data: {
@@ -340,9 +350,17 @@ describe('dungeon loot', () => {
     );
     expect(temple.instances?.map((instance) => instance.name)).toEqual(['Sunken Temple']);
     expect(result.instances![0]!.bosses[0]).toMatchObject({ name: 'Zarla Ober', noDropsYet: true });
-    expect((await dungeonLoot({ dungeon: 'nowhere' }, async () => ({}), data)).status).toBe(
-      'unavailable',
-    );
+    expect(
+      (
+        await dungeonLoot(
+          { dungeon: 'nowhere' },
+          async () => {
+            throw new Error('Unexpected game read');
+          },
+          data,
+        )
+      ).status,
+    ).toBe('unavailable');
     expect(
       await dungeonLoot(
         { instanceMapId: 389 },

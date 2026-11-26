@@ -1,6 +1,10 @@
 import { test, expect } from 'vitest';
 import { Effect } from 'effect';
-import { unavailableGameAccess } from '@wisp/agent/game-access';
+import {
+  decodeInspectionResult,
+  unavailableGameAccess,
+  type GameInspection,
+} from '@wisp/agent/game-access';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -199,7 +203,7 @@ test(
       history,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: (agentSession, inspection) =>
+        inspectGame: <I extends GameInspection>(agentSession: string, inspection: I) =>
           Effect.sync(() => {
             toolCalls.push({ agentSession, inspection });
             return inspection.kind === 'questie_quest'
@@ -212,8 +216,8 @@ test(
                     reference: { kind: 'quest', id: 166 },
                   },
                 }
-              : { status: 'completed', data: { settings: [], verified: true } };
-          }),
+              : { status: 'available', data: { applications: [], options: [], verified: true } };
+          }).pipe(Effect.flatMap(decodeInspectionResult<I['kind']>(inspection.kind))),
       },
     });
     const session = engine.newSessionId();
@@ -322,7 +326,7 @@ test(
         expect.objectContaining({ inspection: expect.objectContaining({ kind: 'settings' }) }),
       ]);
       expect(JSON.parse(String(output(4, 'tool-call-4')))).toMatchObject({
-        status: 'completed',
+        status: 'available',
         data: { verified: true },
       });
 

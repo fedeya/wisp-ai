@@ -1,6 +1,10 @@
 import { afterEach, expect, test } from 'vitest';
 import { Effect, Logger, References } from 'effect';
-import { unavailableGameAccess } from '../src/host/game-access.ts';
+import {
+  decodeInspectionResult,
+  unavailableGameAccess,
+  type GameInspection,
+} from '../src/host/game-access.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -162,12 +166,12 @@ async function fixture(
     history,
     gameAccess: {
       ...unavailableGameAccess,
-      inspectGame: (agentSession, inspection) =>
+      inspectGame: <I extends GameInspection>(agentSession: string, inspection: I) =>
         Effect.gen(function* () {
           inspections.push({ agentSession, inspection });
           if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
-          return { status: 'completed', data: { settings: [], verified: true } };
-        }),
+          return { status: 'available', data: { applications: [], options: [], verified: true } };
+        }).pipe(Effect.flatMap(decodeInspectionResult<I['kind']>(inspection.kind))),
     },
     logging: options.logging,
   });

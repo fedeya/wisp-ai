@@ -133,7 +133,7 @@ test('actions run without a character identity and add the expected character wh
 
 test('raw loot reads require the dungeon loot capability', async () => {
   const chat = workingChat();
-  const requestGame = vi.fn(() => Effect.succeed({ status: 'available', data: {} }));
+  const requestGame = vi.fn(() => Effect.succeed({ status: 'available', data: { items: [] } }));
   let allowed = false;
   const game = makeGameAccess({
     getChats: () => [chat],
@@ -155,6 +155,45 @@ test('raw loot reads require the dungeon loot capability', async () => {
     agent: true,
     operation: { kind: 'inspect', inspection },
   });
+});
+
+test('inspectGame validates the selected reading and keeps addon failure replies', async () => {
+  const chat = workingChat();
+  const failure = { status: 'unavailable', error: 'No target selected' };
+  const requestGame = vi
+    .fn<() => Effect.Effect<unknown>>()
+    .mockReturnValueOnce(
+      Effect.succeed({ status: 'available', data: { items: [{ id: '14149' }] } }),
+    )
+    .mockReturnValueOnce(Effect.succeed(failure))
+    .mockReturnValueOnce(
+      Effect.succeed({
+        status: 'available',
+        data: { level: 23, note: 'Target', nativeExtension: 'preserved' },
+      }),
+    )
+    .mockReturnValueOnce(
+      Effect.succeed({ status: 'available', data: { items: [{ id: 14149, stats: [] }] } }),
+    );
+  const game = makeGameAccess({
+    getChats: () => [chat],
+    currentTransport: () => 'addon',
+    requestGame,
+    capabilitySettings: { enabled: () => true },
+    mcpManager: { call: vi.fn() },
+  });
+  const readGear = () =>
+    Effect.runPromise(
+      game.inspectGame('eve', { kind: 'gear_candidates', args: { itemIds: [14149] } }),
+    );
+  await expect(readGear()).rejects.toThrow('number');
+  const target = { kind: 'target', args: {} } as const;
+  await expect(Effect.runPromise(game.inspectGame('eve', target))).resolves.toEqual(failure);
+  await expect(Effect.runPromise(game.inspectGame('eve', target))).resolves.toMatchObject({
+    status: 'available',
+    data: { level: 23, nativeExtension: 'preserved' },
+  });
+  await expect(readGear()).resolves.toMatchObject({ data: { items: [{ id: 14149, stats: [] }] } });
 });
 
 test('interrupting an in-process inspection aborts the pending game request', async () => {
