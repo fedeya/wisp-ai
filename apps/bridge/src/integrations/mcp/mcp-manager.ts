@@ -1,265 +1,274 @@
-import { z } from 'zod';
+import type { z } from 'zod';
 import { readFile } from 'node:fs/promises';
 import { writeJson } from '../../json-file.ts';
-import path from 'node:path';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { Effect, Exit, Scope, Semaphore } from 'effect';
 import type { SecretVault } from '../../auth/secret-vault.ts';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
+import { McpConnection, McpConnectionError } from './mcp-connection.ts';
+import type { Connection } from './mcp-connection.ts';
 export { mcpDefinition, mcpSetup };
 export type MCPDefinition = z.infer<typeof mcpDefinition> & {
   tools?: { name: string; description?: string }[];
   hasToken?: boolean;
   envKeys?: string[];
 };
-type Connected = { client: Client; tools: Tool[] };
-export class McpManager {
-  file: string;
-  root: string;
-  vault: SecretVault;
-  servers: Record<string, MCPDefinition> = {};
-  clients = new Map<string, Promise<Connected>>();
-  queue: Promise<unknown> = Promise.resolve();
-  constructor(file: string, root: string, vault: SecretVault) {
-    this.file = file;
-    this.root = root;
-    this.vault = vault;
+type Setup = z.infer<typeof mcpSetup>;
+
+class McpConfigurationError extends Error {
+  readonly _tag = 'McpConfigurationError';
+}
+
+class McpVaultError extends Error {
+  readonly _tag = 'McpVaultError';
+}
+
+const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+const configurationError = (cause: unknown) => new McpConfigurationError(message(cause), { cause });
+const vaultError = (cause: unknown) => new McpVaultError(message(cause), { cause });
+
+function make(file: string, root: string, vault: SecretVault) {
+  let servers: Record<string, MCPDefinition> = {};
+  let closed = false;
+  const connectionScope = Scope.makeUnsafe('parallel');
+  const cacheUpdates = Semaphore.makeUnsafe(1);
+  const updates = Semaphore.makeUnsafe(1);
+
+  function exclusive<A, E>(effect: Effect.Effect<A, E>) {
+    // A caller can cancel while waiting, but a started write must finish updating in-memory state.
+    return updates.withPermit(Effect.uninterruptible(effect));
   }
-  async load() {
-    try {
-      const raw = JSON.parse(await readFile(this.file, 'utf8'));
-      for (const [key, value] of Object.entries(raw.servers || {})) {
-        const s = value as Record<string, unknown>;
-        this.servers[key] = {
-          ...mcpDefinition.parse({ ...s, name: key }),
-          tools: Array.isArray(s.tools) ? (s.tools as MCPDefinition['tools']) : [],
-          hasToken: s.hasToken === true,
-          envKeys: Array.isArray(s.envKeys) ? (s.envKeys as string[]) : [],
-        };
-      }
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw e;
-      }
+
+  const load = Effect.fn('McpManager.load')(function* () {
+    const text = yield* Effect.tryPromise({
+      try: () => readFile(file, 'utf8'),
+      catch: configurationError,
+    }).pipe(
+      Effect.catch((error) =>
+        error.cause instanceof Error && 'code' in error.cause && error.cause.code === 'ENOENT'
+          ? Effect.succeed(undefined)
+          : Effect.fail(error),
+      ),
+    );
+    if (text === undefined) {
+      return;
     }
+    const loaded = yield* Effect.try({
+      try: () => {
+        const raw = JSON.parse(text) as { servers?: Record<string, Record<string, unknown>> };
+        return Object.fromEntries(
+          Object.entries(raw.servers || {}).map(([key, s]) => [
+            key,
+            {
+              ...mcpDefinition.parse({ ...s, name: key }),
+              tools: Array.isArray(s.tools) ? (s.tools as MCPDefinition['tools']) : [],
+              hasToken: s.hasToken === true,
+              envKeys: Array.isArray(s.envKeys) ? (s.envKeys as string[]) : [],
+            },
+          ]),
+        );
+      },
+      catch: configurationError,
+    });
+    Object.assign(servers, loaded);
+  }, exclusive);
+
+  function list() {
+    return Object.values(servers).map((s) => ({ ...s, args: [...s.args] }));
   }
-  list() {
-    return Object.values(this.servers).map((s) => ({ ...s, args: [...s.args] }));
+
+  function readSecret(key: string) {
+    return Effect.tryPromise({ try: () => vault.read(key), catch: vaultError });
   }
-  private async open(
+
+  function writeSecret(key: string, value: string) {
+    return Effect.tryPromise({ try: () => vault.write(key, value), catch: vaultError });
+  }
+
+  const transportFor = Effect.fn('McpManager.transportFor')(function* (
     server: MCPDefinition,
     token?: string,
     providedEnv?: Record<string, string>,
-  ): Promise<Connected> {
-    const client = new Client({ name: 'WispAI', version: '0.2.0' }, { capabilities: {} });
-    const secret =
-      token ??
-      (server.hasToken
-        ? await this.vault.read('mcp:' + server.name + ':token')
+  ) {
+    let secret = token;
+    if (secret === undefined) {
+      secret = server.hasToken
+        ? yield* readSecret('mcp:' + server.name + ':token')
         : server.tokenEnv
           ? process.env[server.tokenEnv]
-          : '');
-    const env =
-      providedEnv ??
-      (server.envKeys?.length
-        ? JSON.parse((await this.vault.read('mcp:' + server.name + ':env')) || '{}')
-        : {});
-    let transport;
-    if (server.transport === 'stdio') {
-      let command = server.command!,
-        args = [...server.args];
-      if (/^node(?:\.exe)?$/i.test(command)) {
-        command = process.env.WISP_ENGINE_EXECUTABLE
-          ? path.join(this.root, 'runtime/node.exe')
-          : process.execPath;
-      }
-      if (/^npx(?:\.cmd)?$/i.test(command)) {
-        command = process.execPath;
-        args = [
-          process.env.WISP_ENGINE_EXECUTABLE
-            ? '--npx'
-            : path.join(this.root, 'runtime', 'npm', 'bin', 'npx-cli.js'),
-          ...args,
-        ];
-      }
-      const allowedEnv = Object.fromEntries(
-        [
-          'SystemRoot',
-          'WINDIR',
-          'PATH',
-          'Path',
-          'PATHEXT',
-          'TEMP',
-          'TMP',
-          'USERPROFILE',
-          'APPDATA',
-          'LOCALAPPDATA',
-          'HOME',
-          'ComSpec',
-        ].flatMap((k) => (process.env[k] ? [[k, process.env[k]!]] : [])),
-      );
-      allowedEnv.PATH =
-        path.join(this.root, 'runtime') +
-        path.delimiter +
-        path.dirname(process.execPath) +
-        path.delimiter +
-        (process.env.PATH || process.env.Path || '');
-      transport = new StdioClientTransport({
-        command,
-        args,
-        cwd: this.root,
-        env: { ...allowedEnv, ...env },
-        stderr: 'pipe',
+          : undefined;
+    }
+    let env = providedEnv;
+    if (env === undefined && server.envKeys?.length) {
+      const stored = yield* readSecret('mcp:' + server.name + ':env');
+      env = yield* Effect.try({
+        try: () => JSON.parse(stored || '{}') as Record<string, string>,
+        catch: vaultError,
       });
-      transport.stderr?.on('data', () => {});
-    } else {
-      const headers: Record<string, string> = secret ? { authorization: 'Bearer ' + secret } : {};
-      transport =
-        server.transport === 'sse'
-          ? new SSEClientTransport(new URL(server.url!), {
-              requestInit: { headers },
-              eventSourceInit: {
-                fetch: (url, init) =>
-                  fetch(url, {
-                    ...init,
-                    headers: { ...headers, ...Object.fromEntries(new Headers(init?.headers)) },
-                  }),
-              },
-            })
-          : new StreamableHTTPClientTransport(new URL(server.url!), { requestInit: { headers } });
     }
-    const timeout = setTimeout(() => void client.close(), 15000);
-    try {
-      await client.connect(transport);
-      const tools: Tool[] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 10; page++) {
-        const result = await client.listTools(cursor ? { cursor } : undefined, { timeout: 10000 });
-        tools.push(...result.tools);
-        if (!result.nextCursor) {
-          break;
-        }
-        cursor = result.nextCursor;
-      }
-      if (tools.length > 1000) {
-        throw Error('MCP exposes too many tools');
-      }
-      return { client, tools };
-    } catch (e) {
-      await client.close().catch(() => {});
-      throw e;
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-  async test(input: z.infer<typeof mcpSetup>) {
-    const parsed = mcpSetup.parse(input),
-      existing = this.servers[parsed.server.name];
-    const connection = await this.open({ ...existing, ...parsed.server }, parsed.token, parsed.env);
-    try {
-      return {
-        tools: connection.tools.map((t) => ({ name: t.name, description: t.description })),
-        count: connection.tools.length,
-      };
-    } finally {
-      await connection.client.close();
-    }
-  }
-  async save(input: z.infer<typeof mcpSetup>) {
-    const parsed = mcpSetup.parse(input);
-    const tested = await this.test(parsed);
-    const work = this.queue
-      .catch(() => {})
-      .then(async () => {
-        if (parsed.token !== undefined) {
-          await this.vault.write('mcp:' + parsed.server.name + ':token', parsed.token);
-        }
-        if (parsed.env !== undefined) {
-          await this.vault.write('mcp:' + parsed.server.name + ':env', JSON.stringify(parsed.env));
-        }
-        const old = this.servers[parsed.server.name];
-        const definition = {
-          ...parsed.server,
-          tools: tested.tools,
-          hasToken: parsed.token !== undefined ? !!parsed.token : old?.hasToken,
-          envKeys: parsed.env !== undefined ? Object.keys(parsed.env) : old?.envKeys,
-        };
-        const next = { ...this.servers, [definition.name]: definition };
-        await this.persist(next);
-        await this.disconnect(definition.name);
-      });
-    this.queue = work;
-    await work;
+    return yield* McpConnection.makeTransport(root, server, secret, env ?? {});
+  });
+
+  const connections = new Map<string, Connection<Effect.Error<ReturnType<typeof transportFor>>>>();
+
+  const probe = Effect.fn('McpManager.probe')(function* (input: Setup) {
+    const tools = yield* McpConnection.probe(
+      transportFor({ ...servers[input.server.name], ...input.server }, input.token, input.env),
+    );
+    return {
+      tools: tools.map((t) => ({ name: t.name, description: t.description })),
+      count: tools.length,
+    };
+  });
+
+  const test = Effect.fn('McpManager.test')(function* (input: Setup) {
+    const parsed = yield* Effect.try({
+      try: () => mcpSetup.parse(input),
+      catch: configurationError,
+    });
+    return yield* probe(parsed);
+  });
+
+  const save = Effect.fn('McpManager.save')(function* (input: Setup) {
+    const parsed = yield* Effect.try({
+      try: () => mcpSetup.parse(input),
+      catch: configurationError,
+    });
+    const tested = yield* probe(parsed);
+    yield* saveTestedSetup(parsed, tested.tools);
     return tested;
-  }
-  private async persist(next: Record<string, MCPDefinition>) {
-    await writeJson(this.file, { servers: next });
-    this.servers = next;
-  }
-  async setEnabled(key: string, enabled: boolean) {
-    name.parse(key);
+  });
+
+  const saveTestedSetup = Effect.fn('McpManager.saveTestedSetup')(function* (
+    setup: Setup,
+    tools: MCPDefinition['tools'],
+  ) {
+    const key = setup.server.name;
+    if (setup.token !== undefined) {
+      yield* writeSecret('mcp:' + key + ':token', setup.token);
+    }
+    if (setup.env !== undefined) {
+      yield* writeSecret('mcp:' + key + ':env', JSON.stringify(setup.env));
+    }
+    const old = servers[key];
+    const definition = {
+      ...setup.server,
+      tools,
+      hasToken: setup.token !== undefined ? !!setup.token : old?.hasToken,
+      envKeys: setup.env !== undefined ? Object.keys(setup.env) : old?.envKeys,
+    };
+    yield* persist({ ...servers, [key]: definition });
+    yield* disconnectConnection(key);
+  }, exclusive);
+
+  const persist = Effect.fn('McpManager.persist')(function* (next: Record<string, MCPDefinition>) {
+    yield* Effect.tryPromise({
+      try: () => writeJson(file, { servers: next }),
+      catch: configurationError,
+    });
+    servers = next;
+  });
+
+  const setEnabled = Effect.fn('McpManager.setEnabled')(function* (key: string, enabled: boolean) {
+    yield* Effect.try({ try: () => name.parse(key), catch: configurationError });
     if (typeof enabled !== 'boolean') {
-      throw Error('Invalid MCP switch');
+      return yield* Effect.fail(new McpConfigurationError('Invalid MCP switch'));
     }
-    const work = this.queue
-      .catch(() => {})
-      .then(async () => {
-        const server = this.servers[key];
-        if (!server) {
-          throw Error('Unknown MCP connection');
-        }
-        if (server.enabled === enabled) {
-          return;
-        }
-        await this.persist({ ...this.servers, [key]: { ...server, enabled } });
-        if (!enabled) {
-          await this.disconnect(key);
-        }
+    const server = servers[key];
+    if (!server) {
+      return yield* Effect.fail(new McpConfigurationError('Unknown MCP connection'));
+    }
+    if (server.enabled !== enabled) {
+      yield* persist({ ...servers, [key]: { ...server, enabled } });
+      if (!enabled) {
+        yield* disconnectConnection(key);
+      }
+    }
+  }, exclusive);
+
+  const remove = Effect.fn('McpManager.remove')(function* (key: string) {
+    yield* Effect.try({ try: () => name.parse(key), catch: configurationError });
+    const next = { ...servers };
+    delete next[key];
+    yield* persist(next);
+    yield* disconnectConnection(key);
+    yield* writeSecret('mcp:' + key + ':token', '');
+    yield* writeSecret('mcp:' + key + ':env', '');
+  }, exclusive);
+
+  const getConnection = Effect.fn('McpManager.getConnection')(
+    function* (key: string) {
+      const server = servers[key];
+      if (closed || !server?.enabled) {
+        return yield* Effect.fail(new McpConnectionError('MCP connection is unavailable'));
+      }
+      const existing = connections.get(key);
+      if (existing) {
+        return existing;
+      }
+      const connection = McpConnection.make({
+        scope: connectionScope,
+        transport: transportFor(server),
+        onClosed: () => {
+          if (connections.get(key) === connection) {
+            connections.delete(key);
+          }
+        },
       });
-    this.queue = work;
-    await work;
+      connections.set(key, connection);
+      yield* connection.start;
+      return connection;
+    },
+    (effect) => cacheUpdates.withPermit(Effect.uninterruptible(effect)),
+  );
+
+  function connect(key: string) {
+    return getConnection(key).pipe(Effect.flatMap((connection) => connection.awaitReady));
   }
-  async remove(key: string) {
-    name.parse(key);
-    const work = this.queue
-      .catch(() => {})
-      .then(async () => {
-        const next = { ...this.servers };
-        delete next[key];
-        await this.persist(next);
-        await this.disconnect(key);
-        await this.vault.write('mcp:' + key + ':token', '');
-        await this.vault.write('mcp:' + key + ':env', '');
-      });
-    this.queue = work;
-    await work;
-  }
-  async connect(key: string) {
-    const server = this.servers[key];
-    if (!server || !server.enabled) {
-      throw Error('MCP connection is unavailable');
+
+  const disconnectConnection = Effect.fn('McpManager.disconnect')(function* (key: string) {
+    const connection = yield* cacheUpdates.withPermit(
+      Effect.sync(() => {
+        const connection = connections.get(key);
+        if (connection) {
+          connections.delete(key);
+        }
+        return connection;
+      }),
+    );
+    if (connection) {
+      yield* connection.close;
     }
-    let pending = this.clients.get(key);
-    if (!pending) {
-      pending = this.open(server).catch((error) => {
-        this.clients.delete(key);
-        throw error;
-      });
-      this.clients.set(key, pending);
-    }
-    return pending;
+  });
+
+  function disconnect(key: string) {
+    return exclusive(disconnectConnection(key));
   }
-  async disconnect(key: string) {
-    const pending = this.clients.get(key);
-    this.clients.delete(key);
-    if (pending) {
-      await pending.then((c) => c.client.close()).catch(() => {});
-    }
-  }
-  async close() {
-    await Promise.all([...this.clients.keys()].map((key) => this.disconnect(key)));
-  }
+
+  const close = Effect.fn('McpManager.close')(function* () {
+    yield* cacheUpdates.withPermit(
+      Effect.sync(() => {
+        closed = true;
+        connections.clear();
+      }),
+    );
+    yield* Scope.close(connectionScope, Exit.void);
+  }, exclusive);
+
+  return {
+    get servers() {
+      return servers;
+    },
+    list,
+    load,
+    test,
+    save,
+    setEnabled,
+    remove,
+    connect,
+    disconnect,
+    close,
+  };
 }
+
+export type McpManager = ReturnType<typeof make>;
+export const McpManager = { make };

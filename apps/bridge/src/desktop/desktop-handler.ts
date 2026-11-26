@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
+import { Effect } from 'effect';
 import { z } from 'zod';
 import {
   desktopRoutes as routes,
@@ -45,7 +46,7 @@ interface DesktopDependencies {
   sendPanelCommand: (command: PanelCommand) => void;
   openRoutine: (id: string) => void;
   readSimulationCharacter: () => Promise<unknown>;
-  setCapability: (id: string, enabled: boolean) => Promise<void>;
+  setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   setWowTransport: (input: z.infer<typeof wowTransportInput>) => Promise<void>;
   setAppUpdate: (version: string | null) => void;
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
@@ -61,7 +62,8 @@ const json = <T extends z.ZodType>(schema: T) =>
     }
   });
 const ok = { ok: true } as const;
-export function createDesktopApp(deps: DesktopDependencies) {
+export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDependencies) {
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const {
     auth,
     connections,
@@ -132,26 +134,42 @@ export function createDesktopApp(deps: DesktopDependencies) {
     )
     .post('/integrations/set', json(routes['/integrations/set'].input), async (c) => {
       const { id, enabled } = c.req.valid('json');
-      await deps.setCapability(id, enabled);
+      await runPromise(deps.setCapability(id, enabled));
       deps.changed();
       return c.json(ok);
     })
     .post('/mcps/test', json(routes['/mcps/test'].input), async (c) =>
-      c.json(await mcpManager.test(c.req.valid('json'))),
+      c.json(await runPromise(mcpManager.test(c.req.valid('json')))),
     )
     .post('/mcps/save', json(routes['/mcps/save'].input), async (c) => {
       const setup = c.req.valid('json');
-      const result = await mcpManager.save(setup);
-      deps.refreshMcpCatalog();
-      await capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled);
-      deps.changed();
+      const result = await runPromise(
+        Effect.gen(function* () {
+          const tested = yield* mcpManager.save(setup);
+          deps.refreshMcpCatalog();
+          yield* Effect.tryPromise({
+            try: () => capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled),
+            catch: (error) => error,
+          });
+          deps.changed();
+          return tested;
+        }),
+      );
       return c.json(result);
     })
     .post('/mcps/remove', json(routes['/mcps/remove'].input), async (c) => {
-      await mcpManager.remove(c.req.valid('json').name);
-      deps.refreshMcpCatalog();
-      await capabilitySettings.publish();
-      deps.changed();
+      const { name } = c.req.valid('json');
+      await runPromise(
+        Effect.gen(function* () {
+          yield* mcpManager.remove(name);
+          deps.refreshMcpCatalog();
+          yield* Effect.tryPromise({
+            try: () => capabilitySettings.publish(),
+            catch: (error) => error,
+          });
+          deps.changed();
+        }),
+      );
       return c.json(ok);
     })
     .post('/panels/action', json(routes['/panels/action'].input), async (c) => {
@@ -213,8 +231,8 @@ export function createDesktopApp(deps: DesktopDependencies) {
       deps.requestStop();
       return c.json(ok);
     });
-}
-export type DesktopApp = ReturnType<typeof createDesktopApp>;
+});
+export type DesktopApp = Effect.Success<ReturnType<typeof createDesktopApp>>;
 // Compile-time proof that every contract route is served with a reply its
 // output schema accepts. A drifting route surfaces here by name.
 type Served = DesktopApp extends Hono<infer _E, infer S> ? S : never;

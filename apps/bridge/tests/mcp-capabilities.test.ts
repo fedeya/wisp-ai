@@ -1,7 +1,13 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
-import { mcpCapabilityCatalog } from '../src/integrations/mcp/mcp-capabilities.ts';
+import { Effect } from 'effect';
+import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import {
+  createMcpCapabilities,
+  mcpCapabilityCatalog,
+} from '../src/integrations/mcp/mcp-capabilities.ts';
+import { mcpDefinition } from '../src/integrations/mcp/mcp-manager.ts';
 
 type Server = Parameters<typeof mcpCapabilityCatalog>[0][number];
 
@@ -42,4 +48,29 @@ test('adds MCP servers and tools after the built-in capabilities without URL sec
       description: 'Local helper - Local stdio server',
     },
   ]);
+});
+
+test('a capability write failure restores the MCP server switch and preserves the error', async () => {
+  const server = mcpDefinition.parse({ name: 'notes', url: 'https://example.com/mcp' });
+  const switches: boolean[] = [];
+  const manager = {
+    list: () => [{ ...server }],
+    setEnabled: (_key: string, enabled: boolean) =>
+      Effect.sync(() => {
+        switches.push(enabled);
+        server.enabled = enabled;
+        return undefined;
+      }),
+  };
+  const settings = new CapabilitySettings('unused');
+  const failure = Error('Capability write failed');
+  using set = vi.spyOn(settings, 'set').mockRejectedValue(failure);
+  const { setCapability } = createMcpCapabilities(manager, settings);
+
+  await assert.rejects(Effect.runPromise(setCapability('mcp:notes', false)), (error) => {
+    assert.equal(error, failure);
+    return true;
+  });
+  assert.deepEqual(switches, [false, true]);
+  assert.deepEqual(set.mock.calls, [['mcp:notes', false]]);
 });

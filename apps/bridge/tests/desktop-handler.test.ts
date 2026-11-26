@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { Effect } from 'effect';
 import { createDesktopApp } from '../src/desktop/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 const authState = { status: 'signed_out', revision: 1, profiles: [] };
@@ -43,13 +44,13 @@ function setup() {
     getChats: () => [],
     currentCharacterKey: () => 'mage',
     sendPanelCommand: vi.fn(),
-    setCapability: vi.fn(async () => {}),
+    setCapability: vi.fn(() => Effect.void),
     setWowTransport: vi.fn(async () => {}),
     setAppUpdate: vi.fn(),
     setFeature: vi.fn(async () => {}),
     changed: vi.fn(),
   };
-  const app = createDesktopApp(deps as never);
+  const app = Effect.runSync(createDesktopApp(deps as never));
   const post = (route: string, body: unknown) =>
     app.request(route, {
       method: 'POST',

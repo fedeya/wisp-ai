@@ -45,7 +45,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       memoryStore: new MemoryStore(database),
       transport: () => ({ resetSession: () => {}, setCursor: () => {} }),
       refreshModelCatalog: async () => {},
-      setCapability: async () => {},
+      setCapability: () => Effect.void,
       memorySnapshot: async () => ({ status: 'available', entries: [] }),
       run,
       interrupt,

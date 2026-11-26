@@ -1,4 +1,5 @@
 import { defaultCapabilities, type Capability } from '@wisp/protocol/capabilities';
+import { Effect, Result } from 'effect';
 import type { CapabilitySettings } from '../capabilities.ts';
 import type { McpManager } from './mcp-manager.ts';
 
@@ -51,30 +52,37 @@ export function createMcpCapabilities(
       capabilitySettings.catalog = mcpCapabilityCatalog(mcpManager.list());
     },
     /** Start or stop each MCP server as its saved capability setting says. */
-    async applySavedSettings() {
+    applySavedSettings: Effect.fn('McpCapabilities.applySavedSettings')(function* () {
       for (const server of mcpManager.list()) {
-        await mcpManager.setEnabled(
+        yield* mcpManager.setEnabled(
           server.name,
           capabilitySettings.configured('mcp:' + server.name),
         );
       }
-    },
+    }),
     /** Save a capability; for an MCP server, switch it first and undo that if saving fails. */
-    async setCapability(id: string, enabled: boolean) {
+    setCapability: Effect.fn('McpCapabilities.setCapability')(function* (
+      id: string,
+      enabled: boolean,
+    ) {
       const server = id.startsWith('mcp:')
         ? mcpManager.list().find((server) => id === 'mcp:' + server.name)
         : undefined;
       if (server) {
-        await mcpManager.setEnabled(server.name, enabled);
+        yield* mcpManager.setEnabled(server.name, enabled);
       }
-      try {
-        await capabilitySettings.set(id, enabled);
-      } catch (error) {
+      const result = yield* Effect.result(
+        Effect.tryPromise({
+          try: () => capabilitySettings.set(id, enabled),
+          catch: (error) => error,
+        }),
+      );
+      if (Result.isFailure(result)) {
         if (server) {
-          await mcpManager.setEnabled(server.name, server.enabled);
+          yield* mcpManager.setEnabled(server.name, server.enabled);
         }
-        throw error;
+        return yield* Effect.fail(result.failure);
       }
-    },
+    }),
   };
 }

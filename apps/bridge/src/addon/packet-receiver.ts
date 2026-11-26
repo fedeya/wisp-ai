@@ -43,7 +43,7 @@ interface ReceiverDependencies {
   memoryStore: MemoryStore;
   transport: () => Pick<DiskTransport, 'resetSession' | 'setCursor'> | undefined;
   refreshModelCatalog: () => Promise<void>;
-  setCapability: (id: string, enabled: boolean) => Promise<void>;
+  setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   interrupt: (chat: Chat) => void;
@@ -60,6 +60,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const runSync = Effect.runSyncWith(context);
+  const runPromise = Effect.runPromiseWith(context);
   const {
     state,
     engine,
@@ -522,7 +523,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         if (typeof packet.key !== 'string' || typeof packet.enabled !== 'boolean') {
           throw new Error('Invalid capability setting');
         }
-        await setCapability(packet.key, packet.enabled);
+        await runPromise(setCapability(packet.key, packet.enabled));
         if (state.activeTransport === transportSession) {
           state.capabilityAcks[packet.key] = packet.requestId || '';
           state.capabilityError = undefined;
