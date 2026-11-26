@@ -1,7 +1,11 @@
 import { test, expect, vi } from 'vitest';
-import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect';
 import { GameRequests, UNRESPONSIVE_MS, type GameRequest } from '../src/game-requests.ts';
 import { layer, WowBridge } from '../src/wow-bridge.ts';
+
+function makeRequests(...args: Parameters<typeof GameRequests.make>) {
+  return Effect.runSync(GameRequests.make(...args));
+}
 
 function runRequest(
   requests: GameRequests,
@@ -13,7 +17,7 @@ function runRequest(
 }
 
 test('responses are scoped to both transport session and conversation', async () => {
-  const requests = new GameRequests(() => {});
+  const requests = makeRequests(() => {});
   const result = runRequest(requests, {
     chat: 'chat',
     session: 'one',
@@ -28,7 +32,7 @@ test('responses are scoped to both transport session and conversation', async ()
 });
 
 test('reload, deletion and HTTP cancellation reject requests and release their timers', async () => {
-  const requests = new GameRequests(() => {});
+  const requests = makeRequests(() => {});
   const reload = runRequest(requests, { chat: 'a', session: 'one' });
   const deleted = runRequest(requests, { chat: 'b', session: 'one' });
   const rejectedReload = expect(reload).rejects.toThrow('Reload');
@@ -47,7 +51,7 @@ test('reload, deletion and HTTP cancellation reject requests and release their t
 test('timeout removes a request before a late game response can settle it', async () => {
   vi.useFakeTimers();
   try {
-    const requests = new GameRequests(() => {});
+    const requests = makeRequests(() => {});
     const result = runRequest(requests, { chat: 'chat', session: 'one' }, undefined, 50);
     const rejected = expect(result).rejects.toThrow('did not respond');
     const [{ id }] = requests.snapshot();
@@ -64,7 +68,7 @@ test('interrupting a retried read clears its aliases, retries and timeout', asyn
   vi.useFakeTimers();
   try {
     const onTimeout = vi.fn();
-    const requests = new GameRequests(() => {}, { onTimeout });
+    const requests = makeRequests(() => {}, { onTimeout });
     const abort = new AbortController();
     const read = runRequest(
       requests,
@@ -94,7 +98,7 @@ test('closing the bridge layer rejects outstanding game requests', async () => {
   try {
     const context = Effect.runSync(
       Layer.buildWithScope(
-        layer(() => {}),
+        layer(() => {}).pipe(Layer.provide([FileSystem.layerNoop({}), Path.layer])),
         scope,
       ),
     );
@@ -117,7 +121,7 @@ test('lost reads recover with fresh IDs within the original deadline; actions ne
   vi.useFakeTimers();
   try {
     const changed = vi.fn();
-    const requests = new GameRequests(changed);
+    const requests = makeRequests(changed);
     const result = runRequest(requests, { chat: 'chat', session: 'one', sections: ['character'] });
     const [{ id: first }] = requests.snapshot();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -146,7 +150,7 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
   try {
     let clock = 1_000_000;
     const timeouts: unknown[] = [];
-    const requests = new GameRequests(() => {}, {
+    const requests = makeRequests(() => {}, {
       now: () => clock,
       onTimeout: (timeout) => timeouts.push(timeout),
     });
@@ -205,7 +209,7 @@ test('a timeout reports whether the addon kept talking while the request waited'
   try {
     let clock = 1_000_000;
     const timeouts: { addonSilent: boolean }[] = [];
-    const requests = new GameRequests(() => {}, {
+    const requests = makeRequests(() => {}, {
       now: () => clock,
       onTimeout: (timeout) => timeouts.push(timeout),
     });
@@ -242,7 +246,7 @@ test('a valid late answer to a timed-out read lets new requests through again', 
   vi.useFakeTimers();
   try {
     let clock = 1_000_000;
-    const requests = new GameRequests(() => {}, { now: () => clock });
+    const requests = makeRequests(() => {}, { now: () => clock });
     const read = runRequest(requests, {
       chat: 'chat',
       session: 'one',
@@ -287,7 +291,7 @@ test('requests the player starts are still sent while WoW is unresponsive, with 
   vi.useFakeTimers();
   try {
     let clock = 1_000_000;
-    const requests = new GameRequests(() => {}, { now: () => clock });
+    const requests = makeRequests(() => {}, { now: () => clock });
     const settings = runRequest(requests, {
       chat: 'chat',
       session: 'one',

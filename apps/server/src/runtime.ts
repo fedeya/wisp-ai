@@ -1,5 +1,7 @@
 import { characterLabel } from '@wisp/protocol/character-key';
-import { Context, Effect, Exit, Layer, Scope } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as NodePath from '@effect/platform-node/NodePath';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
@@ -59,6 +61,9 @@ import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine } from '@wisp/agent/engine';
 import { AgentHistory } from './agent/agent-history.ts';
+
+const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
+
 export interface ServerOptions {
   resourceRoot?: string;
   dataDirectory?: string;
@@ -256,7 +261,7 @@ export const makeServer = Effect.fn('Server.make')(
                 Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
               ),
             ),
-        }),
+        }).pipe(Layer.provide(wowPlatform)),
       ),
       WowBridge.WowBridge,
     );
@@ -394,8 +399,8 @@ export const makeServer = Effect.fn('Server.make')(
       saveWow: (wow) => config.update({ wow }),
       changed,
       isStopping: () => shutdownRequested,
-    });
-    yield* releaseRuntimeResource(() => transport.serialize(transport.disconnect));
+    }).pipe(Effect.provide(wowPlatform));
+    yield* Effect.addFinalizer(() => transport.serialize(transport.disconnect));
     const server = createServer(
       yield* createAgentHandler({
         telemetry,
@@ -515,17 +520,21 @@ export const makeServer = Effect.fn('Server.make')(
       refreshMcpCatalog: mcpCapabilities.refreshCatalog,
       changed,
       setWowTransport: (input) =>
-        transport.serialize(async () => {
-          if (shutdownRequested) throw Error('Wisp is stopping.');
-          if (input.action === 'pause') {
-            if (state.chats.some((chat) => chat.status === 'working')) {
-              throw Error('Wait for the active turn before installing the addon.');
+        transport.serialize(
+          Effect.gen(function* () {
+            if (shutdownRequested) return yield* Effect.fail(Error('Wisp is stopping.'));
+            if (input.action === 'pause') {
+              if (state.chats.some((chat) => chat.status === 'working')) {
+                return yield* Effect.fail(
+                  Error('Wait for the active turn before installing the addon.'),
+                );
+              }
+              yield* transport.disconnect;
+            } else {
+              yield* transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
             }
-            await transport.disconnect();
-          } else {
-            await transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
-          }
-        }),
+          }),
+        ),
       setFeature: (id, enabled) => features.set(id, enabled),
       setAppUpdate: (version) => {
         appUpdateVersion = version;
@@ -556,10 +565,14 @@ export const makeServer = Effect.fn('Server.make')(
       startDesktopServer(runtime, desktopApp, options.desktopPort),
     );
     yield* releaseRuntimeResource(() => closeServer(desktopServer));
-    const transportStartup =
+    const transportStartup = yield* (
       options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
-        ? Promise.resolve()
-        : transport.serialize(() => transport.connect(config.get().wow)).catch(transport.logError);
+        ? Effect.void
+        : transport.serialize(transport.connect(config.get().wow)).pipe(
+            Effect.catchDefect((error) => Effect.fail(error)),
+            Effect.catch((error) => Effect.sync(() => transport.logError(error))),
+          )
+    ).pipe(Effect.forkChild());
     const integrationHealth = setInterval(() => {
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
@@ -602,7 +615,8 @@ export const makeServer = Effect.fn('Server.make')(
         state.chats.forEach(run.interrupt);
       }),
     );
-    yield* startup(() => Promise.all([engineStartup, transportStartup]));
+    yield* startup(() => engineStartup);
+    yield* Fiber.join(transportStartup);
     return { state, receive };
   },
   // The existing Promise-based acquisitions cannot be interrupted safely.

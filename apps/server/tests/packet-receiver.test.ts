@@ -23,7 +23,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   state.currentCharacterKey = 'old-character';
   state.inlineChat = 'old-inline';
   state.panelCommand = { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' };
-  const pending = new GameRequests(() => {});
+  const pending = Effect.runSync(GameRequests.make(() => {}));
   const capabilitySettings = new CapabilitySettings('unused');
   const cancel = vi.fn();
   const end = vi.fn(async (_session: string) => {});

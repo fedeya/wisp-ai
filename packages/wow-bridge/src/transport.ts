@@ -1,9 +1,17 @@
-import { watch, type FSWatcher } from 'node:fs';
-import { readdir, readFile, mkdir, writeFile, rename, rm } from 'node:fs/promises';
-import path from 'node:path';
-import { randomBytes } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
-import { Effect, Schedule } from 'effect';
+import {
+  Cause,
+  Clock,
+  Deferred,
+  Effect,
+  FiberSet,
+  FileSystem,
+  Path,
+  Random,
+  Schedule,
+  Semaphore,
+  Stream,
+} from 'effect';
+import type { PlatformError } from 'effect/PlatformError';
 import { luaJson, packetSchema, type Packet } from './protocol.ts';
 import {
   MailboxDecoder,
@@ -90,22 +98,19 @@ export const ACTIVE_SESSION_MS = 150_000;
 export const FULL_SCAN_INTERVAL_MS = 5000;
 
 export class DiskTransport {
-  private scans?: Promise<void>;
-  private reads = new Map<string, Promise<void>>();
-  private onError: (error: unknown) => void;
+  private reads = new Map<string, Semaphore.Semaphore>();
+  private readonly writeLock = Semaphore.makeUnsafe(1);
   private mailboxDecoders = new Map<string, MailboxDecoder>();
   private activeFile?: string;
   private activeSession?: string;
   private activeAt = 0;
   /** Wall-clock time of the last message from the active window. */
   private activeSeenAt = 0;
-  private onHeldOff: (session: string) => void;
-  private onSlowDownlink: (report: SlowDownlink) => void;
   private uplinkBusy = new Map<string, boolean>();
   private uplinkObserved = new Map<string, { frame: Buffer; at: number }>();
   private publishedRevision = 0;
   private notification?: Buffer;
-  private generation = randomBytes(4).readUInt32BE() || 1;
+  private generation: number;
   private notificationSequence = 0;
   private mailboxVersion = false;
   private compactAck = false;
@@ -114,14 +119,13 @@ export class DiskTransport {
   private acknowledgedSnapshot?: PublishedSnapshot;
   private downlink?: DownlinkTransfer;
   private publicationEpoch = 0;
-  private controlWriting?: Promise<void>;
+  private controlWriting?: Deferred.Deferred<void, PlatformError>;
   private lastControlWriteAt = 0;
   stopped = false;
   published = '';
   nextSlot = 1;
   peerRevision = 0;
-  writing = Promise.resolve();
-  watchers = new Map<string, FSWatcher>();
+  readonly watchers = new Set<string>();
   performance: {
     controlWrites: number;
     wireBytes: number;
@@ -141,91 +145,155 @@ export class DiskTransport {
     bulkStarts: 0,
     restarts: 0,
   };
-  wow: string;
-  receive: (packet: Packet) => void;
-  constructor(
+  private readonly fs: FileSystem.FileSystem;
+  private readonly path: Path.Path;
+  private readonly clock: Clock.Clock;
+  private readonly random: Random.Random;
+  private readonly fibers: FiberSet.FiberSet;
+  private readonly runBackground: (effect: Effect.Effect<void>) => unknown;
+  readonly wow: string;
+  private readonly receive: (packet: Packet) => void;
+  private readonly onError: (error: unknown) => void;
+  private readonly onHeldOff: (session: string) => void;
+  private readonly onSlowDownlink: (report: SlowDownlink) => void;
+
+  private constructor(options: {
+    fs: FileSystem.FileSystem;
+    path: Path.Path;
+    clock: Clock.Clock;
+    random: Random.Random;
+    fibers: FiberSet.FiberSet;
+    runBackground: (effect: Effect.Effect<void>) => unknown;
+    wow: string;
+    receive: (packet: Packet) => void;
+    onError: (error: unknown) => void;
+    onHeldOff: (session: string) => void;
+    onSlowDownlink: (report: SlowDownlink) => void;
+  }) {
+    this.fs = options.fs;
+    this.path = options.path;
+    this.clock = options.clock;
+    this.random = options.random;
+    this.fibers = options.fibers;
+    this.runBackground = options.runBackground;
+    this.wow = options.wow;
+    this.receive = options.receive;
+    this.onError = options.onError;
+    this.onHeldOff = options.onHeldOff;
+    this.onSlowDownlink = options.onSlowDownlink;
+    this.generation = this.nextGeneration();
+  }
+
+  static readonly make = Effect.fnUntraced(function* (
     wow: string,
     receive: (packet: Packet) => void,
     onError: (error: unknown) => void = console.error,
     onHeldOff: (session: string) => void = () => {},
     onSlowDownlink: (report: SlowDownlink) => void = () => {},
   ) {
-    this.wow = wow;
-    this.receive = receive;
-    this.onError = onError;
-    this.onHeldOff = onHeldOff;
-    this.onSlowDownlink = onSlowDownlink;
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const clock = yield* Clock.Clock;
+    const random = yield* Random.Random;
+    const fibers = yield* FiberSet.make();
+    const runBackground = yield* FiberSet.runtime(fibers)();
+    const transport = new DiskTransport({
+      fs,
+      path,
+      clock,
+      random,
+      fibers,
+      runBackground,
+      wow,
+      receive,
+      onError,
+      onHeldOff,
+      onSlowDownlink,
+    });
+    yield* Effect.addFinalizer(() => transport.stop());
+    return transport;
+  });
+
+  private nextGeneration() {
+    return this.random.nextIntUnsafe() >>> 0 || 1;
   }
+
+  private now() {
+    return this.clock.currentTimeMillisUnsafe();
+  }
+
   start() {
     return Effect.gen({ self: this }, function* () {
-      yield* Effect.addFinalizer(() => Effect.promise(() => this.stop()));
-      // A baseline scan may create watchers before it finishes.
-      yield* Effect.tryPromise({ try: () => this.scan(true), catch: (error) => error }).pipe(
-        Effect.uninterruptible,
-      );
+      yield* this.scan(true);
       if (this.stopped) return;
-      let lastScanAt = Date.now();
-      yield* Effect.sync(() => {
-        if (this.scans) return;
-        // Folder watchers deliver most changes; this tick is the fallback.
-        // Walking every character folder and rereading every state file each
-        // second costs I/O that grows with the number of characters, so once a
-        // game session is active only its file is reread every second and the
-        // full walk (new characters, character switches) runs less often.
+      let lastScanAt = this.now();
+      // Watchers deliver most changes. The fallback polls the active file more
+      // frequently than it walks all character directories.
+      const poll = Effect.suspend(() => {
         const active = this.activeFile;
-        const now = Date.now();
-        const fullScan = !active || now - lastScanAt >= FULL_SCAN_INTERVAL_MS;
-        if (fullScan) lastScanAt = now;
-        const work = fullScan ? this.scan(false) : this.read(active, false);
-        this.scans = work.catch(this.onError).finally(() => {
-          this.scans = undefined;
-        });
-      }).pipe(Effect.schedule(Schedule.fixed(1000)), Effect.forkScoped({ uninterruptible: false }));
-      yield* Effect.sync(() => {
-        if (!this.activeFile || !this.controlPending()) return;
+        const now = this.now();
+        if (active && now - lastScanAt < FULL_SCAN_INTERVAL_MS) return this.read(active, false);
+        lastScanAt = now;
+        return this.scan(false);
+      });
+      const control = Effect.suspend(() => {
+        if (!this.activeFile || !this.controlPending()) return Effect.void;
         const transfer = this.downlink;
-        if (transfer && Date.now() - transfer.lastProgressAt > 5000) {
+        const now = this.now();
+        if (transfer && now - transfer.lastProgressAt > 5000) {
           // A lost final ACK or an interrupted receiver must not pin the lane
           // forever. A fresh FIRST frame also restarts partial reassembly.
           this.performance.restarts++;
           transfer.restarts++;
-          if (!transfer.stallReported && Date.now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
+          if (!transfer.stallReported && now - transfer.startedAt >= SLOW_DOWNLINK_MS) {
             transfer.stallReported = true;
             this.reportSlowDownlink('stalled', transfer);
           }
           this.frameTransfer(transfer);
         }
-        void this.read(this.activeFile, false).catch(this.onError);
-      }).pipe(Effect.schedule(Schedule.fixed(150)), Effect.forkScoped({ uninterruptible: false }));
+        return this.read(this.activeFile, false);
+      });
+      this.runBackground(
+        poll.pipe(
+          Effect.catch((error) => Effect.sync(() => this.onError(error))),
+          Effect.schedule(Schedule.fixed(1000)),
+          Effect.asVoid,
+        ),
+      );
+      this.runBackground(
+        control.pipe(
+          Effect.catch((error) => Effect.sync(() => this.onError(error))),
+          Effect.schedule(Schedule.fixed(150)),
+          Effect.asVoid,
+        ),
+      );
     });
   }
-  async scan(baseline: boolean) {
-    const account = path.join(this.wow, 'WTF', 'Account');
-    const walk = async (dir: string, depth: number): Promise<void> => {
-      if (this.stopped || depth > 4) {
-        return;
-      }
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        if (this.stopped) return;
-        const file = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await walk(file, depth + 1);
-        } else if (entry.name.toLowerCase() === 'addons.txt') {
-          if (!this.mailboxDecoders.has(file)) {
-            this.mailboxDecoders.set(file, new MailboxDecoder(UPLINK_KIND));
-          }
-          this.watchDirectory(dir, file);
-          await this.read(file, baseline);
+  scan(baseline: boolean) {
+    const account = this.path.join(this.wow, 'WTF', 'Account');
+    const walk = (dir: string, depth: number): Effect.Effect<void, PlatformError> =>
+      Effect.gen({ self: this }, function* () {
+        if (this.stopped || depth > 4) {
+          return;
         }
-      }
-    };
-    await walk(account, 0);
+        const entries = yield* this.fs
+          .readDirectoryEntries(dir)
+          .pipe(Effect.orElseSucceed(() => []));
+        for (const entry of entries) {
+          if (this.stopped) return;
+          const file = this.path.join(dir, entry.name);
+          if (entry.type === 'Directory') {
+            yield* walk(file, depth + 1);
+          } else if (entry.name.toLowerCase() === 'addons.txt') {
+            if (!this.mailboxDecoders.has(file)) {
+              this.mailboxDecoders.set(file, new MailboxDecoder(UPLINK_KIND));
+            }
+            this.watchDirectory(dir, file);
+            yield* this.read(file, baseline);
+          }
+        }
+      });
+    return walk(account, 0);
   }
   /**
    * Watch a character folder for state-file changes. The watch only speeds up
@@ -238,164 +306,159 @@ export class DiskTransport {
     if (this.stopped || this.watchers.has(dir)) {
       return;
     }
-    let watcher: FSWatcher;
-    try {
-      watcher = watch(dir, (_, name) => {
-        if (String(name).toLowerCase() === 'addons.txt') {
-          void this.read(file, false).catch(this.onError);
-        }
-      });
-    } catch (error) {
-      this.onError(error);
-      return;
-    }
-    watcher.on('error', (error) => {
-      watcher.close();
-      if (this.watchers.get(dir) === watcher) {
-        this.watchers.delete(dir);
+    this.watchers.add(dir);
+    const watch = this.fs.watch(dir).pipe(
+      Stream.filter((event) => this.path.basename(event.path).toLowerCase() === 'addons.txt'),
+      Stream.runForEach(() =>
+        this.read(file, false).pipe(
+          Effect.catch((error) => Effect.sync(() => this.onError(error))),
+        ),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          if (!this.stopped && !Cause.hasInterruptsOnly(cause)) this.onError(Cause.squash(cause));
+        }),
+      ),
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.watchers.delete(dir);
+        }),
+      ),
+    );
+    this.runBackground(watch);
+  }
+  read(file: string, baseline: boolean) {
+    return Effect.suspend(() => {
+      if (this.stopped) return Effect.void;
+      let lock = this.reads.get(file);
+      if (!lock) {
+        lock = Semaphore.makeUnsafe(1);
+        this.reads.set(file, lock);
       }
-      if (!this.stopped) {
-        this.onError(error);
+      return lock.withPermit(this.readCurrent(file, baseline));
+    });
+  }
+  private readCurrent(file: string, baseline: boolean) {
+    return Effect.gen({ self: this }, function* () {
+      if (this.stopped) {
+        return;
+      }
+      const text = yield* this.sharedFile(this.fs.readFileString(file)).pipe(
+        Effect.orElseSucceed(() => undefined),
+      );
+      if (this.stopped || text === undefined) return;
+      const mailboxFrame = readUplink(text);
+      let mailboxDecoder = this.mailboxDecoders.get(file);
+      if (!mailboxDecoder) {
+        mailboxDecoder = new MailboxDecoder(UPLINK_KIND);
+        this.mailboxDecoders.set(file, mailboxDecoder);
+      }
+      if (baseline) {
+        // State files persist across host restarts and addon downgrades. Never
+        // replay an on-disk operation merely because it fits in a single frame.
+        if (mailboxFrame) {
+          mailboxDecoder.baseline(mailboxFrame);
+        }
+        return;
+      }
+      const compact = mailboxFrame && decodeFrame(mailboxFrame.subarray(0, 16));
+      if (compact?.kind === COMPACT_ACK_KIND) {
+        if (file === this.activeFile && this.mailboxVersion && this.compactAck) {
+          this.uplinkBusy.set(file, false);
+          if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame!)) {
+            this.uplinkObserved.set(file, { frame: mailboxFrame!, at: this.now() });
+          }
+          const transfer = this.downlink;
+          const applied =
+            transfer && (transfer.bulk || transfer.index + 1 === transfer.frames.length);
+          yield* this.acknowledgeDownlink(
+            {
+              a: [
+                compact.generation,
+                compact.sequence,
+                applied ? transfer.snapshot.revision : this.peerRevision,
+              ],
+              b: Boolean(compact.flags & 2),
+              n: Boolean(compact.flags & 1),
+            },
+            true,
+          );
+        }
+      } else if (mailboxFrame) {
+        const parsed = decodeFrame(mailboxFrame);
+        if (parsed?.kind === UPLINK_KIND) {
+          if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame)) {
+            this.uplinkObserved.set(file, { frame: mailboxFrame, at: this.now() });
+          }
+          this.uplinkBusy.set(file, !(parsed.flags & LAST));
+          const message = mailboxDecoder.add(mailboxFrame);
+          if (message) {
+            let value: unknown;
+            let packet: Packet | undefined;
+            try {
+              value = JSON.parse(inflateMessage(message).toString('utf8'));
+              const ack = message.flags === 0 && parseDownlinkAck(value);
+              if (ack) {
+                if (file === this.activeFile && this.mailboxVersion) {
+                  yield* this.acknowledgeDownlink(ack).pipe(Effect.ignore);
+                }
+              } else {
+                packet = packetSchema.parse(value);
+              }
+            } catch {
+              // Corrupt, oversized or schema-invalid messages wait for the game's
+              // existing application-level resend; never dispatch partial data.
+            }
+            if (packet?.transportVersion === 2) {
+              if (
+                packet.type === 'hello' &&
+                (!this.activeFile || this.activeSession !== packet.session)
+              ) {
+                // Ignore old sessions from inactive historical character files.
+                if (this.activeFile && packet.at < this.activeAt) {
+                  packet = undefined;
+                } else if (
+                  this.activeFile &&
+                  packet.heartbeat &&
+                  !packet.takeover &&
+                  this.now() - this.activeSeenAt < ACTIVE_SESSION_MS
+                ) {
+                  // Another game window's periodic heartbeat never takes a session
+                  // that is still in use; only its player's own request can.
+                  this.onHeldOff(packet.session);
+                  packet = undefined;
+                } else {
+                  this.activeFile = file;
+                  this.activeSession = packet.session;
+                  this.notification = undefined;
+                  this.publishedRevision = 0;
+                  this.published = '';
+                  this.clearDownlink();
+                  this.mailboxVersion = packet.mailboxVersion === 1;
+                  this.compactAck = packet.mailboxVersion === 1 && packet.compactAck === true;
+                  this.bulkAvailable = packet.bulkAvailable !== false;
+                }
+              }
+              if (packet && file === this.activeFile && packet.session === this.activeSession) {
+                this.activeAt = Math.max(this.activeAt, packet.at);
+                this.activeSeenAt = this.now();
+                if (packet.mailboxVersion === 1) {
+                  this.mailboxVersion = true;
+                  this.compactAck ||= packet.compactAck === true;
+                  this.bulkAvailable &&= packet.bulkAvailable !== false;
+                }
+                // Duplicates (application resends) are expected here: the packet
+                // receiver dedupes by session and sequence and re-acknowledges them.
+                this.receive(packet);
+              }
+            }
+          }
+        }
+      }
+      if (file === this.activeFile) {
+        this.repairControl(text);
       }
     });
-    this.watchers.set(dir, watcher);
-  }
-  async read(file: string, baseline: boolean) {
-    if (this.stopped) return;
-    const work = (this.reads.get(file) || Promise.resolve())
-      .catch(() => {})
-      .then(() => this.readCurrent(file, baseline));
-    this.reads.set(file, work);
-    try {
-      await work;
-    } finally {
-      if (this.reads.get(file) === work) {
-        this.reads.delete(file);
-      }
-    }
-  }
-  private async readCurrent(file: string, baseline: boolean) {
-    if (this.stopped) {
-      return;
-    }
-    let text;
-    try {
-      text = await this.sharedFile(() => readFile(file, 'utf8'));
-    } catch {
-      return;
-    }
-    if (this.stopped) return;
-    const mailboxFrame = readUplink(text);
-    let mailboxDecoder = this.mailboxDecoders.get(file);
-    if (!mailboxDecoder) {
-      mailboxDecoder = new MailboxDecoder(UPLINK_KIND);
-      this.mailboxDecoders.set(file, mailboxDecoder);
-    }
-    if (baseline) {
-      // State files persist across host restarts and addon downgrades. Never
-      // replay an on-disk operation merely because it fits in a single frame.
-      if (mailboxFrame) {
-        mailboxDecoder.baseline(mailboxFrame);
-      }
-      return;
-    }
-    const compact = mailboxFrame && decodeFrame(mailboxFrame.subarray(0, 16));
-    if (compact?.kind === COMPACT_ACK_KIND) {
-      if (file === this.activeFile && this.mailboxVersion && this.compactAck) {
-        this.uplinkBusy.set(file, false);
-        if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame!)) {
-          this.uplinkObserved.set(file, { frame: mailboxFrame!, at: Date.now() });
-        }
-        const transfer = this.downlink;
-        const applied =
-          transfer && (transfer.bulk || transfer.index + 1 === transfer.frames.length);
-        await this.acknowledgeDownlink(
-          {
-            a: [
-              compact.generation,
-              compact.sequence,
-              applied ? transfer.snapshot.revision : this.peerRevision,
-            ],
-            b: Boolean(compact.flags & 2),
-            n: Boolean(compact.flags & 1),
-          },
-          true,
-        );
-      }
-    } else if (mailboxFrame) {
-      const parsed = decodeFrame(mailboxFrame);
-      if (parsed?.kind === UPLINK_KIND) {
-        if (!this.uplinkObserved.get(file)?.frame.equals(mailboxFrame)) {
-          this.uplinkObserved.set(file, { frame: mailboxFrame, at: Date.now() });
-        }
-        this.uplinkBusy.set(file, !(parsed.flags & LAST));
-        const message = mailboxDecoder.add(mailboxFrame);
-        if (message) {
-          let value: unknown;
-          let packet: Packet | undefined;
-          try {
-            value = JSON.parse(inflateMessage(message).toString('utf8'));
-            const ack = message.flags === 0 && parseDownlinkAck(value);
-            if (ack) {
-              if (file === this.activeFile && this.mailboxVersion) {
-                await this.acknowledgeDownlink(ack);
-              }
-            } else {
-              packet = packetSchema.parse(value);
-            }
-          } catch {
-            // Corrupt, oversized or schema-invalid messages wait for the game's
-            // existing application-level resend; never dispatch partial data.
-          }
-          if (packet?.transportVersion === 2) {
-            if (
-              packet.type === 'hello' &&
-              (!this.activeFile || this.activeSession !== packet.session)
-            ) {
-              // Ignore old sessions from inactive historical character files.
-              if (this.activeFile && packet.at < this.activeAt) {
-                packet = undefined;
-              } else if (
-                this.activeFile &&
-                packet.heartbeat &&
-                !packet.takeover &&
-                Date.now() - this.activeSeenAt < ACTIVE_SESSION_MS
-              ) {
-                // Another game window's periodic heartbeat never takes a session
-                // that is still in use; only its player's own request can.
-                this.onHeldOff(packet.session);
-                packet = undefined;
-              } else {
-                this.activeFile = file;
-                this.activeSession = packet.session;
-                this.notification = undefined;
-                this.publishedRevision = 0;
-                this.published = '';
-                this.clearDownlink();
-                this.mailboxVersion = packet.mailboxVersion === 1;
-                this.compactAck = packet.mailboxVersion === 1 && packet.compactAck === true;
-                this.bulkAvailable = packet.bulkAvailable !== false;
-              }
-            }
-            if (packet && file === this.activeFile && packet.session === this.activeSession) {
-              this.activeAt = Math.max(this.activeAt, packet.at);
-              this.activeSeenAt = Date.now();
-              if (packet.mailboxVersion === 1) {
-                this.mailboxVersion = true;
-                this.compactAck ||= packet.compactAck === true;
-                this.bulkAvailable &&= packet.bulkAvailable !== false;
-              }
-              // Duplicates (application resends) are expected here: the packet
-              // receiver dedupes by session and sequence and re-acknowledges them.
-              this.receive(packet);
-            }
-          }
-        }
-      }
-    }
-    if (file === this.activeFile) {
-      this.repairControl(text);
-    }
   }
   private repairControl(text: string) {
     if (
@@ -404,45 +467,58 @@ export class DiskTransport {
       readDownlink(text)?.equals(this.notification) ||
       !this.activeFile ||
       this.uplinkBusy.get(this.activeFile) ||
-      Date.now() - this.lastControlWriteAt < 150
+      this.now() - this.lastControlWriteAt < 150
     ) {
       return;
     }
-    void this.writeControl().catch(this.onError);
+    this.runBackground(
+      this.writeControl().pipe(Effect.catch((error) => Effect.sync(() => this.onError(error)))),
+    );
   }
   private controlPending() {
     return Boolean(
       this.notification && (this.downlink || this.peerRevision < this.publishedRevision),
     );
   }
-  private async sharedFile<T>(operation: () => Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (attempt >= 8 || !['EBUSY', 'EPERM', 'EACCES', 'ENOENT'].includes(code || '')) {
-          throw error;
-        }
-        await delay(4 * (attempt + 1));
-      }
-    }
+  private sharedFile<T>(operation: Effect.Effect<T, PlatformError>) {
+    return operation.pipe(
+      Effect.retry({
+        schedule: Schedule.recurs(8).pipe(
+          Schedule.addDelay(({ attempt }) => Effect.succeed(4 * attempt)),
+        ),
+        while: (error) => ['Busy', 'PermissionDenied', 'NotFound'].includes(error.reason._tag),
+      }),
+    );
   }
-  private writeControl(): Promise<void> {
-    if (this.controlWriting) {
-      return this.controlWriting;
-    }
-    const work = (async () => {
+  private writeControl() {
+    return Effect.gen({ self: this }, function* () {
+      // Claim the slot before yielding; concurrent callers share this write's result.
+      const current = this.controlWriting;
+      if (current) return yield* Deferred.await(current);
+      const reply = Deferred.makeUnsafe<void, PlatformError>();
+      this.controlWriting = reply;
+      yield* this.writeControlFrame().pipe(
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            this.controlWriting = undefined;
+            Deferred.doneUnsafe(reply, exit);
+          }),
+        ),
+      );
+    }).pipe(Effect.uninterruptible);
+  }
+  private writeControlFrame() {
+    return Effect.gen({ self: this }, function* () {
       const file = this.activeFile;
       const frame = this.notification;
       if (this.stopped || !file || !frame || !this.controlPending() || this.uplinkBusy.get(file)) {
         return;
       }
-      const quietMs = 5 - (Date.now() - (this.uplinkObserved.get(file)?.at || 0));
+      const quietMs = 5 - (this.now() - (this.uplinkObserved.get(file)?.at || 0));
       if (quietMs > 0) {
-        await delay(quietMs);
+        yield* Effect.sleep(quietMs);
       }
-      const current = await this.sharedFile(() => readFile(file, 'utf8'));
+      const current = yield* this.sharedFile(this.fs.readFileString(file));
       // An empty file is one being rewritten (truncated, not yet written).
       // Replacing it would drop the writer's uplink frame and every other
       // addon's setting; the watchdog retries once the content is back.
@@ -465,60 +541,53 @@ export class DiskTransport {
         return;
       }
       const temporary = file + '.wisp-control.tmp';
-      await writeFile(temporary, replaceDownlink(current, frame), 'utf8');
-      let replaced = false;
-      try {
+      const replaced = yield* Effect.gen({ self: this }, function* () {
+        yield* this.fs.writeFileString(temporary, replaceDownlink(current, frame));
         if (this.stopped || this.activeFile !== file || this.notification !== frame) {
-          return;
+          return false;
         }
-        const latest = await this.sharedFile(() => readFile(file, 'utf8'));
+        const latest = yield* this.sharedFile(this.fs.readFileString(file));
         // Preserve concurrent game packets and unrelated user addon settings.
         // A changed file is retried from a fresh snapshot by the watchdog.
-        if (latest !== current) {
-          return;
+        if (
+          latest !== current ||
+          this.stopped ||
+          this.activeFile !== file ||
+          this.notification !== frame
+        ) {
+          return false;
         }
-        await this.sharedFile(() => rename(temporary, file));
-        replaced = true;
-      } finally {
-        // An abandoned write must not leave its copy beside the game's files.
-        if (!replaced) {
-          await rm(temporary, { force: true }).catch(() => {});
-        }
-      }
-      this.lastControlWriteAt = Date.now();
+        yield* this.sharedFile(this.fs.rename(temporary, file));
+        return true;
+      }).pipe(
+        Effect.onExit((exit) =>
+          exit._tag === 'Success' && exit.value
+            ? Effect.void
+            : Effect.ignore(this.fs.remove(temporary, { force: true })),
+        ),
+      );
+      if (!replaced) return;
+      this.lastControlWriteAt = this.now();
       this.performance.controlWrites++;
       this.performance.wireBytes += frame.length;
       if (this.downlink && this.notification === frame) {
         this.downlink.sentAt ??= this.lastControlWriteAt;
         this.downlink.writes++;
       }
-    })();
-    this.controlWriting = work;
-    void work
-      .finally(() => {
-        if (this.controlWriting === work) {
-          this.controlWriting = undefined;
-        }
-      })
-      .catch(() => {});
-    return work;
+    });
   }
-  private async writePayload(json: string) {
-    const file = path.join(this.wow, 'Interface', 'AddOns', 'WispAI_Payload', 'Payload.lua');
-    await mkdir(path.dirname(file), { recursive: true });
-    const tmp = file + '.tmp';
-    await writeFile(tmp, luaJson(json), 'utf8');
-    for (let attempt = 0; ; attempt++) {
-      try {
-        await rename(tmp, file);
-        break;
-      } catch (error) {
-        if (attempt >= 5) {
-          throw error;
-        }
-        await delay(30);
-      }
-    }
+  private writePayload(json: string) {
+    const file = this.path.join(this.wow, 'Interface', 'AddOns', 'WispAI_Payload', 'Payload.lua');
+    const temporary = file + '.tmp';
+    return this.fs.makeDirectory(this.path.dirname(file), { recursive: true }).pipe(
+      Effect.andThen(this.fs.writeFileString(temporary, luaJson(json))),
+      Effect.andThen(
+        this.fs
+          .rename(temporary, file)
+          .pipe(Effect.retry({ times: 5, schedule: Schedule.spaced(30) })),
+      ),
+      Effect.tapError(() => Effect.ignore(this.fs.remove(temporary, { force: true }))),
+    );
   }
   private reportSlowDownlink(phase: SlowDownlink['phase'], transfer: DownlinkTransfer) {
     const file = this.activeFile;
@@ -527,12 +596,12 @@ export class DiskTransport {
       this.onSlowDownlink({
         phase,
         revision: transfer.snapshot.revision,
-        ageMs: Date.now() - transfer.startedAt,
+        ageMs: this.now() - transfer.startedAt,
         restarts: transfer.restarts,
         bulk: transfer.bulk,
         frames: transfer.frames.length,
         frame: transfer.index,
-        uplinkQuietMs: observed ? Date.now() - observed.at : undefined,
+        uplinkQuietMs: observed ? this.now() - observed.at : undefined,
         uplinkBusy: Boolean(file && this.uplinkBusy.get(file)),
       });
     } catch (error) {
@@ -560,7 +629,7 @@ export class DiskTransport {
       : encodeMessage(transfer.body, kind, this.generation, this.notificationSequence, true);
     this.notificationSequence = (this.notificationSequence + transfer.frames.length) & 65535;
     transfer.index = 0;
-    transfer.lastProgressAt = Date.now();
+    transfer.lastProgressAt = this.now();
     transfer.sentAt = undefined;
     transfer.writes = 0;
     if (transfer.bulk) {
@@ -570,63 +639,66 @@ export class DiskTransport {
     }
     this.notification = transfer.frames[0];
   }
-  private async startDownlink() {
-    const record = this.latestSnapshot;
-    if (
-      this.stopped ||
-      !this.mailboxVersion ||
-      !this.activeFile ||
-      this.downlink ||
-      !record ||
-      record.revision <= this.peerRevision
-    ) {
-      return;
-    }
-    const prepared = prepareDownlink(record.snapshot, this.acknowledgedSnapshot?.snapshot);
-    const transfer: DownlinkTransfer = {
-      snapshot: record,
-      body: prepared.body,
-      frames: [],
-      index: 0,
-      bulk:
-        this.bulkAvailable &&
-        preferBulkDelivery(prepared.body.length, {
-          fragmentMs: this.performance.fragmentRttMs ?? (this.compactAck ? 50 : 100),
-          bulkMs: this.performance.bulkRttMs ?? 150,
-          slotsRemaining: 1025 - this.nextSlot,
-        }),
-      bulkSlot: this.nextSlot,
-      lastProgressAt: Date.now(),
-      writes: 0,
-      startedAt: Date.now(),
-      restarts: 0,
-      stallReported: false,
-    };
-    this.downlink = transfer;
-    if (transfer.bulk) {
-      try {
-        await this.writePayload(record.json);
-      } catch {
-        // Bulk files are an acceleration, never a prerequisite for progress.
-        transfer.bulk = false;
+  private startDownlink() {
+    return Effect.gen({ self: this }, function* () {
+      const record = this.latestSnapshot;
+      if (
+        this.stopped ||
+        !this.mailboxVersion ||
+        !this.activeFile ||
+        this.downlink ||
+        !record ||
+        record.revision <= this.peerRevision
+      ) {
+        return;
       }
-    }
-    if (this.downlink !== transfer || this.stopped) {
-      return;
-    }
-    this.frameTransfer(transfer);
-    await this.writeControl();
+      const prepared = prepareDownlink(record.snapshot, this.acknowledgedSnapshot?.snapshot);
+      const transfer: DownlinkTransfer = {
+        snapshot: record,
+        body: prepared.body,
+        frames: [],
+        index: 0,
+        bulk:
+          this.bulkAvailable &&
+          preferBulkDelivery(prepared.body.length, {
+            fragmentMs: this.performance.fragmentRttMs ?? (this.compactAck ? 50 : 100),
+            bulkMs: this.performance.bulkRttMs ?? 150,
+            slotsRemaining: 1025 - this.nextSlot,
+          }),
+        bulkSlot: this.nextSlot,
+        lastProgressAt: this.now(),
+        writes: 0,
+        startedAt: this.now(),
+        restarts: 0,
+        stallReported: false,
+      };
+      this.downlink = transfer;
+      if (transfer.bulk) {
+        // Bulk files are an acceleration, never a prerequisite for progress.
+        transfer.bulk = yield* this.writePayload(record.json).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        );
+      }
+      if (this.downlink !== transfer || this.stopped) {
+        return;
+      }
+      this.frameTransfer(transfer);
+      yield* this.writeControl();
+    });
   }
   private queueDownlink() {
+    if (this.stopped) return;
     const epoch = this.publicationEpoch;
-    this.writing = this.writing
-      .catch(() => {})
-      .then(async () => {
-        if (epoch === this.publicationEpoch) {
-          await this.startDownlink();
-        }
-      });
-    void this.writing.catch(this.onError);
+    this.runBackground(
+      this.writeLock
+        .withPermit(
+          Effect.suspend(() =>
+            epoch === this.publicationEpoch ? this.startDownlink() : Effect.void,
+          ).pipe(Effect.uninterruptible),
+        )
+        .pipe(Effect.catch((error) => Effect.sync(() => this.onError(error)))),
+    );
   }
   private finishDownlink(revision: number) {
     const transfer = this.downlink;
@@ -648,7 +720,7 @@ export class DiskTransport {
       // next user message; max also avoids counting a newer app cursor twice.
       this.nextSlot = Math.max(this.nextSlot, Math.min(1024, transfer.bulkSlot + 1));
     }
-    if (transfer.stallReported || Date.now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
+    if (transfer.stallReported || this.now() - transfer.startedAt >= SLOW_DOWNLINK_MS) {
       this.reportSlowDownlink('delivered', transfer);
     }
     this.peerRevision = Math.max(this.peerRevision, revision);
@@ -657,101 +729,112 @@ export class DiskTransport {
     this.notification = undefined;
     this.queueDownlink();
   }
-  private async acknowledgeDownlink(
+  private acknowledgeDownlink(
     ack: NonNullable<ReturnType<typeof parseDownlinkAck>>,
     compact = false,
   ) {
-    const transfer = this.downlink;
-    const frame = this.notification && decodeFrame(this.notification);
-    if (!transfer || !frame || ack.a[0] !== frame.generation || ack.a[1] !== frame.sequence) {
-      return;
-    }
-    this.performance.acknowledgments++;
-    if (compact) {
-      this.performance.compactAcknowledgments++;
-    }
-    const sample = transfer.sentAt === undefined ? undefined : Date.now() - transfer.sentAt;
-    if (!ack.n && transfer.writes === 1 && sample !== undefined && sample >= 1 && sample <= 2000) {
-      const key = transfer.bulk ? 'bulkRttMs' : 'fragmentRttMs';
-      const previous = this.performance[key];
-      this.performance[key] = previous === undefined ? sample : previous * 0.8 + sample * 0.2;
-    }
-    this.bulkAvailable &&= ack.b;
-    transfer.lastProgressAt = Date.now();
-    if (ack.n) {
-      this.acknowledgedSnapshot = undefined;
-      this.downlink = undefined;
-      this.notification = undefined;
-      this.queueDownlink();
-    } else if (transfer.bulk) {
-      if (ack.a[2] >= transfer.snapshot.revision) {
-        this.finishDownlink(ack.a[2]);
-      } else if (!ack.b) {
-        transfer.bulk = false;
-        this.frameTransfer(transfer);
-        await this.writeControl();
+    return Effect.gen({ self: this }, function* () {
+      const transfer = this.downlink;
+      const frame = this.notification && decodeFrame(this.notification);
+      if (!transfer || !frame || ack.a[0] !== frame.generation || ack.a[1] !== frame.sequence) {
+        return;
       }
-    } else if (transfer.index + 1 < transfer.frames.length) {
-      transfer.index++;
-      transfer.sentAt = undefined;
-      transfer.writes = 0;
-      this.notification = transfer.frames[transfer.index];
-      await this.writeControl();
-    } else if (ack.a[2] === transfer.snapshot.revision) {
-      this.finishDownlink(ack.a[2]);
-    } else {
-      // A decoder/base mismatch needs a full snapshot, not a repeated patch.
-      this.acknowledgedSnapshot = undefined;
-      this.downlink = undefined;
-      this.notification = undefined;
-      this.queueDownlink();
-    }
+      this.performance.acknowledgments++;
+      if (compact) {
+        this.performance.compactAcknowledgments++;
+      }
+      const sample = transfer.sentAt === undefined ? undefined : this.now() - transfer.sentAt;
+      if (
+        !ack.n &&
+        transfer.writes === 1 &&
+        sample !== undefined &&
+        sample >= 1 &&
+        sample <= 2000
+      ) {
+        const key = transfer.bulk ? 'bulkRttMs' : 'fragmentRttMs';
+        const previous = this.performance[key];
+        this.performance[key] = previous === undefined ? sample : previous * 0.8 + sample * 0.2;
+      }
+      this.bulkAvailable &&= ack.b;
+      transfer.lastProgressAt = this.now();
+      if (ack.n) {
+        this.acknowledgedSnapshot = undefined;
+        this.downlink = undefined;
+        this.notification = undefined;
+        this.queueDownlink();
+      } else if (transfer.bulk) {
+        if (ack.a[2] >= transfer.snapshot.revision) {
+          this.finishDownlink(ack.a[2]);
+        } else if (!ack.b) {
+          transfer.bulk = false;
+          this.frameTransfer(transfer);
+          yield* this.writeControl();
+        }
+      } else if (transfer.index + 1 < transfer.frames.length) {
+        transfer.index++;
+        transfer.sentAt = undefined;
+        transfer.writes = 0;
+        this.notification = transfer.frames[transfer.index];
+        yield* this.writeControl();
+      } else if (ack.a[2] === transfer.snapshot.revision) {
+        this.finishDownlink(ack.a[2]);
+      } else {
+        // A decoder/base mismatch needs a full snapshot, not a repeated patch.
+        this.acknowledgedSnapshot = undefined;
+        this.downlink = undefined;
+        this.notification = undefined;
+        this.queueDownlink();
+      }
+    });
   }
   publish(snapshot: unknown) {
-    const json = JSON.stringify(snapshot);
-    const revision = (snapshot as { rev?: unknown } | null)?.rev;
-    if (json === this.published) {
-      return this.writing;
-    }
-    this.published = json;
-    const epoch = this.publicationEpoch;
-    this.writing = this.writing
-      .catch(() => {})
-      .then(async () => {
-        if (this.stopped || epoch !== this.publicationEpoch) {
-          return;
-        }
-        if (this.mailboxVersion && Number.isSafeInteger(revision) && Number(revision) > 0) {
-          this.publishedRevision = Number(revision);
-          this.latestSnapshot = {
-            revision: Number(revision),
-            json,
-            snapshot: JSON.parse(json),
-          };
-          await this.startDownlink();
-          return;
-        }
-        await this.writePayload(json);
-        if (Number.isSafeInteger(revision) && Number(revision) > 0) {
-          this.publishedRevision = Number(revision);
-          this.notification = encodeFrame({
-            kind: DOWNLINK_KIND,
-            flags: FIRST | LAST,
-            generation: this.generation,
-            sequence: this.notificationSequence,
-            payload: Buffer.from(JSON.stringify({ r: revision })),
-          });
-          this.notificationSequence = (this.notificationSequence + 1) & 65535;
-          await this.writeControl();
-        }
-      })
-      .catch((error) => {
-        if (this.published === json) {
-          this.published = '';
-        }
-        throw error;
-      });
-    return this.writing;
+    return Effect.suspend(() => {
+      const json = JSON.stringify(snapshot);
+      const revision = (snapshot as { rev?: unknown } | null)?.rev;
+      const epoch = this.publicationEpoch;
+      return this.writeLock.withPermit(
+        Effect.gen({ self: this }, function* () {
+          if (this.stopped || epoch !== this.publicationEpoch || json === this.published) {
+            return;
+          }
+          this.published = json;
+          if (this.mailboxVersion && Number.isSafeInteger(revision) && Number(revision) > 0) {
+            this.publishedRevision = Number(revision);
+            this.latestSnapshot = {
+              revision: Number(revision),
+              json,
+              snapshot: JSON.parse(json),
+            };
+            yield* this.startDownlink();
+            return;
+          }
+          yield* this.writePayload(json);
+          if (this.stopped || epoch !== this.publicationEpoch) return;
+          if (Number.isSafeInteger(revision) && Number(revision) > 0) {
+            this.publishedRevision = Number(revision);
+            this.notification = encodeFrame({
+              kind: DOWNLINK_KIND,
+              flags: FIRST | LAST,
+              generation: this.generation,
+              sequence: this.notificationSequence,
+              payload: Buffer.from(JSON.stringify({ r: revision })),
+            });
+            this.notificationSequence = (this.notificationSequence + 1) & 65535;
+            yield* this.writeControl();
+          }
+        }).pipe(
+          Effect.tapCause(() =>
+            Effect.sync(() => {
+              if (this.published === json) this.published = '';
+            }),
+          ),
+          Effect.uninterruptible,
+        ),
+      );
+    });
+  }
+  waitForWrites() {
+    return this.writeLock.withPermit(Effect.void);
   }
   setCursor(slot: number, receivedRevision: number) {
     this.nextSlot = Math.max(this.nextSlot, slot);
@@ -779,16 +862,18 @@ export class DiskTransport {
     this.publishedRevision = 0;
     this.notification = undefined;
     this.clearDownlink();
-    this.generation = randomBytes(4).readUInt32BE() || 1;
+    this.generation = this.nextGeneration();
     this.notificationSequence = 0;
   }
-  async stop() {
-    this.stopped = true;
-    for (const watcher of this.watchers.values()) {
-      watcher.close();
-    }
-    this.watchers.clear();
-    await Promise.allSettled([this.scans, ...this.reads.values()]);
-    await Promise.allSettled([this.writing, this.controlWriting]);
+  private stop() {
+    return Effect.gen({ self: this }, function* () {
+      this.stopped = true;
+      yield* FiberSet.clear(this.fibers);
+      yield* Effect.forEach(this.reads.values(), (lock) => lock.withPermit(Effect.void), {
+        discard: true,
+        concurrency: 'unbounded',
+      });
+      yield* this.waitForWrites();
+    });
   }
 }

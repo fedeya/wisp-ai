@@ -45,7 +45,7 @@ function setup() {
     currentCharacterKey: () => 'mage',
     sendPanelCommand: vi.fn(),
     setCapability: vi.fn(() => Effect.void),
-    setWowTransport: vi.fn(async () => {}),
+    setWowTransport: vi.fn(() => Effect.void),
     setAppUpdate: vi.fn(),
     setFeature: vi.fn(async () => {}),
     changed: vi.fn(),

@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Cause, Effect } from 'effect';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { errorMessage } from '../errors.ts';
 import { createPublishScheduler } from './publish-scheduler.ts';
@@ -45,15 +45,20 @@ export const createSnapshotPublisher = Effect.fnUntraced(function* (
       state.firstReadyRevision = snapshot.rev;
     }
     if (snapshot) {
-      void transport.publish(snapshot).catch((error) => {
-        snapshots.invalidate();
-        dirty = true;
-        runFork(
-          Effect.logWarning('Failed to publish reply').pipe(
-            Effect.annotateLogs({ event: 'transport.publish_failed', error: errorMessage(error) }),
-          ),
-        );
-      });
+      runFork(
+        transport.publish(snapshot).pipe(
+          Effect.catchCause((cause) => {
+            snapshots.invalidate();
+            dirty = true;
+            return Effect.logWarning('Failed to publish reply').pipe(
+              Effect.annotateLogs({
+                event: 'transport.publish_failed',
+                error: errorMessage(Cause.squash(cause)),
+              }),
+            );
+          }),
+        ),
+      );
     }
   }
 

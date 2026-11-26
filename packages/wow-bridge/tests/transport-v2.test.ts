@@ -1,5 +1,5 @@
 import { expect, test, vi } from 'vitest';
-import { Effect, Exit, Scope } from 'effect';
+import { Effect, type FileSystem } from 'effect';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -30,10 +30,12 @@ import {
   inflateMessage,
 } from '../src/mailbox.ts';
 import { applyDownlink } from '../src/downlink.ts';
+import { openTransport } from './transport-fixture.ts';
 
 async function fixture(
   receive: (packet: Packet, bridge: DiskTransport) => void = () => {},
   realm = 'realm',
+  overrideFs?: (fs: FileSystem.FileSystem) => FileSystem.FileSystem,
 ) {
   const base = path.resolve('runtime');
   await mkdir(base, { recursive: true });
@@ -51,22 +53,24 @@ async function fixture(
   const packets: Packet[] = [];
   const heldOff: string[] = [];
   const slow: SlowDownlink[] = [];
-  const bridge = new DiskTransport(
-    root,
-    (packet) => {
-      packets.push(packet);
-      receive(packet, bridge);
-    },
-    (error) => errors.push(error),
-    (session) => heldOff.push(session),
-    (report) => slow.push(report),
+  const { bridge, close } = await openTransport(
+    [
+      root,
+      (packet) => {
+        packets.push(packet);
+        receive(packet, bridge);
+      },
+      (error) => errors.push(error),
+      (session) => heldOff.push(session),
+      (report) => slow.push(report),
+    ],
+    overrideFs,
   );
   const hello = { type: 'hello', session: 'v2', seq: 1, at: 1, transportVersion: 2 };
-  const scope = Scope.makeUnsafe();
   return {
     root,
     bridge,
-    start: () => Effect.runPromise(Scope.provide(bridge.start(), scope)),
+    start: () => Effect.runPromise(bridge.start()),
     file,
     payload,
     original,
@@ -86,13 +90,12 @@ async function fixture(
       );
       for (const frame of frames) {
         await writeFile(target, replaceUplink(await readFile(target, 'utf8'), frame));
-        await bridge.read(target, false);
+        await Effect.runPromise(bridge.read(target, false));
       }
       return frames;
     },
     async close() {
-      await Effect.runPromise(Scope.close(scope, Exit.void));
-      if (!bridge.stopped) await bridge.stop();
+      await close();
       expect(path.resolve(root).startsWith(base + path.sep)).toBeTruthy();
       await rm(root, { recursive: true, force: true });
     },
@@ -116,7 +119,7 @@ test('fresh sparse AddOns.txt in a numeric realm connects and receives its first
   const f = await fixture(undefined, '91');
   try {
     await writeFile(f.file, 'Other: disabled\r\n');
-    await f.bridge.scan(true);
+    await Effect.runPromise(f.bridge.scan(true));
     const [frame] = encodeMessage(Buffer.from(JSON.stringify(f.hello)), UPLINK_KIND, 77);
     const sparse = [
       'Other: disabled',
@@ -125,10 +128,12 @@ test('fresh sparse AddOns.txt in a numeric realm connects and receives its first
       ),
     ].join('\r\n');
     await writeFile(f.file, sparse);
-    await f.bridge.read(f.file, false);
+    await Effect.runPromise(f.bridge.read(f.file, false));
     expect(f.packets.length).toBe(1);
     expect(f.packets[0].type).toBe('hello');
-    await f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'first connection' });
+    await Effect.runPromise(
+      f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'first connection' }),
+    );
     const current = await readFile(f.file, 'utf8');
     expect(readUplink(current)).toStrictEqual(frame);
     expect(JSON.parse(decodeFrame(readDownlink(current)!)!.payload.toString())).toStrictEqual({
@@ -154,12 +159,12 @@ test('initial scan baselines a cached hello and fresh hello retry preserves nego
     await writeFile(f.file, replaceUplink(f.original, frames[0]));
     await f.start();
     expect(f.packets.length, 'persisted hello cannot establish a stale session').toBe(0);
-    await f.bridge.read(f.file, false);
+    await Effect.runPromise(f.bridge.read(f.file, false));
     expect(f.packets.length, 'an unchanged persisted frame stays suppressed').toBe(0);
     const [freshHello] = await f.send(f.hello, 10);
     expect(f.packets.length).toBe(1);
     expect(f.packets[0].transportVersion).toBe(2);
-    await f.bridge.publish({ rev: 2, session: 'v2', text: 'ready after reset' });
+    await Effect.runPromise(f.bridge.publish({ rev: 2, session: 'v2', text: 'ready after reset' }));
     const current = await readFile(f.file, 'utf8');
     const ready = decodeFrame(readDownlink(current)!);
     expect(JSON.parse(ready!.payload.toString())).toStrictEqual({ r: 2 });
@@ -196,10 +201,10 @@ test('cached single-frame user operations are not replayed and fresh user data c
     expect(rest.length, 'fixture must be a complete single-frame user operation').toBe(0);
     await writeFile(f.file, replaceUplink(f.original, frame));
     await f.start();
-    await f.bridge.read(f.file, false);
+    await Effect.runPromise(f.bridge.read(f.file, false));
     expect(f.packets.length).toBe(0);
     await f.send({ ...say, seq: 2 }, 10, true);
-    await f.bridge.publish({ rev: 1, text: 'not negotiated' });
+    await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'not negotiated' }));
     expect(f.packets.length).toBe(0);
     expect(decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)).toBe(null);
     await f.send({ ...f.hello, session: 'x' }, 20);
@@ -218,7 +223,7 @@ test('unversioned messages cannot negotiate or take ownership of an active Wisp 
     await f.send({ type: 'hello', session: 'unversioned', seq: 1, at: 1 });
     expect(f.packets.length).toBe(0);
     await f.send(f.hello, 10);
-    await f.bridge.publish({ rev: 2, text: 'v2 active' });
+    await Effect.runPromise(f.bridge.publish({ rev: 2, text: 'v2 active' }));
     await f.send({ type: 'hello', session: 'unversioned', seq: 2, at: 2 }, 20);
     await f.send(
       { type: 'say', session: 'unversioned', seq: 3, at: 3, chat: 'c', text: 'must be ignored' },
@@ -236,7 +241,7 @@ test('unversioned messages cannot negotiate or take ownership of an active Wisp 
 test('only fully decoded, CRC-valid, schema-valid v2 application messages reach dispatch', async () => {
   const f = await fixture();
   try {
-    await f.bridge.scan(true);
+    await Effect.runPromise(f.bridge.scan(true));
     await f.send(f.hello);
     const say = {
       ...f.hello,
@@ -260,7 +265,7 @@ test('only fully decoded, CRC-valid, schema-valid v2 application messages reach 
         frame[15] ^= 1;
       }
       await writeFile(f.file, replaceUplink(await readFile(f.file, 'utf8'), frame));
-      await f.bridge.read(f.file, false);
+      await Effect.runPromise(f.bridge.read(f.file, false));
     }
     expect(f.packets.length, 'damaged partial body cannot dispatch').toBe(1);
     await f.send(say, 100, true);
@@ -279,7 +284,7 @@ test('readiness is reasserted after a game save loses it, then repair stops once
   try {
     await f.start();
     const [helloFrame] = await f.send(f.hello);
-    await f.bridge.publish({ rev: 8, text: 'bulk '.repeat(2000) });
+    await Effect.runPromise(f.bridge.publish({ rev: 8, text: 'bulk '.repeat(2000) }));
     expect(await readFile(f.payload, 'utf8')).toContain('bulk '.repeat(2000));
     const ready = readDownlink(await readFile(f.file, 'utf8'))!;
     const savedOldControl = replaceUplink(f.original, helloFrame);
@@ -299,15 +304,17 @@ test('readiness is reasserted after a game save loses it, then repair stops once
 test('bulk publish is not announced until its file replacement succeeds', async () => {
   const f = await fixture();
   try {
-    await f.bridge.scan(true);
+    await Effect.runPromise(f.bridge.scan(true));
     await f.send(f.hello);
     // An occupied Interface path reliably fails before creating/replacing Payload.lua.
     const resolved = path.join(f.root, 'Interface');
     await writeFile(resolved, 'blocked');
-    await expect(f.bridge.publish({ rev: 4, text: 'must not announce' })).rejects.toThrow();
+    await expect(
+      Effect.runPromise(f.bridge.publish({ rev: 4, text: 'must not announce' })),
+    ).rejects.toThrow();
     expect(decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)).toBe(null);
     await rm(resolved);
-    await f.bridge.publish({ rev: 4, text: 'must not announce' });
+    await Effect.runPromise(f.bridge.publish({ rev: 4, text: 'must not announce' }));
     expect(
       JSON.parse(decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!.payload.toString()),
     ).toStrictEqual({ r: 4 });
@@ -340,8 +347,8 @@ async function acknowledge(
       payload: Buffer.alloc(0),
     }).copy(lane);
     await writeFile(f.file, replaceUplink(current, lane));
-    await f.bridge.read(f.file, false);
-    await f.bridge.writing;
+    await Effect.runPromise(f.bridge.read(f.file, false));
+    await Effect.runPromise(f.bridge.waitForWrites());
     return;
   }
   await f.send(
@@ -352,7 +359,7 @@ async function acknowledge(
     },
     ackSequence++,
   );
-  await f.bridge.writing;
+  await Effect.runPromise(f.bridge.waitForWrites());
 }
 async function drainMailbox(
   f: TransportFixture,
@@ -389,7 +396,7 @@ test('negotiated responses transfer through reusable fragments without any bulk 
   try {
     await mailbox(f);
     const snapshot = { rev: 1, session: 'v2', text: 'Propio 🚀 '.repeat(50), ready: true };
-    await f.bridge.publish(snapshot);
+    await Effect.runPromise(f.bridge.publish(snapshot));
     const result = await drainMailbox(f);
     expect(result.state).toStrictEqual(snapshot);
     expect(result.frames, 'exercise multi-frame flow control').toBeGreaterThan(1);
@@ -406,7 +413,7 @@ test('only matching ACKs advance a fragment, and lost file writes restore the sa
   const f = await fixture();
   try {
     await mailbox(f);
-    await f.bridge.publish({ rev: 1, text: 'Checked responses '.repeat(40) });
+    await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'Checked responses '.repeat(40) }));
     const first = readDownlink(await readFile(f.file, 'utf8'))!;
     const frame = decodeFrame(first)!;
     await acknowledge(f, { ...frame, sequence: (frame.sequence + 1) & 65535 }, 0);
@@ -438,7 +445,7 @@ test(
       await mailbox(f, true);
       const text = Array.from({ length: 60 }, (_, i) => Math.sin(i * 123).toString(36)).join('');
       const snapshot = { rev: 1, text };
-      await f.bridge.publish(snapshot);
+      await Effect.runPromise(f.bridge.publish(snapshot));
       const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
       expect(ready.flags, 'large state initially uses the optional file accelerator').toBe(3);
       expect(JSON.parse(ready.payload.toString())).toStrictEqual({ r: 1 });
@@ -449,7 +456,7 @@ test(
       expect(f.bridge.nextSlot).toBe(1024);
       // A stale envelope queued before exhaustion cannot turn bulk back on.
       await f.send({ ...f.hello, seq: 2, mailboxVersion: 1, bulkAvailable: true }, 3000);
-      await f.bridge.publish({ rev: 2, text: text + ' after the bank ran out' });
+      await Effect.runPromise(f.bridge.publish({ rev: 2, text: text + ' after the bank ran out' }));
       expect((await drainMailbox(f, snapshot)).state).toStrictEqual({
         rev: 2,
         text: text + ' after the bank ran out',
@@ -473,7 +480,7 @@ test(
         rev: 1,
         text: Array.from({ length: 80 }, (_, i) => Math.cos(i * 321).toString(36)).join(''),
       };
-      await f.bridge.publish(snapshot);
+      await Effect.runPromise(f.bridge.publish(snapshot));
       expect((await drainMailbox(f)).state).toStrictEqual(snapshot);
       expect(f.errors).toStrictEqual([]);
     } finally {
@@ -493,7 +500,7 @@ test('publications coalesce without replacing unacknowledged data and patches us
       chats: [{ id: 'c', messages: [{ text: 'Unchanged '.repeat(500), ui: ['a', 'b'] }] }],
       catalog: Array.from({ length: 100 }, (_, i) => ({ id: 'model-' + i, name: 'Model ' + i })),
     };
-    await f.bridge.publish(first);
+    await Effect.runPromise(f.bridge.publish(first));
     const bytes = readDownlink(await readFile(f.file, 'utf8'))!;
     const latest = {
       ...first,
@@ -501,7 +508,7 @@ test('publications coalesce without replacing unacknowledged data and patches us
       chats: [{ id: 'c', messages: [{ text: 'Final text', ui: ['a'] }] }],
     };
     for (let rev = 2; rev <= 20; rev++) {
-      await f.bridge.publish({ ...latest, rev });
+      await Effect.runPromise(f.bridge.publish({ ...latest, rev }));
       expect(readDownlink(await readFile(f.file, 'utf8'))).toStrictEqual(bytes);
     }
     expect((await drainMailbox(f)).state).toStrictEqual(first);
@@ -527,10 +534,10 @@ test('resynchronization discards a failed delta and delivers a fresh full latest
       catalog: Array.from({ length: 80 }, (_, i) => ({ id: 'model-' + i, name: 'Model ' + i })),
       text: 'before',
     };
-    await f.bridge.publish(base);
+    await Effect.runPromise(f.bridge.publish(base));
     await drainMailbox(f);
     const latest = { ...base, rev: 2, text: 'after' };
-    await f.bridge.publish(latest);
+    await Effect.runPromise(f.bridge.publish(latest));
     const first = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     await acknowledge(f, first, 0, false, true);
     const full = await drainMailbox(f);
@@ -551,11 +558,11 @@ test('unrelated B-lane state cannot negotiate or block a fresh mailbox hello and
       (_, id: string) => 'WispAI_B' + id + ': ' + (Number(id) % 3 ? 'disabled' : 'enabled'),
     );
     await writeFile(f.file, unrelated);
-    await f.bridge.read(f.file, false);
+    await Effect.runPromise(f.bridge.read(f.file, false));
     expect(f.packets.length).toBe(0);
     await f.send({ ...f.hello, mailboxVersion: 1, bulkAvailable: false });
     const snapshot = { rev: 1, text: 'fresh after unrelated B state' };
-    await f.bridge.publish(snapshot);
+    await Effect.runPromise(f.bridge.publish(snapshot));
     expect((await drainMailbox(f)).state).toStrictEqual(snapshot);
     expect(f.errors).toStrictEqual([]);
   } finally {
@@ -567,13 +574,13 @@ test('host restarts discard old ACKs and unknown future cursors cannot suppress 
   const f = await fixture();
   try {
     await mailbox(f);
-    await f.bridge.publish({ rev: 1, text: 'interrupted' });
+    await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'interrupted' }));
     const oldFrame = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     f.bridge.resetSession();
     f.bridge.setCursor(1024, 9000);
     expect(f.bridge.peerRevision, 'previous-host revision cannot acknowledge unseen state').toBe(0);
     const snapshot = { rev: 2, text: 'fresh generation' };
-    await f.bridge.publish(snapshot);
+    await Effect.runPromise(f.bridge.publish(snapshot));
     const fresh = readDownlink(await readFile(f.file, 'utf8'))!;
     await acknowledge(f, oldFrame, 1);
     expect(readDownlink(await readFile(f.file, 'utf8'))).toStrictEqual(fresh);
@@ -606,7 +613,7 @@ test('compact-capable peers transfer checked state with header-only ACKs and no 
     await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
     const snapshot = { rev: 1, session: 'v2', text: 'Compacto 🚀 '.repeat(100) };
-    await f.bridge.publish(snapshot);
+    await Effect.runPromise(f.bridge.publish(snapshot));
     const frame = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     expect(frame.kind).toBe(COMPACT_DOWNLINK_KIND);
     const pending = readDownlink(await readFile(f.file, 'utf8'));
@@ -632,7 +639,7 @@ test('compact ACKs cannot negotiate support for an older peer', async () => {
   try {
     await mailbox(f);
     const snapshot = { rev: 1, text: 'Raw ACK compatibility remains available' };
-    await f.bridge.publish(snapshot);
+    await Effect.runPromise(f.bridge.publish(snapshot));
     const bytes = readDownlink(await readFile(f.file, 'utf8'))!;
     const frame = decodeFrame(bytes)!;
     await acknowledge(f, { ...frame, kind: COMPACT_DOWNLINK_KIND }, 0);
@@ -657,7 +664,7 @@ test(
         rev: 1,
         text: Array.from({ length: 120 }, (_, i) => Math.sin(i * 719).toString(36)).join(''),
       };
-      await f.bridge.publish(snapshot);
+      await Effect.runPromise(f.bridge.publish(snapshot));
       const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
       expect(ready.kind).toBe(COMPACT_DOWNLINK_KIND);
       expect(ready.flags).toBe(3);
@@ -681,13 +688,13 @@ test('a file caught mid-rewrite is never replaced and its pending frame is resto
   try {
     await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
-    await f.bridge.publish({ rev: 1, text: 'x' });
+    await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'x' }));
     const pending = readDownlink(await readFile(f.file, 'utf8'))!;
     // A writer truncated the file and has not written it yet. On Linux the
     // directory watcher reads it in exactly this state.
     await delay(200);
     await writeFile(f.file, '');
-    await f.bridge.read(f.file, false);
+    await Effect.runPromise(f.bridge.read(f.file, false));
     await delay(200);
     expect(await readFile(f.file, 'utf8')).toBe('');
     await writeFile(f.file, f.original);
@@ -705,7 +712,7 @@ test('matching first-attempt ACKs update fragment RTT independently from bulk la
   try {
     await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: false });
-    await f.bridge.publish({ rev: 1, text: 'x' });
+    await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'x' }));
     let frame = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     expect(frame.flags & 2, 'exercise multiple latency samples').toBe(0);
     now.mockReturnValue(1060);
@@ -730,10 +737,12 @@ test('a compact bulk confirmation updates both its latency and slot budget witho
   try {
     await f.start();
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true, bulkAvailable: true });
-    await f.bridge.publish({
-      rev: 1,
-      text: Array.from({ length: 120 }, (_, i) => Math.cos(i * 419).toString(36)).join(''),
-    });
+    await Effect.runPromise(
+      f.bridge.publish({
+        rev: 1,
+        text: Array.from({ length: 120 }, (_, i) => Math.cos(i * 419).toString(36)).join(''),
+      }),
+    );
     const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     expect(ready.flags).toBe(3);
     now.mockReturnValue(1120);
@@ -745,10 +754,12 @@ test('a compact bulk confirmation updates both its latency and slot budget witho
       'the confirmed bulk read updates scarcity without an app cursor',
     ).toBe(2);
     expect(f.bridge.peerRevision).toBe(1);
-    await f.bridge.publish({
-      rev: 2,
-      text: Array.from({ length: 120 }, (_, i) => Math.cos(i * 293).toString(36)).join(''),
-    });
+    await Effect.runPromise(
+      f.bridge.publish({
+        rev: 2,
+        text: Array.from({ length: 120 }, (_, i) => Math.cos(i * 293).toString(36)).join(''),
+      }),
+    );
     const second = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     expect(second.flags).toBe(3);
     // An application cursor may reach the host before the transport ACK.
@@ -818,23 +829,25 @@ test('an active session rereads only its own state file between full folder walk
 });
 
 test('an abandoned control write removes its temporary copy', async () => {
-  const f = await fixture();
+  let reads = 0;
+  let rewriting = false;
+  // Make the game appear to rewrite the file between the bridge's two reads.
+  const f = await fixture(undefined, undefined, (fs) => ({
+    ...fs,
+    readFileString: (file, encoding) =>
+      fs
+        .readFileString(file, encoding)
+        .pipe(
+          Effect.map((value) => (rewriting && ++reads === 2 ? value + '\r\nGame: enabled' : value)),
+        ),
+  }));
   try {
     await f.send({ ...f.hello, mailboxVersion: 1, compactAck: true });
-    // Make the game appear to rewrite the file between the bridge's two reads.
-    const transport = f.bridge as unknown as {
-      sharedFile: <T>(operation: () => Promise<T>) => Promise<T>;
-    };
-    const original = transport.sharedFile.bind(f.bridge);
-    let reads = 0;
-    transport.sharedFile = async <T>(operation: () => Promise<T>) => {
-      const value = await original(operation);
-      return (
-        typeof value === 'string' && ++reads === 2 ? value + '\r\nGame: enabled' : value
-      ) as T;
-    };
+    rewriting = true;
     const before = await readFile(f.file, 'utf8');
-    await f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'abandoned' });
+    await Effect.runPromise(
+      f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'abandoned' }),
+    );
     expect(reads, 'the write reached its second read').toBeGreaterThanOrEqual(2);
     await expect(readFile(f.file + '.wisp-control.tmp')).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await readFile(f.file, 'utf8'), 'the changed file was not replaced').toBe(before);
@@ -854,7 +867,7 @@ test('a reply the game has not read for 10 seconds is reported once, then again 
   try {
     await mailbox(f);
     const snapshot = { rev: 1, text: 'el huesoooo' };
-    await f.bridge.publish(snapshot);
+    await Effect.runPromise(f.bridge.publish(snapshot));
     // The watchdog restarts an unacknowledged transfer every five seconds.
     clock += 6000;
     await delay(400);
@@ -873,7 +886,7 @@ test('a reply the game has not read for 10 seconds is reported once, then again 
     expect(f.slow[1]!.phase).toBe('delivered');
     expect(f.slow[1]!.ageMs).toBeGreaterThan(f.slow[0]!.ageMs);
     // A prompt reply after that is not reported.
-    await f.bridge.publish({ rev: 2, text: 'rápido' });
+    await Effect.runPromise(f.bridge.publish({ rev: 2, text: 'rápido' }));
     await drainMailbox(f, snapshot);
     expect(f.slow.length).toBe(2);
     expect(f.errors).toStrictEqual([]);

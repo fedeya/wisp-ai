@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
-import { Deferred, Effect } from 'effect';
+import { Clock, Deferred, Effect } from 'effect';
+import { SecureRandom } from 'effect/crypto';
 
 export interface GameRequest {
   chat: string;
@@ -40,16 +40,32 @@ export class GameRequests {
   private changed: () => void;
   private now: () => number;
   private onTimeout: (timeout: GameTimeout) => void;
+  private readonly nextId: Effect.Effect<string>;
   private lastHeardAt = 0;
   private unresponsiveSince?: number;
   private closed = false;
   /** IDs of recently timed-out requests, kept only to recognize a late answer. */
   private timedOut = new Map<string, { session: string; chat: string }>();
-  constructor(changed: () => void, options: GameRequestOptions = {}) {
+  private constructor(
+    changed: () => void,
+    options: GameRequestOptions,
+    clock: Clock.Clock,
+    nextId: Effect.Effect<string>,
+  ) {
     this.changed = changed;
-    this.now = options.now ?? Date.now;
+    this.now = options.now ?? (() => clock.currentTimeMillisUnsafe());
     this.onTimeout = options.onTimeout ?? (() => {});
+    this.nextId = nextId;
   }
+
+  static readonly make = Effect.fnUntraced(function* (
+    changed: () => void,
+    options: GameRequestOptions = {},
+  ) {
+    const clock = yield* Clock.Clock;
+    const random = yield* SecureRandom.SecureRandom;
+    return new GameRequests(changed, options, clock, random.uuidV4());
+  }, Effect.provide(SecureRandom.layerWebCrypto));
 
   /** Records any packet from the active game window, to tell a silent addon from a busy one. */
   heard() {
@@ -71,7 +87,7 @@ export class GameRequests {
       }
       const startedAt = this.now();
       const reply = yield* Deferred.make<unknown, Error>();
-      let id = randomUUID();
+      let id = yield* this.nextId;
       const previousIds: string[] = [];
 
       const remove = () => {
@@ -101,10 +117,11 @@ export class GameRequests {
       if (!input.action && (input.sections || input.inspection)) {
         const retry = Effect.sleep(timeout / 3).pipe(
           Effect.andThen(
-            Effect.sync(() => {
+            Effect.gen({ self: this }, function* () {
+              const nextId = yield* this.nextId;
               if (!this.pending.delete(id)) return;
               previousIds.push(id);
-              id = randomUUID();
+              id = nextId;
               for (const previous of previousIds) {
                 this.recoveryIds.set(previous, id);
               }
