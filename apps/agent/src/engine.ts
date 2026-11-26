@@ -20,6 +20,7 @@ import type { Emit, EngineEvent } from './execution/turn-events.ts';
 import type { TurnInput } from './execution/turn-input.ts';
 import { SessionHistory, type HistoryError, type HistoryStore } from './session/session-history.ts';
 import { TurnToolbox } from './tools/turn-toolbox.ts';
+import { GameAccess, unavailableGameAccess } from './host/game-access.ts';
 import * as Wisp from './wisp/wisp-agent.ts';
 
 export type { ModelMessage } from 'ai';
@@ -69,6 +70,7 @@ export interface EngineResult {
 
 export interface EngineOptions extends EngineHost {
   history: HistoryStore;
+  gameAccess?: GameAccess['Service'];
   /** Hosts can supply their own Effect logging layer; otherwise the engine is silent. */
   logging?: Layer.Layer<never>;
 }
@@ -146,7 +148,12 @@ const aborted = (signal: AbortSignal) =>
  * cancellation enters here, as an AbortSignal that interrupts its stream.
  */
 export function createAgentEngine(options: EngineOptions) {
-  const { history, logging = Logger.layer([]), ...host } = options;
+  const {
+    history,
+    gameAccess = unavailableGameAccess,
+    logging = Logger.layer([]),
+    ...host
+  } = options;
   const runtime = ManagedRuntime.make(
     AgentEngine.layer.pipe(
       Layer.provide(
@@ -158,6 +165,7 @@ export function createAgentEngine(options: EngineOptions) {
         ),
       ),
       Layer.provide(Capabilities.layerFromFile(host.capabilitiesFile)),
+      Layer.provide(Layer.succeed(GameAccess, gameAccess)),
       Layer.provide(NodeFileSystem.layer),
       Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(host))),
       Layer.provideMerge(logging),

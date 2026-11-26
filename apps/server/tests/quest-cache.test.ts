@@ -1,12 +1,11 @@
 import { test, expect, vi } from 'vitest';
 import { Effect } from 'effect';
-import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
-import { runBridgeEffect } from './capture-logs.ts';
+import { make as makeGameAccess } from '../src/game/agent-game-access.ts';
+import type { CharacterSections } from '@wisp/agent/game-access';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { characterIdentity, rememberTurnQuests } from '../src/chat/context.ts';
 
-test('state RPC serves quests locally, fetches only missing sections, and respects refresh and permissions', async () => {
+test('GameAccess serves quests locally, fetches only missing sections, and respects refresh and permissions', async () => {
   const snapshot = {
     capturedAt: 123,
     sections: {
@@ -40,57 +39,39 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
       },
     }),
   );
-  // Other service dependencies are not used by the state endpoint under test.
-  const handler = runBridgeEffect(
-    createAgentHandler({
-      token: 'test',
-      getChats: () => [chat],
-      currentTransport: () => 'addon',
-      capabilitySettings: { enabled: () => allowed },
-      requestGame: request,
-    } as unknown as Parameters<typeof createAgentHandler>[0]),
-  );
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = 'http://127.0.0.1:' + (server.address() as { port: number }).port + '/state';
-  const read = (sections: string[], refresh?: boolean) =>
-    fetch(url, {
-      method: 'POST',
-      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify({ agentSession: 'eve', sections, refresh }),
-    });
-  try {
-    const quests = await read(['quests']);
-    expect(quests.status).toBe(200);
-    expect((await quests.json()).sections.quests.data.quests[0]).toMatchObject({
-      title: 'Cached delivery',
-      rewardXP: 850,
-    });
-    expect(request).not.toHaveBeenCalled();
-    const mixed = await read(['quests', 'talents']);
-    const result = await mixed.json();
-    expect(result.sections.quests.data.quests[0].title).toBe('Cached delivery');
-    expect(result.sections.quests.data.quests[0].rewardXP).toBe(850);
-    expect(result.sections.talents.data.unspentPoints).toBe(1);
-    expect(request).toHaveBeenLastCalledWith({
-      chat: 'chat',
-      session: 'addon',
-      agent: true,
-      operation: { kind: 'read', sections: ['talents'] },
-    });
-    await (await read(['quests'], true)).json();
-    expect(request).toHaveBeenLastCalledWith({
-      chat: 'chat',
-      session: 'addon',
-      agent: true,
-      operation: { kind: 'read', sections: ['quests'] },
-    });
-    allowed = false;
-    const denied = await read(['quests']);
-    expect(denied.status).toBe(503);
-    expect(await denied.text()).toContain('disabled');
-    expect(request).toHaveBeenCalledTimes(2);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-  }
+  const game = makeGameAccess({
+    getChats: () => [chat],
+    currentTransport: () => 'addon',
+    capabilitySettings: { enabled: () => allowed },
+    requestGame: request,
+    mcpManager: { call: vi.fn() },
+  });
+  const read = (sections: CharacterSections, refresh?: boolean) =>
+    Effect.runPromise(game.readCharacter('eve', sections, refresh));
+  expect(await read(['quests'])).toMatchObject({
+    sections: { quests: { data: { quests: [{ title: 'Cached delivery', rewardXP: 850 }] } } },
+  });
+  expect(request).not.toHaveBeenCalled();
+  expect(await read(['quests', 'talents'])).toMatchObject({
+    sections: {
+      quests: { data: { quests: [{ title: 'Cached delivery', rewardXP: 850 }] } },
+      talents: { data: { unspentPoints: 1 } },
+    },
+  });
+  expect(request).toHaveBeenLastCalledWith({
+    chat: 'chat',
+    session: 'addon',
+    agent: true,
+    operation: { kind: 'read', sections: ['talents'] },
+  });
+  await read(['quests'], true);
+  expect(request).toHaveBeenLastCalledWith({
+    chat: 'chat',
+    session: 'addon',
+    agent: true,
+    operation: { kind: 'read', sections: ['quests'] },
+  });
+  allowed = false;
+  await expect(read(['quests'])).rejects.toThrow('disabled');
+  expect(request).toHaveBeenCalledTimes(2);
 });

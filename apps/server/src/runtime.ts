@@ -59,6 +59,7 @@ import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine } from '@wisp/agent/engine';
+import * as AgentGameAccess from './game/agent-game-access.ts';
 import { AgentHistory } from './agent/agent-history.ts';
 
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
@@ -261,6 +262,13 @@ export const makeServer = Effect.fn('Server.make')(
       token,
       history: agentHistory,
       capabilitiesFile: () => capabilitySettings.agentFile,
+      gameAccess: AgentGameAccess.make({
+        getChats: () => state.chats,
+        currentTransport: () => state.activeTransport,
+        requestGame: (call) => transport.request(call),
+        capabilitySettings,
+        mcpManager,
+      }),
       mcp: {
         manager: mcpManager,
         allowed: (server, tool) =>
@@ -392,12 +400,10 @@ export const makeServer = Effect.fn('Server.make')(
         auth,
         connections,
         webSearch,
-        mcpManager,
         capabilitySettings,
         routineStore,
         panelStore,
         memoryStore,
-        requestGame: transport.request,
         database,
         simulator,
         getChats: () => state.chats,

@@ -1,4 +1,8 @@
+import { Option, Schema } from 'effect';
 import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
+import type { ItemSourcesResult } from '@wisp/agent/game-access';
+import type { sourceNamesInput } from '@wisp/agent/contract/game-inspection';
+import type { z } from 'zod';
 
 // How an item is obtained, by Everloot relation. Other relations (reagent for,
 // same icon, set membership) do not say where to get the item.
@@ -11,53 +15,79 @@ const OBTAIN = {
 } as const;
 type SourceKind = (typeof OBTAIN)[keyof typeof OBTAIN];
 
-interface Edge {
-  rel?: string;
-  toKind?: string;
-  toId?: number;
-  evidence?: string;
-  installs?: number | null;
-  lastSeen?: string;
-}
-interface Named {
-  id: number;
-  name?: string;
-  subName?: string;
-  zones?: string[];
-  requiredLevel?: number;
-  questLevel?: number;
-}
-interface Price {
+const obtain = new Map<string, SourceKind>(Object.entries(OBTAIN));
+const edge = Schema.Struct({
+  rel: Schema.String,
+  toKind: Schema.optional(Schema.String),
+  toId: Schema.Int,
+  evidence: Schema.optional(Schema.String),
+  installs: Schema.optional(Schema.NullOr(Schema.Number)),
+  lastSeen: Schema.optional(Schema.String),
+});
+const decodeEdge = Schema.decodeUnknownOption(edge);
+const decodePage = Schema.decodeUnknownOption(
+  Schema.Struct({
+    edges: Schema.optional(Schema.Array(Schema.Unknown)),
+    notShown: Schema.optional(Schema.Int),
+  }),
+);
+const namedEntity = Schema.Struct({
+  id: Schema.Int,
+  name: Schema.optional(Schema.String),
+  subName: Schema.optional(Schema.String),
+  zones: Schema.optional(Schema.Array(Schema.String)),
+  requiredLevel: Schema.optional(Schema.Number),
+  questLevel: Schema.optional(Schema.Number),
+});
+const namedEntities = Schema.optional(Schema.Array(namedEntity));
+const decodeSourceNames = Schema.decodeUnknownSync(
+  Schema.Struct({
+    data: Schema.optional(
+      Schema.Struct({
+        npcs: namedEntities,
+        quests: namedEntities,
+        spells: namedEntities,
+        prices: Schema.optional(
+          Schema.Array(
+            Schema.Struct({
+              itemId: Schema.Int,
+              status: Schema.optional(Schema.String),
+              unitPriceCopper: Schema.optional(Schema.Number),
+              ageDays: Schema.optional(Schema.Number),
+            }),
+          ),
+        ),
+        priceStatus: Schema.optional(Schema.String),
+        realm: Schema.optional(Schema.String),
+      }),
+    ),
+  }),
+);
+type ItemSource = NonNullable<ItemSourcesResult['items'][number]['drops']>[number];
+type Relations = {
   itemId: number;
-  status?: string;
-  unitPriceCopper?: number;
-  ageDays?: number;
-}
-interface SourceNames {
-  npcs?: Named[];
-  quests?: Named[];
-  spells?: Named[];
-  prices?: Price[];
-  priceStatus?: string;
-  realm?: string;
-}
+  edges: readonly (typeof edge.Type)[];
+  notShown: number;
+  status: ItemSourcesResult['items'][number]['sourcesStatus'];
+};
 
-async function relations(id: number, readEverloot: EverlootLookup) {
+async function relations(itemId: number, readEverloot: EverlootLookup): Promise<Relations> {
+  const unavailable: Relations = { itemId, edges: [], notShown: 0, status: 'unavailable' };
   try {
     const content = await readEverloot('entity_relations', {
       kind: 'item',
-      id,
+      id: itemId,
       direction: 'from',
       limit: 10,
     });
-    const page = content.page as { edges?: Edge[]; notShown?: number } | undefined;
-    const edges = Array.isArray(page?.edges) ? page.edges : [];
+    const page = Option.getOrUndefined(decodePage(content.page));
+    if (!page) return unavailable;
+    const edges = (page.edges ?? []).flatMap((entry) => Option.toArray(decodeEdge(entry)));
     // Everloot caps lines per relation, so an obtain relation is never missing
     // entirely; notShown counts extra lines the agent may want to know about.
-    const notShown = Number.isInteger(page?.notShown) ? (page?.notShown ?? 0) : 0;
-    return { edges, notShown, status: 'available' as const };
+    return { itemId, edges, notShown: page.notShown ?? 0, status: 'available' };
   } catch {
-    return { edges: [] as Edge[], notShown: 0, status: 'unavailable' as const };
+    return unavailable;
   }
 }
 
@@ -65,28 +95,31 @@ async function relations(id: number, readEverloot: EverlootLookup) {
 // named by the game (QuestieDB, spell API) with cached Auctionator prices.
 export async function itemSources(
   itemIds: number[],
-  readGame: (inspection: { kind: 'source_names'; args: unknown }) => Promise<unknown>,
+  readGame: (inspection: {
+    kind: 'source_names';
+    args: z.output<typeof sourceNamesInput>;
+  }) => Promise<unknown>,
   options: {
     everloot: boolean;
     questie: boolean;
     auctionator: boolean;
     readEverloot: EverlootLookup;
   },
-) {
+): Promise<ItemSourcesResult> {
   const ids = [...new Set(itemIds)];
-  const found = options.everloot
+  const found: Relations[] = options.everloot
     ? await Promise.all(ids.map((id) => relations(id, options.readEverloot)))
-    : ids.map(() => ({ edges: [] as Edge[], notShown: 0, status: 'disabled' as const }));
+    : ids.map((itemId) => ({ itemId, edges: [], notShown: 0, status: 'disabled' }));
   const wanted = { npc: new Set<number>(), quest: new Set<number>(), spell: new Set<number>() };
   for (const { edges } of found) {
     for (const edge of edges) {
-      const target = edge.toKind as keyof typeof wanted;
-      if (edge.rel && edge.rel in OBTAIN && target in wanted && Number.isInteger(edge.toId)) {
-        wanted[target].add(edge.toId!);
+      const target = edge.toKind;
+      if (obtain.has(edge.rel) && (target === 'npc' || target === 'quest' || target === 'spell')) {
+        wanted[target].add(edge.toId);
       }
     }
   }
-  const reading = (await readGame({
+  const reading = await readGame({
     kind: 'source_names',
     // Questie names and Auctionator prices follow their own integration settings.
     args: {
@@ -96,28 +129,28 @@ export async function itemSources(
       spellIds: [...wanted.spell].slice(0, 200),
       useQuestie: options.questie,
     },
-  })) as { data?: SourceNames; status?: string; error?: string };
-  const names = reading?.data ?? {};
-  const byId = (list: Named[] | undefined) =>
+  });
+  const names = decodeSourceNames(reading ?? {}).data ?? {};
+  const byId = (list: readonly (typeof namedEntity.Type)[] | undefined) =>
     new Map((list ?? []).map((entry) => [entry.id, entry]));
   const npcs = byId(names.npcs);
   const quests = byId(names.quests);
   const spells = byId(names.spells);
   const prices = new Map((names.prices ?? []).map((price) => [price.itemId, price]));
-  const items = ids.map((id, index) => {
-    const sources: Partial<Record<SourceKind, unknown[]>> = {};
-    for (const edge of found[index]!.edges) {
-      const kind = edge.rel ? OBTAIN[edge.rel as keyof typeof OBTAIN] : undefined;
-      if (!kind || !Number.isInteger(edge.toId)) {
+  const items = found.map(({ itemId, edges, status, notShown }) => {
+    const sources: Partial<Record<SourceKind, ItemSource[]>> = {};
+    for (const edge of edges) {
+      const kind = obtain.get(edge.rel);
+      if (!kind) {
         continue;
       }
       const named =
         edge.toKind === 'npc'
-          ? npcs.get(edge.toId!)
+          ? npcs.get(edge.toId)
           : edge.toKind === 'quest'
-            ? quests.get(edge.toId!)
+            ? quests.get(edge.toId)
             : edge.toKind === 'spell'
-              ? spells.get(edge.toId!)
+              ? spells.get(edge.toId)
               : undefined;
       (sources[kind] ??= []).push({
         kind: edge.toKind,
@@ -127,17 +160,17 @@ export async function itemSources(
         ...(edge.installs ? { installs: edge.installs, lastSeen: edge.lastSeen } : {}),
       });
     }
-    const price = prices.get(id);
+    const price = prices.get(itemId);
     return {
-      itemId: id,
+      itemId,
       ...sources,
       auction:
         price?.status === 'available'
           ? { unitPriceCopper: price.unitPriceCopper, ageDays: price.ageDays }
           : undefined,
       sourceKnown: Object.keys(sources).length > 0,
-      sourcesStatus: found[index]!.status,
-      ...(found[index]!.notShown ? { moreSourcesNotShown: found[index]!.notShown } : {}),
+      sourcesStatus: status,
+      ...(notShown ? { moreSourcesNotShown: notShown } : {}),
     };
   });
   return {

@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from 'vitest';
-import { Logger, References } from 'effect';
+import { Effect, Logger, References } from 'effect';
+import { unavailableGameAccess } from '../src/host/game-access.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -116,12 +117,6 @@ async function fixture(
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(value));
     if (req.url?.startsWith('/session-model?')) {
       json({ model: 'offline-test', effort: 'provider-default', contextWindow });
-    } else if (req.url === '/inspect') {
-      inspections.push(JSON.parse(body));
-      setTimeout(
-        () => json({ status: 'completed', data: { settings: [], verified: true } }),
-        options.inspectDelayMs ?? 0,
-      );
     } else {
       const request = JSON.parse(body) as Item;
       requests.push(request);
@@ -165,6 +160,18 @@ async function fixture(
     origin: () => origin,
     token: 'offline-token',
     history,
+    gameAccess: {
+      ...unavailableGameAccess,
+      readSettings: (agentSession, args) =>
+        Effect.gen(function* () {
+          inspections.push({ agentSession, inspection: { kind: 'settings', args } });
+          if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
+          return {
+            status: 'available' as const,
+            data: { applications: [], options: [], verified: true },
+          };
+        }),
+    },
     logging: options.logging,
   });
   async function send(

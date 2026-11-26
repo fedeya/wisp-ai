@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGameAction } from '../../tools/game-tool.ts';
 export default enabledTool(
   'clear_map_waypoint',
   defineTool({
@@ -16,11 +16,6 @@ export default enabledTool(
           ? 'Removed map marker'
           : 'Tried to remove the map marker',
     },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'action',
-        { agentSession: ctx.session.id, action: { kind: 'clear_waypoint', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => runGameAction(ctx, { kind: 'clear_waypoint', args }),
   }),
 );

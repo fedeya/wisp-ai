@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGameAction } from '../../tools/game-tool.ts';
 import { macroInput } from '../../contract/game-actions.ts';
 export default enabledTool(
   'create_macro',
@@ -16,11 +16,6 @@ export default enabledTool(
           ? 'Created macro'
           : 'Tried to create a macro',
     },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'action',
-        { agentSession: ctx.session.id, action: { kind: 'create_macro', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => runGameAction(ctx, { kind: 'create_macro', args }),
   }),
 );

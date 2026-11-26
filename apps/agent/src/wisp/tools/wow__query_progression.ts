@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { progressionInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'query_progression',
@@ -11,10 +11,6 @@ export default enabledTool(
     inputSchema: progressionInput,
     label: { start: () => 'Reading progression', complete: () => 'Read progression' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'progression', args } },
-        ctx.abortSignal,
-      ),
+      runGame(ctx, (game) => game.readProgression(ctx.session.id, args)),
   }),
 );

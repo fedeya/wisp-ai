@@ -1,6 +1,4 @@
 import { z } from 'zod';
-import { inspectionSchema } from './game-inspection.ts';
-import { actionSchema } from './game-actions.ts';
 import { panelInput } from './panels.ts';
 import { routineInput } from '@wisp/protocol/routines';
 import { simulationInput } from './simulation.ts';
@@ -9,22 +7,6 @@ import { wowheadQuery } from '@wisp/protocol/search';
 import { providerId } from '@wisp/protocol/providers';
 import { replyPresentation } from './reply-presentation.ts';
 
-export const characterSections = z
-  .array(
-    z.enum([
-      'character',
-      'location',
-      'group',
-      'talents',
-      'spells',
-      'quests',
-      'gear',
-      'bags',
-      'pvp',
-    ]),
-  )
-  .min(1)
-  .max(9);
 const session = { agentSession: z.string().min(1) };
 export const memoryRequest = z.discriminatedUnion('operation', [
   z.object({
@@ -47,7 +29,6 @@ export const memoryRequest = z.discriminatedUnion('operation', [
   }),
 ]);
 export const rpcRequests = {
-  state: z.object({ ...session, sections: characterSections, refresh: z.boolean().optional() }),
   identity: z.object(session),
   title: z.object({ ...session, title: z.string().min(1).max(500) }),
   present: z.object({
@@ -56,8 +37,6 @@ export const rpcRequests = {
     presentation: replyPresentation,
   }),
   memory: memoryRequest,
-  inspect: z.object({ ...session, inspection: inspectionSchema }),
-  action: z.object({ ...session, action: actionSchema }),
   panels: z.object({ ...session, input: panelInput }),
   routines: z.object({ ...session, input: routineInput }),
   simulate: simulationInput.extend(session),
@@ -72,13 +51,10 @@ export type RpcInput<K extends RpcEndpoint> = z.input<(typeof rpcRequests)[K]>;
 export const memoryEntry = z.object({ key: z.string(), text: z.string(), updatedAt: z.string() });
 const reading = z.record(z.string(), z.unknown());
 export const rpcResponses = {
-  state: reading,
   identity: z.object({ characterKey: z.string().nullable() }),
   title: z.object({ title: z.string() }),
   present: replyPresentation,
   memory: z.object({ entries: z.array(memoryEntry) }),
-  inspect: reading,
-  action: reading,
   panels: reading,
   routines: reading,
   simulate: reading,

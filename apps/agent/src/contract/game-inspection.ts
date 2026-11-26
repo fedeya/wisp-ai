@@ -1,5 +1,23 @@
 import { z } from 'zod';
 import { settingsRead } from './settings.ts';
+
+export const characterSections = z
+  .array(
+    z.enum([
+      'character',
+      'location',
+      'group',
+      'talents',
+      'spells',
+      'quests',
+      'gear',
+      'bags',
+      'pvp',
+    ]),
+  )
+  .min(1)
+  .max(9);
+
 export const npcLocationsInput = z
   .strictObject({
     mode: z.enum(['npc', 'class_trainers', 'services']).default('npc'),
@@ -177,7 +195,7 @@ export const sourceNamesInput = z.strictObject({
   spellIds: z.array(z.number().int().positive()).max(200),
   useQuestie: z.boolean(),
 });
-// Bridge-to-addon only: the bridge resolves catalog IDs before the game read.
+// Internal item reading used after a tool resolves catalog IDs.
 export const gearCandidatesInput = z.strictObject({
   itemIds: z.array(z.number().int().positive()).min(1).max(500),
   minRequiredLevel: z.number().int().min(0).max(100).optional(),
@@ -291,6 +309,11 @@ export const trainingInput = z
     limit: z.number().int().min(1).max(100).default(30),
   })
   .refine((input) => input.minLevel <= input.maxLevel, 'Invalid level range');
+export const gearSearchInspectionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
+  z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
+]);
+
 export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('training'), args: trainingInput }),
   z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
@@ -306,10 +329,8 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reference'), args: referenceInput }),
   z.object({ kind: z.literal('progression'), args: progressionInput }),
   z.object({ kind: z.literal('compare_items'), args: compareInput }),
-  z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
-  z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
-  z.object({ kind: z.literal('item_sources'), args: itemSourcesInput }),
-  z.object({ kind: z.literal('dungeon_loot'), args: dungeonLootInput }),
+  ...gearSearchInspectionSchema.options,
+  z.object({ kind: z.literal('gear_candidates'), args: gearCandidatesInput }),
   z.object({ kind: z.literal('auctions'), args: auctionInput }),
   z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
   z.object({ kind: z.literal('dungeons'), args: dungeonsInput }),
@@ -328,7 +349,7 @@ export const inspectionSchema = z.discriminatedUnion('kind', [
     }),
   }),
   z.object({ kind: z.literal('hearthstone'), args: z.strictObject({}) }),
-  ...(['target', 'trainer', 'resources'] as const).map((kind) =>
-    z.object({ kind: z.literal(kind), args: z.object({}) }),
-  ),
+  z.object({ kind: z.literal('target'), args: z.object({}) }),
+  z.object({ kind: z.literal('trainer'), args: z.object({}) }),
+  z.object({ kind: z.literal('resources'), args: z.object({}) }),
 ]);

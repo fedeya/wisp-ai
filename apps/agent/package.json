@@ -11,6 +11,7 @@
   "exports": {
     "./package.json": "./package.json",
     "./agent-rpc": "./src/host/agent-rpc.ts",
+    "./game-access": "./src/host/game-access.ts",
     "./agent-host": "./src/host/agent-host.ts",
     "./agent-memory": "./src/wisp/agent-memory.ts",
     "./enabled-tool": "./src/tools/enabled-tool.ts",

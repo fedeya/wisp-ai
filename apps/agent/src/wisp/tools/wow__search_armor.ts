@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { armorSearchInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { runGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'search_armor',
@@ -11,11 +11,6 @@ export default enabledTool(
     inputSchema: armorSearchInput,
     label: { start: () => 'Searching armor', complete: () => 'Searched armor' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'search_armor', args } },
-        ctx.abortSignal,
-        60_000,
-      ),
+      runGame(ctx, (game) => game.searchArmor(ctx.session.id, args), 60_000),
   }),
 );
