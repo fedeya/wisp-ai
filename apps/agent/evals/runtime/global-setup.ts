@@ -2,9 +2,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { TestProject } from 'vitest/node';
-import type { AgentHost } from '../src/host/agent-host.ts';
-import { itemSourcesFixture } from './fixtures/fedrath.ts';
-import { gameItemReadings } from './fixtures/dungeon-loot.ts';
+import type { AgentHost } from '../../src/host/agent-host.ts';
+import { gameItemReadings } from '../fixtures/dungeon-loot.ts';
+import { itemSourcesFixture } from '../fixtures/fedrath.ts';
 import { startModelBridge } from './model-bridge.ts';
 
 declare module 'vitest' {

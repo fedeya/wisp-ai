@@ -1,4 +1,4 @@
-import type { ToolStub } from '../harness.ts';
+import type { ToolStub } from '../runtime/harness.ts';
 
 // Quest, dungeon and map fixtures for non-gear questions. Put these before
 // fedrathStubs(): the first matching stub wins.

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
-import { gradeAnswer, judgeModel, qualityPrompt } from '../evals/quality-scorer.ts';
+import { gradeAnswer, judgeModel, qualityPrompt } from '../evals/judges/quality-scorer.ts';
 
 test('the quality grader asks the eval model for structured grades over the eval bridge', async () => {
   const requests: Record<string, any>[] = [];

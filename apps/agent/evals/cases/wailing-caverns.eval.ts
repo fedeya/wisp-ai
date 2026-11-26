@@ -1,10 +1,10 @@
 import { createJudge, describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
-import { wispHarness } from '../harness.ts';
-import type { WispInput } from '../harness.ts';
-import { avoidsTool, maxToolCalls, presentedText } from '../judges.ts';
-import { qualityJudges } from '../quality-scorer.ts';
+import { qualityJudges } from '../judges/quality-scorer.ts';
+import { avoidsTool, maxToolCalls, presentedText } from '../judges/tool-calls.ts';
+import { wispHarness } from '../runtime/harness.ts';
+import type { WispInput } from '../runtime/harness.ts';
 
 const name = 'wailing-caverns';
 const recommendsRun = createJudge<WispInput, { reply: string }>(

@@ -1,8 +1,8 @@
 import { describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs, mapStubs } from '../fixtures/world.ts';
-import { wispHarness } from '../harness.ts';
-import { qualityJudges } from '../quality-scorer.ts';
+import { qualityJudges } from '../judges/quality-scorer.ts';
+import { wispHarness } from '../runtime/harness.ts';
 
 const name = 'mark-rfc';
 

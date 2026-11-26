@@ -1,5 +1,5 @@
 import type { TurnInput } from '../../src/engine.ts';
-import type { ToolStub } from '../harness.ts';
+import type { ToolStub } from '../runtime/harness.ts';
 
 // Stub responses must be plain JSON values.
 const json = (value: unknown) => JSON.parse(JSON.stringify(value));

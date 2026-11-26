@@ -5,8 +5,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '../src/host/agent-host.ts';
-import { wispHarness } from '../evals/harness.ts';
-import { avoidsTool } from '../evals/judges.ts';
+import { avoidsTool } from '../evals/judges/tool-calls.ts';
+import { wispHarness } from '../evals/runtime/harness.ts';
 
 afterEach(() => setAgentHost(undefined));
 

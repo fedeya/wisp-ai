@@ -5,9 +5,9 @@ import { inject } from 'vitest';
 import { createHarness, createJudge } from 'vitest-evals';
 import type { JudgeHarnessInput, ToolCall } from 'vitest-evals';
 import { z } from 'zod';
-import { connectionModel } from '../src/models/connection-model.ts';
-import type { WispInput } from './harness.ts';
-import { criteria, scenarios } from './quality.ts';
+import { connectionModel } from '../../src/models/connection-model.ts';
+import type { WispInput } from '../runtime/harness.ts';
+import { criteria, scenarios } from './quality-rubric.ts';
 
 const GRADER = `You grade answers from Wisp, an in-game World of Warcraft assistant.
 Judge only against the FACTS, the TOOL RESULTS the agent read and the GOOD ANSWER description, not your own game knowledge: a detail is supported when the facts or a tool result state it, and anything else counts as unsupported.

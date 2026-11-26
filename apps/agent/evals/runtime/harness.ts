@@ -6,12 +6,12 @@ import {
   toJsonValue,
 } from 'vitest-evals';
 import type { TranscriptEvent } from 'vitest-evals';
-import { recordContextUsage } from '../src/contract/context-usage.ts';
-import { createAgentEngine } from '../src/engine.ts';
-import type { ToolStubOutcome } from '../src/engine.ts';
-import { agentHost } from '../src/host/agent-host.ts';
-import { MemoryHistory } from '../src/session/memory-history.ts';
-import { playerMessage } from './fixtures/fedrath.ts';
+import { recordContextUsage } from '../../src/contract/context-usage.ts';
+import { createAgentEngine } from '../../src/engine.ts';
+import type { ToolStubOutcome } from '../../src/engine.ts';
+import { agentHost } from '../../src/host/agent-host.ts';
+import { MemoryHistory } from '../../src/session/memory-history.ts';
+import { playerMessage } from '../fixtures/fedrath.ts';
 
 export interface ToolStub {
   id: string;
