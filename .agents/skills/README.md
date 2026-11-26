@@ -30,6 +30,12 @@ Load the skill that matches the area you are changing, along with the references
 
 For TanStack Form, use the official [validation](https://tanstack.com/form/latest/docs/framework/react/guides/validation) and [async initial values](https://tanstack.com/form/latest/docs/framework/react/guides/async-initial-values) guides with the version pinned by the workspace.
 
+For all TypeScript work, read [Type System Discipline](principle-type-system-discipline/SKILL.md)
+and [TypeScript Best Practices](typescript-best-practices/SKILL.md). Both are
+copied unchanged from [Cursor's pstack plugin](https://github.com/cursor/plugins/tree/b7b93c36be9bcc36a74db438e0fd385d660bc559/pstack/skills).
+The Best Practices skill includes its examples; its Boundary Discipline reference
+is [available upstream](https://github.com/cursor/plugins/blob/b7b93c36be9bcc36a74db438e0fd385d660bc559/pstack/skills/principle-boundary-discipline/SKILL.md).
+
 Imported skills keep their upstream formatting. References outside the copied trees link to the pinned source. Tool Design names sibling skills from its collection (such as `project-development` and `evaluation`) that are not copied here; the eval skills cover evaluation.
 
 When updating an imported skill, update its source revision, preserve the upstream attribution and include the supporting files used by the new version.
