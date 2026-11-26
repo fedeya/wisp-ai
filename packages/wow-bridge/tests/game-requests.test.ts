@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { GameRequests, UNRESPONSIVE_MS } from '../src/wow-bridge/game-requests.ts';
+import { GameRequests, UNRESPONSIVE_MS } from '../src/game-requests.ts';
 
 test('responses are scoped to both transport session and conversation', async () => {
   const requests = new GameRequests(() => {});

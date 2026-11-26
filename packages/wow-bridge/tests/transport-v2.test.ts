@@ -10,8 +10,8 @@ import {
   SLOW_DOWNLINK_MS,
   preferBulkDelivery,
   type SlowDownlink,
-} from '../src/wow-bridge/transport.ts';
-import type { Packet } from '../src/wow-bridge/protocol.ts';
+} from '../src/transport.ts';
+import type { Packet } from '../src/protocol.ts';
 import {
   DOWNLINK_HELPERS,
   DOWNLINK_KIND,
@@ -28,8 +28,8 @@ import {
   readUplink,
   replaceUplink,
   inflateMessage,
-} from '../src/wow-bridge/mailbox.ts';
-import { applyDownlink } from '../src/wow-bridge/downlink.ts';
+} from '../src/mailbox.ts';
+import { applyDownlink } from '../src/downlink.ts';
 
 async function fixture(
   receive: (packet: Packet, bridge: DiskTransport) => void = () => {},

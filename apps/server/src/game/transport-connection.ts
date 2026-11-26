@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Effect } from 'effect';
-import type { Packet } from '../wow-bridge/protocol.ts';
+import type { Packet } from '@wisp/wow-bridge/protocol';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
-import type { GameRequests } from '../wow-bridge/game-requests.ts';
+import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { SessionState } from '../session-state.ts';
-import type { SnapshotGate } from '../wow-bridge/snapshots.ts';
-import { DiskTransport, type SlowDownlink } from '../wow-bridge/transport.ts';
+import type { SnapshotGate } from './snapshots.ts';
+import { DiskTransport, type SlowDownlink } from '@wisp/wow-bridge/transport';
 
 export interface TransportConnectionDependencies {
   state: SessionState;

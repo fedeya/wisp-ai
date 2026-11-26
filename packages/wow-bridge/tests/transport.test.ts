@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { DiskTransport } from '../src/wow-bridge/transport.ts';
+import { DiskTransport } from '../src/transport.ts';
 test('a failed payload write can retry the same snapshot after the filesystem recovers', async () => {
   await mkdir(path.resolve('runtime'), { recursive: true });
   const root = await mkdtemp(path.resolve('runtime', 'transport-retry-'));

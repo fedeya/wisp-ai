@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { readLoadedItems, retriesItemLoading } from '../src/wow-bridge/item-loading.ts';
+import { readLoadedItems, retriesItemLoading } from '../src/game/item-loading.ts';
 
 const loading = { status: 'available', data: { id: 4314, status: 'loading' } };
 const loaded = { status: 'available', data: { id: 4314, status: 'available', name: 'Shoulders' } };

@@ -1,0 +1,31 @@
+{
+  "name": "@wisp/wow-bridge",
+  "version": "0.3.2",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    "./downlink": "./src/downlink.ts",
+    "./game-requests": "./src/game-requests.ts",
+    "./mailbox": "./src/mailbox.ts",
+    "./protocol": "./src/protocol.ts",
+    "./transport": "./src/transport.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "cd ../.. && vitest run --config packages/wow-bridge/vitest.config.ts"
+  },
+  "dependencies": {
+    "@wisp/protocol": "workspace:*",
+    "effect": "4.1.3",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "typescript": "5.9.3",
+    "vitest": "5.1.0"
+  }
+}

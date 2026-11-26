@@ -2,7 +2,7 @@ import { ReplyProjection } from '../src/reply/reply-stream.ts';
 import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { applyEvent, type Chat } from '../src/chat/events.ts';
-import { SnapshotGate } from '../src/wow-bridge/snapshots.ts';
+import { SnapshotGate } from '../src/game/snapshots.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 

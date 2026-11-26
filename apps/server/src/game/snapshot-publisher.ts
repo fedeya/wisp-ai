@@ -1,10 +1,10 @@
 import { Effect } from 'effect';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { errorMessage } from '../errors.ts';
-import { createPublishScheduler } from '../wow-bridge/publish-scheduler.ts';
+import { createPublishScheduler } from './publish-scheduler.ts';
 import type { SessionState } from '../session-state.ts';
-import type { SnapshotGate } from '../wow-bridge/snapshots.ts';
-import type { DiskTransport } from '../wow-bridge/transport.ts';
+import type { SnapshotGate } from './snapshots.ts';
+import type { DiskTransport } from '@wisp/wow-bridge/transport';
 
 export interface SnapshotPublisherDependencies {
   state: SessionState;

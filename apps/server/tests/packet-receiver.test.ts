@@ -4,7 +4,7 @@ import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { GameRequests } from '../src/wow-bridge/game-requests.ts';
+import { GameRequests } from '@wisp/wow-bridge/game-requests';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import { IntegrationState } from '../src/integrations/integration-state.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';
@@ -12,7 +12,7 @@ import { RoutineStore } from '../src/routines/routine-store.ts';
 import { ApplicationDatabase } from '../src/db/application-database.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { packetSchema } from '../src/wow-bridge/protocol.ts';
+import { packetSchema } from '@wisp/wow-bridge/protocol';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
