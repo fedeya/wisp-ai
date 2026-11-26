@@ -1,21 +1,17 @@
-import { Effect, Exit, FileSystem, Path, Scope, Semaphore } from 'effect';
-import type { Connection, WowBridge } from '@wisp/wow-bridge';
-import type { Packet } from '@wisp/wow-bridge/protocol';
+import { Effect, Exit, FileSystem, Path, Scope, Semaphore, Stream } from 'effect';
+import type { Connection, GameCall, GameEvent, SlowDownlink, WowBridge } from '@wisp/wow-bridge';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { SessionState } from '../session-state.ts';
-import type { SnapshotGate } from './snapshots.ts';
-import type { SlowDownlink } from '@wisp/wow-bridge/transport';
 
 export interface TransportConnectionDependencies {
   state: SessionState;
   bridge: WowBridge['Service'];
   integrationState: Pick<IntegrationState, 'reset'>;
-  snapshots: Pick<SnapshotGate, 'invalidate'>;
   capabilitySettings: Pick<CapabilitySettings, 'publish'>;
   /** Packets from the current transport only; a replaced one is ignored. */
-  receive: (packet: Packet) => void;
+  receive: (event: GameEvent) => void;
   /** Persist a WoW folder the user picked once its transport has started. */
   saveWow: (wow: string) => Promise<void>;
   changed: () => void;
@@ -25,6 +21,7 @@ export interface TransportConnectionDependencies {
 export interface TransportConnection {
   /** The running transport, if WoW is connected. */
   current(): Connection | undefined;
+  request(call: GameCall): Effect.Effect<unknown, Error>;
   /**
    * Run `work` after every earlier transport operation has settled, so
    * connects and disconnects never interleave. A failed earlier operation does
@@ -48,8 +45,9 @@ export const createTransportConnection = Effect.fnUntraced(function* (
   const path = yield* Path.Path;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
-  const { state, bridge, integrationState, snapshots, capabilitySettings, changed } = deps;
+  const { state, bridge, integrationState, capabilitySettings, changed } = deps;
   let transport: Connection | undefined;
+  let wowDirectory: string | undefined;
   let connectionScope: Scope.Closeable | undefined;
   const transportLock = yield* Semaphore.make(1);
 
@@ -87,14 +85,12 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     const previous = connectionScope;
     connectionScope = undefined;
     transport = undefined;
+    wowDirectory = undefined;
     state.activeTransport = '';
-    state.firstReadyRevision = 0;
     state.currentCharacterKey = undefined;
     state.routinePresence = undefined;
     state.memoryViewRequest = undefined;
-    bridge.requests.cancelAll('The connection to WoW changed. Try again after reconnecting.');
     integrationState.reset();
-    snapshots.invalidate();
     changed();
     if (previous) yield* Scope.close(previous, Exit.void);
     yield* Effect.tryPromise({
@@ -104,7 +100,7 @@ export const createTransportConnection = Effect.fnUntraced(function* (
   });
 
   const connect = Effect.fnUntraced(function* (wow: string | undefined, save = false) {
-    if (deps.isStopping() || transport?.wow === wow) return;
+    if (deps.isStopping() || wowDirectory === wow) return;
     yield* disconnect;
     if (
       !wow ||
@@ -120,35 +116,47 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     const scope = yield* Scope.make();
     connectionScope = scope;
     yield* Effect.gen(function* () {
-      transport = yield* bridge
-        .open({
-          wow,
-          receive: (packet, connection) => {
-            if (connectionScope !== scope) return;
-            transport = connection;
-            deps.receive(packet);
-          },
+      const connection = yield* bridge
+        .open(wow, {
           onError: logError,
           onHeldOff: logHeldOff,
           onSlowDownlink: logSlowDownlink,
+          onTimeout: (timeout) =>
+            runFork(
+              Effect.logWarning('WoW did not answer a request').pipe(
+                Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
+              ),
+            ),
         })
         .pipe(Scope.provide(scope));
+      transport = connection;
+      wowDirectory = wow;
+      yield* connection.events.pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            if (connectionScope === scope) deps.receive(event);
+          }).pipe(Effect.catchDefect((error) => Effect.sync(() => logError(error)))),
+        ),
+        Effect.forkIn(scope, { uninterruptible: false }),
+      );
       if (save) yield* Effect.tryPromise({ try: () => deps.saveWow(wow), catch: (error) => error });
     }).pipe(Effect.onExit((exit) => (Exit.isFailure(exit) ? disconnect : Effect.void)));
   });
 
   return {
     current: () => transport,
+    request: (call) =>
+      Effect.suspend(
+        () =>
+          transport?.request(call) ?? Effect.fail(Error('No active connection for this character')),
+      ),
     serialize: (work) => transportLock.withPermit(Effect.uninterruptible(work)),
     connect,
     disconnect,
-    gameConnected: () =>
-      Boolean(
-        state.activeTransport &&
-        state.firstReadyRevision &&
-        transport &&
-        transport.peerRevision >= state.firstReadyRevision,
-      ),
+    gameConnected: () => {
+      const status = transport?.status();
+      return Boolean(status?.ready && status.session === state.activeTransport);
+    },
     logError,
   };
 });

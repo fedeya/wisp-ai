@@ -1,5 +1,6 @@
 import { test, expect, vi } from 'vitest';
 import { Effect } from 'effect';
+import type { GameCall } from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { runBridgeEffect } from './capture-logs.ts';
@@ -99,8 +100,8 @@ test('actions run without a character identity and add the expected character wh
     agentSession: 'known',
     characterKey: JSON.stringify(['WoW Forever', '', 'Fedrath']),
   };
-  const request = vi.fn((_input: { action?: unknown }) => Effect.succeed({ status: 'completed' }));
-  const server = await serve({ getChats: () => [unknown, known], pending: { request } as never });
+  const request = vi.fn((_input: GameCall) => Effect.succeed({ status: 'completed' }));
+  const server = await serve({ getChats: () => [unknown, known], requestGame: request });
   const waypoint = {
     kind: 'set_waypoint',
     args: { mapId: 1, x: 50, y: 50, label: 'NPC', source: 'user', navigate: true },
@@ -110,10 +111,11 @@ test('actions run without a character identity and add the expected character wh
       const reply = await server.post('/action', { agentSession, action: waypoint });
       expect(reply.status).toBe(200);
     }
-    expect(request.mock.calls.map(([input]) => input.action)).toEqual([
-      waypoint,
-      { ...waypoint, expectedCharacter: { realm: '', name: 'Fedrath' } },
-    ]);
+    expect(
+      request.mock.calls.map(([input]) =>
+        input.operation.kind === 'act' ? input.operation.action : undefined,
+      ),
+    ).toEqual([waypoint, { ...waypoint, expectedCharacter: { realm: '', name: 'Fedrath' } }]);
   } finally {
     await server.close();
   }
@@ -128,7 +130,7 @@ test('agent server aborts game requests when the agent hangs up', async () => {
       return new Promise(() => {});
     }),
   );
-  const server = await serve({ getChats: () => [chat], pending: { request } as never });
+  const server = await serve({ getChats: () => [chat], requestGame: request });
   try {
     const client = new AbortController();
     const reply = server

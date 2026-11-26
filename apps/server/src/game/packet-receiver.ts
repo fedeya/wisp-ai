@@ -1,5 +1,5 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
-import type { Packet } from '@wisp/wow-bridge/protocol';
+import type { Connection, GameEvent } from '@wisp/wow-bridge';
 import { selectionValues } from '@wisp/agent/contract/ui-schema';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
 import { randomUUID } from 'node:crypto';
@@ -8,8 +8,6 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MemoryView, SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
-import type { Connection } from '@wisp/wow-bridge';
-import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
@@ -33,14 +31,13 @@ interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
   engine: Pick<AgentEngine, 'end'>;
-  pending: GameRequests;
+  request: Connection['request'];
   integrationState: IntegrationState;
   capabilitySettings: CapabilitySettings;
   models: Pick<ModelCatalog, 'models'>;
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryStore: MemoryStore;
-  transport: () => Pick<Connection, 'resetSession' | 'setCursor'> | undefined;
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
@@ -63,14 +60,13 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
   const {
     state,
     engine,
-    pending,
+    request,
     integrationState,
     capabilitySettings,
     models,
     routineStore,
     panelStore,
     memoryStore,
-    transport,
     refreshModelCatalog,
     setCapability,
     memorySnapshot,
@@ -89,19 +85,17 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     state.chats.push(chat);
     return chat;
   };
-  return function receive(packet: Packet) {
+  return function receive(packet: GameEvent) {
     const receivedAt = now();
     if (state.activeTransport && packet.session === state.activeTransport) {
       activeSeenAt = receivedAt;
-      pending.heard();
     }
     const establishesSession =
       packet.type === 'hello' || (!state.activeTransport && packet.type === 'poll');
     if (!establishesSession && packet.session !== state.activeTransport) {
       return;
     }
-    // DiskTransport decides which window owns the bridge (see ACTIVE_SESSION_MS) before
-    // a hello reaches here, so the transport and this state always follow one window.
+    // The bridge has already selected the window that owns the connection.
     const beforeIntegrations = JSON.stringify(capabilitySettings.snapshot());
     const newTransport = establishesSession && state.activeTransport !== packet.session;
     if (newTransport) {
@@ -117,7 +111,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       activeSeenAt = receivedAt;
       contextCache = new TurnContextCache();
       lastDelivery = '';
-      pending.cancelAll('The addon reloaded or the character changed. Query again.');
       for (const chat of state.chats.filter(
         (chat) => chat.owner === state.activeTransport && isWorking(chat),
       )) {
@@ -131,12 +124,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       state.routineCommand = undefined;
       state.routinePresence = undefined;
       integrationState.reset();
-      state.firstReadyRevision = 0;
       state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
       state.memoryView = undefined;
       state.acknowledgments = [];
       state.handled.clear();
-      transport()?.resetSession();
       void refreshModelCatalog();
     }
     packet.context = contextCache.resolve(packet.context);
@@ -152,13 +143,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     }
     if (packet.messageId) {
       deps.flushAcknowledgment?.();
-    }
-    if (
-      Number.isSafeInteger(packet.nextSlot) &&
-      packet.nextSlot! >= 1 &&
-      packet.nextSlot! <= 1024
-    ) {
-      transport()?.setCursor(packet.nextSlot!, Number(packet.receivedRev || 0));
     }
     if (integrationState.receive(packet.integrations) && integrationState.report) {
       deps.telemetry?.game(integrationState.report.version);
@@ -438,10 +422,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           changed();
           try {
             const result = await runPromise(
-              pending.request({
+              request({
                 chat: chat.id,
                 session: state.activeTransport,
-                action,
+                operation: { kind: 'act', action },
               }),
             );
             chat.lastUIResult = result;
@@ -593,7 +577,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       }
       state.deletedChatIds.add(packet.chat);
       state.chats = state.chats.filter((c) => c.id !== packet.chat);
-      pending.cancelChat(packet.chat);
       endSession(engine, removed?.agentSession);
       state.activeChat = resumeChat(state.chats, packet.nextChat)?.id || '';
       changed();
@@ -645,9 +628,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       if (chat) {
         (deps.cancel ?? interrupt)(chat);
       }
-    }
-    if (packet.type === 'state_result' && packet.requestId) {
-      pending.receive(packet.requestId, packet.session, packet.chat, packet.data);
     }
     if (packet.type !== 'poll') {
       changed();

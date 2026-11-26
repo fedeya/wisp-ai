@@ -6,16 +6,44 @@ Wisp exchanges checked W2 frames through WoW addon enable states and desktop
 state files. The game UI stays inside the addon. Reusable frames carry both
 directions; a finite bank of load-on-demand helpers can accelerate large replies.
 
+## Server and agent boundary
+
+The server opens a scoped [`WowBridge` connection](../packages/wow-bridge/src/wow-bridge.ts)
+for the selected WoW directory. It consumes `events` in order, submits game
+operations through `request`, publishes the current addon view through `publish`,
+and reads `status` for readiness. The connection joins that view with pending
+requests and consumes game results and transport acknowledgments internally.
+Ordinary application events use a bounded queue; view updates replace one
+another. One writer fiber handles the filesystem writes for the connection.
+
+The next migration is an agent-owned `GameAccess` service with `readCharacter`,
+`inspectGame`, and `runGameAction` operations. Each operation should return an
+Effect, take the current turn's agent session, and use the agent's existing
+game input and result contracts. The agent shouldn't need the WoW folder, the
+bridge session ID, or a bridge dependency. The server implementation will
+resolve the agent session to its working chat, apply capability and read-only
+policy, and pass the expected game session and character to the existing
+bridge connection. Cancellation should interrupt the request fiber; tests and
+evals can supply a `GameAccess` implementation without a game connection.
+
+To migrate without changing tool behavior, move the current game HTTP handler
+logic behind that service first, preserving quest caching, inspection routing,
+and action safeguards. Then switch tool callers and remove `/state`, `/inspect`
+and `/action`. Other host RPCs and model streaming still have independent HTTP
+consumers; removing those is separate from `GameAccess`.
+
 ## Ownership and framing
 
-| Owner                                                  | Source                                                       |
-| ------------------------------------------------------ | ------------------------------------------------------------ |
-| Host scheduling, helper publication and bulk selection | [bridge transport](../packages/wow-bridge/src/transport.ts)  |
-| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/wow-bridge/src/mailbox.ts)       |
-| Full snapshots, patches and transport acknowledgements | [downlink contract](../packages/wow-bridge/src/downlink.ts)  |
-| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)     |
-| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)       |
-| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua) |
+| Owner                                                  | Source                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------ |
+| Inbound frames, polling and active game window         | [bridge transport](../packages/wow-bridge/src/transport.ts)        |
+| Outbound delivery, cursor and bulk selection           | [outbound mailbox](../packages/wow-bridge/src/outbound-mailbox.ts) |
+| Replacing addon files and retrying filesystem I/O      | [addon files](../packages/wow-bridge/src/addon-files.ts)           |
+| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/wow-bridge/src/mailbox.ts)             |
+| Full snapshots, patches and transport acknowledgements | [downlink contract](../packages/wow-bridge/src/downlink.ts)        |
+| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)           |
+| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)             |
+| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua)       |
 
 | Direction                          | Frame kind                           | Frame bytes | Payload bytes |
 | ---------------------------------- | ------------------------------------ | ----------- | ------------- |

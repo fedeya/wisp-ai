@@ -4,7 +4,6 @@ import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { GameRequests } from '@wisp/wow-bridge/game-requests';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import { IntegrationState } from '../src/integrations/integration-state.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';
@@ -12,7 +11,7 @@ import { RoutineStore } from '../src/routines/routine-store.ts';
 import { ApplicationDatabase } from '../src/db/application-database.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { packetSchema } from '@wisp/wow-bridge/protocol';
+import { gameEvent } from './game-event-fixture.ts';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
 function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
@@ -23,7 +22,6 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   state.currentCharacterKey = 'old-character';
   state.inlineChat = 'old-inline';
   state.panelCommand = { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' };
-  const pending = Effect.runSync(GameRequests.make(() => {}));
   const capabilitySettings = new CapabilitySettings('unused');
   const cancel = vi.fn();
   const end = vi.fn(async (_session: string) => {});
@@ -34,7 +32,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const receive = runBridgeEffect(
     createPacketReceiver({
       state,
-      pending,
+      request: () => Effect.void,
       capabilitySettings,
       integrationState: new IntegrationState(capabilitySettings),
       engine: { end },
@@ -43,7 +41,6 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       routineStore: new RoutineStore(database),
       panelStore: new PanelStore(database),
       memoryStore: new MemoryStore(database),
-      transport: () => ({ resetSession: () => {}, setCursor: () => {} }),
       refreshModelCatalog: async () => {},
       setCapability: () => Effect.void,
       memorySnapshot: async () => ({ status: 'available', entries: [] }),
@@ -55,7 +52,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       ...overrides,
     }),
   );
-  return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
+  return { state, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
 }
 
 test('Stop during first-turn model preparation prevents engine dispatch', async () => {
@@ -104,7 +101,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
   });
   try {
     receive(
-      packetSchema.parse({
+      gameEvent({
         type: 'say',
         session: 'one',
         chat: chat.id,
@@ -118,7 +115,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
     expect(chat.agentSession).toBeUndefined();
     expect(newSessionId).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
-    receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
+    receive(gameEvent({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
   } finally {
     releasePreparation();
     await run.drain();
@@ -130,7 +127,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
 
 test('Stop cancels the turn in the bridge and keeps its session', () => {
   const f = fixture();
-  f.receive(packetSchema.parse({ type: 'cancel', session: 'one', chat: 'old', seq: 1, at: 1 }));
+  f.receive(gameEvent({ type: 'cancel', session: 'one', chat: 'old', seq: 1, at: 1 }));
   expect(f.cancel).toHaveBeenCalledExactlyOnceWith(f.state.chats[0]);
   expect(f.interrupt).not.toHaveBeenCalled();
   expect(f.end).not.toHaveBeenCalled();
@@ -138,7 +135,7 @@ test('Stop cancels the turn in the bridge and keeps its session', () => {
 
 test('a stale-session cancel cannot interrupt or cancel the current chat', () => {
   const f = fixture();
-  f.receive(packetSchema.parse({ type: 'cancel', session: 'stale', chat: 'old', seq: 1, at: 1 }));
+  f.receive(gameEvent({ type: 'cancel', session: 'stale', chat: 'old', seq: 1, at: 1 }));
   expect(f.interrupt).not.toHaveBeenCalled();
   expect(f.cancel).not.toHaveBeenCalled();
   expect(f.state.chats[0].status).toBe('working');
@@ -146,19 +143,19 @@ test('a stale-session cancel cannot interrupt or cancel the current chat', () =>
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
   const f = fixture();
-  f.receive(packetSchema.parse({ type: 'new', chat: 'draft', session: 'one', seq: 20, at: 1 }));
+  f.receive(gameEvent({ type: 'new', chat: 'draft', session: 'one', seq: 20, at: 1 }));
   expect(f.state.chats.some((chat) => chat.id === 'draft')).toBe(true);
-  f.receive(packetSchema.parse({ type: 'select', chat: 'old', session: 'one', seq: 21, at: 2 }));
+  f.receive(gameEvent({ type: 'select', chat: 'old', session: 'one', seq: 21, at: 2 }));
   expect(f.state.chats.map((chat) => chat.id)).toEqual(['old']);
-  f.receive(packetSchema.parse({ type: 'new', chat: 'used', session: 'one', seq: 22, at: 3 }));
+  f.receive(gameEvent({ type: 'new', chat: 'used', session: 'one', seq: 22, at: 3 }));
   f.state.chats.find((chat) => chat.id === 'used')!.messages.push({ role: 'user', text: 'Hi' });
-  f.receive(packetSchema.parse({ type: 'new', chat: 'next', session: 'one', seq: 23, at: 4 }));
+  f.receive(gameEvent({ type: 'new', chat: 'next', session: 'one', seq: 23, at: 4 }));
   expect(f.state.chats.map((chat) => chat.id)).toEqual(['old', 'used', 'next']);
 });
 
 test('interactive receipt requests an immediate acknowledgement publish, including duplicate retries', () => {
   const f = fixture();
-  const packet = packetSchema.parse({
+  const packet = gameEvent({
     type: 'say',
     chat: 'old',
     session: 'one',
@@ -187,7 +184,7 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
     },
   };
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'quest_sync',
       session: 'one',
       seq: 10,
@@ -196,7 +193,7 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
     }),
   );
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'say',
       session: 'one',
       seq: 11,
@@ -207,9 +204,9 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
     }),
   );
   expect(f.run.mock.calls.at(-1)?.[3]).toMatchObject({ sections: { quests } });
-  f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 3 }));
+  f.receive(gameEvent({ type: 'hello', session: 'two', seq: 1, at: 3 }));
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'say',
       session: 'two',
       seq: 2,
@@ -236,7 +233,7 @@ test("changing models keeps the chat's agent session and its visible conversatio
     [first, second].map((slug) => ({ slug, displayName: slug, efforts: [] })),
   );
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'chat_model_set',
       requestId: 'model-change',
       session: 'one',
@@ -251,7 +248,7 @@ test("changing models keeps the chat's agent session and its visible conversatio
   expect(session).toBeDefined();
   expect(chat.messages[0]?.text).toBe('Keep this conversation');
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'chat_model_set',
       requestId: 'model-change',
       session: 'one',
@@ -266,34 +263,23 @@ test("changing models keeps the chat's agent session and its visible conversatio
   expect(f.end).not.toHaveBeenCalled();
 });
 
-test('reload interrupts old turns, rejects outstanding reads and clears character-specific commands', async () => {
+test('reload interrupts old turns and clears character-specific commands', async () => {
   const f = fixture();
-  const request = Effect.runPromise(f.pending.request({ chat: 'old', session: 'one' }));
-  const rejection = expect(request).rejects.toThrow('reloaded');
-  f.receive(packetSchema.parse({ type: 'hello', session: 'two', seq: 1, at: 1 }));
-  await rejection;
+  f.receive(gameEvent({ type: 'hello', session: 'two', seq: 1, at: 1 }));
   expect(f.state.chats[0].status).toBe('interrupted');
   expect(f.cancel).not.toHaveBeenCalled();
   expect(f.interrupt).toHaveBeenCalledTimes(1);
   expect(f.state.currentCharacterKey).toBeUndefined();
   expect(f.state.panelCommand).toBeUndefined();
   expect(f.state.inlineChat).toBe('');
-  expect(f.pending.snapshot()).toEqual([]);
-  f.receive(
-    packetSchema.parse({ type: 'say', session: 'one', chat: 'old', text: 'stale', seq: 2, at: 2 }),
-  );
+  f.receive(gameEvent({ type: 'say', session: 'one', chat: 'old', text: 'stale', seq: 2, at: 2 }));
   expect(f.run).not.toHaveBeenCalled();
 });
 
-test('deleting an active conversation cancels its requests and prevents delayed messages from recreating it', async () => {
+test('deleting an active conversation prevents delayed messages from recreating it', async () => {
   const f = fixture();
-  const request = Effect.runPromise(f.pending.request({ chat: 'old', session: 'one' }));
-  const rejection = expect(request).rejects.toThrow('deleted');
-  f.receive(packetSchema.parse({ type: 'delete', session: 'one', chat: 'old', seq: 2, at: 2 }));
-  await rejection;
-  f.receive(
-    packetSchema.parse({ type: 'say', session: 'one', chat: 'old', text: 'late', seq: 3, at: 3 }),
-  );
+  f.receive(gameEvent({ type: 'delete', session: 'one', chat: 'old', seq: 2, at: 2 }));
+  f.receive(gameEvent({ type: 'say', session: 'one', chat: 'old', text: 'late', seq: 3, at: 3 }));
   expect(f.state.chats).toEqual([]);
   expect(f.end).toHaveBeenCalledTimes(1);
   expect(f.run).not.toHaveBeenCalled();
@@ -304,10 +290,10 @@ test('retry reuses the failed question and ignores retries while working', () =>
   const chat = f.state.chats[0]!;
   chat.messages.push({ role: 'user', id: 'question', text: 'Which quest?' });
   chat.status = 'error';
-  f.receive(packetSchema.parse({ type: 'retry', chat: 'old', session: 'one', seq: 11, at: 1 }));
+  f.receive(gameEvent({ type: 'retry', chat: 'old', session: 'one', seq: 11, at: 1 }));
   expect(f.run).toHaveBeenCalledWith(chat, 'Which quest?', 'question', undefined);
   chat.status = 'working';
-  f.receive(packetSchema.parse({ type: 'retry', chat: 'old', session: 'one', seq: 12, at: 1 }));
+  f.receive(gameEvent({ type: 'retry', chat: 'old', session: 'one', seq: 12, at: 1 }));
   expect(f.run).toHaveBeenCalledTimes(1);
 });
 
@@ -331,7 +317,7 @@ test('a new character key is adopted before the packet that reports it is handle
     data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
   };
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'routine_event',
       session: 'one',
       seq: 30,
@@ -352,10 +338,10 @@ test('a new game window logs why it took the bridge and how long the old one was
   let clock = 1_000_000;
   const logs = captureLogs();
   const f = fixture({ now: () => clock });
-  f.receive(packetSchema.parse({ type: 'poll', session: 'one', seq: 1, at: 1 }));
+  f.receive(gameEvent({ type: 'poll', session: 'one', seq: 1, at: 1 }));
   clock += 30_000;
   f.receive(
-    packetSchema.parse({
+    gameEvent({
       type: 'hello',
       session: 'two',
       seq: 1,

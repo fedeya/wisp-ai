@@ -25,7 +25,6 @@ export interface RoutinePresence {
 export interface SessionState {
   chats: Chat[];
   activeTransport: string;
-  firstReadyRevision: number;
   questRevision?: number;
   characterRevision?: number;
   activeChat: string;
@@ -48,7 +47,6 @@ export function createSessionState(chats: Chat[] = []): SessionState {
   return {
     chats,
     activeTransport: '',
-    firstReadyRevision: 0,
     activeChat: '',
     inlineChat: '',
     modelCatalog: [],

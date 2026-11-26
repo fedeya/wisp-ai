@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { startServer, type ServerOptions } from '../src/runtime.ts';
-import { packetSchema } from '@wisp/wow-bridge/protocol';
+import { gameEvent } from './game-event-fixture.ts';
 import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/wow-bridge/mailbox';
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
@@ -189,7 +189,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
       baseURL: 'http://localhost:1234/v1',
       models: [{ id: 'local', contextWindow: 64000 }],
     });
-    bridge.receive(packetSchema.parse({ type: 'hello', session: 'live', seq: 1, at: 1 }));
+    bridge.receive(gameEvent({ type: 'hello', session: 'live', seq: 1, at: 1 }));
     const chat = newChat('search-chat', 'live');
     chat.agentSession = 'eve-search';
     chat.status = 'working';
@@ -268,19 +268,15 @@ test('the assembled runtime serves validated status, receives packets, persists 
       headers: { authorization: 'Bearer ' + identity.token },
     });
     expect(statusSchema.parse(await response.json()).auth.status).toBe('signed_out');
-    bridge.receive(packetSchema.parse({ type: 'hello', session: 'test', seq: 1, at: 1 }));
-    bridge.receive(
-      packetSchema.parse({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }),
-    );
+    bridge.receive(gameEvent({ type: 'hello', session: 'test', seq: 1, at: 1 }));
+    bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }));
     bridge.state.chats
       .find((chat) => chat.id === 'chat')!
       .messages.push({
         role: 'user',
         text: 'Hello',
       });
-    bridge.receive(
-      packetSchema.parse({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }),
-    );
+    bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }));
     await bridge.stop();
     const { ChatStore } = await import('../src/chat/chat-store.ts');
     const store = new ChatStore(path.join(f.dataDirectory, 'runtime/wisp.sqlite'), () => {});

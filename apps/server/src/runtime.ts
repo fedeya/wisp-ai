@@ -35,7 +35,6 @@ import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './integrations/capabilities.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
-import { SnapshotGate } from './game/snapshots.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
@@ -224,10 +223,8 @@ export const makeServer = Effect.fn('Server.make')(
     });
     // The app update the desktop last reported; the desktop resends it after a restart.
     let appUpdateVersion: string | null = null;
-    const snapshots = new SnapshotGate();
     const publisher: SnapshotPublisher = yield* createSnapshotPublisher({
       state,
-      snapshots,
       transport: () => transport.current(),
       inputs: () => {
         const character = state.currentCharacterKey;
@@ -247,25 +244,14 @@ export const makeServer = Effect.fn('Server.make')(
           routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
           capabilities: capabilitySettings.snapshot(),
           features: features.values(),
-          requests: pending.snapshot(),
         };
       },
     });
     yield* releaseRuntimeResource(() => publisher.stop());
     const bridge = Context.get(
-      yield* Layer.build(
-        WowBridge.layer(changed, {
-          onTimeout: (timeout) =>
-            runFork(
-              Effect.logWarning('WoW did not answer a request').pipe(
-                Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
-              ),
-            ),
-        }).pipe(Layer.provide(wowPlatform)),
-      ),
+      yield* Layer.build(WowBridge.layer.pipe(Layer.provide(wowPlatform))),
       WowBridge.WowBridge,
     );
-    const pending = bridge.requests;
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
@@ -292,10 +278,10 @@ export const makeServer = Effect.fn('Server.make')(
         throw Error('Connect WoW and enable Character readings first.');
       }
       return runPromise(
-        pending.request({
+        transport.request({
           chat,
           session: state.activeTransport,
-          sections: ['character', 'talents', 'spells', 'gear'],
+          operation: { kind: 'read', sections: ['character', 'talents', 'spells', 'gear'] },
         }),
       );
     }
@@ -362,14 +348,13 @@ export const makeServer = Effect.fn('Server.make')(
       telemetry,
       state,
       engine,
-      pending,
+      request: (call) => transport.request(call),
       integrationState,
       capabilitySettings,
       models: connections,
       routineStore,
       panelStore,
       memoryStore,
-      transport: () => transport.current(),
       refreshModelCatalog,
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
@@ -393,7 +378,6 @@ export const makeServer = Effect.fn('Server.make')(
       state,
       bridge,
       integrationState,
-      snapshots,
       capabilitySettings,
       receive,
       saveWow: (wow) => config.update({ wow }),
@@ -414,7 +398,7 @@ export const makeServer = Effect.fn('Server.make')(
         routineStore,
         panelStore,
         memoryStore,
-        pending,
+        requestGame: transport.request,
         database,
         simulator,
         getChats: () => state.chats,
@@ -475,7 +459,7 @@ export const makeServer = Effect.fn('Server.make')(
     function observeGameConnection() {
       telemetry.gameConnectionProgress(
         transport.gameConnected(),
-        Boolean(state.firstReadyRevision),
+        transport.current()?.status().readyPublished ?? false,
       );
     }
     function desktopStatus(): Status {
@@ -611,7 +595,6 @@ export const makeServer = Effect.fn('Server.make')(
       Effect.sync(() => {
         shutdownRequested = true;
         clearTimeout(desktopStopTimer);
-        pending.cancelAll('Bridge stopped');
         state.chats.forEach(run.interrupt);
       }),
     );

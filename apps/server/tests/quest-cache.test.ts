@@ -47,7 +47,7 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
       getChats: () => [chat],
       currentTransport: () => 'addon',
       capabilitySettings: { enabled: () => allowed },
-      pending: { request },
+      requestGame: request,
     } as unknown as Parameters<typeof createAgentHandler>[0]),
   );
   const server = createServer(handler);
@@ -76,14 +76,14 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
       chat: 'chat',
       session: 'addon',
       agent: true,
-      sections: ['talents'],
+      operation: { kind: 'read', sections: ['talents'] },
     });
     await (await read(['quests'], true)).json();
     expect(request).toHaveBeenLastCalledWith({
       chat: 'chat',
       session: 'addon',
       agent: true,
-      sections: ['quests'],
+      operation: { kind: 'read', sections: ['quests'] },
     });
     allowed = false;
     const denied = await read(['quests']);

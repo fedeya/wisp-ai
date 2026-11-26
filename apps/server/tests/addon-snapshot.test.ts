@@ -46,7 +46,6 @@ function inputs(overrides: Partial<AddonSnapshotInputs> = {}): AddonSnapshotInpu
     routineRuns: [],
     routinesAllowed: true,
     capabilities: [],
-    requests: [],
     now: 1_000_000,
     ...overrides,
   };
@@ -78,7 +77,6 @@ test('keeps the payload key order the snapshot gate signs', () => {
     'routinesEnabled',
     'memory',
     'capabilities',
-    'requests',
   ]);
 });
 

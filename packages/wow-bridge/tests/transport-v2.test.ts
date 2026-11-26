@@ -4,13 +4,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deflateSync } from 'node:zlib';
+import { ACTIVE_SESSION_MS, type DiskTransport } from '../src/transport.ts';
 import {
-  ACTIVE_SESSION_MS,
-  DiskTransport,
   SLOW_DOWNLINK_MS,
   preferBulkDelivery,
   type SlowDownlink,
-} from '../src/transport.ts';
+} from '../src/outbound-mailbox.ts';
 import type { Packet } from '../src/protocol.ts';
 import {
   DOWNLINK_HELPERS,
@@ -148,11 +147,7 @@ test('fresh sparse AddOns.txt in a numeric realm connects and receives its first
 });
 
 test('initial scan baselines a cached hello and fresh hello retry preserves negotiation across session reset', async () => {
-  const f = await fixture((packet, bridge) => {
-    if (packet.type === 'hello') {
-      bridge.resetSession();
-    }
-  });
+  const f = await fixture();
   try {
     const frames = encodeMessage(Buffer.from(JSON.stringify(f.hello)), UPLINK_KIND, 77);
     expect(frames.length, 'fixture must exercise the first already-published message').toBe(1);
@@ -291,7 +286,7 @@ test('readiness is reasserted after a game save loses it, then repair stops once
     await writeFile(f.file, savedOldControl);
     await waitFor(async () => readDownlink(await readFile(f.file, 'utf8'))!.equals(ready));
     expect(f.packets.length, 'control repairs do not replay a game packet').toBe(1);
-    f.bridge.setCursor(2, 8);
+    await Effect.runPromise(f.bridge.setCursor(2, 8));
     await writeFile(f.file, savedOldControl);
     await delay(350);
     expect(await readFile(f.file, 'utf8')).toBe(savedOldControl);
@@ -449,7 +444,7 @@ test(
       const ready = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
       expect(ready.flags, 'large state initially uses the optional file accelerator').toBe(3);
       expect(JSON.parse(ready.payload.toString())).toStrictEqual({ r: 1 });
-      f.bridge.setCursor(1024, 0);
+      await Effect.runPromise(f.bridge.setCursor(1024, 0));
       await acknowledge(f, ready, 0, false);
       const result = await drainMailbox(f);
       expect(result.state).toStrictEqual(snapshot);
@@ -576,15 +571,15 @@ test('host restarts discard old ACKs and unknown future cursors cannot suppress 
     await mailbox(f);
     await Effect.runPromise(f.bridge.publish({ rev: 1, text: 'interrupted' }));
     const oldFrame = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
-    f.bridge.resetSession();
-    f.bridge.setCursor(1024, 9000);
+    await Effect.runPromise(f.bridge.resetSession());
+    await Effect.runPromise(f.bridge.setCursor(1024, 9000));
     expect(f.bridge.peerRevision, 'previous-host revision cannot acknowledge unseen state').toBe(0);
     const snapshot = { rev: 2, text: 'fresh generation' };
     await Effect.runPromise(f.bridge.publish(snapshot));
     const fresh = readDownlink(await readFile(f.file, 'utf8'))!;
     await acknowledge(f, oldFrame, 1);
     expect(readDownlink(await readFile(f.file, 'utf8'))).toStrictEqual(fresh);
-    f.bridge.setCursor(1024, 9000);
+    await Effect.runPromise(f.bridge.setCursor(1024, 9000));
     expect(f.bridge.peerRevision).toBe(0);
     expect((await drainMailbox(f)).state).toStrictEqual(snapshot);
     expect(f.errors).toStrictEqual([]);
@@ -763,7 +758,7 @@ test('a compact bulk confirmation updates both its latency and slot budget witho
     const second = decodeFrame(readDownlink(await readFile(f.file, 'utf8'))!)!;
     expect(second.flags).toBe(3);
     // An application cursor may reach the host before the transport ACK.
-    f.bridge.nextSlot = 3;
+    await Effect.runPromise(f.bridge.setCursor(3, 1));
     now.mockReturnValue(1240);
     await acknowledge(f, second, 2, true);
     expect(f.bridge.nextSlot, 'a newer app cursor must not be counted twice').toBe(3);

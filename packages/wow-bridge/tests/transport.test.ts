@@ -32,24 +32,24 @@ test('payload writes stay ordered and acknowledgements never rewind the receive 
       Effect.runPromise(bridge.publish({ v: 1, rev: 1, text: 'first' })),
       Effect.runPromise(bridge.publish({ v: 1, rev: 2, text: 'second' })),
     ]);
-    bridge.setCursor(2, 1);
+    await Effect.runPromise(bridge.setCursor(2, 1));
     await Effect.runPromise(bridge.waitForWrites());
     const payload = await readFile(
       path.join(root, 'Interface', 'AddOns', 'WispAI_Payload', 'Payload.lua'),
       'utf8',
     );
     expect(payload).toContain('second');
-    bridge.setCursor(3, 2);
+    await Effect.runPromise(bridge.setCursor(3, 2));
     await Effect.runPromise(bridge.waitForWrites());
-    bridge.setCursor(1, 2);
+    await Effect.runPromise(bridge.setCursor(1, 2));
     expect(bridge.nextSlot, 'late packets cannot rewind the slot').toBe(3);
-    bridge.setCursor(4, 1);
+    await Effect.runPromise(bridge.setCursor(4, 1));
     await Effect.runPromise(bridge.waitForWrites());
     expect(
       bridge.peerRevision,
       'an old queued packet cannot undo a newer acknowledgement and make consumed data look unread',
     ).toBe(2);
-    bridge.resetSession();
+    await Effect.runPromise(bridge.resetSession());
     expect(bridge.peerRevision).toBe(0);
     expect(bridge.nextSlot).toBe(1);
     await Effect.runPromise(bridge.publish({ v: 1, rev: 3, text: 'fresh session' }));

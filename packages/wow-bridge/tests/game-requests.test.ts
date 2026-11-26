@@ -1,7 +1,6 @@
 import { test, expect, vi } from 'vitest';
-import { Context, Effect, Exit, FileSystem, Layer, Path, Scope } from 'effect';
+import { Effect } from 'effect';
 import { GameRequests, UNRESPONSIVE_MS, type GameRequest } from '../src/game-requests.ts';
-import { layer, WowBridge } from '../src/wow-bridge.ts';
 
 function makeRequests(...args: Parameters<typeof GameRequests.make>) {
   return Effect.runSync(GameRequests.make(...args));
@@ -90,30 +89,6 @@ test('interrupting a retried read clears its aliases, retries and timeout', asyn
     expect(onTimeout).not.toHaveBeenCalled();
   } finally {
     vi.useRealTimers();
-  }
-});
-
-test('closing the bridge layer rejects outstanding game requests', async () => {
-  const scope = Scope.makeUnsafe();
-  try {
-    const context = Effect.runSync(
-      Layer.buildWithScope(
-        layer(() => {}).pipe(Layer.provide([FileSystem.layerNoop({}), Path.layer])),
-        scope,
-      ),
-    );
-    const { requests } = Context.get(context, WowBridge);
-    const pending = runRequest(requests, { chat: 'chat', session: 'one', sections: ['gear'] });
-    const rejected = expect(pending).rejects.toThrow('Bridge stopped');
-    expect(requests.snapshot()).toHaveLength(1);
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    await rejected;
-    expect(requests.snapshot()).toEqual([]);
-    await expect(runRequest(requests, { chat: 'chat', session: 'one' })).rejects.toThrow(
-      'Bridge stopped',
-    );
-  } finally {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
   }
 });
 

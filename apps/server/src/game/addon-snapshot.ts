@@ -8,7 +8,6 @@ import {
   type RoutineRun,
 } from '@wisp/protocol/routines';
 import { projectChats } from '../chat/chat-projection.ts';
-import type { GameRequests } from '@wisp/wow-bridge/game-requests';
 import type { SessionState } from '../session-state.ts';
 
 /** Longest routine trigger text shown on the addon's Routines page. */
@@ -36,7 +35,6 @@ export interface AddonSnapshotInputs {
   /** Whether the routine tool (`tool:manage_routine`) is enabled. */
   routinesAllowed: boolean;
   capabilities: CapabilityView[];
-  requests: ReturnType<GameRequests['snapshot']>;
   now?: number;
 }
 
@@ -109,6 +107,5 @@ export function buildAddonSnapshot(inputs: AddonSnapshotInputs) {
       acks: state.capabilityAcks,
       error: state.capabilityError,
     },
-    requests: inputs.requests,
   };
 }

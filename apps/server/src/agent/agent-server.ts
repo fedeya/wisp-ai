@@ -21,7 +21,7 @@ import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { MemoryStore } from './memory-store.ts';
-import type { GameRequest, GameRequests } from '@wisp/wow-bridge/game-requests';
+import type { Connection, GameCall } from '@wisp/wow-bridge';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
@@ -51,7 +51,7 @@ interface AgentDependencies {
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryStore: MemoryStore;
-  pending: GameRequests;
+  requestGame: Connection['request'];
   database: TheWoWDB;
   simulator: Simulator;
   getChats: () => Chat[];
@@ -123,7 +123,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     routineStore,
     panelStore,
     memoryStore,
-    pending,
+    requestGame: sendGameRequest,
     database,
     simulator,
     getChats,
@@ -480,10 +480,10 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       // is sent only when the turn knew who was playing.
       const stateRequest = !inspection && !action ? rpcRequests.state.parse(raw) : undefined;
       const abort = signal();
-      const requestGame = (input: GameRequest) =>
+      const requestGame = (input: GameCall) =>
         abort.aborted
           ? Promise.reject(new Error('Game request cancelled'))
-          : runPromise(pending.request(input), { signal: abort });
+          : runPromise(sendGameRequest(input), { signal: abort });
       if (stateRequest) {
         return queryCharacterSections(
           chat,
@@ -493,7 +493,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
               await requestGame({
                 chat: chat.id,
                 session: currentTransport(),
-                sections,
+                operation: { kind: 'read', sections },
                 agent: true,
               }),
             ),
@@ -505,13 +505,12 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
           chat: chat.id,
           session: currentTransport(),
           agent: true,
-          ...(action
+          operation: action
             ? {
+                kind: 'act',
                 action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
               }
-            : gameInspection
-              ? { inspection: gameInspection }
-              : {}),
+            : { kind: 'inspect', inspection: gameInspection },
         });
       const everlootAllowed = (tool: Everloot.LookupTool) =>
         capabilitySettings.enabled('mcp:' + Everloot.name) &&
