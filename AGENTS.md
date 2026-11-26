@@ -170,8 +170,11 @@ the `AgentCapabilities` tag directly.
 
 ## Contributor skills and PRs
 
-When writing or reviewing TypeScript, load
-[TypeScript Contracts](.agents/skills/typescript-contracts/SKILL.md).
+For every task that reads, writes, or reviews `.ts` or `.tsx` files, read and
+apply both [Type System Discipline](.agents/skills/principle-type-system-discipline/SKILL.md)
+and [TypeScript Best Practices](.agents/skills/typescript-best-practices/SKILL.md),
+in that order, before working on the TypeScript. If the harness does not
+auto-load these skills, read their linked files directly.
 
 Project skills live in `.agents/skills/`; [its README](.agents/skills/README.md)
 says which skill fits which area (Base UI, React Router, Testing Library, Tauri
