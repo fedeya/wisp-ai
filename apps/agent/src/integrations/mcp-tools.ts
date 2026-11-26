@@ -1,14 +1,13 @@
-import { Context, Effect, FileSystem, Layer } from 'effect';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { Context, Effect, Exit, FileSystem, Layer, Scope } from 'effect';
 import { everlootTools } from '@wisp/protocol/capabilities';
 import { agentHost } from '../host/agent-host.ts';
 import { bridgeOrigin } from '../host/agent-rpc.ts';
 import type { CapabilitySnapshot } from '../host/capabilities.ts';
 import { EngineConfig } from '../host/engine-config.ts';
 import { readSettings } from '../host/read-settings.ts';
-import { HostError, hostCall } from '../execution/engine-errors.ts';
+import { HostError } from '../execution/engine-errors.ts';
+import * as Connection from './mcp-connection.ts';
+import type { McpConnection } from './mcp-connection.ts';
 
 /** One MCP tool offered through `tool_search` and `tool_call`, named `<connection>__<tool>`. */
 export interface McpTool {
@@ -18,18 +17,9 @@ export interface McpTool {
   call: (input: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
 }
 
-export interface McpConnection {
-  url: string;
-  description: string;
-  headers?: Record<string, string>;
-  allow?: string[];
-  block?: string[];
-  /** Arguments the application fixes; they are hidden from the model. */
-  provided?: Record<string, unknown>;
-}
+export type { McpConnection } from './mcp-connection.ts';
 
 const EVERLOOT_URL = 'https://everloot.app/mcp/public';
-const CACHE_MS = 5 * 60_000;
 
 function everlootConnections(capabilities: CapabilitySnapshot): Record<string, McpConnection> {
   if (!capabilities.enabled('mcp:everloot')) {
@@ -130,125 +120,89 @@ export const mcpConnections = Effect.fnUntraced(function* (
   });
 });
 
-interface Connected {
-  client: Client;
-  tools?: Tool[];
-  at: number;
-}
+type ClientEntry = Effect.Success<ReturnType<typeof Connection.start>> & { retiring: boolean };
+type Clients = Map<string, ClientEntry>;
 
-// Discovery and calls each have a deadline, so a stalled server cannot hold a turn.
-const LIST_TIMEOUT_MS = 30_000;
-const CALL_TIMEOUT_MS = 120_000;
+/** Shares open clients across turns and retires them when the configuration changes. */
+export const make = Effect.fnUntraced(function* () {
+  const scope = Scope.makeUnsafe('parallel');
+  let current: { key: string; clients: Clients } | undefined;
+  let closed = false;
 
-/** Connects to one server over Streamable HTTP. */
-async function connect(connection: McpConnection): Promise<Connected> {
-  const client = new Client({ name: 'wisp', version: '1.0.0' });
-  await client.connect(
-    new StreamableHTTPClientTransport(new URL(connection.url), {
-      requestInit: { headers: connection.headers },
-    }),
-    { timeout: LIST_TIMEOUT_MS },
+  yield* Effect.addFinalizer(() =>
+    Effect.sync(() => {
+      closed = true;
+      current = undefined;
+    }).pipe(Effect.andThen(Scope.close(scope, Exit.void))),
   );
-  return { client, at: 0 };
-}
 
-/**
- * MCP clients shared across turns, one per connection. Clients are kept while
- * the enabled connections stay the same, and their tool lists for a few
- * minutes; a failed listing or call drops that client so the next turn
- * reconnects.
- */
-export class McpTools {
-  private current?: { key: string; clients: Map<string, Connected> };
-  private closed = false;
-
-  private async disconnect(clients: Map<string, Connected>, name?: string) {
-    const names = name ? [name] : [...clients.keys()];
-    await Promise.all(
-      names.map(async (entry) => {
-        const connected = clients.get(entry);
-        clients.delete(entry);
-        await connected?.client.close().catch(() => {});
-      }),
-    );
-  }
-
-  private async drop() {
-    const current = this.current;
-    this.current = undefined;
-    if (current) {
-      await this.disconnect(current.clients);
+  const clientsFor = Effect.fnUntraced(function* (key: string) {
+    if (closed) return;
+    if (current?.key === key) return current.clients;
+    const retired = current;
+    const clients: Clients = new Map();
+    current = { key, clients };
+    if (retired) {
+      yield* Effect.forEach(retired.clients.values(), (entry) => entry.close, {
+        discard: true,
+        concurrency: 'unbounded',
+      });
     }
-  }
+    return clients;
+  }, Effect.uninterruptible);
 
-  // The connection's tools, connecting and listing again when needed.
-  private async listed(
-    clients: Map<string, Connected>,
+  const entryFor = Effect.fnUntraced(function* (
+    clients: Clients,
     name: string,
     connection: McpConnection,
-  ): Promise<Connected | undefined> {
-    if (this.current?.clients !== clients) return;
-    let connected = clients.get(name);
-    if (!connected) {
-      connected = await connect(connection);
-      // Shutdown or a configuration change can drop this cache while connecting.
-      if (this.current?.clients !== clients) {
-        await connected.client.close().catch(() => {});
-        return;
-      }
-      clients.set(name, connected);
-    }
-    if (!connected.tools || Date.now() - connected.at > CACHE_MS) {
-      try {
-        const tools: Tool[] = [];
-        let cursor: string | undefined;
-        do {
-          const page = await connected.client.listTools(cursor ? { cursor } : undefined, {
-            timeout: LIST_TIMEOUT_MS,
-          });
-          tools.push(...page.tools);
-          cursor = page.nextCursor;
-        } while (cursor);
-        connected.tools = tools;
-        connected.at = Date.now();
-      } catch (error) {
-        await this.disconnect(clients, name);
-        throw error;
-      }
-    }
-    return connected;
-  }
+  ) {
+    if (current?.clients !== clients) return;
+    const existing = clients.get(name);
+    if (existing) return existing;
+    const lifecycle = yield* Connection.start(scope, connection, () => {
+      if (clients.get(name) === entry) clients.delete(name);
+    });
+    const entry = { ...lifecycle, retiring: false };
+    clients.set(name, entry);
+    return entry;
+  }, Effect.uninterruptible);
 
-  /** The enabled MCP tools; an unreachable connection is skipped and reported to onError. */
-  async tools(
-    connections: Record<string, McpConnection>,
-    onError: (connection: string, error: unknown) => void,
-  ): Promise<McpTool[]> {
-    if (this.closed) return [];
-    if (!Object.keys(connections).length) {
-      await this.drop();
-      return [];
+  const retire = Effect.fnUntraced(function* (clients: Clients, name: string, entry: ClientEntry) {
+    if (clients.get(name) === entry) {
+      entry.retiring = true;
+      yield* entry.close;
     }
-    const key = JSON.stringify(connections);
-    if (this.current?.key !== key) {
-      await this.drop();
-      if (this.closed) return [];
-      this.current = { key, clients: new Map() };
-    }
-    const { clients } = this.current!;
+  }, Effect.uninterruptible);
+
+  const tools = Effect.fn('Mcp.tools')(function* (connections: Record<string, McpConnection>) {
+    const clients = yield* clientsFor(JSON.stringify(connections));
+    if (!clients) return [];
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
     const tools: McpTool[] = [];
     for (const [name, connection] of Object.entries(connections)) {
-      let connected: Connected | undefined;
-      try {
-        connected = await this.listed(clients, name, connection);
-      } catch (error) {
-        if (this.current?.clients !== clients) return [];
-        // Retried on the next turn instead of caching its absence.
-        onError(name, error);
-        continue;
-      }
-      if (!connected || this.current?.clients !== clients) return [];
-      for (const tool of connected.tools ?? []) {
+      const entry = yield* entryFor(clients, name, connection);
+      if (!entry) return [];
+      const listed = yield* Effect.gen(function* () {
+        const client = yield* entry.ready;
+        if (!client || entry.retiring || current?.clients !== clients) return;
+        const tools = yield* client.tools.pipe(Effect.tapError(() => retire(clients, name, entry)));
+        return { client, tools };
+      }).pipe(
+        Effect.catch(({ cause }) =>
+          current?.clients !== clients
+            ? Effect.void
+            : Effect.logWarning('MCP connection unavailable').pipe(
+                Effect.annotateLogs({
+                  event: 'agent.mcp_unavailable',
+                  connection: name,
+                  error: cause instanceof Error ? cause.message : String(cause),
+                }),
+              ),
+        ),
+      );
+      if (current?.clients !== clients) return [];
+      if (!listed || entry.retiring || clients.get(name) !== entry) continue;
+      for (const tool of listed.tools) {
         if (
           (connection.allow && !connection.allow.includes(tool.name)) ||
           connection.block?.includes(tool.name)
@@ -259,31 +213,30 @@ export class McpTools {
           name: name + '__' + tool.name,
           description: [connection.description, tool.description].filter(Boolean).join('\n'),
           inputSchema: withoutProvided(tool.inputSchema, connection.provided),
-          call: async (input, signal) => {
-            try {
-              return await connected.client.callTool(
-                { name: tool.name, arguments: { ...input, ...connection.provided } },
-                undefined,
-                { signal, timeout: CALL_TIMEOUT_MS },
-              );
-            } catch (error) {
-              if (!signal.aborted && clients.get(name) === connected) {
-                await this.disconnect(clients, name);
-              }
-              throw error;
-            }
-          },
+          call: (input, signal) =>
+            runPromise(
+              Effect.suspend(() =>
+                current?.clients === clients && clients.get(name) === entry && !entry.retiring
+                  ? listed.client.call(tool.name, { ...input, ...connection.provided })
+                  : Effect.fail(
+                      new HostError({ cause: new Error('MCP connection is unavailable') }),
+                    ),
+              ).pipe(
+                Effect.tapError(() =>
+                  signal.aborted ? Effect.void : retire(clients, name, entry),
+                ),
+                Effect.mapError((error) => error.cause),
+              ),
+              { signal },
+            ),
         });
       }
     }
     return tools;
-  }
+  });
 
-  async close() {
-    this.closed = true;
-    await this.drop();
-  }
-}
+  return { tools };
+});
 
 /** The MCP tools of the enabled connections, with clients kept across turns. */
 export class Mcp extends Context.Service<
@@ -293,42 +246,20 @@ export class Mcp extends Context.Service<
       capabilities: CapabilitySnapshot,
     ) => Effect.Effect<readonly McpTool[], HostError>;
   }
->()('@wisp/agent/Mcp') {
-  static readonly layer = Layer.effect(
-    Mcp,
-    Effect.gen(function* () {
-      const { mcpConfigFile } = yield* EngineConfig;
-      const fs = yield* FileSystem.FileSystem;
-      const clients = yield* Effect.acquireRelease(
-        Effect.sync(() => new McpTools()),
-        (tools) => Effect.promise(() => tools.close()),
-      );
-      const tools = Effect.fn('Mcp.tools')(function* (capabilities: CapabilitySnapshot) {
-        const connections = yield* mcpConnections(capabilities, mcpConfigFile).pipe(
+>()('@wisp/agent/Mcp') {}
+
+export const layer = Layer.effect(
+  Mcp,
+  Effect.gen(function* () {
+    const { mcpConfigFile } = yield* EngineConfig;
+    const fs = yield* FileSystem.FileSystem;
+    const clients = yield* make();
+    return Mcp.of({
+      tools: (capabilities) =>
+        mcpConnections(capabilities, mcpConfigFile).pipe(
           Effect.provideService(FileSystem.FileSystem, fs),
-        );
-        const unavailable: { connection: string; error: unknown }[] = [];
-        const listed = yield* hostCall(() =>
-          clients.tools(connections, (connection, error) =>
-            unavailable.push({ connection, error }),
-          ),
-        );
-        // An unreachable connection is left out of this turn, not fatal to it.
-        yield* Effect.forEach(
-          unavailable,
-          ({ connection, error }) =>
-            Effect.logWarning('MCP connection unavailable').pipe(
-              Effect.annotateLogs({
-                event: 'agent.mcp_unavailable',
-                connection,
-                error: error instanceof Error ? error.message : String(error),
-              }),
-            ),
-          { discard: true },
-        );
-        return listed;
-      });
-      return Mcp.of({ tools });
-    }),
-  );
-}
+          Effect.flatMap(clients.tools),
+        ),
+    });
+  }),
+);

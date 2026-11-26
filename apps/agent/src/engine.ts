@@ -3,7 +3,7 @@ import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { v7 as uuidv7 } from 'uuid';
 import { EngineConfig, type EngineHost } from './host/engine-config.ts';
 import * as Capabilities from './host/capabilities.ts';
-import { Mcp } from './integrations/mcp-tools.ts';
+import * as Mcp from './integrations/mcp-tools.ts';
 import { SessionModels } from './models/session-models.ts';
 import { compactHistory } from './execution/compaction.ts';
 import {
