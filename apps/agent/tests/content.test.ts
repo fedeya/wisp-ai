@@ -2,7 +2,10 @@ import { expect, test } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Effect, FileSystem, PlatformError } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { readSkills } from '../src/wisp/content.ts';
+import * as Wisp from '../src/wisp/wisp-agent.ts';
 
 test('skills are the folders with a SKILL.md; other entries are skipped', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-skills-'));
@@ -14,7 +17,9 @@ test('skills are the folders with a SKILL.md; other entries are skipped', async 
     );
     await mkdir(path.join(root, 'skills/empty'));
     await writeFile(path.join(root, 'skills/README.md'), 'Not a skill.');
-    expect(await readSkills(root)).toEqual([
+    expect(
+      await Effect.runPromise(readSkills(root).pipe(Effect.provide(NodeFileSystem.layer))),
+    ).toEqual([
       {
         name: 'combat',
         description: 'Read the combat log.',
@@ -27,5 +32,37 @@ test('skills are the folders with a SKILL.md; other entries are skipped', async 
 });
 
 test("Wisp's own skills all load", async () => {
-  expect((await readSkills()).length).toBeGreaterThan(0);
+  const skills = await Effect.runPromise(readSkills().pipe(Effect.provide(NodeFileSystem.layer)));
+  expect(skills.length).toBeGreaterThan(0);
+});
+
+test('content retries a failed read and shares the successful load across turns', async () => {
+  let reads = 0;
+  const fs = FileSystem.layerNoop({
+    readDirectory: () => Effect.succeed([]),
+    readFileString: (file) =>
+      Effect.suspend(() => {
+        reads++;
+        return reads === 1
+          ? Effect.fail(
+              PlatformError.systemError({
+                _tag: 'NotFound',
+                module: 'FileSystem',
+                method: 'readFileString',
+                pathOrDescriptor: file,
+              }),
+            )
+          : Effect.yieldNow.pipe(Effect.as('Instructions'));
+      }),
+  });
+  const program = Effect.gen(function* () {
+    const { content } = yield* Wisp.WispAgent;
+    expect(yield* Effect.flip(content)).toMatchObject({ _tag: 'HostError' });
+    const loaded = yield* Effect.all([content, content], { concurrency: 2 });
+    expect(loaded[0]).toEqual({ system: 'Instructions', skills: [] });
+    expect(loaded[1]).toBe(loaded[0]);
+    expect(yield* content).toBe(loaded[0]);
+  });
+  await Effect.runPromise(program.pipe(Effect.provide(Wisp.layer), Effect.provide(fs)));
+  expect(reads).toBe(2);
 });

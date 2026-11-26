@@ -18,8 +18,8 @@ if (mode === '--version') {
     throw Error('SQLite is unavailable in the packaged engine.');
   }
   db.close();
-  const { readInstructions, readSkills } = await import('./agent-content.mjs');
-  const [instructions, skills] = await Promise.all([readInstructions(), readSkills()]);
+  const { loadAgentContent } = await import('./agent-content.mjs');
+  const { instructions, skills } = await loadAgentContent();
   if (!instructions.trim() || !skills.length) {
     throw Error('The agent instructions or skills are missing from the packaged engine.');
   }

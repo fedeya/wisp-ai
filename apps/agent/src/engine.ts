@@ -19,7 +19,7 @@ import type { Emit, EngineEvent } from './execution/turn-events.ts';
 import type { TurnInput } from './execution/turn-input.ts';
 import { SessionHistory, type HistoryError, type HistoryStore } from './session/session-history.ts';
 import { TurnToolbox } from './tools/turn-toolbox.ts';
-import { WispAgent } from './wisp/wisp-agent.ts';
+import * as Wisp from './wisp/wisp-agent.ts';
 
 export type { ModelMessage } from 'ai';
 export { EngineConfig, type EngineHost } from './host/engine-config.ts';
@@ -99,7 +99,7 @@ export class AgentEngine extends Context.Service<
     Effect.gen(function* () {
       const { stub } = yield* EngineConfig;
       const history = yield* SessionHistory;
-      const wisp = yield* WispAgent;
+      const wisp = yield* Wisp.WispAgent;
       const models = yield* SessionModels;
       const toolbox = yield* TurnToolbox;
       const turnDependencies = { stub, history, wisp, models, toolbox };
@@ -151,7 +151,7 @@ export function createAgentEngine(options: EngineOptions) {
       Layer.provide(
         Layer.mergeAll(
           SessionHistory.layer(history),
-          WispAgent.layer,
+          Wisp.layer,
           SessionModels.layer,
           TurnToolbox.layer.pipe(Layer.provide(Mcp.layer)),
         ),
