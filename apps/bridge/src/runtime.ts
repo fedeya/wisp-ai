@@ -20,13 +20,15 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTransportConnection } from './addon/transport-connection.ts';
+import type { TransportConnection } from './addon/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
 import { applicationDatabaseFile } from './db/application-file.ts';
 import { ApplicationDatabase } from './db/application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { Effect } from 'effect';
-import { bridgeLogging, runBridgeLog } from './logger.ts';
+import type { Context } from 'effect';
+import { bridgeLogging } from './logger.ts';
 import { MemoryStore } from './agent/memory-store.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
@@ -35,6 +37,7 @@ import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { SnapshotGate } from './addon/snapshots.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './addon/publish-scheduler.ts';
 import { createSnapshotPublisher } from './addon/snapshot-publisher.ts';
+import type { SnapshotPublisher } from './addon/snapshot-publisher.ts';
 import { PanelStore } from './addon/panels.ts';
 import { McpManager } from './integrations/mcp/mcp-manager.ts';
 import { McpRelay } from './integrations/mcp/mcp-relay.ts';
@@ -81,7 +84,21 @@ export interface BridgeOptions {
  *   drain, and turns drain before the publisher stops, chats are flushed and
  *   the database closes (last).
  */
-export async function startBridge(options: BridgeOptions = {}) {
+export function startBridge(options: BridgeOptions = {}) {
+  return Effect.runPromise(startBridgeEffect(options).pipe(Effect.provide(bridgeLogging)));
+}
+
+export const startBridgeEffect = Effect.fnUntraced(function* (options: BridgeOptions = {}) {
+  const context = yield* Effect.context<never>();
+  return yield* Effect.tryPromise({
+    try: () => openBridge(options, context),
+    catch: (error) => error,
+  });
+});
+
+async function openBridge(options: BridgeOptions, context: Context.Context<never>) {
+  const runSync = Effect.runSyncWith(context);
+  const runFork = Effect.runForkWith(context);
   const resources = new RuntimeResources();
   // Set by stop() or a desktop stop request; checked by everything that
   // starts work, so nothing new begins while resources close.
@@ -143,7 +160,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       enabledFeatures: () => features.enabledNames(),
     });
     resources.defer(() => telemetry.close());
-    const auth = new ChatGPTAuth(runtime, vault);
+    const auth = runSync(ChatGPTAuth.make(runtime, vault));
     await auth.load();
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     await connections.load();
@@ -179,7 +196,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     );
     resources.defer(() => mcpRelay.close());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
-      runBridgeLog(
+      runFork(
         Effect.logError('Conversation save failed').pipe(
           Effect.annotateLogs({ event: 'chat.save_failed', error: errorMessage(error) }),
         ),
@@ -205,36 +222,38 @@ export async function startBridge(options: BridgeOptions = {}) {
     // The app update the desktop last reported; the desktop resends it after a restart.
     let appUpdateVersion: string | null = null;
     const snapshots = new SnapshotGate();
-    const publisher = createSnapshotPublisher({
-      state,
-      snapshots,
-      transport: () => transport.current(),
-      inputs: () => {
-        const character = state.currentCharacterKey;
-        return {
-          connected: engineReady,
-          bridgeVersion,
-          expectedAddonVersion,
-          appUpdateVersion,
-          contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
-            ?.contextWindow,
-          defaultModel: defaultModel(),
-          panels: character ? panelStore.list(character) : [],
-          routines: character ? routineStore.list(character) : [],
-          routineRuns: character
-            ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
-            : [],
-          routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
-          capabilities: capabilitySettings.snapshot(),
-          features: features.values(),
-          requests: pending.snapshot(),
-        };
-      },
-    });
+    const publisher: SnapshotPublisher = runSync(
+      createSnapshotPublisher({
+        state,
+        snapshots,
+        transport: () => transport.current(),
+        inputs: () => {
+          const character = state.currentCharacterKey;
+          return {
+            connected: engineReady,
+            bridgeVersion,
+            expectedAddonVersion,
+            appUpdateVersion,
+            contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
+              ?.contextWindow,
+            defaultModel: defaultModel(),
+            panels: character ? panelStore.list(character) : [],
+            routines: character ? routineStore.list(character) : [],
+            routineRuns: character
+              ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
+              : [],
+            routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
+            capabilities: capabilitySettings.snapshot(),
+            features: features.values(),
+            requests: pending.snapshot(),
+          };
+        },
+      }),
+    );
     resources.defer(() => publisher.stop());
     const pending = new GameRequests(changed, {
       onTimeout: (timeout) =>
-        runBridgeLog(
+        runFork(
           Effect.logWarning('WoW did not answer a request').pipe(
             Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
           ),
@@ -276,7 +295,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       void capabilitySettings
         .publish()
         .catch((error) =>
-          runBridgeLog(
+          runFork(
             Effect.logWarning('Feature flags could not reach the agent').pipe(
               Effect.annotateLogs({ event: 'features.publish_failed', error: errorMessage(error) }),
             ),
@@ -284,37 +303,41 @@ export async function startBridge(options: BridgeOptions = {}) {
         );
       changed();
     }
-    const run = createTurnRunner({
-      telemetry,
-      modelFailures,
-      modelProvider: (model) => connections.provider(model),
-      engine,
-      models: connections,
-      capabilitySettings,
-      changed,
-      currentTransport: () => state.activeTransport,
-      activeChat: () => state.activeChat,
-      defaultModel,
-      isReady: () => engineReady,
-      isStopping: () => shutdownRequested,
-      accountBusy: accounts.busy,
-      hasProvider: () => connections.hasProvider(),
-      isCurrent: (chat) => state.chats.includes(chat),
-      flushSnapshot: publisher.flush,
-    });
+    const run = runSync(
+      createTurnRunner({
+        telemetry,
+        modelFailures,
+        modelProvider: (model) => connections.provider(model),
+        engine,
+        models: connections,
+        capabilitySettings,
+        changed,
+        currentTransport: () => state.activeTransport,
+        activeChat: () => state.activeChat,
+        defaultModel,
+        isReady: () => engineReady,
+        isStopping: () => shutdownRequested,
+        accountBusy: accounts.busy,
+        hasProvider: () => connections.hasProvider(),
+        isCurrent: (chat) => state.chats.includes(chat),
+        flushSnapshot: publisher.flush,
+      }),
+    );
     resources.defer(async () => {
       state.chats.forEach(run.interrupt);
       await run.drain();
     });
-    const stopRoutineScheduler = startRoutineScheduler({
-      state,
-      routineStore,
-      capabilitySettings,
-      run,
-      changed,
-      isStopping: () => shutdownRequested,
-      isReady: () => engineReady,
-    });
+    const stopRoutineScheduler = runSync(
+      startRoutineScheduler({
+        state,
+        routineStore,
+        capabilitySettings,
+        run,
+        changed,
+        isStopping: () => shutdownRequested,
+        isReady: () => engineReady,
+      }),
+    );
     resources.defer(stopRoutineScheduler);
     const adoptCharacter = createCharacterAdoption({
       database: applicationDatabase,
@@ -322,29 +345,31 @@ export async function startBridge(options: BridgeOptions = {}) {
       chats: () => state.chats,
       changed,
     });
-    const receivePacket = createPacketReceiver({
-      telemetry,
-      state,
-      engine,
-      pending,
-      integrationState,
-      capabilitySettings,
-      models: connections,
-      routineStore,
-      panelStore,
-      memoryStore,
-      transport: () => transport.current(),
-      refreshModelCatalog,
-      setCapability: mcpCapabilities.setCapability,
-      memorySnapshot,
-      run,
-      flushAcknowledgment: publisher.flush,
-      adoptCharacter,
-      interrupt: run.interrupt,
-      cancel: run.cancel,
-      runtime,
-      changed,
-    });
+    const receivePacket = runSync(
+      createPacketReceiver({
+        telemetry,
+        state,
+        engine,
+        pending,
+        integrationState,
+        capabilitySettings,
+        models: connections,
+        routineStore,
+        panelStore,
+        memoryStore,
+        transport: () => transport.current(),
+        refreshModelCatalog,
+        setCapability: mcpCapabilities.setCapability,
+        memorySnapshot,
+        run,
+        flushAcknowledgment: publisher.flush,
+        adoptCharacter,
+        interrupt: run.interrupt,
+        cancel: run.cancel,
+        runtime,
+        changed,
+      }),
+    );
     const receive: typeof receivePacket = (packet) => {
       const previousSession = state.activeTransport;
       observeGameConnection();
@@ -353,45 +378,49 @@ export async function startBridge(options: BridgeOptions = {}) {
         telemetry.gameConnectionStarted();
       }
     };
-    const transport = createTransportConnection({
-      state,
-      pending,
-      integrationState,
-      snapshots,
-      capabilitySettings,
-      receive,
-      saveWow: (wow) => config.update({ wow }),
-      changed,
-      isStopping: () => shutdownRequested,
-    });
+    const transport: TransportConnection = runSync(
+      createTransportConnection({
+        state,
+        pending,
+        integrationState,
+        snapshots,
+        capabilitySettings,
+        receive,
+        saveWow: (wow) => config.update({ wow }),
+        changed,
+        isStopping: () => shutdownRequested,
+      }),
+    );
     resources.defer(() => transport.serialize(transport.disconnect));
     const server = createServer(
-      createAgentHandler({
-        telemetry,
-        modelFailures,
-        token,
-        auth,
-        connections,
-        webSearch,
-        mcpRelay,
-        capabilitySettings,
-        routineStore,
-        panelStore,
-        memoryStore,
-        pending,
-        database,
-        simulator,
-        getChats: () => state.chats,
-        currentTransport: () => state.activeTransport,
-        defaultModel,
-        readSimulationCharacter,
-        memorySnapshot,
-        presentReply: run.present,
-        setMemoryView: (view) => {
-          state.memoryView = view;
-        },
-        changed,
-      }),
+      runSync(
+        createAgentHandler({
+          telemetry,
+          modelFailures,
+          token,
+          auth,
+          connections,
+          webSearch,
+          mcpRelay,
+          capabilitySettings,
+          routineStore,
+          panelStore,
+          memoryStore,
+          pending,
+          database,
+          simulator,
+          getChats: () => state.chats,
+          currentTransport: () => state.activeTransport,
+          defaultModel,
+          readSimulationCharacter,
+          memorySnapshot,
+          presentReply: run.present,
+          setMemoryView: (view) => {
+            state.memoryView = view;
+          },
+          changed,
+        }),
+      ),
     );
     resources.defer(() => closeServer(server));
     const agentPort = await listenOnLoopback(server, options.agentPort ?? 43187);
@@ -404,7 +433,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       retireLegacyEngine(paths.legacyEngine),
       rm(path.join(runtime, 'eve.log'), { force: true }),
     ]).catch((error: unknown) =>
-      runBridgeLog(
+      runFork(
         Effect.logWarning('Could not remove the old Eve engine folder').pipe(
           Effect.annotateLogs({
             event: 'agent.legacy_engine_cleanup_failed',
@@ -415,7 +444,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     );
     // Histories no conversation refers to belong to deleted chats or reset sessions.
     await agentHistory.prune().catch((error: unknown) =>
-      runBridgeLog(
+      runFork(
         Effect.logWarning('Could not prune agent history').pipe(
           Effect.annotateLogs({
             event: 'agent.history_prune_failed',
@@ -430,7 +459,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         changed();
       },
       (error: unknown) =>
-        runBridgeLog(
+        runFork(
           Effect.logError('Agent failed to load').pipe(
             Effect.annotateLogs({ event: 'agent.preload_failed', error: errorMessage(error) }),
           ),
@@ -519,7 +548,7 @@ export async function startBridge(options: BridgeOptions = {}) {
         setTimeout(
           () =>
             void stop().catch((error) =>
-              runBridgeLog(
+              runFork(
                 Effect.logError('Bridge shutdown failed').pipe(
                   Effect.annotateLogs({
                     event: 'bridge.shutdown_failed',
@@ -543,7 +572,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       integrationState.refresh();
       if (JSON.stringify(capabilitySettings.snapshot()) !== before) {
         void capabilitySettings.publish().catch((error) =>
-          runBridgeLog(
+          runFork(
             Effect.logWarning('Integration update failed').pipe(
               Effect.annotateLogs({
                 event: 'integration.update_failed',
@@ -563,7 +592,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       observeGameConnection();
       publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
-    runBridgeLog(
+    runFork(
       Effect.logInfo('Wisp started').pipe(
         Effect.annotateLogs({
           event: 'bridge.started',
@@ -583,7 +612,7 @@ export async function startBridge(options: BridgeOptions = {}) {
     return { state, receive, stop };
   } catch (error) {
     await resources.close().catch((cleanupError) =>
-      runBridgeLog(
+      runFork(
         Effect.logError('Bridge cleanup failed').pipe(
           Effect.annotateLogs({
             event: 'bridge.cleanup_failed',

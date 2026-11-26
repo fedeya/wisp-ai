@@ -1,4 +1,4 @@
-import { Formatter, Logger, ManagedRuntime, Predicate, Record } from 'effect';
+import { Formatter, Logger, Predicate, Record } from 'effect';
 
 // Keep the existing bridge.log format and redact credentials from structured fields.
 export const bridgeLogging = Logger.layer([
@@ -26,6 +26,3 @@ export const bridgeLogging = Logger.layer([
     ),
   ),
 ]);
-
-// Node callbacks and Promise-based bridge code log through the same layer as the agent.
-export const runBridgeLog = ManagedRuntime.make(bridgeLogging).runSync;

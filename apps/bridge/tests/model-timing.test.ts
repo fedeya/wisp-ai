@@ -1,12 +1,14 @@
 import { test, expect } from 'vitest';
 import { modelTiming } from '../src/models/model-timing.ts';
-import { captureLogs } from './capture-logs.ts';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 
 test('model observation forwards bytes immediately and logs only timings and cache metadata', async () => {
   const logs = captureLogs();
-  const tap = modelTiming(
-    { model: 'test', instructions: 'private instructions', tools: [] },
-    performance.now(),
+  const tap = runBridgeEffect(
+    modelTiming(
+      { model: 'test', instructions: 'private instructions', tools: [] },
+      performance.now(),
+    ),
   );
   const chunks: Buffer[] = [];
   tap.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -40,7 +42,7 @@ test('model observation forwards bytes immediately and logs only timings and cac
 });
 
 async function observe(body: Record<string, unknown>) {
-  const tap = modelTiming(body, performance.now());
+  const tap = runBridgeEffect(modelTiming(body, performance.now()));
   tap.resume();
   tap.end(
     Buffer.from('data: ' + JSON.stringify({ type: 'response.completed', response: {} }) + '\n\n'),

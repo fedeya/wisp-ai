@@ -1,5 +1,11 @@
 import { onTestFinished, vi } from 'vitest';
+import { Effect } from 'effect';
 import { z } from 'zod';
+import { bridgeLogging } from '../src/logger.ts';
+
+export function runBridgeEffect<A, E>(effect: Effect.Effect<A, E>) {
+  return Effect.runSync(effect.pipe(Effect.provide(bridgeLogging)));
+}
 
 const logRecord = z.looseObject({});
 

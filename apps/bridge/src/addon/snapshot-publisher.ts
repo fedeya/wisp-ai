@@ -1,5 +1,4 @@
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 import { buildAddonSnapshot, type AddonSnapshotInputs } from './addon-snapshot.ts';
 import { errorMessage } from '../errors.ts';
 import { createPublishScheduler } from './publish-scheduler.ts';
@@ -26,7 +25,10 @@ export interface SnapshotPublisher {
 }
 
 /** Publishes the addon snapshot to the current transport whenever it changes. */
-export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): SnapshotPublisher {
+export const createSnapshotPublisher = Effect.fnUntraced(function* (
+  deps: SnapshotPublisherDependencies,
+): Effect.fn.Return<SnapshotPublisher> {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const { state, snapshots } = deps;
   let dirty = true;
   const scheduler = createPublishScheduler(() => publish());
@@ -46,7 +48,7 @@ export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): Sn
       void transport.publish(snapshot).catch((error) => {
         snapshots.invalidate();
         dirty = true;
-        runBridgeLog(
+        runFork(
           Effect.logWarning('Failed to publish reply').pipe(
             Effect.annotateLogs({ event: 'transport.publish_failed', error: errorMessage(error) }),
           ),
@@ -71,4 +73,4 @@ export function createSnapshotPublisher(deps: SnapshotPublisherDependencies): Sn
     },
     stop: () => scheduler.stop(),
   };
-}
+});

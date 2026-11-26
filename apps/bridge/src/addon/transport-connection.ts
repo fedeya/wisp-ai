@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 import type { Packet } from './protocol.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { errorMessage } from '../errors.ts';
@@ -44,15 +43,16 @@ export interface TransportConnection {
 }
 
 /** Owns the addon's disk transport: connecting, replacing and disconnecting it. */
-export function createTransportConnection(
+export const createTransportConnection = Effect.fnUntraced(function* (
   deps: TransportConnectionDependencies,
-): TransportConnection {
+): Effect.fn.Return<TransportConnection> {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const { state, pending, integrationState, snapshots, capabilitySettings, changed } = deps;
   let transport: DiskTransport | undefined;
   let transportWork = Promise.resolve();
 
   function logError(error: unknown) {
-    runBridgeLog(
+    runFork(
       Effect.logError('Game transport failed').pipe(
         Effect.annotateLogs({ event: 'transport.failed', error: errorMessage(error) }),
       ),
@@ -64,7 +64,7 @@ export function createTransportConnection(
   function logHeldOff(session: string) {
     if (heldOff.has(session) || heldOff.size >= 32) return;
     heldOff.add(session);
-    runBridgeLog(
+    runFork(
       Effect.logInfo(
         'Another game window is connected; its heartbeat did not take the bridge',
       ).pipe(Effect.annotateLogs({ event: 'transport.heartbeat_held_off' })),
@@ -72,7 +72,7 @@ export function createTransportConnection(
   }
 
   function logSlowDownlink(report: SlowDownlink) {
-    runBridgeLog(
+    runFork(
       Effect.logInfo(
         report.phase === 'stalled'
           ? 'A reply is taking long to reach the game'
@@ -141,4 +141,4 @@ export function createTransportConnection(
       ),
     logError,
   };
-}
+});

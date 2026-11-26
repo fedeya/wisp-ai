@@ -6,7 +6,7 @@ import path from 'node:path';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { createHash } from 'node:crypto';
 import { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
-import { captureLogs } from './capture-logs.ts';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 
 async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-auth-')),
@@ -103,7 +103,7 @@ async function fixture(t: Pick<TestContext, 'onTestFinished'>) {
     }
     throw Error('Unexpected endpoint ' + url);
   }) as typeof fetch;
-  const auth = new ChatGPTAuth(root, vault, { fetch: mock, now: () => now });
+  const auth = runBridgeEffect(ChatGPTAuth.make(root, vault, { fetch: mock, now: () => now }));
   await auth.load();
   t.onTestFinished(async () => {
     await auth.cancel();
@@ -205,7 +205,7 @@ test('independent OAuth uses PKCE and verified identity; only safe state is publ
   );
   assert.equal(exchange.has('client_secret'), false);
   assert.doesNotMatch(JSON.stringify(f.auth.state()), /access-private|refresh-private|eyJ/);
-  const restored = new ChatGPTAuth(f.root, f.vault);
+  const restored = runBridgeEffect(ChatGPTAuth.make(f.root, f.vault));
   await restored.load();
   assert.equal(restored.hostId, f.auth.hostId);
   assert.equal(restored.state().status, 'connected');

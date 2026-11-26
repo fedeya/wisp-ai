@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { captureLogs } from './capture-logs.ts';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -67,15 +67,17 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     // Arm the interval one tick before the mutation timestamp so save, claim,
     // and pause all happen in the same millisecond without any real-time race.
     vi.setSystemTime(start - 3000);
-    stop = startRoutineScheduler({
-      state,
-      routineStore: store,
-      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-      isStopping: () => false,
-      isReady: () => true,
-      changed: () => settled.resolve(),
-      run,
-    });
+    stop = runBridgeEffect(
+      startRoutineScheduler({
+        state,
+        routineStore: store,
+        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        isStopping: () => false,
+        isReady: () => true,
+        changed: () => settled.resolve(),
+        run,
+      }),
+    );
     await vi.advanceTimersByTimeAsync(3000);
     await claimed.promise;
     expect(store.history()).toHaveLength(1);
@@ -157,29 +159,31 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     let active = 0;
     let maxActive = 0;
     const logs = captureLogs();
-    stop = startRoutineScheduler({
-      state,
-      routineStore: store,
-      capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
-      isStopping: () => false,
-      isReady: () => true,
-      changed: () => settledA.resolve(),
-      run: async (chat) => {
-        selected.push(chat.routineId!);
-        active++;
-        maxActive = Math.max(maxActive, active);
-        chat.status = 'working';
-        if (selected.length === 1) {
-          startedA.resolve();
-          await releaseA.promise;
-        } else {
-          startedB.resolve();
-          await releaseB.promise;
-        }
-        chat.status = 'done';
-        active--;
-      },
-    });
+    stop = runBridgeEffect(
+      startRoutineScheduler({
+        state,
+        routineStore: store,
+        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        isStopping: () => false,
+        isReady: () => true,
+        changed: () => settledA.resolve(),
+        run: async (chat) => {
+          selected.push(chat.routineId!);
+          active++;
+          maxActive = Math.max(maxActive, active);
+          chat.status = 'working';
+          if (selected.length === 1) {
+            startedA.resolve();
+            await releaseA.promise;
+          } else {
+            startedB.resolve();
+            await releaseB.promise;
+          }
+          chat.status = 'done';
+          active--;
+        },
+      }),
+    );
     await vi.advanceTimersByTimeAsync(3000);
     await startedA.promise;
     expect(selected).toEqual(['a']);

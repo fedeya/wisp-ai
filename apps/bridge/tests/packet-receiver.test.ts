@@ -1,5 +1,6 @@
 import { test, expect, vi } from 'vitest';
-import { captureLogs } from './capture-logs.ts';
+import { Effect } from 'effect';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/addon/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
@@ -30,28 +31,30 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
   const flushAcknowledgment = vi.fn();
-  const receive = createPacketReceiver({
-    state,
-    pending,
-    capabilitySettings,
-    integrationState: new IntegrationState(capabilitySettings),
-    engine: { end },
-    cancel,
-    models: { models },
-    routineStore: new RoutineStore(database),
-    panelStore: new PanelStore(database),
-    memoryStore: new MemoryStore(database),
-    transport: () => ({ resetSession: () => {}, setCursor: () => {} }),
-    refreshModelCatalog: async () => {},
-    setCapability: async () => {},
-    memorySnapshot: async () => ({ status: 'available', entries: [] }),
-    run,
-    interrupt,
-    runtime: 'unused',
-    changed: () => {},
-    flushAcknowledgment,
-    ...overrides,
-  });
+  const receive = runBridgeEffect(
+    createPacketReceiver({
+      state,
+      pending,
+      capabilitySettings,
+      integrationState: new IntegrationState(capabilitySettings),
+      engine: { end },
+      cancel,
+      models: { models },
+      routineStore: new RoutineStore(database),
+      panelStore: new PanelStore(database),
+      memoryStore: new MemoryStore(database),
+      transport: () => ({ resetSession: () => {}, setCursor: () => {} }),
+      refreshModelCatalog: async () => {},
+      setCapability: async () => {},
+      memorySnapshot: async () => ({ status: 'available', entries: [] }),
+      run,
+      interrupt,
+      runtime: 'unused',
+      changed: () => {},
+      flushAcknowledgment,
+      ...overrides,
+    }),
+  );
   return { state, pending, receive, cancel, end, interrupt, run, models, flushAcknowledgment };
 }
 
@@ -72,23 +75,25 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
   const newSessionId = vi.fn(() => 'session');
   const engine = { newSessionId, send, end: vi.fn(async () => {}) };
   const capabilitySettings = new CapabilitySettings('unused');
-  const run = createTurnRunner({
-    engine,
-    models: {
-      prepare,
-      models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
-      complete: vi.fn(async () => 'Unused title'),
-    },
-    capabilitySettings,
-    currentTransport: () => state.activeTransport,
-    activeChat: () => state.activeChat,
-    defaultModel: () => 'model',
-    isReady: () => true,
-    isStopping: () => false,
-    accountBusy: () => false,
-    isCurrent: (candidate) => state.chats.includes(candidate),
-    changed: () => {},
-  });
+  const run = runBridgeEffect(
+    createTurnRunner({
+      engine,
+      models: {
+        prepare,
+        models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
+        complete: vi.fn(async () => 'Unused title'),
+      },
+      capabilitySettings,
+      currentTransport: () => state.activeTransport,
+      activeChat: () => state.activeChat,
+      defaultModel: () => 'model',
+      isReady: () => true,
+      isStopping: () => false,
+      accountBusy: () => false,
+      isCurrent: (candidate) => state.chats.includes(candidate),
+      changed: () => {},
+    }),
+  );
   const { receive } = fixture({
     state,
     engine,
@@ -308,7 +313,11 @@ test('retry reuses the failed question and ignores retries while working', () =>
 
 test('a new character key is adopted before the packet that reports it is handled', () => {
   const calls: string[] = [];
-  const adoptCharacter = vi.fn(() => void calls.push('adopt'));
+  const adoptCharacter = vi.fn(() =>
+    Effect.sync(() => {
+      calls.push('adopt');
+    }),
+  );
   const observe = vi.fn(async () => void calls.push('observe'));
   const capabilitySettings = new CapabilitySettings('unused');
   vi.spyOn(capabilitySettings, 'enabled').mockReturnValue(true);

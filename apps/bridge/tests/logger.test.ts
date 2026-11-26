@@ -1,11 +1,14 @@
-import { Effect } from 'effect';
+import { Effect, Fiber } from 'effect';
 import { expect, test } from 'vitest';
-import { bridgeLogging, runBridgeLog } from '../src/logger.ts';
+import { bridgeLogging } from '../src/logger.ts';
 import { captureLogs } from './capture-logs.ts';
 
-test('bridge callbacks write JSON with structured fields and no credentials', () => {
+test('bridge callbacks write JSON with structured fields and no credentials', async () => {
   const logs = captureLogs();
-  runBridgeLog(
+  const runFork = Effect.runSync(
+    Effect.context<never>().pipe(Effect.map(Effect.runForkWith), Effect.provide(bridgeLogging)),
+  );
+  const logged = runFork(
     Effect.logWarning('Test warning').pipe(
       Effect.annotateLogs({
         event: 'bridge.test',
@@ -17,6 +20,7 @@ test('bridge callbacks write JSON with structured fields and no credentials', ()
       }),
     ),
   );
+  await Effect.runPromise(Fiber.join(logged));
   expect(logs()).toEqual([
     {
       level: 'WARN',

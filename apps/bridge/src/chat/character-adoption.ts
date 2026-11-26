@@ -1,5 +1,4 @@
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 import type { ApplicationDatabase } from '../db/application-database.ts';
 import { adoptCharacterKey, saveCharacterName } from '../db/character-keys.ts';
 import { errorMessage } from '../errors.ts';
@@ -24,7 +23,7 @@ interface CharacterAdoptionDependencies {
  */
 export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
   const seen = new Map<string, string>();
-  return function adoptCharacter(character: CharacterProfile): void {
+  return Effect.fnUntraced(function* (character: CharacterProfile) {
     if (!character.guid) return;
     const label = JSON.stringify([character.name, character.realm]);
     if (seen.get(character.key) === label) return;
@@ -46,19 +45,15 @@ export function createCharacterAdoption(deps: CharacterAdoptionDependencies) {
       }
       if (merged.length) {
         deps.panelStore.refresh();
-        runBridgeLog(
-          Effect.logInfo('Saved character data moved to its GUID key').pipe(
-            Effect.annotateLogs({ event: 'character.keys_merged', count: merged.length }),
-          ),
+        yield* Effect.logInfo('Saved character data moved to its GUID key').pipe(
+          Effect.annotateLogs({ event: 'character.keys_merged', count: merged.length }),
         );
       }
       deps.changed();
     } catch (error) {
-      runBridgeLog(
-        Effect.logWarning('Could not move saved character data').pipe(
-          Effect.annotateLogs({ event: 'character.keys_merge_failed', error: errorMessage(error) }),
-        ),
+      yield* Effect.logWarning('Could not move saved character data').pipe(
+        Effect.annotateLogs({ event: 'character.keys_merge_failed', error: errorMessage(error) }),
       );
     }
-  };
+  });
 }

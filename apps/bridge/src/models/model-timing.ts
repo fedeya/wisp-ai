@@ -2,10 +2,13 @@ import { Transform } from 'node:stream';
 import { StringDecoder } from 'node:string_decoder';
 import { createHash } from 'node:crypto';
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 
 // Forward original chunks immediately; observe metadata without logging content.
-export function modelTiming(body: Record<string, unknown>, started: number) {
+export const modelTiming = Effect.fnUntraced(function* (
+  body: Record<string, unknown>,
+  started: number,
+) {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const decoder = new StringDecoder('utf8');
   let buffer = '',
     firstTextMs: number | undefined;
@@ -53,7 +56,7 @@ export function modelTiming(body: Record<string, unknown>, started: number) {
             firstTextMs = Math.round(performance.now() - started);
           }
           if (event.type === 'response.completed') {
-            runBridgeLog(
+            runFork(
               Effect.logInfo('Model timing').pipe(
                 Effect.annotateLogs({
                   event: 'model.timing',
@@ -81,7 +84,7 @@ export function modelTiming(body: Record<string, unknown>, started: number) {
       done();
     },
   });
-}
+});
 
 // A prompt cache can only hit when a request starts with the previous request
 // of the same conversation. Remember per-item hashes (never content) so the log

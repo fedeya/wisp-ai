@@ -1,6 +1,7 @@
 import { test, expect, vi } from 'vitest';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { runBridgeEffect } from './capture-logs.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
 test('simulation RPC skips game reads and transport freshness for hypothetical requests only', async () => {
@@ -10,14 +11,16 @@ test('simulation RPC skips game reads and transport freshness for hypothetical r
   let enabled = true;
   let transport = 'new-addon';
   const server = createServer(
-    createAgentHandler({
-      token: 'test',
-      getChats: () => [chat],
-      currentTransport: () => transport,
-      capabilitySettings: { enabled: () => enabled },
-      readSimulationCharacter,
-      simulator: { run },
-    } as unknown as Parameters<typeof createAgentHandler>[0]),
+    runBridgeEffect(
+      createAgentHandler({
+        token: 'test',
+        getChats: () => [chat],
+        currentTransport: () => transport,
+        capabilitySettings: { enabled: () => enabled },
+        readSimulationCharacter,
+        simulator: { run },
+      } as unknown as Parameters<typeof createAgentHandler>[0]),
+    ),
   );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const url = 'http://127.0.0.1:' + (server.address() as { port: number }).port + '/simulate';

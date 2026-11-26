@@ -10,7 +10,6 @@ import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
 import { safeErrorMessage } from '@wisp/protocol/model-errors';
 import { errorMessage } from '../errors.ts';
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
@@ -97,7 +96,8 @@ interface TurnDependencies {
   /** How long an admitted turn may go without engine activity; defaults to `TURN_IDLE_TIMEOUT_MS`. */
   idleTimeoutMs?: number;
 }
-export function createTurnRunner(deps: TurnDependencies) {
+export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependencies) {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const {
     engine,
     models,
@@ -144,7 +144,7 @@ export function createTurnRunner(deps: TurnDependencies) {
           changed();
         },
         (error) => {
-          runBridgeLog(
+          runFork(
             Effect.logInfo('Conversation title failed').pipe(
               Effect.annotateLogs({
                 event: 'chat.title_failed',
@@ -372,7 +372,7 @@ export function createTurnRunner(deps: TurnDependencies) {
         ...(failure instanceof NoProviderError ? { notice: 'noProvider' as const } : {}),
       });
       const log = failed ? Effect.logError : Effect.logInfo;
-      runBridgeLog(
+      runFork(
         log('Turn failed').pipe(
           Effect.annotateLogs({
             event: 'chat.turn_failed',
@@ -402,7 +402,7 @@ export function createTurnRunner(deps: TurnDependencies) {
             }
           : {},
       );
-      runBridgeLog(
+      runFork(
         Effect.logInfo('Turn timing').pipe(
           Effect.annotateLogs({
             event: 'chat.turn_timing',
@@ -476,4 +476,4 @@ export function createTurnRunner(deps: TurnDependencies) {
       }
     },
   });
-}
+});

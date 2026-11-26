@@ -7,7 +7,6 @@ import { errorMessage } from '../errors.ts';
 import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 interface SchedulerDependencies {
   state: SessionState;
   routineStore: RoutineStore;
@@ -19,7 +18,8 @@ interface SchedulerDependencies {
   /** Whether a finished routine chat failed on a usage limit; tests replace it. */
   usageLimited?: (chat: Chat) => boolean;
 }
-export function startRoutineScheduler(deps: SchedulerDependencies) {
+export const startRoutineScheduler = Effect.fnUntraced(function* (deps: SchedulerDependencies) {
+  const runFork = Effect.runForkWith(yield* Effect.context<never>());
   const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed } = deps;
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
@@ -123,13 +123,13 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
       );
       await routineStore.finish(chat.id, status, summary);
     })()
-      .catch((error) =>
-        runBridgeLog(
+      .catch((error: unknown) => {
+        runFork(
           Effect.logError('Routine dispatch failed').pipe(
             Effect.annotateLogs({ event: 'routine.dispatch_failed', error: errorMessage(error) }),
           ),
-        ),
-      )
+        );
+      })
       .finally(() => {
         dispatchingRoutine = false;
         changed();
@@ -139,4 +139,4 @@ export function startRoutineScheduler(deps: SchedulerDependencies) {
     clearInterval(timer);
     await dispatch;
   };
-}
+});

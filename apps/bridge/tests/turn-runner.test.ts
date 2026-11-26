@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { captureLogs } from './capture-logs.ts';
+import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import type { TurnInput } from '@wisp/agent/engine';
 import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
@@ -70,28 +70,30 @@ function fixture(
   const hasProvider = vi.fn(() => true);
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
-  const run = createTurnRunner({
-    telemetry,
-    engine,
-    models: { models, prepare, complete },
-    capabilitySettings: {
-      publish: async () => {},
-      enabled: () => titlesEnabled,
-      snapshot: () => [],
-    },
-    currentTransport: () => transport,
-    activeChat: () => 'chat',
-    defaultModel: () => defaultModel,
-    isReady,
-    isStopping: () => false,
-    accountBusy,
-    hasProvider,
-    isCurrent: () => current,
-    changed,
-    flushSnapshot,
-    idleTimeoutMs,
-    ...extra,
-  });
+  const run = runBridgeEffect(
+    createTurnRunner({
+      telemetry,
+      engine,
+      models: { models, prepare, complete },
+      capabilitySettings: {
+        publish: async () => {},
+        enabled: () => titlesEnabled,
+        snapshot: () => [],
+      },
+      currentTransport: () => transport,
+      activeChat: () => 'chat',
+      defaultModel: () => defaultModel,
+      isReady,
+      isStopping: () => false,
+      accountBusy,
+      hasProvider,
+      isCurrent: () => current,
+      changed,
+      flushSnapshot,
+      idleTimeoutMs,
+      ...extra,
+    }),
+  );
   return {
     chat,
     run,

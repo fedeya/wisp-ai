@@ -30,7 +30,6 @@ import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
 import { Effect } from 'effect';
-import { runBridgeLog } from '../logger.ts';
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -54,10 +53,13 @@ interface ReceiverDependencies {
   changed: () => void;
   flushAcknowledgment?: () => void;
   /** Records a character's name and moves its pre-GUID data before the packet is handled. */
-  adoptCharacter?: (character: CharacterProfile) => void;
+  adoptCharacter?: (character: CharacterProfile) => Effect.Effect<void>;
   now?: () => number;
 }
-export function createPacketReceiver(deps: ReceiverDependencies) {
+export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverDependencies) {
+  const context = yield* Effect.context<never>();
+  const runFork = Effect.runForkWith(context);
+  const runSync = Effect.runSyncWith(context);
   const {
     state,
     engine,
@@ -103,7 +105,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const beforeIntegrations = JSON.stringify(capabilitySettings.snapshot());
     const newTransport = establishesSession && state.activeTransport !== packet.session;
     if (newTransport) {
-      runBridgeLog(
+      runFork(
         Effect.logInfo('Game window connected').pipe(
           Effect.annotateLogs({
             event: 'transport.session_changed',
@@ -163,7 +165,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     }
     if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
       void capabilitySettings.publish().catch((error) =>
-        runBridgeLog(
+        runFork(
           Effect.logWarning('Integration update failed').pipe(
             Effect.annotateLogs({
               event: 'integration.update_failed',
@@ -188,7 +190,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
-      runBridgeLog(
+      runFork(
         Effect.logInfo('Message delivery').pipe(
           Effect.annotateLogs({ event: 'transport.message_delivery', ...delivery }),
         ),
@@ -251,7 +253,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           })
           .safeParse(data);
         if (timing.success) {
-          runBridgeLog(
+          runFork(
             Effect.logInfo('First text in WoW').pipe(
               Effect.annotateLogs({
                 ...timing.data,
@@ -277,7 +279,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
         path.join(runtime, 'inline-status.json'),
         JSON.stringify(status, null, 2),
       ).catch((error) =>
-        runBridgeLog(
+        runFork(
           Effect.logWarning('Inline diagnostic save failed').pipe(
             Effect.annotateLogs({
               event: 'addon.inline_status_save_failed',
@@ -293,7 +295,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       const character = characterProfile(packet.context);
       if (character) {
         state.currentCharacterKey = character.key;
-        deps.adoptCharacter?.(character);
+        if (deps.adoptCharacter) runSync(deps.adoptCharacter(character));
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -316,7 +318,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
             .observe(identity, event.data)
             .then(changed)
             .catch((error) =>
-              runBridgeLog(
+              runFork(
                 Effect.logWarning('Routine event failed').pipe(
                   Effect.annotateLogs({
                     event: 'routine.event_failed',
@@ -341,7 +343,7 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
           .mutate(identity, input.data)
           .then(changed)
           .catch((error) =>
-            runBridgeLog(
+            runFork(
               Effect.logWarning('Routine action failed').pipe(
                 Effect.annotateLogs({ event: 'routine.action_failed', error: errorMessage(error) }),
               ),
@@ -649,4 +651,4 @@ export function createPacketReceiver(deps: ReceiverDependencies) {
       changed();
     }
   };
-}
+});
