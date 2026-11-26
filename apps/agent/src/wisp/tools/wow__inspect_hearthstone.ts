@@ -1,7 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 
 export default enabledTool(
   'inspect_hearthstone',
@@ -12,10 +11,6 @@ export default enabledTool(
     inputSchema: z.strictObject({}),
     label: { start: () => 'Reading Hearthstone bind', complete: () => 'Read Hearthstone bind' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'hearthstone', args } },
-        ctx.abortSignal,
-      ),
+      ctx.host('inspect', { inspection: { kind: 'hearthstone', args } }),
   }),
 );

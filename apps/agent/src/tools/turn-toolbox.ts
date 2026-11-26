@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from 'effect';
 import { localMemory, memorySlots } from '../wisp/agent-memory.ts';
 import { toolOffered } from './enabled-tool.ts';
+import { sessionHost } from '../contract/host-calls.ts';
 import { EngineConfig } from '../host/engine-config.ts';
 import { hostCall, type HostError } from '../execution/engine-errors.ts';
 import { Mcp } from '../integrations/mcp-tools.ts';
@@ -30,7 +31,7 @@ export class TurnToolbox extends Context.Service<
   static readonly layer = Layer.effect(
     TurnToolbox,
     Effect.gen(function* () {
-      const { stub } = yield* EngineConfig;
+      const { stub, calls } = yield* EngineConfig;
       const mcp = yield* Mcp;
 
       const own = (session: string) =>
@@ -45,9 +46,10 @@ export class TurnToolbox extends Context.Service<
           }
           for (const slot of memorySlots) {
             const slotMemory = localMemory(slot);
-            if (!(await slotMemory.scope(session, signal))) continue;
+            const host = sessionHost(calls, session, signal);
+            if (!(await slotMemory.scope(host))) continue;
             Object.assign(direct, slotMemory.tools());
-            const recalled = await slotMemory.recall(session, signal);
+            const recalled = await slotMemory.recall(host);
             if (recalled) memory.push(recalled);
           }
           return { direct, deferred, memory: memory.join('\n\n') };

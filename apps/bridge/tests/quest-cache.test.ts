@@ -1,6 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { createServer } from 'node:http';
-import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { createAgentCalls } from '../src/agent/agent-calls.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { characterIdentity, rememberTurnQuests } from '../src/chat/context.ts';
 
@@ -36,33 +35,28 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
       quests: { status: 'available', data: { quests: [], count: 0 } },
     },
   }));
-  // Other service dependencies are not used by the state endpoint under test.
-  const handler = createAgentHandler({
-    token: 'test',
+  // Other service dependencies are not used by the state call under test.
+  const agent = createAgentCalls({
     getChats: () => [chat],
     currentTransport: () => 'addon',
     capabilitySettings: { enabled: () => allowed },
     pending: { request },
-  } as unknown as Parameters<typeof createAgentHandler>[0]);
-  const server = createServer(handler);
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = 'http://127.0.0.1:' + (server.address() as { port: number }).port + '/state';
+  } as unknown as Parameters<typeof createAgentCalls>[0]);
   const read = (sections: string[], refresh?: boolean) =>
-    fetch(url, {
-      method: 'POST',
-      headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
-      body: JSON.stringify({ agentSession: 'eve', sections, refresh }),
-    });
-  try {
+    agent.call(
+      'eve',
+      'state',
+      { sections: sections as never, refresh },
+      new AbortController().signal,
+    ) as Promise<any>;
+  {
     const quests = await read(['quests']);
-    expect(quests.status).toBe(200);
-    expect((await quests.json()).sections.quests.data.quests[0]).toMatchObject({
+    expect(quests.sections.quests.data.quests[0]).toMatchObject({
       title: 'Cached delivery',
       rewardXP: 850,
     });
     expect(request).not.toHaveBeenCalled();
-    const mixed = await read(['quests', 'talents']);
-    const result = await mixed.json();
+    const result = await read(['quests', 'talents']);
     expect(result.sections.quests.data.quests[0].title).toBe('Cached delivery');
     expect(result.sections.quests.data.quests[0].rewardXP).toBe(850);
     expect(result.sections.talents.data.unspentPoints).toBe(1);
@@ -70,17 +64,13 @@ test('state RPC serves quests locally, fetches only missing sections, and respec
       { chat: 'chat', session: 'addon', agent: true, sections: ['talents'] },
       expect.any(AbortSignal),
     );
-    await (await read(['quests'], true)).json();
+    await read(['quests'], true);
     expect(request).toHaveBeenLastCalledWith(
       { chat: 'chat', session: 'addon', agent: true, sections: ['quests'] },
       expect.any(AbortSignal),
     );
     allowed = false;
-    const denied = await read(['quests']);
-    expect(denied.status).toBe(503);
-    expect(await denied.text()).toContain('disabled');
+    await expect(read(['quests'])).rejects.toThrow('disabled');
     expect(request).toHaveBeenCalledTimes(2);
-  } finally {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

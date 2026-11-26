@@ -13,6 +13,7 @@ import { readJson } from './json-file.ts';
 import { loadBridgeConfig } from './bridge-config.ts';
 import { z } from 'zod';
 import { createAgentHandler } from './agent/agent-server.ts';
+import { createAgentCalls } from './agent/agent-calls.ts';
 import { GameRequests } from './addon/game-requests.ts';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
@@ -55,6 +56,7 @@ import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine } from '@wisp/agent/engine';
+import type { AgentHostCalls } from '@wisp/agent/contract/host-calls';
 import { AgentHistory } from './agent/agent-history.ts';
 export interface BridgeOptions {
   resourceRoot?: string;
@@ -240,7 +242,19 @@ export async function startBridge(options: BridgeOptions = {}) {
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
     let engineReady = false;
+    // The agent calls the bridge directly. Its handlers need stores created below,
+    // so the engine reaches them through this binding once they exist.
+    let agentCalls: AgentHostCalls | undefined;
+    const calls = () => {
+      if (!agentCalls) throw Error('The bridge is still starting.');
+      return agentCalls;
+    };
+    const hostCalls: AgentHostCalls = {
+      call: (session, call, input, signal) => calls().call(session, call, input, signal),
+      selectedModel: (session, signal) => calls().selectedModel(session, signal),
+    };
     const engine = createAgentEngine({
+      calls: hostCalls,
       origin: () => agentOrigin,
       token,
       history: agentHistory,
@@ -364,34 +378,31 @@ export async function startBridge(options: BridgeOptions = {}) {
       logger,
     });
     resources.defer(() => transport.serialize(transport.disconnect));
+    agentCalls = createAgentCalls({
+      telemetry,
+      connections,
+      webSearch,
+      capabilitySettings,
+      routineStore,
+      panelStore,
+      memoryStore,
+      pending,
+      database,
+      simulator,
+      getChats: () => state.chats,
+      currentTransport: () => state.activeTransport,
+      defaultModel,
+      readSimulationCharacter,
+      memorySnapshot,
+      presentReply: run.present,
+      setMemoryView: (view) => {
+        state.memoryView = view;
+      },
+      changed,
+    });
+    // The model proxies and the MCP relay stay HTTP: the AI SDK and MCP clients reach them by URL.
     const server = createServer(
-      createAgentHandler({
-        logger,
-        telemetry,
-        modelFailures,
-        token,
-        auth,
-        connections,
-        webSearch,
-        mcpRelay,
-        capabilitySettings,
-        routineStore,
-        panelStore,
-        memoryStore,
-        pending,
-        database,
-        simulator,
-        getChats: () => state.chats,
-        currentTransport: () => state.activeTransport,
-        defaultModel,
-        readSimulationCharacter,
-        memorySnapshot,
-        presentReply: run.present,
-        setMemoryView: (view) => {
-          state.memoryView = view;
-        },
-        changed,
-      }),
+      createAgentHandler({ logger, modelFailures, token, auth, connections, mcpRelay }),
     );
     resources.defer(() => closeServer(server));
     const agentPort = await listenOnLoopback(server, options.agentPort ?? 43187);
@@ -562,7 +573,7 @@ export async function startBridge(options: BridgeOptions = {}) {
       return resources.close();
     }
     await Promise.all([engineStartup, transportStartup]);
-    return { state, receive, stop };
+    return { state, receive, stop, agent: hostCalls };
   } catch (error) {
     await resources
       .close()

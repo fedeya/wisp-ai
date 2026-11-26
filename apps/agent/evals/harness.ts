@@ -1,6 +1,7 @@
 // Runs one eval as a real engine turn: fixture stubs answer game and
 // integration tools, gates must pass and scorers are tracked as warnings.
 import { isDeepStrictEqual } from 'node:util';
+import { evalBridgeCalls } from './eval-host.ts';
 import { createAgentEngine, type EngineEvent, type ToolStubOutcome } from '../src/engine.ts';
 import { agentHost } from '../src/host/agent-host.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
@@ -55,6 +56,7 @@ export async function runEval(definition: EvalDefinition): Promise<EvalOutcome> 
     throw Error('Start the eval bridge before running evals.');
   }
   const engine = createAgentEngine({
+    calls: evalBridgeCalls(host.origin, host.token),
     origin: () => host.origin,
     token: host.token,
     // Each eval is a single new turn; nothing is resumed.

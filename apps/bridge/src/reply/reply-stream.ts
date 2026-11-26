@@ -67,7 +67,7 @@ export class ReplyProjection {
   private waiters = new Map<string, Set<() => void>>();
 
   beginTurn() {
-    // Execution can reach the RPC before the first turn.started event is read.
+    // A present call can arrive before the first turn.started event is read.
     // Keep those waiters alive; subsequent turns must invalidate the old ones.
     if (this.started) {
       this.finish();
@@ -339,7 +339,7 @@ export class ReplyProjection {
         presentation.value = value;
         this.references = { ...this.references, ...value.references };
       } catch {
-        // Old or malformed history can lack the live RPC acceptance step.
+        // Old or malformed history can lack the live present call's acceptance.
       }
     }
     presentation.pending = false;

@@ -308,7 +308,7 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 | Shared contracts              | [protocol](../packages/protocol/src)                                                          |
 | Game UI, readings and actions | [addon](../addon/WispAI)                                                                      |
 
-The bridge owns accounts, persistence and tool execution, and runs the agent in process. It prefers loopback **43187** for the agent RPC/model endpoint and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The agent endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
+The bridge owns accounts, persistence and tool execution, and runs the agent in process. The agent's tools call the bridge directly (`createAgentCalls` in `apps/bridge/src/agent/agent-calls.ts` implements `AgentHostCalls` from `@wisp/agent/contract/host-calls`). The bridge prefers loopback **43187** for the model proxy and MCP relay, which the AI SDK and MCP clients reach by URL, and **43190** for the desktop API. If any of these ports is occupied, for example by another Wisp, the operating system assigns that endpoint a free port. The loopback endpoint uses an ephemeral token. Credential and data boundaries are documented under [privacy](usage.md#what-leaves-your-computer).
 
 The agent runs inside the bridge on the [AI SDK](https://ai-sdk.dev), with each
 turn run as an [Effect](https://effect.website) program:
@@ -319,7 +319,8 @@ apps/agent/src/
   execution/    Turn execution, stream events, and compaction
   session/      Session log and replay
   models/       Model selection and provider adapters
-  host/         Agent configuration and bridge RPC
+  contract/     What the agent asks of its host: calls, tool inputs, presentation
+  host/         Agent configuration, capabilities and the MCP relay endpoint
   tools/        Per-turn toolbox and AI SDK tool assembly
   integrations/ MCP and web fetching
   wisp/         Instructions, skills, memory, and authored tools
@@ -398,7 +399,7 @@ and structured `chat.turn_timing` entries for preparation, admission and the fir
 
 Replies stream as ordinary Markdown text. The agent tool `wisp__present_ui`
 inserts a complete, schema-validated native panel or declares inline entity
-references. Its authenticated `/present` RPC reserves component IDs, immutable
+references. Its `present` call to the bridge reserves component IDs, immutable
 reference keys and aggregate payload budgets in the active turn before returning
 `{ accepted: true }` to the model. Rejections return actionable tool errors.
 Successful `call.settled` events publish the reserved payload, so cancelled calls

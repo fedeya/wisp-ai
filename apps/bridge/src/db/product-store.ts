@@ -6,7 +6,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { savedRoutine, routineRun, type Routine, type RoutineRun } from '@wisp/protocol/routines';
 import { panelContent, type Panel } from '@wisp/agent/contract/panels';
-import { memoryEntry } from '@wisp/agent/contract/agent-rpc';
+import { memoryEntry } from '@wisp/agent/contract/host-calls';
 import type { ApplicationOrm } from './application-database.ts';
 import { writeMigrationBackup } from './private-file.ts';
 import { routines, routineRuns, panels, memoryScopes, memoryEntries, metadata } from './schema.ts';

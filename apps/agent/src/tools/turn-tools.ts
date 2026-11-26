@@ -1,6 +1,7 @@
 import { hasToolCall, isStepCount, tool, type StopCondition, type ToolSet } from 'ai';
 import { z } from 'zod';
 import type { AuthoredSkill } from '../wisp/content.ts';
+import { sessionHost, type AgentHostCalls, type SessionHost } from '../contract/host-calls.ts';
 import type { ToolDefinition } from './tool.ts';
 
 export type ToolStubOutcome = { response: unknown } | { throw: { message: string } };
@@ -31,7 +32,7 @@ export interface DeferredTool {
   label?: ToolDefinition['label'];
   run: (
     input: unknown,
-    ctx: { session: string; signal: AbortSignal; callId: string },
+    ctx: { session: string; signal: AbortSignal; callId: string; host: SessionHost },
   ) => Promise<unknown>;
 }
 
@@ -90,6 +91,7 @@ export function authored(name: string, tool: ToolDefinition, stub?: ToolStub): D
         session: { id: ctx.session },
         abortSignal: ctx.signal,
         callId: ctx.callId,
+        host: ctx.host,
       });
     },
   };
@@ -104,12 +106,14 @@ export function authored(name: string, tool: ToolDefinition, stub?: ToolStub): D
 export function assembleTools(options: {
   session: string;
   signal: AbortSignal;
+  /** The host's calls, which tools reach through their context. */
+  calls: AgentHostCalls;
   direct: Record<string, ToolDefinition>;
   deferred: DeferredTool[];
   skills: AuthoredSkill[];
   stub?: ToolStub;
 }) {
-  const { session, signal, direct, skills, stub } = options;
+  const { session, signal, calls, direct, skills, stub } = options;
   const labels = new Map<string, ToolDefinition['label']>();
   const deferred = new Map(options.deferred.map((entry) => [entry.name, entry]));
   // tool_call also reaches direct tools, for a model that routes every call through it.
@@ -129,10 +133,12 @@ export function assembleTools(options: {
         if (fixture) {
           return stubbed(fixture);
         }
+        const abortSignal = context.abortSignal ?? signal;
         return definition.execute(input, {
           session: { id: session },
-          abortSignal: context.abortSignal ?? signal,
+          abortSignal,
           callId: context.toolCallId,
+          host: sessionHost(calls, session, abortSignal),
         });
       },
       ...(toModelOutput ? { toModelOutput: ({ output }) => toModelOutput(output) as never } : {}),
@@ -182,10 +188,12 @@ export function assembleTools(options: {
         if (!target) {
           throw Error('Unknown or disabled tool: ' + name + '. Use tool_search to find tools.');
         }
+        const callSignal = context.abortSignal ?? signal;
         return target.run(input, {
           session,
-          signal: context.abortSignal ?? signal,
+          signal: callSignal,
           callId: context.toolCallId,
+          host: sessionHost(calls, session, callSignal),
         });
       },
     });

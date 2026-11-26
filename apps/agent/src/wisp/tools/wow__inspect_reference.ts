@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { referenceInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'inspect_reference',
@@ -12,11 +11,6 @@ export default enabledTool(
       start: ({ kind }) => 'Inspecting ' + kind,
       complete: ({ kind }) => 'Inspected ' + kind,
     },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'reference', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => ctx.host('inspect', { inspection: { kind: 'reference', args } }),
   }),
 );

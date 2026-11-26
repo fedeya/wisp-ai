@@ -1,7 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 export default enabledTool(
   'inspect_map',
   defineTool({
@@ -13,11 +12,6 @@ export default enabledTool(
       query: z.string().min(1).max(80).optional(),
     }),
     label: { start: () => 'Reading maps', complete: () => 'Read maps' },
-    execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'map', args } },
-        ctx.abortSignal,
-      ),
+    execute: async (args, ctx) => ctx.host('inspect', { inspection: { kind: 'map', args } }),
   }),
 );

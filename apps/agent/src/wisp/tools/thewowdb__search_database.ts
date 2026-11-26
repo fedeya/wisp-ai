@@ -1,7 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { databaseSearch } from '../../contract/database.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 
 export default enabledTool(
   'search_database',
@@ -14,11 +13,6 @@ export default enabledTool(
       start: ({ kind }) => 'Searching Forever ' + kind + ' database',
       complete: ({ kind }) => 'Searched Forever ' + kind + ' database',
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'database',
-        { agentSession: ctx.session.id, operation: 'search', ...args },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => ctx.host('database', { operation: 'search', ...args }),
   }),
 );

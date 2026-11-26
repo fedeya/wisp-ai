@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { settingsUndo } from '../../contract/settings.ts';
 export default enabledTool(
   'undo_settings',
@@ -16,11 +15,6 @@ export default enabledTool(
           ? 'Restored settings'
           : 'Tried to restore settings',
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'action',
-        { agentSession: ctx.session.id, action: { kind: 'undo_settings', args } },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => ctx.host('action', { action: { kind: 'undo_settings', args } }),
   }),
 );

@@ -1,7 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { databaseEntity } from '../../contract/database.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 
 export default enabledTool(
   'get_database_entity',
@@ -14,11 +13,6 @@ export default enabledTool(
       start: ({ kind }) => 'Reading Forever ' + kind + ' data',
       complete: ({ kind }) => 'Read Forever ' + kind + ' data',
     },
-    execute: (args, ctx) =>
-      agentRPC(
-        'database',
-        { agentSession: ctx.session.id, operation: 'get', ...args },
-        ctx.abortSignal,
-      ),
+    execute: (args, ctx) => ctx.host('database', { operation: 'get', ...args }),
   }),
 );

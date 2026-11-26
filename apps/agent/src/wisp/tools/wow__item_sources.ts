@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { itemSourcesInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'item_sources',
@@ -11,11 +10,6 @@ export default enabledTool(
     inputSchema: itemSourcesInput,
     label: { start: () => 'Finding item sources', complete: () => 'Found item sources' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'item_sources', args } },
-        ctx.abortSignal,
-        60_000,
-      ),
+      ctx.host('inspect', { inspection: { kind: 'item_sources', args } }, 60_000),
   }),
 );

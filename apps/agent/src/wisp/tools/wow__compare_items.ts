@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { compareInput } from '../../contract/game-inspection.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'compare_items',
@@ -11,10 +10,6 @@ export default enabledTool(
     inputSchema: compareInput,
     label: { start: () => 'Comparing equipment', complete: () => 'Compared equipment' },
     execute: async (args, ctx) =>
-      agentRPC(
-        'inspect',
-        { agentSession: ctx.session.id, inspection: { kind: 'compare_items', args } },
-        ctx.abortSignal,
-      ),
+      ctx.host('inspect', { inspection: { kind: 'compare_items', args } }),
   }),
 );

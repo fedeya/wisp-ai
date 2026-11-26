@@ -104,12 +104,12 @@ export class AgentEngine extends Context.Service<
   static readonly layer = Layer.effect(
     AgentEngine,
     Effect.gen(function* () {
-      const { stub } = yield* EngineConfig;
+      const { stub, calls } = yield* EngineConfig;
       const history = yield* SessionHistory;
       const wisp = yield* WispAgent;
       const models = yield* SessionModels;
       const toolbox = yield* TurnToolbox;
-      const turnDependencies = { stub, history, wisp, models, toolbox };
+      const turnDependencies = { stub, calls, history, wisp, models, toolbox };
 
       const compactNow = Effect.fn('AgentEngine.compactNow')(function* (
         session: string,

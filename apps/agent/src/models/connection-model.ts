@@ -2,7 +2,7 @@ import { createProviderModel } from './providers.ts';
 import { createOpenAI } from '@ai-sdk/openai';
 import { wrapLanguageModel } from 'ai';
 import { normalizeModelError } from '../contract/model-errors.ts';
-import { MODEL_SESSION_HEADER, selectedModel } from '../contract/agent-rpc.ts';
+import { MODEL_SESSION_HEADER, selectedModel } from '../contract/host-calls.ts';
 import type { z } from 'zod';
 import { subscriptionCallOptions, filterWebSearch } from './model-tools.ts';
 import { applyModelReasoning } from './reasoning.ts';

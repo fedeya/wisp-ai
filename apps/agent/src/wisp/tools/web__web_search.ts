@@ -1,6 +1,5 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { agentRPC } from '@wisp/agent/agent-rpc';
 import { wowheadQuery, resolveWebSearch } from '@wisp/protocol/search';
 
 function displayQuery(query: string) {
@@ -21,11 +20,6 @@ export default enabledTool(
       complete: ({ query }) => `Searched the web for “${displayQuery(query)}”`,
     },
     execute: (args, ctx) =>
-      agentRPC(
-        'wowhead',
-        { agentSession: ctx.session.id, ...args },
-        ctx.abortSignal,
-        resolveWebSearch(args).timeoutSeconds * 1000 + 15000,
-      ),
+      ctx.host('wowhead', args, resolveWebSearch(args).timeoutSeconds * 1000 + 15000),
   }),
 );

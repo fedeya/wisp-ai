@@ -16,7 +16,7 @@ import type { ModelCatalog } from '../models/model-connections.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from './panels.ts';
 import type { MemoryStore } from '../agent/memory-store.ts';
-import type { MemoryView } from '../agent/agent-server.ts';
+import type { MemoryView } from '../agent/agent-calls.ts';
 import {
   characterIdentity,
   characterProfile,

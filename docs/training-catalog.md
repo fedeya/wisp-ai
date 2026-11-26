@@ -128,7 +128,7 @@ ChatGPT receives the selected depth/query/findings/time budget; its query count
 is guidance to the hosted search model, not an independently enforced internal
 query counter. Returned findings/sources and the request deadline are enforced.
 Deep search uses medium reasoning on supported models; other profiles use low.
-The agent RPC deadline includes a 15-second margin above the search deadline.
+The tool's call to the bridge allows 15 seconds more than the search deadline.
 Returned results report the selected `budget` for inspection.
 
 Example tool input:
