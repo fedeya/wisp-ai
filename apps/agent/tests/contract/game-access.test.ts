@@ -2,11 +2,9 @@ import { Effect, Schema } from 'effect';
 import { expect, expectTypeOf, test } from 'vitest';
 import {
   GameAccess,
-  decodeInspectionResult,
   itemSourcesResult,
   unavailableGameAccess,
   type ItemSourcesResult,
-  type GameInspection,
   type InspectionResult,
 } from '../../src/host/game-access.ts';
 
@@ -29,13 +27,10 @@ test('item source inspections return a typed and validated item list', async () 
   expect((await Effect.runPromise(reading)).items).toEqual(result.items);
 });
 
-test('inspectGame ties the caller and the implementation to the inspection kind', () => {
-  const target = unavailableGameAccess.inspectGame('turn', { kind: 'target', args: {} });
+test('inspection methods declare distinct caller and implementation contracts', () => {
+  const target = unavailableGameAccess.readTarget('turn', {});
   expectTypeOf(target).toEqualTypeOf<Effect.Effect<InspectionResult<'target'>, Error>>();
-  const gear = unavailableGameAccess.inspectGame('turn', {
-    kind: 'gear_candidates',
-    args: { itemIds: [14149] },
-  });
+  const gear = unavailableGameAccess.readGearCandidates('turn', { itemIds: [14149] });
   expectTypeOf(gear).toEqualTypeOf<Effect.Effect<InspectionResult<'gear_candidates'>, Error>>();
   expectTypeOf<
     Extract<
@@ -44,11 +39,14 @@ test('inspectGame ties the caller and the implementation to the inspection kind'
     >['data']['items'][number]['id']
   >().toEqualTypeOf<number>();
 
-  const wrong = (_session: string, _inspection: GameInspection) =>
-    decodeInspectionResult('target')({ status: 'available', data: { note: 'Target' } });
-  // @ts-expect-error Returning a target reading for every kind violates the service contract.
-  const implementation: typeof unavailableGameAccess.inspectGame = wrong;
-  expect(implementation).toBe(wrong);
+  const readTarget: GameAccess['Service']['readTarget'] = () =>
+    Effect.succeed({ status: 'available', data: { note: 'Target' } });
+  const game = GameAccess.of({
+    ...unavailableGameAccess,
+    // @ts-expect-error A target result cannot implement the gear candidate operation.
+    readGearCandidates: readTarget,
+  });
+  expect(game.readGearCandidates).toBe(readTarget);
 });
 
 test('item source inspections reject an object with malformed items', async () => {

@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { inspectGame } from '../../tools/game-tool.ts';
+import { runGame } from '../../tools/game-tool.ts';
 export default enabledTool(
   'inspect_map',
   defineTool({
@@ -13,6 +13,6 @@ export default enabledTool(
       query: z.string().min(1).max(80).optional(),
     }),
     label: { start: () => 'Reading maps', complete: () => 'Read maps' },
-    execute: async (args, ctx) => inspectGame(ctx, { kind: 'map', args }),
+    execute: async (args, ctx) => runGame(ctx, (game) => game.readMap(ctx.session.id, args)),
   }),
 );

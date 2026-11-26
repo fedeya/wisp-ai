@@ -1,12 +1,13 @@
 import {
   characterSections,
+  gearSearchInspectionSchema,
   inspectionSchema,
   itemSourcesInput,
 } from '@wisp/agent/contract/game-inspection';
 import { Effect, Schema } from 'effect';
 import {
   GameAccess,
-  decodeInspectionResult,
+  inspectionResults,
   gameReading,
   itemSourcesResult,
   type GameInspection,
@@ -108,6 +109,67 @@ export function make(deps: Dependencies) {
     capabilitySettings.enabled('mcp:' + Everloot.name) &&
     capabilitySettings.enabled('mcp_tool:' + Everloot.name + ':' + tool);
 
+  type InspectionKind = GameInspection['kind'];
+  type InspectionArgs<K extends InspectionKind> = Extract<GameInspection, { kind: K }>['args'];
+
+  const inspectionMethod = <K extends InspectionKind, A>(kind: K, schema: Schema.Decoder<A>) => {
+    const decode = Schema.decodeUnknownEffect(schema);
+    return Effect.fn(`GameAccess.inspect.${kind}`)(function* (
+      session: string,
+      args: InspectionArgs<K>,
+    ) {
+      const parsed = inspectionSchema.safeParse({ kind, args });
+      if (!parsed.success) return yield* Effect.fail(parsed.error);
+      const inspection = parsed.data;
+      const { request } = yield* authorize(session, inspectionTools[kind]);
+      const read = request({ kind: 'inspect', inspection });
+      if (!retriesItemLoading(inspection)) return yield* read.pipe(Effect.flatMap(decode));
+
+      const run = Effect.runPromiseWith(yield* Effect.context<never>());
+      return yield* Effect.tryPromise({
+        try: (signal) => readLoadedItems(() => run(read, { signal }), signal),
+        catch: asError,
+      }).pipe(Effect.flatMap(decode));
+    });
+  };
+
+  const gearSearchMethod = <K extends 'search_armor' | 'search_weapons'>(kind: K) =>
+    Effect.fn(`GameAccess.inspect.${kind}`)(function* (session: string, args: InspectionArgs<K>) {
+      const parsed = gearSearchInspectionSchema.safeParse({ kind, args });
+      if (!parsed.success) return yield* Effect.fail(parsed.error);
+      const inspection = parsed.data;
+      const { request } = yield* authorize(session, inspectionTools[kind]);
+      if (!everlootAllowed('item_categories')) {
+        return yield* Effect.fail(
+          new Error(
+            'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
+          ),
+        );
+      }
+      const run = Effect.runPromiseWith(yield* Effect.context<never>());
+      return yield* Effect.tryPromise({
+        try: (signal) =>
+          searchGear(
+            inspection,
+            async (candidateRead) => {
+              const read = request({ kind: 'inspect', inspection: candidateRead });
+              const result = await readLoadedItems(() => run(read, { signal }), signal);
+              return run(Schema.decodeUnknownEffect(inspectionResults.gear_candidates)(result), {
+                signal,
+              });
+            },
+            (tool, args) =>
+              run(
+                Everloot.read(deps.mcpManager, tool, args, () => everlootAllowed(tool)),
+                {
+                  signal,
+                },
+              ),
+          ),
+        catch: asError,
+      }).pipe(Effect.tap(Schema.decodeUnknownEffect(inspectionResults[kind])));
+    });
+
   return GameAccess.of({
     readCharacter: Effect.fn('GameAccess.readCharacter')(function* (session, input, refresh) {
       const sections = characterSections.safeParse(input);
@@ -154,56 +216,32 @@ export function make(deps: Dependencies) {
         catch: asError,
       }).pipe(Effect.tap(Schema.decodeUnknownEffect(itemSourcesResult)));
     }),
-    inspectGame: Effect.fn('GameAccess.inspectGame')(function* <I extends GameInspection>(
-      session: string,
-      input: I,
-    ) {
-      const parsed = inspectionSchema.safeParse(input);
-      if (!parsed.success) return yield* Effect.fail(parsed.error);
-      const inspection = parsed.data;
-      const decode = decodeInspectionResult<I['kind']>(input.kind);
-      const { request } = yield* authorize(session, inspectionTools[inspection.kind]);
-      const inspect = (inspection: unknown) => request({ kind: 'inspect', inspection });
-      if (
-        inspection.kind !== 'search_armor' &&
-        inspection.kind !== 'search_weapons' &&
-        !retriesItemLoading(inspection)
-      ) {
-        return yield* inspect(inspection).pipe(Effect.flatMap(decode));
-      }
-      const run = Effect.runPromiseWith(yield* Effect.context<never>());
-      return yield* Effect.tryPromise({
-        try: async (signal) => {
-          const read = (input: unknown) => run(inspect(input), { signal });
-          const readItems = (input: unknown) => readLoadedItems(() => read(input), signal);
-          const readEverloot: Everloot.Lookup = (tool, args) =>
-            run(
-              Everloot.read(deps.mcpManager, tool, args, () => everlootAllowed(tool)),
-              { signal },
-            );
-          switch (inspection.kind) {
-            case 'search_armor':
-            case 'search_weapons':
-              if (!everlootAllowed('item_categories')) {
-                throw new Error(
-                  'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
-                );
-              }
-              return searchGear(
-                inspection,
-                async (input) => {
-                  const read = await readItems(input);
-                  return run(decodeInspectionResult('gear_candidates')(read), { signal });
-                },
-                readEverloot,
-              );
-            default:
-              return readItems(inspection);
-          }
-        },
-        catch: asError,
-      }).pipe(Effect.flatMap(decode));
-    }),
+    readSettings: inspectionMethod('settings', inspectionResults.settings),
+    findNpcLocations: inspectionMethod('npc_locations', inspectionResults.npc_locations),
+    readQuestieQuest: inspectionMethod('questie_quest', inspectionResults.questie_quest),
+    readQuestieChain: inspectionMethod('questie_chain', inspectionResults.questie_chain),
+    findObjectLocations: inspectionMethod('object_locations', inspectionResults.object_locations),
+    findStoredItem: inspectionMethod('stored_item', inspectionResults.stored_item),
+    readItemPrices: inspectionMethod('item_prices', inspectionResults.item_prices),
+    readPolestarGuide: inspectionMethod('polestar_guide', inspectionResults.polestar_guide),
+    readReference: inspectionMethod('reference', inspectionResults.reference),
+    readProgression: inspectionMethod('progression', inspectionResults.progression),
+    readTarget: inspectionMethod('target', inspectionResults.target),
+    readTrainer: inspectionMethod('trainer', inspectionResults.trainer),
+    readFlightPaths: inspectionMethod('flight_paths', inspectionResults.flight_paths),
+    readDungeons: inspectionMethod('dungeons', inspectionResults.dungeons),
+    readTraining: inspectionMethod('training', inspectionResults.training),
+    readChat: inspectionMethod('chat', inspectionResults.chat),
+    readCombat: inspectionMethod('combat', inspectionResults.combat),
+    readResources: inspectionMethod('resources', inspectionResults.resources),
+    compareItems: inspectionMethod('compare_items', inspectionResults.compare_items),
+    searchArmor: gearSearchMethod('search_armor'),
+    searchWeapons: gearSearchMethod('search_weapons'),
+    readGearCandidates: inspectionMethod('gear_candidates', inspectionResults.gear_candidates),
+    readAuctions: inspectionMethod('auctions', inspectionResults.auctions),
+    readMacros: inspectionMethod('macros', inspectionResults.macros),
+    readMap: inspectionMethod('map', inspectionResults.map),
+    readHearthstone: inspectionMethod('hearthstone', inspectionResults.hearthstone),
     runGameAction: Effect.fn('GameAccess.runGameAction')(function* (session, input) {
       const action = yield* Effect.try({ try: () => actionSchema.parse(input), catch: asError });
       const { character, request } = yield* authorize(session, actionTools[action.kind], true);

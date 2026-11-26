@@ -1,10 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
-import { Effect } from 'effect';
-import {
-  decodeInspectionResult,
-  unavailableGameAccess,
-  type GameInspection,
-} from '../../src/host/game-access.ts';
+import { Effect, Schema } from 'effect';
+import { inspectionResults, unavailableGameAccess } from '../../src/host/game-access.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -76,27 +72,20 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
             realm: 'Vorn',
             note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
           })),
-        inspectGame: <I extends GameInspection>(_session: string, input: I) => {
-          const inspection: GameInspection = input;
-          if (inspection.kind === 'gear_candidates') {
-            return Effect.sync(() => {
-              const found = inspection.args.itemIds.map((id) => lootItems[id]).filter(Boolean);
-              return {
+        readGearCandidates: (_session, args) =>
+          Effect.sync(() => {
+            const found = args.itemIds.map((id) => lootItems[id]).filter(Boolean);
+            return {
+              status: 'available',
+              data: {
                 status: 'available',
-                data: {
-                  status: 'available',
-                  items: found
-                    .filter((entry) => entry.kind === 'item')
-                    .map((entry) => entry.reading),
-                  other: found
-                    .filter((entry) => entry.kind === 'other')
-                    .map((entry) => entry.reading),
-                },
-              };
-            }).pipe(Effect.flatMap(decodeInspectionResult<I['kind']>(input.kind)));
-          }
-          return Effect.fail(new Error('Not available in evals: stub this inspection tool.'));
-        },
+                items: found.filter((entry) => entry.kind === 'item').map((entry) => entry.reading),
+                other: found
+                  .filter((entry) => entry.kind === 'other')
+                  .map((entry) => entry.reading),
+              },
+            };
+          }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(inspectionResults.gear_candidates))),
       },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });

@@ -1,10 +1,6 @@
 import { test, expect } from 'vitest';
 import { Effect } from 'effect';
-import {
-  decodeInspectionResult,
-  unavailableGameAccess,
-  type GameInspection,
-} from '@wisp/agent/game-access';
+import { unavailableGameAccess } from '@wisp/agent/game-access';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -203,21 +199,27 @@ test(
       history,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: <I extends GameInspection>(agentSession: string, inspection: I) =>
+        readSettings: (agentSession, args) =>
           Effect.sync(() => {
-            toolCalls.push({ agentSession, inspection });
-            return inspection.kind === 'questie_quest'
-              ? {
-                  status: 'available',
-                  data: {
-                    status: 'available',
-                    questId: 166,
-                    data: { name: 'The Defias Brotherhood' },
-                    reference: { kind: 'quest', id: 166 },
-                  },
-                }
-              : { status: 'available', data: { applications: [], options: [], verified: true } };
-          }).pipe(Effect.flatMap(decodeInspectionResult<I['kind']>(inspection.kind))),
+            toolCalls.push({ agentSession, inspection: { kind: 'settings', args } });
+            return {
+              status: 'available' as const,
+              data: { applications: [], options: [], verified: true },
+            };
+          }),
+        readQuestieQuest: (agentSession, args) =>
+          Effect.sync(() => {
+            toolCalls.push({ agentSession, inspection: { kind: 'questie_quest', args } });
+            return {
+              status: 'available',
+              data: {
+                status: 'available',
+                questId: 166,
+                data: { name: 'The Defias Brotherhood' },
+                reference: { kind: 'quest', id: 166 },
+              },
+            } as const;
+          }),
       },
     });
     const session = engine.newSessionId();

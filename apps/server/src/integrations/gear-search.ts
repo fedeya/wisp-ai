@@ -1,8 +1,7 @@
 import type { z } from 'zod';
 import {
   typelessArmorSlots,
-  type armorSearchInput,
-  type weaponSearchInput,
+  type gearSearchInspectionSchema,
 } from '@wisp/agent/contract/game-inspection';
 import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 import type { GameInspection, InspectionResult } from '@wisp/agent/game-access';
@@ -11,11 +10,7 @@ import type { GameInspection, InspectionResult } from '@wisp/agent/game-access';
 // slot/type listing checked so far (all under 100 per quality) complete.
 const PAGE = 100;
 
-type ArmorSearch = z.output<typeof armorSearchInput>;
-type WeaponSearch = z.output<typeof weaponSearchInput>;
-export type GearSearch =
-  | { kind: 'search_armor'; args: ArmorSearch }
-  | { kind: 'search_weapons'; args: WeaponSearch };
+export type GearSearch = z.output<typeof gearSearchInspectionSchema>;
 
 interface Category {
   class: string;

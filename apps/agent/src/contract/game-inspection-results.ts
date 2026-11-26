@@ -1,4 +1,4 @@
-import { Schema, type Effect } from 'effect';
+import { Schema } from 'effect';
 import type { z } from 'zod';
 import type { inspectionSchema } from './game-inspection.ts';
 
@@ -123,7 +123,7 @@ const flightPoint = fields({
   discovery: Schema.Literals(['unknown', 'undiscovered', 'learned']),
 });
 
-const inspectionResults = {
+export const inspectionResults = {
   settings: reply(
     fields({
       applications: texts,
@@ -485,14 +485,4 @@ const inspectionResults = {
   ),
 } satisfies Record<InspectionKind, Schema.Decoder<unknown>>;
 
-type InspectionResults = { [K in InspectionKind]: (typeof inspectionResults)[K]['Type'] };
-export type InspectionResult<K extends InspectionKind> = InspectionResults[K];
-
-const resultSchemas: { [K in InspectionKind]: Schema.Decoder<InspectionResult<K>> } =
-  inspectionResults;
-
-export function decodeInspectionResult<K extends InspectionKind>(
-  kind: K,
-): (input: unknown) => Effect.Effect<InspectionResult<K>, Schema.SchemaError> {
-  return Schema.decodeUnknownEffect<Schema.Decoder<InspectionResult<K>>>(resultSchemas[kind]);
-}
+export type InspectionResult<K extends InspectionKind> = (typeof inspectionResults)[K]['Type'];

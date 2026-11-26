@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { trainingInput } from '../../contract/game-inspection.ts';
-import { inspectGame } from '../../tools/game-tool.ts';
+import { runGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'query_training',
@@ -13,6 +13,6 @@ export default enabledTool(
       start: () => 'Looking up ability training',
       complete: () => 'Looked up ability training',
     },
-    execute: (args, ctx) => inspectGame(ctx, { kind: 'training', args }),
+    execute: (args, ctx) => runGame(ctx, (game) => game.readTraining(ctx.session.id, args)),
   }),
 );

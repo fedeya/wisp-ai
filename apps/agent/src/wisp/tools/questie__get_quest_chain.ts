@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { inspectGame } from '../../tools/game-tool.ts';
+import { runGame } from '../../tools/game-tool.ts';
 import { questChainInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'get_quest_chain',
@@ -13,6 +13,6 @@ export default enabledTool(
       start: ({ questId }) => `Reading the chain for quest #${questId}`,
       complete: ({ questId }) => `Looked up the chain for quest #${questId}`,
     },
-    execute: (args, ctx) => inspectGame(ctx, { kind: 'questie_chain', args }),
+    execute: (args, ctx) => runGame(ctx, (game) => game.readQuestieChain(ctx.session.id, args)),
   }),
 );

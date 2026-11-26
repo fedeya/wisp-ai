@@ -19,7 +19,7 @@ bridge. View updates replace one another, and one writer fiber handles the
 filesystem writes for the connection.
 
 The agent calls its in-process [`GameAccess` service](../apps/agent/src/host/game-access.ts)
-for `readCharacter`, `inspectGame`, and `runGameAction`. The server resolves the
+for character reads, named inspection methods, and actions. The server resolves the
 agent session to its working chat, applies capability and read-only policy, and
 uses the current bridge connection. Cancelling a tool interrupts its pending
 request. Tests and evals can supply their own implementation without live WoW.

@@ -1,25 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Effect } from 'effect';
 import { dungeonLootInput } from '../src/contract/game-inspection.ts';
-import {
-  decodeInspectionResult,
-  unavailableGameAccess,
-  type GameInspection,
-} from '../src/host/game-access.ts';
+import { unavailableGameAccess } from '../src/host/game-access.ts';
 import { dungeonLoot } from '../src/wisp/dungeon-loot.ts';
 import generated from '../src/wisp/dungeon-loot.json' with { type: 'json' };
 import tool from '../src/wisp/tools/wow__dungeon_loot.ts';
 
 it('runs the loot tool against the catalog, asking GameAccess only for raw items', async () => {
-  const inspectGame = vi.fn((_: string, inspection: GameInspection) => {
-    if (inspection.kind !== 'gear_candidates') {
-      return Effect.fail(new Error('Expected an item read'));
-    }
-    return Effect.succeed({
+  const readGearCandidates = vi.fn<typeof unavailableGameAccess.readGearCandidates>((_, args) =>
+    Effect.succeed({
       status: 'available',
-      data: { items: inspection.args.itemIds.map((id) => ({ id, name: `Item ${id}` })) },
-    });
-  });
+      data: { items: args.itemIds.map((id) => ({ id, name: `Item ${id}` })) },
+    }),
+  );
   const result = await tool.execute(
     { instanceMapId: 389 },
     {
@@ -28,22 +21,16 @@ it('runs the loot tool against the catalog, asking GameAccess only for raw items
       abortSignal: new AbortController().signal,
       gameAccess: {
         ...unavailableGameAccess,
-        inspectGame: <I extends GameInspection>(session: string, inspection: I) =>
-          inspectGame(session, inspection).pipe(
-            Effect.flatMap(decodeInspectionResult<I['kind']>(inspection.kind)),
-          ),
+        readGearCandidates,
       },
       runEffect: Effect.runPromise,
     },
   );
-  expect(inspectGame).toHaveBeenCalledExactlyOnceWith('turn', {
-    kind: 'gear_candidates',
-    args: {
-      itemIds: expect.arrayContaining([14149]),
-      minRequiredLevel: 0,
-      maxRequiredLevel: 100,
-      includeOther: true,
-    },
+  expect(readGearCandidates).toHaveBeenCalledExactlyOnceWith('turn', {
+    itemIds: expect.arrayContaining([14149]),
+    minRequiredLevel: 0,
+    maxRequiredLevel: 100,
+    includeOther: true,
   });
   expect(result).toMatchObject({
     status: 'available',
@@ -102,8 +89,8 @@ describe('dungeon loot', () => {
     const reads: unknown[] = [];
     const result = await dungeonLoot(
       { instanceMapId: 389, boss: 'jergosh' },
-      async (inspection) => {
-        reads.push(inspection);
+      async (args) => {
+        reads.push(args);
         return {
           status: 'available',
           data: {
@@ -118,13 +105,10 @@ describe('dungeon loot', () => {
     );
     expect(reads).toEqual([
       {
-        kind: 'gear_candidates',
-        args: {
-          itemIds: [14150, 253906],
-          minRequiredLevel: 0,
-          maxRequiredLevel: 100,
-          includeOther: true,
-        },
+        itemIds: [14150, 253906],
+        minRequiredLevel: 0,
+        maxRequiredLevel: 100,
+        includeOther: true,
       },
     ]);
     expect(result.status).toBe('loading');

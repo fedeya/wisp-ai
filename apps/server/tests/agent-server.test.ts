@@ -143,10 +143,14 @@ test('raw loot reads require the dungeon loot capability', async () => {
     mcpManager: { call: vi.fn() },
   });
   const inspection = { kind: 'gear_candidates' as const, args: { itemIds: [14149] } };
-  await expect(Effect.runPromise(game.inspectGame('eve', inspection))).rejects.toThrow('disabled');
+  await expect(Effect.runPromise(game.readGearCandidates('eve', inspection.args))).rejects.toThrow(
+    'disabled',
+  );
   expect(requestGame).not.toHaveBeenCalled();
   allowed = true;
-  await expect(Effect.runPromise(game.inspectGame('eve', inspection))).resolves.toMatchObject({
+  await expect(
+    Effect.runPromise(game.readGearCandidates('eve', inspection.args)),
+  ).resolves.toMatchObject({
     status: 'available',
   });
   expect(requestGame).toHaveBeenCalledExactlyOnceWith({
@@ -157,7 +161,46 @@ test('raw loot reads require the dungeon loot capability', async () => {
   });
 });
 
-test('inspectGame validates the selected reading and keeps addon failure replies', async () => {
+test('armor search can read catalog candidates with its own tool permission', async () => {
+  const chat = workingChat();
+  const requestGame = vi.fn(() =>
+    Effect.succeed({ status: 'available', data: { items: [{ id: 14_149 }] } }),
+  );
+  const game = makeGameAccess({
+    getChats: () => [chat],
+    currentTransport: () => 'addon',
+    requestGame,
+    capabilitySettings: {
+      enabled: (key) =>
+        ['tool:search_armor', 'mcp:everloot', 'mcp_tool:everloot:item_categories'].includes(key),
+    },
+    mcpManager: {
+      call: () =>
+        Effect.succeed({ content: [], structuredContent: { items: [{ itemId: 14_149 }] } }),
+    },
+  });
+
+  await expect(
+    Effect.runPromise(
+      game.searchArmor('eve', { slot: 'feet', armorType: 'cloth', quality: ['rare'] }),
+    ),
+  ).resolves.toMatchObject({
+    status: 'available',
+    catalog: { listed: 1 },
+    data: { items: [{ id: 14_149 }] },
+  });
+  expect(requestGame).toHaveBeenCalledExactlyOnceWith({
+    chat: chat.id,
+    session: 'addon',
+    agent: true,
+    operation: {
+      kind: 'inspect',
+      inspection: { kind: 'gear_candidates', args: { itemIds: [14_149] } },
+    },
+  });
+});
+
+test('game inspection methods validate their readings and keep addon failure replies', async () => {
   const chat = workingChat();
   const failure = { status: 'unavailable', error: 'No target selected' };
   const requestGame = vi
@@ -182,14 +225,10 @@ test('inspectGame validates the selected reading and keeps addon failure replies
     capabilitySettings: { enabled: () => true },
     mcpManager: { call: vi.fn() },
   });
-  const readGear = () =>
-    Effect.runPromise(
-      game.inspectGame('eve', { kind: 'gear_candidates', args: { itemIds: [14149] } }),
-    );
+  const readGear = () => Effect.runPromise(game.readGearCandidates('eve', { itemIds: [14149] }));
   await expect(readGear()).rejects.toThrow('number');
-  const target = { kind: 'target', args: {} } as const;
-  await expect(Effect.runPromise(game.inspectGame('eve', target))).resolves.toEqual(failure);
-  await expect(Effect.runPromise(game.inspectGame('eve', target))).resolves.toMatchObject({
+  await expect(Effect.runPromise(game.readTarget('eve', {}))).resolves.toEqual(failure);
+  await expect(Effect.runPromise(game.readTarget('eve', {}))).resolves.toMatchObject({
     status: 'available',
     data: { level: 23, nativeExtension: 'preserved' },
   });
@@ -213,7 +252,7 @@ test('interrupting an in-process inspection aborts the pending game request', as
     mcpManager: { call: vi.fn() },
   });
   const client = new AbortController();
-  const reply = Effect.runPromiseExit(game.inspectGame('eve', { kind: 'target', args: {} }), {
+  const reply = Effect.runPromiseExit(game.readTarget('eve', {}), {
     signal: client.signal,
   });
   try {

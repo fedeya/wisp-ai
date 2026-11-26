@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { inspectGame } from '../../tools/game-tool.ts';
+import { runGame } from '../../tools/game-tool.ts';
 export default enabledTool(
   'inspect_macros',
   defineTool({
@@ -13,6 +13,6 @@ export default enabledTool(
       includeBodies: z.boolean().default(false),
     }),
     label: { start: () => 'Reading macros', complete: () => 'Read macros' },
-    execute: async (args, ctx) => inspectGame(ctx, { kind: 'macros', args }),
+    execute: async (args, ctx) => runGame(ctx, (game) => game.readMacros(ctx.session.id, args)),
   }),
 );

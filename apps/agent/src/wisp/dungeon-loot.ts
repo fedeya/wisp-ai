@@ -106,10 +106,7 @@ export interface LootResult {
 // against the weakest equipped item in its slot.
 export async function dungeonLoot(
   args: z.infer<typeof dungeonLootInput>,
-  readGame: (inspection: {
-    kind: 'gear_candidates';
-    args: z.input<typeof gearCandidatesInput>;
-  }) => Promise<GearReading>,
+  readGearCandidates: (args: z.input<typeof gearCandidatesInput>) => Promise<GearReading>,
   data: LootData = generated as LootData,
 ): Promise<LootResult> {
   const wanted = args.dungeon ? fold(args.dungeon) : undefined;
@@ -163,9 +160,11 @@ export async function dungeonLoot(
   const read = ids.slice(0, MAX_ITEMS);
   // The addon answers { status, data, error }; data holds the gear reading.
   const envelope: GearReading = read.length
-    ? await readGame({
-        kind: 'gear_candidates',
-        args: { itemIds: read, minRequiredLevel: 0, maxRequiredLevel: 100, includeOther: true },
+    ? await readGearCandidates({
+        itemIds: read,
+        minRequiredLevel: 0,
+        maxRequiredLevel: 100,
+        includeOther: true,
       })
     : { status: 'available', data: { items: [] } };
   if (envelope.status === 'unavailable') {

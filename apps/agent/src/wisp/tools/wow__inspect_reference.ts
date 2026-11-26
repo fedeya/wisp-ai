@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { referenceInput } from '../../contract/game-inspection.ts';
-import { inspectGame } from '../../tools/game-tool.ts';
+import { runGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'inspect_reference',
@@ -12,6 +12,6 @@ export default enabledTool(
       start: ({ kind }) => 'Inspecting ' + kind,
       complete: ({ kind }) => 'Inspected ' + kind,
     },
-    execute: async (args, ctx) => inspectGame(ctx, { kind: 'reference', args }),
+    execute: async (args, ctx) => runGame(ctx, (game) => game.readReference(ctx.session.id, args)),
   }),
 );

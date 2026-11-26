@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { inspectGame } from '../../tools/game-tool.ts';
+import { runGame } from '../../tools/game-tool.ts';
 import { objectLocationsInput } from '../../contract/game-inspection.ts';
 export default enabledTool(
   'find_object_locations',
@@ -13,6 +13,6 @@ export default enabledTool(
       start: () => 'Finding object locations',
       complete: () => 'Looked up object locations',
     },
-    execute: (args, ctx) => inspectGame(ctx, { kind: 'object_locations', args }),
+    execute: (args, ctx) => runGame(ctx, (game) => game.findObjectLocations(ctx.session.id, args)),
   }),
 );
