@@ -11,6 +11,7 @@ import {
   maxToolCalls,
   notCalledTool,
   recommendedByName,
+  recommendedItemIds,
   replied,
   visibleText,
 } from '../evals/checks.ts';
@@ -179,7 +180,7 @@ test('name checks read panel text line by line, after the reply', () => {
       {
         name: 'wisp__present_ui',
         input: {
-          blocks: [
+          nodes: [
             { type: 'text', text: 'Buy Azure Silk Hood' },
             { text: "Skip Spidersilk Boots, you can't get them" },
             { kind: 'table', rows: [['Azure Silk Belt', 'Skip: requires Tailoring']] },
@@ -193,4 +194,27 @@ test('name checks read panel text line by line, after the reply', () => {
   expect(recommendedByName(text, /Azure Silk (Hood|Belt)|Spidersilk Boots/i)).toEqual([
     'Buy Azure Silk Hood',
   ]);
+});
+
+test('linked items count only where the answer does not turn them down', () => {
+  const turn = {
+    reply:
+      'Skip [[ref:hood]] because it is unavailable. Buy [[ref:boots]] from the Orgrimmar vendor.',
+    presented: '',
+    toolCalls: [
+      {
+        name: 'wisp__present_ui',
+        input: {
+          nodes: [{ id: 'card', kind: 'reference', reference: 'ring' }],
+          references: {
+            hood: { kind: 'item', id: 7048, label: 'Azure Silk Hood' },
+            boots: { kind: 'item', id: 3065, label: 'Blessed Apprentice Boots' },
+            ring: { kind: 'item', id: 11288, label: 'Carved Pearl Ring' },
+          },
+        },
+      },
+    ],
+  };
+  expect(visibleText(turn)).toContain('Skip Azure Silk Hood because');
+  expect(recommendedItemIds(turn).sort()).toEqual([11288, 3065].sort());
 });

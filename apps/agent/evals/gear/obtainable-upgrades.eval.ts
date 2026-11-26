@@ -1,5 +1,5 @@
 import { defineEval } from '../harness.ts';
-import { expects, presentedItemIds, recommendedByName, replied, visibleText } from '../checks.ts';
+import { expects, recommendedItemIds, recommendedByName, replied, visibleText } from '../checks.ts';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 
 // Crafted-only candidates in the fixture (Tailoring or Enchanting recipes),
@@ -25,7 +25,7 @@ export default defineEval({
     replied(),
     expects(
       'presents no crafted-only item',
-      (turn) => !presentedItemIds(turn).some((id) => CRAFTED.includes(id)),
+      (turn) => !recommendedItemIds(turn).some((id) => CRAFTED.includes(id)),
     ),
     expects(
       'recommends no crafted-only item by name',
@@ -35,7 +35,7 @@ export default defineEval({
       'recommends gear from a quest, vendor or drop',
       (turn) =>
         OBTAINABLE_NAMES.test(visibleText(turn)) ||
-        presentedItemIds(turn).some((id) => OBTAINABLE.includes(id)),
+        recommendedItemIds(turn).some((id) => OBTAINABLE.includes(id)),
     ),
   ],
 });

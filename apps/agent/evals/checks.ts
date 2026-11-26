@@ -97,21 +97,6 @@ export const maxToolCalls = (count: number) =>
 // 2026-11-23). Each one answers one objective question about a turn, so it runs
 // as a gate or scorer instead of an LLM judge.
 
-/** Item IDs the reply presents as references ([[ref:key]] with kind item). */
-export function presentedItemIds(turn: TurnView): number[] {
-  const ids: number[] = [];
-  for (const call of turn.toolCalls) {
-    if (call.name !== 'wisp__present_ui') continue;
-    const { references } = call.input as {
-      references?: Record<string, { kind?: string; id?: number }>;
-    };
-    for (const reference of Object.values(references ?? {})) {
-      if (reference.kind === 'item' && typeof reference.id === 'number') ids.push(reference.id);
-    }
-  }
-  return ids;
-}
-
 /**
  * Broken formatting: a heading, bold lead or list item glued to the previous
  * sentence, as in "15 seconds.### What I'd use" or "rinde.- **Compraría:**".
@@ -160,11 +145,27 @@ export const commonScorers = (): Check[] => [
   ),
 ];
 
+type Reference = { kind?: string; id?: number; label?: string };
+
+// The references the turn registered with present_ui, by key.
+function references(turn: TurnView): Record<string, Reference> {
+  const all: Record<string, Reference> = {};
+  for (const call of turn.toolCalls) {
+    if (call.name === 'wisp__present_ui') {
+      Object.assign(all, (call.input as { references?: Record<string, Reference> }).references);
+    }
+  }
+  return all;
+}
+
 /**
  * What the player reads: the reply, then each text of its present_ui panels on
- * its own line (a table row as one line), so sentence checks such as recommendedByName work on panels.
+ * its own line (a table row as one line), with [[ref:key]] links and reference
+ * cards shown by their labels, so sentence checks such as recommendedByName see
+ * a linked item together with the words around it.
  */
 export function visibleText(turn: TurnView): string {
+  const refs = references(turn);
   const texts: string[] = [turn.reply];
   const collect = (value: unknown): void => {
     if (typeof value === 'string') {
@@ -176,11 +177,34 @@ export function visibleText(turn: TurnView): string {
     } else if (Array.isArray(value)) {
       value.forEach(collect);
     } else if (value && typeof value === 'object') {
+      const node = value as { kind?: string; reference?: string };
+      if (node.kind === 'reference' && node.reference) {
+        texts.push(refs[node.reference]?.label ?? '');
+      }
       Object.values(value).forEach(collect);
     }
   };
   for (const call of turn.toolCalls) {
-    if (call.name === 'wisp__present_ui') collect(call.input);
+    if (call.name === 'wisp__present_ui') {
+      // Only the panel is shown; the reference catalog is not text.
+      collect((call.input as { nodes?: unknown }).nodes);
+    }
   }
-  return texts.join('\n');
+  return texts
+    .join('\n')
+    .replace(/\[\[ref:([^\]]+)\]\]/g, (link, key: string) => refs[key]?.label ?? link);
+}
+
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Item IDs the player is pointed to: linked or shown items whose label appears
+ * in visible text that does not turn them down.
+ */
+export function recommendedItemIds(turn: TurnView): number[] {
+  const text = visibleText(turn);
+  return Object.values(references(turn))
+    .filter((ref) => ref.kind === 'item' && typeof ref.id === 'number' && ref.label)
+    .filter((ref) => recommendedByName(text, new RegExp(escape(ref.label!), 'i')).length > 0)
+    .map((ref) => ref.id!);
 }
