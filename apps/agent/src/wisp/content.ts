@@ -1,6 +1,7 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { Effect, FileSystem, Predicate } from 'effect';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { HostError } from '../execution/engine-errors.ts';
 
 /**
  * The authored instructions and skills. The packaged engine ships them as
@@ -19,45 +20,76 @@ export interface AuthoredSkill {
   instructions: string;
 }
 
-export async function readInstructions(root = agentContentRoot()) {
-  return readFile(path.join(root, 'instructions.md'), 'utf8');
-}
+const readInstructions = Effect.fnUntraced(function* (root: string) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.readFileString(path.join(root, 'instructions.md'));
+});
 
 /**
  * Reads every `skills/<name>/SKILL.md`; the frontmatter name must match its folder.
  * Entries are listed by name only: the packaged engine reads these files from
  * pkg's snapshot, whose readdir ignores `withFileTypes`.
  */
-export async function readSkills(root = agentContentRoot()): Promise<AuthoredSkill[]> {
+export const readSkills = Effect.fnUntraced(function* (root = agentContentRoot()) {
+  const fs = yield* FileSystem.FileSystem;
   const directory = path.join(root, 'skills');
-  const files = await Promise.all(
-    (await readdir(directory)).map(async (name) => {
-      try {
-        return { name, file: await readFile(path.join(directory, name, 'SKILL.md'), 'utf8') };
-      } catch (error) {
-        // A file, or a folder without SKILL.md, is not a skill.
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code === 'ENOENT' || code === 'ENOTDIR') return undefined;
-        throw error;
-      }
+  const names = yield* fs
+    .readDirectory(directory)
+    .pipe(Effect.mapError((cause) => new HostError({ cause })));
+  const skills = yield* Effect.forEach(
+    names,
+    Effect.fnUntraced(function* (name) {
+      const file = yield* fs.readFileString(path.join(directory, name, 'SKILL.md')).pipe(
+        Effect.catch((error) => {
+          // A file, or a folder without SKILL.md, is not a skill.
+          const { reason } = error;
+          if (
+            reason._tag === 'NotFound' ||
+            (reason._tag === 'BadResource' &&
+              Predicate.hasProperty(reason.cause, 'code') &&
+              reason.cause.code === 'ENOTDIR')
+          ) {
+            return Effect.succeed(undefined);
+          }
+          return Effect.fail(new HostError({ cause: error }));
+        }),
+      );
+      if (file === undefined) return undefined;
+      return yield* Effect.try({
+        try: () => parseSkill(name, file),
+        catch: (cause) => new HostError({ cause }),
+      });
     }),
+    { concurrency: 'unbounded' },
   );
-  const skills = files
-    .filter((entry) => entry !== undefined)
-    .map((entry) => {
-      const text = entry.file.replace(/\r\n/g, '\n');
-      const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text);
-      if (!match) {
-        throw Error('Skill without frontmatter: ' + entry.name);
-      }
-      const field = (key: string) =>
-        new RegExp('^' + key + ':\\s*(.+)$', 'm').exec(match[1]!)?.[1]?.trim();
-      const name = field('name');
-      const description = field('description');
-      if (name !== entry.name || !description) {
-        throw Error('Skill frontmatter must name its folder and describe it: ' + entry.name);
-      }
-      return { name, description, instructions: match[2]!.trim() };
-    });
-  return skills.sort((a, b) => a.name.localeCompare(b.name));
+  return skills.filter((skill) => skill !== undefined).sort((a, b) => a.name.localeCompare(b.name));
+});
+
+function parseSkill(folder: string, file: string): AuthoredSkill {
+  const text = file.replace(/\r\n/g, '\n');
+  const match = /^---\n([\s\S]*?)\n---\n?([\s\S]*)$/.exec(text);
+  if (!match) {
+    throw Error('Skill without frontmatter: ' + folder);
+  }
+  const field = (key: string) =>
+    new RegExp('^' + key + ':\\s*(.+)$', 'm').exec(match[1]!)?.[1]?.trim();
+  const name = field('name');
+  const description = field('description');
+  if (name !== folder || !description) {
+    throw Error('Skill frontmatter must name its folder and describe it: ' + folder);
+  }
+  return { name, description, instructions: match[2]!.trim() };
 }
+
+export const readContent = Effect.fn('WispAgent.readContent')(function* (
+  root = agentContentRoot(),
+) {
+  const [instructions, skills] = yield* Effect.all(
+    [
+      readInstructions(root).pipe(Effect.mapError((cause) => new HostError({ cause }))),
+      readSkills(root),
+    ],
+    { concurrency: 2 },
+  );
+  return { instructions, skills };
+});
