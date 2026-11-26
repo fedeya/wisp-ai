@@ -5,14 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
-import { adoptCharacterKey, readCharacterNames } from '../src/db/character-keys.ts';
-import {
-  importRoutines,
-  readMemory,
-  readPanels,
-  saveMemory,
-  savePanels,
-} from '../src/db/product-store.ts';
+import { adoptCharacterKey, readCharacterNames } from '../src/chat/character-keys.ts';
+import { readMemory, saveMemory } from '../src/agent/memory-record.ts';
+import { readPanels, savePanels } from '../src/panels/panel-record.ts';
+import { importRoutines } from '../src/routines/routine-record.ts';
 import { chats, metadata, routineRuns, routines } from '@wisp/db/schema';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';

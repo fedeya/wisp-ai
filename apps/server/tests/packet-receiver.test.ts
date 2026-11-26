@@ -8,7 +8,7 @@ import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import { IntegrationState } from '../src/integrations/integration-state.ts';
 import { MemoryStore } from '../src/agent/memory-store.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
-import { ApplicationDatabase } from '../src/db/application-database.ts';
+import { ApplicationDatabase } from '../src/application-database.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { gameEvent } from './game-event-fixture.ts';

@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import type { ApplicationDatabase } from '../src/db/application-database.ts';
+import type { ApplicationDatabase } from '../src/application-database.ts';
 import { databaseScope } from './database-fixture.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';

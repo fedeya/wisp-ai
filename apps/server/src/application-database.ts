@@ -1,5 +1,5 @@
 import { Database } from '@wisp/db/database';
-import { importProductData } from './product-store.ts';
+import { importProductData } from './migrations/product-json.ts';
 
 /** The application database, plus the one-time import of routines, panels and memory from JSON. */
 export class ApplicationDatabase extends Database {

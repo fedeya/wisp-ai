@@ -13,7 +13,8 @@
     "./database": "./src/database.ts",
     "./migrate": "./src/migrate.ts",
     "./private-file": "./src/private-file.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./sync-rows": "./src/sync-rows.ts"
   },
   "scripts": {
     "generate": "drizzle-kit generate",

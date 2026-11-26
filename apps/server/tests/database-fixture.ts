@@ -1,4 +1,4 @@
-import { ApplicationDatabase } from '../src/db/application-database.ts';
+import { ApplicationDatabase } from '../src/application-database.ts';
 export function databaseScope() {
   const databases: ApplicationDatabase[] = [];
   return {

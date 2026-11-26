@@ -8,7 +8,7 @@ import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
 import { cancelRunningCalls } from './chat-lifecycle.ts';
 import type { ApplicationOrm } from '@wisp/db/database';
-import { ApplicationDatabase } from '../db/application-database.ts';
+import { ApplicationDatabase } from '../application-database.ts';
 import { writeMigrationBackup } from '@wisp/db/private-file';
 import {
   agentSessions,
@@ -23,7 +23,7 @@ import {
   type StoredChat,
   type MessageRow,
   type MessageIdentities,
-} from '../db/chat-record.ts';
+} from './chat-record.ts';
 
 interface StoreOptions {
   instanceId?: string;

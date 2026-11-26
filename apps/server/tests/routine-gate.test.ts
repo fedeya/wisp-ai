@@ -3,7 +3,7 @@ import { runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ApplicationDatabase } from '../src/db/application-database.ts';
+import { ApplicationDatabase } from '../src/application-database.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createRoutineGate, routineFingerprint } from '../src/routines/routine-gate.ts';

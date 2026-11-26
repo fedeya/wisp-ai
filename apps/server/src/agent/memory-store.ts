@@ -1,6 +1,6 @@
-import { readMemory, saveMemory, type MemorySlot, type MemoryEntry } from '../db/product-store.ts';
-import { ApplicationDatabase } from '../db/application-database.ts';
-export type { MemorySlot, MemoryEntry } from '../db/product-store.ts';
+import { readMemory, saveMemory, type MemorySlot, type MemoryEntry } from './memory-record.ts';
+import { ApplicationDatabase } from '../application-database.ts';
+export type { MemorySlot, MemoryEntry } from './memory-record.ts';
 
 export class MemoryStore {
   readonly database: ApplicationDatabase;
