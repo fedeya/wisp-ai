@@ -1,4 +1,5 @@
 import { Cause, Context, Effect, Exit, Layer, Logger, ManagedRuntime, Queue, Stream } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { v7 as uuidv7 } from 'uuid';
 import { EngineConfig, type EngineHost } from './host/engine-config.ts';
 import { AgentCapabilities } from './host/capabilities.ts';
@@ -156,6 +157,7 @@ export function createAgentEngine(options: EngineOptions) {
         ),
       ),
       Layer.provide(AgentCapabilities.layer(host.capabilitiesFile)),
+      Layer.provide(NodeFileSystem.layer),
       Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(host))),
       Layer.provideMerge(logging),
     ),

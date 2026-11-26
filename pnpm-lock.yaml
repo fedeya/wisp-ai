@@ -275,6 +275,9 @@ importers:
       '@ai-sdk/zai':
         specifier: 3.0.49
         version: 3.0.49(zod@4.6.7)
+      '@effect/platform-node':
+        specifier: 4.1.3
+        version: 4.1.3(effect@4.1.3)
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
@@ -626,6 +629,9 @@ importers:
 
   tests:
     devDependencies:
+      '@effect/platform-node':
+        specifier: 4.1.3
+        version: 4.1.3(effect@4.1.3)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6

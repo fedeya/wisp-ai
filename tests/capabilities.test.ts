@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { AgentCapabilities } from '@wisp/agent/capabilities';
 import { HostError } from '@wisp/agent/engine';
@@ -18,9 +19,14 @@ const CONNECTION_NAME = /^[a-z][a-z0-9-]*$/;
 
 const readFlags = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
   Effect.provide(AgentCapabilities.layer()),
+  Effect.provide(NodeFileSystem.layer),
 );
 const readConnections = (configFile?: string) =>
-  Effect.runPromise(Effect.flatMap(readFlags, (flags) => mcpConnections(flags, () => configFile)));
+  Effect.runPromise(
+    Effect.flatMap(readFlags, (flags) => mcpConnections(flags, () => configFile)).pipe(
+      Effect.provide(NodeFileSystem.layer),
+    ),
+  );
 
 test('settings persist, filter real tool/MCP definitions, and preserve child settings when an MCP is off', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-capabilities-'));

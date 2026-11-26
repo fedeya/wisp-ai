@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -19,7 +20,7 @@ const readConnections = (config: string) =>
   Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) =>
       Effect.flatMap(settings.read, (flags) => mcpConnections(flags, () => config)),
-    ).pipe(Effect.provide(AgentCapabilities.layer())),
+    ).pipe(Effect.provide(AgentCapabilities.layer()), Effect.provide(NodeFileSystem.layer)),
   );
 
 test('closing MCP tools also closes a client whose connection completes after shutdown', async () => {

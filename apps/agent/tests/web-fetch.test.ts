@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import definition from '../src/wisp/tools/web_fetch.ts';
 import type { WebFetchInput } from '../src/integrations/web/web-fetch.ts';
 import { WebFetchPages } from '../src/integrations/web/web-fetch-pages.ts';
@@ -18,6 +19,7 @@ const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) => {
   const flags = await Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
       Effect.provide(AgentCapabilities.layer()),
+      Effect.provide(NodeFileSystem.layer),
     ),
   );
   return toolOffered(tool, flags) ? tool : null;

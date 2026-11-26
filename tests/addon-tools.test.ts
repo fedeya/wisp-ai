@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Effect } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { AgentCapabilities } from '@wisp/agent/capabilities';
 import { CapabilitySettings } from '@wisp/bridge/capabilities';
 import { IntegrationState } from '../apps/bridge/src/integrations/integration-state.ts';
@@ -54,6 +55,7 @@ test('actual tool definitions follow per-API readiness, parent switches and expi
     const state = new IntegrationState(settings);
     const readFlags = Effect.flatMap(AgentCapabilities, (capabilities) => capabilities.read).pipe(
       Effect.provide(AgentCapabilities.layer()),
+      Effect.provide(NodeFileSystem.layer),
     );
     // A tool as the agent offers it this turn, or null while its capability is off.
     const resolve = async <T extends { capability?: string }>(definition: T) =>

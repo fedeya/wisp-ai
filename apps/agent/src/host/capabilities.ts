@@ -1,8 +1,8 @@
 import type { FeatureFlag } from '@wisp/protocol/features';
-import { Context, Effect, Layer, Schema } from 'effect';
-import { readFile } from 'node:fs/promises';
-import { HostError, hostCall } from '../execution/engine-errors.ts';
+import { Context, Effect, FileSystem, Layer, Schema } from 'effect';
+import { HostError } from '../execution/engine-errors.ts';
 import { agentHost } from './agent-host.ts';
+import { readSettings } from './read-settings.ts';
 
 export type CapabilityFlags = Readonly<Record<string, boolean>>;
 
@@ -22,31 +22,29 @@ export class AgentCapabilities extends Context.Service<
   }
 >()('@wisp/agent/AgentCapabilities') {
   static layer(file = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE) {
-    const document = hostCall(async (signal): Promise<unknown> => {
-      const path = file();
-      if (!path) return { enabled: {} };
-      try {
-        return JSON.parse(await readFile(path, { encoding: 'utf8', signal }));
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { enabled: {} };
-        throw error;
-      }
-    });
+    return Layer.effect(
+      AgentCapabilities,
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const document = readSettings(fs, file);
 
-    const read = Effect.gen(function* () {
-      const data = yield* document;
-      if (!hasCapabilityFlags(data)) {
-        return yield* new HostError({
-          cause: new Error('Invalid capability settings; the file was preserved'),
+        const read = Effect.gen(function* () {
+          const data = yield* document;
+          if (data === undefined) return {};
+          if (!hasCapabilityFlags(data)) {
+            return yield* new HostError({
+              cause: new Error('Invalid capability settings; the file was preserved'),
+            });
+          }
+          return data.enabled;
         });
-      }
-      return data.enabled;
-    });
 
-    return Layer.succeed(AgentCapabilities, {
-      read,
-      featureEnabled: (flag) =>
-        Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),
-    });
+        return AgentCapabilities.of({
+          read,
+          featureEnabled: (flag) =>
+            Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),
+        });
+      }),
+    );
   }
 }

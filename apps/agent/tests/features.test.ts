@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { AgentCapabilities } from '../src/host/capabilities.ts';
 
 let directory = '';
@@ -24,6 +25,7 @@ const featureEnabled = (name: string) =>
   Effect.runPromise(
     Effect.flatMap(AgentCapabilities, (settings) => settings.featureEnabled(flag(name))).pipe(
       Effect.provide(AgentCapabilities.layer()),
+      Effect.provide(NodeFileSystem.layer),
     ),
   );
 

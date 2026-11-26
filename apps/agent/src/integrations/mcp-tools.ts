@@ -1,5 +1,4 @@
-import { readFile } from 'node:fs/promises';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, FileSystem, Layer } from 'effect';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -8,7 +7,8 @@ import { agentHost } from '../host/agent-host.ts';
 import { bridgeOrigin } from '../host/agent-rpc.ts';
 import type { CapabilityFlags } from '../host/capabilities.ts';
 import { EngineConfig } from '../host/engine-config.ts';
-import { hostCall, type HostError } from '../execution/engine-errors.ts';
+import { readSettings } from '../host/read-settings.ts';
+import { HostError, hostCall } from '../execution/engine-errors.ts';
 
 /** One MCP tool offered through `tool_search` and `tool_call`, named `<connection>__<tool>`. */
 export interface McpTool {
@@ -70,24 +70,11 @@ function everlootConnections(flags: CapabilityFlags): Record<string, McpConnecti
 }
 
 // Player-configured servers run in the bridge, which relays them over loopback.
-async function externalConnections(
-  flags: CapabilityFlags,
-  configFile: string | undefined,
-  signal: AbortSignal,
-): Promise<Record<string, McpConnection>> {
-  if (!configFile) {
+function externalConnections(data: unknown, flags: CapabilityFlags): Record<string, McpConnection> {
+  if (data === undefined) {
     return {};
   }
-  let raw: string;
-  try {
-    raw = await readFile(configFile, { encoding: 'utf8', signal });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return {};
-    }
-    throw error;
-  }
-  const config = JSON.parse(raw) as {
+  const config = data as {
     servers?: Record<string, { enabled?: boolean; description?: string }>;
   };
   const token = agentHost()?.token ?? process.env.WOW_BRIDGE_TOKEN;
@@ -128,12 +115,17 @@ function withoutProvided(schema: unknown, provided?: Record<string, unknown>) {
 }
 
 /** The enabled MCP connections: bundled Everloot ones and the player's relayed servers. */
-export function mcpConnections(flags: CapabilityFlags, configFile?: () => string | undefined) {
-  return hostCall(async (signal) => ({
-    ...everlootConnections(flags),
-    ...(await externalConnections(flags, configFile?.(), signal)),
-  }));
-}
+export const mcpConnections = Effect.fnUntraced(function* (
+  flags: CapabilityFlags,
+  configFile?: () => string | undefined,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const data = yield* readSettings(fs, configFile);
+  return yield* Effect.try({
+    try: () => ({ ...everlootConnections(flags), ...externalConnections(data, flags) }),
+    catch: (cause) => new HostError({ cause }),
+  });
+});
 
 interface Connected {
   client: Client;
@@ -299,12 +291,15 @@ export class Mcp extends Context.Service<
     Mcp,
     Effect.gen(function* () {
       const { mcpConfigFile } = yield* EngineConfig;
+      const fs = yield* FileSystem.FileSystem;
       const clients = yield* Effect.acquireRelease(
         Effect.sync(() => new McpTools()),
         (tools) => Effect.promise(() => tools.close()),
       );
       const tools = Effect.fn('Mcp.tools')(function* (flags: CapabilityFlags) {
-        const connections = yield* mcpConnections(flags, mcpConfigFile);
+        const connections = yield* mcpConnections(flags, mcpConfigFile).pipe(
+          Effect.provideService(FileSystem.FileSystem, fs),
+        );
         const unavailable: { connection: string; error: unknown }[] = [];
         const listed = yield* hostCall(() =>
           clients.tools(connections, (connection, error) =>
