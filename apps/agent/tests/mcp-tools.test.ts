@@ -7,8 +7,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { setAgentHost } from '../src/agent-host.ts';
-import { McpTools } from '../src/mcp-tools.ts';
+import { setAgentHost } from '../src/host/agent-host.ts';
+import { McpTools } from '../src/integrations/mcp-tools.ts';
 import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));

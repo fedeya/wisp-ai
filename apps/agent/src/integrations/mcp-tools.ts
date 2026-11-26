@@ -4,11 +4,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import { everlootTools } from '@wisp/protocol/capabilities';
-import { agentHost } from './agent-host.ts';
-import { bridgeOrigin } from './agent-rpc.ts';
-import { capabilityEnabled, connectionTools, readCapabilityFlags } from './capabilities.ts';
-import { EngineConfig } from './engine-config.ts';
-import { hostCall, type HostError } from './engine-errors.ts';
+import { agentHost } from '../host/agent-host.ts';
+import { bridgeOrigin } from '../host/agent-rpc.ts';
+import { capabilityEnabled, connectionTools, readCapabilityFlags } from '../host/capabilities.ts';
+import { EngineConfig } from '../host/engine-config.ts';
+import { hostCall, type HostError } from '../execution/engine-errors.ts';
 
 /** One MCP tool offered through `tool_search` and `tool_call`, named `<connection>__<tool>`. */
 export interface McpTool {

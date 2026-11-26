@@ -8,6 +8,18 @@ import type {
 } from 'ai';
 import type { Message, Native, StoredMessage, Synthetic, Tool } from './session-message.ts';
 
+/** A compaction's summary, as the first exchange the model reads. */
+export const summaryMessages = (summary: string | undefined): ModelMessage[] =>
+  summary === undefined
+    ? []
+    : [
+        {
+          role: 'user',
+          content: '<conversation_summary>\n' + summary.trim() + '\n</conversation_summary>',
+        },
+        { role: 'assistant', content: 'Understood; I will continue from that summary.' },
+      ];
+
 /** The model a turn runs on, as the bridge's session settings describe it. */
 export interface ReplayTarget {
   /** Wisp's model slug (`connection:<id>:<model>` for connections). */

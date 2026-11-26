@@ -12,10 +12,10 @@ import {
   WispAgent,
   hostLayer,
 } from '../src/engine.ts';
-import { modelError } from '../src/engine-errors.ts';
-import { MemoryHistory } from '../src/memory-history.ts';
-import { defineTool, type ToolDefinition } from '../src/tool.ts';
-import type { DeferredTool } from '../src/turn-tools.ts';
+import { modelError } from '../src/execution/engine-errors.ts';
+import { MemoryHistory } from '../src/session/memory-history.ts';
+import { defineTool, type ToolDefinition } from '../src/tools/tool.ts';
+import type { DeferredTool } from '../src/tools/turn-tools.ts';
 
 const apiError = (statusCode: number) =>
   new APICallError({

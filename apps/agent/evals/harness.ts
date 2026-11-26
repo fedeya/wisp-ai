@@ -2,8 +2,8 @@
 // integration tools, gates must pass and scorers are tracked as warnings.
 import { isDeepStrictEqual } from 'node:util';
 import { createAgentEngine, type EngineEvent, type ToolStubOutcome } from '../src/engine.ts';
-import { agentHost } from '../src/agent-host.ts';
-import { MemoryHistory } from '../src/memory-history.ts';
+import { agentHost } from '../src/host/agent-host.ts';
+import { MemoryHistory } from '../src/session/memory-history.ts';
 import { eventsView, type Check, type TurnView } from './checks.ts';
 import { playerMessage } from './fixtures/fedrath.ts';
 

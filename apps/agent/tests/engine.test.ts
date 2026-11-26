@@ -4,7 +4,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
-import { setAgentHost } from '../src/agent-host.ts';
+import { setAgentHost } from '../src/host/agent-host.ts';
 import {
   compactionSplit,
   createAgentEngine,
@@ -13,7 +13,7 @@ import {
   type Entry,
   type TurnInput,
 } from '../src/engine.ts';
-import { MemoryHistory } from '../src/memory-history.ts';
+import { MemoryHistory } from '../src/session/memory-history.ts';
 import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));

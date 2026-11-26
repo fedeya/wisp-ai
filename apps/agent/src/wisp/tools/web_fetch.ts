@@ -1,6 +1,6 @@
 import { defineTool } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
-import { fetchWebPage, webFetchInput, webFetchOutput } from '../../web-fetch.ts';
+import { fetchWebPage, webFetchInput, webFetchOutput } from '../../integrations/web/web-fetch.ts';
 
 export default enabledTool(
   'web_fetch',

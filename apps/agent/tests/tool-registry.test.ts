@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { authoredTools } from '../src/tools.ts';
+import { authoredTools } from '../src/wisp/tool-registry.ts';
 
 test('the static tool registry lists every authored tool', async () => {
   const files = await readdir(fileURLToPath(new URL('../src/wisp/tools/', import.meta.url)));

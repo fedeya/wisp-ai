@@ -9,7 +9,6 @@ const repository = fileURLToPath(new URL('../', import.meta.url));
 const root = process.env.WISP_RESOURCE_ROOT || repository;
 const bridge = process.env.WISP_RESOURCE_ROOT || path.join(repository, 'apps/bridge');
 const require = createRequire(path.join(bridge, 'package.json'));
-const agent = path.dirname(require.resolve('@wisp/agent/package.json'));
 const dir =
   process.env.WISP_SMOKE_DIR || path.resolve(repository, '../../work', 'agent-smoke-' + Date.now());
 await mkdir(dir, { recursive: true });
@@ -22,10 +21,14 @@ const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
   { applyEvent } = await load('src/chat/events.ts'),
   { ReplyProjection } = await load('src/reply/reply-stream.ts'),
   { turnInput } = await load('src/chat/context.ts');
-const { createAgentEngine } = await import(pathToFileURL(path.join(agent, 'src/engine.ts')).href);
-const { setAgentHost } = await import(pathToFileURL(path.join(agent, 'src/agent-host.ts')).href);
+const { createAgentEngine } = await import(
+  pathToFileURL(require.resolve('@wisp/agent/engine')).href
+);
+const { setAgentHost } = await import(
+  pathToFileURL(require.resolve('@wisp/agent/agent-host')).href
+);
 const { MemoryHistory } = await import(
-  pathToFileURL(path.join(agent, 'src/memory-history.ts')).href
+  pathToFileURL(require.resolve('@wisp/agent/memory-history')).href
 );
 const { Simulator } = await load('src/integrations/simulation/simulator.ts');
 const { CapabilitySettings } = await load('src/integrations/capabilities.ts');

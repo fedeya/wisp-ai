@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { setAgentHost } from '../src/agent-host.ts';
+import { setAgentHost } from '../src/host/agent-host.ts';
 import { defineEval, runEval } from '../evals/harness.ts';
 import { calledTool, expects, maxToolCalls, notCalledTool, replied } from '../evals/checks.ts';
 

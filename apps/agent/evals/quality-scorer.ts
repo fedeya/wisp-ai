@@ -2,7 +2,7 @@
 // the scenario's facts and the tool results the agent read.
 import { generateText, Output, wrapLanguageModel } from 'ai';
 import { z } from 'zod';
-import { connectionModel } from '../src/connection-model.ts';
+import { connectionModel } from '../src/models/connection-model.ts';
 import { criteria, scenarios } from './quality.ts';
 
 export interface Run {

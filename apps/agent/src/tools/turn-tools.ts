@@ -1,6 +1,6 @@
 import { hasToolCall, isStepCount, tool, type StopCondition, type ToolSet } from 'ai';
 import { z } from 'zod';
-import type { AuthoredSkill } from './content.ts';
+import type { AuthoredSkill } from '../wisp/content.ts';
 import type { ToolDefinition } from './tool.ts';
 
 export type ToolStubOutcome = { response: unknown } | { throw: { message: string } };

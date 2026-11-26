@@ -9,7 +9,7 @@ import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { setAgentHost } from '../src/agent-host.ts';
+import { setAgentHost } from '../src/host/agent-host.ts';
 import { runEval, type EvalDefinition } from './harness.ts';
 import { saveTurn } from './report.ts';
 import { startModelBridge } from './model-bridge.ts';

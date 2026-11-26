@@ -3,11 +3,10 @@ import type { LanguageModel } from 'ai';
 import { Context, Effect, Layer } from 'effect';
 import type { z } from 'zod';
 import { selectedModel } from '@wisp/protocol/agent-rpc';
-import { capabilityEnabled } from './capabilities.ts';
+import { capabilityEnabled } from '../host/capabilities.ts';
 import { connectionModel } from './connection-model.ts';
-import { EngineConfig } from './engine-config.ts';
-import { hostCall } from './engine-errors.ts';
-import type { HostError } from './engine-errors.ts';
+import { EngineConfig } from '../host/engine-config.ts';
+import { hostCall, type HostError } from '../execution/engine-errors.ts';
 
 /** The model a session runs on, as the bridge's chat settings choose it. */
 export type SelectedModel = z.infer<typeof selectedModel>;
