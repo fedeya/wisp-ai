@@ -1,5 +1,4 @@
-import { test } from 'vitest';
-import assert from 'node:assert/strict';
+import { expect, test } from 'vitest';
 import { luaJson, packetSchema } from '../src/protocol.ts';
 const message = {
   type: 'say',
@@ -13,34 +12,32 @@ const message = {
 test('WoW empty-table telemetry does not prevent hello, poll or user packets from reaching the bridge', () => {
   for (const type of ['hello', 'poll', 'say'] as const) {
     const result = packetSchema.parse({ ...message, type, transport: [] });
-    assert.equal(result.type, type);
-    assert.deepEqual(result.transport, {});
+    expect(result.type).toBe(type);
+    expect(result.transport).toStrictEqual({});
   }
   const delivery = { messageId: 'msg', ms: 1200 };
-  assert.deepEqual(packetSchema.parse({ ...message, transport: { delivery } }).transport, {
+  expect(packetSchema.parse({ ...message, transport: { delivery } }).transport).toStrictEqual({
     delivery,
   });
-  assert.equal(packetSchema.safeParse({ ...message, transport: ['invalid'] }).success, false);
+  expect(packetSchema.safeParse({ ...message, transport: ['invalid'] }).success).toBe(false);
 });
 test('packet operations validate their required fields before reaching the bridge', () => {
-  assert.equal(packetSchema.safeParse({ ...message, type: 'unknown_operation' }).success, false);
-  assert.equal(packetSchema.safeParse({ ...message, chat: undefined }).success, false);
-  assert.equal(
+  expect(packetSchema.safeParse({ ...message, type: 'unknown_operation' }).success).toBe(false);
+  expect(packetSchema.safeParse({ ...message, chat: undefined }).success).toBe(false);
+  expect(
     packetSchema.safeParse({
       ...message,
       type: 'capability_set',
       key: 'tool:query_character',
       enabled: 'false',
     }).success,
-    false,
-  );
-  assert.equal(
+  ).toBe(false);
+  expect(
     packetSchema.safeParse({ ...message, type: 'state_result', requestId: 'request', data: {} })
       .success,
-    true,
-  );
+  ).toBe(true);
 });
 test('payload strings cannot terminate the Lua long string', () => {
   const payload = luaJson(JSON.stringify({ text: ']=] ]] ]==] print("bad")' }));
-  assert.ok(payload.startsWith('WispAI_Receive([===['));
+  expect(payload.startsWith('WispAI_Receive([===[')).toBeTruthy();
 });
