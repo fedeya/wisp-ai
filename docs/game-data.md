@@ -36,7 +36,7 @@ kept: item and NPC IDs, boss and instance names, levels and rates. Forever's
 instances, which AtlasLoot names but does not number, are placed by their
 Map.db2 name; `curated/dungeon-loot.json` holds the few that need a hand
 (Dire Maul's wings, instances the build does not have yet). The output is
-`apps/bridge/src/integrations/dungeon-loot.json`, read by `wow__dungeon_loot`.
+`apps/server/src/integrations/dungeon-loot.json`, read by `wow__dungeon_loot`.
 
 To update it, set the newer file's ID, name and sha256 in `build.json` (the
 file page on CurseForge lists the name) and run `pnpm data:generate dungeon-loot`.

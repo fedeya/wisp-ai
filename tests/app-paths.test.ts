@@ -6,8 +6,8 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { appPaths, retireLegacyEngine } from '@wisp/bridge/app-paths';
-import { migrateDesktop } from '@wisp/bridge/desktop-migration';
+import { appPaths, retireLegacyEngine } from '@wisp/server/app-paths';
+import { migrateDesktop } from '@wisp/server/desktop-migration';
 import { createHash } from 'node:crypto';
 
 test('startup retires the Eve engine folder of a separate data folder only', async () => {

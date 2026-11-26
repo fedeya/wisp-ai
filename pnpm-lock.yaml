@@ -328,67 +328,6 @@ importers:
         specifier: 0.18.1
         version: 0.18.1(tinyrainbow@3.2.0)(vitest@5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)))(zod@4.6.7)
 
-  apps/bridge:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 4.1.3
-        version: 4.1.3(effect@4.1.3)
-      '@hono/node-server':
-        specifier: 2.1.5
-        version: 2.1.5(hono@4.13.15)
-      '@hono/zod-validator':
-        specifier: 0.9.1
-        version: 0.9.1(hono@4.13.15)(zod@4.6.7)
-      '@openfeature/core':
-        specifier: 1.12.0
-        version: 1.12.0
-      '@openfeature/web-sdk':
-        specifier: 1.10.0
-        version: 1.10.0(@openfeature/core@1.12.0)
-      '@wisp/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@wisp/protocol':
-        specifier: workspace:*
-        version: link:../../packages/protocol
-      drizzle-orm:
-        specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
-      effect:
-        specifier: 4.1.3
-        version: 4.1.3
-      hono:
-        specifier: 4.13.15
-        version: 4.13.15
-      jose:
-        specifier: 6.2.15
-        version: 6.2.15
-      posthog-node:
-        specifier: 5.68.2
-        version: 5.68.2
-      uuid:
-        specifier: 14.0.3
-        version: 14.0.3
-      zod:
-        specifier: 4.6.7
-        version: 4.6.7
-    devDependencies:
-      '@ai-sdk/openai':
-        specifier: 4.0.110
-        version: 4.0.110(zod@4.6.7)
-      '@types/node':
-        specifier: 26.6.6
-        version: 26.6.6
-      drizzle-kit:
-        specifier: 1.0.0-rc.5
-        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7))
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-      vitest:
-        specifier: 5.1.0
-        version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-
   apps/desktop:
     dependencies:
       '@base-ui/react':
@@ -464,9 +403,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: 6.3.0
         version: 6.3.0(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-      '@wisp/bridge':
+      '@wisp/server':
         specifier: workspace:*
-        version: link:../bridge
+        version: link:../server
       jsdom:
         specifier: 31.0.0
         version: 31.0.0
@@ -479,6 +418,67 @@ importers:
       vite:
         specifier: 8.3.6
         version: 8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  apps/server:
+    dependencies:
+      '@effect/platform-node':
+        specifier: 4.1.3
+        version: 4.1.3(effect@4.1.3)
+      '@hono/node-server':
+        specifier: 2.1.5
+        version: 2.1.5(hono@4.13.15)
+      '@hono/zod-validator':
+        specifier: 0.9.1
+        version: 0.9.1(hono@4.13.15)(zod@4.6.7)
+      '@openfeature/core':
+        specifier: 1.12.0
+        version: 1.12.0
+      '@openfeature/web-sdk':
+        specifier: 1.10.0
+        version: 1.10.0(@openfeature/core@1.12.0)
+      '@wisp/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@wisp/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      drizzle-orm:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7)
+      effect:
+        specifier: 4.1.3
+        version: 4.1.3
+      hono:
+        specifier: 4.13.15
+        version: 4.13.15
+      jose:
+        specifier: 6.2.15
+        version: 6.2.15
+      posthog-node:
+        specifier: 5.68.2
+        version: 5.68.2
+      uuid:
+        specifier: 14.0.3
+        version: 14.0.3
+      zod:
+        specifier: 4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@ai-sdk/openai':
+        specifier: 4.0.110
+        version: 4.0.110(zod@4.6.7)
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      drizzle-kit:
+        specifier: 1.0.0-rc.5
+        version: 1.0.0-rc.5(drizzle-orm@1.0.0-rc.5(@libsql/client@0.18.0)(effect@4.1.3)(sql.js@1.15.2)(zod@4.6.7))
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
       vitest:
         specifier: 5.1.0
         version: 5.1.0(@types/node@26.6.6)(jsdom@31.0.0)(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
@@ -596,15 +596,15 @@ importers:
       '@wisp/agent':
         specifier: workspace:*
         version: link:../apps/agent
-      '@wisp/bridge':
-        specifier: workspace:*
-        version: link:../apps/bridge
       '@wisp/protocol':
         specifier: workspace:*
         version: link:../packages/protocol
       '@wisp/releases':
         specifier: workspace:*
         version: link:../packages/releases
+      '@wisp/server':
+        specifier: workspace:*
+        version: link:../apps/server
       '@yao-pkg/pkg':
         specifier: 6.24.0
         version: 6.24.0(bare-buffer@3.7.1)
@@ -638,12 +638,12 @@ importers:
       '@wisp/agent':
         specifier: workspace:*
         version: link:../apps/agent
-      '@wisp/bridge':
-        specifier: workspace:*
-        version: link:../apps/bridge
       '@wisp/protocol':
         specifier: workspace:*
         version: link:../packages/protocol
+      '@wisp/server':
+        specifier: workspace:*
+        version: link:../apps/server
       effect:
         specifier: 4.1.3
         version: 4.1.3

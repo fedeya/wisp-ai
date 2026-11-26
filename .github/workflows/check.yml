@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
-      - run: pnpm test:core -- --exclude=apps/bridge/tests/simulation.test.ts
+      - run: pnpm test:core -- --exclude=apps/server/tests/simulation.test.ts
   simulator-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
     runs-on: windows-latest
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-workspace
       - uses: ./.github/actions/setup-simulator
-      - run: pnpm exec turbo run test --filter=@wisp/bridge -- apps/bridge/tests/simulation.test.ts
+      - run: pnpm exec turbo run test --filter=@wisp/server -- apps/server/tests/simulation.test.ts
   addon-tests:
     if: github.event_name != 'workflow_run' && !inputs.release_run_id
     runs-on: ubuntu-latest

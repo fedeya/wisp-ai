@@ -9,7 +9,7 @@ test('workspace sources declare their direct package imports', () => {
   const builtins = new Set(builtinModules);
   for (const directory of [
     'apps/agent',
-    'apps/bridge',
+    'apps/server',
     'apps/desktop',
     'apps/web',
     'packages/protocol',

@@ -7,12 +7,12 @@ import { setAgentHost } from '@wisp/agent/agent-host';
 import { createAgentEngine, type TurnInput } from '@wisp/agent/engine';
 import { MemoryHistory } from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
-import { newChat } from '@wisp/bridge/chat-lifecycle';
-import { applyEvent } from '@wisp/bridge/events';
-import { ReplyProjection } from '@wisp/bridge/reply-stream';
-import { turnInput } from '@wisp/bridge/context';
-import { rebuildHistory } from '../apps/bridge/src/chat/history.ts';
-import { replyContent } from '../apps/bridge/src/reply/reply-content.ts';
+import { newChat } from '@wisp/server/chat-lifecycle';
+import { applyEvent } from '@wisp/server/events';
+import { ReplyProjection } from '@wisp/server/reply-stream';
+import { turnInput } from '@wisp/server/context';
+import { rebuildHistory } from '../apps/server/src/chat/history.ts';
+import { replyContent } from '../apps/server/src/reply/reply-content.ts';
 
 type Item = Record<string, unknown>;
 

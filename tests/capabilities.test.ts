@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Effect } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
-import { CapabilitySettings } from '@wisp/bridge/capabilities';
+import { CapabilitySettings } from '@wisp/server/capabilities';
 import { AgentCapabilities, layerFromFile } from '@wisp/agent/capabilities';
 import { HostError } from '@wisp/agent/engine';
 import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';

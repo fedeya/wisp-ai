@@ -12,8 +12,8 @@ Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 
 | Path                 | Package           | What it is                                                                                                        |
 | -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `apps/bridge`        | `@wisp/bridge`    | Local Node host: addon transport, chat sessions, SQLite (Drizzle) storage, MCP, routines, logging                 |
-| `apps/agent`         | `@wisp/agent`     | Agent runtime on the AI SDK and Effect, run in the bridge: models, tools, skills and instructions                 |
+| `apps/server`        | `@wisp/server`    | Local Node host: composes the agent, WoW bridge, Desktop API, SQLite storage and other Wisp services              |
+| `apps/agent`         | `@wisp/agent`     | Agent runtime on the AI SDK and Effect, run in the server: models, tools, skills and instructions                 |
 | `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                                     |
 | `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                                     |
 | `packages/protocol`  | `@wisp/protocol`  | Zod schemas the desktop and bridge share (providers, capabilities, features, routines, search), and addon helpers |
@@ -42,15 +42,15 @@ Run from the repository root. Toolchain: Node 26.13.1+ and pnpm 12.18.0
 | `pnpm test:addon`                               | Busted specs in `addon/tests/`                                                              |
 | `pnpm test:ui`                                  | Desktop React tests (CI runs `pnpm ui:build` first)                                         |
 | `pnpm exec turbo run test --filter=@wisp/<pkg>` | One package; append `-- <file>` for one file                                                |
-| `pnpm start`                                    | Run the bridge                                                                              |
-| `pnpm --filter @wisp/agent eval`                | Agent evals against a real model (sign in once with `apps/bridge/src/evals/eval-bridge.ts`) |
+| `pnpm start`                                    | Run the Wisp server                                                                         |
+| `pnpm --filter @wisp/agent eval`                | Agent evals against a real model (sign in once with `apps/server/src/evals/eval-bridge.ts`) |
 | `pnpm ui:dev` / `pnpm desktop:dev`              | Vite only / staged native Tauri app                                                         |
 | `pnpm web:dev`                                  | Next.js website on 127.0.0.1:3000                                                           |
 | `pnpm data:generate`                            | Regenerate game data from the pinned Forever build ([docs/game-data.md](docs/game-data.md)) |
 | `pnpm data:check`                               | Say whether a newer Forever build is out than the pinned one                                |
 
 Native Rust checks run in CI with `cargo fmt --check` and `cargo test` against
-`apps/desktop/src-tauri/Cargo.toml`. `apps/bridge/tests/simulation.test.ts` needs
+`apps/desktop/src-tauri/Cargo.toml`. `apps/server/tests/simulation.test.ts` needs
 the simulator binary (`scripts/build-simulator.ps1`); Linux CI excludes it.
 
 ### Lua toolchain
@@ -128,10 +128,11 @@ the `AgentCapabilities` tag directly.
 
 ## Conventions observed in the code
 
-- **Bridge layout:** `apps/bridge/src` groups modules by domain: `addon/`
-  (transport, snapshots, panels), `agent/` (engine wiring, agent server, turns, model history),
+- **Server layout:** `apps/server/src/wow-bridge/` owns the addon transport;
+  `game/` connects it to Wisp's state and workflows, and `api/` serves Desktop.
+  Other domains include `agent/` (engine wiring, agent server, turns, model history),
   `auth/`, `chat/`, `reply/`, `models/`, `integrations/` (search, MCP,
-  simulation, TheWoWDB), `desktop/`, `routines/`, `db/` and `migrations/`.
+  simulation, TheWoWDB), `panels/`, `routines/`, `db/` and `migrations/`.
   Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,
   `logger.ts`, `app-paths.ts`) stay at the root. Package export names do not
   follow file moves.
@@ -140,7 +141,7 @@ the `AgentCapabilities` tag directly.
   (`@wisp/protocol/providers`); what the agent asks of its host, such as tool
   inputs, game inspections and presentation, is in `apps/agent/src/contract/`
   (`@wisp/agent/contract/game-inspection`), which the bridge implements; the
-  addon's packets, mailbox frames and downlink are in `apps/bridge/src/addon/`.
+  addon's packets, mailbox frames and downlink are in `apps/server/src/wow-bridge/`.
   Change a shape where it lives rather than redefining it in another app.
 - **Package boundaries:** `tests/package-boundaries.test.ts` requires every
   workspace to declare each package it imports in its own `package.json`
@@ -148,10 +149,10 @@ the `AgentCapabilities` tag directly.
   tests use package exports.
 - **Logging:** use `Effect.log*` with `Effect.annotateLogs` for structured fields,
   including a dotted `event` key. The bridge and agent share the JSON logging
-  layer in `apps/bridge/src/logger.ts`; capture an Effect runner where Node
+  layer in `apps/server/src/logger.ts`; capture an Effect runner where Node
   callbacks are created and use `Effect.log*` directly inside Effect operations.
 - **Errors:** convert unknown errors with `errorMessage` from
-  `apps/bridge/src/errors.ts`, which sanitizes via `safeErrorMessage`.
+  `apps/server/src/errors.ts`, which sanitizes via `safeErrorMessage`.
 - **Addon Lua:** follow [docs/lua-guidelines.md](docs/lua-guidelines.md) and
   [addon/AGENTS.md](addon/AGENTS.md).
 - **Commits:** history uses Conventional Commits with scopes, e.g.
