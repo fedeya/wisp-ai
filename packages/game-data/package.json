@@ -9,13 +9,12 @@
   "scripts": {
     "generate": "node src/generate.ts",
     "check": "node src/check.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsc --noEmit",
     "test": "cd ../.. && vitest run --config packages/game-data/vitest.config.ts"
   },
   "devDependencies": {
     "@types/node": "26.6.6",
     "fengari": "0.1.5",
-    "typescript": "5.9.3",
     "vitest": "5.1.0"
   }
 }

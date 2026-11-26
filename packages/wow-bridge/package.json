@@ -19,7 +19,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsc --noEmit",
     "test": "cd ../.. && vitest run --config packages/wow-bridge/vitest.config.ts"
   },
   "dependencies": {

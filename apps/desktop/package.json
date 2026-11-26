@@ -8,7 +8,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p src/tsconfig.json",
+    "typecheck": "effect-tsgo tsc --noEmit -p src/tsconfig.json",
     "tauri": "tauri",
     "stage": "cd ../.. && node scripts/stage-desktop.ts",
     "dev:native": "tauri dev",
@@ -44,7 +44,6 @@
     "@wisp/server": "workspace:*",
     "jsdom": "31.0.0",
     "tailwindcss": "4.3.5",
-    "typescript": "5.9.3",
     "vite": "8.3.6",
     "vitest": "5.1.0"
   }

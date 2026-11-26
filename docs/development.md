@@ -39,6 +39,32 @@ tools. Core tests, addon tests and build scripts declare their own dependencies 
 excluded explicitly; installs do not need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
 `turbo prune @wisp/web` can export an isolated web workspace from the same lockfile.
 
+### TypeScript and the Effect language service
+
+`pnpm typecheck` (also used by CI) runs the Effect build of native TypeScript 7
+for the root and non-web workspaces. The shared [`tsconfig.base.json`](../tsconfig.base.json)
+enables Effect diagnostics: errors fail the check, while warnings and suggestions
+are advisory. The website still generates route types with `next typegen` and checks
+them with its own TypeScript 5.9. Package builds also keep their existing TypeScript
+5.9 emit; the package-boundary test uses that version's JavaScript compiler API.
+
+Run `pnpm exec turbo run typecheck --filter=@wisp/server` for a single workspace
+with its dependency builds, or `pnpm exec effect-tsgo tsc --noEmit --watch -p
+apps/agent/tsconfig.json` to watch a project after those dependencies are built.
+Both use `@effect/tsgo` directly, so installs and CI need no compiler patch.
+
+For VS Code or Cursor, install the [TypeScript native extension](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview)
+and run `pnpm typecheck:editor` from the repository root. This patches only the
+root workspace's native TypeScript SDK. Enable `js/ts.experimental.useTsgo`, set
+`js/ts.tsdk.path` to `./node_modules/typescript/bin`, and use **TypeScript: Select
+TypeScript Version → Use Workspace Version**. Rerun the patch if an install
+replaces the SDK. To restore it, run `pnpm exec effect-tsgo unpatch --typescript`.
+Use the JavaScript TypeScript server for the website if you need Next's editor plugin.
+
+In editors that accept an LSP command (for example Neovim or Zed), use
+`pnpm exec effect-tsgo tsc --lsp --stdio` from the repository root in place of
+the existing TypeScript server. This path needs no patch.
+
 ### Contributor skills
 
 See the [contributor skill index](../.agents/skills/README.md) for the project
