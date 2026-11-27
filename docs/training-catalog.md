@@ -59,48 +59,10 @@ Wowhead's encoded equals separator are normalized). Unrelated unsafe search hits
 are discarded without suppressing valid findings. Generated dossiers remain
 leads for reading and corroboration, not independent confirmation.
 
-The headless smoke scenario exercises the production agent, model proxy,
-database lookup, global web search and page fetching without a WoW session.
-Only the catalog-miss boundary is synthetic; no live character data is supplied
-or modified, and game tools other than the fixture catalog are unavailable.
-It sends the original question without supplying the expected answer. The
-report records tool order, search queries, returned dossiers and the final answer
-for semantic review; passing tool-order assertions alone does not prove an answer
-correct. Existing signed-in ChatGPT credentials are read through the native vault;
-the harness refuses tokens close to expiry to avoid concurrent renewal.
-
-From the repository root in PowerShell:
-
-```powershell
-$env:WISP_SMOKE_RESEARCH = '1'
-$env:WISP_DATA_DIR = Join-Path $env:APPDATA 'com.wisp.ai'
-$env:WISP_SMOKE_DIR = Join-Path (Get-Location) 'runtime/research-smoke'
-$env:WISP_DESKTOP_EXE = Join-Path (Get-Location) 'dist/preview-latest/wisp.exe'
-node scripts/smoke-agent.mjs
-```
-
-The report is written to `$env:WISP_SMOKE_DIR/report.json`. This is an opt-in
-live-model/network smoke check, separate from deterministic unit tests.
-
-### Verified headless run — 2026-11-09
-
-The final run sent `¿Cuándo aprendo invisibilidad con el mago?` without hints about
-the expected answer. It consulted the synthetic empty catalog, the live database,
-two global web searches and three page reads. Both web searches returned available
-source dossiers with three findings each. The agent answered that the Mage does
-not learn Invisibility as a class ability in Forever, linked the current community
-guide it read, and explicitly distinguished that guide from an official statement.
-
-Semantic review checks the supported conclusion and attribution, not just tool
-calls. Earlier runs exposed search timeouts and rejection of otherwise valid
-sources because of unrelated unsafe search hits. The final implementation bounds
-each search to a focused dossier, uses low reasoning on supported GPT-5/6 search
-models, and allows 85 seconds within the calling tool's 100-second deadline.
-
-To evaluate another run, inspect the answer and the per-search findings/scope in
-`report.json`. A generic refusal despite accessible explicit evidence is a failed
-semantic result even if every tool completed. Unavailable providers should remain
-an explicit test limitation, not be interpreted as missing gameplay content.
+Each search is bounded to a focused dossier, uses low reasoning on supported
+GPT-5/6 search models, and gets 85 seconds within the calling tool's 100-second
+deadline. Earlier versions timed out or rejected valid sources because of
+unrelated unsafe search hits.
 
 ## Adaptive search budgets
 
