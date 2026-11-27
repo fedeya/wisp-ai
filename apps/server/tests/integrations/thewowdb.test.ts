@@ -3,7 +3,7 @@ import { Effect, Fiber, Layer } from 'effect';
 import { HttpClient, HttpClientResponse } from 'effect/http';
 import type { HttpClientRequest } from 'effect/http';
 import { TestClock } from 'effect/testing';
-import * as TheWoWDB from '../src/integrations/thewowdb.ts';
+import * as TheWoWDB from '../../src/integrations/thewowdb/index.ts';
 
 const spell = {
   id: 122,

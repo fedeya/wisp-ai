@@ -16,7 +16,7 @@ import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
-import type { TheWoWDB } from '../integrations/thewowdb.ts';
+import type { TheWoWDB } from '../integrations/thewowdb/index.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
