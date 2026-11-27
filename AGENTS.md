@@ -81,18 +81,20 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
 
-## Current priority: code quality with Effect
+## Current priority: an Effect-native codebase
 
-Improve the codebase's readability and maintainability, using Effect where it
-makes dependencies, error handling, cancellation, or resource lifetimes clearer.
-Prefer the simplest implementation that fits: keep pure logic as plain
-TypeScript, and don't add a service or layer unless it earns its place. Keep
-cleanup separate from behavior changes so reviewers can verify each on its own.
+The TypeScript workspaces are moving to idiomatic Effect; the
+[Effect migration plan](docs/effect-migration.md) has the rules, the phases and
+what stays as it is. Every side effect, dependency, failure, resource and piece
+of background work goes through Effect, and data is modeled with `Schema`. Pure
+logic stays plain TypeScript, called from Effect code. Keep cleanup separate
+from behavior changes so reviewers can verify each on its own.
 
 When working with Effect, load the [Effect skill](.agents/skills/effect-ts/SKILL.md)
-for local examples and verification guidance. Before writing any Effect code,
-first read `node_modules/effect/AGENTS.md` **completely**, and follow the links
-in the file when required.
+for local examples and verification guidance, and the matching reference of the
+[Effect contributor skill](.agents/skills/effect/SKILL.md). Before writing any
+Effect code, first read `node_modules/effect/AGENTS.md` **completely**, and
+follow the links in the file when required.
 
 If you need to learn more about particular Effect apis and concepts that the
 guide doesn't cover, search through the source code in `node_modules/effect/src`.
@@ -100,19 +102,30 @@ guide doesn't cover, search through the source code in `node_modules/effect/src`
 The root `package.json` declares `effect` so that `node_modules/effect` exists
 despite `hoist: false`; keep it on the same version as the workspaces.
 
-### Effect patterns for the bridge
+### Effect rules
 
-- **Compose Effects before running them.** Internal operations return Effects
-  so callers can compose them with `yield*`. Run the composed operation at the
-  process entry point or at a boundary that expects a `Promise`, such as an HTTP
-  handler or SDK callback. Capture the caller's Effect context when a callback
-  runs later. Avoid a Promise wrapper that runs each method separately.
-- **Use small factories for stateful modules.** A module can expose
-  `Module.make(...)` and return an object of operations, with state private to
-  the factory. If construction only captures dependencies, keep it synchronous
-  and make I/O explicit in operations such as `start` and `close`. Use named
-  `Effect.fn` for operations that benefit from tracing. Use `Context.Service`
-  and `Layer` when Effect should provide the dependency or own its lifecycle.
+- **Replace, don't wrap.** A migrated module has no `async`, `new Promise`,
+  `try`/`catch`, thrown expected failures or `Effect.run*` inside it.
+  `Effect.tryPromise` belongs only in adapters around third-party Promise APIs
+  and maps the failure to a `Schema.TaggedError`. Don't use `Effect.promise` for
+  work that can fail: a rejection becomes a defect.
+- **Run Effects only at the edges.** Internal operations return Effects that
+  callers compose with `yield*`. Run them at the process entry point or where a
+  library expects a `Promise`, such as an SDK callback, and capture the caller's
+  Effect context when that callback runs later.
+- **Services by default.** Anything with dependencies, state or a lifecycle is
+  a `Context.Service` with a layer and `Effect.fn('Service.operation')`
+  methods. Don't pass bags of callbacks (`changed`, `saveChats`) between
+  modules: shared state lives in a service backed by `SubscriptionRef`, and
+  whatever reacts to it subscribes to its changes.
+- **Leaves before the root.** Migrate adapters and domain services before
+  `apps/server/src/runtime.ts`. Until then the root declares migrated services
+  in its requirements and `main.ts` provides them; no `Layer.build` with
+  `Context.get` inside the root.
+- **Keep layers closed.** Consumers depend on the domain service, not on the
+  infrastructure under it such as `SqlDatabase`. Don't `Layer.provideMerge` it
+  out to them, and don't use `Layer.mergeAll` or `provideMerge` just to make
+  types check.
 - **Give each resource one owner.** For a keyed connection cache, the manager
   decides when to reuse, replace, or invalidate an entry; the connection owns
   the handshake, timeout, and cleanup. Register cleanup before starting work
@@ -123,6 +136,9 @@ despite `hoist: false`; keep it on the same version as the workspaces.
   operations. The agent owns MCP connections and tool execution; the host
   provides settings storage, access to the vault, and the current turn's
   policy. Keep upstream tool schemas intact except for arguments fixed by Wisp.
+- **Test through Effect.** Use `@effect/vitest` (`it.effect`, `layer(...)`),
+  test layers instead of objects cast with `as unknown as`, and `TestClock`
+  instead of real sleeps or fake timers.
 
 ### Effect service layers
 

@@ -10,7 +10,7 @@ description: Use when writing, refactoring, reviewing, or testing Effect v4 code
 1. Before writing Effect code, read `node_modules/effect/AGENTS.md` completely
    and follow the linked examples relevant to the task. For APIs the guide
    doesn't cover, inspect `node_modules/effect/src` at the installed version.
-2. Read the Effect conventions in the root [`AGENTS.md`](../../../AGENTS.md#current-priority-code-quality-with-effect)
+2. Read the Effect conventions in the root [`AGENTS.md`](../../../AGENTS.md#current-priority-an-effect-native-codebase)
    and the closest implementation in Wisp. Use the installed library for API
    behavior and Wisp's code and guide for local conventions.
 3. If dependencies are missing, run `pnpm install --frozen-lockfile`. Wisp
