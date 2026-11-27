@@ -67,7 +67,19 @@ function make(db: SqlOrm) {
 
   const list = Effect.fn('PanelRepository.list')(function* (characterKey?: string) {
     const rows = yield* select(characterKey).pipe(Effect.mapError(storageError('read')));
-    return yield* Effect.forEach(rows, decodePanel);
+    const readable: Panel[] = [];
+    for (const row of rows) {
+      const panel = yield* decodePanel(row).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(error.message).pipe(
+            Effect.annotateLogs({ event: 'panels.invalid_row', panelId: row.id }),
+            Effect.as(undefined),
+          ),
+        ),
+      );
+      if (panel) readable.push(panel);
+    }
+    return readable;
   });
 
   const get = Effect.fn('PanelRepository.get')(function* (characterKey: string, id: string) {
@@ -100,7 +112,8 @@ function make(db: SqlOrm) {
             return yield* list(characterKey);
           }
 
-          const previous = yield* list(characterKey);
+          // Unreadable rows still take up space and can be replaced by ID.
+          const previous = yield* select(characterKey);
           const existing = previous.find((panel) => panel.id === edit.panel.id);
           if (!existing && previous.length >= 12) {
             return yield* new PanelQuotaExceeded();
@@ -119,7 +132,12 @@ function make(db: SqlOrm) {
             characterKey,
             updatedAt: yield* Clock.currentTimeMillis,
           };
-          if (existing?.formerKey) panel.formerKey = existing.formerKey;
+          const stored = existing
+            ? yield* decodeStoredContent(existing.content).pipe(
+                Effect.orElseSucceed(() => undefined),
+              )
+            : undefined;
+          if (stored?.formerKey) panel.formerKey = stored.formerKey;
           const row = encodePanel(panel, (last?.position ?? -1) + 1);
           yield* db
             .insert(panels)

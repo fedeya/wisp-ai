@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
 import { panelContent } from '@wisp/agent/contract/panels';
+import { panels } from '@wisp/db/schema';
 const example = {
   id: 'materials',
   title: 'Materials',
@@ -69,6 +70,49 @@ test('concurrent writers cannot both take the last panel slot', async () => {
     const rejected = results.find((result) => result.status === 'rejected');
     assert.match(String(rejected?.reason), /Keep at most 12 panels per character/);
     assert.equal((await first.list('mage')).length, 12);
+  } finally {
+    await scope.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+test('unreadable panels do not hide valid panels and still count toward the quota', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wow-panels-'));
+  const scope = databaseScope();
+  try {
+    const database = scope.open(path.join(root, 'wisp.sqlite'));
+    const store = await scope.panels(database);
+    const save = (id: string) =>
+      store.update('mage', { operation: 'save', panel: panelContent.parse({ ...example, id }) });
+    await save('materials');
+    await database.transaction((db) =>
+      db
+        .insert(panels)
+        .values(
+          Array.from({ length: 11 }, (_, index) => ({
+            characterKey: 'mage',
+            id: `old-${index}`,
+            title: 'Old panel',
+            sortIndex: index + 1,
+            updatedAt: 0,
+            content: JSON.stringify({ formerKey: 'old-mage', ui: [] }),
+          })),
+        )
+        .run(),
+    );
+
+    assert.deepEqual(
+      (await store.list('mage')).map((panel) => panel.id),
+      ['materials'],
+    );
+    await assert.rejects(save('extra'), /Keep at most 12 panels per character/);
+    const repaired = await save('old-0');
+    assert.deepEqual(
+      repaired.map(({ id, formerKey }) => [id, formerKey]),
+      [
+        ['materials', undefined],
+        ['old-0', 'old-mage'],
+      ],
+    );
   } finally {
     await scope.close();
     await rm(root, { recursive: true, force: true });

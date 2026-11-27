@@ -452,6 +452,35 @@ test('capability updates do not block chat packets or acknowledge after receiver
   expect(invalidateAddonView).not.toHaveBeenCalled();
 });
 
+test('a capability saved during a window switch refreshes the new window without acknowledging there', async () => {
+  const started = Deferred.makeUnsafe<void>();
+  const release = Deferred.makeUnsafe<void>();
+  const invalidateAddonView = vi.fn();
+  const f = fixture({
+    invalidateAddonView,
+    setCapability: () =>
+      Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release))),
+  });
+  f.receive(
+    gameEvent({
+      type: 'capability_set',
+      session: 'one',
+      seq: 1,
+      at: 1,
+      key: 'tool:manage_panel',
+      enabled: false,
+      requestId: 'capability-1',
+    }),
+  );
+  await Effect.runPromise(Deferred.await(started));
+  f.receive(gameEvent({ type: 'hello', session: 'two', seq: 1, at: 2 }));
+  expect(f.state.activeTransport).toBe('two');
+  invalidateAddonView.mockClear();
+  await Effect.runPromise(Deferred.succeed(release, undefined));
+  await vi.waitFor(() => expect(invalidateAddonView).toHaveBeenCalledOnce());
+  expect(f.state.capabilityAcks).toEqual({});
+});
+
 test.each([
   { verified: true, text: 'Settings applied. You can undo these changes.', undo: true },
   { verified: 'true', text: 'Settings were not applied: Verification failed.', undo: false },

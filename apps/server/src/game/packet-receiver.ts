@@ -187,8 +187,9 @@ export const make = Effect.fnUntraced(function* (deps: ReceiverDependencies) {
         if (state.activeTransport === packet.session) {
           state.capabilityAcks[packet.key] = packet.requestId || '';
           state.capabilityError = undefined;
-          invalidateAddonView();
         }
+        // The saved capability is global; the acknowledgement belongs to the requesting window.
+        invalidateAddonView();
       }).pipe(
         Effect.catch((error) =>
           Effect.sync(() => {
