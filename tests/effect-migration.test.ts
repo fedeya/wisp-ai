@@ -12,16 +12,16 @@ const formatChanges = (changes: readonly Change[]) =>
 
 const { rises, drops } = compare(readBaseline(), scoreboard());
 
+// Only rises fail. Migration PRs leave the baseline alone so they don't
+// conflict with each other, and it is lowered after they merge.
 test('no workspace adds non-Effect patterns', () => {
   expect(
     rises,
     `New code must use Effect, see docs/effect-migration.md. These counts rose:\n${formatChanges(rises)}`,
   ).toEqual([]);
-});
-
-test('the baseline records migration progress', () => {
-  expect(
-    drops,
-    `These counts dropped. Record the progress with \`pnpm --filter @wisp/tests effect:baseline\` and commit tests/effect-migration-baseline.json:\n${formatChanges(drops)}`,
-  ).toEqual([]);
+  if (drops.length > 0) {
+    process.stdout.write(
+      `Effect migration counts are below the baseline; lower it after merging with \`pnpm --filter @wisp/tests effect:baseline\`:\n${formatChanges(drops)}\n`,
+    );
+  }
 });
