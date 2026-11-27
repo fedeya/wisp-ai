@@ -98,58 +98,78 @@ and `auth/`; and `integrations/` holds settings that every domain reads.
 1. **Folders by domain, not by kind.** A folder is about one part of Wisp (chats,
    routines, the game connection) and owns its services, repository, schemas,
    desktop API handlers and the agent host port it implements. No `services/`,
-   `utils/` or `helpers/` folders.
+   `utils/` or `helpers/` folders. A domain is a part of Wisp, not a feature:
+   new features land in an existing domain, and a domain that grows gets
+   subfolders inside it.
 2. **`platform/` for the machine and the network.** Configuration, logging, the
    HTTP client, JSON settings files and the secret vault: adapters every domain
    may use, with no domain logic.
 3. **`http/` for servers.** Listeners, security middleware and which API is
-   served where. Handlers stay in their domain (`<domain>-api.ts`) and stay
-   thin.
-4. **One direction.** `platform/` ← domains ← `http/` ← `server.ts`. A domain
-   uses another domain through its service, never its records, repository or
-   private helpers, and folders never import each other in a cycle.
-5. **The root holds the entry point and the layer graph only:** `main.ts` and
+   served where. Handlers stay in their domain (`api.ts`) and stay thin.
+4. **`index.ts` is a domain's public surface.** Other domains import it as
+   `#<domain>` (`#routines`, `#integrations/search`) and platform modules as
+   `#platform/<name>`, through the `imports` field of `apps/server/package.json`:
+
+   ```json
+   "imports": { "#platform/*": "./src/platform/*.ts", "#*": "./src/*/index.ts" }
+   ```
+
+   Node, TypeScript, Vitest and esbuild resolve it as is. `index.ts` exports
+   explicitly (the service, its layer, and the schemas, types and errors other
+   domains need), never `export *`. Everything else in the folder is private:
+   only files inside the domain import it, with relative paths. A small domain
+   can be just its `index.ts`.
+
+5. **One direction.** `platform/` ← domains ← `http/` ← `server.ts`, and
+   folders never import each other in a cycle.
+6. **The root holds the entry point and the layer graph only:** `main.ts` and
    `server.ts`. Nothing else is added there.
-6. **Contracts stay in packages:** `@wisp/protocol` (Desktop and server,
+7. **Contracts stay in packages:** `@wisp/protocol` (Desktop and server,
    including the `HttpApi`), `@wisp/agent/contract` (agent and host),
    `@wisp/wow-bridge` (addon wire format), `@wisp/db` (SQLite schema).
-7. **Names.** kebab-case, one main export per file, prefixed with the domain
-   when the bare name would be ambiguous in a search (`routine-store.ts`, not
-   `store.ts`). A domain with a single file can stay a file
-   (`integrations/thewowdb.ts`).
+8. **Names.** kebab-case and one main export per file. Inside a domain, name a
+   file by its role or concept without repeating the domain (`routines/repo.ts`,
+   `routines/scheduler.ts`, not `routines/routine-store.ts`); qualify only when
+   two files in one folder share a role (`users-repo.ts`, `accounts-repo.ts`).
+9. **Tests mirror the domains** under `apps/server/tests/`
+   (`tests/routines/scheduler.test.ts`). A test may import its own domain's
+   private files and other domains through `#<domain>`.
 
 ### `apps/server/src`
 
 ```text
 main.ts           process entry: Layer.launch(ServerLayer) with NodeRuntime.runMain
 server.ts         ServerLayer, the layer graph (today's runtime.ts)
-platform/         app-config, http-client, json-file, logger, errors, secret-vault
-http/             desktop-server (Desktop HttpApi), agent-server (model proxy, MCP relay)
-session/          SessionState on SubscriptionRef and its change stream
-game/             WoW transport, packet receiver, snapshot publisher, item loading, the agent's Game port
-chat/             Chat schema, repository, lifecycle, projection, history, titles, references, replies
+platform/         config, http-client, json-file, logger, errors, secret-vault
+http/             desktop (Desktop HttpApi server), agent (model proxy, MCP relay)
+routines/         index (Routines service), repo, scheduler, gate, api
+chat/             index, repo, lifecycle, projection, history, titles, references, replies, api
+session/          index: SessionState on SubscriptionRef and its change stream
+game/             transport, packet receiver, snapshot publisher, item loading, the agent's Game port
 turns/            agent engine wiring, turn runner, turn context, agent history and sessions
 auth/             ChatGPT sign-in and its callback page, account operations
-models/           model connections, catalog, failures, timing, proxy handler, response stream
+models/           connections, catalog, failures, timing, proxy handler, response stream
 capabilities/     capability switches and integration availability
-integrations/     one folder (or file) per external service: everloot/, mcp/, search/, simulation/, thewowdb.ts
-memory/  panels/  routines/  features/  telemetry/  settings/  migrations/  evals/
+integrations/     one domain per external service: everloot/, mcp/, search/, simulation/, thewowdb/
+memory/  panels/  features/  telemetry/  settings/  migrations/  evals/
 ```
 
-| Today                                                                                               | Target                                    |
-| --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `runtime.ts`                                                                                        | `server.ts` (phase 5)                     |
-| `runtime-resources.ts`, `application-database.ts`, `loopback-server.ts`                             | Deleted by phases 3–5                     |
-| `app-config.ts`, `http-client.ts`, `json-file.ts`, `logger.ts`, `errors.ts`, `auth/secret-vault.ts` | `platform/`                               |
-| `api/desktop-server.ts`; the listener in `agent/agent-server.ts`                                    | `http/`                                   |
-| `api/desktop-handler.ts`                                                                            | Each domain's `<domain>-api.ts` (phase 4) |
-| `session-state.ts`                                                                                  | `session/`                                |
-| `features.ts`, `telemetry.ts`, `bridge-config.ts`                                                   | `features/`, `telemetry/`, `settings/`    |
-| `account-operations.ts`                                                                             | `auth/`                                   |
-| `reply/*`                                                                                           | `chat/` (ends the `chat` ↔ `reply` cycle) |
-| `agent/turn-runner.ts`, `agent-history.ts`, `agent-session.ts`, `chat/context.ts`                   | `turns/`                                  |
-| `integrations/capabilities.ts`, `integrations/integration-state.ts`                                 | `capabilities/`                           |
-| `integrations/gear-search.ts`, `integrations/item-sources.ts`                                       | `integrations/everloot/`                  |
+| Today                                                                                               | Target                                            |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `runtime.ts`                                                                                        | `server.ts` (phase 5)                             |
+| `runtime-resources.ts`, `application-database.ts`, `loopback-server.ts`                             | Deleted by phases 3–5                             |
+| `app-config.ts`, `http-client.ts`, `json-file.ts`, `logger.ts`, `errors.ts`, `auth/secret-vault.ts` | `platform/` (`app-config.ts` becomes `config.ts`) |
+| `api/desktop-server.ts`; the listener in `agent/agent-server.ts`                                    | `http/`                                           |
+| `api/desktop-handler.ts`                                                                            | Each domain's `api.ts` (phase 4)                  |
+| `session-state.ts`                                                                                  | `session/`                                        |
+| `features.ts`, `telemetry.ts`, `bridge-config.ts`                                                   | `features/`, `telemetry/`, `settings/`            |
+| `account-operations.ts`                                                                             | `auth/`                                           |
+| `reply/*`                                                                                           | `chat/` (ends the `chat` ↔ `reply` cycle)         |
+| `agent/turn-runner.ts`, `agent-history.ts`, `agent-session.ts`, `chat/context.ts`                   | `turns/`                                          |
+| `integrations/capabilities.ts`, `integrations/integration-state.ts`                                 | `capabilities/`                                   |
+| `integrations/gear-search.ts`, `integrations/item-sources.ts`                                       | `integrations/everloot/`                          |
+| `integrations/thewowdb.ts`                                                                          | `integrations/thewowdb/`                          |
+| `routines/routine-store.ts`, `chat/chat-record.ts` and other prefixed files                         | Role names in their domain (`repo.ts`, …)         |
 
 `apps/agent/src` keeps its layout (`contract/`, `execution/`, `host/` ports,
 `integrations/`, `models/`, `session/`, `tools/` and the `wisp/` tool catalog);
@@ -164,6 +184,9 @@ phase 4.
   and nothing else; it is never mixed with a rewrite of another module.
 - Moving keeps a file's package export name; replacing a module's API renames
   or removes the export (rule 8).
+- A file that moves into its domain drops the domain prefix from its name
+  (`routines/routine-record.ts` → `routines/repo.ts`), and its importers from
+  other domains switch to `#<domain>`.
 
 ## Phases
 
@@ -177,6 +200,10 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 - [ ] Ratchets: Effect language service diagnostics as errors where the code is
       already clean, restricted imports for clean folders, and a scoreboard
       test that fails when a count of non-Effect patterns goes up.
+- [ ] Domain boundaries: the `imports` field in `apps/server/package.json` and a
+      test that fails on a relative import that leaves its domain folder, a cycle
+      between folders, or a new file at the `src/` root. It covers the migrated
+      domains and grows with them.
 
 ### 1. Schema
 
