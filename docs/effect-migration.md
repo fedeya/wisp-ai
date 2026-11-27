@@ -23,7 +23,9 @@ simulation adapters). Effect code calls it directly.
    then HTTP, then `apps/server/src/runtime.ts`. Until the root is migrated,
    `makeServer` declares the migrated services in its requirements and
    `main.ts` provides them with one layer; no `Layer.build` and `Context.get`
-   inside the root.
+   inside the root. Unmigrated consumers keep their current interface, and
+   `runtime.ts` adapts a migrated service for them in one marked block until
+   they migrate.
 3. **Services by default.** Anything with dependencies, state or a lifecycle is
    a `Context.Service` with a layer (`Layer.effect` returning `Service.of(...)`)
    and `Effect.fn('Service.operation')` methods. Factories that take a bag of
@@ -42,7 +44,8 @@ simulation adapters). Effect code calls it directly.
    test layers instead of partial objects cast with `as unknown as`, and
    `TestClock` instead of real sleeps or fake timers.
 8. **One module per PR.** A PR converts one module end to end (implementation,
-   consumers and tests) and deletes the old path. It changes no behavior; a
+   consumers and tests) and deletes the old path, including package exports and
+   names nobody imports anymore; no compatibility aliases. It changes no behavior; a
    behavior change gets its own PR. Wire formats, files on disk and the
    contracts with the Rust host and the addon stay byte-compatible.
 
@@ -187,7 +190,7 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 
 ### 2. Platform adapters
 
-- [ ] App configuration on `Config` (`WISP_*` variables, app paths).
+- [x] App configuration on `Config` (`WISP_*` variables, app paths).
 - [ ] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
       the same file formats.
 - [ ] `SecretVault` on `ChildProcess`, secrets as `Redacted`.

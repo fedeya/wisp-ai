@@ -151,16 +151,20 @@ clearly, for example `Capabilities.layerFromFile(...)`. Consumers can use
 ## Conventions observed in the code
 
 - **Server layout:** `apps/server/src/` is moving to the
-  [target structure](docs/effect-migration.md#target-structure): folders by
-  domain (`game/`, `chat/`, `turns/`, `routines/`, …) that own their services,
-  repositories, schemas and API handlers; `platform/` for configuration,
-  logging, HTTP client, JSON files and the vault; `http/` for the servers; and
-  only `main.ts` and the layer graph at the root. Put new and migrated modules
-  in their target folder, never at the root. Each domain keeps its own table
-  access next to it; the schema and connection live in `@wisp/db`. Moving a file
-  keeps its package export name; when a change replaces a module's API, rename
-  or remove the export and update every consumer in the same PR. All consumers
-  live in this repository, so don't add compatibility aliases.
+  [target structure](docs/effect-migration.md#target-structure): one folder per
+  domain (`game/`, `chat/`, `turns/`, `routines/`, …) that owns its services,
+  repository, schemas and API handlers; `platform/` for configuration, logging,
+  the HTTP client, JSON files and the vault; `http/` for the servers; and only
+  `main.ts` and the layer graph at the root. A domain's `index.ts` is its public
+  surface: other domains import it as `#<domain>` and platform modules as
+  `#platform/<name>` (the `imports` field of `apps/server/package.json`), never
+  another domain's files. Inside a domain, files are named by role (`repo.ts`,
+  `api.ts`, `scheduler.ts`) without repeating the domain. Put new and migrated
+  modules in their target folder, never at the root. Each domain keeps its own
+  table access; the schema and connection live in `@wisp/db`. Moving a file keeps
+  its package export name; when a change replaces a module's API, rename or
+  remove the export and update every consumer in the same PR. All consumers live
+  in this repository, so don't add compatibility aliases.
 - **Shared schemas:** shapes are zod schemas owned by the workspace that defines
   the contract. The desktop–bridge contract is in `packages/protocol/src/`
   (`@wisp/protocol/providers`); what the agent asks of its host, such as tool
