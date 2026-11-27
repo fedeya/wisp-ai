@@ -1,7 +1,8 @@
 import { generateText, type LanguageModel } from 'ai';
 import { Effect } from 'effect';
 import { summaryMessages } from '../session/replay.ts';
-import type { LoadedHistory, SessionHistory } from '../session/session-history.ts';
+import type { LoadedHistory } from '../session/session-history.ts';
+import type * as SessionHistory from '../session/session-history.ts';
 import type { Compaction, Message, Tool } from '../session/session-message.ts';
 import { errorText, modelCall } from './engine-errors.ts';
 import type { Emit } from './turn-events.ts';
@@ -77,7 +78,7 @@ const SUMMARY_PROMPT =
 // messages stay stored. False when summarizing failed and the model goes on
 // with the recent turns only.
 const summarize = Effect.fn('AgentEngine.summarize')(function* (
-  history: SessionHistory['Service'],
+  history: SessionHistory.Service['Service'],
   session: string,
   loaded: LoadedHistory,
   model: LanguageModel,
@@ -124,7 +125,7 @@ const summarize = Effect.fn('AgentEngine.summarize')(function* (
 
 /** Runs a compaction between `context` events. */
 export const compactHistory = Effect.fn('AgentEngine.compacting')(function* (
-  history: SessionHistory['Service'],
+  history: SessionHistory.Service['Service'],
   session: string,
   loaded: LoadedHistory,
   model: LanguageModel,

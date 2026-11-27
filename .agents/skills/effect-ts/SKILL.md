@@ -20,8 +20,8 @@ description: Use when writing, refactoring, reviewing, or testing Effect v4 code
 ## Pick a local example
 
 - **Service and layer:** [`capabilities.ts`](../../../apps/agent/src/host/capabilities.ts)
-  exports the `AgentCapabilities` tag and a separate `layerFromFile`. The
-  [`engine`](../../../apps/agent/src/engine.ts) selects that implementation
+  exports the `Service` tag and a separate `layerFromFile`. The
+  [server runtime](../../../apps/server/src/runtime.ts) selects that implementation
   and supplies `NodeFileSystem.layer`.
 - **SDK callback:** the [turn toolbox](../../../apps/agent/src/tools/turn-toolbox.ts)
   captures the Effect context before running MCP operations from Promise-based

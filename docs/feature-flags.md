@@ -61,7 +61,7 @@ addon for the name by hand.
 | Agent   | `yield* capabilities.featureEnabled('combat_coach')`                                                    |
 | Addon   | `ns.Core.FeatureEnabled("combat_coach")`, and `ns.Core.OnFeaturesChanged(listener)` to react to changes |
 
-In the agent, use `const capabilities = yield* AgentCapabilities` to access
+In the agent, use `const capabilities = yield* Capabilities.Service` to access
 the service from `apps/agent/src/host/capabilities.ts`.
 
 A tool that belongs to the feature goes in `toolFeatures` in

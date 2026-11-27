@@ -66,8 +66,22 @@ export function searchTools(tools: DeferredTool[], query: string, limit = 8) {
     }));
 }
 
-function jsonSchema(schema: z.ZodType) {
-  return z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' });
+function jsonSchema(schema: ToolDefinition['inputSchema']) {
+  return 'safeParse' in schema
+    ? z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' })
+    : schema['~standard'].jsonSchema.input({ target: 'draft-07' });
+}
+
+async function parseInput(name: string, schema: ToolDefinition['inputSchema'], input: unknown) {
+  const prefix = 'Invalid input for ' + name + ': ';
+  if ('safeParse' in schema) {
+    const parsed = schema.safeParse(input);
+    if (parsed.success) return parsed.data;
+    throw Error(prefix + z.prettifyError(parsed.error));
+  }
+  const parsed = await schema['~standard'].validate(input);
+  if (parsed.issues) throw Error(prefix + parsed.issues.map((issue) => issue.message).join('; '));
+  return parsed.value;
 }
 
 /** An authored tool as tool_call runs it: input validated against its schema, then executed. */
@@ -78,15 +92,12 @@ export function authored(name: string, tool: ToolDefinition, stub?: ToolStub): D
     inputSchema: jsonSchema(tool.inputSchema),
     label: tool.label,
     run: async (input, ctx) => {
-      const parsed = tool.inputSchema.safeParse(input ?? {});
-      if (!parsed.success) {
-        throw Error('Invalid input for ' + name + ': ' + z.prettifyError(parsed.error));
-      }
-      const fixture = stub?.(name, parsed.data);
+      const parsed = await parseInput(name, tool.inputSchema, input ?? {});
+      const fixture = stub?.(name, parsed);
       if (fixture) {
         return stubbed(fixture);
       }
-      return tool.execute(parsed.data, {
+      return tool.execute(parsed, {
         session: { id: ctx.session },
         abortSignal: ctx.signal,
         callId: ctx.callId,

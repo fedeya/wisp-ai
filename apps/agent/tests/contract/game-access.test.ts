@@ -1,12 +1,12 @@
 import { Effect, Schema } from 'effect';
 import { expect, expectTypeOf, test } from 'vitest';
 import {
-  GameAccess,
   itemSourcesResult,
   unavailableGameAccess,
   type ItemSourcesResult,
   type InspectionResult,
 } from '../../src/host/game-access.ts';
+import * as Game from '../../src/host/game-access.ts';
 
 const input = { itemIds: [14149] };
 const decode = Schema.decodeUnknownEffect(itemSourcesResult);
@@ -18,7 +18,7 @@ test('item source inspections return a typed and validated item list', async () 
     priceStatus: 'unavailable',
     note: 'No known sources',
   };
-  const game = GameAccess.of({
+  const game = Game.Service.of({
     ...unavailableGameAccess,
     itemSources: () => Effect.succeed(result).pipe(Effect.tap(decode)),
   });
@@ -39,9 +39,9 @@ test('inspection methods declare distinct caller and implementation contracts', 
     >['data']['items'][number]['id']
   >().toEqualTypeOf<number>();
 
-  const readTarget: GameAccess['Service']['readTarget'] = () =>
+  const readTarget: Game.Service['Service']['readTarget'] = () =>
     Effect.succeed({ status: 'available', data: { note: 'Target' } });
-  const game = GameAccess.of({
+  const game = Game.Service.of({
     ...unavailableGameAccess,
     // @ts-expect-error A target result cannot implement the gear candidate operation.
     readGearCandidates: readTarget,
@@ -56,7 +56,7 @@ test('item source inspections reject an object with malformed items', async () =
     priceStatus: 'unavailable',
     note: 'No known sources',
   };
-  const game = GameAccess.of({
+  const game = Game.Service.of({
     ...unavailableGameAccess,
     // @ts-expect-error Runtime validation must not hide a wrong producer type.
     itemSources: () => Effect.succeed(malformed).pipe(Effect.tap(decode)),

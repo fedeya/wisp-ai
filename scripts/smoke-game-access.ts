@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { Effect, Schema } from 'effect';
-import {
-  GameAccess,
-  gameReading,
-  inspectionResults,
-  unavailableGameAccess,
-} from '@wisp/agent/game-access';
+import * as Game from '@wisp/agent/game-access';
+import { gameReading, inspectionResults, unavailableGameAccess } from '@wisp/agent/game-access';
 import type { addonSmokeFixtures } from './addon-smoke-fixtures.ts';
 
 interface Options {
@@ -21,7 +17,7 @@ export function smokeGameAccess({ addonFixtures, researchMode, simulationSnapsho
       Effect.tap(() => Effect.sync(() => reads.push(kind))),
     );
   const inspections = addonFixtures?.inspections;
-  const gameAccess = GameAccess.of({
+  const gameAccess = Game.Service.of({
     ...unavailableGameAccess,
     ...(simulationSnapshot === undefined
       ? {}

@@ -13,7 +13,8 @@ import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from '../agent/memory-store.ts';
+import type { MemoryRepository } from '../memory/repository.ts';
+import type { MemoryEdit } from '@wisp/agent/contract/memory';
 import {
   characterIdentity,
   characterProfile,
@@ -37,10 +38,10 @@ interface ReceiverDependencies {
   models: Pick<ModelCatalog, 'models'>;
   routineStore: RoutineStore;
   panelStore: PanelStore;
-  memoryStore: MemoryStore;
+  memoryRepository: MemoryRepository['Service'];
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
-  memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
+  memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   interrupt: (chat: Chat) => void;
   /** Stops a turn the player cancelled. */
@@ -54,7 +55,6 @@ interface ReceiverDependencies {
 export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverDependencies) {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
-  const runSync = Effect.runSyncWith(context);
   const runPromise = Effect.runPromiseWith(context);
   const {
     state,
@@ -65,7 +65,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     models,
     routineStore,
     panelStore,
-    memoryStore,
+    memoryRepository,
     refreshModelCatalog,
     setCapability,
     memorySnapshot,
@@ -84,7 +84,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     state.chats.push(chat);
     return chat;
   };
-  return function receive(packet: GameEvent) {
+  return Effect.fnUntraced(function* receive(packet: GameEvent) {
     const receivedAt = now();
     if (state.activeTransport && packet.session === state.activeTransport) {
       activeSeenAt = receivedAt;
@@ -256,8 +256,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.context) {
       const character = characterProfile(packet.context);
       if (character) {
+        if (deps.adoptCharacter) yield* deps.adoptCharacter(character);
+        const previous = state.currentCharacterKey;
         state.currentCharacterKey = character.key;
-        if (deps.adoptCharacter) runSync(deps.adoptCharacter(character));
+        if (packet.type === 'poll' && previous !== character.key) changed();
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -506,6 +508,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         transportSession = state.activeTransport;
       state.memoryViewRequest = packet.requestId;
       void (async () => {
+        let readSnapshot = memorySnapshot(identity);
         if (packet.type !== 'memory_list') {
           if (packet.slot !== 'preferences' && packet.slot !== 'character') {
             throw new Error('Invalid memory scope');
@@ -514,17 +517,18 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           if (!owner || typeof packet.key !== 'string') {
             throw new Error('A fresh character identity and memory key are required');
           }
-          if (packet.type === 'memory_save' && typeof packet.text !== 'string') {
-            throw new Error('Memory text is required');
+          const scope = { slot: packet.slot, owner };
+          const key = packet.key;
+          let edit: MemoryEdit;
+          if (packet.type === 'memory_save') {
+            if (typeof packet.text !== 'string') throw new Error('Memory text is required');
+            edit = { operation: 'save', key, text: packet.text };
+          } else {
+            edit = { operation: 'remove', key };
           }
-          await memoryStore.update(
-            packet.slot,
-            owner,
-            packet.key,
-            packet.type === 'memory_save' ? packet.text : undefined,
-          );
+          readSnapshot = Effect.andThen(memoryRepository.update(scope, edit), readSnapshot);
         }
-        const snapshot = await memorySnapshot(identity);
+        const snapshot = await runPromise(readSnapshot);
         if (
           state.activeTransport === transportSession &&
           state.memoryViewRequest === packet.requestId
@@ -532,14 +536,14 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           state.memoryView = { ...snapshot, requestId: packet.requestId };
         }
       })()
-        .catch((error) => {
+        .catch((error: unknown) => {
           if (
             state.activeTransport === transportSession &&
             state.memoryViewRequest === packet.requestId
           ) {
             state.memoryView = {
               status: 'unavailable',
-              error: error.message,
+              error: errorMessage(error),
               requestId: packet.requestId,
             };
           }
@@ -610,5 +614,5 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.type !== 'poll') {
       changed();
     }
-  };
+  });
 });

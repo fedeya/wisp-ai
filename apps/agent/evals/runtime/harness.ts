@@ -1,6 +1,12 @@
 import { isDeepStrictEqual } from 'node:util';
-import { Effect, Schema } from 'effect';
+import { Effect, Layer, Logger, Schema } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { inspectionResults, unavailableGameAccess } from '../../src/host/game-access.ts';
+import * as Game from '../../src/host/game-access.ts';
+import * as Memory from '../../src/host/memory.ts';
+import * as Capabilities from '../../src/host/capabilities.ts';
+import * as Mcp from '../../src/integrations/mcp-tools.ts';
+import * as Everloot from '../../src/integrations/everloot.ts';
 import {
   attachHarnessRunToError,
   createHarness,
@@ -9,7 +15,7 @@ import {
 } from 'vitest-evals';
 import type { TranscriptEvent } from 'vitest-evals';
 import { recordContextUsage } from '../../src/contract/context-usage.ts';
-import { createAgentEngine } from '../../src/engine.ts';
+import { make, layer as agentLayer, EngineConfig, SessionHistory } from '../../src/engine.ts';
 import type { ToolStubOutcome } from '../../src/engine.ts';
 import { agentHost } from '../../src/host/agent-host.ts';
 import { MemoryHistory } from '../../src/session/memory-history.ts';
@@ -51,44 +57,59 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
     if (!host) {
       throw new Error('Start the eval bridge before running evals.');
     }
-    const engine = createAgentEngine({
+    const config = EngineConfig.of({
       origin: () => host.origin,
       token: host.token,
-      history: new MemoryHistory(),
-      gameAccess: {
-        ...unavailableGameAccess,
-        itemSources: (_session, args) =>
-          Effect.sync(() => ({
-            status: 'available',
-            items: [...new Set(args.itemIds)].map(
-              (itemId) =>
-                itemSources[itemId] ?? {
-                  itemId,
-                  sourceKnown: false,
-                  sourcesStatus: 'available',
-                },
-            ),
-            priceStatus: 'available',
-            realm: 'Vorn',
-            note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
-          })),
-        readGearCandidates: (_session, args) =>
-          Effect.sync(() => {
-            const found = args.itemIds.map((id) => lootItems[id]).filter(Boolean);
-            return {
-              status: 'available',
-              data: {
-                status: 'available',
-                items: found.filter((entry) => entry.kind === 'item').map((entry) => entry.reading),
-                other: found
-                  .filter((entry) => entry.kind === 'other')
-                  .map((entry) => entry.reading),
-              },
-            };
-          }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(inspectionResults.gear_candidates))),
-      },
       stub: (tool, args) => input.stubs.find((stub) => matches(stub, tool, args))?.outcome,
     });
+    const gameAccess = Game.Service.of({
+      ...unavailableGameAccess,
+      itemSources: (_session, args) =>
+        Effect.sync(() => ({
+          status: 'available',
+          items: [...new Set(args.itemIds)].map(
+            (itemId) =>
+              itemSources[itemId] ?? {
+                itemId,
+                sourceKnown: false,
+                sourcesStatus: 'available',
+              },
+          ),
+          priceStatus: 'available',
+          realm: 'Vorn',
+          note: 'Player-observed sources need 3 agreeing installs; game-file sources are unconfirmed. sourceKnown=false means no known source, not proof the item is unobtainable. Auction prices are cached unit prices in copper.',
+        })),
+      readGearCandidates: (_session, args) =>
+        Effect.sync(() => {
+          const found = args.itemIds.map((id) => lootItems[id]).filter(Boolean);
+          return {
+            status: 'available',
+            data: {
+              status: 'available',
+              items: found.filter((entry) => entry.kind === 'item').map((entry) => entry.reading),
+              other: found.filter((entry) => entry.kind === 'other').map((entry) => entry.reading),
+            },
+          };
+        }).pipe(Effect.flatMap(Schema.decodeUnknownEffect(inspectionResults.gear_candidates))),
+    });
+    const engine = make(
+      agentLayer.pipe(
+        Layer.provide(SessionHistory.layer(new MemoryHistory())),
+        Layer.provide(Layer.succeed(Game.Service, gameAccess)),
+        Layer.provide(
+          Layer.succeed(Memory.Service, {
+            characterKey: () => Effect.succeed('eval-character'),
+            read: () => Effect.succeed([]),
+            update: () => Effect.succeed([]),
+          }),
+        ),
+        Layer.provide(Layer.succeed(EngineConfig, config)),
+        Layer.provide(Mcp.layer([Everloot.profile])),
+        Layer.provide(Capabilities.layerFromFile()),
+        Layer.provide(NodeFileSystem.layer),
+        Layer.provideMerge(Logger.layer([])),
+      ),
+    );
     try {
       const timeout = AbortSignal.timeout(300_000);
       const turn = engine.send(

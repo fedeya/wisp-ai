@@ -66,7 +66,7 @@ active WoW session, mutations to shared player state, or access mediated by
 host-managed credentials. The host checks session ownership and permissions and
 provides the operation the tool needs. The tool decides how to use the result.
 
-[`GameAccess`](../apps/agent/src/host/game-access.ts) already lets the server or
+[`Game.Service`](../apps/agent/src/host/game-access.ts) already lets the server or
 an eval supply live game access. Other calls through
 [`agent-rpc.ts`](../apps/agent/src/host/agent-rpc.ts) still discover a loopback
 host through global or environment configuration. Use supplied capabilities for
@@ -76,7 +76,7 @@ work belongs in the agent in the first place.
 
 - [`wow__dungeon_loot`](../apps/agent/src/wisp/tools/wow__dungeon_loot.ts)
   already does this: the agent selects drops from its bundled AtlasLoot data
-  and builds the answer, asking `GameAccess` for the live item and equipment
+  and builds the answer, asking `Game.Service` for the live item and equipment
   reading. An external catalog lookup, if needed, could also run in the agent.
 - [`wow__item_sources`](../apps/agent/src/wisp/tools/wow__item_sources.ts) is a
   candidate for the same split. Today the server

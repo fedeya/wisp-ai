@@ -20,8 +20,8 @@ type InspectionOperation<K extends GameInspection['kind']> = (
   args: Extract<GameInspection, { kind: K }>['args'],
 ) => Effect.Effect<InspectionResult<K>, Error>;
 
-export class GameAccess extends Context.Service<
-  GameAccess,
+export class Service extends Context.Service<
+  Service,
   {
     readCharacter: (
       session: string,
@@ -60,10 +60,10 @@ export class GameAccess extends Context.Service<
     ) => Effect.Effect<ItemSourcesResult, Error>;
     runGameAction: (session: string, action: GameAction) => Effect.Effect<GameReading, Error>;
   }
->()('@wisp/agent/GameAccess') {}
+>()('@wisp/agent/Game') {}
 
 const unavailable = () => Effect.fail(new Error('No active connection for this character'));
-export const unavailableGameAccess = GameAccess.of({
+export const unavailableGameAccess = Service.of({
   readCharacter: unavailable,
   readSettings: unavailable,
   findNpcLocations: unavailable,

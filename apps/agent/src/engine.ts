@@ -1,10 +1,6 @@
-import { Cause, Context, Effect, Exit, Layer, Logger, ManagedRuntime, Queue, Stream } from 'effect';
-import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import { Cause, Context, Effect, Exit, Layer, ManagedRuntime, Queue, Stream } from 'effect';
 import { v7 as uuidv7 } from 'uuid';
-import { EngineConfig, type EngineHost } from './host/engine-config.ts';
-import * as Capabilities from './host/capabilities.ts';
-import * as Mcp from './integrations/mcp-tools.ts';
-import * as Everloot from './integrations/everloot.ts';
+import { EngineConfig } from './host/engine-config.ts';
 import { SessionModels } from './models/session-models.ts';
 import { compactHistory } from './execution/compaction.ts';
 import {
@@ -18,9 +14,9 @@ import {
 import { runTurn } from './execution/turn.ts';
 import type { Emit, EngineEvent } from './execution/turn-events.ts';
 import type { TurnInput } from './execution/turn-input.ts';
-import { SessionHistory, type HistoryError, type HistoryStore } from './session/session-history.ts';
+import * as SessionHistory from './session/session-history.ts';
+import type { HistoryError } from './session/session-history.ts';
 import { TurnToolbox } from './tools/turn-toolbox.ts';
-import { GameAccess, unavailableGameAccess } from './host/game-access.ts';
 import * as Wisp from './wisp/wisp-agent.ts';
 
 export type { ModelMessage } from 'ai';
@@ -40,7 +36,6 @@ export { stepUsage } from './execution/usage.ts';
 export type { ReplayTarget } from './session/replay.ts';
 export {
   HistoryError,
-  SessionHistory,
   type HistoryStore,
   type LoadedHistory,
   type LoggedMessage,
@@ -48,6 +43,7 @@ export {
   type StoredRow,
   type TokenUsage,
 } from './session/session-history.ts';
+export { SessionHistory };
 export {
   FORMAT as SESSION_FORMAT,
   type Compaction,
@@ -66,13 +62,6 @@ export interface EngineResult {
   error?: { message?: string };
   /** For a failed model call, how it failed (`ModelError`). */
   reason?: ModelError['reason'];
-}
-
-export interface EngineOptions extends EngineHost {
-  history: HistoryStore;
-  gameAccess?: GameAccess['Service'];
-  /** Hosts can supply their own Effect logging layer; otherwise the engine is silent. */
-  logging?: Layer.Layer<never>;
 }
 
 /** A program's events as a stream that ends with it, or fails with its error. */
@@ -101,7 +90,7 @@ export class AgentEngine extends Context.Service<
     AgentEngine,
     Effect.gen(function* () {
       const { stub } = yield* EngineConfig;
-      const history = yield* SessionHistory;
+      const history = yield* SessionHistory.Service;
       const wisp = yield* Wisp.WispAgent;
       const models = yield* SessionModels;
       const toolbox = yield* TurnToolbox;
@@ -142,35 +131,14 @@ const aborted = (signal: AbortSignal) =>
     return Effect.sync(() => signal.removeEventListener('abort', abort));
   });
 
-/**
- * The engine for a host that does not run Effect (the bridge, tests and
- * evals): promises, and turns as an event iterable plus a result. Every turn's
- * cancellation enters here, as an AbortSignal that interrupts its stream.
- */
-export function createAgentEngine(options: EngineOptions) {
-  const {
-    history,
-    gameAccess = unavailableGameAccess,
-    logging = Logger.layer([]),
-    ...host
-  } = options;
-  const runtime = ManagedRuntime.make(
-    AgentEngine.layer.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          SessionHistory.layer(history),
-          Wisp.layer,
-          SessionModels.layer,
-          TurnToolbox.layer.pipe(Layer.provide(Mcp.layer([Everloot.profile]))),
-        ),
-      ),
-      Layer.provide(Capabilities.layerFromFile(host.capabilitiesFile)),
-      Layer.provide(Layer.succeed(GameAccess, gameAccess)),
-      Layer.provide(NodeFileSystem.layer),
-      Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of(host))),
-      Layer.provideMerge(logging),
-    ),
-  );
+/** Internal agent services. The caller supplies the host implementations. */
+export const layer = AgentEngine.layer.pipe(
+  Layer.provide(Layer.mergeAll(Wisp.layer, SessionModels.layer, TurnToolbox.layer)),
+);
+
+/** Adapts a composed engine layer to the Promise and async-iterator API. */
+export function make(engine: Layer.Layer<AgentEngine>) {
+  const runtime = ManagedRuntime.make(engine);
 
   function settled(exit: Exit.Exit<unknown, unknown>, signal: AbortSignal): EngineResult {
     if (signal.aborted || (Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause))) {

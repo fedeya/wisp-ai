@@ -11,7 +11,7 @@ export interface TransportConnectionDependencies {
   integrationState: Pick<IntegrationState, 'reset'>;
   capabilitySettings: Pick<CapabilitySettings, 'publish'>;
   /** Packets from the current transport only; a replaced one is ignored. */
-  receive: (event: GameEvent) => void;
+  receive: (event: GameEvent) => Effect.Effect<void>;
   /** Persist a WoW folder the user picked once its transport has started. */
   saveWow: (wow: string) => Promise<void>;
   changed: () => void;
@@ -99,9 +99,9 @@ export const createTransportConnection = Effect.fnUntraced(function* (
       wowDirectory = wow;
       yield* connection.events.pipe(
         Stream.runForEach((event) =>
-          Effect.sync(() => {
-            if (connectionScope === scope) deps.receive(event);
-          }).pipe(Effect.catchDefect((error) => Effect.sync(() => logError(error)))),
+          Effect.suspend(() =>
+            connectionScope === scope ? deps.receive(event) : Effect.void,
+          ).pipe(Effect.catchDefect((error) => Effect.sync(() => logError(error)))),
         ),
         Effect.forkIn(scope, { uninterruptible: false }),
       );

@@ -13,15 +13,22 @@ export function readPanels(db: ApplicationOrm): Panel[] {
     .map(({ sortIndex: _sortIndex, content, ...row }) => ({ ...JSON.parse(content), ...row }));
 }
 
-export function savePanels(db: ApplicationOrm, value: Panel[]) {
-  const next = value.map(({ characterKey, id, title, updatedAt, ...content }, sortIndex) => ({
+export function encodePanel(
+  { characterKey, id, title, updatedAt, ...content }: Panel,
+  sortIndex: number,
+) {
+  return {
     characterKey,
     id,
     title,
     updatedAt,
     sortIndex,
     content: JSON.stringify(content),
-  }));
+  };
+}
+
+export function savePanels(db: ApplicationOrm, value: Panel[]) {
+  const next = value.map(encodePanel);
   syncRows(
     db.select().from(panels).all(),
     next,

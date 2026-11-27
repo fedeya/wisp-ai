@@ -6,17 +6,18 @@ import path from 'node:path';
 import { Effect } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { CapabilitySettings } from '@wisp/server/capabilities';
-import { AgentCapabilities, layerFromFile } from '@wisp/agent/capabilities';
+import * as Capabilities from '@wisp/agent/capabilities';
 import { HostError } from '@wisp/agent/engine';
 import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';
 import { localMemory } from '@wisp/agent/agent-memory';
+import * as Memory from '@wisp/agent/memory';
 import { z } from 'zod';
 import { filterWebSearch } from '@wisp/agent/model-tools';
 import * as Everloot from '@wisp/agent/everloot';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 
-const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
-  Effect.provide(layerFromFile()),
+const readCapabilities = Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
+  Effect.provide(Capabilities.layerFromFile()),
   Effect.provide(NodeFileSystem.layer),
 );
 test('settings persist, filter offered tools, and preserve child settings when an MCP is off', async () => {
@@ -61,7 +62,16 @@ test('settings persist, filter offered tools, and preserve child settings when a
     await restarted.load();
     assert.equal(restarted.enabled('tool:search_database'), false);
     await settings.set('memory:preferences', false);
-    const memory = localMemory('preferences');
+    const unexpectedAccess = Effect.die('Disabled memory should not call its host');
+    const memory = localMemory(
+      'preferences',
+      Memory.Service.of({
+        characterKey: () => unexpectedAccess,
+        read: () => unexpectedAccess,
+        update: () => unexpectedAccess,
+      }),
+      Effect.runPromise,
+    );
     assert.equal(
       await Effect.runPromise(
         Effect.flatMap(readCapabilities, (capabilities) => memory.scope('session', capabilities)),

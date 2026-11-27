@@ -23,7 +23,7 @@
     "./events": "./src/chat/events.ts",
     "./history": "./src/chat/history.ts",
     "./main": "./src/main.ts",
-    "./memory-store": "./src/agent/memory-store.ts",
+    "./memory-repository": "./src/memory/repository.ts",
     "./migrate-replies": "./src/migrations/replies.ts",
     "./model-proxy": "./src/models/model-proxy.ts",
     "./panels": "./src/panels/panel-store.ts",

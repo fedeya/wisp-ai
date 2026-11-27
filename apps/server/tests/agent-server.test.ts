@@ -4,6 +4,7 @@ import type { GameCall } from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { make as makeGameAccess } from '../src/game/agent-game-access.ts';
+import { make as makeMemoryAccess } from '../src/memory/agent-access.ts';
 import { runBridgeEffect } from './capture-logs.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 
@@ -14,6 +15,7 @@ async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
         token: 'test',
         currentTransport: () => 'addon',
         capabilitySettings: { enabled: () => true },
+        changed: () => {},
         ...deps,
       } as unknown as Parameters<typeof createAgentHandler>[0]),
     ),
@@ -50,7 +52,7 @@ test('agent server rejects bad tokens, unknown routes and oversized bodies', asy
   const chat = workingChat();
   const server = await serve({ getChats: () => [chat] });
   try {
-    const forbidden = await fetch(server.origin + '/identity', {
+    const forbidden = await fetch(server.origin + '/title', {
       method: 'POST',
       headers: { authorization: 'Bearer wrong' },
       body: '{}',
@@ -58,43 +60,49 @@ test('agent server rejects bad tokens, unknown routes and oversized bodies', asy
     expect(forbidden.status).toBe(403);
     expect(await forbidden.text()).toBe('Forbidden');
     expect((await server.post('/unknown', {})).status).toBe(404);
-    for (const route of ['/state', '/inspect', '/action']) {
+    for (const route of ['/state', '/inspect', '/action', '/identity', '/memory']) {
       expect((await server.post(route, {})).status).toBe(404);
     }
     expect(
-      (await fetch(server.origin + '/identity', { headers: { authorization: 'Bearer test' } }))
-        .status,
+      (await fetch(server.origin + '/title', { headers: { authorization: 'Bearer test' } })).status,
     ).toBe(404);
-    const large = await server.post('/identity', { agentSession: 'eve', pad: 'x'.repeat(40000) });
+    const large = await server.post('/title', { agentSession: 'eve', pad: 'x'.repeat(40000) });
     expect(large.status).toBe(503);
     expect(await large.text()).toBe('Request is too large');
-    const identity = await server.post('/identity', { agentSession: 'eve' });
-    expect(identity.status).toBe(200);
-    expect(await identity.json()).toEqual({ characterKey: 'Realm-Name' });
+    const title = await server.post('/title', { agentSession: 'eve', title: 'Plan' });
+    expect(title.status).toBe(200);
+    expect(await title.json()).toEqual({ title: 'Plan' });
   } finally {
     await server.close();
   }
 });
 
-test('agent server refuses changes from automatic suggestions and reports the reason', async () => {
+test('memory access refuses changes from automatic suggestions and rejects unknown sessions', async () => {
   const chat = workingChat(true);
-  const server = await serve({ getChats: () => [chat] });
-  try {
-    const refused = await server.post('/memory', {
-      agentSession: 'eve',
-      slot: 'character',
-      operation: 'save',
-      key: 'k',
-      text: 't',
-    });
-    expect(refused.status).toBe(503);
-    expect(await refused.text()).toMatch(/Automatic suggestions cannot change/);
-    const missing = await server.post('/identity', { agentSession: 'other' });
-    expect(missing.status).toBe(503);
-    expect(await missing.text()).toBe('No active connection for this character');
-  } finally {
-    await server.close();
-  }
+  const update = vi.fn(() => Effect.succeed([]));
+  const entry = { key: 'plan', text: 'Remember this', updatedAt: '2026-11-09' };
+  const memoryAccess = makeMemoryAccess({
+    repository: {
+      read: () => Effect.succeed([{ ...entry, extension: { source: 'legacy' } }]),
+      update,
+    },
+    chats: () => [chat],
+    currentTransport: () => 'addon',
+    capabilities: { enabled: () => true },
+    snapshot: () => Effect.succeed({ status: 'available', entries: [] }),
+    setView: () => {},
+    changed: () => {},
+  });
+  await expect(
+    Effect.runPromise(
+      memoryAccess.update('eve', 'character', { operation: 'save', key: 'k', text: 't' }),
+    ),
+  ).rejects.toThrow('Automatic suggestions cannot change');
+  expect(update).not.toHaveBeenCalled();
+  expect(await Effect.runPromise(memoryAccess.read('eve', 'character'))).toEqual([entry]);
+  await expect(Effect.runPromise(memoryAccess.characterKey('other'))).rejects.toThrow(
+    'No active connection for this character',
+  );
 });
 
 test('actions run without a character identity and add the expected character when known', async () => {
