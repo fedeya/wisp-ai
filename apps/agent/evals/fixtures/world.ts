@@ -240,3 +240,217 @@ export function dungeonStubs(): ToolStub[] {
     },
   ];
 }
+
+// The game's Death Recap for the character's latest death, in the shape
+// addon/WispAI/Combat/Combat.lua returns (view=deaths), modelled on a real
+// chat: two Venture Co. enemies at Windshear Crag, a Fireball finished it.
+const recapEvents = [
+  {
+    event: 'SPELL_DAMAGE',
+    spell: 'Fireball',
+    source: 'Venture Co. Deforester',
+    amount: 107,
+    health: 24,
+    healthPercent: 8,
+    secondsBeforeDeath: 0,
+    overkill: 83,
+    causedDeath: true,
+  },
+  {
+    event: 'SPELL_DAMAGE',
+    spell: 'Throw',
+    source: 'Venture Co. Logger',
+    amount: 58,
+    health: 82,
+    healthPercent: 29,
+    secondsBeforeDeath: 1,
+  },
+  {
+    event: 'SWING_DAMAGE',
+    spell: 'Melee',
+    source: 'Venture Co. Logger',
+    amount: 31,
+    health: 113,
+    healthPercent: 40,
+    secondsBeforeDeath: 3,
+  },
+  {
+    event: 'SPELL_DAMAGE',
+    spell: 'Fireball',
+    source: 'Venture Co. Deforester',
+    amount: 64,
+    health: 177,
+    healthPercent: 63,
+    secondsBeforeDeath: 5,
+  },
+  {
+    event: 'SWING_DAMAGE',
+    spell: 'Melee',
+    source: 'Venture Co. Logger',
+    amount: 42,
+    health: 219,
+    healthPercent: 78,
+    secondsBeforeDeath: 7,
+  },
+];
+export function combatStubs(): ToolStub[] {
+  return [
+    {
+      id: 'combat',
+      tool: 'wow__read_combat',
+      outcome: {
+        response: {
+          status: 'available',
+          data: {
+            inCombat: false,
+            dead: true,
+            view: 'deaths',
+            deathCount: 1,
+            deaths: [
+              {
+                diedAt: 1_795_318_990,
+                secondsAgo: 40,
+                zone: 'Stonetalon Mountains',
+                subzone: 'Windshear Crag',
+                level: 21,
+                recapAvailable: true,
+                maxHealth: 279,
+                killingBlow: recapEvents[0],
+                damageTaken: 302,
+                damageBySource: [
+                  { source: 'Venture Co. Deforester', ability: 'Fireball', amount: 171, hits: 2 },
+                  { source: 'Venture Co. Logger', ability: 'Melee', amount: 73, hits: 2 },
+                  { source: 'Venture Co. Logger', ability: 'Throw', amount: 58, hits: 1 },
+                ],
+                secondsCovered: 7,
+                events: recapEvents,
+              },
+            ],
+            note: "Newest death first, from the game's Death Recap. Events are newest first; the first caused the death.",
+          },
+        },
+      },
+    },
+  ];
+}
+
+// Forever PvP progression for a level 21 character that has fought in the
+// open world but never queued a battleground, in the shape the addon's pvp
+// collector (Character/Capture.lua) returns: counters only, no rules, so the
+// agent has to apply what its PvP instructions say.
+export function pvpStubs(): ToolStub[] {
+  return [
+    {
+      id: 'character-pvp',
+      tool: 'wow__query_character',
+      match: { sections: { contains: { const: 'pvp' } } },
+      outcome: {
+        response: {
+          status: 'available',
+          sections: {
+            pvp: {
+              status: 'available',
+              data: {
+                rank: {
+                  rank: 0,
+                  points: 0,
+                  nextRankPoints: 2000,
+                  maxRank: 14,
+                  weeklyCapRank: 3,
+                  seasonPoints: 0,
+                  weeklyCapPoints: 7500,
+                  weeklyCapIncrease: 2500,
+                  seasonMaxPoints: 60000,
+                },
+                season: { number: 1 },
+                honor: { name: 'Honor Points', amount: 89, max: 25000, earnedThisWeek: 89 },
+                kills: { today: 3, yesterday: 0, lifetime: 12 },
+              },
+            },
+          },
+        },
+      },
+    },
+  ];
+}
+
+// Rune of Teleportation: the catalog finds the item and Questie places its
+// vendor, Horthus, in Orgrimmar (the item's vendor comes from item sources).
+export function runeStubs(): ToolStub[] {
+  // The shape addon/WispAI/Integrations/Questie.lua returns for an NPC lookup.
+  const horthus = {
+    response: {
+      status: 'available',
+      version: 'forever',
+      source: { name: 'QuestieDB Forever', url: 'https://github.com/Questie/QuestieDB' },
+      mapId: 1454,
+      zone: 'Orgrimmar',
+      locations: [
+        {
+          npcId: 3335,
+          name: 'Horthus',
+          subName: 'Reagents',
+          mapId: 1454,
+          zone: 'Orgrimmar',
+          x: 45.4,
+          y: 56.6,
+          reference: {
+            kind: 'map',
+            mapId: 1454,
+            x: 45.4,
+            y: 56.6,
+            label: 'Horthus',
+            source: 'QuestieDB Forever',
+          },
+        },
+      ],
+      total: 1,
+      truncated: false,
+      skippedUnverifiedFrames: 0,
+      unmappedAreas: 0,
+      note: 'Database spawn positions, not live sightings or guaranteed active phases. Coordinates are percentages on the verified native map. Missing coverage is unknown, not absence. No waypoint was placed.',
+    },
+  };
+  return [
+    {
+      id: 'rune-search',
+      tool: 'thewowdb__search_database',
+      match: { query: /[Rr]une|[Rr]una/ },
+      outcome: {
+        // The shape TheWoWDB.result() in the bridge returns: the API payload
+        // under `data`, its records verified as Forever items.
+        response: {
+          status: 'available',
+          source: {
+            name: 'TheWoWDB',
+            version: 'forever',
+            apiUrl:
+              'https://thewowdb.com/api/v1/forever/item/?q=Rune+of+Teleportation&page=1&per_page=10',
+          },
+          fetchedAt: '2026-11-23T00:00:00.000Z',
+          cacheHit: false,
+          data: {
+            version: 'forever',
+            kind: 'item',
+            results: [
+              { version: 'forever', kind: 'item', id: 17031, name: 'Rune of Teleportation' },
+            ],
+          },
+          note: 'Preserve record links, attribution and build. Catalog facts are not live player state; an older build may differ. Zone IDs are not necessarily native UiMap IDs.',
+        },
+      },
+    },
+    {
+      id: 'horthus-by-name',
+      tool: 'questie__find_npc_locations',
+      match: { name: /[Hh]orthus/ },
+      outcome: horthus,
+    },
+    {
+      id: 'horthus-by-id',
+      tool: 'questie__find_npc_locations',
+      match: { npcId: { const: 3335 } },
+      outcome: horthus,
+    },
+  ];
+}

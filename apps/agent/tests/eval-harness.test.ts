@@ -1,4 +1,4 @@
-import { afterEach } from 'vitest';
+import { afterEach, expect, test } from 'vitest';
 import { describeEval, toolCalls } from 'vitest-evals';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '../src/host/agent-host.ts';
 import { avoidsTool } from '../evals/judges/tool-calls.ts';
-import { wispHarness } from '../evals/runtime/harness.ts';
+import { matches, wispHarness, type MatchRule } from '../evals/runtime/harness.ts';
+import { recommendedByName, recommendedItemIds, visibleText } from '../evals/judges/checks.ts';
 
 afterEach(() => setAgentHost(undefined));
 
@@ -134,4 +135,88 @@ describeEval('Wisp eval adapter', { harness: wispHarness }, (it) => {
       }
     },
   );
+});
+
+test('stubs match inputs by value, pattern and array element', () => {
+  const stub = (match: Record<string, MatchRule>) => ({
+    id: 's',
+    tool: 't',
+    match,
+    outcome: { response: {} },
+  });
+  expect(matches(stub({ id: { const: 7 } }), 't', { id: 7 })).toBe(true);
+  expect(matches(stub({ id: { const: 7 } }), 'other', { id: 7 })).toBe(false);
+  expect(matches(stub({ query: /[Rr]une/ }), 't', { query: 'Rune of X' })).toBe(true);
+  expect(matches(stub({ query: /[Rr]une/ }), 't', { query: 'Hood' })).toBe(false);
+  const pvp = stub({ sections: { contains: { const: 'pvp' } } });
+  expect(matches(pvp, 't', { sections: ['character', 'pvp'] })).toBe(true);
+  expect(matches(pvp, 't', { sections: ['gear'] })).toBe(false);
+});
+
+test('name checks read panel text line by line, after the reply', () => {
+  const turn = {
+    reply: 'Buy Blessed Apprentice Boots from the vendor.',
+    toolCalls: [
+      {
+        name: 'wisp__present_ui',
+        input: {
+          nodes: [
+            { id: 'a', kind: 'text', text: 'Buy Azure Silk Hood' },
+            { id: 'b', kind: 'text', text: "Skip Spidersilk Boots, you can't get them" },
+            {
+              id: 'c',
+              kind: 'table',
+              columns: [{ label: 'Item' }, { label: 'Note' }],
+              rows: [['Azure Silk Belt', 'Skip: requires Tailoring']],
+            },
+            // A button shows its label; its prompt is the player's next question.
+            {
+              id: 'd',
+              kind: 'button',
+              label: 'Other options?',
+              action: { kind: 'ask', prompt: 'Can I get Azure Silk Belt?' },
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const text = visibleText(turn);
+  expect(text.startsWith(turn.reply)).toBe(true);
+  expect(text).toContain('Other options?');
+  expect(text).not.toContain('Can I get');
+  expect(recommendedByName(text, /Azure Silk (Hood|Belt)|Spidersilk Boots/i)).toEqual([
+    'Buy Azure Silk Hood',
+  ]);
+});
+
+test('linked items count only where the answer does not turn them down', () => {
+  const turn = {
+    reply:
+      'Skip [[ref:hood]] because it is unavailable. Buy [[ref:boots]] from the Orgrimmar vendor.',
+    toolCalls: [
+      {
+        name: 'wisp__present_ui',
+        input: {
+          nodes: [{ id: 'card', kind: 'reference', reference: 'ring' }],
+          references: {
+            hood: { kind: 'item', id: 7048, label: 'Azure Silk Hood' },
+            boots: { kind: 'item', id: 3065, label: 'Blessed Apprentice Boots' },
+            ring: { kind: 'item', id: 11288, label: 'Carved Pearl Ring' },
+          },
+        },
+      },
+    ],
+  };
+  expect(visibleText(turn)).toContain('Skip Azure Silk Hood because');
+  expect(recommendedItemIds(turn).sort()).toEqual([11288, 3065].sort());
+});
+
+test('a comparison turns down only the item it is compared against', () => {
+  const crafted = /Azure Silk Hood/i;
+  const vendor = /Blessed Apprentice Boots/i;
+  const answer = 'Buy Azure Silk Hood instead of Blessed Apprentice Boots.';
+  expect(recommendedByName(answer, crafted)).toEqual([answer]);
+  expect(recommendedByName(answer, vendor)).toEqual([]);
+  expect(recommendedByName('Skip Azure Silk Hood, you cannot get it.', crafted)).toEqual([]);
 });

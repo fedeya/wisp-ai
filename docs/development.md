@@ -398,7 +398,8 @@ offline model. `pnpm --filter @wisp/agent eval` runs the gameplay evals with
 the eval bridge. Sign in once with `node apps/server/src/evals/eval-bridge.ts sign-in`.
 Each case runs one engine turn. Gates fail the test; scorers are informational.
 Pass a filename filter (e.g. `boss-loot`) or `--tagsFilter gear` to select cases.
-Set `WISP_EVAL_GRADE=1` to include the answer-quality judge in the same run.
+Set `WISP_EVAL_GRADE=1` to add the binary answer judges (one Pass/Fail verdict per
+failure mode the case lists in `evals/judges/quality-rubric.ts`) to the same run.
 Scoring an existing report is not supported.
 
 The JSON report is saved to `apps/agent/eval-replies/results.json`. To keep

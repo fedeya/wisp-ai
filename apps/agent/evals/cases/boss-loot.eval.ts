@@ -1,6 +1,7 @@
 import { createJudge, describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
 import { dungeonStubs, noLookupStubs } from '../fixtures/world.ts';
+import { keepsFormatting } from '../judges/checks.ts';
 import { qualityJudges } from '../judges/quality-scorer.ts';
 import { presentedText } from '../judges/tool-calls.ts';
 import { wispHarness } from '../runtime/harness.ts';
@@ -18,7 +19,7 @@ describeEval(
   name,
   {
     harness: wispHarness,
-    judges: [swordTraining, ...qualityJudges(name)],
+    judges: [swordTraining, keepsFormatting(), ...qualityJudges(name)],
     judgeThreshold: null,
   },
   (it) => {

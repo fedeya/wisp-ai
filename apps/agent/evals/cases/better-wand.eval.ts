@@ -1,5 +1,6 @@
 import { describeEval, toolCalls } from 'vitest-evals';
 import { fedrathStubs } from '../fixtures/fedrath.ts';
+import { keepsFormatting } from '../judges/checks.ts';
 import { qualityJudges } from '../judges/quality-scorer.ts';
 import { avoidsTool, maxToolCalls } from '../judges/tool-calls.ts';
 import { wispHarness } from '../runtime/harness.ts';
@@ -10,7 +11,12 @@ describeEval(
   name,
   {
     harness: wispHarness,
-    judges: [avoidsTool('thewowdb__search_database'), maxToolCalls(10), ...qualityJudges(name)],
+    judges: [
+      avoidsTool('thewowdb__search_database'),
+      maxToolCalls(10),
+      keepsFormatting(),
+      ...qualityJudges(name),
+    ],
     judgeThreshold: null,
   },
   (it) => {

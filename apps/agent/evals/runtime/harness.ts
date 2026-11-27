@@ -25,10 +25,16 @@ import { gameItemReadings } from '../fixtures/dungeon-loot.ts';
 const lootItems = gameItemReadings();
 const itemSources = itemSourcesFixture();
 
+/**
+ * A rule for one input field: equal to `const`, a string matching a regular
+ * expression, or an array with an element that meets `contains`.
+ */
+export type MatchRule = { const: unknown } | RegExp | { contains: MatchRule };
+
 export interface ToolStub {
   id: string;
   tool: string;
-  match?: Record<string, { const: unknown } | RegExp>;
+  match?: Record<string, MatchRule>;
   outcome: ToolStubOutcome;
 }
 
@@ -37,17 +43,22 @@ export interface WispInput {
   stubs: ToolStub[];
 }
 
-function matches(stub: ToolStub, tool: string, input: unknown) {
+function meets(value: unknown, rule: MatchRule): boolean {
+  if (rule instanceof RegExp) {
+    return typeof value === 'string' && value.search(rule) !== -1;
+  }
+  if ('contains' in rule) {
+    return Array.isArray(value) && value.some((element) => meets(element, rule.contains));
+  }
+  return isDeepStrictEqual(value, rule.const);
+}
+
+export function matches(stub: ToolStub, tool: string, input: unknown) {
   if (stub.tool !== tool) {
     return false;
   }
   const fields = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-  return Object.entries(stub.match ?? {}).every(([key, rule]) => {
-    const value = fields[key];
-    return rule instanceof RegExp
-      ? typeof value === 'string' && value.search(rule) !== -1
-      : isDeepStrictEqual(value, rule.const);
-  });
+  return Object.entries(stub.match ?? {}).every(([key, rule]) => meets(fields[key], rule));
 }
 
 export const wispHarness = createHarness<WispInput, { reply: string }>({

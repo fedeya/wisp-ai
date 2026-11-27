@@ -1,10 +1,16 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
-import { gradeAnswer, judgeModel, qualityPrompt } from '../evals/judges/quality-scorer.ts';
+import {
+  judgeAnswer,
+  judgeInstructions,
+  judgeModel,
+  qualityPrompt,
+} from '../evals/judges/quality-scorer.ts';
+import { judges } from '../evals/judges/binary-judges.ts';
 
-test('the quality grader asks the eval model for structured grades over the eval bridge', async () => {
+test('a judge asks the eval model for a structured verdict over the eval bridge', async () => {
   const requests: Record<string, any>[] = [];
-  const grades = { correctness: 2, fit: 1, usefulness: 2, honesty: 2, clarity: 1, notes: 'Brief.' };
+  const grades = { critique: 'The boots come from the search results.', result: 'Pass' };
   const server = createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) {
@@ -48,8 +54,9 @@ test('the quality grader asks the eval model for structured grades over the eval
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   try {
-    const { output } = await gradeAnswer(
+    const { output } = await judgeAnswer(
       judgeModel(origin, 'eval-token', 'gpt-5.4'),
+      judgeInstructions(judges['unsupported-claim']),
       qualityPrompt('find-upgrades', 'find upgrades for me', 'Get Spidersilk Boots.', [
         { name: 'wow__search_armor', arguments: {}, status: 'ok', result: { items: [] } },
       ]),
@@ -61,11 +68,12 @@ test('the quality grader asks the eval model for structured grades over the eval
     expect(request.authorization).toBe('Bearer eval-token');
     // Reasoning models get the grading effort, as the raw grader request did.
     expect(request.reasoning).toMatchObject({ effort: 'medium' });
-    // The judge sees the scenario's facts, the answer and what the agent read.
+    // The judge sees its criterion, the scenario's facts, the answer and what the agent read.
     const prompt = JSON.stringify(request.input);
     expect(prompt).toContain('Spidersilk Boots');
     expect(prompt).toContain('wow__search_armor');
     expect(prompt).toContain('Fedrath');
+    expect(JSON.stringify(request.instructions ?? request.input)).toContain('Criterion');
   } finally {
     server.close();
   }
