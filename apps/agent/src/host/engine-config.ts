@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Context } from 'effect';
 import type { ToolStub } from '../tools/turn-tools.ts';
 

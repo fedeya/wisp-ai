@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Context, Effect, Layer, Redacted, Schema, Stream } from 'effect';
 import type { Duration } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';

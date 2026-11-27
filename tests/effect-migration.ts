@@ -10,9 +10,8 @@ import { Schema } from 'effect';
  * source lines and skip lines that are only comments.
  */
 
-const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
+export const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 const baselineFile = fileURLToPath(new URL('./effect-migration-baseline.json', import.meta.url));
-
 /** Each workspace and the folder that holds its shipped code. */
 const workspaces = [
   { workspace: 'apps/server', folder: 'apps/server/src', recursive: true },
@@ -38,6 +37,9 @@ const codePatternNames = [
   'throwStatements',
   'tryBlocks',
 ] as const;
+
+/** Every pattern, in the order reports list them. */
+export const patternNames = [...importPatternNames, ...codePatternNames] as const;
 
 type ImportPattern = (typeof importPatternNames)[number];
 type CodePattern = (typeof codePatternNames)[number];
@@ -118,22 +120,82 @@ const countSource = (source: string, counts: Counts) => {
   }
 };
 
+/** Counts every pattern in one source file. */
+export const countFile = (file: string): Counts => {
+  const counts = emptyCounts();
+  countSource(readFileSync(file, 'utf8'), counts);
+  return counts;
+};
+
+/** The shipped source files the scoreboard counts, by workspace. */
+export const scoredFiles = (root = repositoryRoot) =>
+  workspaces.map(({ workspace, folder, recursive }) => ({
+    workspace,
+    files: sourceFiles(path.join(root, folder), recursive),
+  }));
+
 /** Counts every pattern in every workspace's shipped sources. */
 export const scoreboard = (root = repositoryRoot): Scoreboard =>
   Object.fromEntries(
-    workspaces.map(({ workspace, folder, recursive }) => {
+    scoredFiles(root).map(({ workspace, files }) => {
       const counts = emptyCounts();
-      for (const file of sourceFiles(path.join(root, folder), recursive)) {
+      for (const file of files) {
         countSource(readFileSync(file, 'utf8'), counts);
       }
       return [workspace, counts];
     }),
   );
 
+/** The patterns a file still contains, with their counts. */
+export const presentPatterns = (counts: Counts) =>
+  patternNames.flatMap((pattern) =>
+    counts[pattern] > 0 ? [{ pattern, count: counts[pattern] }] : [],
+  );
+
 const BaselineSchema = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number));
 
 export const readBaseline = (): Scoreboard =>
   Schema.decodeUnknownSync(BaselineSchema)(JSON.parse(readFileSync(baselineFile, 'utf8')));
+
+/**
+ * A migrated file says so in a comment: `// @effect-migrated`, or
+ * `// @effect-migrated allow=effectPromises: adapter around the MCP SDK` to
+ * keep patterns for a stated reason.
+ */
+const markerLine = /^\/\/ @effect-migrated\b(.*)$/m;
+const allowance = /^ allow=([\w,]+): *(\S.*)$/;
+const isPatternName = Schema.is(Schema.Literals(patternNames));
+
+export const markerFormat = '// @effect-migrated [allow=<pattern>[,<pattern>]: <reason>]';
+
+export type Marker =
+  | { readonly kind: 'unmarked' }
+  | { readonly kind: 'migrated'; readonly allow: readonly PatternName[] }
+  | { readonly kind: 'invalid'; readonly problem: string };
+
+/** Reads a source file's migration marker. */
+export const readMarker = (source: string): Marker => {
+  const marker = markerLine.exec(source);
+  if (!marker) {
+    return { kind: 'unmarked' };
+  }
+  const rest = marker[1]?.trimEnd() ?? '';
+  if (rest === '') {
+    return { kind: 'migrated', allow: [] };
+  }
+  const [, names = '', reason = ''] = allowance.exec(rest) ?? [];
+  if (reason === '') {
+    return { kind: 'invalid', problem: `its marker must read \`${markerFormat}\`` };
+  }
+  const unknown = names.split(',').filter((name) => !isPatternName(name));
+  if (unknown.length > 0) {
+    return {
+      kind: 'invalid',
+      problem: `its marker allows unknown patterns (${unknown.join(', ')}); use names from tests/effect-migration.ts`,
+    };
+  }
+  return { kind: 'migrated', allow: names.split(',').filter(isPatternName) };
+};
 
 export const writeBaseline = (board: Scoreboard = scoreboard()) =>
   writeFileSync(baselineFile, `${JSON.stringify(board, null, 2)}\n`);

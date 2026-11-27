@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect } from 'effect';
 import type { SqlOrm } from '@wisp/db/sql-database';
 import { adoptCharacterKey, saveCharacterName } from './character-keys.ts';

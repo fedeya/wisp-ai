@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Schema } from 'effect';
 
 export const MemorySlot = Schema.Literals(['preferences', 'character']);

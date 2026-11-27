@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Context } from 'effect';
 import type { Effect } from 'effect';
 import type { MemoryEdit, MemoryEntries, MemorySlot } from '../contract/memory.ts';

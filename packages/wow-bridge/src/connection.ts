@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Cause, Clock, Effect, FiberSet, Random, Schedule, Semaphore, Stream } from 'effect';
 import { decodeUplink, type Packet } from './wire/protocol.ts';
 import {
