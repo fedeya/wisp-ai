@@ -32,7 +32,7 @@
     "./secret-vault": "./src/platform/secret-vault.ts",
     "./sessions": "./src/chat/sessions.ts",
     "./simulation": "./src/integrations/simulation/simulator.ts",
-    "./thewowdb": "./src/integrations/thewowdb.ts",
+    "./thewowdb": "./src/integrations/thewowdb/index.ts",
     "./public-web-search": "./src/integrations/search/public-web-search.ts",
     "./wowhead-search": "./src/integrations/search/wowhead-search.ts",
     "./runtime": "./src/runtime.ts",

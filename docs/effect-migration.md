@@ -228,7 +228,7 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 - [x] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
 - [x] `Simulator` on `ChildProcess` and `Stream`.
 - [ ] One `HttpClient` layer; TheWoWDB, web search (Exa, public, Wowhead) and
-      model discovery on it.
+      model discovery on it. (TheWoWDB done)
 - [ ] `ChatGPTAuth`: `HttpClient`, `effect/jose`, `Redacted`, refresh on a
       `Schedule`, callback server on `HttpRouter`.
 

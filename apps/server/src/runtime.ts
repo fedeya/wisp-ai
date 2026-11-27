@@ -64,7 +64,8 @@ import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
 import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
-import { TheWoWDB } from './integrations/thewowdb.ts';
+import * as TheWoWDB from './integrations/thewowdb/index.ts';
+import * as HttpClient from './platform/http-client.ts';
 import * as Simulation from './integrations/simulation/simulator.ts';
 import * as AppConfig from './app-config.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
@@ -96,6 +97,7 @@ export const ServerLayer = Layer.mergeAll(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
     Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerDigest]),
   ),
+  TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer)),
 );
 
 export interface ServerOptions {
@@ -206,7 +208,7 @@ export const makeServer = Effect.fn('Server.make')(
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     yield* startup(() => webSearch.load());
     yield* releaseRuntimeResource(() => auth.cancel());
-    const database = new TheWoWDB();
+    const database = yield* TheWoWDB.TheWoWDB;
     const storage = yield* Layer.build(
       MemoryRepository.layer.pipe(Layer.provideMerge(Sql.layer(databaseFile))),
     );
