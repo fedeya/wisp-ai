@@ -1,3 +1,4 @@
+// @effect-migrated
 import type { ModelMessage, TextStreamPart, ToolSet } from 'ai';
 import { Predicate } from 'effect';
 import type { Assistant, AssistantPart, Native, Tool, ToolState } from './session-message.ts';

@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect, FileSystem, Path, Schedule, Stream } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
 import {

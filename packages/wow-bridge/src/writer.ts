@@ -1,3 +1,4 @@
+// @effect-migrated
 import { type Cause, Deferred, Effect, Fiber, Queue } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
 

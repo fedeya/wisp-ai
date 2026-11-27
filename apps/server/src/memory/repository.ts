@@ -1,3 +1,4 @@
+// @effect-migrated
 import { and, eq } from 'drizzle-orm';
 import { Context, DateTime, Effect, Layer, Schema } from 'effect';
 import { MemoryEntry, MemoryKey, memoryTextLimit } from '@wisp/agent/contract/memory';

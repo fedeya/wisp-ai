@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect } from 'effect';
 import type { AddonFiles } from './addon-files.ts';
 import { logTransportError } from './logging.ts';

@@ -1,3 +1,4 @@
+// @effect-migrated
 import * as NodePath from '@effect/platform-node/NodePath';
 import { Config, Context, Effect, FileSystem, Layer, Option, Path, Schedule } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';

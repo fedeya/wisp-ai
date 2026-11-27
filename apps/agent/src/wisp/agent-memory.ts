@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect } from 'effect';
 import type { CapabilitySnapshot } from '../host/capabilities.ts';
 import type * as Memory from '../host/memory.ts';

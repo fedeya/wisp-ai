@@ -18,7 +18,12 @@ simulation adapters). Effect code calls it directly.
    `Effect.tryPromise` appears only in adapters around third-party Promise APIs
    (AI SDK, MCP SDK, PostHog, impit) and maps the failure to a
    `Schema.TaggedError`. `Effect.promise` is never used for work that can fail:
-   it turns a rejection into a defect.
+   it turns a rejection into a defect. A migrated module imports nothing from
+   `zod` itself: until [phase 1](#1-schema) converts them, it takes contract
+   types and schemas from the contract module (`@wisp/agent/contract/...`,
+   `@wisp/protocol/...`). A migrated file starts with `// @effect-migrated`,
+   and `tests/effect-migrated.test.ts` fails while it still has a scoreboard
+   pattern.
 2. **Leaves before the root.** Migrate platform adapters, then domain services,
    then HTTP, then `apps/server/src/runtime.ts`. Until the root is migrated,
    `makeServer` declares the migrated services in its requirements and
@@ -195,7 +200,8 @@ phase 4.
 
 ## Phases
 
-Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
+Each item is one PR unless it says otherwise. It is ticked after that PR
+merges.
 
 ### 0. Standard and guardrails
 
@@ -329,6 +335,14 @@ with a link to itself.
   in adapters.
 - Every migrated workspace is under the restricted-imports rule.
 
+## Working in parallel
+
+Migration PRs run in parallel only when their files don't overlap. PRs that
+touch `apps/server/src/runtime.ts`, `main.ts` or `ServerLayer` go one at a
+time. The scoreboard test fails only when a count rises above the baseline, so
+PRs don't edit the baseline; it is lowered with
+`pnpm --filter @wisp/tests effect:baseline` after they merge.
+
 ## Writing a migration PR
 
 1. Read `node_modules/effect/AGENTS.md` and the matching reference in
@@ -338,7 +352,12 @@ with a link to itself.
    [target folder](#target-structure).
 3. Move its tests to `@effect/vitest`, with test layers instead of partial
    dependency objects.
-4. Record the scoreboard drop, and extend the restricted-imports rule to the
-   folder if it is clean now.
-5. Tick the item above.
+4. Start each of the module's files with `// @effect-migrated`.
+   `tests/effect-migrated.test.ts` fails while a marked file has any of the
+   scoreboard's patterns; an allowance names the patterns and a reason, such as
+   `// @effect-migrated allow=effectPromises: adapter around the MCP SDK`.
+   Check files with `pnpm --filter @wisp/tests effect:audit <files...>`, and
+   extend the restricted-imports rule to the folder if it is clean now.
+5. Leave `tests/effect-migration-baseline.json` and the checkboxes above alone:
+   both are updated after the PR merges.
 6. If you left a behavior change out, add it to [phase 9](#9-deferred-behavior-changes).

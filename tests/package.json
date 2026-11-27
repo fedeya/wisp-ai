@@ -6,7 +6,8 @@
   "scripts": {
     "test": "cd .. && vitest run --config tests/vitest.config.ts",
     "typecheck": "effect-tsgo tsc --noEmit",
-    "effect:baseline": "node update-effect-migration-baseline.ts"
+    "effect:baseline": "node update-effect-migration-baseline.ts",
+    "effect:audit": "node effect-audit.ts"
   },
   "devDependencies": {
     "@effect/platform-node": "4.1.3",

@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
 import { Digest } from 'effect/crypto';
 import type { PlatformError } from 'effect/PlatformError';

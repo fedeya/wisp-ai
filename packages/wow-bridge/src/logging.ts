@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect } from 'effect';
 
 export function logTransportError(error: unknown) {

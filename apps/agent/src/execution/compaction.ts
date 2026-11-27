@@ -1,3 +1,4 @@
+// @effect-migrated
 import { generateText, type LanguageModel } from 'ai';
 import { Effect } from 'effect';
 import { summaryMessages } from '../session/replay.ts';
