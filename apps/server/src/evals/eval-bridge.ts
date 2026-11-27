@@ -9,10 +9,11 @@ import { randomBytes } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Effect } from 'effect';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { Effect, Layer, Redacted } from 'effect';
 import { bridgeLogging } from '../logger.ts';
 import { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
-import { NativeVault } from '../platform/secret-vault.ts';
+import * as SecretVault from '../platform/secret-vault.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
 
 const dataDir = path.resolve(
@@ -112,7 +113,14 @@ await Effect.runPromise(
     }
     // The native vault keeps secrets under WISP_DATA_DIR, apart from the app's.
     process.env.WISP_DATA_DIR = dataDir;
-    const auth = yield* ChatGPTAuth.make(dataDir, new NativeVault(desktop));
+    // ChatGPTAuth still takes a Promise vault.
+    const secretVault = yield* SecretVault.SecretVault;
+    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+    const vault: SecretVault.PromiseSecretVault = {
+      read: (key) => runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
+      write: (key, value) => runPromise(secretVault.write(key, Redacted.make(value))),
+    };
+    const auth = yield* ChatGPTAuth.make(dataDir, vault);
     yield* Effect.tryPromise({
       try: async () => {
         await mkdir(dataDir, { recursive: true });
@@ -128,7 +136,14 @@ await Effect.runPromise(
       try: () => serve(auth, proxyModel),
       catch: (error) => error,
     });
-  }).pipe(Effect.provide(bridgeLogging)),
+  }).pipe(
+    Effect.provide(
+      Layer.merge(
+        SecretVault.layerHelper({ command: [desktop] }).pipe(Layer.provide(NodeServices.layer)),
+        bridgeLogging,
+      ),
+    ),
+  ),
 ).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

@@ -6,7 +6,7 @@ import {
 } from '@wisp/protocol/search';
 import { parseConnectionModel } from '@wisp/protocol/providers';
 import type { z } from 'zod';
-import type { SecretVault } from '../../platform/secret-vault.ts';
+import type { PromiseSecretVault as SecretVault } from '../../platform/secret-vault.ts';
 import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
 import { readJson, writeJson } from '../../json-file.ts';
 import { isPublicSourceUrl, searchPublicWeb } from './public-web-search.ts';

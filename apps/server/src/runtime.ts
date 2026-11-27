@@ -1,5 +1,16 @@
 import { characterLabel } from '@wisp/protocol/character-key';
-import { ConfigProvider, Context, Effect, Exit, Fiber, FileSystem, Layer, Scope } from 'effect';
+import {
+  ConfigProvider,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Redacted,
+  Scope,
+} from 'effect';
+import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
@@ -43,7 +54,7 @@ import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
-import { NativeVault, type SecretVault } from './platform/secret-vault.ts';
+import * as SecretVault from './platform/secret-vault.ts';
 import { startDesktopServer } from './api/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
@@ -72,14 +83,20 @@ const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 
 /**
  * The migrated services `makeServer` receives from its caller. Each migrated
- * adapter adds its layer here; `main.ts` and `startServerEffect` provide it.
+ * adapter adds its layer here; `main.ts` and `startServer` provide it.
  */
-export const ServerLayer = Layer.mergeAll(AppConfig.layer, NodeFileSystem.layer, NodePath.layer);
+export const ServerLayer = Layer.mergeAll(
+  AppConfig.layer,
+  wowPlatform,
+  SecretVault.layer.pipe(
+    Layer.provide(AppConfig.layer),
+    Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
+  ),
+);
 
 export interface ServerOptions {
   agentPort?: number;
   desktopPort?: number;
-  vault?: SecretVault;
   /**
    * Replaces the environment as the source of the `WISP_*` configuration in
    * `startServer`. Effect callers provide a `ConfigProvider` instead.
@@ -145,7 +162,14 @@ export const makeServer = Effect.fn('Server.make')(
     const mcpFile = mcpConfig
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
-    const vault = options.vault || new NativeVault(paths.desktopExecutable);
+    // Adapters for unmigrated consumers, which take Promise interfaces built
+    // here from migrated services. Remove each one when its consumers migrate.
+    const secretVault = yield* SecretVault.SecretVault;
+    const vault: SecretVault.PromiseSecretVault = {
+      read: (key) => runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
+      write: (key, value) => runPromise(secretVault.write(key, Redacted.make(value))),
+    };
+    // End of adapters.
     const mcpManager = McpManager.make(
       ROOT,
       {
@@ -660,7 +684,9 @@ function startup<A>(operation: () => Promise<A>) {
 }
 
 export function startServer(options: ServerOptions = {}) {
-  const server = startServerEffect(options).pipe(Effect.provide(bridgeLogging));
+  const server = startServerEffect(options).pipe(
+    Effect.provide(Layer.merge(ServerLayer, bridgeLogging)),
+  );
   return Effect.runPromise(
     options.configProvider
       ? server.pipe(Effect.provideService(ConfigProvider.ConfigProvider, options.configProvider))
@@ -693,7 +719,6 @@ export const startServerEffect = Effect.fnUntraced(function* (options: ServerOpt
           )
         : Effect.void,
     ),
-    Effect.provide(ServerLayer),
   );
   return { ...server, stop };
 });
