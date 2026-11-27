@@ -1,6 +1,33 @@
 import cloudflare from '@cloudflare/oxlint-config';
 import { defineConfig } from 'oxlint';
 
+/** Apps that only reach the server through its HTTP API. */
+const serverBoundary = { group: ['@wisp/server', '@wisp/server/*'] };
+
+// Folders with no zod, Hono or Node I/O imports must stay that way: Effect
+// Schema, HttpApi, FileSystem, ChildProcess and HttpClient replace them.
+const effectMigrationMessage = 'Use the Effect equivalent instead; see docs/effect-migration.md.';
+const effectRestrictedImports = {
+  paths: [
+    'zod',
+    'hono',
+    'fs',
+    'node:fs',
+    'child_process',
+    'node:child_process',
+    'http',
+    'node:http',
+    'https',
+    'node:https',
+  ].map((name) => ({ name, message: effectMigrationMessage })),
+  patterns: [
+    {
+      group: ['zod/*', 'hono/*', '@hono/*', 'fs/*', 'node:fs/*'],
+      message: effectMigrationMessage,
+    },
+  ],
+};
+
 export default defineConfig({
   extends: [cloudflare],
   env: cloudflare.env,
@@ -29,7 +56,7 @@ export default defineConfig({
         'no-restricted-imports': [
           'error',
           {
-            patterns: ['@wisp/server', '@wisp/server/*'],
+            patterns: [serverBoundary],
           },
         ],
       },
@@ -50,6 +77,36 @@ export default defineConfig({
             ],
           },
         ],
+      },
+    },
+    {
+      // An override replaces the rule's options, so these folders inside
+      // apps/agent and apps/desktop repeat the server boundary.
+      files: [
+        'apps/agent/src/*',
+        'apps/agent/src/session/**',
+        'apps/desktop/src/*',
+        'apps/desktop/src/components/**',
+        'apps/desktop/src/routes/**',
+      ],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            paths: effectRestrictedImports.paths,
+            patterns: [...effectRestrictedImports.patterns, serverBoundary],
+          },
+        ],
+      },
+    },
+    {
+      files: [
+        'apps/server/src/memory/**',
+        'packages/releases/src/**',
+        'packages/wow-bridge/src/**',
+      ],
+      rules: {
+        'no-restricted-imports': ['error', effectRestrictedImports],
       },
     },
     {
