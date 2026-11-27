@@ -14,3 +14,5 @@ export const databaseRequest = z.discriminatedUnion('operation', [
   databaseSearch.extend({ operation: z.literal('search') }),
   databaseEntity.extend({ operation: z.literal('get') }),
 ]);
+export type DatabaseRequestInput = z.input<typeof databaseRequest>;
+export type DatabaseRequest = z.output<typeof databaseRequest>;

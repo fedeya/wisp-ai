@@ -16,7 +16,7 @@ import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
-import type { TheWoWDB } from '../integrations/thewowdb.ts';
+import type { TheWoWDB } from '../integrations/thewowdb/index.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
@@ -38,7 +38,7 @@ interface AgentDependencies {
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
-  database: TheWoWDB;
+  database: TheWoWDB['Service'];
   simulator: Simulator['Service'];
   getChats: () => Chat[];
   currentTransport: () => string;
@@ -254,7 +254,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       const abort = signal();
       const { agentSession: _session, ...args } = data;
       return route === '/database'
-        ? database.query(databaseRequest.parse(args), abort)
+        ? // Hanging up interrupts the lookup, which cancels its request.
+          runPromise(database.query(databaseRequest.parse(args)), { signal: abort })
         : measuredWebSearch(
             wowheadQuery.parse(args),
             chat.modelSettings?.model || defaultModel(),
