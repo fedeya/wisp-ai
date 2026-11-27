@@ -222,7 +222,7 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 - [x] App configuration on `Config` (`WISP_*` variables, app paths).
 - [ ] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
       the same file formats.
-- [ ] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
+- [x] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
 - [ ] `Simulator` on `ChildProcess` and `Stream`.
 - [ ] One `HttpClient` layer; TheWoWDB, web search (Exa, public, Wowhead) and
       model discovery on it.
