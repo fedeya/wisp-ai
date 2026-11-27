@@ -1,6 +1,6 @@
 param([string]$GoPath = 'go', [string]$ProtocPath = 'protoc')
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot
+$root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $source = Join-Path $root 'node_modules\.cache\wowsims-levelsim'
 $commit = '7f9c0e733fe3f8823407566dd417aca11f833e6f'
 if (-not (Test-Path -LiteralPath (Join-Path $source '.git'))) {
@@ -14,7 +14,7 @@ if ($head -ne $commit) {
     git -C $source checkout --detach $commit
     if ($LASTEXITCODE -ne 0) { throw 'Could not select the pinned simulator revision.' }
 }
-$rankPatch = Join-Path $PSScriptRoot 'simulator-downranking.patch'
+$rankPatch = Join-Path $PSScriptRoot 'downranking.patch'
 git -C $source apply --reverse --check $rankPatch 2>$null
 if ($LASTEXITCODE -ne 0) {
     git -C $source apply --check $rankPatch
@@ -39,6 +39,6 @@ try {
     } finally { Pop-Location }
     $node = Get-Command node.exe -ErrorAction SilentlyContinue
     $nodePath = if ($node) { $node.Source } else { Join-Path $root 'runtime\node.exe' }
-    & $nodePath (Join-Path $PSScriptRoot 'simulator-metadata.ts') $source
+    & $nodePath (Join-Path $PSScriptRoot 'metadata.ts') $source
     if ($LASTEXITCODE -ne 0) { throw 'Could not refresh simulator metadata.' }
 } finally { $env:GOBIN = $oldBin }

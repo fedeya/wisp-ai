@@ -184,7 +184,7 @@ and partial-startup cleanup in temporary data directories.
 In addition to the workspace prerequisites, install Rust, Windows C++ build tools, Git, Go and protoc. Build the pinned simulator before starting the native app:
 
 ```powershell
-pwsh -File scripts/build-simulator.ps1
+pwsh -File scripts/simulator/build.ps1
 pnpm desktop:dev
 ```
 

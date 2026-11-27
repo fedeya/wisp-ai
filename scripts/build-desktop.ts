@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { stageEngine, stageTauri } from './stage-tauri.ts';
-import { buildEngine } from './build-engine.ts';
+import { buildEngine } from './engine/build.ts';
 import { createRequire } from 'node:module';
 import { writeUpdateManifest } from './update-manifest.ts';
 import {

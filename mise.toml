@@ -1,7 +1,7 @@
 # Local toolchain matching CI. Run `mise install`.
 # Node/pnpm: .github/actions/setup-workspace. Rust: dtolnay/rust-toolchain@stable
 # in check.yml and release.yml. Go/protoc: .github/actions/setup-simulator, for
-# scripts/build-simulator.ps1 (CI installs protoc from Chocolatey, unpinned).
+# scripts/simulator/build.ps1 (CI installs protoc from Chocolatey, unpinned).
 # PowerShell 7 (`pwsh`) runs the scripts/*.ps1 helpers as CI does; Windows
 # PowerShell 5.1 turns redirected native stderr into errors and stops them.
 # Lua 5.1 + LuaRocks for Busted/Luacheck are not managed here; see docs/development.md.

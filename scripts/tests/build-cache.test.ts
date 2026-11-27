@@ -11,7 +11,7 @@ import {
   saveNativeBinary,
   type NativeBuildContext,
 } from '../native-cache.ts';
-import { verifySimulator } from '../verify-simulator.ts';
+import { verifySimulator } from '../simulator/verify.ts';
 
 const context: NativeBuildContext = {
   platform: 'win32',

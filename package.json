@@ -23,7 +23,7 @@
     "desktop:dev": "turbo run dev:native --filter=@wisp/desktop",
     "build:desktop": "turbo run package:windows --filter=@wisp/desktop",
     "package:windows": "pnpm build:desktop",
-    "package:engine": "turbo run build --filter=@wisp/server... && node scripts/build-engine.ts",
+    "package:engine": "turbo run build --filter=@wisp/server... && node scripts/engine/build.ts",
     "format": "oxfmt --write && stylua --verify .busted .luacheckrc addon tests && prettier --write \"apps/desktop/src/**/*.{css,html}\"",
     "format:check": "oxfmt --check && stylua --check .busted .luacheckrc addon tests && prettier --check \"apps/desktop/src/**/*.{css,html}\"",
     "lint": "oxlint apps packages scripts tests addon/tests vitest.config.ts && pnpm lint:addon",

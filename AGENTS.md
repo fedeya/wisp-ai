@@ -57,7 +57,7 @@ Run from the repository root. Toolchain: Node 26.13.1+ and pnpm 12.18.0
 
 Native Rust checks run in CI with `cargo fmt --check` and `cargo test` against
 `apps/desktop/src-tauri/Cargo.toml`. `apps/server/tests/simulation.test.ts` needs
-the simulator binary (`scripts/build-simulator.ps1`); Linux CI excludes it.
+the simulator binary (`scripts/simulator/build.ps1`); Linux CI excludes it.
 
 ### Lua toolchain
 
