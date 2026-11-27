@@ -88,7 +88,12 @@ export const simulationInput = z
     },
   );
 
-export function simulationNeedsLiveState(input: z.input<typeof simulationInput>) {
+/** A simulation request as the agent's tool sends it, before defaults are applied. */
+export type SimulationInput = z.input<typeof simulationInput>;
+/** One step of a rotation plan, after parsing. */
+export type RotationAction = z.infer<typeof rotationAction>;
+
+export function simulationNeedsLiveState(input: SimulationInput) {
   const options = simulationInput.parse(input);
   return (
     !options.nativeRequest &&

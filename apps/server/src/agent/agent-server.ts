@@ -39,7 +39,7 @@ interface AgentDependencies {
   routineStore: RoutineStore;
   panelStore: PanelStore;
   database: TheWoWDB;
-  simulator: Simulator;
+  simulator: Simulator['Service'];
   getChats: () => Chat[];
   currentTransport: () => string;
   defaultModel: () => string;
@@ -67,6 +67,8 @@ function abortOnHangUp(c: AgentContext) {
   return abort.signal;
 }
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
+  // Runs migrated services from the Hono handlers; a hang-up interrupts the run.
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
@@ -232,7 +234,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       ) {
         throw Error('The character changed. Request a new simulation.');
       }
-      return simulator.run(snapshot, input, abort);
+      return runPromise(simulator.run(snapshot, input), { signal: abort });
     },
     1024 * 1024,
   );

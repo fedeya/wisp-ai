@@ -1,59 +1,53 @@
-import { z } from 'zod';
-import { readFile, writeFile, mkdtemp, rm, mkdir } from 'node:fs/promises';
-import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { createHash } from 'node:crypto';
-const execute = promisify(execFile);
-import {
-  simulationInput,
-  rotationAction,
-  simulationNeedsLiveState,
-} from '@wisp/agent/contract/simulation';
+import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
+import { Digest } from 'effect/crypto';
+import type { PlatformError } from 'effect/PlatformError';
+import { ChildProcess, ChildProcessSpawner } from 'effect/process';
+import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
+import type { RotationAction, SimulationInput } from '@wisp/agent/contract/simulation';
+import { AppConfig } from '../../app-config.ts';
 import { adapters } from './adapters/index.ts';
 import type { ClassMetadata } from './adapters/types.ts';
 import { equipmentSlots, replaceEquipment, type CatalogItem } from './equipment.ts';
-const reading = z.object({
-  sections: z.object({
-    character: z.object({
-      status: z.literal('available'),
-      data: z.object({
-        name: z.string(),
-        realm: z.string(),
-        game: z.literal('WoW Forever'),
-        level: z.number().int().min(1).max(60),
-        class: z.string(),
-        raceToken: z.string(),
-        build: z.string().optional(),
+const positiveInt = Schema.Int.check(Schema.isGreaterThan(0));
+const intBetween = (minimum: number, maximum: number) =>
+  Schema.Int.check(Schema.isBetween({ minimum, maximum }));
+/** The snapshot sections a simulation needs: a fresh, complete Forever character reading. */
+const Reading = Schema.Struct({
+  sections: Schema.Struct({
+    character: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({
+        name: Schema.String,
+        realm: Schema.String,
+        game: Schema.Literal('WoW Forever'),
+        level: intBetween(1, 60),
+        class: Schema.String,
+        raceToken: Schema.String,
+        build: Schema.optional(Schema.String),
       }),
     }),
-    spells: z.object({
-      status: z.literal('available'),
-      data: z.object({ known: z.array(z.object({ id: z.number().int().positive() })) }),
+    spells: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({ known: Schema.Array(Schema.Struct({ id: positiveInt })) }),
     }),
-    talents: z.object({
-      status: z.literal('available'),
-      data: z.object({
-        selected: z.array(
-          z.object({ id: z.number().int().positive(), rank: z.number().int().min(1).max(5) }),
-        ),
-        hasPendingChanges: z.boolean().optional(),
+    talents: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({
+        selected: Schema.Array(Schema.Struct({ id: positiveInt, rank: intBetween(1, 5) })),
+        hasPendingChanges: Schema.optional(Schema.Boolean),
       }),
     }),
-    gear: z.object({
-      status: z.literal('available'),
-      data: z.object({
-        items: z.array(
-          z.object({
-            slot: z.number().int().min(1).max(19),
-            id: z.number().int().positive(),
-            link: z.string(),
-          }),
+    gear: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({
+        items: Schema.Array(
+          Schema.Struct({ slot: intBetween(1, 19), id: positiveInt, link: Schema.String }),
         ),
       }),
     }),
   }),
 });
+const decodeReading = Schema.decodeUnknownOption(Reading);
 interface Manifest {
   wandIds: number[];
   name: string;
@@ -74,22 +68,132 @@ const raceMap: Record<string, string> = {
   Orc: 'RaceOrc',
   Tauren: 'RaceTauren',
 };
-export class Simulator {
-  readonly root: string;
-  readonly runtime: string;
-  constructor(root: string, runtime = path.join(root, 'runtime')) {
-    this.root = path.resolve(root);
-    this.runtime = path.resolve(runtime);
-  }
-  async prepare(
+
+type EquipmentBase = 'current' | 'empty';
+type Replacement = { slot: number; itemId: number };
+
+/** A simulation step that failed. The agent shows `message` to the model as it is. */
+export class SimulationError extends Schema.TaggedError<SimulationError>()('SimulationError', {
+  message: Schema.String,
+}) {}
+
+const failure = (message: string) => new SimulationError({ message });
+/** The message Node gave the failed file or process call, as `fs` and `execFile` reported it. */
+const platformFailure = (error: PlatformError) =>
+  failure(error.reason.cause instanceof Error ? error.reason.cause.message : error.message);
+/** Runs a throwing plain helper (contract parsing, `JSON.parse`, equipment rules). */
+const attempt = <A>(evaluate: () => A) =>
+  Effect.try({
+    try: evaluate,
+    catch: (cause) => failure(cause instanceof Error ? cause.message : 'Simulation failed'),
+  });
+
+/** The time one CLI run may take, and the budget of a whole structured request. */
+const timeLimit = '45 seconds';
+/** No new scenario starts after this, so the last one can finish inside the budget. */
+const scenarioDeadlineMillis = 40000;
+/** The most output one CLI stream may write, as `execFile`'s `maxBuffer` allowed. */
+const maxBuffer = 1024 * 1024;
+
+const make = Effect.gen(function* () {
+  const { paths } = yield* AppConfig;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const digest = yield* Digest.Digest;
+  const directory = path.resolve(paths.root, 'simulator');
+  const executable = path.resolve(paths.simulatorExecutable);
+  const runtime = path.resolve(paths.runtime);
+
+  const readJson = (file: string) =>
+    fs.readFileString(file).pipe(
+      Effect.mapError(platformFailure),
+      Effect.flatMap((text) => attempt(() => JSON.parse(text))),
+    );
+
+  const verifyExecutable = Effect.fnUntraced(function* (manifest: Manifest) {
+    const binary = yield* fs.readFile(executable).pipe(Effect.mapError(platformFailure));
+    if ((yield* digest.digestHex(Digest.sha256, binary)) !== manifest.sha256) {
+      return yield* failure('Simulator binary does not match the pinned manifest.');
+    }
+  });
+
+  /** Drains one output stream of the CLI, failing like `execFile` once it passes `maxBuffer`. */
+  const drain = (
+    stream: Stream.Stream<Uint8Array, PlatformError>,
+    name: 'stdout' | 'stderr',
+    chunks: Uint8Array[],
+  ) =>
+    stream.pipe(
+      Stream.mapError(platformFailure),
+      Stream.runForEach((chunk) => {
+        chunks.push(chunk);
+        return chunks.reduce((size, c) => size + c.length, 0) > maxBuffer
+          ? Effect.fail(failure(name + ' maxBuffer length exceeded'))
+          : Effect.void;
+      }),
+    );
+
+  /**
+   * Runs the CLI with `args`. A nonzero exit, a signal or the time limit fail
+   * with the message `execFile` gave them: the command line and its stderr.
+   */
+  const execute = (args: string[]) => {
+    const stderr: Uint8Array[] = [];
+    const commandFailed = () =>
+      failure(
+        'Command failed: ' +
+          [executable, ...args].join(' ') +
+          '\n' +
+          new TextDecoder().decode(Buffer.concat(stderr)),
+      );
+    return Effect.gen(function* () {
+      const handle = yield* spawner
+        .spawn(ChildProcess.make(executable, args, { windowsHide: true }))
+        .pipe(Effect.mapError(platformFailure));
+      const [exitCode] = yield* Effect.all(
+        [
+          handle.exitCode.pipe(Effect.mapError(commandFailed)),
+          drain(handle.stdout, 'stdout', []),
+          drain(handle.stderr, 'stderr', stderr),
+        ],
+        { concurrency: 'unbounded' },
+      );
+      if (exitCode !== ChildProcessSpawner.ExitCode(0)) {
+        return yield* commandFailed();
+      }
+    }).pipe(
+      Effect.scoped,
+      Effect.timeoutOrElse({ duration: timeLimit, orElse: () => Effect.fail(commandFailed()) }),
+    );
+  };
+
+  /** Writes `request` to a scoped temporary folder, runs the CLI on it and reads its output. */
+  const simulate = Effect.fnUntraced(function* (request: unknown) {
+    yield* fs.makeDirectory(runtime, { recursive: true }).pipe(Effect.mapError(platformFailure));
+    const temporary = yield* fs
+      .makeTempDirectoryScoped({ directory: runtime, prefix: 'simulation-' })
+      .pipe(Effect.mapError(platformFailure));
+    const infile = path.join(temporary, 'input.json'),
+      outfile = path.join(temporary, 'output.json');
+    yield* fs
+      .writeFileString(infile, JSON.stringify(request))
+      .pipe(Effect.mapError(platformFailure));
+    yield* execute(['sim', '--infile', infile, '--outfile', outfile]);
+    return yield* readJson(outfile);
+  }, Effect.scoped);
+
+  const prepare = Effect.fn('Simulator.prepare')(function* (
     snapshot: unknown,
-    input: z.input<typeof simulationInput>,
-    replacements: { slot: number; itemId: number }[] = [],
-    equipmentBase: 'current' | 'empty' = 'current',
+    input: SimulationInput,
+    replacements: Replacement[] = [],
+    equipmentBase: EquipmentBase = 'current',
   ) {
-    const parsedOptions = simulationInput.parse(input);
+    const parsedOptions = yield* attempt(() => simulationInput.parse(input));
     if ((snapshot === null || snapshot === undefined) && simulationNeedsLiveState(parsedOptions)) {
-      throw Error('A fresh snapshot is required for the requested live character or equipment.');
+      return yield* failure(
+        'A fresh snapshot is required for the requested live character or equipment.',
+      );
     }
     const fallback = parsedOptions.character
       ? {
@@ -109,17 +213,17 @@ export class Simulator {
           },
         }
       : undefined;
-    const parsed = reading.safeParse(snapshot ?? fallback);
-    if (!parsed.success) {
-      throw Error(
+    const parsed = decodeReading(snapshot ?? fallback);
+    if (Option.isNone(parsed)) {
+      return yield* failure(
         'Fresh, complete Forever character, raceToken, talents, spells and gear readings are required. Reload the addon if needed.',
       );
     }
-    const s = parsed.data.sections,
+    const s = parsed.value.sections,
       c = { ...s.character.data, ...parsedOptions.character };
     const adapter = adapters[c.class];
     if (!adapter) {
-      throw Error('No validated damage adapter for class ' + c.class + '.');
+      return yield* failure('No validated damage adapter for class ' + c.class + '.');
     }
     const options = {
       ...parsedOptions,
@@ -129,39 +233,33 @@ export class Simulator {
     const hypotheticalTalents = plan.talents !== undefined || options.character !== undefined;
     const race = raceMap[c.raceToken];
     if (!race) {
-      throw Error('The current race has not been validated for this simulator adapter.');
+      return yield* failure('The current race has not been validated for this simulator adapter.');
     }
-    const directory = path.join(this.root, 'simulator');
-    const manifest = JSON.parse(
-      await readFile(path.join(directory, 'manifest.json'), 'utf8'),
-    ) as Manifest;
-    const metadata = (
-      JSON.parse(await readFile(path.join(directory, 'classes.json'), 'utf8')) as Record<
-        string,
-        ClassMetadata
-      >
-    )[c.class];
+    const manifest: Manifest = yield* readJson(path.join(directory, 'manifest.json'));
+    const classes: Record<string, ClassMetadata> = yield* readJson(
+      path.join(directory, 'classes.json'),
+    );
+    const metadata = classes[c.class];
     if (!metadata) {
-      throw Error('Missing pinned metadata for class ' + c.class + '.');
+      return yield* failure('Missing pinned metadata for class ' + c.class + '.');
     }
     const trees = metadata.talents;
-    const catalog = new Map(
-      (JSON.parse(await readFile(path.join(directory, 'items.json'), 'utf8')) as CatalogItem[]).map(
-        (i) => [i.id, i],
+    const catalogItems: CatalogItem[] = yield* readJson(path.join(directory, 'items.json'));
+    const catalog = new Map(catalogItems.map((i) => [i.id, i]));
+    const equipped = yield* attempt(() =>
+      replaceEquipment(
+        equipmentBase === 'empty' ? [] : s.gear.data.items,
+        replacements,
+        catalog,
+        c.class,
+        c.level,
+        c.raceToken,
       ),
-    );
-    const equipped = replaceEquipment(
-      equipmentBase === 'empty' ? [] : s.gear.data.items,
-      replacements,
-      catalog,
-      c.class,
-      c.level,
-      c.raceToken,
     );
     const talentSelection = plan.talents ?? (options.character ? [] : s.talents.data.selected);
     const selected = new Map(talentSelection.map((t) => [t.id, t.rank]));
     if (selected.size !== talentSelection.length) {
-      throw Error('The talent reading contains duplicate talents.');
+      return yield* failure('The talent reading contains duplicate talents.');
     }
     const mapped = new Set<number>();
     const talentsString = trees
@@ -178,7 +276,7 @@ export class Simulator {
       )
       .join('-');
     if (mapped.size !== selected.size) {
-      throw Error(
+      return yield* failure(
         'Some selected talents are missing from the pinned Forever simulator. No talent was silently omitted.',
       );
     }
@@ -188,7 +286,7 @@ export class Simulator {
     const channels = spellIds.filter((id) =>
       (adapter.channels ?? []).some((family) => metadata.ranks[family].some((r) => r.id === id)),
     );
-    const compileAction = (a: z.infer<typeof rotationAction>, isPriority = false) => {
+    const compileAction = (a: RotationAction, isPriority = false) => {
       const vals: Record<string, unknown>[] = [];
       for (const id of channels) {
         vals.push({ not: { val: { spellIsChanneling: { spellId: { spellId: id } } } } });
@@ -267,20 +365,29 @@ export class Simulator {
     }
     priorityList.push(...plan.priority.map((a) => ({ action: compileAction(a, true) })));
     const gear = new Map(equipped.map((i) => [i.slot, i]));
-    const items = equipmentSlots.map((slot) => {
+    const items: ({ id: number; enchant: number; randomSuffix: number } | Record<never, never>)[] =
+      [];
+    for (const slot of equipmentSlots) {
       const item = gear.get(slot);
       if (!item) {
-        return {};
+        items.push({});
+        continue;
       }
       if (!catalog.has(item.id)) {
-        throw Error('Equipped item ' + item.id + ' is absent from the pinned simulator database.');
+        return yield* failure(
+          'Equipped item ' + item.id + ' is absent from the pinned simulator database.',
+        );
       }
       const fields = item.link.match(/item:([^|]+)/)?.[1].split(':');
       if (!fields || Number(fields[0]) !== item.id) {
-        throw Error('Equipped item link does not match its ID.');
+        return yield* failure('Equipped item link does not match its ID.');
       }
-      return { id: item.id, enchant: Number(fields[1] || 0), randomSuffix: Number(fields[6] || 0) };
-    });
+      items.push({
+        id: item.id,
+        enchant: Number(fields[1] || 0),
+        randomSuffix: Number(fields[6] || 0),
+      });
+    }
     const targetLevel = c.level + options.targetLevelOffset;
     const request = {
       raid: {
@@ -339,8 +446,142 @@ export class Simulator {
         equipmentBase,
       },
     };
-  }
-  async run(snapshot: unknown, input: z.input<typeof simulationInput>, signal?: AbortSignal) {
+  });
+
+  /** Runs an engine request the agent wrote itself. */
+  const executeRequest = Effect.fnUntraced(function* (request: Record<string, unknown>) {
+    const manifest: Manifest = yield* readJson(path.join(directory, 'manifest.json'));
+    yield* verifyExecutable(manifest);
+    const result = yield* simulate(request);
+    if (result.error) {
+      return yield* failure(result.error.message || 'Simulator rejected the native request.');
+    }
+    if (!Number.isInteger(result.iterationsDone) || result.iterationsDone <= 0) {
+      return yield* failure('Simulator did not complete a valid iteration count.');
+    }
+    return { result, manifest };
+  });
+
+  /** Simulates one plan on one equipment set. */
+  const simulateScenario = Effect.fnUntraced(function* (
+    snapshot: unknown,
+    input: SimulationInput,
+    replacements: Replacement[],
+    equipmentBase: EquipmentBase,
+  ) {
+    const prepared = yield* prepare(snapshot, input, replacements, equipmentBase);
+    yield* verifyExecutable(prepared.manifest);
+    const result = yield* simulate(prepared.request);
+    if (result.error) {
+      return yield* failure(result.error.message || 'Simulator rejected this character.');
+    }
+    const player = result.raidMetrics?.parties?.[0]?.players?.[0];
+    const dps = { avg: 0, stdev: 0, min: 0, max: 0, ...player?.dps };
+    if (
+      !player ||
+      !Number.isFinite(dps.avg) ||
+      dps.avg < 0 ||
+      result.iterationsDone !== prepared.scenario.iterations
+    ) {
+      return yield* failure('Simulator did not finish with a valid nonnegative DPS result.');
+    }
+    const damage = new Map<
+      string,
+      { spellId?: number; otherId?: string | number; damagePerFight: number }
+    >();
+    const casts = new Map<number, number>();
+    for (const action of player.actions ?? []) {
+      const rawSpellId = action.id?.spellId;
+      const spellId = prepared.metadata.triggerParents[rawSpellId] ?? rawSpellId;
+      const otherId = action.id?.otherId;
+      const key = spellId ? 'spell:' + spellId : 'other:' + otherId;
+      const damagePerFight =
+        (action.targets ?? []).reduce((sum: number, t: any) => sum + (t.damage ?? 0), 0) /
+        result.iterationsDone;
+      const castCount =
+        (action.targets ?? []).reduce((sum: number, t: any) => sum + (t.casts ?? 0), 0) /
+        result.iterationsDone;
+      if (rawSpellId && prepared.scenario.spellIds.includes(rawSpellId)) {
+        casts.set(rawSpellId, (casts.get(rawSpellId) ?? 0) + castCount);
+      }
+      if (damagePerFight > 0) {
+        damage.set(key, {
+          spellId,
+          otherId,
+          damagePerFight: (damage.get(key)?.damagePerFight ?? 0) + damagePerFight,
+        });
+      }
+    }
+    const damageBySpell = [...damage.values()];
+    return {
+      status: 'available' as const,
+      version: 'forever',
+      engine: {
+        name: prepared.manifest.name,
+        source: prepared.manifest.source,
+        upstream: prepared.manifest.upstream,
+        commit: prepared.manifest.commit,
+        patches: prepared.manifest.patches ?? [],
+      },
+      character: prepared.character,
+      scenario: prepared.scenario,
+      dps: {
+        average: dps.avg,
+        standardDeviation: dps.stdev,
+        standardError: dps.stdev / Math.sqrt(result.iterationsDone),
+        min: dps.min,
+        max: dps.max,
+      },
+      damageBySpell,
+      castsBySpell: [...casts].map(([spellId, castsPerFight]) => ({ spellId, castsPerFight })),
+      secondsOutOfMana: player.secondsOomAvg,
+      unusedSpellIds: prepared.scenario.spellIds.filter(
+        (id) => !(casts.get(id) || damageBySpell.some((a) => a.spellId === id)),
+      ),
+      zeroDamageSpellIds: prepared.scenario.spellIds.filter(
+        (id) => !damageBySpell.some((a) => a.spellId === id),
+      ),
+      assumptions: [
+        'Experimental WoWSims Forever levelsim fork; ' +
+          prepared.adapter.token +
+          ' damage adapter.',
+        'Stationary single target, fixed duration and seed. Opening sequence runs once, then actions follow priority, mana conditions, cooldowns and engine cast/channel timing.',
+        'Character and talents may be live or hypothetical, as reported by character.source and talentSource. Equipment starts from the live snapshot or empty, as reported by equipmentBase, then applies explicit catalog replacements without ownership requirements. No external buffs, consumables or temporary enchants. Orc Blood Fury requires an explicit action.',
+        'The engine assumes trained weapon types and level-appropriate weapon skills; current weapon training/skill is not read. Zero-damage actions may be utility cooldowns or may never be reached under the selected priorities.',
+        'No incoming attacks, movement, kiting or player latency. This is a scenario estimate, not measured combat DPS.',
+        ...prepared.adapter.assumptions,
+      ],
+    };
+  });
+
+  /** A scenario's result, or why it produced none. */
+  const runSingle = (
+    snapshot: unknown,
+    input: SimulationInput,
+    replacements: Replacement[],
+    equipmentBase: EquipmentBase,
+  ) =>
+    simulateScenario(snapshot, input, replacements, equipmentBase).pipe(
+      Effect.catchTag('SimulationError', (error) =>
+        Effect.succeed({
+          status: 'unavailable' as const,
+          version: 'forever',
+          error: error.message,
+          note: 'No valid DPS result. Do not invent a number or substitute a level-60 preset.',
+        }),
+      ),
+    );
+  type ScenarioResult = Extract<
+    Effect.Success<ReturnType<typeof runSingle>>,
+    { status: 'available' }
+  >;
+
+  /**
+   * Runs a simulation request: an engine request the agent wrote, the catalog
+   * of a class, or every plan on every equipment set within the time budget.
+   * Interrupting it stops the CLI and removes its temporary files.
+   */
+  const run = Effect.fn('Simulator.run')(function* (snapshot: unknown, input: SimulationInput) {
     const options = simulationInput.safeParse(input);
     if (!options.success) {
       return {
@@ -349,30 +590,29 @@ export class Simulator {
         error: 'Invalid simulation plans or scenario. No DPS was calculated.',
       };
     }
-    if (options.data.nativeRequest) {
-      try {
-        const { result, manifest } = await this.executeRequest(options.data.nativeRequest, signal);
-        return {
+    const nativeRequest = options.data.nativeRequest;
+    if (nativeRequest) {
+      return yield* executeRequest(nativeRequest).pipe(
+        Effect.map(({ result, manifest }) => ({
           status: 'native' as const,
           engine: manifest,
-          request: options.data.nativeRequest,
+          request: nativeRequest,
           result,
-        };
-      } catch (error) {
-        return {
-          status: 'unavailable' as const,
-          error: error instanceof Error ? error.message : 'Native simulation failed.',
-        };
-      }
+        })),
+        Effect.catchTag('SimulationError', (error) =>
+          Effect.succeed({ status: 'unavailable' as const, error: error.message }),
+        ),
+      );
     }
     if (options.data.catalogOnly) {
-      const parsed = reading.safeParse(snapshot);
       const token =
         options.data.character?.class ??
-        (parsed.success ? parsed.data.sections.character.data.class : undefined);
-      const catalog = JSON.parse(
-        await readFile(path.join(this.root, 'simulator', 'classes.json'), 'utf8'),
-      ) as Record<string, ClassMetadata>;
+        Option.getOrUndefined(
+          Option.map(decodeReading(snapshot), (r) => r.sections.character.data.class),
+        );
+      const catalog: Record<string, ClassMetadata> = yield* readJson(
+        path.join(directory, 'classes.json'),
+      );
       if (!token || !catalog[token]) {
         return {
           status: 'unavailable' as const,
@@ -387,18 +627,15 @@ export class Simulator {
         requiredTalents: adapters[token].requiredTalents ?? {},
       };
     }
-    const results: Extract<Awaited<ReturnType<Simulator['runSingle']>>, { status: 'available' }>[] =
-      [];
-    const deadline = Date.now() + 40000;
-    const budget = AbortSignal.timeout(45000);
-    const runSignal = signal ? AbortSignal.any([signal, budget]) : budget;
+    const results: ScenarioResult[] = [];
+    const deadline = (yield* Clock.currentTimeMillis) + scenarioDeadlineMillis;
     const sets = [
       ...(options.data.includeCurrentEquipment
         ? [
             {
               label: 'Current equipment',
               base: 'current' as const,
-              replacements: [] as { slot: number; itemId: number }[],
+              replacements: [] as Replacement[],
             },
           ]
         : []),
@@ -408,30 +645,29 @@ export class Simulator {
     let next = options.data.startIndex;
     const indices: number[] = [];
     const failures: { index: number; error: string }[] = [];
-    while (next < totalScenarios && !runSignal.aborted) {
-      if (Date.now() >= deadline) {
-        break;
+    // The budget interrupts the scenario in progress; the completed ones are kept.
+    yield* Effect.gen(function* () {
+      while (next < totalScenarios) {
+        if ((yield* Clock.currentTimeMillis) >= deadline) {
+          break;
+        }
+        const set = sets[Math.floor(next / options.data.plans.length)];
+        const plan = options.data.plans[next % options.data.plans.length];
+        const result = yield* runSingle(
+          snapshot,
+          { ...options.data, plans: [plan] },
+          set.replacements,
+          set.base,
+        );
+        if (result.status === 'available') {
+          results.push(result);
+          indices.push(next);
+        } else {
+          failures.push({ index: next, error: result.error });
+        }
+        next++;
       }
-      const set = sets[Math.floor(next / options.data.plans.length)];
-      const plan = options.data.plans[next % options.data.plans.length];
-      const result = await this.runSingle(
-        snapshot,
-        { ...options.data, plans: [plan] },
-        runSignal,
-        set.replacements,
-        set.base,
-      );
-      if (runSignal.aborted) {
-        break;
-      }
-      if (result.status === 'available') {
-        results.push(result);
-        indices.push(next);
-      } else {
-        failures.push({ index: next, error: result.error });
-      }
-      next++;
-    }
+    }).pipe(Effect.timeoutOption(timeLimit));
     if (!results.length) {
       return {
         status: 'unavailable' as const,
@@ -481,166 +717,18 @@ export class Simulator {
       }),
       note: 'All results use one character snapshot, duration, target, iterations and seed. nextIndex is the continuation cursor; repeat the identical request with startIndex set to it until null. Failures are reported per scenario without discarding completed results. Percentage deltas are null for zero or absent baselines. Equipment deltas compare the SAME plan against current equipment and are null when current equipment is excluded; relativeToFirstPercent compares to the first result. Sets based on empty inherit no live equipment. Items need not be owned. Small differences require attention to sampling variation. Replacements are unenchanted base catalog items, with no random suffix. These comparisons do not prove a globally optimal rotation or build.',
     };
-  }
-  private async executeRequest(request: Record<string, unknown>, signal?: AbortSignal) {
-    const directory = path.join(this.root, 'simulator');
-    const manifest = JSON.parse(
-      await readFile(path.join(directory, 'manifest.json'), 'utf8'),
-    ) as Manifest;
-    const executable = path.join(directory, 'wowsimcli.exe');
-    if (
-      createHash('sha256')
-        .update(await readFile(executable))
-        .digest('hex') !== manifest.sha256
-    ) {
-      throw Error('Simulator binary does not match the pinned manifest.');
-    }
-    await mkdir(this.runtime, { recursive: true });
-    const temporary = await mkdtemp(path.join(this.runtime, 'simulation-'));
-    try {
-      const infile = path.join(temporary, 'input.json'),
-        outfile = path.join(temporary, 'output.json');
-      await writeFile(infile, JSON.stringify(request));
-      await execute(executable, ['sim', '--infile', infile, '--outfile', outfile], {
-        windowsHide: true,
-        timeout: 45000,
-        maxBuffer: 1024 * 1024,
-        signal,
-      });
-      const result = JSON.parse(await readFile(outfile, 'utf8'));
-      if (result.error) {
-        throw Error(result.error.message || 'Simulator rejected the native request.');
-      }
-      if (!Number.isInteger(result.iterationsDone) || result.iterationsDone <= 0) {
-        throw Error('Simulator did not complete a valid iteration count.');
-      }
-      return { result, manifest };
-    } finally {
-      if (temporary.startsWith(this.runtime + path.sep)) {
-        await rm(temporary, { recursive: true, force: true });
-      }
-    }
-  }
-  private async runSingle(
-    snapshot: unknown,
-    input: z.input<typeof simulationInput>,
-    signal?: AbortSignal,
-    replacements: { slot: number; itemId: number }[] = [],
-    equipmentBase: 'current' | 'empty' = 'current',
-  ) {
-    let temporary: string | undefined;
-    try {
-      const prepared = await this.prepare(snapshot, input, replacements, equipmentBase);
-      const executable = path.join(this.root, 'simulator', 'wowsimcli.exe');
-      const hash = createHash('sha256')
-        .update(await readFile(executable))
-        .digest('hex');
-      if (hash !== prepared.manifest.sha256) {
-        throw Error('Simulator binary does not match the pinned manifest.');
-      }
-      await mkdir(this.runtime, { recursive: true });
-      temporary = await mkdtemp(path.join(this.runtime, 'simulation-'));
-      const infile = path.join(temporary, 'input.json'),
-        outfile = path.join(temporary, 'output.json');
-      await writeFile(infile, JSON.stringify(prepared.request));
-      await execute(executable, ['sim', '--infile', infile, '--outfile', outfile], {
-        windowsHide: true,
-        timeout: 45000,
-        maxBuffer: 1024 * 1024,
-        signal,
-      });
-      const result = JSON.parse(await readFile(outfile, 'utf8'));
-      if (result.error) {
-        throw Error(result.error.message || 'Simulator rejected this character.');
-      }
-      const player = result.raidMetrics?.parties?.[0]?.players?.[0];
-      const dps = { avg: 0, stdev: 0, min: 0, max: 0, ...player?.dps };
-      if (
-        !player ||
-        !Number.isFinite(dps.avg) ||
-        dps.avg < 0 ||
-        result.iterationsDone !== prepared.scenario.iterations
-      ) {
-        throw Error('Simulator did not finish with a valid nonnegative DPS result.');
-      }
-      const damage = new Map<
-        string,
-        { spellId?: number; otherId?: string | number; damagePerFight: number }
-      >();
-      const casts = new Map<number, number>();
-      for (const action of player.actions ?? []) {
-        const rawSpellId = action.id?.spellId;
-        const spellId = prepared.metadata.triggerParents[rawSpellId] ?? rawSpellId;
-        const otherId = action.id?.otherId;
-        const key = spellId ? 'spell:' + spellId : 'other:' + otherId;
-        const damagePerFight =
-          (action.targets ?? []).reduce((sum: number, t: any) => sum + (t.damage ?? 0), 0) /
-          result.iterationsDone;
-        const castCount =
-          (action.targets ?? []).reduce((sum: number, t: any) => sum + (t.casts ?? 0), 0) /
-          result.iterationsDone;
-        if (rawSpellId && prepared.scenario.spellIds.includes(rawSpellId)) {
-          casts.set(rawSpellId, (casts.get(rawSpellId) ?? 0) + castCount);
-        }
-        if (damagePerFight > 0) {
-          damage.set(key, {
-            spellId,
-            otherId,
-            damagePerFight: (damage.get(key)?.damagePerFight ?? 0) + damagePerFight,
-          });
-        }
-      }
-      const damageBySpell = [...damage.values()];
-      return {
-        status: 'available' as const,
-        version: 'forever',
-        engine: {
-          name: prepared.manifest.name,
-          source: prepared.manifest.source,
-          upstream: prepared.manifest.upstream,
-          commit: prepared.manifest.commit,
-          patches: prepared.manifest.patches ?? [],
-        },
-        character: prepared.character,
-        scenario: prepared.scenario,
-        dps: {
-          average: dps.avg,
-          standardDeviation: dps.stdev,
-          standardError: dps.stdev / Math.sqrt(result.iterationsDone),
-          min: dps.min,
-          max: dps.max,
-        },
-        damageBySpell,
-        castsBySpell: [...casts].map(([spellId, castsPerFight]) => ({ spellId, castsPerFight })),
-        secondsOutOfMana: player.secondsOomAvg,
-        unusedSpellIds: prepared.scenario.spellIds.filter(
-          (id) => !(casts.get(id) || damageBySpell.some((a) => a.spellId === id)),
-        ),
-        zeroDamageSpellIds: prepared.scenario.spellIds.filter(
-          (id) => !damageBySpell.some((a) => a.spellId === id),
-        ),
-        assumptions: [
-          'Experimental WoWSims Forever levelsim fork; ' +
-            prepared.adapter.token +
-            ' damage adapter.',
-          'Stationary single target, fixed duration and seed. Opening sequence runs once, then actions follow priority, mana conditions, cooldowns and engine cast/channel timing.',
-          'Character and talents may be live or hypothetical, as reported by character.source and talentSource. Equipment starts from the live snapshot or empty, as reported by equipmentBase, then applies explicit catalog replacements without ownership requirements. No external buffs, consumables or temporary enchants. Orc Blood Fury requires an explicit action.',
-          'The engine assumes trained weapon types and level-appropriate weapon skills; current weapon training/skill is not read. Zero-damage actions may be utility cooldowns or may never be reached under the selected priorities.',
-          'No incoming attacks, movement, kiting or player latency. This is a scenario estimate, not measured combat DPS.',
-          ...prepared.adapter.assumptions,
-        ],
-      };
-    } catch (error) {
-      return {
-        status: 'unavailable' as const,
-        version: 'forever',
-        error: error instanceof Error ? error.message : 'Simulation failed',
-        note: 'No valid DPS result. Do not invent a number or substitute a level-60 preset.',
-      };
-    } finally {
-      if (temporary && temporary.startsWith(this.runtime + path.sep)) {
-        await rm(temporary, { recursive: true, force: true });
-      }
-    }
-  }
-}
+  });
+
+  /** Whether the pinned CLI is installed. */
+  const available = fs.exists(executable).pipe(Effect.orElseSucceed(() => false));
+
+  return { prepare, run, available };
+});
+
+/** The pinned WoWSims Forever CLI: prepares engine requests and runs them. */
+export class Simulator extends Context.Service<Simulator>()('@wisp/server/Simulator', {
+  make,
+}) {}
+
+/** Requires `AppConfig`, a `ChildProcessSpawner`, `FileSystem`, `Path` and `Digest`. */
+export const layer = Layer.effect(Simulator, make);
