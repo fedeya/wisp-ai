@@ -12,7 +12,7 @@ fonts, network requests, or external services are used at runtime.
 Rebuild on Windows with PowerShell and System.Drawing:
   Download https://codeload.github.com/jdecked/twemoji/tar.gz/refs/tags/v17.0.3
   Archive SHA256: a0855654b633045ae2337537e77f1bb4361162f7fcd910e613eaab1d6d9c5fca
-  Extract and run scripts/build-emoji.ps1 -Source <extracted directory>
+  Extract and run scripts/textures/emoji.ps1 -Source <extracted directory>
 
 EmojiData.lua maps complete Unicode sequences to atlas slots. Emoji.lua
 groups ZWJ sequences, modifiers, keycaps, regional flags, tag flags and

@@ -1,6 +1,6 @@
 # Convert the shared brand asset to an uncompressed, 32-bit TGA for WoW.
 Add-Type -AssemblyName System.Drawing
-$root = Split-Path $PSScriptRoot -Parent
+$root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $source = [System.Drawing.Bitmap]::FromFile((Join-Path $root 'assets/wisp.png'))
 $size = 128
 $bitmap = [System.Drawing.Bitmap]::new($size, $size)

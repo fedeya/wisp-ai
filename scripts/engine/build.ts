@@ -10,7 +10,7 @@ export async function buildEngine() {
   if (process.platform !== 'win32' || process.arch !== 'x64') {
     throw Error('Engine packaging currently supports Windows x64.');
   }
-  const root = fileURLToPath(new URL('../', import.meta.url));
+  const root = fileURLToPath(new URL('../../', import.meta.url));
   const require = createRequire(import.meta.url);
   const directory = path.join(root, 'dist/engine-build');
   if (directory !== path.resolve(root, 'dist', 'engine-build')) {
@@ -51,7 +51,7 @@ export async function buildEngine() {
       install: 'apps/server/scripts/install.ts',
       'migrate-desktop': 'apps/server/scripts/migrate-desktop.ts',
       // The self-test reads the agent's content with the code the bridge uses.
-      'agent-content': 'scripts/engine-content.ts',
+      'agent-content': 'scripts/engine/content.ts',
     },
     outdir: directory,
     outExtension: { '.js': '.mjs' },
@@ -64,7 +64,7 @@ export async function buildEngine() {
       js: "import { createRequire as __wispCreateRequire } from 'node:module'; const require = __wispCreateRequire(import.meta.url);",
     },
   });
-  await cp(path.join(root, 'scripts/engine-entry.mjs'), path.join(directory, 'engine.mjs'));
+  await cp(path.join(root, 'scripts/engine/entry.mjs'), path.join(directory, 'engine.mjs'));
   await cp(path.join(root, 'packages/db/src/migrations'), path.join(directory, 'migrations'), {
     recursive: true,
   });

@@ -2,8 +2,8 @@ import { readFile, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { adapters } from '../apps/server/src/integrations/simulation/adapters/index.ts';
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import { adapters } from '../../apps/server/src/integrations/simulation/adapters/index.ts';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const source = path.resolve(process.argv[2]);
 const output = path.join(root, 'simulator');
 const manifest = JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8'));
@@ -139,9 +139,9 @@ await writeFile(
 manifest.supportedClasses = Object.keys(adapters);
 manifest.patches = [
   {
-    file: 'scripts/simulator-downranking.patch',
+    file: 'scripts/simulator/downranking.patch',
     sha256: createHash('sha256')
-      .update(await readFile(path.join(root, 'scripts/simulator-downranking.patch')))
+      .update(await readFile(path.join(root, 'scripts/simulator/downranking.patch')))
       .digest('hex'),
   },
 ];

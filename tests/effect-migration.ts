@@ -23,7 +23,7 @@ const workspaces = [
   { workspace: 'packages/db', folder: 'packages/db/src', recursive: true },
   { workspace: 'packages/game-data', folder: 'packages/game-data/src', recursive: true },
   { workspace: 'packages/releases', folder: 'packages/releases/src', recursive: true },
-  { workspace: 'scripts', folder: 'scripts', recursive: false },
+  { workspace: 'scripts', folder: 'scripts', recursive: true },
 ] as const;
 
 const importPatternNames = ['zodImports', 'honoImports', 'nodeIoImports'] as const;

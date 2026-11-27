@@ -584,7 +584,7 @@ end
 --- radius: three fill strips and four corner discs, a one-pixel edge between
 --- four corner arcs. Returns a handle whose SetColors(bg, border) repaints it.
 --- The corners are CORNER_RADIUS physical pixels, drawn 1:1 from 16 px
---- textures (see scripts/generate-icons.ts): the client makes no mipmaps, so a
+--- textures (see scripts/textures/icons.ts): the client makes no mipmaps, so a
 --- texture shrunk a lot would leave jagged steps along the curve.
 local CORNER_TEXTURE, CORNER_RADIUS = 16, 10
 local CROP = 1 - CORNER_RADIUS / CORNER_TEXTURE -- where the quarter circle starts
