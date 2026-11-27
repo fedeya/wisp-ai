@@ -1,9 +1,28 @@
-// Synthetic public-API fixtures executed through the real Lua adapters, never player data.
+import { expect, it } from '@effect/vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { Effect, Schema } from 'effect';
+import { inspectionResults } from '@wisp/agent/game-access';
+
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
-export function addonSmokeFixtures(root: string) {
+
+const addon = new URL('../../addon/WispAI/', import.meta.url);
+
+/** What the addon reports and answers, as the bridge receives it from the game. */
+const addonReply = Schema.Struct({
+  report: Schema.Unknown,
+  inspections: Schema.Struct({
+    questie_quest: inspectionResults.questie_quest,
+    questie_chain: inspectionResults.questie_chain,
+    object_locations: inspectionResults.object_locations,
+    stored_item: inspectionResults.stored_item,
+    item_prices: inspectionResults.item_prices,
+  }),
+});
+
+// Synthetic public-API fixtures run through the real Lua adapters, never player data.
+function inspectAddon(): unknown {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
   const run = (code: string) => {
@@ -43,9 +62,7 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
     'Integrations/PolestarGuides.lua',
     'Integrations/Polestar.lua',
   ]) {
-    run(
-      `assert(load(${JSON.stringify(readFileSync(root + '/addon/WispAI/' + file, 'utf8'))}))('WispAI',ns)`,
-    );
+    run(`assert(load(${JSON.stringify(readFileSync(new URL(file, addon), 'utf8'))}))('WispAI',ns)`);
   }
   run(`RESULT={ report=ns.Integrations.IntegrationReport(), inspections={
     questie_quest=ns.Integrations.InspectIntegration({kind='questie_quest',args={questId=600001}}),
@@ -72,7 +89,11 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
       rows: [string | number, unknown][] = [];
     lua.lua_pushnil(L);
     while (lua.lua_next(L, absolute)) {
-      rows.push([value(-2) as string | number, value(-1)]);
+      const key = value(-2);
+      if (typeof key !== 'string' && typeof key !== 'number') {
+        throw Error('Unexpected Lua table key.');
+      }
+      rows.push([key, value(-1)]);
       lua.lua_pop(L, 1);
     }
     // WoW SerializeJSON also represents an empty Lua table as an array.
@@ -82,8 +103,31 @@ Advice = {}}; function time()return 123 end; function GetRealmName()return 'Fixt
     return Object.fromEntries(rows);
   }
   lua.lua_getglobal(L, to_luastring('RESULT'));
-  return value(-1) as {
-    report: unknown;
-    inspections: Record<string, { status: string; data?: unknown }>;
-  };
+  return value(-1);
 }
+
+// The Busted specs check each adapter in Lua; this checks that what the adapters
+// answer is what the agent's inspection schemas accept.
+it.effect('the real integration adapters answer in the shape the agent decodes', () =>
+  Effect.gen(function* () {
+    const { report, inspections } = yield* Schema.decodeUnknownEffect(addonReply)(inspectAddon());
+    expect(report).toMatchObject({
+      questie: { quests: true, objects: true },
+      syndicator: { status: 'ready' },
+      auctionator: { status: 'ready' },
+      polestar: { status: 'missing', guides: false },
+    });
+    for (const inspection of Object.values(inspections)) {
+      expect(inspection.status).toBe('available');
+    }
+    expect(inspections.stored_item).toMatchObject({ data: { totalCached: 10 } });
+    expect(inspections.item_prices).toMatchObject({
+      data: {
+        prices: [
+          { itemId: 123, status: 'available', unitPriceCopper: 450, ageDays: 3, ageKnown: true },
+          { itemId: 999, status: 'unknown', ageKnown: false },
+        ],
+      },
+    });
+  }),
+);
