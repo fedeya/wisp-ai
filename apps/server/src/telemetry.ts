@@ -121,7 +121,7 @@ export class UsageTelemetry {
   constructor(dataRoot: string, version: string, options: TelemetryOptions = {}) {
     this.dataRoot = dataRoot;
     this.version = version;
-    this.release = options.release ?? process.env.WISP_TELEMETRY_RELEASE === '1';
+    this.release = options.release ?? false;
     this.isCustomMcpConnection = options.isCustomMcpConnection;
     this.enabledFeatures = options.enabledFeatures;
   }

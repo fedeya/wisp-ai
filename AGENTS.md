@@ -158,7 +158,7 @@ clearly, for example `Capabilities.layerFromFile(...)`. Consumers can use
   imports). Each domain keeps its own table access next to it (`chat/chat-record.ts`,
   `routines/routine-record.ts`); the schema and connection live in `@wisp/db`.
   Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,
-  `logger.ts`, `app-paths.ts`, `application-database.ts`) stay at the root. Package export names do not
+  `logger.ts`, `app-config.ts`, `application-database.ts`) stay at the root. Package export names do not
   follow file moves.
 - **Shared schemas:** shapes are zod schemas owned by the workspace that defines
   the contract. The desktop–bridge contract is in `packages/protocol/src/`

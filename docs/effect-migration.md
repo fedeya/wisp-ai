@@ -23,7 +23,9 @@ simulation adapters). Effect code calls it directly.
    then HTTP, then `apps/server/src/runtime.ts`. Until the root is migrated,
    `makeServer` declares the migrated services in its requirements and
    `main.ts` provides them with one layer; no `Layer.build` and `Context.get`
-   inside the root.
+   inside the root. Unmigrated consumers keep their current interface, and
+   `runtime.ts` adapts a migrated service for them in one marked block until
+   they migrate.
 3. **Services by default.** Anything with dependencies, state or a lifecycle is
    a `Context.Service` with a layer (`Layer.effect` returning `Service.of(...)`)
    and `Effect.fn('Service.operation')` methods. Factories that take a bag of
@@ -107,7 +109,7 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 
 ### 2. Platform adapters
 
-- [ ] App configuration on `Config` (`WISP_*` variables, app paths).
+- [x] App configuration on `Config` (`WISP_*` variables, app paths).
 - [ ] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
       the same file formats.
 - [ ] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
