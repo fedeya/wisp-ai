@@ -74,7 +74,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
         capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
         isStopping: () => false,
         isReady: () => true,
-        changed: () => settled.resolve(),
+        invalidateAddonView: () => settled.resolve(),
         run,
       }),
     );
@@ -166,7 +166,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
         capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
         isStopping: () => false,
         isReady: () => true,
-        changed: () => settledA.resolve(),
+        invalidateAddonView: () => settledA.resolve(),
         run: async (chat) => {
           selected.push(chat.routineId!);
           active++;

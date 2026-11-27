@@ -15,7 +15,7 @@ import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation'
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
+import type { PanelRepository } from '../panels/repository.ts';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
@@ -37,14 +37,15 @@ interface AgentDependencies {
   webSearch: WowheadSearch;
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
-  panelStore: PanelStore;
+  panelRepository: Pick<PanelRepository['Service'], 'get' | 'list' | 'update'>;
   database: TheWoWDB;
   simulator: Simulator;
   getChats: () => Chat[];
   currentTransport: () => string;
   defaultModel: () => string;
   readSimulationCharacter: (chat?: string) => Promise<unknown>;
-  changed: () => void;
+  invalidateAddonView: () => void;
+  saveChats: () => void;
   presentReply: (
     chat: Chat,
     callId: string,
@@ -67,6 +68,7 @@ function abortOnHangUp(c: AgentContext) {
   return abort.signal;
 }
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
@@ -74,14 +76,15 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     webSearch,
     capabilitySettings,
     routineStore,
-    panelStore,
+    panelRepository,
     database,
     simulator,
     getChats,
     currentTransport,
     defaultModel,
     readSimulationCharacter,
-    changed,
+    invalidateAddonView,
+    saveChats,
   } = deps;
   const expected = Buffer.from('Bearer ' + token);
   const app = new Hono<{ Bindings: HttpBindings }>();
@@ -299,10 +302,17 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       throw Error('A fresh character identity is required');
     }
     const input = routineInput.parse(data.input);
-    const routines = ['save', 'pause', 'resume', 'remove'].includes(input.operation)
-      ? await routineStore.mutate(chat.characterKey, input, chat.id)
-      : routineStore.list(chat.characterKey);
-    changed();
+    if (
+      input.operation === 'save' ||
+      input.operation === 'pause' ||
+      input.operation === 'resume' ||
+      input.operation === 'remove'
+    ) {
+      const routines = await routineStore.mutate(chat.characterKey, input, chat.id);
+      invalidateAddonView();
+      return { routines };
+    }
+    const routines = routineStore.list(chat.characterKey);
     return input.operation === 'catalog'
       ? {
           events: routineEvents,
@@ -332,23 +342,29 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       throw Error('A fresh character identity is required');
     }
     const input = panelInput.parse(data.input);
-    const panels =
-      input.operation === 'save' || input.operation === 'remove'
-        ? await panelStore.mutate(chat.characterKey, input)
-        : panelStore.list(chat.characterKey);
-    changed();
-    return input.operation === 'get'
-      ? { panel: panels.find((p) => p.id === input.id) || null }
-      : input.operation === 'list'
-        ? {
-            panels: panels.map((p) => ({
-              id: p.id,
-              title: p.title,
-              bindings: p.bindings,
-              updatedAt: p.updatedAt,
+    const characterKey = chat.characterKey;
+    return runPromise(
+      Effect.gen(function* () {
+        if (input.operation === 'get') {
+          const panel = yield* panelRepository.get(characterKey, input.id);
+          return { panel: panel ?? null };
+        }
+        if (input.operation === 'list') {
+          const panels = yield* panelRepository.list(characterKey);
+          return {
+            panels: panels.map(({ id, title, bindings, updatedAt }) => ({
+              id,
+              title,
+              bindings,
+              updatedAt,
             })),
-          }
-        : { panels };
+          };
+        }
+        const panels = yield* panelRepository.update(characterKey, input);
+        invalidateAddonView();
+        return { panels };
+      }),
+    );
   });
 
   tool('/title', async ({ raw, chat }) => {
@@ -362,7 +378,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     }
     chat.title = title;
     chat.titleGenerated = true;
-    changed();
+    saveChats();
+    invalidateAddonView();
     return { title };
   });
 

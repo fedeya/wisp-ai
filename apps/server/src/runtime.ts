@@ -6,7 +6,11 @@ import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
-import { createPacketReceiver } from './game/packet-receiver.ts';
+import * as PacketReceiver from './game/packet-receiver.ts';
+import * as InlineDiagnostics from './game/inline-diagnostics.ts';
+import * as AddonMemory from './memory/addon-access.ts';
+import * as AddonRoutines from './routines/addon-events.ts';
+import * as AddonConversations from './chat/addon-conversations.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
 import { readCharacterNames } from './chat/character-keys.ts';
 import { createSessionState } from './session-state.ts';
@@ -41,7 +45,7 @@ import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
-import { PanelStore } from './panels/panel-store.ts';
+import * as Panels from './panels/repository.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
 import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
@@ -173,29 +177,14 @@ export const makeServer = Effect.fn('Server.make')(
     yield* releaseRuntimeResource(() => auth.cancel());
     const database = new TheWoWDB();
     const storage = yield* Layer.build(
-      MemoryRepository.layer.pipe(Layer.provideMerge(Sql.layer(databaseFile))),
+      Layer.merge(MemoryRepository.layer, Panels.layer).pipe(
+        Layer.provideMerge(Sql.layer(databaseFile)),
+      ),
     );
     const { db: sql } = Context.get(storage, Sql.SqlDatabase);
     yield* importProductData(databaseFile, sql);
     const memoryRepository = Context.get(storage, MemoryRepository.MemoryRepository);
-    const memorySnapshot = Effect.fn('Memory.snapshot')(function* (identity: string | undefined) {
-      const preferences = yield* memoryRepository.read({
-        slot: 'preferences',
-        owner: 'local-player',
-      });
-      const character = identity
-        ? yield* memoryRepository.read({ slot: 'character', owner: identity })
-        : [];
-      return {
-        status: 'available',
-        entries: [
-          ...preferences.map((entry) => ({ ...entry, slot: 'preferences' })),
-          ...character.map((entry) => ({ ...entry, slot: 'character' })),
-        ],
-      };
-    });
-    const panelStore = new PanelStore(applicationDatabase);
-    yield* startup(() => panelStore.load());
+    const panelRepository = Context.get(storage, Panels.PanelRepository);
     const routineStore = new RoutineStore(applicationDatabase);
     yield* startup(() => routineStore.load());
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
@@ -228,7 +217,11 @@ export const makeServer = Effect.fn('Server.make')(
         await chatStore.close();
       }
     });
-    const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
+    const refreshModelCatalog = createModelCatalogRefresh({
+      state,
+      connections,
+      invalidateAddonView: () => publisher.invalidate(),
+    });
     // The default follows the providers the player connected, not one vendor's model.
     const defaultModel = () => resolveDefaultModel(config.get().model, state.modelCatalog);
     if (connections.hasProvider()) void refreshModelCatalog();
@@ -242,7 +235,7 @@ export const makeServer = Effect.fn('Server.make')(
     const publisher: SnapshotPublisher = yield* createSnapshotPublisher({
       state,
       transport: () => transport.current(),
-      inputs: () => {
+      inputs: Effect.fnUntraced(function* () {
         const character = state.currentCharacterKey;
         return {
           connected: engineReady,
@@ -252,7 +245,7 @@ export const makeServer = Effect.fn('Server.make')(
           contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
             ?.contextWindow,
           defaultModel: defaultModel(),
-          panels: character ? panelStore.list(character) : [],
+          panels: character ? yield* panelRepository.list(character) : [],
           routines: character ? routineStore.list(character) : [],
           routineRuns: character
             ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
@@ -261,9 +254,10 @@ export const makeServer = Effect.fn('Server.make')(
           capabilities: capabilitySettings.snapshot(),
           features: features.values(),
         };
-      },
+      }),
     });
-    yield* releaseRuntimeResource(() => publisher.stop());
+    const invalidateAddonView = publisher.invalidate;
+    yield* Effect.addFinalizer(() => publisher.stop);
     const bridge = Context.get(
       yield* Layer.build(WowBridge.layer.pipe(Layer.provide(wowPlatform))),
       WowBridge.WowBridge,
@@ -276,11 +270,11 @@ export const makeServer = Effect.fn('Server.make')(
       chats: () => state.chats,
       currentTransport: () => state.activeTransport,
       capabilities: capabilitySettings,
-      snapshot: memorySnapshot,
+      snapshot: (identity) => AddonMemory.snapshot(memoryRepository, identity),
       setView: (view) => {
         state.memoryView = view;
+        invalidateAddonView();
       },
-      changed,
     });
     let engineReady = false;
     const gameAccess = AgentGameAccess.make({
@@ -326,8 +320,7 @@ export const makeServer = Effect.fn('Server.make')(
         }),
       );
     }
-    function changed() {
-      publisher.changed();
+    function saveChats() {
       if (!shutdownRequested) {
         chatStore.schedule(() => state.chats);
       }
@@ -345,7 +338,7 @@ export const makeServer = Effect.fn('Server.make')(
             ),
           ),
         );
-      changed();
+      invalidateAddonView();
     }
     const run = yield* createTurnRunner({
       telemetry,
@@ -354,7 +347,8 @@ export const makeServer = Effect.fn('Server.make')(
       engine,
       models: connections,
       capabilitySettings,
-      changed,
+      invalidateAddonView,
+      saveChats,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
       defaultModel,
@@ -374,38 +368,53 @@ export const makeServer = Effect.fn('Server.make')(
       routineStore,
       capabilitySettings,
       run,
-      changed,
+      invalidateAddonView,
       isStopping: () => shutdownRequested,
       isReady: () => engineReady,
     });
     yield* releaseRuntimeResource(stopRoutineScheduler);
     const adoptCharacter = createCharacterAdoption({
       db: sql,
-      panelStore,
       chats: () => state.chats,
-      changed,
+      saveChats,
     });
-    const receivePacket = yield* createPacketReceiver({
+    const receiverLayer = PacketReceiver.layer({
       telemetry,
       state,
-      engine,
-      request: (call) => transport.request(call),
       integrationState,
       capabilitySettings,
-      models: connections,
-      routineStore,
-      panelStore,
-      memoryRepository,
+      routines: AddonRoutines.make({
+        state,
+        store: routineStore,
+        enabled: () => capabilitySettings.enabled('tool:manage_routine'),
+        invalidateAddonView,
+      }),
       refreshModelCatalog,
       setCapability: mcpCapabilities.setCapability,
-      memorySnapshot,
-      run,
       adoptCharacter,
-      interrupt: run.interrupt,
-      cancel: run.cancel,
-      runtime,
-      changed,
-    });
+      invalidateAddonView,
+    }).pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          AddonMemory.layer(state, invalidateAddonView),
+          InlineDiagnostics.layer(runtime).pipe(Layer.provide(wowPlatform)),
+          AddonConversations.layer({
+            state,
+            engine,
+            request: (call) => transport.request(call),
+            models: connections,
+            enabled: (key) => capabilitySettings.enabled(key),
+            turns: { run, interrupt: run.interrupt, cancel: run.cancel },
+            invalidateAddonView,
+            saveChats,
+          }),
+        ),
+      ),
+    );
+    const { receive: receivePacket } = yield* Layer.build(receiverLayer).pipe(
+      Effect.provideContext(storage),
+      Effect.map(Context.get(PacketReceiver.Service)),
+    );
     const receive = Effect.fnUntraced(function* (packet: Parameters<typeof receivePacket>[0]) {
       const previousSession = state.activeTransport;
       observeGameConnection();
@@ -421,7 +430,7 @@ export const makeServer = Effect.fn('Server.make')(
       capabilitySettings,
       receive,
       saveWow: (wow) => config.update({ wow }),
-      changed,
+      invalidateAddonView,
       isStopping: () => shutdownRequested,
     }).pipe(Effect.provide(wowPlatform));
     yield* Effect.addFinalizer(() => transport.serialize(transport.disconnect));
@@ -435,7 +444,7 @@ export const makeServer = Effect.fn('Server.make')(
         webSearch,
         capabilitySettings,
         routineStore,
-        panelStore,
+        panelRepository,
         database,
         simulator,
         getChats: () => state.chats,
@@ -443,7 +452,8 @@ export const makeServer = Effect.fn('Server.make')(
         defaultModel,
         readSimulationCharacter,
         presentReply: run.present,
-        changed,
+        invalidateAddonView,
+        saveChats,
       }),
     );
     yield* releaseRuntimeResource(() => closeServer(server));
@@ -480,7 +490,7 @@ export const makeServer = Effect.fn('Server.make')(
     const engineStartup = engine.preload().then(
       () => {
         engineReady = true;
-        changed();
+        invalidateAddonView();
       },
       (error: unknown) =>
         runFork(
@@ -495,7 +505,8 @@ export const makeServer = Effect.fn('Server.make')(
         transport.current()?.status().readyPublished ?? false,
       );
     }
-    function desktopStatus(): Status {
+    const desktopStatus = Effect.fnUntraced(function* () {
+      const panels = yield* panelRepository.list();
       const characters = readCharacterNames(applicationDatabase.orm);
       return {
         ready: engineReady,
@@ -511,7 +522,7 @@ export const makeServer = Effect.fn('Server.make')(
           ...s,
           enabled: s.enabled && capabilitySettings.enabled('mcp:' + s.name),
         })),
-        panels: panelStore.panels.map((p) => ({
+        panels: panels.map((p) => ({
           ...p,
           character: characterLabel(p.characterKey, characters, ' - '),
         })),
@@ -520,8 +531,8 @@ export const makeServer = Effect.fn('Server.make')(
         characters,
         appUpdate: appUpdateVersion,
         features: features.state(),
-      };
-    }
+      } satisfies Status;
+    });
     let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
     const desktopApp = yield* createDesktopApp({
       auth,
@@ -529,13 +540,14 @@ export const makeServer = Effect.fn('Server.make')(
       webSearch,
       capabilitySettings,
       mcpManager,
-      panelStore,
+      panelRepository,
       routineStore,
       accountOperation: accounts.run,
       readSimulationCharacter,
       setCapability: mcpCapabilities.setCapability,
       refreshMcpCatalog: mcpCapabilities.refreshCatalog,
-      changed,
+      invalidateAddonView,
+      saveChats,
       setWowTransport: (input) =>
         transport.serialize(
           Effect.gen(function* () {
@@ -604,11 +616,11 @@ export const makeServer = Effect.fn('Server.make')(
             ),
           ),
         );
-        changed();
+        invalidateAddonView();
       }
     }, 30000);
     yield* releaseRuntimeResource(() => clearInterval(integrationHealth));
-    // Snapshots publish from changed(); this tick only polls what has no event:
+    // View changes normally invalidate the snapshot; this tick polls what has no event:
     // the addon's acknowledged revision, and a publish that is still dirty
     // because the transport was missing or its last write failed.
     const publish = setInterval(() => {

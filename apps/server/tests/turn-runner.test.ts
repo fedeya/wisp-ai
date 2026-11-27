@@ -69,7 +69,8 @@ function fixture(
   const accountBusy = vi.fn(() => false);
   const hasProvider = vi.fn(() => true);
   const flushSnapshot = vi.fn();
-  const changed = vi.fn();
+  const invalidateAddonView = vi.fn();
+  const saveChats = vi.fn();
   const run = runBridgeEffect(
     createTurnRunner({
       telemetry,
@@ -88,7 +89,8 @@ function fixture(
       accountBusy,
       hasProvider,
       isCurrent: () => current,
-      changed,
+      invalidateAddonView,
+      saveChats,
       flushSnapshot,
       idleTimeoutMs,
       ...extra,
@@ -107,7 +109,8 @@ function fixture(
     accountBusy,
     hasProvider,
     flushSnapshot,
-    changed,
+    invalidateAddonView,
+    saveChats,
     changeCharacter: () => {
       transport = 'two';
     },
@@ -364,7 +367,7 @@ test('plain source schedules persistence before a reply can be rendered', async 
   const f = fixture();
   f.send.mockImplementationOnce(async () => ({
     stream: async function* () {
-      const before = f.changed.mock.calls.length;
+      const before = f.saveChats.mock.calls.length;
       yield {
         type: 'content.delta',
         data: { partId: 'reply', kind: 'text', delta: 'Primera parte' },
@@ -372,7 +375,7 @@ test('plain source schedules persistence before a reply can be rendered', async 
       expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
         'Primera parte',
       );
-      expect(f.changed.mock.calls.length).toBeGreaterThan(before);
+      expect(f.saveChats.mock.calls.length).toBeGreaterThan(before);
       expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
         'Primera parte',
       );
@@ -407,25 +410,27 @@ test.each([
       let publications = 0,
         previews = 0,
         completed = 0;
-      f.changed.mockImplementation(() => {
+      const publish = () => {
         const snapshot = gate.next(projectChats(state));
         if (snapshot) {
           publications++;
           expect(JSON.stringify(snapshot)).not.toContain('rawReply');
         }
-      });
+      };
+      f.invalidateAddonView.mockImplementation(publish);
+      f.flushSnapshot.mockImplementation(publish);
       const delta = 'a';
       f.send.mockImplementationOnce(async () => ({
         stream: async function* () {
           const baseline = publications;
           for (let index = 0; index < 100; index++) {
             vi.setSystemTime((index + 1) * interval);
-            const changes = f.changed.mock.calls.length;
+            const saves = f.saveChats.mock.calls.length;
             yield {
               type: 'content.delta',
               data: { partId: 'reply', kind: 'text', delta },
             };
-            expect(f.changed.mock.calls.length).toBeGreaterThan(changes);
+            expect(f.saveChats.mock.calls.length).toBeGreaterThan(saves);
           }
           expect(f.chat.messages.find((message) => message.id === 'text-reply')?.text).toBe(
             delta.repeat(100),

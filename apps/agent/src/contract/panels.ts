@@ -64,6 +64,7 @@ export const panelInput = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('save'), panel: panelContent }),
   z.object({ operation: z.literal('remove'), id: key }),
 ]);
+export type PanelInput = z.infer<typeof panelInput>;
 export type Panel = z.infer<typeof panelContent> & {
   characterKey: string;
   updatedAt: number;

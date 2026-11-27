@@ -10,11 +10,11 @@ import type { SessionState } from '../session-state.ts';
 export function createModelCatalogRefresh({
   state,
   connections,
-  changed,
+  invalidateAddonView,
 }: {
   state: Pick<SessionState, 'modelCatalog' | 'modelCatalogError'>;
   connections: Pick<ModelConnections, 'models'>;
-  changed: () => void;
+  invalidateAddonView: () => void;
 }): () => Promise<void> {
   let load: Promise<void> | undefined;
   return () =>
@@ -27,7 +27,7 @@ export function createModelCatalogRefresh({
         state.modelCatalogError = errorMessage(error);
       } finally {
         load = undefined;
-        changed();
+        invalidateAddonView();
       }
     })());
 }

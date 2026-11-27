@@ -4,7 +4,6 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
-import { PanelStore } from '../src/panels/panel-store.ts';
 import { panelContent } from '@wisp/agent/contract/panels';
 const example = {
   id: 'materials',
@@ -21,27 +20,55 @@ test('persistent panels isolate characters, survive restart and update by ID wit
   const scope = databaseScope();
   try {
     const file = path.join(root, 'wisp.sqlite'),
-      store = new PanelStore(scope.open(file));
-    await store.load();
-    await store.mutate('mage', { operation: 'save', panel: panelContent.parse(example) });
-    await store.mutate('warrior', {
+      store = await scope.panels(scope.open(file));
+    await store.update('mage', { operation: 'save', panel: panelContent.parse(example) });
+    await store.update('warrior', {
       operation: 'save',
       panel: panelContent.parse({ ...example, title: 'Other character' }),
     });
-    await store.mutate('mage', {
+    await store.update('mage', {
+      operation: 'save',
+      panel: panelContent.parse({ ...example, id: 'supplies' }),
+    });
+    await store.update('mage', {
       operation: 'save',
       panel: panelContent.parse({ ...example, title: 'Updated materials' }),
     });
-    const next = new PanelStore(scope.open(file));
-    await next.load();
-    assert.equal(next.list('mage').length, 1);
-    assert.equal(next.list('mage')[0].title, 'Updated materials');
-    assert.equal(next.list('warrior')[0].title, 'Other character');
-    await next.mutate('mage', { operation: 'remove', id: 'materials' });
-    assert.equal(next.list('warrior').length, 1);
-    const reopened = new PanelStore(scope.open(file));
-    await reopened.load();
-    assert.equal(reopened.panels.length, 1);
+    const next = await scope.panels(scope.open(file));
+    const mage = await next.list('mage');
+    assert.deepEqual(
+      mage.map((panel) => panel.id),
+      ['supplies', 'materials'],
+    );
+    assert.equal(mage[1].title, 'Updated materials');
+    assert.equal((await next.list('warrior'))[0].title, 'Other character');
+    await next.update('mage', { operation: 'remove', id: 'materials' });
+    assert.equal((await store.list('warrior')).length, 1);
+    assert.deepEqual(
+      (await store.list('mage')).map((panel) => panel.id),
+      ['supplies'],
+    );
+  } finally {
+    await scope.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+test('concurrent writers cannot both take the last panel slot', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wow-panels-'));
+  const scope = databaseScope();
+  try {
+    const file = path.join(root, 'wisp.sqlite');
+    const first = await scope.panels(scope.open(file));
+    const second = await scope.panels(scope.open(file));
+    const save = (store: typeof first, id: string) =>
+      store.update('mage', { operation: 'save', panel: panelContent.parse({ ...example, id }) });
+    for (let i = 0; i < 11; i++) await save(first, `panel-${i}`);
+
+    const results = await Promise.allSettled([save(first, 'last-a'), save(second, 'last-b')]);
+    assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+    const rejected = results.find((result) => result.status === 'rejected');
+    assert.match(String(rejected?.reason), /Keep at most 12 panels per character/);
+    assert.equal((await first.list('mage')).length, 12);
   } finally {
     await scope.close();
     await rm(root, { recursive: true, force: true });

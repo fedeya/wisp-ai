@@ -9,12 +9,12 @@ import { savedRoutine } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
 import { adoptCharacterKey, readCharacterNames } from '../src/chat/character-keys.ts';
 import { importMemory } from '../src/memory/repository.ts';
-import { readPanels, savePanels } from '../src/panels/panel-record.ts';
+import { encodePanel } from '../src/panels/repository.ts';
 import { encodeRoutine, encodeRun } from '../src/routines/routine-record.ts';
-import { chats, metadata, routineRuns, routines } from '@wisp/db/schema';
+import { chats, metadata, panels, routineRuns, routines } from '@wisp/db/schema';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { PanelStore } from '../src/panels/panel-store.ts';
+import type { ApplicationOrm } from '@wisp/db/database';
 
 const key = (...parts: string[]) => JSON.stringify(['WoW Forever', ...parts]);
 const oldRealm = key('CAMWOW US2 Realm 2 PvP', 'Fedrath');
@@ -55,12 +55,15 @@ const memory = (entryKey: string, text: string) => ({
   text,
   updatedAt: '2026-11-01',
 });
+const seedPanels = (db: ApplicationOrm, entries: ReturnType<typeof panel>[]) =>
+  db.insert(panels).values(entries.map(encodePanel)).run();
 
 async function withDatabase(
   work: (
     database: ReturnType<ReturnType<typeof databaseScope>['open']>,
     openMemory: ReturnType<typeof databaseScope>['memory'],
     sql: SqlOrm,
+    openPanels: ReturnType<typeof databaseScope>['panels'],
   ) => Promise<void>,
 ) {
   const dir = await mkdtemp(path.join(tmpdir(), 'wisp-character-keys-'));
@@ -69,7 +72,7 @@ async function withDatabase(
   const sql = ManagedRuntime.make(sqlLayer(database.file));
   try {
     await database.initializeProducts();
-    await work(database, scope.memory, (await sql.runPromise(SqlDatabase)).db);
+    await work(database, scope.memory, (await sql.runPromise(SqlDatabase)).db, scope.panels);
   } finally {
     await sql.dispose();
     await scope.close();
@@ -81,7 +84,7 @@ const adoptKey = (db: SqlOrm, character = fedrath) =>
   Effect.runPromise(db.$client.withTransaction(adoptCharacterKey(db, character.key, character)));
 
 test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on conflicts', async () => {
-  await withDatabase(async (database, openMemory, sql) => {
+  await withDatabase(async (database, openMemory, sql, openPanels) => {
     await database.transaction((db) => {
       db.insert(routines)
         .values(
@@ -110,7 +113,7 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
           ),
         )
         .run();
-      savePanels(db, [
+      seedPanels(db, [
         panel('goal', noRealm, 'Old goal'),
         panel('goal', current, 'Current goal'),
         panel('farm', oldRealm),
@@ -154,6 +157,7 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
     expect(merged.sort()).toEqual([oldRealm, noRealm].sort());
 
     const db = database.orm;
+    const storedPanels = await openPanels(database);
     expect(
       db
         .select({ key: routines.characterKey, id: routines.id })
@@ -171,9 +175,7 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
     );
     expect(db.select().from(routineRuns).get()?.characterKey).toBe(current);
     expect(
-      readPanels(db)
-        .map((p) => [p.characterKey, p.id, p.title, p.formerKey])
-        .sort(),
+      (await storedPanels.list()).map((p) => [p.characterKey, p.id, p.title, p.formerKey]).sort(),
     ).toEqual([
       [current, 'farm', 'farm', oldRealm],
       [current, 'goal', 'Current goal', undefined],
@@ -201,16 +203,13 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
 test('a name saved on several realms stays put, since the empty realm cannot pick one', async () => {
   const pvp = key('Realm 2 PvP', 'Fedrath');
   const pve = key('Realm 1 PvE', 'Fedrath');
-  await withDatabase(async (database, _openMemory, sql) => {
+  await withDatabase(async (database, _openMemory, sql, openPanels) => {
     await database.transaction((db) =>
-      savePanels(db, [panel('a', pvp), panel('b', pve), panel('c', noRealm)]),
+      seedPanels(db, [panel('a', pvp), panel('b', pve), panel('c', noRealm)]),
     );
     expect(await adoptKey(sql)).toEqual([noRealm]);
-    expect(
-      readPanels(database.orm)
-        .map((p) => [p.id, p.characterKey])
-        .sort(),
-    ).toEqual([
+    const storedPanels = await openPanels(database);
+    expect((await storedPanels.list()).map((p) => [p.id, p.characterKey]).sort()).toEqual([
       ['a', pvp],
       ['b', pve],
       ['c', current],
@@ -219,8 +218,9 @@ test('a name saved on several realms stays put, since the empty realm cannot pic
 });
 
 test('a failed memory move rolls back character adoption across domains', async () => {
-  await withDatabase(async (database, openMemory, sql) => {
-    await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
+  await withDatabase(async (database, openMemory, sql, openPanels) => {
+    await database.transaction((db) => seedPanels(db, [panel('farm', oldRealm)]));
+    const panels = await openPanels(database);
     const repository = openMemory(database);
     await repository.update('character', oldRealm, 'guide', 'Keep this note');
     database.connection.exec(`
@@ -229,57 +229,57 @@ test('a failed memory move rolls back character adoption across domains', async 
     `);
     const adopt = createCharacterAdoption({
       db: sql,
-      panelStore: { refresh: () => {} },
       chats: () => [],
-      changed: () => {},
+      saveChats: () => {},
     });
     await Effect.runPromise(adopt(fedrath));
     expect(readCharacterNames(database.orm)).toEqual({});
-    expect(readPanels(database.orm).map((entry) => entry.characterKey)).toEqual([oldRealm]);
+    expect((await panels.list()).map((entry) => entry.characterKey)).toEqual([oldRealm]);
     expect(await repository.read('character', current)).toEqual([]);
     expect(await repository.read('character', oldRealm)).toHaveLength(1);
     database.connection.exec('DROP TRIGGER reject_adoption');
     await Effect.runPromise(adopt(fedrath));
-    expect(readPanels(database.orm).map((entry) => entry.characterKey)).toEqual([current]);
+    expect((await panels.list()).map((entry) => entry.characterKey)).toEqual([current]);
     expect(await repository.read('character', current)).toHaveLength(1);
   });
 });
 
 test('adoption saves the name, moves in-memory chats and runs once per character', async () => {
-  await withDatabase(async (database, _openMemory, sql) => {
-    await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
+  await withDatabase(async (database, _openMemory, sql, openPanels) => {
+    await database.transaction((db) => seedPanels(db, [panel('farm', oldRealm)]));
+    const panels = await openPanels(database);
     const chat = { ...newChat('unsaved', 'addon'), characterKey: noRealm };
     const other = { ...newChat('other', 'addon'), characterKey: someoneElse };
-    let refreshes = 0,
-      changes = 0;
+    let saves = 0;
     const adopt = createCharacterAdoption({
       db: sql,
-      panelStore: { refresh: () => void refreshes++ },
       chats: () => [chat, other],
-      changed: () => void changes++,
+      saveChats: () => void saves++,
     });
-    await Effect.runPromise(adopt({ ...fedrath, key: oldRealm, guid: undefined }));
-    expect([refreshes, changes]).toEqual([0, 0]);
-    await Effect.runPromise(adopt(fedrath));
-    await Effect.runPromise(adopt(fedrath));
+    expect(await Effect.runPromise(adopt({ ...fedrath, key: oldRealm, guid: undefined }))).toBe(
+      false,
+    );
+    expect(saves).toBe(0);
+    expect(await Effect.runPromise(adopt(fedrath))).toBe(true);
+    expect(await Effect.runPromise(adopt(fedrath))).toBe(false);
     expect([chat.characterKey, other.characterKey]).toEqual([current, someoneElse]);
-    expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
+    expect((await panels.list()).map((p) => p.characterKey)).toEqual([current]);
     expect(readCharacterNames(database.orm)).toEqual({
       [current]: { name: 'Fedrath', realm: '' },
     });
-    expect([refreshes, changes]).toEqual([1, 1]);
+    expect(saves).toBe(1);
 
     // A damaged name row is skipped instead of breaking every label.
     database.orm.insert(metadata).values({ key: 'character-name:broken', value: '{' }).run();
     expect(Object.keys(readCharacterNames(database.orm))).toEqual([current]);
 
     // A rename keeps the key and only updates the saved name.
-    await Effect.runPromise(adopt({ ...fedrath, name: 'Fedrath Vorn' }));
+    expect(await Effect.runPromise(adopt({ ...fedrath, name: 'Fedrath Vorn' }))).toBe(false);
     expect(readCharacterNames(database.orm)[current]).toEqual({
       name: 'Fedrath Vorn',
       realm: '',
     });
-    expect([refreshes, changes]).toEqual([1, 2]);
+    expect(saves).toBe(1);
   });
 });
 
@@ -304,37 +304,35 @@ test('memory merged over quota can still be trimmed but not grown', async () => 
 });
 
 test('editing an adopted panel keeps the key it was moved from', async () => {
-  await withDatabase(async (database, _openMemory, sql) => {
-    await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
+  await withDatabase(async (database, _openMemory, sql, openPanels) => {
+    await database.transaction((db) => seedPanels(db, [panel('farm', oldRealm)]));
     await adoptKey(sql);
-    const store = new PanelStore(database);
-    await store.load();
-    const [saved] = await store.mutate(current, {
+    const store = await openPanels(database);
+    const [saved] = await store.update(current, {
       operation: 'save',
       panel: panel('farm', current, 'Renamed farm'),
     });
     expect([saved.title, saved.formerKey]).toEqual(['Renamed farm', oldRealm]);
-    expect(readPanels(database.orm)[0].formerKey).toEqual(oldRealm);
+    expect((await store.list())[0].formerKey).toEqual(oldRealm);
   });
 });
 
 test('panels merged past the limit can be edited but not added to', async () => {
-  await withDatabase(async (database) => {
+  await withDatabase(async (database, _openMemory, _sql, openPanels) => {
     await database.transaction((db) =>
-      savePanels(
+      seedPanels(
         db,
         Array.from({ length: 13 }, (_, i) => panel('p' + i, current)),
       ),
     );
-    const store = new PanelStore(database);
-    await store.load();
-    const edited = await store.mutate(current, {
+    const store = await openPanels(database);
+    const edited = await store.update(current, {
       operation: 'save',
       panel: panel('p0', current, 'Edited'),
     });
     expect(edited.find((p) => p.id === 'p0')?.title).toBe('Edited');
     await expect(
-      store.mutate(current, { operation: 'save', panel: panel('new', current) }),
+      store.update(current, { operation: 'save', panel: panel('new', current) }),
     ).rejects.toThrow('Keep at most 12 panels per character');
   });
 });

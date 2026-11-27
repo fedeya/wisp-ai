@@ -1,4 +1,4 @@
-/** Trailing window that coalesces a burst of `changed()` calls into one snapshot. */
+/** Trailing window that coalesces a burst of view invalidations into one snapshot. */
 export const PUBLISH_COALESCE_MS = 50;
 /**
  * Minimum spacing between snapshot publishes. This was the old fixed poll

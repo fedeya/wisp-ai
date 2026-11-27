@@ -14,13 +14,14 @@ interface SchedulerDependencies {
   isStopping: () => boolean;
   isReady: () => boolean;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
-  changed: () => void;
+  invalidateAddonView: () => void;
   /** Whether a finished routine chat failed on a usage limit; tests replace it. */
   usageLimited?: (chat: Chat) => boolean;
 }
 export const startRoutineScheduler = Effect.fnUntraced(function* (deps: SchedulerDependencies) {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
-  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed } = deps;
+  const { state, routineStore, capabilitySettings, isStopping, isReady, run, invalidateAddonView } =
+    deps;
   const createChat = (id: string) => {
     const chat = newChat(id, state.activeTransport);
     state.chats.push(chat);
@@ -50,11 +51,13 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
       return;
     }
     dispatchingRoutine = true;
+    let claimedWork = false;
     dispatch = (async () => {
       const claimed = await routineStore.claim(presence.identity);
       if (!claimed) {
         return;
       }
+      claimedWork = true;
       if (isStopping()) {
         await routineStore.defer(claimed.run.id, claimed.event);
         return;
@@ -132,7 +135,7 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
       })
       .finally(() => {
         dispatchingRoutine = false;
-        changed();
+        if (claimedWork) invalidateAddonView();
       });
   }, 3000);
   return async () => {

@@ -15,7 +15,8 @@ async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
         token: 'test',
         currentTransport: () => 'addon',
         capabilitySettings: { enabled: () => true },
-        changed: () => {},
+        invalidateAddonView: () => {},
+        saveChats: () => {},
         ...deps,
       } as unknown as Parameters<typeof createAgentHandler>[0]),
     ),
@@ -77,6 +78,38 @@ test('agent server rejects bad tokens, unknown routes and oversized bodies', asy
   }
 });
 
+test('panel tools invalidate the addon only after a write, without saving chats', async () => {
+  const calls: string[] = [];
+  const saveChats = vi.fn();
+  const server = await serve({
+    getChats: () => [workingChat()],
+    panelRepository: {
+      list: () => Effect.succeed([]),
+      get: () => Effect.undefined,
+      update: () =>
+        Effect.sync(() => {
+          calls.push('commit');
+          return [];
+        }),
+    },
+    invalidateAddonView: () => {
+      calls.push('invalidate');
+    },
+    saveChats,
+  });
+  try {
+    const post = (input: unknown) => server.post('/panels', { agentSession: 'eve', input });
+    expect((await post({ operation: 'list' })).status).toBe(200);
+    expect((await post({ operation: 'get', id: 'panel' })).status).toBe(200);
+    expect(calls).toEqual([]);
+    expect((await post({ operation: 'remove', id: 'panel' })).status).toBe(200);
+    expect(calls).toEqual(['commit', 'invalidate']);
+    expect(saveChats).not.toHaveBeenCalled();
+  } finally {
+    await server.close();
+  }
+});
+
 test('memory access refuses changes from automatic suggestions and rejects unknown sessions', async () => {
   const chat = workingChat(true);
   const update = vi.fn(() => Effect.succeed([]));
@@ -91,7 +124,6 @@ test('memory access refuses changes from automatic suggestions and rejects unkno
     capabilities: { enabled: () => true },
     snapshot: () => Effect.succeed({ status: 'available', entries: [] }),
     setView: () => {},
-    changed: () => {},
   });
   await expect(
     Effect.runPromise(

@@ -14,7 +14,6 @@ interface Dependencies {
   capabilities: Pick<CapabilitySettings, 'enabled'>;
   snapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
   setView: (view: MemoryView) => void;
-  changed: () => void;
 }
 
 class MemoryAccessDenied extends Schema.TaggedError<MemoryAccessDenied>()('MemoryAccessDenied', {
@@ -71,7 +70,6 @@ export function make(deps: Dependencies) {
       const entries = yield* deps.repository.update(memoryScope, edit);
       const snapshot = yield* deps.snapshot(chat.characterKey);
       if (chat.owner === deps.currentTransport()) deps.setView(snapshot);
-      deps.changed();
       return yield* publicEntries(entries);
     }),
   });

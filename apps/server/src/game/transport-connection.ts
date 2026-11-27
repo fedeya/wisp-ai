@@ -14,7 +14,7 @@ export interface TransportConnectionDependencies {
   receive: (event: GameEvent) => Effect.Effect<void>;
   /** Persist a WoW folder the user picked once its transport has started. */
   saveWow: (wow: string) => Promise<void>;
-  changed: () => void;
+  invalidateAddonView: () => void;
   isStopping: () => boolean;
 }
 
@@ -45,7 +45,7 @@ export const createTransportConnection = Effect.fnUntraced(function* (
   const path = yield* Path.Path;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
-  const { state, bridge, integrationState, capabilitySettings, changed } = deps;
+  const { state, bridge, integrationState, capabilitySettings, invalidateAddonView } = deps;
   let transport: Connection | undefined;
   let wowDirectory: string | undefined;
   let connectionScope: Scope.Closeable | undefined;
@@ -69,7 +69,7 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     state.routinePresence = undefined;
     state.memoryViewRequest = undefined;
     integrationState.reset();
-    changed();
+    invalidateAddonView();
     if (previous) yield* Scope.close(previous, Exit.void);
     yield* Effect.tryPromise({
       try: () => capabilitySettings.publish(),

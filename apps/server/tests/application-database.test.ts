@@ -9,7 +9,6 @@ import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
 } from '@wisp/db/application-file';
-import { PanelStore } from '../src/panels/panel-store.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { databaseScope } from './database-fixture.ts';
 
@@ -104,11 +103,9 @@ test('legacy stores reuse the runtime connection and only its owner closes it', 
       database.initializeProducts(),
     ]);
     const connection = database.connection;
-    const panels = new PanelStore(database),
-      routines = new RoutineStore(database);
+    const routines = new RoutineStore(database);
     await chats.load();
     await chats.flush([chat()]);
-    await panels.load();
     await routines.load();
     await chats.close();
     expect(database.connection).toBe(connection);
