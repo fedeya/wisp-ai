@@ -107,14 +107,16 @@ and `auth/`; and `integrations/` holds settings that every domain reads.
 3. **`http/` for servers.** Listeners, security middleware and which API is
    served where. Handlers stay in their domain (`api.ts`) and stay thin.
 4. **`index.ts` is a domain's public surface.** Other domains import it as
-   `#<domain>` (`#routines`, `#integrations/search`) and platform modules as
-   `#platform/<name>`, through the `imports` field of `apps/server/package.json`:
+   `#/<domain>` (`#/routines`, `#/integrations/search`) and platform modules as
+   `#/platform/<name>`, through the `imports` field of `apps/server/package.json`:
 
    ```json
-   "imports": { "#platform/*": "./src/platform/*.ts", "#*": "./src/*/index.ts" }
+   "imports": { "#/platform/*": "./src/platform/*.ts", "#/*": "./src/*/index.ts" }
    ```
 
-   Node, TypeScript, Vitest and esbuild resolve it as is. `index.ts` exports
+   Node 26, TypeScript, Vitest and esbuild resolve it as is; `#/` is Node's native
+   form of the `~/` and `@/` aliases other tools configure in `tsconfig` paths,
+   which plain Node would ignore at runtime. `index.ts` exports
    explicitly (the service, its layer, and the schemas, types and errors other
    domains need), never `export *`. Everything else in the folder is private:
    only files inside the domain import it, with relative paths. A small domain
@@ -133,7 +135,7 @@ and `auth/`; and `integrations/` holds settings that every domain reads.
    two files in one folder share a role (`users-repo.ts`, `accounts-repo.ts`).
 9. **Tests mirror the domains** under `apps/server/tests/`
    (`tests/routines/scheduler.test.ts`). A test may import its own domain's
-   private files and other domains through `#<domain>`.
+   private files and other domains through `#/<domain>`.
 
 ### `apps/server/src`
 
@@ -186,7 +188,7 @@ phase 4.
   or removes the export (rule 8).
 - A file that moves into its domain drops the domain prefix from its name
   (`routines/routine-record.ts` → `routines/repo.ts`), and its importers from
-  other domains switch to `#<domain>`.
+  other domains switch to `#/<domain>`.
 
 ## Phases
 

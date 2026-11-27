@@ -156,8 +156,8 @@ clearly, for example `Capabilities.layerFromFile(...)`. Consumers can use
   repository, schemas and API handlers; `platform/` for configuration, logging,
   the HTTP client, JSON files and the vault; `http/` for the servers; and only
   `main.ts` and the layer graph at the root. A domain's `index.ts` is its public
-  surface: other domains import it as `#<domain>` and platform modules as
-  `#platform/<name>` (the `imports` field of `apps/server/package.json`), never
+  surface: other domains import it as `#/<domain>` and platform modules as
+  `#/platform/<name>` (the `imports` field of `apps/server/package.json`), never
   another domain's files. Inside a domain, files are named by role (`repo.ts`,
   `api.ts`, `scheduler.ts`) without repeating the domain. Put new and migrated
   modules in their target folder, never at the root. Each domain keeps its own
