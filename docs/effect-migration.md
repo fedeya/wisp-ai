@@ -128,7 +128,12 @@ and `auth/`; and `integrations/` holds settings that every domain reads.
    explicitly (the service, its layer, and the schemas, types and errors other
    domains need), never `export *`. Everything else in the folder is private:
    only files inside the domain import it, with relative paths. A small domain
-   can be just its `index.ts`.
+   can be just its `index.ts`. `tests/domain-boundaries.test.ts` enforces this
+   in `apps/server/src` for each domain with a door (an `index.ts`, or
+   `platform/`): files marked `// @effect-migrated` reach it through `#/`, no
+   file outside it imports its private files (`runtime.ts` and `main.ts` aside
+   until phase 5), such domains don't import each other in a cycle, and no file
+   joins today's `src/` root.
 
 5. **One direction.** `platform/` ← domains ← `http/` ← `server.ts`, and
    folders never import each other in a cycle.
