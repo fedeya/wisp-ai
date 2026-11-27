@@ -44,7 +44,8 @@ simulation adapters). Effect code calls it directly.
    test layers instead of partial objects cast with `as unknown as`, and
    `TestClock` instead of real sleeps or fake timers.
 8. **One module per PR.** A PR converts one module end to end (implementation,
-   consumers and tests) and deletes the old path. It changes no behavior; a
+   consumers and tests) and deletes the old path, including package exports and
+   names nobody imports anymore; no compatibility aliases. It changes no behavior; a
    behavior change gets its own PR. Wire formats, files on disk and the
    contracts with the Rust host and the addon stay byte-compatible.
 
