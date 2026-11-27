@@ -1,4 +1,5 @@
 import { test, expect, vi } from 'vitest';
+import { ConfigProvider } from 'effect';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -10,7 +11,7 @@ import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { agentHost } from '@wisp/agent/agent-host';
 
-async function fixture(configured = true) {
+async function fixture(configured = true, env: Record<string, string> = {}) {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
   if (configured) {
     await writeFile(
@@ -19,7 +20,7 @@ async function fixture(configured = true) {
     );
   }
   const options: ServerOptions = {
-    dataDirectory,
+    configProvider: ConfigProvider.fromEnv({ env: { ...env, WISP_DATA_DIR: dataDirectory } }),
     agentPort: 0,
     desktopPort: 0,
     vault: { read: async () => '', write: async () => {} },
@@ -28,8 +29,7 @@ async function fixture(configured = true) {
 }
 
 test('addon maintenance switches WoW folders without stopping the agent or the desktop API', async () => {
-  const f = await fixture(false);
-  f.options.deferWowTransport = true;
+  const f = await fixture(false, { WISP_DEFER_WOW_TRANSPORT: '1' });
   let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
   async function game(name: string) {
     const folder = path.join(f.dataDirectory, name);

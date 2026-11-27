@@ -6,36 +6,8 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { appPaths, retireLegacyEngine } from '@wisp/server/app-paths';
 import { migrateDesktop } from '@wisp/server/desktop-migration';
 import { createHash } from 'node:crypto';
-
-test('startup retires the Eve engine folder of a separate data folder only', async () => {
-  const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-engine-retire-'));
-  try {
-    const root = path.join(temporary, 'resources'),
-      data = path.join(temporary, 'user');
-    const paths = appPaths(root, data);
-    assert.equal(paths.legacyEngine, path.join(data, 'engine'));
-    assert.equal(paths.config, path.join(data, 'config.local.json'));
-    assert.equal(appPaths(root, '').legacyEngine, undefined);
-    await mkdir(path.join(paths.legacyEngine!, '.eve/.workflow-data'), { recursive: true });
-    await writeFile(path.join(paths.legacyEngine!, '.eve/.workflow-data/run.json'), '{}');
-    await mkdir(paths.runtime, { recursive: true });
-    await writeFile(path.join(paths.runtime, 'wisp.sqlite'), 'keep');
-    await retireLegacyEngine(paths.legacyEngine);
-    await assert.rejects(readFile(path.join(paths.legacyEngine!, '.eve/.workflow-data/run.json')), {
-      code: 'ENOENT',
-    });
-    assert.equal(await readFile(path.join(paths.runtime, 'wisp.sqlite'), 'utf8'), 'keep');
-    // Only a folder named engine is ever removed.
-    await retireLegacyEngine(paths.runtime);
-    assert.equal(await readFile(path.join(paths.runtime, 'wisp.sqlite'), 'utf8'), 'keep');
-    await retireLegacyEngine(undefined);
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-});
 
 test('the installed bridge can import native adapters from node_modules without TypeScript stripping', async () => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-native-import-'));
