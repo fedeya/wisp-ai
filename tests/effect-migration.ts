@@ -140,6 +140,15 @@ export const countSource = (source: string, counts: Counts = emptyCounts()): Cou
   return counts;
 };
 
+/** The module specifiers a source text imports or re-exports, skipping comment lines. */
+export const moduleSpecifiers = (source: string): string[] =>
+  source
+    .split('\n')
+    .filter((line) => !commentLine.test(line))
+    .flatMap((line) =>
+      Array.from(line.matchAll(specifierPattern), ([, specifier = '']) => specifier),
+    );
+
 /** Counts every pattern in one source file. */
 export const countFile = Effect.fnUntraced(function* (file: string) {
   const fs = yield* FileSystem.FileSystem;
