@@ -226,7 +226,7 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 - [ ] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
       the same file formats.
 - [x] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
-- [ ] `Simulator` on `ChildProcess` and `Stream`.
+- [x] `Simulator` on `ChildProcess` and `Stream`.
 - [ ] One `HttpClient` layer; TheWoWDB, web search (Exa, public, Wowhead) and
       model discovery on it. (TheWoWDB done)
 - [ ] `ChatGPTAuth`: `HttpClient`, `effect/jose`, `Redacted`, refresh on a
