@@ -493,8 +493,6 @@ Vitest projects and native tests must pass before packaging and signing.
 
 `pnpm format:check` checks Oxfmt, StyLua and CSS/HTML Prettier output. `pnpm format` writes across the workspace. For Rust, use `cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml`. The [CI workflow](../.github/workflows/check.yml) contains native test prerequisites and tests the exact installer artifact after successful release builds. Packaging alone is not the full check suite.
 
-[smoke-agent.mjs](../scripts/smoke-agent.mjs) is an **opt-in live diagnostic**, not an offline test: it uses the signed-in subscription and external services, consumes usage, and may put private data in reports outside the repository. It requires Windows configuration and native credentials. Its isolated sessions block game writes but do not validate browser consent; snapshot replay does not replace fresh readings in normal use. Consult the script before running it.
-
 ## Adding integrations
 
 To add an integration, declare its capabilities in `packages/protocol/src/capabilities.ts`,
