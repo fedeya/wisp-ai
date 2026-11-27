@@ -4,7 +4,7 @@ import { readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 import { createRemoteJWKSet, jwtVerify, customFetch } from 'jose';
 import { z } from 'zod';
-import type { SecretVault } from './secret-vault.ts';
+import type { SecretVault } from '../platform/secret-vault.ts';
 import { errorMessage } from '../errors.ts';
 import { Effect } from 'effect';
 import { accountModel, type AccountModel, type AccountModelInput } from '../chat/chat-model.ts';

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { NativeVault } from '../src/auth/secret-vault.ts';
+import { NativeVault } from '../src/platform/secret-vault.ts';
 
 // Node rejects `--secret` and exits before reading what the vault writes to it,
 // so the write hits a closed pipe. That must fail the call, not the bridge.

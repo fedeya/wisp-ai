@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NativeVault } from '../src/auth/secret-vault.ts';
+import { NativeVault } from '../src/platform/secret-vault.ts';
 import { startDesktopServer } from '../src/api/desktop-server.ts';
 test('desktop controls require the session token and reject browser origins', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-desktop-'));

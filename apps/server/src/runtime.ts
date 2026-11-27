@@ -43,7 +43,7 @@ import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
-import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
+import { NativeVault, type SecretVault } from './platform/secret-vault.ts';
 import { startDesktopServer } from './api/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';

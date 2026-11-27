@@ -12,7 +12,7 @@ import path from 'node:path';
 import { Effect } from 'effect';
 import { bridgeLogging } from '../logger.ts';
 import { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
-import { NativeVault } from '../auth/secret-vault.ts';
+import { NativeVault } from '../platform/secret-vault.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
 
 const dataDir = path.resolve(
