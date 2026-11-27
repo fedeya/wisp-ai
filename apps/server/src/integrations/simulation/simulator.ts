@@ -1,13 +1,9 @@
-import type { z } from 'zod';
 import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
 import { Digest } from 'effect/crypto';
 import type { PlatformError } from 'effect/PlatformError';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
-import {
-  simulationInput,
-  rotationAction,
-  simulationNeedsLiveState,
-} from '@wisp/agent/contract/simulation';
+import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
+import type { RotationAction, SimulationInput } from '@wisp/agent/contract/simulation';
 import { AppConfig } from '../../app-config.ts';
 import { adapters } from './adapters/index.ts';
 import type { ClassMetadata } from './adapters/types.ts';
@@ -73,7 +69,6 @@ const raceMap: Record<string, string> = {
   Tauren: 'RaceTauren',
 };
 
-export type SimulationInput = z.input<typeof simulationInput>;
 type EquipmentBase = 'current' | 'empty';
 type Replacement = { slot: number; itemId: number };
 
@@ -291,7 +286,7 @@ const make = Effect.gen(function* () {
     const channels = spellIds.filter((id) =>
       (adapter.channels ?? []).some((family) => metadata.ranks[family].some((r) => r.id === id)),
     );
-    const compileAction = (a: z.infer<typeof rotationAction>, isPriority = false) => {
+    const compileAction = (a: RotationAction, isPriority = false) => {
       const vals: Record<string, unknown>[] = [];
       for (const id of channels) {
         vals.push({ not: { val: { spellIsChanneling: { spellId: { spellId: id } } } } });
