@@ -5,7 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import { Effect } from 'effect';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { Effect, Layer, Redacted } from 'effect';
 import { smokeGameAccess } from './smoke-game-access.ts';
 const repository = fileURLToPath(new URL('../', import.meta.url));
 const root = process.env.WISP_RESOURCE_ROOT || repository;
@@ -16,7 +17,7 @@ const dir =
 await mkdir(dir, { recursive: true });
 const load = (p) => import(pathToFileURL(path.join(bridge, p)).href);
 const { ChatGPTAuth } = await load('src/auth/chatgpt-auth.ts'),
-  { NativeVault } = await load('src/auth/secret-vault.ts'),
+  SecretVault = await load('src/platform/secret-vault.ts'),
   { createModelProxy } = await load('src/models/model-proxy.ts'),
   { bridgeLogging } = await load('src/logger.ts'),
   { TheWoWDB } = await load('src/integrations/thewowdb.ts'),
@@ -52,14 +53,27 @@ const simulator = new Simulator(root);
 const dataRoot = process.env.WISP_DATA_DIR || root;
 const config = JSON.parse(await readFile(path.join(dataRoot, 'config.local.json'), 'utf8')),
   model = config.model || 'gpt-6.1-sol';
-const auth = Effect.runSync(
-  ChatGPTAuth.make(
-    path.join(dataRoot, 'runtime'),
-    new NativeVault(
-      process.env.WISP_DESKTOP_EXE ||
-        path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
+// ChatGPTAuth still takes a Promise vault.
+const secretVault = Effect.runSync(
+  Effect.gen(function* () {
+    return yield* SecretVault.SecretVault;
+  }).pipe(
+    Effect.provide(
+      SecretVault.layerHelper({
+        command: [
+          process.env.WISP_DESKTOP_EXE ||
+            path.join(repository, 'apps/desktop/src-tauri/target/release/wisp.exe'),
+        ],
+      }).pipe(Layer.provide(NodeServices.layer)),
     ),
-  ).pipe(Effect.provide(bridgeLogging)),
+  ),
+);
+const vault = {
+  read: (key) => Effect.runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
+  write: (key, value) => Effect.runPromise(secretVault.write(key, Redacted.make(value))),
+};
+const auth = Effect.runSync(
+  ChatGPTAuth.make(path.join(dataRoot, 'runtime'), vault).pipe(Effect.provide(bridgeLogging)),
 );
 await auth.load();
 const t = auth.saved.profiles.find((p) => p.id === auth.saved.activeId)?.tokens;

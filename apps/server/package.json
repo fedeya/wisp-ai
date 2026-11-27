@@ -29,7 +29,7 @@
     "./rename-migration": "./src/migrations/addon-rename.ts",
     "./reply-stream": "./src/reply/reply-stream.ts",
     "./response-stream": "./src/models/response-stream.ts",
-    "./secret-vault": "./src/auth/secret-vault.ts",
+    "./secret-vault": "./src/platform/secret-vault.ts",
     "./sessions": "./src/chat/sessions.ts",
     "./simulation": "./src/integrations/simulation/simulator.ts",
     "./thewowdb": "./src/integrations/thewowdb.ts",
