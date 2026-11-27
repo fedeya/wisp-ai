@@ -54,7 +54,8 @@ import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
 import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
-import { TheWoWDB } from './integrations/thewowdb.ts';
+import * as TheWoWDB from './integrations/thewowdb.ts';
+import * as HttpClient from './http-client.ts';
 import { Simulator } from './integrations/simulation/simulator.ts';
 import { appPaths, retireLegacyEngine } from './app-paths.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
@@ -79,6 +80,10 @@ export interface ServerOptions {
   vault?: SecretVault;
   deferWowTransport?: boolean;
 }
+
+/** Services `makeServer` requires; `main.ts` and `startServer` provide them. */
+export const serverServices = TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer));
+
 /**
  * Composition root of the Wisp server: loads stores and settings, wires the
  * in-process agent, the WoW bridge and the HTTP listeners, and returns
@@ -171,7 +176,7 @@ export const makeServer = Effect.fn('Server.make')(
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     yield* startup(() => webSearch.load());
     yield* releaseRuntimeResource(() => auth.cancel());
-    const database = new TheWoWDB();
+    const database = yield* TheWoWDB.TheWoWDB;
     const storage = yield* Layer.build(
       MemoryRepository.layer.pipe(Layer.provideMerge(Sql.layer(databaseFile))),
     );
@@ -648,7 +653,9 @@ function startup<A>(operation: () => Promise<A>) {
 }
 
 export function startServer(options: ServerOptions = {}) {
-  return Effect.runPromise(startServerEffect(options).pipe(Effect.provide(bridgeLogging)));
+  return Effect.runPromise(
+    startServerEffect(options).pipe(Effect.provide([serverServices, bridgeLogging])),
+  );
 }
 
 export const startServerEffect = Effect.fnUntraced(function* (options: ServerOptions = {}) {

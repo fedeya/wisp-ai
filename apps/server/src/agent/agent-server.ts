@@ -38,7 +38,7 @@ interface AgentDependencies {
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
-  database: TheWoWDB;
+  database: TheWoWDB['Service'];
   simulator: Simulator;
   getChats: () => Chat[];
   currentTransport: () => string;
@@ -68,6 +68,7 @@ function abortOnHangUp(c: AgentContext) {
 }
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const {
     token,
     connections,
@@ -252,7 +253,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       const abort = signal();
       const { agentSession: _session, ...args } = data;
       return route === '/database'
-        ? database.query(databaseRequest.parse(args), abort)
+        ? // Hanging up interrupts the lookup, which cancels its request.
+          runPromise(database.query(databaseRequest.parse(args)), { signal: abort })
         : measuredWebSearch(
             wowheadQuery.parse(args),
             chat.modelSettings?.model || defaultModel(),
