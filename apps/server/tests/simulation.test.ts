@@ -378,6 +378,49 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
       }),
   );
 
+  it.effect(
+    'an incomplete reading asks for a reload, and the catalog falls back to the class',
+    () =>
+      Effect.gen(function* () {
+        const simulator = yield* Simulation.Simulator;
+        const cases = [
+          (s: any) => {
+            s.sections.character.data.level = 61;
+          },
+          (s: any) => {
+            delete s.sections.character.data.raceToken;
+          },
+          (s: any) => {
+            s.sections.talents.data.selected = [{ id: 11070, rank: 6 }];
+          },
+          (s: any) => {
+            s.sections.spells.data.known = [{ id: 1.5 }];
+          },
+          (s: any) => {
+            s.sections.gear.data.items = [{ id: 1, slot: 20, link: 'item:1' }];
+          },
+        ];
+        for (const change of cases) {
+          const snapshot = mageSnapshot();
+          change(snapshot);
+          const error = yield* Effect.flip(simulator.prepare(snapshot, input));
+          assert.equal(
+            error.message,
+            'Fresh, complete Forever character, raceToken, talents, spells and gear readings are required. Reload the addon if needed.',
+          );
+        }
+        const incomplete: any = mageSnapshot();
+        incomplete.sections.gear.status = 'unavailable';
+        const fromSnapshot = yield* simulator.run(incomplete, { catalogOnly: true });
+        assert.equal(fromSnapshot.status, 'unavailable');
+        const fromCharacter = yield* simulator.run(incomplete, {
+          catalogOnly: true,
+          character: { class: 'MAGE', level: 60, raceToken: 'Gnome' },
+        });
+        assert.equal(fromCharacter.status, 'catalog');
+      }),
+  );
+
   it.effect.skipIf(!hasBinary)(
     'native pinned WoWSims executes a nonzero level-11 simulation',
     () =>

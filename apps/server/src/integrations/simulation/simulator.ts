@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { Clock, Context, Effect, FileSystem, Layer, Path, Schema, Stream } from 'effect';
+import type { z } from 'zod';
+import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
 import { Digest } from 'effect/crypto';
 import type { PlatformError } from 'effect/PlatformError';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
@@ -12,47 +12,46 @@ import { AppConfig } from '../../app-config.ts';
 import { adapters } from './adapters/index.ts';
 import type { ClassMetadata } from './adapters/types.ts';
 import { equipmentSlots, replaceEquipment, type CatalogItem } from './equipment.ts';
-const reading = z.object({
-  sections: z.object({
-    character: z.object({
-      status: z.literal('available'),
-      data: z.object({
-        name: z.string(),
-        realm: z.string(),
-        game: z.literal('WoW Forever'),
-        level: z.number().int().min(1).max(60),
-        class: z.string(),
-        raceToken: z.string(),
-        build: z.string().optional(),
+const positiveInt = Schema.Int.check(Schema.isGreaterThan(0));
+const intBetween = (minimum: number, maximum: number) =>
+  Schema.Int.check(Schema.isBetween({ minimum, maximum }));
+/** The snapshot sections a simulation needs: a fresh, complete Forever character reading. */
+const Reading = Schema.Struct({
+  sections: Schema.Struct({
+    character: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({
+        name: Schema.String,
+        realm: Schema.String,
+        game: Schema.Literal('WoW Forever'),
+        level: intBetween(1, 60),
+        class: Schema.String,
+        raceToken: Schema.String,
+        build: Schema.optional(Schema.String),
       }),
     }),
-    spells: z.object({
-      status: z.literal('available'),
-      data: z.object({ known: z.array(z.object({ id: z.number().int().positive() })) }),
+    spells: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({ known: Schema.Array(Schema.Struct({ id: positiveInt })) }),
     }),
-    talents: z.object({
-      status: z.literal('available'),
-      data: z.object({
-        selected: z.array(
-          z.object({ id: z.number().int().positive(), rank: z.number().int().min(1).max(5) }),
-        ),
-        hasPendingChanges: z.boolean().optional(),
+    talents: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({
+        selected: Schema.Array(Schema.Struct({ id: positiveInt, rank: intBetween(1, 5) })),
+        hasPendingChanges: Schema.optional(Schema.Boolean),
       }),
     }),
-    gear: z.object({
-      status: z.literal('available'),
-      data: z.object({
-        items: z.array(
-          z.object({
-            slot: z.number().int().min(1).max(19),
-            id: z.number().int().positive(),
-            link: z.string(),
-          }),
+    gear: Schema.Struct({
+      status: Schema.Literal('available'),
+      data: Schema.Struct({
+        items: Schema.Array(
+          Schema.Struct({ slot: intBetween(1, 19), id: positiveInt, link: Schema.String }),
         ),
       }),
     }),
   }),
 });
+const decodeReading = Schema.decodeUnknownOption(Reading);
 interface Manifest {
   wandIds: number[];
   name: string;
@@ -87,7 +86,7 @@ const failure = (message: string) => new SimulationError({ message });
 /** The message Node gave the failed file or process call, as `fs` and `execFile` reported it. */
 const platformFailure = (error: PlatformError) =>
   failure(error.reason.cause instanceof Error ? error.reason.cause.message : error.message);
-/** Runs a throwing plain helper (zod parsing, `JSON.parse`, equipment rules). */
+/** Runs a throwing plain helper (contract parsing, `JSON.parse`, equipment rules). */
 const attempt = <A>(evaluate: () => A) =>
   Effect.try({
     try: evaluate,
@@ -219,13 +218,13 @@ const make = Effect.gen(function* () {
           },
         }
       : undefined;
-    const parsed = reading.safeParse(snapshot ?? fallback);
-    if (!parsed.success) {
+    const parsed = decodeReading(snapshot ?? fallback);
+    if (Option.isNone(parsed)) {
       return yield* failure(
         'Fresh, complete Forever character, raceToken, talents, spells and gear readings are required. Reload the addon if needed.',
       );
     }
-    const s = parsed.data.sections,
+    const s = parsed.value.sections,
       c = { ...s.character.data, ...parsedOptions.character };
     const adapter = adapters[c.class];
     if (!adapter) {
@@ -611,10 +610,11 @@ const make = Effect.gen(function* () {
       );
     }
     if (options.data.catalogOnly) {
-      const parsed = reading.safeParse(snapshot);
       const token =
         options.data.character?.class ??
-        (parsed.success ? parsed.data.sections.character.data.class : undefined);
+        Option.getOrUndefined(
+          Option.map(decodeReading(snapshot), (r) => r.sections.character.data.class),
+        );
       const catalog: Record<string, ClassMetadata> = yield* readJson(
         path.join(directory, 'classes.json'),
       );
