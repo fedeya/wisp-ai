@@ -1,7 +1,13 @@
-import { describe, expect, it } from 'vitest';
-import { atlasLootUrl, memoryTables, parseCsv, pinned, unzip } from '../src/index.ts';
-import { runAtlasLoot } from '../src/atlasloot.ts';
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { describe, expect, it } from '@effect/vitest';
+import { Effect, FileSystem, Layer, Path } from 'effect';
+import { Digest } from 'effect/crypto';
+import { atlasLootUrl, parseCsv, unzip, type AtlasLootPin } from '../src/index.ts';
+import * as AtlasLoot from '../src/atlasloot.ts';
 import { dungeonLoot, type LootInstance } from '../src/datasets/dungeon-loot.ts';
+import * as Wago from '../src/wago.ts';
+import { cannedHttp } from './canned-http.ts';
 
 const MODULE = 'AtlasLootClassic_DungeonsAndRaids';
 // Shaped like AtlasLoot Classic Forever 1.4.8's data.lua: a classic instance
@@ -65,7 +71,7 @@ const FILES = new Map([
   [`${MODULE}/droprate.lua`, Buffer.from(DROPRATE)],
 ]);
 // Real Forever 1.60.1.71037 rows.
-const TABLES = memoryTables({
+const TABLES = Wago.layerMemory({
   AreaTable: parseCsv('ID,AreaName_lang\n2437,"Ragefire Chasm"'),
   Map: parseCsv(
     'ID,MapName_lang,InstanceType\n389,"Ragefire Chasm",1\n409,"Molten Core",2\n2994,"Alcaz Prison",1\n1,Kalimdor,0',
@@ -73,9 +79,10 @@ const TABLES = memoryTables({
 });
 
 function build(files = FILES, instanceMapIds = {}) {
-  return dungeonLoot(async (areas) => runAtlasLoot(files, areas), { instanceMapIds }).build(
-    TABLES,
-  ) as unknown as Promise<{ instances: LootInstance[] }>;
+  return dungeonLoot({ instanceMapIds }).build.pipe(
+    Effect.provide(Layer.mergeAll(TABLES, AtlasLoot.layerFromFiles(files), NodeServices.layer)),
+    Effect.map((value) => value as unknown as { instances: LootInstance[] }),
+  );
 }
 
 // A stored (uncompressed) zip with one entry, its folder written with a
@@ -104,70 +111,130 @@ function storedZip(name: string, content: string) {
 
 describe('AtlasLoot source', () => {
   it('pins a CurseForge file and reads archives with either path separator', () => {
-    expect(atlasLootUrl({ ...pinned.atlasloot, file: 9763940, name: 'a.zip' })).toBe(
+    expect(atlasLootUrl({ project: 1422985, file: 9763940, name: 'a.zip', sha256: '' })).toBe(
       'https://mediafilez.forgecdn.net/files/9763/940/a.zip',
     );
     const files = unzip(storedZip(`${MODULE}\\data.lua`, 'return 1'));
     expect(files.get(`${MODULE}/data.lua`)?.toString()).toBe('return 1');
   });
+
+  // An archive whose module lacks droprate.lua, so a load that downloads,
+  // verifies and unpacks it stops at running the loot files.
+  const ARCHIVE = storedZip(`${MODULE}\\data.lua`, 'return 1');
+  const load = (pin: AtlasLootPin, cacheDir: string, http: ReturnType<typeof cannedHttp>) =>
+    AtlasLoot.AtlasLoot.use((source) => source.load(new Map())).pipe(
+      Effect.provide(
+        AtlasLoot.layer({ pin, cacheDir, refresh: false }).pipe(
+          Layer.provide([http.layer, NodeCrypto.layerDigest]),
+        ),
+      ),
+      Effect.flip,
+      Effect.map((error) => error.message),
+    );
+
+  it.effect('downloads the pinned archive once, checks its hash and runs its loot files', () => {
+    const http = cannedHttp(() => new Response(ARCHIVE));
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const digest = yield* Digest.Digest;
+      const cacheDir = yield* fs.makeTempDirectoryScoped();
+      const pin = {
+        project: 1422985,
+        file: 9763940,
+        name: 'a.zip',
+        sha256: yield* digest.digestHex(Digest.sha256, ARCHIVE),
+      };
+      const missing = `AtlasLoot archive has no ${MODULE}/droprate.lua`;
+      expect(yield* load(pin, cacheDir, http)).toBe(missing);
+      expect(yield* load(pin, cacheDir, http)).toBe(missing);
+      expect(http.sent.map(({ url }) => url.href)).toEqual([
+        'https://mediafilez.forgecdn.net/files/9763/940/a.zip',
+      ]);
+      const cached = yield* fs.readFile(path.join(cacheDir, 'atlasloot', 'a.zip'));
+      expect(Buffer.from(cached).equals(ARCHIVE)).toBe(true);
+      expect(yield* load({ ...pin, sha256: 'abc' }, cacheDir, http)).toBe(
+        `AtlasLoot a.zip: sha256 ${pin.sha256} does not match the pin abc`,
+      );
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layerDigest)));
+  });
+
+  it.effect('names the archive when the download fails', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const cacheDir = yield* fs.makeTempDirectoryScoped();
+      const pin = { project: 1422985, file: 9763940, name: 'a.zip', sha256: 'abc' };
+      const http = cannedHttp(() => new Response('', { status: 404 }));
+      expect(yield* load(pin, cacheDir, http)).toBe('AtlasLoot a.zip: HTTP 404');
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });
 
 describe('dungeon loot dataset', () => {
-  it('lists each boss loot with Forever additions and drop rates', async () => {
-    const { instances } = await build();
-    const ragefire = instances.find((instance) => instance.key === 'Ragefire')!;
-    expect(ragefire).toMatchObject({
-      name: 'Ragefire Chasm',
-      instanceMapId: 389,
-      kind: 'dungeon',
-      levels: { min: 10, recommended: 13, max: 18 },
-    });
-    expect(ragefire.forever).toBeUndefined();
-    expect(ragefire.bosses).toEqual([
-      {
-        name: 'Jergosh the Invoker',
-        npcIds: [11518],
-        items: [
-          { id: 14150, chance: 36.36 },
-          { id: 14147, chance: 37.34 },
-          { id: 253906, forever: true },
-        ],
-      },
-    ]);
-  });
+  it.effect('lists each boss loot with Forever additions and drop rates', () =>
+    Effect.gen(function* () {
+      const { instances } = yield* build();
+      const ragefire = instances.find((instance) => instance.key === 'Ragefire')!;
+      expect(ragefire).toMatchObject({
+        name: 'Ragefire Chasm',
+        instanceMapId: 389,
+        kind: 'dungeon',
+        levels: { min: 10, recommended: 13, max: 18 },
+      });
+      expect(ragefire.forever).toBeUndefined();
+      expect(ragefire.bosses).toEqual([
+        {
+          name: 'Jergosh the Invoker',
+          npcIds: [11518],
+          items: [
+            { id: 14150, chance: 36.36 },
+            { id: 14147, chance: 37.34 },
+            { id: 253906, forever: true },
+          ],
+        },
+      ]);
+    }),
+  );
 
-  it('names classic tables keyed by an AtlasLoot locale key after their map', async () => {
-    const { instances } = await build();
-    expect(instances.find((instance) => instance.key === 'MoltenCore')).toMatchObject({
-      name: 'Molten Core',
-      instanceMapId: 409,
-      kind: 'raid',
-    });
-  });
+  it.effect('names classic tables keyed by an AtlasLoot locale key after their map', () =>
+    Effect.gen(function* () {
+      const { instances } = yield* build();
+      expect(instances.find((instance) => instance.key === 'MoltenCore')).toMatchObject({
+        name: 'Molten Core',
+        instanceMapId: 409,
+        kind: 'raid',
+      });
+    }),
+  );
 
-  it('places Forever instances by name and keeps bosses without drops', async () => {
-    const { instances } = await build();
-    const alcaz = instances.find((instance) => instance.key === 'TheAlcazPrison')!;
-    expect(alcaz).toMatchObject({ name: 'Alcaz Prison', instanceMapId: 2994, forever: true });
-    expect(alcaz.bosses).toEqual([
-      { name: 'Overseer Wrex', items: [{ id: 276732 }] },
-      { name: 'Zarla Ober', noDropsYet: true, items: [] },
-      { name: 'Trash', extra: true, items: [{ id: 287020 }] },
-    ]);
-  });
+  it.effect('places Forever instances by name and keeps bosses without drops', () =>
+    Effect.gen(function* () {
+      const { instances } = yield* build();
+      const alcaz = instances.find((instance) => instance.key === 'TheAlcazPrison')!;
+      expect(alcaz).toMatchObject({ name: 'Alcaz Prison', instanceMapId: 2994, forever: true });
+      expect(alcaz.bosses).toEqual([
+        { name: 'Overseer Wrex', items: [{ id: 276732 }] },
+        { name: 'Zarla Ober', noDropsYet: true, items: [] },
+        { name: 'Trash', extra: true, items: [{ id: 287020 }] },
+      ]);
+    }),
+  );
 
-  it('fails on an instance no map matches unless it is curated', async () => {
-    const files = new Map(FILES);
-    files.set(
-      `${MODULE}/data.lua`,
-      Buffer.from(DATA.replace('"Alcaz Prison" .. LTNX', '"Mount Hyjal" .. LTNX')),
-    );
-    await expect(build(files)).rejects.toThrow('TheAlcazPrison (Mount Hyjal)');
-    const { instances } = await build(files, {
-      TheAlcazPrison: { value: null, source: 'test' },
-    });
-    expect(instances.find((instance) => instance.key === 'TheAlcazPrison')?.instanceMapId).toBe(
-      undefined,
-    );
-  });
+  it.effect('fails on an instance no map matches unless it is curated', () =>
+    Effect.gen(function* () {
+      const files = new Map(FILES);
+      files.set(
+        `${MODULE}/data.lua`,
+        Buffer.from(DATA.replace('"Alcaz Prison" .. LTNX', '"Mount Hyjal" .. LTNX')),
+      );
+      const error = yield* Effect.flip(build(files));
+      expect(error.message).toContain('TheAlcazPrison (Mount Hyjal)');
+      const { instances } = yield* build(files, {
+        TheAlcazPrison: { value: null, source: 'test' },
+      });
+      expect(instances.find((instance) => instance.key === 'TheAlcazPrison')?.instanceMapId).toBe(
+        undefined,
+      );
+    }),
+  );
 });
