@@ -82,6 +82,86 @@ simulation adapters). Effect code calls it directly.
 - **Out of scope:** `apps/web` (Next.js), the Rust host and the Lua addon. The
   Desktop React UI is an optional last phase.
 
+## Target structure
+
+The migration also fixes where code lives, so the rewritten modules land in a
+layout worth keeping. Today `apps/server/src/` mixes the entry point, platform
+helpers, domain services and code on its way out at its root; `chat/` and
+`reply/` import each other; HTTP servers sit in `api/`, `agent/`, `models/`
+and `auth/`; and `integrations/` holds settings that every domain reads.
+
+### Principles
+
+1. **Folders by domain, not by kind.** A folder is about one part of Wisp (chats,
+   routines, the game connection) and owns its services, repository, schemas,
+   desktop API handlers and the agent host port it implements. No `services/`,
+   `utils/` or `helpers/` folders.
+2. **`platform/` for the machine and the network.** Configuration, logging, the
+   HTTP client, JSON settings files and the secret vault: adapters every domain
+   may use, with no domain logic.
+3. **`http/` for servers.** Listeners, security middleware and which API is
+   served where. Handlers stay in their domain (`<domain>-api.ts`) and stay
+   thin.
+4. **One direction.** `platform/` ← domains ← `http/` ← `server.ts`. A domain
+   uses another domain through its service, never its records, repository or
+   private helpers, and folders never import each other in a cycle.
+5. **The root holds the entry point and the layer graph only:** `main.ts` and
+   `server.ts`. Nothing else is added there.
+6. **Contracts stay in packages:** `@wisp/protocol` (Desktop and server,
+   including the `HttpApi`), `@wisp/agent/contract` (agent and host),
+   `@wisp/wow-bridge` (addon wire format), `@wisp/db` (SQLite schema).
+7. **Names.** kebab-case, one main export per file, prefixed with the domain
+   when the bare name would be ambiguous in a search (`routine-store.ts`, not
+   `store.ts`). A domain with a single file can stay a file
+   (`integrations/thewowdb.ts`).
+
+### `apps/server/src`
+
+```text
+main.ts           process entry: Layer.launch(ServerLayer) with NodeRuntime.runMain
+server.ts         ServerLayer, the layer graph (today's runtime.ts)
+platform/         app-config, http-client, json-file, logger, errors, secret-vault
+http/             desktop-server (Desktop HttpApi), agent-server (model proxy, MCP relay)
+session/          SessionState on SubscriptionRef and its change stream
+game/             WoW transport, packet receiver, snapshot publisher, item loading, the agent's Game port
+chat/             Chat schema, repository, lifecycle, projection, history, titles, references, replies
+turns/            agent engine wiring, turn runner, turn context, agent history and sessions
+auth/             ChatGPT sign-in and its callback page, account operations
+models/           model connections, catalog, failures, timing, proxy handler, response stream
+capabilities/     capability switches and integration availability
+integrations/     one folder (or file) per external service: everloot/, mcp/, search/, simulation/, thewowdb.ts
+memory/  panels/  routines/  features/  telemetry/  settings/  migrations/  evals/
+```
+
+| Today                                                                                               | Target                                    |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `runtime.ts`                                                                                        | `server.ts` (phase 5)                     |
+| `runtime-resources.ts`, `application-database.ts`, `loopback-server.ts`                             | Deleted by phases 3–5                     |
+| `app-config.ts`, `http-client.ts`, `json-file.ts`, `logger.ts`, `errors.ts`, `auth/secret-vault.ts` | `platform/`                               |
+| `api/desktop-server.ts`; the listener in `agent/agent-server.ts`                                    | `http/`                                   |
+| `api/desktop-handler.ts`                                                                            | Each domain's `<domain>-api.ts` (phase 4) |
+| `session-state.ts`                                                                                  | `session/`                                |
+| `features.ts`, `telemetry.ts`, `bridge-config.ts`                                                   | `features/`, `telemetry/`, `settings/`    |
+| `account-operations.ts`                                                                             | `auth/`                                   |
+| `reply/*`                                                                                           | `chat/` (ends the `chat` ↔ `reply` cycle) |
+| `agent/turn-runner.ts`, `agent-history.ts`, `agent-session.ts`, `chat/context.ts`                   | `turns/`                                  |
+| `integrations/capabilities.ts`, `integrations/integration-state.ts`                                 | `capabilities/`                           |
+| `integrations/gear-search.ts`, `integrations/item-sources.ts`                                       | `integrations/everloot/`                  |
+
+`apps/agent/src` keeps its layout (`contract/`, `execution/`, `host/` ports,
+`integrations/`, `models/`, `session/`, `tools/` and the `wisp/` tool catalog);
+`host/agent-rpc.ts` and `host/agent-host.ts` go away with the last RPC routes in
+phase 4.
+
+### Moving files
+
+- A migration PR moves the module it rewrites to its target folder, with its
+  tests, and updates every import. New modules go straight to their target.
+- A module that only needs to move gets a move-only PR, so Git shows renames
+  and nothing else; it is never mixed with a rewrite of another module.
+- Moving keeps a file's package export name; replacing a module's API renames
+  or removes the export (rule 8).
+
 ## Phases
 
 Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
@@ -194,7 +274,8 @@ Independent of the other phases; these PRs can run in parallel.
 
 1. Read `node_modules/effect/AGENTS.md` and the matching reference in
    [`.agents/skills/effect/references/`](../.agents/skills/effect/references/).
-2. Convert the module and all its consumers, and delete the old code path.
+2. Convert the module and all its consumers, delete the old code path, and put
+   the module in its [target folder](#target-structure).
 3. Move its tests to `@effect/vitest`, with test layers instead of partial
    dependency objects.
 4. Record the scoreboard drop, and extend the restricted-imports rule to the
