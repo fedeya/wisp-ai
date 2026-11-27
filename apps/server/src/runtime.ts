@@ -2,6 +2,8 @@ import { characterLabel } from '@wisp/protocol/character-key';
 import { ConfigProvider, Context, Effect, Exit, Fiber, FileSystem, Layer, Scope } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
+import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
@@ -34,7 +36,6 @@ import * as AgentMemoryAccess from './memory/agent-access.ts';
 import * as Sql from '@wisp/db/sql-database';
 import { importProductData } from './migrations/product-json.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
-import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './integrations/capabilities.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
@@ -54,7 +55,7 @@ import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
 import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
 import { TheWoWDB } from './integrations/thewowdb.ts';
-import { Simulator } from './integrations/simulation/simulator.ts';
+import * as Simulation from './integrations/simulation/simulator.ts';
 import * as AppConfig from './app-config.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
@@ -74,7 +75,15 @@ const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
  * The migrated services `makeServer` receives from its caller. Each migrated
  * adapter adds its layer here; `main.ts` and `startServerEffect` provide it.
  */
-export const ServerLayer = Layer.mergeAll(AppConfig.layer, NodeFileSystem.layer, NodePath.layer);
+export const ServerLayer = Layer.mergeAll(
+  AppConfig.layer,
+  NodeFileSystem.layer,
+  NodePath.layer,
+  Simulation.layer.pipe(
+    Layer.provide(NodeChildProcessSpawner.layer),
+    Layer.provide([AppConfig.layer, NodeFileSystem.layer, NodePath.layer, NodeCrypto.layerDigest]),
+  ),
+);
 
 export interface ServerOptions {
   agentPort?: number;
@@ -127,7 +136,7 @@ export const makeServer = Effect.fn('Server.make')(
       ]),
     );
     const runtime = paths.runtime;
-    const simulator = new Simulator(ROOT, runtime);
+    const simulator = yield* Simulation.Simulator;
     yield* startup(() => mkdir(runtime, { recursive: true }));
     const databaseFile = applicationDatabaseFile(runtime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
@@ -210,7 +219,7 @@ export const makeServer = Effect.fn('Server.make')(
     capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
     capabilitySettings.features = features.values();
     const integrationState = new IntegrationState(capabilitySettings);
-    const simulatorAvailable = existsSync(paths.simulatorExecutable);
+    const simulatorAvailable = yield* simulator.available;
     capabilitySettings.availability.set('integration:wowsims', {
       available: simulatorAvailable,
       status: simulatorAvailable ? 'ready' : 'missing',
