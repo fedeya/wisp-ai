@@ -45,9 +45,12 @@ simulation adapters). Effect code calls it directly.
    `TestClock` instead of real sleeps or fake timers.
 8. **One module per PR.** A PR converts one module end to end (implementation,
    consumers and tests) and deletes the old path, including package exports and
-   names nobody imports anymore; no compatibility aliases. It changes no behavior; a
-   behavior change gets its own PR. Wire formats, files on disk and the
-   contracts with the Rust host and the addon stay byte-compatible.
+   names nobody imports anymore; no compatibility aliases. The module's own zod
+   schemas move to `Schema` in the same PR; only shared contract schemas
+   (`@wisp/protocol`, `@wisp/agent/contract`) wait for phase 1. A migration PR
+   changes no behavior; a behavior change gets its own PR (see phase 9). Wire
+   formats, files on disk and the contracts with the Rust host and the addon stay
+   byte-compatible.
 
 ## From → to
 
@@ -222,7 +225,7 @@ Each item is one PR unless it says otherwise. Tick it in the PR that lands it.
 - [x] App configuration on `Config` (`WISP_*` variables, app paths).
 - [ ] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
       the same file formats.
-- [ ] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
+- [x] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
 - [ ] `Simulator` on `ChildProcess` and `Stream`.
 - [ ] One `HttpClient` layer; TheWoWDB, web search (Exa, public, Wowhead) and
       model discovery on it. (TheWoWDB done)
@@ -294,6 +297,30 @@ Independent of the other phases; these PRs can run in parallel.
 - [ ] Spike `@effect/atom-react` with `AtomHttpApi` on the Routines page, then
       decide whether it replaces Zustand and the `useEffect` loaders.
 
+### 9. Deferred behavior changes
+
+Changes a migration PR found worth making but left out to stay a pure
+migration. Each lands in its own PR after its module is migrated, with a release
+note when players can notice it. A migration PR that leaves one out adds it here
+with a link to itself.
+
+- [ ] Simulator: decode the pinned data files (`classes.json`, `items.json`,
+      `manifest.json`) and the CLI's `output.json` with `Schema` instead of
+      `JSON.parse` into loose types, so malformed data fails with a typed error
+      instead of reaching the simulation ([#319](https://github.com/fedeya/wisp-ai/pull/319)).
+- [ ] TheWoWDB: decode responses into typed schemas instead of checking unknown
+      JSON with `Schema.is`; the record the agent receives may then lose the
+      source's key order ([#316](https://github.com/fedeya/wisp-ai/pull/316)).
+- [ ] Repositories, with phase 3 (proposed in [#307](https://github.com/fedeya/wisp-ai/pull/307)):
+  - [ ] Transactions take `BEGIN IMMEDIATE`, including the startup read of
+        chats.
+  - [ ] Rows are validated against their schemas when read, and a damaged row
+        fails with `CorruptRecord`.
+  - [ ] The legacy JSON import (`importProductData`) runs once as a startup step
+        instead of lazily in every store method.
+  - [ ] Panels are read from SQLite on every call instead of an in-memory copy.
+  - [ ] The routine scheduler ticks on `Schedule.fixed('3 seconds')`.
+
 ## Done
 
 - The scoreboard reads zero for `zod`, Hono, Node I/O imports, timers,
@@ -306,10 +333,12 @@ Independent of the other phases; these PRs can run in parallel.
 
 1. Read `node_modules/effect/AGENTS.md` and the matching reference in
    [`.agents/skills/effect/references/`](../.agents/skills/effect/references/).
-2. Convert the module and all its consumers, delete the old code path, and put
-   the module in its [target folder](#target-structure).
+2. Convert the module (its own zod schemas included) and all its consumers,
+   delete the old code path, and put the module in its
+   [target folder](#target-structure).
 3. Move its tests to `@effect/vitest`, with test layers instead of partial
    dependency objects.
 4. Record the scoreboard drop, and extend the restricted-imports rule to the
    folder if it is clean now.
 5. Tick the item above.
+6. If you left a behavior change out, add it to [phase 9](#9-deferred-behavior-changes).

@@ -22,7 +22,7 @@ import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/mode
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
-import type { SecretVault } from '../auth/secret-vault.ts';
+import type { PromiseSecretVault as SecretVault } from '../platform/secret-vault.ts';
 import { readJson, writeJson } from '../json-file.ts';
 
 /**
