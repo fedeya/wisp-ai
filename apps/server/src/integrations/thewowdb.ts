@@ -1,8 +1,8 @@
-import type { z } from 'zod';
 import { Context, DateTime, Effect, Layer, Predicate, Ref, Schema } from 'effect';
 import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 import type { HttpClientError } from 'effect/http';
 import { databaseRequest } from '@wisp/agent/contract/database';
+import type { DatabaseRequest, DatabaseRequestInput } from '@wisp/agent/contract/database';
 
 const API = 'https://thewowdb.com/api/v1/forever/';
 const REQUEST_TIMEOUT = '20 seconds';
@@ -10,7 +10,6 @@ const MAX_TTL_SECONDS = 3600;
 const MAX_RESPONSE_LENGTH = 2 * 1024 * 1024;
 const CACHE_CAPACITY = 100;
 
-type DatabaseRequest = z.output<typeof databaseRequest>;
 type DatabaseKind = DatabaseRequest['kind'];
 
 const extraFields = [Schema.Record(Schema.String, Schema.Unknown)] as const;
@@ -78,7 +77,7 @@ export class TheWoWDB extends Context.Service<
   {
     /** Reads TheWoWDB's Forever catalog; source failures are results the agent can act on. */
     readonly query: (
-      input: z.input<typeof databaseRequest>,
+      input: DatabaseRequestInput,
     ) => Effect.Effect<DatabaseResult, InvalidDatabaseRequest>;
   }
 >()('@wisp/server/integrations/TheWoWDB') {}
@@ -218,7 +217,7 @@ export const layer = Layer.effect(
       return cachedResult(source, entry, false);
     });
 
-    const query = Effect.fn('TheWoWDB.query')(function* (input: z.input<typeof databaseRequest>) {
+    const query = Effect.fn('TheWoWDB.query')(function* (input: DatabaseRequestInput) {
       const parsed = databaseRequest.safeParse(input);
       if (!parsed.success) {
         return yield* new InvalidDatabaseRequest({ message: parsed.error.message });

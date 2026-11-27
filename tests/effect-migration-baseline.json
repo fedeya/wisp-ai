@@ -1,6 +1,6 @@
 {
   "apps/server": {
-    "zodImports": 25,
+    "zodImports": 24,
     "honoImports": 9,
     "nodeIoImports": 24,
     "fetchCalls": 2,
