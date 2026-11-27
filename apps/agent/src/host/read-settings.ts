@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect, type FileSystem } from 'effect';
 import { HostError } from '../execution/engine-errors.ts';
 

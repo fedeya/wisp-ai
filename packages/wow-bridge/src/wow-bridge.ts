@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Cause, Context, Effect, FileSystem, Layer, Path, Queue, Stream } from 'effect';
 import type { Scope } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';

@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect, Schema } from 'effect';
 import * as Memory from '@wisp/agent/memory';
 import { MemoryEntries } from '@wisp/agent/contract/memory';

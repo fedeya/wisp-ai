@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Formatter, Logger, Predicate, Record } from 'effect';
 
 // Keep the existing bridge.log format and redact credentials from structured fields.

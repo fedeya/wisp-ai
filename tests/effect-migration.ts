@@ -1,7 +1,5 @@
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { Schema } from 'effect';
+import { Effect, FileSystem, Path, Schema } from 'effect';
+import type { PlatformError } from 'effect/PlatformError';
 
 /**
  * Effect migration scoreboard: how often each workspace's shipped TypeScript
@@ -10,9 +8,14 @@ import { Schema } from 'effect';
  * source lines and skip lines that are only comments.
  */
 
-const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
-const baselineFile = fileURLToPath(new URL('./effect-migration-baseline.json', import.meta.url));
+/** A path relative to this module's folder. */
+const fromHere = Effect.fnUntraced(function* (relative: string) {
+  const path = yield* Path.Path;
+  return yield* path.fromFileUrl(new URL(relative, import.meta.url));
+});
 
+export const repositoryRoot = fromHere('..');
+const baselineFile = fromHere('./effect-migration-baseline.json');
 /** Each workspace and the folder that holds its shipped code. */
 const workspaces = [
   { workspace: 'apps/server', folder: 'apps/server/src', recursive: true },
@@ -39,12 +42,13 @@ const codePatternNames = [
   'tryBlocks',
 ] as const;
 
+/** Every pattern, in the order reports list them. */
+export const patternNames = [...importPatternNames, ...codePatternNames] as const;
+
 type ImportPattern = (typeof importPatternNames)[number];
 type CodePattern = (typeof codePatternNames)[number];
 export type PatternName = ImportPattern | CodePattern;
 export type Counts = Record<PatternName, number>;
-/** Pattern counts by workspace, as stored in the baseline file. */
-export type Scoreboard = Readonly<Record<string, Readonly<Record<string, number>>>>;
 
 const nodeIoModules = new Set(['fs', 'child_process', 'http', 'https']);
 
@@ -76,14 +80,30 @@ const commentLine = /^\s*(?:\/\/|\/\*|\*)/;
 const excludedFile = /\.(?:test|spec)\.|test-helpers?\.|\.d\.ts$|\.generated\./;
 const excludedFolders = new Set(['node_modules', 'dist', 'tests', '__tests__']);
 
-const sourceFiles = (folder: string, recursive: boolean): string[] =>
-  readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
-    const file = path.join(folder, entry.name);
-    if (entry.isDirectory()) {
-      return recursive && !excludedFolders.has(entry.name) ? sourceFiles(file, recursive) : [];
-    }
-    return /\.tsx?$/.test(entry.name) && !excludedFile.test(entry.name) ? [file] : [];
-  });
+/** The scored source files in a folder, in name order. */
+const sourceFiles = Effect.fnUntraced(function* (
+  folder: string,
+  recursive: boolean,
+): Effect.fn.Return<string[], PlatformError, FileSystem.FileSystem | Path.Path> {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const entries = yield* fs.readDirectoryEntries(folder);
+  const nested = yield* Effect.forEach(
+    [...entries].sort((a, b) => a.name.localeCompare(b.name)),
+    (entry) => {
+      const file = path.join(folder, entry.name);
+      if (entry.type === 'Directory') {
+        return recursive && !excludedFolders.has(entry.name)
+          ? sourceFiles(file, recursive)
+          : Effect.succeed([]);
+      }
+      return Effect.succeed(
+        /\.tsx?$/.test(entry.name) && !excludedFile.test(entry.name) ? [file] : [],
+      );
+    },
+  );
+  return nested.flat();
+});
 
 const emptyCounts = (): Counts => ({
   zodImports: 0,
@@ -100,7 +120,8 @@ const emptyCounts = (): Counts => ({
   tryBlocks: 0,
 });
 
-const countSource = (source: string, counts: Counts) => {
+/** Counts every pattern in one source text, adding to `counts`. */
+export const countSource = (source: string, counts: Counts = emptyCounts()): Counts => {
   for (const line of source.split('\n')) {
     if (commentLine.test(line)) {
       continue;
@@ -116,27 +137,105 @@ const countSource = (source: string, counts: Counts) => {
       counts[name] += line.match(codePatterns[name])?.length ?? 0;
     }
   }
+  return counts;
 };
 
+/** Counts every pattern in one source file. */
+export const countFile = Effect.fnUntraced(function* (file: string) {
+  const fs = yield* FileSystem.FileSystem;
+  return countSource(yield* fs.readFileString(file));
+});
+
+/** The shipped source files the scoreboard counts, by workspace. */
+export const scoredFiles = Effect.fnUntraced(function* () {
+  const path = yield* Path.Path;
+  const root = yield* repositoryRoot;
+  return yield* Effect.forEach(workspaces, ({ workspace, folder, recursive }) =>
+    Effect.map(sourceFiles(path.join(root, folder), recursive), (files) => ({
+      workspace,
+      files,
+    })),
+  );
+});
+
 /** Counts every pattern in every workspace's shipped sources. */
-export const scoreboard = (root = repositoryRoot): Scoreboard =>
-  Object.fromEntries(
-    workspaces.map(({ workspace, folder, recursive }) => {
-      const counts = emptyCounts();
-      for (const file of sourceFiles(path.join(root, folder), recursive)) {
-        countSource(readFileSync(file, 'utf8'), counts);
-      }
-      return [workspace, counts];
-    }),
+export const scoreboard = Effect.fnUntraced(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const board: Record<string, Counts> = {};
+  for (const { workspace, files } of yield* scoredFiles()) {
+    const counts = emptyCounts();
+    for (const file of files) {
+      countSource(yield* fs.readFileString(file), counts);
+    }
+    board[workspace] = counts;
+  }
+  return board;
+});
+
+/** The patterns a file still contains, with their counts. */
+export const presentPatterns = (counts: Counts) =>
+  patternNames.flatMap((pattern) =>
+    counts[pattern] > 0 ? [{ pattern, count: counts[pattern] }] : [],
   );
 
-const BaselineSchema = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Number));
+const ScoreboardSchema = Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Int));
+/** Pattern counts by workspace, as stored in the baseline file. */
+export type Scoreboard = typeof ScoreboardSchema.Type;
 
-export const readBaseline = (): Scoreboard =>
-  Schema.decodeUnknownSync(BaselineSchema)(JSON.parse(readFileSync(baselineFile, 'utf8')));
+/** The baseline file's text: the scoreboard as JSON indented by two spaces. */
+const BaselineJson = Schema.fromJsonString(ScoreboardSchema, { space: 2 });
 
-export const writeBaseline = (board: Scoreboard = scoreboard()) =>
-  writeFileSync(baselineFile, `${JSON.stringify(board, null, 2)}\n`);
+export const readBaseline = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const text = yield* fs.readFileString(yield* baselineFile);
+  return yield* Schema.decodeEffect(BaselineJson)(text);
+});
+
+/**
+ * A migrated file says so in a comment: `// @effect-migrated`, or
+ * `// @effect-migrated allow=effectPromises: adapter around the MCP SDK` to
+ * keep patterns for a stated reason.
+ */
+const markerLine = /^\/\/ @effect-migrated\b(.*)$/m;
+const allowance = /^ allow=([\w,]+): *(\S.*)$/;
+const isPatternName = Schema.is(Schema.Literals(patternNames));
+
+export const markerFormat = '// @effect-migrated [allow=<pattern>[,<pattern>]: <reason>]';
+
+export type Marker =
+  | { readonly kind: 'unmarked' }
+  | { readonly kind: 'migrated'; readonly allow: readonly PatternName[] }
+  | { readonly kind: 'invalid'; readonly problem: string };
+
+/** Reads a source file's migration marker. */
+export const readMarker = (source: string): Marker => {
+  const marker = markerLine.exec(source);
+  if (!marker) {
+    return { kind: 'unmarked' };
+  }
+  const rest = marker[1]?.trimEnd() ?? '';
+  if (rest === '') {
+    return { kind: 'migrated', allow: [] };
+  }
+  const [, names = '', reason = ''] = allowance.exec(rest) ?? [];
+  if (reason === '') {
+    return { kind: 'invalid', problem: `its marker must read \`${markerFormat}\`` };
+  }
+  const unknown = names.split(',').filter((name) => !isPatternName(name));
+  if (unknown.length > 0) {
+    return {
+      kind: 'invalid',
+      problem: `its marker allows unknown patterns (${unknown.join(', ')}); use names from tests/effect-migration.ts`,
+    };
+  }
+  return { kind: 'migrated', allow: names.split(',').filter(isPatternName) };
+};
+
+export const writeBaseline = Effect.fnUntraced(function* (board: Scoreboard) {
+  const fs = yield* FileSystem.FileSystem;
+  const text = yield* Schema.encodeEffect(BaselineJson)(board);
+  yield* fs.writeFileString(yield* baselineFile, `${text}\n`);
+});
 
 export type Change = {
   readonly workspace: string;

@@ -1,3 +1,4 @@
+// @effect-migrated
 import assert from 'node:assert/strict';
 import { Effect, Schema } from 'effect';
 import * as Game from '@wisp/agent/game-access';

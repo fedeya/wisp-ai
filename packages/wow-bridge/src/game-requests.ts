@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Clock, Deferred, Effect } from 'effect';
 import { SecureRandom } from 'effect/crypto';
 
