@@ -111,7 +111,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
         capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
         isStopping: () => false,
         isReady: () => true,
-        changed: () => {},
+        invalidateAddonView: () => {},
         // The turn runner classifies limits from error codes; the text may not say so.
         usageLimited: (chat) => limited.has(chat),
         run: async (chat) => {

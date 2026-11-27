@@ -10,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 import type { ApplicationDatabase } from '../src/application-database.ts';
 import { databaseScope } from './database-fixture.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
-import { PanelStore } from '../src/panels/panel-store.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { savedRoutine } from '@wisp/protocol/routines';
@@ -65,12 +64,13 @@ async function fixture(
     file: string,
     openDb: (file: string) => ApplicationDatabase,
     openMemory: ReturnType<typeof databaseScope>['memory'],
+    openPanels: ReturnType<typeof databaseScope>['panels'],
   ) => Promise<void>,
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-product-storage-'));
   const scope = databaseScope();
   try {
-    await work(root, path.join(root, 'wisp.sqlite'), scope.open, scope.memory);
+    await work(root, path.join(root, 'wisp.sqlite'), scope.open, scope.memory, scope.panels);
   } finally {
     await scope.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -101,7 +101,7 @@ function inspect<T>(file: string, work: (db: DatabaseSync) => T): T {
 }
 
 test('imports all product data into the same database as chats, retaining exact sources, backups and extensions', async () =>
-  fixture(async (root, file, openDb, openMemory) => {
+  fixture(async (root, file, openDb, openMemory, openPanels) => {
     const sources = await legacy(root);
     const chat = {
       ...newChat('history', 'game'),
@@ -117,11 +117,10 @@ test('imports all product data into the same database as chats, retaining exact 
     await openDb(file).initializeProducts();
     const routines = new RoutineStore(openDb(file));
     await routines.load();
-    const panels = new PanelStore(openDb(file));
-    await panels.load();
+    const panels = await openPanels(openDb(file));
     expect(routines.list()).toEqual([routine]);
     expect(routines.history()).toEqual([run]);
-    expect(panels.panels).toEqual([panel]);
+    expect(await panels.list()).toEqual([panel]);
     expect(await openMemory(openDb(file)).read('character', 'mage')).toEqual(memory.entries);
     for (const [name, original] of sources) {
       const originalFile = path.join(root, name);
@@ -248,14 +247,13 @@ test('a failed memory insert rolls back the product import and leaves it retryab
   }));
 
 test('deletions remain authoritative after restart even when legacy files are stale or invalid', async () =>
-  fixture(async (root, file, openDb, openMemory) => {
+  fixture(async (root, file, openDb, openMemory, openPanels) => {
     await legacy(root);
     const routines = new RoutineStore(openDb(file));
     await routines.load();
     await routines.mutate('mage', { operation: 'remove', id: routine.id });
-    const panels = new PanelStore(openDb(file));
-    await panels.load();
-    await panels.mutate('mage', { operation: 'remove', id: panel.id });
+    const panels = await openPanels(openDb(file));
+    await panels.update('mage', { operation: 'remove', id: panel.id });
     await openMemory(openDb(file)).update('character', 'mage', 'guide');
     await writeFile(path.join(root, 'routines.json'), 'invalid stale JSON');
     await writeFile(path.join(root, 'memory', memoryName), 'invalid stale JSON');
@@ -263,14 +261,13 @@ test('deletions remain authoritative after restart even when legacy files are st
     await reopened.load();
     expect(reopened.list()).toEqual([]);
     expect(reopened.history()).toEqual([run]);
-    const reopenedPanels = new PanelStore(openDb(file));
-    await reopenedPanels.load();
-    expect(reopenedPanels.panels).toEqual([]);
+    const reopenedPanels = await openPanels(openDb(file));
+    expect(await reopenedPanels.list()).toEqual([]);
     expect(await openMemory(openDb(file)).read('character', 'mage')).toEqual([]);
   }));
 
 test('independent stores preserve concurrent edits and a routine can only be claimed once', async () =>
-  fixture(async (_root, file, openDb, openMemory) => {
+  fixture(async (_root, file, openDb, openMemory, openPanels) => {
     const first = new RoutineStore(openDb(file)),
       second = new RoutineStore(openDb(file));
     await Promise.all([first.load(), second.load()]);
@@ -281,14 +278,13 @@ test('independent stores preserve concurrent edits and a routine can only be cla
     const claims = await Promise.all([first.claim('mage', 1000000), second.claim('mage', 1000000)]);
     expect(claims.filter(Boolean)).toHaveLength(1);
     expect(second.list()).toHaveLength(2);
-    const p1 = new PanelStore(openDb(file)),
-      p2 = new PanelStore(openDb(file));
+    const p1 = await openPanels(openDb(file)),
+      p2 = await openPanels(openDb(file));
     await Promise.all([
-      p1.mutate('mage', { operation: 'save', panel }),
-      p2.mutate('warrior', { operation: 'save', panel }),
+      p1.update('mage', { operation: 'save', panel }),
+      p2.update('warrior', { operation: 'save', panel }),
     ]);
-    await p1.load();
-    expect(p1.panels).toHaveLength(2);
+    expect(await p1.list()).toHaveLength(2);
     const m1 = openMemory(openDb(file)),
       m2 = openMemory(openDb(file));
     await Promise.all([

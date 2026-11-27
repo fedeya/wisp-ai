@@ -18,7 +18,7 @@ import {
   metadata,
 } from '@wisp/db/schema';
 import { importMemory, StoredMemoryEntry } from '../memory/repository.ts';
-import { encodePanel } from '../panels/panel-record.ts';
+import { encodePanel } from '../panels/repository.ts';
 import { encodeRoutine, encodeRun } from '../routines/routine-record.ts';
 import { errorMessage } from '../errors.ts';
 

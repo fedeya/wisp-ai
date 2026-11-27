@@ -14,7 +14,7 @@ import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
-import type { PanelStore } from '../panels/panel-store.ts';
+import type { PanelRepository } from '../panels/repository.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { Chat } from '../chat/events.ts';
 import { openChat, isWorking } from '../chat/chat-lifecycle.ts';
@@ -31,11 +31,11 @@ interface DesktopDependencies {
   webSearch: WebSearch;
   capabilitySettings: CapabilitySettings;
   mcpManager: McpManager;
-  panelStore: PanelStore;
+  panelRepository: Pick<PanelRepository['Service'], 'get' | 'remove'>;
   routineStore: RoutineStore;
   accountOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   updateModel: (model: string) => Promise<void>;
-  getStatus: () => Status;
+  getStatus: () => Effect.Effect<Status, Error>;
   getChats: () => Chat[];
   currentCharacterKey: () => string | undefined;
   sendPanelCommand: (command: PanelCommand) => void;
@@ -47,7 +47,8 @@ interface DesktopDependencies {
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
   refreshMcpCatalog: () => void;
   requestStop: () => void;
-  changed: () => void;
+  invalidateAddonView: () => void;
+  saveChats: () => void;
 }
 // Validation failures throw so onError reports them like any other failure.
 const json = <T extends z.ZodType>(schema: T) =>
@@ -65,7 +66,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     webSearch,
     capabilitySettings,
     mcpManager,
-    panelStore,
+    panelRepository,
     routineStore,
     accountOperation,
   } = deps;
@@ -77,7 +78,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await next();
       c.header('cache-control', 'no-store');
     })
-    .get('/status', (c) => c.json(deps.getStatus()))
+    .get('/status', async (c) => c.json(await runPromise(deps.getStatus())))
     .get('/auth/models', async (c) =>
       c.json(await accountOperation(async () => ({ models: await connections.models() }))),
     )
@@ -130,7 +131,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     .post('/integrations/set', json(routes['/integrations/set'].input), async (c) => {
       const { id, enabled } = c.req.valid('json');
       await runPromise(deps.setCapability(id, enabled));
-      deps.changed();
+      deps.invalidateAddonView();
       return c.json(ok);
     })
     .post('/mcps/test', json(routes['/mcps/test'].input), async (c) =>
@@ -146,7 +147,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
             try: () => capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled),
             catch: (error) => error,
           });
-          deps.changed();
+          deps.invalidateAddonView();
           return tested;
         }),
       );
@@ -162,31 +163,33 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
             try: () => capabilitySettings.publish(),
             catch: (error) => error,
           });
-          deps.changed();
+          deps.invalidateAddonView();
         }),
       );
       return c.json(ok);
     })
     .post('/panels/action', json(routes['/panels/action'].input), async (c) => {
       const { characterKey, id, action } = c.req.valid('json');
-      if (!panelStore.list(characterKey).some((p) => p.id === id)) {
-        throw Error('Panel not found');
-      }
       if (action === 'remove') {
-        await panelStore.mutate(characterKey, { operation: 'remove', id });
+        if (!(await runPromise(panelRepository.remove(characterKey, id)))) {
+          throw Error('Panel not found');
+        }
       } else {
+        if (!(await runPromise(panelRepository.get(characterKey, id)))) {
+          throw Error('Panel not found');
+        }
         if (characterKey !== deps.currentCharacterKey()) {
           throw Error('Log into this character first');
         }
         deps.sendPanelCommand({ seq: Date.now(), id, characterKey, action });
       }
-      deps.changed();
+      deps.invalidateAddonView();
       return c.json(ok);
     })
     .post('/routines/action', json(routes['/routines/action'].input), async (c) => {
       const { characterKey, operation, id } = c.req.valid('json');
       await routineStore.mutate(characterKey, { operation, id });
-      deps.changed();
+      deps.invalidateAddonView();
       return c.json(ok);
     })
     .post('/routines/open', json(routes['/routines/open'].input), async (c) => {
@@ -201,13 +204,14 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       }
       openChat(chat);
       deps.openRoutine(run.id);
-      deps.changed();
+      deps.saveChats();
+      deps.invalidateAddonView();
       return c.json(ok);
     })
     .post('/simulator/character', async (c) => c.json(await deps.readSimulationCharacter()))
     .post('/app-update', json(routes['/app-update'].input), (c) => {
       deps.setAppUpdate(c.req.valid('json').version);
-      deps.changed();
+      deps.invalidateAddonView();
       return c.json(ok);
     })
     .post('/features/set', json(routes['/features/set'].input), async (c) => {

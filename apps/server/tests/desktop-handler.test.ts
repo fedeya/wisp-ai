@@ -31,16 +31,26 @@ function setup() {
       models: vi.fn(async () => [{ slug: 'luna', displayName: 'Luna', efforts: [] }]),
       remove: vi.fn(async () => {}),
     },
-    panelStore: {
-      list: vi.fn(() => [{ id: 'materials' }]),
-      mutate: vi.fn(async () => []),
+    panelRepository: {
+      get: vi.fn((characterKey: string, id: string) =>
+        Effect.succeed({
+          characterKey,
+          id,
+          title: 'Materials',
+          updatedAt: 0,
+          ui: [],
+          references: {},
+          bindings: [],
+        }),
+      ),
+      remove: vi.fn(() => Effect.succeed(true)),
     },
     accountOperation: vi.fn(async <T>(operation: () => Promise<T>) => {
       queue.push('account');
       return operation();
     }),
     updateModel: vi.fn(async () => {}),
-    getStatus: () => status,
+    getStatus: () => Effect.succeed(status),
     getChats: () => [],
     currentCharacterKey: () => 'mage',
     sendPanelCommand: vi.fn(),
@@ -48,7 +58,8 @@ function setup() {
     setWowTransport: vi.fn(() => Effect.void),
     setAppUpdate: vi.fn(),
     setFeature: vi.fn(async () => {}),
-    changed: vi.fn(),
+    invalidateAddonView: vi.fn(),
+    saveChats: vi.fn(),
   };
   const app = Effect.runSync(createDesktopApp(deps as never));
   const post = (route: string, body: unknown) =>
@@ -110,7 +121,8 @@ test('panel commands require the logged-in character', async () => {
   expect(deps.sendPanelCommand).toHaveBeenCalledWith(
     expect.objectContaining({ id: 'materials', characterKey: 'mage', action: 'show' }),
   );
-  expect(deps.changed).toHaveBeenCalledOnce();
+  expect(deps.invalidateAddonView).toHaveBeenCalledOnce();
+  expect(deps.saveChats).not.toHaveBeenCalled();
 });
 test('the addon installer can pause and resume the WoW transport', async () => {
   const { post, deps } = setup();
@@ -122,7 +134,7 @@ test('the desktop reports the app update the game announces', async () => {
   const { post, deps } = setup();
   expect(await (await post('/app-update', { version: '0.0.9' })).json()).toEqual({ ok: true });
   expect(deps.setAppUpdate).toHaveBeenCalledWith('0.0.9');
-  expect(deps.changed).toHaveBeenCalledOnce();
+  expect(deps.invalidateAddonView).toHaveBeenCalledOnce();
   expect((await post('/app-update', { version: null })).status).toBe(200);
   expect(deps.setAppUpdate).toHaveBeenLastCalledWith(null);
   expect((await post('/app-update', { version: '' })).status).toBe(400);
