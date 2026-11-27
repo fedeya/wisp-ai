@@ -1,6 +1,17 @@
 import cloudflare from '@cloudflare/oxlint-config';
 import { defineConfig } from 'oxlint';
 
+// @effect/vitest registers tests as `it.effect(...)`, `it.live(...)` and their
+// modifiers. Test-block rules only know plain `it`/`test`, so list every form
+// that takes a test body; `layer(...)` and `it.layer(...)` take suite bodies.
+const effectTestModifiers = ['', '.skip', '.only', '.fails', '.skipIf', '.runIf', '.each', '.prop'];
+const effectTestBlockFunctions = [
+  ...['it.effect', 'it.live'].flatMap((tester) =>
+    effectTestModifiers.map((modifier) => `${tester}${modifier}`),
+  ),
+  'it.prop',
+];
+
 export default defineConfig({
   extends: [cloudflare],
   env: cloudflare.env,
@@ -21,6 +32,10 @@ export default defineConfig({
   rules: {
     curly: ['error', 'multi-line'],
     'no-var': 'error',
+    'vitest/no-standalone-expect': [
+      'error',
+      { additionalTestBlockFunctions: effectTestBlockFunctions },
+    ],
   },
   overrides: [
     {
@@ -125,7 +140,10 @@ export default defineConfig({
         'unicorn/prefer-string-replace-all': 'warn', // 54
         'unicorn/prefer-structured-clone': 'warn', // 7
         'unicorn/prefer-top-level-await': 'warn', // 4
-        'vitest/expect-expect': 'warn', // 29
+        'vitest/expect-expect': [
+          'warn',
+          { additionalTestBlockFunctions: effectTestBlockFunctions },
+        ], // 29
         'vitest/no-conditional-expect': 'warn', // 18
         'vitest/require-mock-type-parameters': 'warn', // 154
         'vitest/require-to-throw-message': 'warn', // 45
