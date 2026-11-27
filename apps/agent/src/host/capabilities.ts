@@ -33,8 +33,8 @@ const hasFeatureFlags = Schema.is(
 );
 
 /** The settings published by the bridge. Reads see updates without restarting the agent. */
-export class AgentCapabilities extends Context.Service<
-  AgentCapabilities,
+export class Service extends Context.Service<
+  Service,
   {
     readonly read: Effect.Effect<CapabilitySnapshot, HostError>;
     readonly featureEnabled: (flag: FeatureFlag) => Effect.Effect<boolean, HostError>;
@@ -45,7 +45,7 @@ export function layerFromFile(
   file = () => agentHost()?.capabilitiesFile ?? process.env.WOW_CAPABILITIES_FILE,
 ) {
   return Layer.effect(
-    AgentCapabilities,
+    Service,
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const document = readSettings(fs, file);
@@ -61,7 +61,7 @@ export function layerFromFile(
         return snapshot(data.enabled);
       });
 
-      return AgentCapabilities.of({
+      return Service.of({
         read,
         featureEnabled: (flag) =>
           Effect.map(document, (data) => hasFeatureFlags(data) && data.features[flag] === true),

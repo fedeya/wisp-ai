@@ -1,63 +1,73 @@
-import { test } from 'vitest';
-import assert from 'node:assert/strict';
+import { test, expect } from 'vitest';
 import { Effect, FileSystem } from 'effect';
-
-import { AgentCapabilities, layerFromFile } from '../src/host/capabilities.ts';
+import { asSchema } from 'ai';
+import * as Capabilities from '../src/host/capabilities.ts';
+import * as Memory from '../src/host/memory.ts';
+import { authored, assembleTools } from '../src/tools/turn-tools.ts';
 import { localMemory } from '../src/wisp/agent-memory.ts';
+import type { MemoryEdit } from '../src/contract/memory.ts';
 
-const signal = () => new AbortController().signal;
-const ctx = (id: string) => ({ session: { id }, abortSignal: signal(), callId: 'call' });
+test('memory uses an injected host and validates Effect Schema tools', async () => {
+  let entries = [{ key: 'guide', text: 'Guide A', updatedAt: '2026-11-07' }];
+  const edits: MemoryEdit[] = [];
+  const memory = localMemory(
+    'character',
+    Memory.Service.of({
+      characterKey: (session) => Effect.succeed(session === 'unknown' ? null : 'mage'),
+      read: () => Effect.sync(() => entries),
+      update: (session, slot, edit) =>
+        Effect.sync(() => {
+          expect(session).toBe('new-session');
+          expect(slot).toBe('character');
+          edits.push(edit);
+          if (edit.operation === 'remove') entries = [];
+          return entries;
+        }),
+    }),
+    Effect.runPromise,
+  );
+  const capabilities = await Effect.runPromise(
+    Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
+      Effect.provide(Capabilities.layerFromFile(() => undefined)),
+      Effect.provide(FileSystem.layerNoop({})),
+    ),
+  );
+  expect(await Effect.runPromise(memory.scope('first', capabilities))).toBe('mage');
+  expect(await Effect.runPromise(memory.scope('unknown', capabilities))).toBeNull();
+  expect(await Effect.runPromise(memory.recall('new-session'))).toContain('Guide A');
 
-test('memory recalls saved entries and character scope fails closed without identity', async () => {
-  const originalFetch = globalThis.fetch;
-  const entries = [{ key: 'guide', text: 'Guide A', updatedAt: '2026-11-07' }];
-  const requests: Record<string, unknown>[] = [];
-  globalThis.fetch = async (url, init) => {
-    const data = JSON.parse(String(init?.body));
-    requests.push(data);
-    return new Response(
-      JSON.stringify(
-        String(url).endsWith('/identity')
-          ? { characterKey: data.agentSession === 'unknown' ? null : 'mage' }
-          : { entries },
-      ),
-    );
-  };
-  try {
-    const capabilities = await Effect.runPromise(
-      Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
-        Effect.provide(layerFromFile(() => undefined)),
-        Effect.provide(FileSystem.layerNoop({})),
-      ),
-    );
-    const memory = localMemory('character');
-    assert.equal(await Effect.runPromise(memory.scope('first', capabilities)), 'mage');
-    assert.equal(await Effect.runPromise(memory.scope('unknown', capabilities)), null);
-    assert.match((await Effect.runPromise(memory.recall('new-session')))!, /Guide A/);
-    assert.equal(requests.at(-1)?.agentSession, 'new-session');
-    assert.equal(requests.at(-1)?.slot, 'character');
-    const tools = memory.tools();
-    assert.deepEqual(Object.keys(tools), ['character__save_memory', 'character__remove_memory']);
-    await tools.character__save_memory!.execute(
-      { key: 'guide', text: 'Guide B' },
-      ctx('new-session'),
-    );
-    assert.deepEqual(requests.at(-1), {
-      agentSession: 'new-session',
-      slot: 'character',
-      operation: 'save',
-      key: 'guide',
-      text: 'Guide B',
-    });
-    await tools.character__remove_memory!.execute({ key: 'guide' }, ctx('new-session'));
-    assert.equal(requests.at(-1)?.operation, 'remove');
-    assert.equal(
-      await Effect.runPromise(localMemory('preferences').scope('new-session', capabilities)),
-      'local-player',
-    );
-    entries.length = 0;
-    assert.equal(await Effect.runPromise(memory.recall('new-session')), null);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const direct = memory.tools();
+  expect(Object.keys(direct)).toEqual(['character__save_memory', 'character__remove_memory']);
+  const { character__save_memory: save, character__remove_memory: remove } = direct;
+  if (!save || !remove) throw Error('Missing memory tools');
+  const signal = new AbortController().signal;
+  // Building the direct SDK tools and producing the deferred schema use the same contract.
+  const { tools } = assembleTools({
+    session: 'new-session',
+    signal,
+    direct,
+    deferred: [],
+    skills: [],
+  });
+  const directSave = tools.character__save_memory?.inputSchema;
+  if (!directSave) throw Error('Missing SDK memory tool schema');
+  const saveTool = authored('character__save_memory', save);
+  expect(saveTool.inputSchema).toMatchObject({
+    properties: { key: { pattern: '^[a-zA-Z0-9_-]{1,64}$' }, text: { maxLength: 1000 } },
+    required: ['key', 'text'],
+  });
+  expect(await asSchema(directSave).jsonSchema).toMatchObject({
+    properties: { key: { pattern: '^[a-zA-Z0-9_-]{1,64}$' }, text: { maxLength: 1000 } },
+  });
+  const ctx = { session: 'new-session', signal, callId: 'call' };
+  await expect(saveTool.run({ key: '../bad', text: 'Guide B' }, ctx)).rejects.toThrow(
+    'Invalid input',
+  );
+  await saveTool.run({ key: 'guide', text: 'Guide B' }, ctx);
+  await authored('character__remove_memory', remove).run({ key: 'guide' }, ctx);
+  expect(edits).toEqual([
+    { operation: 'save', key: 'guide', text: 'Guide B' },
+    { operation: 'remove', key: 'guide' },
+  ]);
+  expect(await Effect.runPromise(memory.recall('new-session'))).toBeNull();
 });

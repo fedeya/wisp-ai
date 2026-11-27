@@ -1,32 +1,24 @@
 import { and, eq, like } from 'drizzle-orm';
+import { Effect } from 'effect';
 import { adoptableKeys, characterName, type CharacterName } from '@wisp/protocol/character-key';
 import type { ApplicationOrm } from '@wisp/db/database';
-import {
-  chats,
-  memoryEntries,
-  memoryScopes,
-  metadata,
-  panels,
-  routineRuns,
-  routines,
-} from '@wisp/db/schema';
+import type { SqlOrm } from '@wisp/db/sql-database';
+import { chats, memoryScopes, metadata, panels, routineRuns, routines } from '@wisp/db/schema';
+import { adoptMemoryOwner } from '../memory/repository.ts';
 
-function storedKeys(db: ApplicationOrm) {
-  const keys = (rows: { key: string | null }[]) => rows.map((row) => row.key);
-  return new Set([
-    ...keys(db.selectDistinct({ key: chats.characterKey }).from(chats).all()),
-    ...keys(db.selectDistinct({ key: routines.characterKey }).from(routines).all()),
-    ...keys(db.selectDistinct({ key: routineRuns.characterKey }).from(routineRuns).all()),
-    ...keys(db.selectDistinct({ key: panels.characterKey }).from(panels).all()),
-    ...keys(
-      db
-        .select({ key: memoryScopes.owner })
-        .from(memoryScopes)
-        .where(eq(memoryScopes.slot, 'character'))
-        .all(),
-    ),
-  ]);
-}
+const storedKeys = Effect.fnUntraced(function* (db: SqlOrm) {
+  const chatKeys = yield* db.selectDistinct({ key: chats.characterKey }).from(chats);
+  const routineKeys = yield* db.selectDistinct({ key: routines.characterKey }).from(routines);
+  const runKeys = yield* db.selectDistinct({ key: routineRuns.characterKey }).from(routineRuns);
+  const panelKeys = yield* db.selectDistinct({ key: panels.characterKey }).from(panels);
+  const memoryKeys = yield* db
+    .select({ key: memoryScopes.owner })
+    .from(memoryScopes)
+    .where(eq(memoryScopes.slot, 'character'));
+  return new Set(
+    [...chatKeys, ...routineKeys, ...runKeys, ...panelKeys, ...memoryKeys].map(({ key }) => key),
+  );
+});
 
 /**
  * Move everything stored under this character's pre-GUID keys (see
@@ -35,36 +27,32 @@ function storedKeys(db: ApplicationOrm) {
  * under `key`, the GUID one wins and the older copy is dropped.
  * Returns the keys that were merged.
  */
-export function adoptCharacterKey(
-  db: ApplicationOrm,
+export const adoptCharacterKey = Effect.fn('CharacterKeys.adopt')(function* (
+  db: SqlOrm,
   key: string,
   character: { game: string; name: string },
   extra: Iterable<string | undefined> = [],
-): string[] {
-  const merged = adoptableKeys([...storedKeys(db), ...extra], character);
+) {
+  const merged = adoptableKeys([...(yield* storedKeys(db)), ...extra], character);
   for (const from of merged) {
-    db.update(chats).set({ characterKey: key }).where(eq(chats.characterKey, from)).run();
-    db.update(routineRuns)
+    yield* db.update(chats).set({ characterKey: key }).where(eq(chats.characterKey, from));
+    yield* db
+      .update(routineRuns)
       .set({ characterKey: key })
-      .where(eq(routineRuns.characterKey, from))
-      .run();
+      .where(eq(routineRuns.characterKey, from));
     for (const table of [routines, panels]) {
       const taken = new Set(
-        db
-          .select({ id: table.id })
-          .from(table)
-          .where(eq(table.characterKey, key))
-          .all()
-          .map((row) => row.id),
+        (yield* db.select({ id: table.id }).from(table).where(eq(table.characterKey, key))).map(
+          (row) => row.id,
+        ),
       );
-      for (const { id, content } of db
+      for (const { id, content } of yield* db
         .select({ id: table.id, content: table.content })
         .from(table)
-        .where(eq(table.characterKey, from))
-        .all()) {
+        .where(eq(table.characterKey, from))) {
         const row = and(eq(table.characterKey, from), eq(table.id, id));
         if (taken.has(id)) {
-          db.delete(table).where(row).run();
+          yield* db.delete(table).where(row);
         } else {
           // Panels remember the key they came from, so the addon can move
           // their saved layout from exactly that key.
@@ -72,57 +60,26 @@ export function adoptCharacterKey(
             table === panels
               ? { content: JSON.stringify({ ...JSON.parse(content), formerKey: from }) }
               : {};
-          db.update(table)
+          yield* db
+            .update(table)
             .set({ characterKey: key, ...moved })
-            .where(row)
-            .run();
+            .where(row);
         }
       }
     }
-    const scope = db
-      .select()
-      .from(memoryScopes)
-      .where(and(eq(memoryScopes.slot, 'character'), eq(memoryScopes.owner, from)))
-      .get();
-    if (scope) {
-      db.insert(memoryScopes)
-        .values({ ...scope, owner: key })
-        .onConflictDoNothing()
-        .run();
-      const owned = (owner: string) =>
-        and(eq(memoryEntries.slot, 'character'), eq(memoryEntries.owner, owner));
-      const taken = new Set(
-        db
-          .select({ key: memoryEntries.key })
-          .from(memoryEntries)
-          .where(owned(key))
-          .all()
-          .map((row) => row.key),
-      );
-      for (const entry of db.select().from(memoryEntries).where(owned(from)).all()) {
-        if (!taken.has(entry.key)) {
-          db.insert(memoryEntries)
-            .values({ ...entry, owner: key })
-            .run();
-        }
-      }
-      db.delete(memoryEntries).where(owned(from)).run();
-      db.delete(memoryScopes)
-        .where(and(eq(memoryScopes.slot, 'character'), eq(memoryScopes.owner, from)))
-        .run();
-    }
+    yield* adoptMemoryOwner(db, from, key);
   }
   return merged;
-}
+});
 
 // GUID keys carry no name, so the bridge keeps the latest one for labels.
 const namePrefix = 'character-name:';
-export function saveCharacterName(db: ApplicationOrm, key: string, name: CharacterName) {
+export function saveCharacterName(db: SqlOrm, key: string, name: CharacterName) {
   const value = JSON.stringify({ name: name.name, realm: name.realm });
-  db.insert(metadata)
+  return db
+    .insert(metadata)
     .values({ key: namePrefix + key, value })
-    .onConflictDoUpdate({ target: metadata.key, set: { value } })
-    .run();
+    .onConflictDoUpdate({ target: metadata.key, set: { value } });
 }
 export function readCharacterNames(db: ApplicationOrm): Record<string, CharacterName> {
   return Object.fromEntries(

@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
-import type { SessionHistory, TokenUsage } from '../session/session-history.ts';
+import type { TokenUsage } from '../session/session-history.ts';
+import type * as SessionHistory from '../session/session-history.ts';
 import type { Assistant } from '../session/session-message.ts';
 
 const tokenCount = z.number().nullish();
@@ -43,7 +44,7 @@ export function stepUsage(raw: unknown): TokenUsage | undefined {
 
 /** Adds one model call's reported tokens to its session's totals. */
 export const recordUsage = (
-  history: SessionHistory['Service'],
+  history: SessionHistory.Service['Service'],
   session: string,
   usage: TokenUsage | undefined,
 ) => (usage ? history.addUsage(session, usage) : Effect.void);

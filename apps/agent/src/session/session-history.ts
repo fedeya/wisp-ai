@@ -58,8 +58,8 @@ export class HistoryError extends Schema.TaggedError<HistoryError>()('HistoryErr
 }) {}
 
 /** A session's log, as the engine reads and writes it. */
-export class SessionHistory extends Context.Service<
-  SessionHistory,
+export class Service extends Context.Service<
+  Service,
   {
     readonly begin: (session: string, start: SessionStart) => Effect.Effect<void, HistoryError>;
     readonly load: (session: string) => Effect.Effect<LoadedHistory, HistoryError>;
@@ -71,34 +71,32 @@ export class SessionHistory extends Context.Service<
     readonly addUsage: (session: string, usage: TokenUsage) => Effect.Effect<void, HistoryError>;
     readonly delete: (session: string) => Effect.Effect<void, HistoryError>;
   }
->()('@wisp/agent/SessionHistory') {
-  /** The service over a store, such as the bridge's SQLite log. */
-  static readonly layer = (store: HistoryStore) =>
-    Layer.succeed(
-      SessionHistory,
-      SessionHistory.of({
-        begin: (session, start) => call('begin', () => store.begin(session, start)),
-        load: Effect.fn('SessionHistory.load')(function* (session: string) {
-          const { summary, rows } = yield* call('load', () => store.load(session));
-          // Rows that do not decode fail the load rather than replay a broken history.
-          const messages = yield* Effect.forEach(rows, (row) =>
-            decodeMessage(row.data).pipe(
-              Effect.map((message): LoggedMessage => ({ seq: row.seq, model: row.model, message })),
-            ),
-          ).pipe(Effect.mapError((cause) => new HistoryError({ operation: 'load', cause })));
-          const loaded: LoadedHistory = { messages };
-          if (summary !== undefined) loaded.summary = summary;
-          return loaded;
-        }),
-        append: (session, entries, model) =>
-          entries.length
-            ? call('append', () => store.append(session, entries, model))
-            : Effect.void,
-        addUsage: (session, usage) => call('addUsage', () => store.addUsage(session, usage)),
-        delete: (session) => call('delete', () => store.delete(session)),
+>()('@wisp/agent/SessionHistory') {}
+
+/** The service over a store, such as the server's SQLite log. */
+export const layer = (store: HistoryStore) =>
+  Layer.succeed(
+    Service,
+    Service.of({
+      begin: (session, start) => call('begin', () => store.begin(session, start)),
+      load: Effect.fn('SessionHistory.load')(function* (session: string) {
+        const { summary, rows } = yield* call('load', () => store.load(session));
+        // Rows that do not decode fail the load rather than replay a broken history.
+        const messages = yield* Effect.forEach(rows, (row) =>
+          decodeMessage(row.data).pipe(
+            Effect.map((message): LoggedMessage => ({ seq: row.seq, model: row.model, message })),
+          ),
+        ).pipe(Effect.mapError((cause) => new HistoryError({ operation: 'load', cause })));
+        const loaded: LoadedHistory = { messages };
+        if (summary !== undefined) loaded.summary = summary;
+        return loaded;
       }),
-    );
-}
+      append: (session, entries, model) =>
+        entries.length ? call('append', () => store.append(session, entries, model)) : Effect.void,
+      addUsage: (session, usage) => call('addUsage', () => store.addUsage(session, usage)),
+      delete: (session) => call('delete', () => store.delete(session)),
+    }),
+  );
 
 const decodeMessage = Schema.decodeUnknownEffect(Message);
 

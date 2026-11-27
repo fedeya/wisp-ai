@@ -30,7 +30,10 @@ import { ApplicationDatabase } from './application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogging } from './logger.ts';
-import { MemoryStore } from './agent/memory-store.ts';
+import * as MemoryRepository from './memory/repository.ts';
+import * as AgentMemoryAccess from './memory/agent-access.ts';
+import * as Sql from '@wisp/db/sql-database';
+import { importProductData } from './migrations/product-json.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
 import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './integrations/capabilities.ts';
@@ -58,7 +61,11 @@ import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
-import { createAgentEngine } from '@wisp/agent/engine';
+import * as Agent from '@wisp/agent/engine';
+import * as Capabilities from '@wisp/agent/capabilities';
+import * as AgentMcp from '@wisp/agent/mcp-tools';
+import * as Game from '@wisp/agent/game-access';
+import * as Memory from '@wisp/agent/memory';
 import * as AgentGameAccess from './game/agent-game-access.ts';
 import { AgentHistory } from './agent/agent-history.ts';
 
@@ -119,20 +126,6 @@ export const makeServer = Effect.fn('Server.make')(
     const databaseFile = applicationDatabaseFile(runtime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
     yield* releaseRuntimeResource(() => applicationDatabase.close());
-    const memoryStore = new MemoryStore(applicationDatabase);
-    async function memorySnapshot(identity: string | undefined) {
-      const preferences = (await memoryStore.read('preferences', 'local-player')).map((entry) => ({
-        ...entry,
-        slot: 'preferences',
-      }));
-      const character = identity
-        ? (await memoryStore.read('character', identity)).map((entry) => ({
-            ...entry,
-            slot: 'character',
-          }))
-        : [];
-      return { status: 'available', entries: [...preferences, ...character] };
-    }
     const config = yield* startup(() => loadBridgeConfig(paths.config));
     const features = yield* startup(() =>
       Features.start({
@@ -179,6 +172,28 @@ export const makeServer = Effect.fn('Server.make')(
     yield* startup(() => webSearch.load());
     yield* releaseRuntimeResource(() => auth.cancel());
     const database = new TheWoWDB();
+    const storage = yield* Layer.build(
+      MemoryRepository.layer.pipe(Layer.provideMerge(Sql.layer(databaseFile))),
+    );
+    const { db: sql } = Context.get(storage, Sql.SqlDatabase);
+    yield* importProductData(databaseFile, sql);
+    const memoryRepository = Context.get(storage, MemoryRepository.MemoryRepository);
+    const memorySnapshot = Effect.fn('Memory.snapshot')(function* (identity: string | undefined) {
+      const preferences = yield* memoryRepository.read({
+        slot: 'preferences',
+        owner: 'local-player',
+      });
+      const character = identity
+        ? yield* memoryRepository.read({ slot: 'character', owner: identity })
+        : [];
+      return {
+        status: 'available',
+        entries: [
+          ...preferences.map((entry) => ({ ...entry, slot: 'preferences' })),
+          ...character.map((entry) => ({ ...entry, slot: 'character' })),
+        ],
+      };
+    });
     const panelStore = new PanelStore(applicationDatabase);
     yield* startup(() => panelStore.load());
     const routineStore = new RoutineStore(applicationDatabase);
@@ -256,31 +271,49 @@ export const makeServer = Effect.fn('Server.make')(
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
+    const memoryAccess = AgentMemoryAccess.make({
+      repository: memoryRepository,
+      chats: () => state.chats,
+      currentTransport: () => state.activeTransport,
+      capabilities: capabilitySettings,
+      snapshot: memorySnapshot,
+      setView: (view) => {
+        state.memoryView = view;
+      },
+      changed,
+    });
     let engineReady = false;
-    const engine = createAgentEngine({
+    const gameAccess = AgentGameAccess.make({
+      getChats: () => state.chats,
+      currentTransport: () => state.activeTransport,
+      requestGame: (call) => transport.request(call),
+      capabilitySettings,
+      mcpManager,
+    });
+    const agentConfig = Agent.EngineConfig.of({
       origin: () => agentOrigin,
       token,
-      history: agentHistory,
-      capabilitiesFile: () => capabilitySettings.agentFile,
-      gameAccess: AgentGameAccess.make({
-        getChats: () => state.chats,
-        currentTransport: () => state.activeTransport,
-        requestGame: (call) => transport.request(call),
-        capabilitySettings,
-        mcpManager,
-      }),
-      mcp: {
-        manager: mcpManager,
-        allowed: (server, tool) =>
-          capabilitySettings.enabled('mcp:' + server) &&
-          (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
-        readOnly: (session) =>
-          state.chats.some(
-            (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
-          ),
-      },
-      logging: bridgeLogging,
     });
+    const agentMcp = AgentMcp.layerFromManager(mcpManager, {
+      allowed: (server, tool) =>
+        capabilitySettings.enabled('mcp:' + server) &&
+        (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
+      readOnly: (session) =>
+        state.chats.some(
+          (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
+        ),
+    });
+    const agentLayer = Agent.layer.pipe(
+      Layer.provide(agentMcp),
+      Layer.provide(Capabilities.layerFromFile(() => capabilitySettings.agentFile)),
+      Layer.provide(NodeFileSystem.layer),
+      Layer.provide(Agent.SessionHistory.layer(agentHistory)),
+      Layer.provide(Layer.succeed(Agent.EngineConfig, agentConfig)),
+      Layer.provide(Layer.succeed(Game.Service, gameAccess)),
+      Layer.provide(Layer.succeed(Memory.Service, memoryAccess)),
+      Layer.provideMerge(bridgeLogging),
+    );
+    const engine = Agent.make(agentLayer);
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
       if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
         throw Error('Connect WoW and enable Character readings first.');
@@ -347,7 +380,7 @@ export const makeServer = Effect.fn('Server.make')(
     });
     yield* releaseRuntimeResource(stopRoutineScheduler);
     const adoptCharacter = createCharacterAdoption({
-      database: applicationDatabase,
+      db: sql,
       panelStore,
       chats: () => state.chats,
       changed,
@@ -362,7 +395,7 @@ export const makeServer = Effect.fn('Server.make')(
       models: connections,
       routineStore,
       panelStore,
-      memoryStore,
+      memoryRepository,
       refreshModelCatalog,
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
@@ -373,14 +406,14 @@ export const makeServer = Effect.fn('Server.make')(
       runtime,
       changed,
     });
-    const receive: typeof receivePacket = (packet) => {
+    const receive = Effect.fnUntraced(function* (packet: Parameters<typeof receivePacket>[0]) {
       const previousSession = state.activeTransport;
       observeGameConnection();
-      receivePacket(packet);
+      yield* receivePacket(packet);
       if (state.activeTransport !== previousSession) {
         telemetry.gameConnectionStarted();
       }
-    };
+    });
     const transport: TransportConnection = yield* createTransportConnection({
       state,
       bridge,
@@ -403,18 +436,13 @@ export const makeServer = Effect.fn('Server.make')(
         capabilitySettings,
         routineStore,
         panelStore,
-        memoryStore,
         database,
         simulator,
         getChats: () => state.chats,
         currentTransport: () => state.activeTransport,
         defaultModel,
         readSimulationCharacter,
-        memorySnapshot,
         presentReply: run.present,
-        setMemoryView: (view) => {
-          state.memoryView = view;
-        },
         changed,
       }),
     );
@@ -605,7 +633,10 @@ export const makeServer = Effect.fn('Server.make')(
     );
     yield* startup(() => engineStartup);
     yield* Fiber.join(transportStartup);
-    return { state, receive };
+    return {
+      state,
+      receive: (packet: Parameters<typeof receive>[0]) => runPromise(receive(packet)),
+    };
   },
   // The existing Promise-based acquisitions cannot be interrupted safely.
   Effect.uninterruptible,

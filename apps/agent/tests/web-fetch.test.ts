@@ -11,14 +11,14 @@ import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities
 import { publicWebAddresses } from '../src/integrations/web/public-web-tunnel.ts';
 import { publicWebTunnel } from '../src/integrations/web/public-web-tunnel.ts';
 import { request } from 'node:http';
-import { AgentCapabilities, layerFromFile } from '../src/host/capabilities.ts';
+import * as Capabilities from '../src/host/capabilities.ts';
 import { toolOffered } from '../src/tools/enabled-tool.ts';
 
 // The tool as the engine offers it: absent while its capability is off.
 const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) => {
   const capabilities = await Effect.runPromise(
-    Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
-      Effect.provide(layerFromFile()),
+    Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
+      Effect.provide(Capabilities.layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     ),
   );

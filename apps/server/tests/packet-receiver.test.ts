@@ -1,12 +1,11 @@
 import { test, expect, vi } from 'vitest';
-import { Effect } from 'effect';
+import { Deferred, Effect } from 'effect';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import { IntegrationState } from '../src/integrations/integration-state.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { ApplicationDatabase } from '../src/application-database.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
@@ -28,7 +27,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const interrupt = vi.fn();
   const run = vi.fn(async (..._args: unknown[]) => {});
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
-  const receive = runBridgeEffect(
+  const receiveEffect = runBridgeEffect(
     createPacketReceiver({
       state,
       request: () => Effect.void,
@@ -39,10 +38,10 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       models: { models },
       routineStore: new RoutineStore(database),
       panelStore: new PanelStore(database),
-      memoryStore: new MemoryStore(database),
+      memoryRepository: { read: () => Effect.succeed([]), update: () => Effect.succeed([]) },
       refreshModelCatalog: async () => {},
       setCapability: () => Effect.void,
-      memorySnapshot: async () => ({ status: 'available', entries: [] }),
+      memorySnapshot: () => Effect.succeed({ status: 'available', entries: [] }),
       run,
       interrupt,
       runtime: 'unused',
@@ -50,7 +49,9 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       ...overrides,
     }),
   );
-  return { state, receive, cancel, end, interrupt, run, models };
+  const receive = (packet: Parameters<typeof receiveEffect>[0]) =>
+    runBridgeEffect(receiveEffect(packet));
+  return { state, receive, receiveEffect, cancel, end, interrupt, run, models };
 }
 
 test('Stop during first-turn model preparation prevents engine dispatch', async () => {
@@ -298,10 +299,14 @@ test('retry reuses the failed question and ignores retries while working', () =>
   expect(f.run).toHaveBeenCalledTimes(1);
 });
 
-test('a new character key is adopted before the packet that reports it is handled', () => {
+test('a packet waits for character adoption before handling its routine event', async () => {
   const calls: string[] = [];
+  const started = await Effect.runPromise(Deferred.make<void>());
+  const release = await Effect.runPromise(Deferred.make<void>());
   const adoptCharacter = vi.fn(() =>
-    Effect.sync(() => {
+    Effect.gen(function* () {
+      yield* Deferred.succeed(started, undefined);
+      yield* Deferred.await(release);
       calls.push('adopt');
     }),
   );
@@ -317,16 +322,23 @@ test('a new character key is adopted before the packet that reports it is handle
     status: 'available',
     data: { name: 'Fedrath', realm: '', game: 'WoW Forever', guid: 'Player-1-00A' },
   };
-  f.receive(
-    gameEvent({
-      type: 'routine_event',
-      session: 'one',
-      seq: 30,
-      at: Math.floor(Date.now() / 1000),
-      context: { sections: { character } },
-      data: { ready: true, event: 'level_up', values: { level: 20 } },
-    }),
+  const handled = Effect.runPromise(
+    f.receiveEffect(
+      gameEvent({
+        type: 'routine_event',
+        session: 'one',
+        seq: 30,
+        at: Math.floor(Date.now() / 1000),
+        context: { sections: { character } },
+        data: { ready: true, event: 'level_up', values: { level: 20 } },
+      }),
+    ),
   );
+  await Effect.runPromise(Deferred.await(started));
+  expect(observe).not.toHaveBeenCalled();
+  expect(f.state.currentCharacterKey).toBe('old-character');
+  await Effect.runPromise(Deferred.succeed(release, undefined));
+  await handled;
   const key = JSON.stringify(['WoW Forever', 'Player-1-00A']);
   expect(adoptCharacter).toHaveBeenCalledWith(
     expect.objectContaining({ key, name: 'Fedrath', guid: 'Player-1-00A' }),

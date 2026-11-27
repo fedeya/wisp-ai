@@ -7,8 +7,7 @@ import path from 'node:path';
 import { McpManager, mcpSetup, type McpStorage } from '../src/integrations/mcp-manager.ts';
 import * as Mcp from '../src/integrations/mcp-tools.ts';
 import * as Everloot from '../src/integrations/everloot.ts';
-import { AgentCapabilities } from '../src/host/capabilities.ts';
-import { EngineConfig } from '../src/host/engine-config.ts';
+import * as Capabilities from '../src/host/capabilities.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { createServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -40,19 +39,12 @@ function listTools(
   allowed: (name: string, tool?: string) => boolean,
   readOnly: (session: string) => boolean = () => false,
 ) {
-  const layer = Mcp.layer().pipe(
+  const layer = Mcp.layerFromManager(manager, { allowed, readOnly }).pipe(
     Layer.provide(
-      Layer.merge(
-        Layer.succeed(EngineConfig, {
-          origin: () => '',
-          token: '',
-          mcp: { manager, allowed, readOnly },
-        }),
-        Layer.succeed(AgentCapabilities, {
-          read: Effect.succeed(capabilities),
-          featureEnabled: () => Effect.succeed(false),
-        }),
-      ),
+      Layer.succeed(Capabilities.Service, {
+        read: Effect.succeed(capabilities),
+        featureEnabled: () => Effect.succeed(false),
+      }),
     ),
   );
   return (session: string) =>

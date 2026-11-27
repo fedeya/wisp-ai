@@ -6,12 +6,12 @@ import {
 } from '@wisp/agent/contract/game-inspection';
 import { Effect, Schema } from 'effect';
 import {
-  GameAccess,
   inspectionResults,
   gameReading,
   itemSourcesResult,
   type GameInspection,
 } from '@wisp/agent/game-access';
+import * as Game from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { McpManager } from '@wisp/agent/mcp-manager';
@@ -170,7 +170,7 @@ export function make(deps: Dependencies) {
       }).pipe(Effect.tap(Schema.decodeUnknownEffect(inspectionResults[kind])));
     });
 
-  return GameAccess.of({
+  return Game.Service.of({
     readCharacter: Effect.fn('GameAccess.readCharacter')(function* (session, input, refresh) {
       const sections = characterSections.safeParse(input);
       if (!sections.success) return yield* Effect.fail(sections.error);

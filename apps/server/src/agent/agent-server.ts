@@ -16,7 +16,6 @@ import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from './memory-store.ts';
 import type { TheWoWDB } from '../integrations/thewowdb.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
@@ -28,7 +27,6 @@ import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
 import { characterIdentity, conversationTitle } from '../chat/context.ts';
-import type { MemoryView } from '../session-state.ts';
 interface AgentDependencies {
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
@@ -40,15 +38,12 @@ interface AgentDependencies {
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
-  memoryStore: MemoryStore;
   database: TheWoWDB;
   simulator: Simulator;
   getChats: () => Chat[];
   currentTransport: () => string;
   defaultModel: () => string;
   readSimulationCharacter: (chat?: string) => Promise<unknown>;
-  memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
-  setMemoryView: (view: MemoryView) => void;
   changed: () => void;
   presentReply: (
     chat: Chat,
@@ -80,15 +75,12 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     capabilitySettings,
     routineStore,
     panelStore,
-    memoryStore,
     database,
     simulator,
     getChats,
     currentTransport,
     defaultModel,
     readSimulationCharacter,
-    memorySnapshot,
-    setMemoryView,
     changed,
   } = deps;
   const expected = Buffer.from('Bearer ' + token);
@@ -163,7 +155,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     signal: () => AbortSignal;
   }
   const operationShape = z.object({
-    operation: z.string().optional(),
     input: z.object({ operation: z.string().optional() }).optional(),
   });
   function tool(
@@ -197,7 +188,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
             chat.proactive &&
             ((route === '/routines' &&
               !['catalog', 'list', 'get'].includes(operation.input?.operation || '')) ||
-              (route === '/memory' && operation.operation !== 'list') ||
               (route === '/panels' &&
                 ['save', 'remove'].includes(operation.input?.operation || '')))
           ) {
@@ -359,47 +349,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
             })),
           }
         : { panels };
-  });
-
-  tool('/identity', async ({ chat }) => ({ characterKey: chat.characterKey || null }));
-
-  tool('/memory', async ({ raw, chat }) => {
-    const data = rpcRequests.memory.parse(raw);
-    if (data.slot !== 'preferences' && data.slot !== 'character') {
-      throw new Error('Invalid memory scope');
-    }
-    if (!capabilitySettings.enabled('memory:' + data.slot)) {
-      throw new Error('This memory capability is disabled in Settings');
-    }
-    const owner = data.slot === 'preferences' ? 'local-player' : chat.characterKey;
-    if (!owner) {
-      throw new Error('No fresh character identity for this memory');
-    }
-    let entries;
-    if (data.operation === 'list') {
-      entries = await memoryStore.read(data.slot, owner);
-    } else if (data.operation === 'save' || data.operation === 'remove') {
-      if (
-        typeof data.key !== 'string' ||
-        (data.operation === 'save' && typeof data.text !== 'string')
-      ) {
-        throw new Error('Invalid memory entry');
-      }
-      entries = await memoryStore.update(
-        data.slot,
-        owner,
-        data.key,
-        data.operation === 'save' ? data.text : undefined,
-      );
-      const snapshot = await memorySnapshot(chat.characterKey);
-      if (chat.owner === currentTransport()) {
-        setMemoryView(snapshot);
-      }
-      changed();
-    } else {
-      throw new Error('Invalid memory operation');
-    }
-    return { entries };
   });
 
   tool('/title', async ({ raw, chat }) => {

@@ -8,35 +8,13 @@ import { providerId } from '@wisp/protocol/providers';
 import { replyPresentation } from './reply-presentation.ts';
 
 const session = { agentSession: z.string().min(1) };
-export const memoryRequest = z.discriminatedUnion('operation', [
-  z.object({
-    ...session,
-    slot: z.enum(['preferences', 'character']),
-    operation: z.literal('list'),
-  }),
-  z.object({
-    ...session,
-    slot: z.enum(['preferences', 'character']),
-    operation: z.literal('save'),
-    key: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
-    text: z.string().trim().min(1).max(1000),
-  }),
-  z.object({
-    ...session,
-    slot: z.enum(['preferences', 'character']),
-    operation: z.literal('remove'),
-    key: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/),
-  }),
-]);
 export const rpcRequests = {
-  identity: z.object(session),
   title: z.object({ ...session, title: z.string().min(1).max(500) }),
   present: z.object({
     ...session,
     callId: z.string().min(1).max(200),
     presentation: replyPresentation,
   }),
-  memory: memoryRequest,
   panels: z.object({ ...session, input: panelInput }),
   routines: z.object({ ...session, input: routineInput }),
   simulate: simulationInput.extend(session),
@@ -48,13 +26,10 @@ export const rpcRequests = {
 };
 export type RpcEndpoint = keyof typeof rpcRequests;
 export type RpcInput<K extends RpcEndpoint> = z.input<(typeof rpcRequests)[K]>;
-export const memoryEntry = z.object({ key: z.string(), text: z.string(), updatedAt: z.string() });
 const reading = z.record(z.string(), z.unknown());
 export const rpcResponses = {
-  identity: z.object({ characterKey: z.string().nullable() }),
   title: z.object({ title: z.string() }),
   present: replyPresentation,
-  memory: z.object({ entries: z.array(memoryEntry) }),
   panels: reading,
   routines: reading,
   simulate: reading,

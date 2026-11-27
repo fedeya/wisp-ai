@@ -1,6 +1,8 @@
 import type { z } from 'zod';
+import { Schema } from 'effect';
 import type { Effect } from 'effect';
-import type { GameAccess } from '../host/game-access.ts';
+import type { StandardJSONSchemaV1, StandardSchemaV1 } from 'effect/StandardSchema';
+import type * as Game from '../host/game-access.ts';
 
 /** What a tool receives besides its input. */
 export interface ToolContext {
@@ -9,7 +11,7 @@ export interface ToolContext {
   abortSignal: AbortSignal;
   /** The model's id for this call. */
   callId: string;
-  gameAccess?: GameAccess['Service'];
+  gameAccess?: Game.Service['Service'];
   runEffect?: <A>(effect: Effect.Effect<A, Error>, options: { signal: AbortSignal }) => Promise<A>;
 }
 
@@ -22,7 +24,9 @@ export type ToolModelOutput =
 
 export interface ToolDefinition<Input = any, Output = any> {
   description: string;
-  inputSchema: z.ZodType<Input>;
+  inputSchema:
+    | z.ZodType<Input>
+    | (StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>);
   outputSchema?: z.ZodType<Output>;
   /**
    * Deferred tools stay out of every request until the model finds them with
@@ -43,6 +47,9 @@ export interface ToolDefinition<Input = any, Output = any> {
   /** Capability switch that must be on for the model to see the tool. */
   capability?: string;
 }
+
+export const effectToolInput = <S extends Schema.ConstraintDecoder<unknown>>(schema: S) =>
+  Schema.toStandardJSONSchemaV1(Schema.toStandardSchemaV1(schema));
 
 export function defineTool<Input, Output>(
   definition: ToolDefinition<Input, Output>,

@@ -18,7 +18,7 @@ enqueuing the event again. Game results are settled and acknowledged within the
 bridge. View updates replace one another, and one writer fiber handles the
 filesystem writes for the connection.
 
-The agent calls its in-process [`GameAccess` service](../apps/agent/src/host/game-access.ts)
+The agent calls its in-process [`Game.Service`](../apps/agent/src/host/game-access.ts)
 for character reads, named inspection methods, and actions. The server resolves the
 agent session to its working chat, applies capability and read-only policy, and
 uses the current bridge connection. Cancelling a tool interrupts its pending
