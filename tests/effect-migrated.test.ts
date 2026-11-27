@@ -1,8 +1,9 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { expect, test } from 'vitest';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as NodePath from '@effect/platform-node/NodePath';
+import { expect, layer } from '@effect/vitest';
+import { Effect, FileSystem, Layer, Path } from 'effect';
 import {
-  countFile,
+  countSource,
   presentPatterns,
   readMarker,
   repositoryRoot,
@@ -10,21 +11,12 @@ import {
 } from './effect-migration.ts';
 import type { Marker } from './effect-migration.ts';
 
-/** Every scored source file that carries an `// @effect-migrated` marker. */
-const markedFiles = scoredFiles().flatMap(({ files }) =>
-  files.flatMap((source) => {
-    const marker = readMarker(readFileSync(source, 'utf8'));
-    const file = path.relative(repositoryRoot, source).split(path.sep).join('/');
-    return marker.kind === 'unmarked' ? [] : [{ file, source, marker }];
-  }),
-);
-
 /** Why a file marked as migrated is not fully Effect. */
 const problems = (file: string, source: string, marker: Exclude<Marker, { kind: 'unmarked' }>) => {
   if (marker.kind === 'invalid') {
     return [`${file} is marked as migrated, but ${marker.problem}`];
   }
-  return presentPatterns(countFile(source))
+  return presentPatterns(countSource(source))
     .filter(({ pattern }) => !marker.allow.includes(pattern))
     .map(
       ({ pattern, count }) =>
@@ -32,6 +24,26 @@ const problems = (file: string, source: string, marker: Exclude<Marker, { kind: 
     );
 };
 
-test.each(markedFiles)('$file is fully Effect', ({ file, source, marker }) => {
-  expect(problems(file, source, marker)).toEqual([]);
+layer(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))((it) => {
+  // The marked files are only known once the sources are read, so one test
+  // checks them all and lists every problem it finds.
+  it.effect('every file marked // @effect-migrated is fully Effect', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* repositoryRoot;
+      const found: string[] = [];
+      for (const { files } of yield* scoredFiles()) {
+        for (const source of files) {
+          const text = yield* fs.readFileString(source);
+          const marker = readMarker(text);
+          if (marker.kind !== 'unmarked') {
+            const file = path.relative(root, source).split(path.sep).join('/');
+            found.push(...problems(file, text, marker));
+          }
+        }
+      }
+      expect(found).toEqual([]);
+    }),
+  );
 });
