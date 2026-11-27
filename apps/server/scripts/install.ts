@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, cp, access, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { Effect } from 'effect';
 import {
   SLOT_COUNT,
   BIT_COUNT,
@@ -10,10 +10,12 @@ import {
   initialAddonPayload,
 } from '@wisp/protocol/addon-helpers';
 import { migrateGameSaves, retireLegacyAddons } from '../src/migrations/addon-rename.ts';
-import { appPaths } from '../src/app-paths.ts';
+import * as AppConfig from '../src/app-config.ts';
 import { addonVersionFromToc } from '../src/game/addon-version.ts';
-const root = process.env.WISP_RESOURCE_ROOT || fileURLToPath(new URL('../../../', import.meta.url));
-const paths = appPaths(root);
+const { paths } = await Effect.runPromise(
+  AppConfig.AppConfig.useSync((config) => config).pipe(Effect.provide(AppConfig.layer)),
+);
+const root = paths.root;
 await mkdir(paths.runtime, { recursive: true });
 const wow = process.argv[2];
 if (!wow) {

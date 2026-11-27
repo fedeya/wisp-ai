@@ -1,5 +1,5 @@
 import { characterLabel } from '@wisp/protocol/character-key';
-import { Context, Effect, Exit, Fiber, Layer, Scope } from 'effect';
+import { ConfigProvider, Context, Effect, Exit, Fiber, FileSystem, Layer, Scope } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
@@ -19,9 +19,8 @@ import { createAgentHandler } from './agent/agent-server.ts';
 import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createTransportConnection } from './game/transport-connection.ts';
 import type { TransportConnection } from './game/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
@@ -57,7 +56,7 @@ import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
 import * as TheWoWDB from './integrations/thewowdb.ts';
 import * as HttpClient from './http-client.ts';
 import { Simulator } from './integrations/simulation/simulator.ts';
-import { appPaths, retireLegacyEngine } from './app-paths.ts';
+import * as AppConfig from './app-config.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
@@ -72,18 +71,27 @@ import { AgentHistory } from './agent/agent-history.ts';
 
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 
+/**
+ * The migrated services `makeServer` receives from its caller. Each migrated
+ * adapter adds its layer here; `main.ts` and `startServerEffect` provide it.
+ */
+export const ServerLayer = Layer.mergeAll(
+  AppConfig.layer,
+  NodeFileSystem.layer,
+  NodePath.layer,
+  TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer)),
+);
+
 export interface ServerOptions {
-  resourceRoot?: string;
-  dataDirectory?: string;
   agentPort?: number;
   desktopPort?: number;
   vault?: SecretVault;
-  deferWowTransport?: boolean;
+  /**
+   * Replaces the environment as the source of the `WISP_*` configuration in
+   * `startServer`. Effect callers provide a `ConfigProvider` instead.
+   */
+  configProvider?: ConfigProvider.ConfigProvider;
 }
-
-/** Services `makeServer` requires; `main.ts` and `startServer` provide them. */
-export const serverServices = TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer));
-
 /**
  * Composition root of the Wisp server: loads stores and settings, wires the
  * in-process agent, the WoW bridge and the HTTP listeners, and returns
@@ -107,11 +115,10 @@ export const makeServer = Effect.fn('Server.make')(
     const runPromise = Effect.runPromiseWith(context);
     // Checked by everything that starts work, so nothing new begins while resources close.
     let shutdownRequested = false;
-    const ROOT =
-      options.resourceRoot ||
-      process.env.WISP_RESOURCE_ROOT ||
-      fileURLToPath(new URL('../../../', import.meta.url));
-    const paths = appPaths(ROOT, options.dataDirectory);
+    // Migrated: the unmigrated consumers below receive plain values read from it.
+    const appConfig = yield* AppConfig.AppConfig;
+    const { paths } = appConfig;
+    const ROOT = paths.root;
     const [bridgeVersion, expectedAddonVersion] = yield* startup(() =>
       Promise.all([
         readJson(path.join(ROOT, 'package.json'), z.object({ version: z.string().min(1) }), () => ({
@@ -134,7 +141,7 @@ export const makeServer = Effect.fn('Server.make')(
     const config = yield* startup(() => loadBridgeConfig(paths.config));
     const features = yield* startup(() =>
       Features.start({
-        channel: featureChannel(bridgeVersion, process.env.WISP_RELEASE_BUILD === '1'),
+        channel: featureChannel(bridgeVersion, appConfig.releaseBuild),
         overrides: config.get().features ?? {},
         saveOverrides: (overrides) => config.update({ features: overrides }),
         onChange: () => featuresChanged(),
@@ -164,6 +171,7 @@ export const makeServer = Effect.fn('Server.make')(
     yield* Effect.addFinalizer(() => mcpManager.close());
     yield* mcpManager.load();
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
+      release: appConfig.telemetryRelease,
       isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
       enabledFeatures: () => features.enabledNames(),
     });
@@ -458,11 +466,15 @@ export const makeServer = Effect.fn('Server.make')(
     yield* startup(() => writeFile(path.join(runtime, 'bridge.pid'), String(process.pid)));
     setAgentHost({ origin: agentOrigin, token });
     yield* releaseRuntimeResource(() => accounts.drain());
-    void Promise.all([
-      retireLegacyEngine(paths.legacyEngine),
-      rm(path.join(runtime, 'eve.log'), { force: true }),
-    ]).catch((error: unknown) =>
-      runFork(
+    const fs = yield* FileSystem.FileSystem;
+    yield* Effect.all(
+      [
+        AppConfig.retireLegacyEngine(paths.legacyEngine),
+        fs.remove(path.join(runtime, 'eve.log'), { force: true }),
+      ],
+      { concurrency: 'unbounded', discard: true },
+    ).pipe(
+      Effect.catch((error) =>
         Effect.logWarning('Could not remove the old Eve engine folder').pipe(
           Effect.annotateLogs({
             event: 'agent.legacy_engine_cleanup_failed',
@@ -470,6 +482,7 @@ export const makeServer = Effect.fn('Server.make')(
           }),
         ),
       ),
+      Effect.forkDetach,
     );
     // Histories no conversation refers to belong to deleted chats or reset sessions.
     yield* startup(() => agentHistory.prune()).pipe(
@@ -588,7 +601,7 @@ export const makeServer = Effect.fn('Server.make')(
     );
     yield* releaseRuntimeResource(() => closeServer(desktopServer));
     const transportStartup = yield* (
-      options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
+      appConfig.deferWowTransport
         ? Effect.void
         : transport.serialize(transport.connect(config.get().wow)).pipe(
             Effect.catchDefect((error) => Effect.fail(error)),
@@ -653,8 +666,11 @@ function startup<A>(operation: () => Promise<A>) {
 }
 
 export function startServer(options: ServerOptions = {}) {
+  const server = startServerEffect(options).pipe(Effect.provide(bridgeLogging));
   return Effect.runPromise(
-    startServerEffect(options).pipe(Effect.provide([serverServices, bridgeLogging])),
+    options.configProvider
+      ? server.pipe(Effect.provideService(ConfigProvider.ConfigProvider, options.configProvider))
+      : server,
   );
 }
 
@@ -683,6 +699,7 @@ export const startServerEffect = Effect.fnUntraced(function* (options: ServerOpt
           )
         : Effect.void,
     ),
+    Effect.provide(ServerLayer),
   );
   return { ...server, stop };
 });
