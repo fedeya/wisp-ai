@@ -1,4 +1,4 @@
-// @effect-migrated
+// @effect-migrated allow=effectPromises: reads the AI SDK's JSON Schema, which may be a PromiseLike
 import { expect, it } from '@effect/vitest';
 import { asSchema } from 'ai';
 import { Effect } from 'effect';
@@ -32,7 +32,9 @@ const modelInputSchema = Effect.fnUntraced(function* (
   });
   const schema = tools[name]?.inputSchema;
   if (!schema) return yield* Effect.die(new Error('Missing SDK tool schema for ' + name));
-  const json: unknown = yield* Effect.tryPromise(async () => asSchema(schema).jsonSchema);
+  const json: unknown = yield* Effect.tryPromise(() =>
+    Promise.resolve(asSchema(schema).jsonSchema),
+  );
   return json;
 });
 

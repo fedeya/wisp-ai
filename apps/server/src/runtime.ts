@@ -9,6 +9,7 @@ import {
   Layer,
   Option,
   Redacted,
+  Schema,
   Scope,
   Stream,
 } from 'effect';
@@ -29,7 +30,6 @@ import { createDesktopApp } from './api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 import { readJson, writeJson } from './json-file.ts';
 import { loadBridgeConfig } from './bridge-config.ts';
-import { z } from 'zod';
 import { createAgentHandler } from './agent/agent-server.ts';
 import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
@@ -83,6 +83,7 @@ import * as Memory from '@wisp/agent/memory';
 import * as AgentGameAccess from './game/agent-game-access.ts';
 import { AgentHistory } from './agent/agent-history.ts';
 
+const packageMetadata = Schema.Struct({ version: Schema.String.check(Schema.isMinLength(1)) });
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 
 /**
@@ -158,7 +159,7 @@ export const makeServer = Effect.fn('Server.make')(
     const ROOT = paths.root;
     const [bridgeVersion, expectedAddonVersion] = yield* startup(() =>
       Promise.all([
-        readJson(path.join(ROOT, 'package.json'), z.object({ version: z.string().min(1) }), () => ({
+        readJson(path.join(ROOT, 'package.json'), packageMetadata, () => ({
           version: 'unknown',
         }))
           .then((metadata) => metadata.version)

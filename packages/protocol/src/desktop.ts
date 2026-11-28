@@ -1,78 +1,86 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Effect, Schema } from 'effect';
 import { capabilityViewSchema } from './capabilities.js';
 import { savedRoutine, routineRun } from './routines.js';
 import { characterName } from './character-key.js';
 import { connectionView } from './providers.js';
 import { searchState } from './search.js';
 import { featuresStateSchema } from './features.js';
-export const desktopInfoSchema = z.object({
-  wow: z.string().nullable().optional(),
-  configured: z.boolean(),
-  dataDirectory: z.string(),
-  platform: z.string(),
-  version: z.string(),
-  telemetryEnabled: z.boolean().optional(),
-  addonOutdated: z.boolean().nullable().optional(),
-  addonUpdateNotice: z.enum(['reload_required', 'failed']).nullish(),
+export const desktopInfoSchema = Schema.Struct({
+  wow: Schema.optional(Schema.NullOr(Schema.String)),
+  configured: Schema.Boolean,
+  dataDirectory: Schema.String,
+  platform: Schema.String,
+  version: Schema.String,
+  telemetryEnabled: Schema.optional(Schema.Boolean),
+  addonOutdated: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  addonUpdateNotice: Schema.optional(Schema.NullOr(Schema.Literals(['reload_required', 'failed']))),
   /** An app update left the addon to update on this launch. */
-  addonUpdatePending: z.boolean().optional(),
+  addonUpdatePending: Schema.optional(Schema.Boolean),
 });
-export const modelSchema = z.object({
-  slug: z.string(),
-  displayName: z.string(),
-  efforts: z.array(z.string()),
+const mcpTool = Schema.Struct({ name: Schema.String, description: Schema.optional(Schema.String) });
+export const modelSchema = Schema.Struct({
+  slug: Schema.String,
+  displayName: Schema.String,
+  efforts: Schema.Array(Schema.String),
 });
-export const mcpSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  transport: z.enum(['http', 'sse', 'stdio']),
-  url: z.string().optional(),
-  command: z.string().optional(),
-  args: z.array(z.string()),
-  enabled: z.boolean(),
-  hasToken: z.boolean().optional(),
-  envKeys: z.array(z.string()).optional(),
-  tools: z.array(z.object({ name: z.string(), description: z.string().optional() })).optional(),
+export const mcpSchema = Schema.Struct({
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  transport: Schema.Literals(['http', 'sse', 'stdio']),
+  url: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+  args: Schema.Array(Schema.String),
+  enabled: Schema.Boolean,
+  hasToken: Schema.optional(Schema.Boolean),
+  envKeys: Schema.optional(Schema.Array(Schema.String)),
+  tools: Schema.optional(Schema.Array(mcpTool)),
 });
-export const panelSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  character: z.string(),
-  characterKey: z.string(),
-  bindings: z.array(z.unknown()).optional(),
-  hidden: z.boolean().optional(),
+export const panelSchema = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  character: Schema.String,
+  characterKey: Schema.String,
+  bindings: Schema.optional(Schema.Array(Schema.Unknown)),
+  hidden: Schema.optional(Schema.Boolean),
 });
-export const authStateSchema = z.object({
-  status: z.string(),
-  activeId: z.string().nullable().optional(),
-  account: z.string().nullable().optional(),
-  message: z.string().optional(),
-  revision: z.number(),
-  profiles: z.array(z.object({ id: z.string(), label: z.string(), connected: z.boolean() })),
+export const authStateSchema = Schema.Struct({
+  status: Schema.String,
+  activeId: Schema.optional(Schema.NullOr(Schema.String)),
+  account: Schema.optional(Schema.NullOr(Schema.String)),
+  message: Schema.optional(Schema.String),
+  revision: Schema.Finite,
+  profiles: Schema.Array(
+    Schema.Struct({ id: Schema.String, label: Schema.String, connected: Schema.Boolean }),
+  ),
 });
-export const statusSchema = z.object({
-  ready: z.boolean(),
-  gameConnected: z.boolean(),
-  model: z.string(),
-  activeTurns: z.number().int().nonnegative(),
+export const statusSchema = Schema.Struct({
+  ready: Schema.Boolean,
+  gameConnected: Schema.Boolean,
+  model: Schema.String,
+  activeTurns: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   auth: authStateSchema,
-  connections: z.array(connectionView).default([]),
-  modelConnected: z.boolean().optional(),
-  search: searchState.optional(),
-  mcps: z.array(mcpSchema),
-  integrations: z.array(capabilityViewSchema),
-  panels: z.array(panelSchema),
-  routines: z.array(savedRoutine),
-  routineRuns: z.array(routineRun),
+  connections: Schema.Array(connectionView).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
+  modelConnected: Schema.optional(Schema.Boolean),
+  search: Schema.optional(searchState),
+  mcps: Schema.Array(mcpSchema),
+  integrations: Schema.Array(capabilityViewSchema),
+  panels: Schema.Array(panelSchema),
+  routines: Schema.Array(savedRoutine),
+  routineRuns: Schema.Array(routineRun),
   /** Saved names for GUID character keys, for labels. */
-  characters: z.record(z.string(), characterName).default({}),
+  characters: Schema.Record(Schema.String, characterName).pipe(
+    Schema.withDecodingDefault(Effect.sync(() => ({}))),
+  ),
   /** Newer app version the desktop reported to this bridge; the addon announces it. */
-  appUpdate: z.string().nullable().default(null),
+  appUpdate: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   /** Experimental features: the channel and each flag's value and source. */
-  features: featuresStateSchema.default({ channel: 'stable', flags: [] }),
+  features: featuresStateSchema.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ channel: 'stable' as const, flags: [] })),
+  ),
 });
-export type DesktopInfo = z.infer<typeof desktopInfoSchema>;
-export type Model = z.infer<typeof modelSchema>;
-export type Mcp = z.infer<typeof mcpSchema>;
-export type Panel = z.infer<typeof panelSchema>;
-export type Status = z.infer<typeof statusSchema>;
+export type DesktopInfo = typeof desktopInfoSchema.Type;
+export type Model = typeof modelSchema.Type;
+export type Mcp = typeof mcpSchema.Type;
+export type Panel = typeof panelSchema.Type;
+export type Status = typeof statusSchema.Type;

@@ -10,9 +10,16 @@ import {
   matchesRoutineEvent,
   savedRoutine,
 } from '@wisp/protocol/routines';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
+import { Exit, Schema } from 'effect';
+
+const decodeDefinition = Schema.decodeUnknownSync(routineDefinition);
+const decodeSavedRoutine = Schema.decodeUnknownSync(savedRoutine, rejectUnknownKeys);
+const accepts = (schema: Schema.Codec<unknown, unknown>, input: unknown) =>
+  Exit.isSuccess(Schema.decodeUnknownExit(schema, rejectUnknownKeys)(input));
 
 const definition = () =>
-  routineDefinition.parse({
+  decodeDefinition({
     id: 'mage',
     title: 'Mage review',
     instruction: 'Read current spells and advise only if useful.',
@@ -61,11 +68,11 @@ test('event definitions reject invented capabilities, invalid operators and exec
     ],
     [{ kind: 'interval', seconds: 1 }],
   ]) {
-    expect(routineDefinition.safeParse({ ...d, triggers }).success).toBe(false);
+    expect(accepts(routineDefinition, { ...d, triggers })).toBe(false);
   }
-  expect(
-    routineInput.safeParse({ operation: 'save', routine: { ...d, script: 'run()' } }).success,
-  ).toBe(false);
+  expect(accepts(routineInput, { operation: 'save', routine: { ...d, script: 'run()' } })).toBe(
+    false,
+  );
 });
 test('pending events survive restart, coalesce, respect cooldown and stay character scoped', async () =>
   fixture(async (store, file, openStore) => {
@@ -122,7 +129,7 @@ test.each([
       { ...base, id: 'not-due', nextAt: now + 1 },
       { ...base, id: 'cooldown', lastStartedAt: now - 1000 },
       ...['a', 'b', 'c'].map((id, index) => ({ ...base, id, lastStartedAt: starts[index] })),
-    ].map((routine) => savedRoutine.parse(routine));
+    ].map((routine) => decodeSavedRoutine(routine));
     const savedOrder = seededRoutines.map((routine) => routine.id);
     await writeFile(
       path.join(path.dirname(file), 'routines.json'),

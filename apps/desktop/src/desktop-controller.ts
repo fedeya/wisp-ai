@@ -205,7 +205,7 @@ function createDesktopSession() {
   async function loadModels() {
     update({ models: [] });
     const { models } = await call(bridge.auth.models.$get());
-    update({ models, modelsError: '' });
+    update({ models: [...models], modelsError: '' });
   }
 
   /** Resolves false when the sign-in page could not be opened. */
@@ -250,7 +250,7 @@ function createDesktopSession() {
       'Installing addon',
       async () => {
         await desktop('install_addon', { wow: getState().wow });
-        update({ info: await desktop<DesktopInfo>('desktop_info') });
+        update({ info: await desktop('desktop_info') });
       },
       'Addon installed. Restart WoW after the first installation; use /reload for updates.',
       'installation',
@@ -265,7 +265,7 @@ function createDesktopSession() {
       async () => {
         await desktop('import_legacy', { source });
         expectService();
-        const info = await desktop<DesktopInfo>('desktop_info');
+        const info = await desktop('desktop_info');
         loadedAccount = '';
         update({ info, wow: info.wow || '' });
       },

@@ -1,17 +1,19 @@
-import type { z } from 'zod';
-import { Effect, Exit, Scope, Semaphore, type Duration } from 'effect';
+import { Effect, Exit, Schema, Scope, Semaphore, type Duration } from 'effect';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Capability } from '@wisp/protocol/capabilities';
 import { McpConnection, McpConnectionError } from './mcp-connection.ts';
 import type { Connection } from './mcp-connection.ts';
 export { mcpDefinition, mcpSetup };
-export type MCPDefinition = z.infer<typeof mcpDefinition> & {
+export type MCPDefinition = typeof mcpDefinition.Type & {
   tools?: { name: string; description?: string }[];
   hasToken?: boolean;
   envKeys?: string[];
 };
-type Setup = z.infer<typeof mcpSetup>;
+type Setup = typeof mcpSetup.Type;
+const decodeName = Schema.decodeUnknownSync(name);
+const decodeSetup = Schema.decodeUnknownSync(mcpSetup);
+const decodeDefinition = Schema.decodeUnknownSync(mcpDefinition);
 
 export interface McpStorage {
   readConfig(): Promise<string | undefined>;
@@ -59,12 +61,12 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
     ]),
   );
   function customName(key: string) {
-    const parsed = name.parse(key);
+    const parsed = decodeName(key);
     if (reservedNames.has(parsed)) throw Error('MCP name is reserved: ' + parsed);
     return parsed;
   }
   function parseSetup(input: Setup) {
-    const setup = mcpSetup.parse(input);
+    const setup = decodeSetup(input);
     customName(setup.server.name);
     return setup;
   }
@@ -95,7 +97,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
           Object.entries(raw.servers || {}).map(([key, s]) => [
             key,
             {
-              ...mcpDefinition.parse({ ...s, name: customName(key) }),
+              ...decodeDefinition({ ...s, name: customName(key) }),
               tools: Array.isArray(s.tools) ? (s.tools as MCPDefinition['tools']) : [],
               hasToken: s.hasToken === true,
               envKeys: Array.isArray(s.envKeys) ? (s.envKeys as string[]) : [],

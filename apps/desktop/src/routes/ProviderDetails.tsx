@@ -1,20 +1,23 @@
+import { Option, Schema } from 'effect';
 import { providerId } from '@wisp/protocol/providers';
 import { useEffect, useRef } from 'react';
 import { Navigate, useParams } from 'react-router';
 import ProviderConfiguration from '../components/connections/ProviderConfiguration';
 import { ProviderLogo, providerPresentation } from '../components/connections/provider-directory';
 
+const decodeProvider = Schema.decodeUnknownOption(providerId);
+
 export default function ProviderDetails() {
   const { provider } = useParams();
-  const parsed = providerId.safeParse(provider);
+  const parsed = decodeProvider(provider);
   const title = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     title.current?.focus();
   }, [provider]);
 
-  if (!parsed.success) return <Navigate to="/connections" replace />;
-  const id = parsed.data;
+  if (Option.isNone(parsed)) return <Navigate to="/connections" replace />;
+  const id = parsed.value;
   const { name } = providerPresentation(id);
 
   return (

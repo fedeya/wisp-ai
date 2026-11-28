@@ -1,4 +1,6 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Schema, Struct } from 'effect';
+import { TrimmedString, UrlString } from './checks.js';
 
 // API-key language providers only. Cloud accounts with regions/deployments are
 // deliberately outside this registry. Keep transport/auth details out of the UI.
@@ -104,9 +106,9 @@ export const providerDefinitions = [
   },
   { id: 'compatible', name: 'OpenAI compatible / Local', baseURL: '', example: 'your-model-id' },
 ] as const;
-export const providerId = z.enum(providerDefinitions.map((p) => p.id));
-export type ProviderId = z.infer<typeof providerId>;
-export const reasoningEffort = z.enum([
+export const providerId = Schema.Literals(providerDefinitions.map((p) => p.id));
+export type ProviderId = typeof providerId.Type;
+export const reasoningEffort = Schema.Literals([
   'none',
   'minimal',
   'low',
@@ -116,48 +118,59 @@ export const reasoningEffort = z.enum([
   'max',
   'enabled',
 ]);
-export type ReasoningEffort = z.infer<typeof reasoningEffort>;
-export const connectionModel = z.object({
-  id: z
-    .string()
-    .trim()
-    .min(1)
-    .max(200)
-    .refine((id) => !/[\s?#]/.test(id), 'Use a model ID without spaces or URL parameters.'),
-  name: z.string().trim().min(1).max(200).optional(),
-  contextWindow: z.number().int().positive().max(100_000_000).optional(),
-  reasoningEfforts: z.array(reasoningEffort).max(8).optional(),
+export type ReasoningEffort = typeof reasoningEffort.Type;
+/** A context window in tokens. */
+export const contextWindow = Schema.Int.check(
+  Schema.isGreaterThan(0),
+  Schema.isLessThanOrEqualTo(100_000_000),
+);
+export const connectionModel = Schema.Struct({
+  id: TrimmedString({ minLength: 1, maxLength: 200 }).check(
+    Schema.makeFilter((id) => !/[\s?#]/u.test(id), {
+      message: 'Use a model ID without spaces or URL parameters.',
+    }),
+  ),
+  name: Schema.optional(TrimmedString({ minLength: 1, maxLength: 200 })),
+  contextWindow: Schema.optional(contextWindow),
+  reasoningEfforts: Schema.optional(Schema.Array(reasoningEffort).check(Schema.isMaxLength(8))),
 });
-export const discoveredConnectionModel = connectionModel.extend({
-  supportsTools: z.boolean().optional(),
-});
+export const discoveredConnectionModel = connectionModel.mapFields(
+  Struct.assign({ supportsTools: Schema.optional(Schema.Boolean) }),
+);
 export const maxConnectionModels = 200;
 
-export const connectionConfig = z.object({
-  id: z.string().uuid(),
+const connectionId = Schema.String.check(Schema.isUUID());
+const connectionName = TrimmedString({ minLength: 1, maxLength: 80 });
+export const connectionConfig = Schema.Struct({
+  id: connectionId,
   provider: providerId,
-  name: z.string().trim().min(1).max(80),
-  baseURL: z.string().url().max(1000).optional(),
-  models: z.array(connectionModel).min(1).max(maxConnectionModels),
+  name: connectionName,
+  baseURL: Schema.optional(UrlString.check(Schema.isMaxLength(1000))),
+  models: Schema.Array(connectionModel).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(maxConnectionModels),
+  ),
 });
-export const connectionSetup = connectionConfig.omit({ id: true }).extend({
-  id: z.string().uuid().optional(),
-  // Optional: the bridge names a new connection after its provider.
-  name: connectionConfig.shape.name.optional(),
-  apiKey: z.string().trim().max(4096).optional(),
-});
-export const connectionDiscovery = connectionSetup.omit({ models: true });
-export const connectionView = connectionConfig.extend({ hasKey: z.boolean() });
-export type ConnectionConfig = z.infer<typeof connectionConfig>;
-export type ConnectionSetup = z.infer<typeof connectionSetup>;
-export type ConnectionModel = z.infer<typeof connectionModel>;
-export type DiscoveredConnectionModel = z.infer<typeof discoveredConnectionModel>;
-export type ConnectionView = z.infer<typeof connectionView>;
+export const connectionSetup = connectionConfig.mapFields(
+  Struct.assign({
+    id: Schema.optional(connectionId),
+    // Optional: the bridge names a new connection after its provider.
+    name: Schema.optional(connectionName),
+    apiKey: Schema.optional(TrimmedString({ maxLength: 4096 })),
+  }),
+);
+export const connectionDiscovery = connectionSetup.mapFields(Struct.omit(['models']));
+export const connectionView = connectionConfig.mapFields(Struct.assign({ hasKey: Schema.Boolean }));
+export type ConnectionConfig = typeof connectionConfig.Type;
+export type ConnectionSetup = typeof connectionSetup.Type;
+export type ConnectionModel = typeof connectionModel.Type;
+export type DiscoveredConnectionModel = typeof discoveredConnectionModel.Type;
+export type ConnectionView = typeof connectionView.Type;
 
 export function connectionModelSlug(connection: string, model: string) {
   return `connection:${connection}:${model}`;
 }
 export function parseConnectionModel(slug: string) {
   const match = /^connection:([0-9a-f-]{36}):(.+)$/i.exec(slug);
-  return match ? { connection: match[1]!, model: match[2]! } : undefined;
+  return match ? { connection: match[1], model: match[2] } : undefined;
 }

@@ -13,9 +13,13 @@ import { RoutineStore } from '../src/routines/routine-store.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { savedRoutine } from '@wisp/protocol/routines';
 
-const routine = savedRoutine.parse({
+const decodeSavedRoutine = Schema.decodeUnknownSync(savedRoutine, rejectUnknownKeys);
+
+const routine = decodeSavedRoutine({
   id: 'review',
   title: 'Review',
   instruction: 'Review spells',

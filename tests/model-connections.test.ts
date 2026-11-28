@@ -6,7 +6,10 @@ import { ModelConnections } from '@wisp/server/model-connections';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { providerDefinitions, connectionModelSlug } from '@wisp/protocol/providers';
 import { desktopRoutes } from '@wisp/protocol/desktop-routes';
+import { Schema } from 'effect';
 import type { PromiseChatGPTAuth } from '@wisp/server/auth';
+
+const decodeDiscovered = Schema.decodeUnknownSync(desktopRoutes['/connections/discover'].output);
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -165,7 +168,7 @@ test.each(['openrouter', 'gateway', 'compatible'] as const)(
       apiKey: 'key',
       baseURL: provider === 'compatible' ? 'http://localhost:1234/v1' : undefined,
     });
-    const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+    const { models } = decodeDiscovered(found);
     expect(models.map(({ id, supportsTools }) => [id, supportsTools])).toEqual([
       ['lab/tools', true],
       ['lab/text', false],
@@ -205,7 +208,7 @@ test('anthropic discovery marks native models as supporting tools', async () => 
     name: 'Anthropic / Claude',
     apiKey: 'key',
   });
-  const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+  const { models } = decodeDiscovered(found);
   expect(models).toEqual([
     expect.objectContaining({
       id: 'claude-sonnet-4-6',
@@ -220,7 +223,7 @@ test('anthropic discovery marks native models as supporting tools', async () => 
     apiKey: 'key',
     baseURL: 'https://proxy.example.com/v1',
   });
-  const { models: customModels } = desktopRoutes['/connections/discover'].output.parse(custom);
+  const { models: customModels } = decodeDiscovered(custom);
   expect(customModels[0]?.supportsTools).toBeUndefined();
 });
 
@@ -408,7 +411,7 @@ test.each([
   async ({ provider, body, expected }) => {
     const { manager } = await fixture(async () => Response.json(body));
     const found = await manager.discover({ provider, name: provider, apiKey: 'key' });
-    const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+    const { models } = decodeDiscovered(found);
     expect(Object.fromEntries(models.map((m) => [m.id, m.supportsTools]))).toEqual(expected);
   },
 );

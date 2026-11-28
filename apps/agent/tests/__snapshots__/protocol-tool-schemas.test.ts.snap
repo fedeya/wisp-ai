@@ -11,44 +11,44 @@ exports[`the model sees the same web__web_search input schema 1`] = `
       "maxLength": 1000
     },
     "depth": {
-      "default": "standard",
-      "description": "Choose quick for a simple fact, standard for normal research, deep for conflicting evidence, missing acquisition routes or broad comparisons.",
       "type": "string",
       "enum": [
         "quick",
         "standard",
         "deep"
-      ]
+      ],
+      "description": "Choose quick for a simple fact, standard for normal research, deep for conflicting evidence, missing acquisition routes or broad comparisons.",
+      "default": "standard"
     },
     "maxResults": {
-      "description": "Maximum returned findings/sources. Overrides the depth default.",
       "type": "integer",
       "minimum": 1,
-      "maximum": 12
+      "maximum": 12,
+      "description": "Maximum returned findings/sources. Overrides the depth default."
     },
     "maxQueries": {
-      "description": "Query budget including the primary query. Guidance for ChatGPT; bounds explicit query variants on Exa.",
       "type": "integer",
       "minimum": 1,
-      "maximum": 6
+      "maximum": 6,
+      "description": "Query budget including the primary query. Guidance for ChatGPT; bounds explicit query variants on Exa."
     },
     "timeoutSeconds": {
-      "description": "Total time budget for this tool call, not per query.",
       "type": "integer",
       "minimum": 10,
-      "maximum": 180
+      "maximum": 180,
+      "description": "Total time budget for this tool call, not per query."
     },
     "excerptCharacters": {
-      "description": "Maximum Exa excerpt length per source.",
       "type": "integer",
       "minimum": 1000,
-      "maximum": 12000
+      "maximum": 12000,
+      "description": "Maximum Exa excerpt length per source."
     },
     "queries": {
-      "default": [],
-      "description": "Optional additional focused query variants. Exa executes these within maxQueries; ChatGPT can use them as research directions.",
-      "maxItems": 5,
       "type": "array",
+      "maxItems": 5,
+      "description": "Optional additional focused query variants. Exa executes these within maxQueries; ChatGPT can use them as research directions.",
+      "default": [],
       "items": {
         "type": "string",
         "minLength": 1,
@@ -66,13 +66,15 @@ exports[`the model sees the same web__web_search input schema 1`] = `
 exports[`the model sees the same wisp__manage_routine input schema 1`] = `
 "{
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "oneOf": [
+  "anyOf": [
     {
       "type": "object",
       "properties": {
         "operation": {
           "type": "string",
-          "const": "catalog"
+          "enum": [
+            "catalog"
+          ]
         }
       },
       "required": [
@@ -85,7 +87,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
       "properties": {
         "operation": {
           "type": "string",
-          "const": "list"
+          "enum": [
+            "list"
+          ]
         }
       },
       "required": [
@@ -98,7 +102,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
       "properties": {
         "operation": {
           "type": "string",
-          "const": "get"
+          "enum": [
+            "get"
+          ]
         },
         "id": {
           "type": "string"
@@ -115,7 +121,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
       "properties": {
         "operation": {
           "type": "string",
-          "const": "save"
+          "enum": [
+            "save"
+          ]
         },
         "routine": {
           "type": "object",
@@ -135,17 +143,17 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
               "maxLength": 6000
             },
             "triggers": {
-              "minItems": 1,
-              "maxItems": 8,
               "type": "array",
               "items": {
-                "oneOf": [
+                "anyOf": [
                   {
                     "type": "object",
                     "properties": {
                       "kind": {
                         "type": "string",
-                        "const": "event"
+                        "enum": [
+                          "event"
+                        ]
                       },
                       "event": {
                         "type": "string",
@@ -161,8 +169,6 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
                         ]
                       },
                       "filters": {
-                        "default": [],
-                        "maxItems": 8,
                         "type": "array",
                         "items": {
                           "type": "object",
@@ -204,7 +210,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
                             "value"
                           ],
                           "additionalProperties": false
-                        }
+                        },
+                        "maxItems": 8,
+                        "default": []
                       }
                     },
                     "required": [
@@ -218,7 +226,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
                     "properties": {
                       "kind": {
                         "type": "string",
-                        "const": "interval"
+                        "enum": [
+                          "interval"
+                        ]
                       },
                       "seconds": {
                         "type": "integer",
@@ -233,18 +243,20 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
                     "additionalProperties": false
                   }
                 ]
-              }
+              },
+              "minItems": 1,
+              "maxItems": 8
             },
             "cooldownSeconds": {
-              "default": 600,
               "type": "integer",
               "minimum": 60,
-              "maximum": 86400
+              "maximum": 86400,
+              "default": 600
             },
             "once": {
-              "default": false,
+              "type": "boolean",
               "description": "Pause after the first successful non-silent result. Silent checks and failures keep watching.",
-              "type": "boolean"
+              "default": false
             }
           },
           "required": [
@@ -267,7 +279,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
       "properties": {
         "operation": {
           "type": "string",
-          "const": "pause"
+          "enum": [
+            "pause"
+          ]
         },
         "id": {
           "type": "string"
@@ -284,7 +298,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
       "properties": {
         "operation": {
           "type": "string",
-          "const": "resume"
+          "enum": [
+            "resume"
+          ]
         },
         "id": {
           "type": "string"
@@ -301,7 +317,9 @@ exports[`the model sees the same wisp__manage_routine input schema 1`] = `
       "properties": {
         "operation": {
           "type": "string",
-          "const": "remove"
+          "enum": [
+            "remove"
+          ]
         },
         "id": {
           "type": "string"

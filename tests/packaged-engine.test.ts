@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
+import { Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { ChatStore, conversationInstanceId } from '@wisp/server/chat-store';
 import { newChat } from '@wisp/server/chat-lifecycle';
@@ -30,7 +32,10 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
       };
       await source.flush([chat]);
       expect((await readFile(source.file + '-wal')).length).toBeGreaterThan(0);
-      const routine = savedRoutine.parse({
+      const routine = Schema.decodeUnknownSync(
+        savedRoutine,
+        rejectUnknownKeys,
+      )({
         id: 'review',
         title: 'Review',
         instruction: 'Review spells',
