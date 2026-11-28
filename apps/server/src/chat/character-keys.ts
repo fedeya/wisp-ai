@@ -1,5 +1,5 @@
 import { and, eq, like } from 'drizzle-orm';
-import { Effect } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { adoptableKeys, characterName, type CharacterName } from '@wisp/protocol/character-key';
 import type { ApplicationOrm } from '@wisp/db/database';
 import type { SqlOrm } from '@wisp/db/sql-database';
@@ -74,6 +74,7 @@ export const adoptCharacterKey = Effect.fn('CharacterKeys.adopt')(function* (
 
 // GUID keys carry no name, so the bridge keeps the latest one for labels.
 const namePrefix = 'character-name:';
+const decodeStoredName = Schema.decodeOption(Schema.fromJsonString(characterName));
 export function saveCharacterName(db: SqlOrm, key: string, name: CharacterName) {
   const value = JSON.stringify({ name: name.name, realm: name.realm });
   return db
@@ -88,16 +89,12 @@ export function readCharacterNames(db: ApplicationOrm): Record<string, Character
       .from(metadata)
       .where(like(metadata.key, namePrefix + '%'))
       .all()
-      .flatMap((row) => {
+      .flatMap((row): Array<[string, CharacterName]> =>
         // A damaged row only loses its label, never the whole desktop status.
-        let value: unknown;
-        try {
-          value = JSON.parse(row.value);
-        } catch {
-          return [];
-        }
-        const name = characterName.safeParse(value);
-        return name.success ? [[row.key.slice(namePrefix.length), name.data]] : [];
-      }),
+        Option.match(decodeStoredName(row.value), {
+          onNone: () => [],
+          onSome: (name) => [[row.key.slice(namePrefix.length), name]],
+        }),
+      ),
   );
 }

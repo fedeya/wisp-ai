@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { routineDefinition } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
+import { Schema } from 'effect';
+
+const decodeDefinition = Schema.decodeUnknownSync(routineDefinition);
 
 test('routine polling and mutations stay bounded with a large silent-run history', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-large-routine-history-'));
@@ -13,7 +16,7 @@ test('routine polling and mutations stay bounded with a large silent-run history
   const store = new RoutineStore(database);
   try {
     await store.load();
-    const definition = routineDefinition.parse({
+    const definition = decodeDefinition({
       id: 'review',
       title: 'Review',
       instruction: 'Review spells',

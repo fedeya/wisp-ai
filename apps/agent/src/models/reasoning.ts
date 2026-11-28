@@ -2,7 +2,11 @@ import { openaiModelCatalog } from '@ai-sdk/openai/internal';
 import { getAnthropicLanguageModelEntry } from '@ai-sdk/anthropic/internal';
 import { getGoogleLanguageModelEntry } from '@ai-sdk/google/internal';
 import type { LanguageModelV4CallOptions } from '@ai-sdk/provider';
+import { Schema } from 'effect';
 import { reasoningEffort, type ProviderId, type ReasoningEffort } from '@wisp/protocol/providers';
+
+const isReasoningEffort = Schema.is(reasoningEffort);
+const decodeReasoningEffort = Schema.decodeUnknownSync(reasoningEffort);
 
 const levels: ReasoningEffort[] = ['low', 'medium', 'high'];
 const toggle: ReasoningEffort[] = ['none', 'enabled'];
@@ -48,9 +52,7 @@ export function modelReasoningEfforts(provider: ProviderId, id: string): Reasoni
     if (!entry && ['o3', 'o3-mini', 'o4-mini'].includes(snapshotBase)) {
       return [...levels];
     }
-    return (entry?.capabilities.language?.reasoning.efforts || []).filter(
-      (value): value is ReasoningEffort => reasoningEffort.safeParse(value).success,
-    );
+    return (entry?.capabilities.language?.reasoning.efforts || []).filter(isReasoningEffort);
   }
   if (provider === 'anthropic') {
     const entry = getAnthropicLanguageModelEntry(id);
@@ -83,9 +85,7 @@ export function modelReasoningEfforts(provider: ProviderId, id: string): Reasoni
     const entry = getGoogleLanguageModelEntry(id);
     const capability = entry.capabilities.language.reasoning;
     if (entry.requestConfig.language.thinkingFormat === 'level') {
-      return [...(capability.efforts || [])].filter(
-        (value): value is ReasoningEffort => reasoningEffort.safeParse(value).success,
-      );
+      return [...(capability.efforts || [])].filter(isReasoningEffort);
     }
     return capability.minBudget === 0 ? [...budget] : [...levels];
   }
@@ -167,7 +167,7 @@ export function applyModelReasoning(
   if (effort === 'provider-default') {
     return params;
   }
-  const chosen = reasoningEffort.parse(effort);
+  const chosen = decodeReasoningEffort(effort);
   // Toggle-only APIs should show On/Off, rather than three effort levels that
   // would all enable the same mode. The native SDK still encodes the request.
   const reasoning = chosen === 'enabled' ? 'high' : chosen;
