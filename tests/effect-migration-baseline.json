@@ -130,7 +130,7 @@
     "asyncFunctions": 25,
     "effectRuns": 1,
     "effectPromises": 0,
-    "throwStatements": 88,
+    "throwStatements": 90,
     "tryBlocks": 17,
     "jsonParse": 28
   }

@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { readFile, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,10 +5,9 @@ import { createHash } from 'node:crypto';
 import { adapters } from '../../apps/server/src/integrations/simulation/adapters/index.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const sourceArgument = process.argv[2];
-assert.ok(
-  sourceArgument !== undefined,
-  'Usage: node scripts/simulator/metadata.ts <wowsims source folder>',
-);
+if (sourceArgument === undefined) {
+  throw new Error('Usage: node scripts/simulator/metadata.ts <wowsims source folder>');
+}
 const source = path.resolve(sourceArgument);
 const output = path.join(root, 'simulator');
 const manifest = JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8'));

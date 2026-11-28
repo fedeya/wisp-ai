@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -70,6 +69,8 @@ export function nightlyBuildVersion(stable: string, run: string, attempt: string
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const version = process.argv[2];
-  assert.ok(version !== undefined, 'Usage: node scripts/release-version.ts <version>');
+  if (version === undefined) {
+    throw new Error('Usage: node scripts/release-version.ts <version>');
+  }
   await syncVersion(version);
 }
