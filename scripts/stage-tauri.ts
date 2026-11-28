@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifySimulator } from './simulator/verify.ts';
 import { findNpmDirectory } from './engine/node-runtime.ts';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { Effect } from 'effect';
 import { addonReleaseVersion, stampAddonReleaseVersion } from './addon-release-version.ts';
 
 function payloadDirectory(root: string) {
@@ -17,7 +19,10 @@ function payloadDirectory(root: string) {
 export async function stageTauri({ packaged = false } = {}) {
   const root = fileURLToPath(new URL('../', import.meta.url));
   const stage = payloadDirectory(root);
-  const addonVersion = packaged ? addonReleaseVersion(root) : undefined;
+  // addon-release-version.ts runs on Effect; this unmigrated script is its edge.
+  const addonVersion = packaged
+    ? await Effect.runPromise(addonReleaseVersion(root).pipe(Effect.provide(NodeServices.layer)))
+    : undefined;
   await verifySimulator(root);
   await rm(stage, { recursive: true, force: true });
   // Hoisting is restricted to the standalone deployment: Windows installer resources
@@ -49,7 +54,11 @@ export async function stageTauri({ packaged = false } = {}) {
     await cp(path.join(root, name), path.join(stage, name), { recursive: true });
   }
   if (addonVersion) {
-    await stampAddonReleaseVersion(path.join(stage, 'addon/WispAI/WispAI.toc'), addonVersion);
+    await Effect.runPromise(
+      stampAddonReleaseVersion(path.join(stage, 'addon/WispAI/WispAI.toc'), addonVersion).pipe(
+        Effect.provide(NodeServices.layer),
+      ),
+    );
   }
   for (const name of ['LICENSE', 'NOTICE']) {
     await copyFile(path.join(root, name), path.join(stage, name));
