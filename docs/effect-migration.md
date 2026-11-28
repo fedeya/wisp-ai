@@ -351,8 +351,19 @@ Independent of the other phases; these PRs can run in parallel.
 
 ### 8. Desktop UI (optional)
 
-- [ ] Spike `@effect/atom-react` with `AtomHttpApi` on the Routines page, then
+- [x] Spike `@effect/atom-react` with `AtomHttpApi` on the Routines page, then
       decide whether it replaces Zustand and the `useEffect` loaders.
+      **Decision (2026-11-28): defer until phase 4's `HttpApi` lands.**
+      `@effect/atom-react` 4.1.3 matches the effect pin, and the atom core ships
+      in `effect/reactivity` (`Atom`, `AsyncResult`, `AtomHttpApi`). But the
+      Routines page loads nothing of its own: it reads the global status that
+      `desktop-controller.ts` polls every 3 seconds. `AtomHttpApi` needs the
+      Desktop API's `HttpApi`, and a prototype added 19 kB gzip and made
+      `App.test.tsx` need asynchronous queries and a per-test registry. Until
+      then React and Zustand stay; the bridge calls, `work()` and the status
+      poll move onto Effect at the store's boundary, with the poll as a
+      scheduled fiber the store owns. After phase 4, spike again with the real
+      `AtomHttpApi`, starting with a per-test `RegistryProvider` helper.
 
 ### 9. Deferred behavior changes
 
