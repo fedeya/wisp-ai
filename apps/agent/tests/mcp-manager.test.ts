@@ -684,7 +684,7 @@ describe('McpManager settings', () => {
     }),
   );
 
-  it.effect('a missing MCP config loads no custom servers and malformed JSON fails', () =>
+  it.effect('a missing MCP config loads no custom servers and a malformed file fails', () =>
     Effect.gen(function* () {
       const connection = yield* fakeConnection();
       const saved = yield* makeSaved();
@@ -692,9 +692,149 @@ describe('McpManager settings', () => {
         const manager = yield* McpManager.Service;
         yield* manager.load();
         assert.deepStrictEqual(yield* manager.list(), []);
-        yield* Ref.set(saved.config, 'invalid JSON');
-        const error = yield* Effect.flip(manager.load());
-        assert.ok(error.cause instanceof SyntaxError);
+        for (const text of ['invalid JSON', '[]', '{"servers":5}']) {
+          yield* Ref.set(saved.config, text);
+          const error = yield* Effect.flip(manager.load());
+          assert.strictEqual(error._tag, 'McpConfigurationError');
+        }
+        assert.deepStrictEqual(yield* manager.list(), []);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('a malformed saved server is skipped and the others still load', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const good = { url: 'https://example.com/mcp', tools: [{ name: 'echo' }], hasToken: true };
+      const saved = yield* makeSaved(
+        JSON.stringify({
+          servers: {
+            first: good,
+            bad_url: { url: 'ftp://example.com/mcp' },
+            bad_tools: { url: 'https://example.com/mcp', tools: 'echo' },
+            bad_token_flag: { url: 'https://example.com/mcp', hasToken: 'yes' },
+            bad_env_keys: { url: 'https://example.com/mcp', envKeys: [1] },
+            not_an_object: 5,
+            wisp: { url: 'https://example.com/mcp' },
+            second: { url: 'https://example.com/mcp', envKeys: ['API_KEY'] },
+          },
+        }),
+      );
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        const servers = yield* manager.list();
+        assert.deepStrictEqual(
+          servers.map(({ name, tools, hasToken, envKeys }) => [name, tools, hasToken, envKeys]),
+          [
+            ['first', [{ name: 'echo' }], true, []],
+            ['second', [], false, ['API_KEY']],
+          ],
+        );
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('a malformed saved server stays in the file through saves, switches and removals', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const valid = { url: 'https://example.com/mcp', args: [], enabled: true };
+      const broken = { url: 'ftp://example.com/mcp', extra: [1, { nested: null }, 'x'], tools: 5 };
+      const saved = yield* makeSaved(
+        JSON.stringify({ servers: { first: valid, broken, last: valid } }),
+      );
+      const written = Effect.map(Ref.get(saved.config), (text) =>
+        text === undefined ? undefined : JSON.parse(text),
+      );
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        assert.deepStrictEqual(
+          (yield* manager.list()).map(({ name }) => name),
+          ['first', 'last'],
+        );
+        yield* manager.save(
+          parseSetup({ server: { name: 'added', url: 'https://example.com/mcp' } }),
+        );
+        const afterSave = yield* written;
+        assert.deepStrictEqual(Object.keys(afterSave.servers), [
+          'first',
+          'broken',
+          'last',
+          'added',
+        ]);
+        assert.deepStrictEqual(afterSave.servers.broken, broken);
+        assert.deepStrictEqual(
+          (yield* manager.list()).map(({ name }) => name),
+          ['first', 'last', 'added'],
+        );
+        yield* manager.setEnabled('first', false);
+        yield* manager.remove('last');
+        const afterChanges = yield* written;
+        assert.deepStrictEqual(Object.keys(afterChanges.servers), ['first', 'broken', 'added']);
+        assert.deepStrictEqual(afterChanges.servers.broken, broken);
+        // A server saved under the broken entry's name replaces it.
+        yield* manager.save(
+          parseSetup({ server: { name: 'broken', url: 'https://example.com/mcp' } }),
+        );
+        const afterReplace = yield* written;
+        assert.deepStrictEqual(Object.keys(afterReplace.servers), ['first', 'broken', 'added']);
+        assert.strictEqual(afterReplace.servers.broken.url, 'https://example.com/mcp');
+        assert.strictEqual(afterReplace.servers.broken.extra, undefined);
+        // Removing by name removes a broken entry too.
+        yield* Ref.set(saved.config, JSON.stringify({ servers: { first: valid, broken } }));
+        yield* manager.load();
+        yield* manager.remove('broken');
+        assert.deepStrictEqual(Object.keys((yield* written).servers), ['first', 'added']);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('reserved names such as constructor and __proto__ are kept in the file as found', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const text =
+        '{"servers":{"constructor":{"url":"https://a.example/mcp"},"__proto__":{"url":"https://b.example/mcp"}}}';
+      const saved = yield* makeSaved(text);
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        assert.deepStrictEqual(yield* manager.list(), []);
+        yield* manager.save(
+          parseSetup({ server: { name: 'added', url: 'https://example.com/mcp' } }),
+        );
+        const after = (yield* Ref.get(saved.config)) ?? '';
+        assert.ok(after.includes('"constructor":{"url":"https://a.example/mcp"}'));
+        assert.ok(after.includes('"__proto__":{"url":"https://b.example/mcp"}'));
+        assert.ok(after.includes('"added"'));
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('a malformed saved environment fails the open without naming its values', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const config = JSON.stringify({
+        servers: { test_server: { url: 'https://example.com/mcp', envKeys: ['API_KEY'] } },
+      });
+      const saved = yield* makeSaved(config);
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        for (const secret of ['{"API_KEY":"hunter2",', '{"API_KEY":42}', '["hunter2"]']) {
+          yield* Ref.update(saved.secrets, (all) =>
+            new Map(all).set('mcp:test_server:env', secret),
+          );
+          const error = yield* Effect.flip(manager.discover('test_server'));
+          assert.strictEqual(error._tag, 'McpVaultError');
+          assert.strictEqual(error.message, 'Saved environment for test_server is not valid');
+        }
+        assert.deepStrictEqual(yield* connection.log, []);
+        yield* Ref.update(saved.secrets, (all) =>
+          new Map(all).set('mcp:test_server:env', '{"API_KEY":"hunter2"}'),
+        );
+        yield* manager.discover('test_server');
+        assert.deepStrictEqual(yield* connection.log, ['open 1', 'list 1']);
       }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
     }),
   );

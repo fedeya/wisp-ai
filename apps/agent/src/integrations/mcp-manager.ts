@@ -1,7 +1,8 @@
-// @effect-migrated allow=jsonParse,typescript/consistent-type-assertions,typescript/no-unsafe-type-assertion: read as before until the phase 9 item "MCP manager: decode the saved MCP configuration and its env secret with Schema (#336)"
+// @effect-migrated
 import type { Capability } from '@wisp/protocol/capabilities';
 import { mcpDefinition, mcpName, mcpSetup } from '@wisp/protocol/mcp-setup';
 import {
+  Array as Arr,
   Cause,
   Context,
   Duration,
@@ -29,6 +30,35 @@ type Setup = typeof mcpSetup.Type;
 const decodeName = Schema.decodeUnknownEffect(mcpName);
 const decodeSetup = Schema.decodeUnknownEffect(mcpSetup);
 const decodeDefinition = Schema.decodeUnknownEffect(mcpDefinition);
+
+/** The saved file: a JSON object of servers by name, each decoded on its own. */
+const decodeSavedFile = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      servers: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
+    }),
+  ),
+);
+const decodeSavedEntry = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.Unknown));
+
+/** What a test found and what is kept in the vault, saved beside the definition. */
+const decodeSavedExtras = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    tools: Schema.Array(
+      Schema.Struct({
+        name: Schema.String,
+        description: Schema.optional(Schema.String),
+      }),
+    ).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
+    hasToken: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+    envKeys: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.sync(() => []))),
+  }),
+);
+
+/** The environment secret: a JSON object of variable values by name. */
+const decodeSavedEnv = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+);
 
 export interface McpToolGroup {
   namespace: string;
@@ -156,6 +186,10 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     ]),
   );
   const servers = yield* Ref.make<Readonly<Record<string, SavedServer>>>({});
+  // Saved entries that did not decode, as they were read, and the saved key
+  // order: every rewrite keeps them, so a player can repair one by hand.
+  const kept = yield* Ref.make<Readonly<Record<string, Schema.Json>>>({});
+  const savedOrder = yield* Ref.make<readonly string[]>([]);
   const updates = yield* Semaphore.make(1);
 
   /** Saved changes run one at a time; a caller can cancel while waiting, but a started write finishes. */
@@ -185,30 +219,34 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     if (text === undefined) {
       return;
     }
-    const entries = yield* Effect.try({
-      try: () =>
-        Object.entries(
-          (JSON.parse(text) as { servers?: Record<string, Record<string, unknown>> }).servers || {},
-        ),
-      catch: configurationError,
-    });
-    const loaded = yield* Effect.forEach(entries, ([key, saved]) =>
+    const file = yield* decodeSavedFile(text).pipe(Effect.mapError(configurationError));
+    // A malformed entry is skipped and reported, so one bad server does not
+    // keep the others, or the host, from starting. It stays in the file.
+    yield* Ref.set(savedOrder, Object.keys(file.servers ?? {}));
+    const loaded = yield* Effect.forEach(Object.entries(file.servers ?? {}), ([key, saved]) =>
       Effect.gen(function* () {
         const name = yield* customName(key);
-        const definition = yield* decodeDefinition({ ...saved, name }).pipe(
+        const entry = yield* decodeSavedEntry(saved).pipe(Effect.mapError(configurationError));
+        const definition = yield* decodeDefinition({ ...entry, name }).pipe(
           Effect.mapError(configurationError),
         );
-        const found = yield* Effect.try({
-          try: () => ({
-            tools: Array.isArray(saved.tools) ? (saved.tools as SavedServer['tools']) : [],
-            hasToken: saved.hasToken === true,
-            envKeys: Array.isArray(saved.envKeys) ? (saved.envKeys as string[]) : [],
-          }),
-          catch: configurationError,
-        });
-        return [key, { ...definition, ...found }] as const;
-      }),
-    );
+        const extras = yield* decodeSavedExtras(entry).pipe(Effect.mapError(configurationError));
+        return [key, { ...definition, ...extras }] as const;
+      }).pipe(
+        Effect.map(Option.some),
+        Effect.catchTag('McpConfigurationError', (error) =>
+          Effect.logWarning('Skipped a malformed saved MCP server').pipe(
+            Effect.annotateLogs({
+              event: 'mcp.config.entry_invalid',
+              server: key,
+              reason: error.message,
+            }),
+            Effect.andThen(Ref.update(kept, (current) => ({ ...current, [key]: saved }))),
+            Effect.as(Option.none()),
+          ),
+        ),
+      ),
+    ).pipe(Effect.map(Arr.getSomes));
     yield* Ref.update(servers, (current) => ({ ...current, ...Object.fromEntries(loaded) }));
   }, exclusive);
 
@@ -235,10 +273,15 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     let env = providedEnv;
     if (env === undefined && server.envKeys?.length) {
       const stored = Redacted.value(yield* readSecret('mcp:' + server.name + ':env'));
-      env = yield* Effect.try({
-        try: () => JSON.parse(stored || '{}') as Record<string, string>,
-        catch: vaultError,
-      });
+      // The decode failure names values, so only the fact that it failed is kept.
+      env = yield* decodeSavedEnv(stored || '{}').pipe(
+        Effect.mapError(
+          () =>
+            new McpVaultError({
+              message: 'Saved environment for ' + server.name + ' is not valid',
+            }),
+        ),
+      );
     }
     return { secret, env: env ?? {} };
   });
@@ -339,11 +382,31 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     };
   });
 
+  /**
+   * Writes `next` with the entries that did not decode, in the saved order. A
+   * server saved under a broken entry's name, or removed by it, replaces it.
+   */
   const persist = Effect.fn('McpManager.persist')(function* (
     next: Readonly<Record<string, SavedServer>>,
+    removed?: string,
   ) {
-    yield* storage.writeConfig(next).pipe(Effect.mapError(configurationError));
+    const rest = Object.fromEntries(
+      Object.entries(yield* Ref.get(kept)).filter(
+        ([name]) => !Object.hasOwn(next, name) && name !== removed,
+      ),
+    );
+    const all: Readonly<Record<string, SavedServer | Schema.Json>> = { ...rest, ...next };
+    const order = (yield* Ref.get(savedOrder)).filter((name) => Object.hasOwn(all, name));
+    const written = Object.fromEntries(
+      [...order, ...Object.keys(all).filter((name) => !order.includes(name))].flatMap((name) => {
+        const entry = all[name];
+        return entry === undefined ? [] : [[name, entry] as const];
+      }),
+    );
+    yield* storage.writeConfig(written).pipe(Effect.mapError(configurationError));
     yield* Ref.set(servers, next);
+    yield* Ref.set(kept, rest);
+    yield* Ref.set(savedOrder, Object.keys(written));
   });
 
   const saveTestedSetup = Effect.fn('McpManager.saveTestedSetup')(function* (
@@ -403,7 +466,7 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     const next = Object.fromEntries(
       Object.entries(yield* Ref.get(servers)).filter(([name]) => name !== key),
     );
-    yield* persist(next);
+    yield* persist(next, key);
     yield* disconnectConnection(key);
     yield* writeSecret('mcp:' + key + ':token', '');
     yield* writeSecret('mcp:' + key + ':env', '');

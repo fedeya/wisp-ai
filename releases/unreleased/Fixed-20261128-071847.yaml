@@ -1,0 +1,3 @@
+kind: Fixed
+body: A broken entry in your saved MCP connections no longer stops Wisp from starting. Wisp skips that connection, keeps it in your settings file so you can fix it, and loads the rest.
+time: 2026-11-28T07:18:47.5286649-03:00

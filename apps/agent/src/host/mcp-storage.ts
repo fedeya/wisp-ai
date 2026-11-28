@@ -4,9 +4,9 @@ import { Context, Effect, Layer, Redacted, Schema } from 'effect';
 
 /** A custom MCP server as it is saved, with what its last test found. */
 export type SavedServer = typeof mcpDefinition.Type & {
-  tools?: { name: string; description?: string | undefined }[];
+  tools?: readonly { readonly name: string; readonly description?: string | undefined }[];
   hasToken?: boolean | undefined;
-  envKeys?: string[] | undefined;
+  envKeys?: readonly string[] | undefined;
 };
 
 /** The host could not read or write what it keeps for MCP servers. */
@@ -21,9 +21,13 @@ export class Service extends Context.Service<
   {
     /** The saved configuration as written, or `undefined` when there is none. */
     readonly readConfig: Effect.Effect<string | undefined, McpStorageError>;
-    /** Replaces the saved configuration with `servers`. */
+    /**
+     * Replaces the saved configuration with `servers`, written in the order
+     * given. An entry that is not a `SavedServer` is one the manager could not
+     * read, kept as it was found.
+     */
     readonly writeConfig: (
-      servers: Readonly<Record<string, SavedServer>>,
+      servers: Readonly<Record<string, SavedServer | Schema.Json>>,
     ) => Effect.Effect<void, McpStorageError>;
     /** A secret from the vault; one never written reads as empty. */
     readonly readSecret: (key: string) => Effect.Effect<Redacted.Redacted, McpStorageError>;
