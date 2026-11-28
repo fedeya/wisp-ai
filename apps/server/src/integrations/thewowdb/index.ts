@@ -13,21 +13,38 @@ const CACHE_CAPACITY = 100;
 
 type DatabaseKind = DatabaseRequest['kind'];
 
-const extraFields = [Schema.Record(Schema.String, Schema.Unknown)] as const;
-// A record TheWoWDB marks as the requested Forever kind. The guard keeps the
-// record itself, so the agent sees the fields in the order the API sent them.
+// The fields Wisp does not read, passed to the agent as TheWoWDB sent them.
+const otherFields = [Schema.Record(Schema.String, Schema.Json)] as const;
+// Decoding rebuilds each record with the fields Wisp checks first, in the
+// order below, then the rest in the API's order (TheWoWDB sorts its keys).
+const foreverFields = (kind: DatabaseKind) => ({
+  kind: Schema.Literal(kind),
+  version: Schema.Literal('forever'),
+});
+// A record TheWoWDB marks as the requested Forever kind.
 const foreverRecord = (kind: DatabaseKind) =>
+  Schema.StructWithRest(Schema.Struct(foreverFields(kind)), otherFields);
+// The requested entity, by its ID.
+const foreverEntity = (kind: DatabaseKind, id: number) =>
   Schema.StructWithRest(
-    Schema.Struct({ version: Schema.Literal('forever'), kind: Schema.Literal(kind) }),
-    extraFields,
+    Schema.Struct({ id: Schema.Literal(id), ...foreverFields(kind) }),
+    otherFields,
   );
+// A search page whose every row is a record of the requested kind.
 const foreverSearch = (kind: DatabaseKind) =>
-  Schema.Struct({ results: Schema.Array(foreverRecord(kind)) });
-const foreverEntity = (id: number) => Schema.Struct({ id: Schema.Literal(id) });
+  Schema.StructWithRest(
+    Schema.Struct({ ...foreverFields(kind), results: Schema.Array(foreverRecord(kind)) }),
+    otherFields,
+  );
 
-type ForeverRecord = ReturnType<typeof foreverRecord>['Type'];
+type ForeverEntity = ReturnType<typeof foreverEntity>['Type'];
+type ForeverSearch = ReturnType<typeof foreverSearch>['Type'];
+/** What TheWoWDB answered, decoded for the request it answers. */
+type ForeverData =
+  | { readonly operation: 'get'; readonly entity: ForeverEntity }
+  | { readonly operation: 'search'; readonly page: ForeverSearch };
 interface CacheEntry {
-  readonly data: ForeverRecord;
+  readonly data: ForeverData;
   readonly etag: string | undefined;
   readonly expiresAt: number;
   readonly fetchedAt: string;
@@ -44,7 +61,7 @@ export type DatabaseResult =
       readonly source: Source;
       readonly fetchedAt: string;
       readonly cacheHit: boolean;
-      readonly data: ForeverRecord;
+      readonly data: ForeverEntity | ForeverSearch;
       readonly note: string;
     }
   | { readonly status: 'not_found'; readonly source: Source; readonly note: string }
@@ -98,13 +115,13 @@ function requestUrl(request: DatabaseRequest) {
 }
 
 function cachedResult(source: Source, entry: CacheEntry, cacheHit: boolean): DatabaseResult {
+  const { data } = entry;
   return {
-    status:
-      Array.isArray(entry.data.results) && !entry.data.results.length ? 'no_matches' : 'available',
+    status: data.operation === 'search' && !data.page.results.length ? 'no_matches' : 'available',
     source,
     fetchedAt: entry.fetchedAt,
     cacheHit,
-    data: entry.data,
+    data: data.operation === 'get' ? data.entity : data.page,
     note: 'Preserve record links, attribution and build. Catalog facts are not live player state; an older build may differ. Zone IDs are not necessarily native UiMap IDs.',
   };
 }
@@ -118,24 +135,31 @@ const transportFailure = (error: HttpClientError.HttpClientError) =>
         : error.message,
   });
 
-const verify = (request: DatabaseRequest, data: unknown) =>
-  Effect.gen(function* () {
-    if (!Schema.is(foreverRecord(request.kind))(data)) {
-      return yield* new DatabaseUnavailable({
-        message: 'Database response did not confirm the requested Forever version and kind',
-      });
-    }
-    if (request.operation === 'search') {
-      if (!Schema.is(foreverSearch(request.kind))(data)) {
-        return yield* new DatabaseUnavailable({
-          message: 'Database search contained unverified or other-version records',
-        });
-      }
-    } else if (!Schema.is(foreverEntity(request.id))(data)) {
-      return yield* new DatabaseUnavailable({ message: 'Database returned a different entity' });
-    }
-    return data;
-  });
+const unavailable = (message: string) => () => new DatabaseUnavailable({ message });
+
+// Decodes an answer for the request it answers. The response must first be a
+// record of the requested Forever kind; then a search's rows must all be, and
+// an entity must be the one requested.
+const decodeAnswer = Effect.fnUntraced(function* (
+  request: DatabaseRequest,
+  json: unknown,
+): Effect.fn.Return<ForeverData, DatabaseUnavailable> {
+  yield* Schema.decodeUnknownEffect(foreverRecord(request.kind))(json).pipe(
+    Effect.mapError(
+      unavailable('Database response did not confirm the requested Forever version and kind'),
+    ),
+  );
+  if (request.operation === 'search') {
+    const page = yield* Schema.decodeUnknownEffect(foreverSearch(request.kind))(json).pipe(
+      Effect.mapError(unavailable('Database search contained unverified or other-version records')),
+    );
+    return { operation: 'search', page };
+  }
+  const entity = yield* Schema.decodeUnknownEffect(foreverEntity(request.kind, request.id))(
+    json,
+  ).pipe(Effect.mapError(unavailable('Database returned a different entity')));
+  return { operation: 'get', entity };
+});
 
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -206,7 +230,7 @@ export const layer = Layer.effect(
       const json = yield* decodeJson(text).pipe(
         Effect.mapError((error) => new DatabaseUnavailable({ message: error.message })),
       );
-      const data = yield* verify(request, json);
+      const data = yield* decodeAnswer(request, json);
       const ttl = Number(response.headers['cache-control']?.match(/max-age=(\d+)/)?.[1] ?? 3600);
       const entry: CacheEntry = {
         data,
