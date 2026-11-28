@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { memoryTables, parseCsv } from '../src/index.ts';
+import { describe, expect, it } from '@effect/vitest';
+import { Effect } from 'effect';
+import { parseCsv } from '../src/index.ts';
 import { itemProficiencies } from '../src/datasets/item-proficiencies.ts';
+import * as Wago from '../src/wago.ts';
 
 // Real Forever 1.60.1.71037 rows: Bows, Plate Mail, Daggers, Unarmed and
 // Defense; Unarmed and Defense reach every class, so they gate no item.
-const TABLES = memoryTables({
+const TABLES = Wago.layerMemory({
   SkillLine: parseCsv(
     'ID,CategoryID,DisplayName_lang\n45,6,Bows\n293,8,Plate Mail\n173,6,Daggers\n162,6,Unarmed\n95,6,Defense\n185,9,Cooking',
   ),
@@ -33,14 +35,16 @@ const TABLES = memoryTables({
 });
 
 describe('item proficiencies dataset', () => {
-  it('maps item subclasses to the skill they need and the classes that learn it', async () => {
-    expect(await itemProficiencies().build(TABLES)).toEqual({
-      subclasses: { '2': { '2': 45, '15': 173 }, '4': { '4': 293 } },
-      skills: {
-        '45': { HUNTER: 0, ROGUE: 0, WARRIOR: 0 },
-        '173': { HUNTER: 0, MAGE: 0, PRIEST: 0, ROGUE: 0, SHAMAN: 0, WARLOCK: 0 },
-        '293': { PALADIN: 40, WARRIOR: 40 },
-      },
-    });
-  });
+  it.effect('maps item subclasses to the skill they need and the classes that learn it', () =>
+    Effect.gen(function* () {
+      expect(yield* itemProficiencies().build).toEqual({
+        subclasses: { '2': { '2': 45, '15': 173 }, '4': { '4': 293 } },
+        skills: {
+          '45': { HUNTER: 0, ROGUE: 0, WARRIOR: 0 },
+          '173': { HUNTER: 0, MAGE: 0, PRIEST: 0, ROGUE: 0, SHAMAN: 0, WARLOCK: 0 },
+          '293': { PALADIN: 40, WARRIOR: 40 },
+        },
+      });
+    }).pipe(Effect.provide(TABLES)),
+  );
 });

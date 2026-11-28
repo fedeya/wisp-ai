@@ -1,10 +1,11 @@
-import type { AtlasLootData } from '../atlasloot.ts';
-import { readFile } from 'node:fs/promises';
-import type { Curated, Dataset } from '../dataset.ts';
-import type { LuaTable } from '../lua.ts';
+// @effect-migrated
+import { Effect, Schema } from 'effect';
+import type { FileSystem, Path } from 'effect';
+import { AtlasLoot, type AtlasLootData, type LuaJson, type LuaObject } from '../atlasloot.ts';
+import type { Row } from '../csv.ts';
+import { Curated, DatasetError, fromRows, readPackageJson, type Dataset } from '../dataset.ts';
 import { num, str } from '../rows.ts';
-
-type LuaRecord = Record<string, unknown>;
+import { GameTables } from '../wago.ts';
 
 // AtlasLoot's difficulties in the order a boss's list is read: dungeons use
 // NORMAL, raids their size, and a few lists split by faction.
@@ -15,15 +16,22 @@ const INSTANCE_TYPES = new Set(['1', '2']); // Map.InstanceType: dungeon, raid
 const COLUMN = 15;
 const NO_DROPS = / - No drops discovered yet$/;
 
-function record(value: unknown): LuaRecord {
-  return value && typeof value === 'object' ? (value as LuaRecord) : {};
+function record(value: LuaJson | undefined): LuaObject {
+  return value && typeof value === 'object' ? value : {};
 }
 // Lua arrays arrive as objects keyed "1", "2", ...
-function list(value: unknown): unknown[] {
+function list(value: LuaJson | undefined): LuaJson[] {
   return Object.entries(record(value))
     .filter(([key]) => /^\d+$/.test(key))
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([, entry]) => entry);
+}
+// A Lua string or number as text; anything else (nil, a table) reads as fallback.
+function text(value: LuaJson | undefined, fallback: string): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return typeof value === 'number' ? String(value) : fallback;
 }
 // Instance names carry WoW color and texture escapes (AtlasLoot's "new" icon).
 function plain(text: string) {
@@ -44,36 +52,45 @@ function fold(text: string) {
     .trim();
 }
 
-export interface LootItem {
-  id: number;
-  chance?: number;
-  forever?: true;
-}
-export interface LootBoss {
-  name: string;
-  npcIds?: number[];
-  extra?: true;
-  noDropsYet?: true;
-  items: LootItem[];
-}
-export interface LootInstance {
-  key: string;
-  name: string;
-  instanceMapId?: number;
-  kind: 'dungeon' | 'raid' | 'world';
-  forever?: true;
-  levels?: { min: number; recommended: number; max: number };
-  bosses: LootBoss[];
-}
+// The generated file's shape. The types are aliases of the schemas' types, not
+// interfaces, so the dataset's value is a LuaValue without a cast.
+const LootItem = Schema.Struct({
+  id: Schema.Int,
+  chance: Schema.optionalKey(Schema.Finite),
+  forever: Schema.optionalKey(Schema.Literal(true)),
+});
+export type LootItem = typeof LootItem.Type;
+const LootBoss = Schema.Struct({
+  name: Schema.String,
+  npcIds: Schema.optionalKey(Schema.Array(Schema.Int)),
+  extra: Schema.optionalKey(Schema.Literal(true)),
+  noDropsYet: Schema.optionalKey(Schema.Literal(true)),
+  items: Schema.Array(LootItem),
+});
+export type LootBoss = typeof LootBoss.Type;
+const LootInstance = Schema.Struct({
+  key: Schema.String,
+  name: Schema.String,
+  instanceMapId: Schema.optionalKey(Schema.Int),
+  kind: Schema.Literals(['dungeon', 'raid', 'world']),
+  forever: Schema.optionalKey(Schema.Literal(true)),
+  levels: Schema.optionalKey(
+    Schema.Struct({ min: Schema.Finite, recommended: Schema.Finite, max: Schema.Finite }),
+  ),
+  bosses: Schema.Array(LootBoss),
+});
+export type LootInstance = typeof LootInstance.Type;
+export const DungeonLoot = Schema.Struct({ instances: Schema.Array(LootInstance) });
+export type DungeonLoot = typeof DungeonLoot.Type;
 
 // The items of one boss list for its first difficulty that has any, with the
 // "Forever" header marking what Forever added to a classic boss.
 function bossItems(
-  boss: LuaRecord,
+  boss: LuaObject,
   npcIds: number[],
   rates: AtlasLootData['droprates'],
 ): LootItem[] {
-  let entries: unknown[] = [];
+  let entries: LuaJson[] = [];
   for (const difficulty of DIFFICULTIES) {
     const table = record(boss[difficulty]);
     const from = table.GetItemsFromDiff;
@@ -92,8 +109,13 @@ function bossItems(
     const column = Math.floor((Number(slot) - 1) / COLUMN);
     if (typeof value === 'string' && /^INV_/i.test(value)) {
       headers.set(column, typeof label === 'string' ? label : '');
-    } else if (Number.isInteger(value) && (value as number) > 0 && !seen.has(value as number)) {
-      const id = value as number;
+    } else if (
+      typeof value === 'number' &&
+      Number.isInteger(value) &&
+      value > 0 &&
+      !seen.has(value)
+    ) {
+      const id = value;
       seen.add(id);
       const chance = Math.max(0, ...npcIds.map((npc) => rates[String(npc)]?.[String(id)] ?? 0));
       items.push({
@@ -106,27 +128,106 @@ function bossItems(
   return items;
 }
 
-export interface LootCuration {
+const LootCuration = Schema.Struct({
   // AtlasLoot table key -> instance map ID where its name matches none in
   // Map.db2; null for an instance the pinned build does not have yet.
-  instanceMapIds: Record<string, Curated<number | null>>;
+  instanceMapIds: Schema.Record(Schema.String, Curated(Schema.NullOr(Schema.Int))),
+});
+export type LootCuration = typeof LootCuration.Type;
+
+export const readLootCuration: Effect.Effect<
+  LootCuration,
+  DatasetError,
+  FileSystem.FileSystem | Path.Path
+> = readPackageJson('curated/dungeon-loot.json', LootCuration);
+
+// Map.db2's dungeons and raids by folded name, and their names by ID.
+function instanceMaps(maps: Row[]) {
+  const instanceIds = new Map<string, number>();
+  const mapNames = new Map<number, string>();
+  for (const map of maps) {
+    if (INSTANCE_TYPES.has(str(map, 'InstanceType'))) {
+      instanceIds.set(fold(str(map, 'MapName_lang')), num(map, 'ID'));
+      mapNames.set(num(map, 'ID'), str(map, 'MapName_lang'));
+    }
+  }
+  return { instanceIds, mapNames };
 }
 
-export async function readLootCuration(): Promise<LootCuration> {
-  return JSON.parse(
-    await readFile(new URL('../../curated/dungeon-loot.json', import.meta.url), 'utf8'),
-  );
+// Every AtlasLoot table as an instance with its bosses' loot, and the tables
+// no instance map matches.
+function lootInstances(
+  atlas: AtlasLootData,
+  { instanceIds, mapNames }: ReturnType<typeof instanceMaps>,
+  instanceMapIds: LootCuration['instanceMapIds'],
+) {
+  const instances: LootInstance[] = [];
+  const unplaced: string[] = [];
+  for (const [key, table] of Object.entries(atlas.tables).sort(([a], [b]) => a.localeCompare(b))) {
+    const atlasName = plain(text(table.name, key));
+    const content = text(table.ContentType, '');
+    const kind = key === 'WorldBosses' ? 'world' : /raid/i.test(content) ? 'raid' : 'dungeon';
+    const curated = instanceMapIds[key];
+    const instanceId = table.InstanceID;
+    const instanceMapId =
+      typeof instanceId === 'number' && Number.isInteger(instanceId)
+        ? instanceId
+        : (instanceIds.get(fold(atlasName)) ?? curated?.value ?? undefined);
+    // Some classic tables are named by an AtlasLoot locale key such as
+    // "MoltenCore", which the stubbed locale returns as is; the game's
+    // Map name is the real one.
+    const name =
+      LOCALE_KEY.test(atlasName) && instanceMapId !== undefined
+        ? (mapNames.get(instanceMapId) ?? atlasName)
+        : atlasName;
+    if (kind !== 'world' && instanceMapId === undefined && !curated) {
+      unplaced.push(`${key} (${name})`);
+    }
+    const [min, recommended, max] = list(table.LevelRange).map(Number);
+    const bosses: LootBoss[] = [];
+    for (const boss of list(table.items).map(record)) {
+      if (boss.IgnoreAsSource || boss.TableType === 'Set') {
+        continue;
+      }
+      const npc = boss.npcID;
+      // One NPC ID, or a list of them; WISP_RESULT writes no JSON arrays.
+      const npcIds = (Number.isInteger(npc) ? [npc] : list(npc)).filter(
+        (id): id is number => typeof id === 'number' && Number.isInteger(id),
+      );
+      const bossName = text(boss.name, '');
+      const items = bossItems(boss, npcIds, atlas.droprates);
+      if (!items.length && !NO_DROPS.test(bossName)) {
+        continue;
+      }
+      bosses.push({
+        name: bossName.replace(NO_DROPS, ''),
+        ...(npcIds.length ? { npcIds } : {}),
+        ...(boss.ExtraList ? { extra: true as const } : {}),
+        ...(NO_DROPS.test(bossName) ? { noDropsYet: true as const } : {}),
+        items,
+      });
+    }
+    instances.push({
+      key,
+      name,
+      ...(instanceMapId !== undefined ? { instanceMapId } : {}),
+      kind,
+      ...(content.startsWith('Forever') ? { forever: true as const } : {}),
+      ...(max ? { levels: { min, recommended, max } } : {}),
+      bosses,
+    });
+  }
+  return { instances, unplaced };
 }
 
 // Boss loot of every dungeon and raid as AtlasLoot Classic Forever lists it:
 // who drops what, Forever's own instances and the drops Forever added to
 // classic bosses, with AtlasLoot's per-NPC drop rates where it has them.
-// readAtlasLoot runs the pinned release; Map names place Forever's instances,
+// AtlasLoot runs the pinned release; Map names place Forever's instances,
 // which AtlasLoot lists by name only.
 export function dungeonLoot(
-  readAtlasLoot: (areas: Map<number, string>) => Promise<AtlasLootData>,
   curation?: LootCuration,
-): Dataset {
+): Dataset<GameTables | AtlasLoot | FileSystem.FileSystem | Path.Path> {
   return {
     name: 'dungeon-loot',
     description:
@@ -135,80 +236,25 @@ export function dungeonLoot(
     credits:
       'Loot facts from AtlasLoot Classic Forever by Sliccer (CurseForge project 1422985, GPL-2.0-or-later), release pinned in build.json.',
     output: { format: 'json', path: 'apps/agent/src/wisp/dungeon-loot.json' },
-    async build(tables) {
-      const [areaRows, maps] = await Promise.all([tables.read('AreaTable'), tables.read('Map')]);
-      const areas = new Map(areaRows.map((row) => [num(row, 'ID'), str(row, 'AreaName_lang')]));
-      const instanceIds = new Map<string, number>();
-      const mapNames = new Map<number, string>();
-      for (const map of maps) {
-        if (INSTANCE_TYPES.has(str(map, 'InstanceType'))) {
-          instanceIds.set(fold(str(map, 'MapName_lang')), num(map, 'ID'));
-          mapNames.set(num(map, 'ID'), str(map, 'MapName_lang'));
-        }
-      }
-      const { instanceMapIds } = curation ?? (await readLootCuration());
-      const atlas = await readAtlasLoot(areas);
-      const instances: LootInstance[] = [];
-      const unplaced: string[] = [];
-      for (const [key, table] of Object.entries(atlas.tables).sort(([a], [b]) =>
-        a.localeCompare(b),
-      )) {
-        const atlasName = plain(String(table.name ?? key));
-        const content = String(table.ContentType ?? '');
-        const kind = key === 'WorldBosses' ? 'world' : /raid/i.test(content) ? 'raid' : 'dungeon';
-        const curated = instanceMapIds[key];
-        const instanceMapId = Number.isInteger(table.InstanceID)
-          ? (table.InstanceID as number)
-          : (instanceIds.get(fold(atlasName)) ?? curated?.value ?? undefined);
-        // Some classic tables are named by an AtlasLoot locale key such as
-        // "MoltenCore", which the stubbed locale returns as is; the game's
-        // Map name is the real one.
-        const name =
-          LOCALE_KEY.test(atlasName) && instanceMapId !== undefined
-            ? (mapNames.get(instanceMapId) ?? atlasName)
-            : atlasName;
-        if (kind !== 'world' && instanceMapId === undefined && !curated) {
-          unplaced.push(`${key} (${name})`);
-        }
-        const [min, recommended, max] = list(table.LevelRange).map(Number);
-        const bosses: LootBoss[] = [];
-        for (const boss of list(table.items).map(record)) {
-          if (boss.IgnoreAsSource || boss.TableType === 'Set') {
-            continue;
-          }
-          const npc = boss.npcID;
-          const npcIds = (
-            Array.isArray(npc) ? npc : Number.isInteger(npc) ? [npc] : list(npc)
-          ).filter((id): id is number => Number.isInteger(id));
-          const bossName = String(boss.name ?? '');
-          const items = bossItems(boss, npcIds, atlas.droprates);
-          if (!items.length && !NO_DROPS.test(bossName)) {
-            continue;
-          }
-          bosses.push({
-            name: bossName.replace(NO_DROPS, ''),
-            ...(npcIds.length ? { npcIds } : {}),
-            ...(boss.ExtraList ? { extra: true as const } : {}),
-            ...(NO_DROPS.test(bossName) ? { noDropsYet: true as const } : {}),
-            items,
-          });
-        }
-        instances.push({
-          key,
-          name,
-          ...(instanceMapId !== undefined ? { instanceMapId } : {}),
-          kind,
-          ...(content.startsWith('Forever') ? { forever: true as const } : {}),
-          ...(max ? { levels: { min, recommended, max } } : {}),
-          bosses,
+    build: Effect.gen(function* () {
+      const tables = yield* GameTables;
+      const [areaRows, maps] = yield* Effect.all([tables.read('AreaTable'), tables.read('Map')], {
+        concurrency: 'unbounded',
+      });
+      const { areas, instances } = yield* fromRows(() => ({
+        areas: new Map(areaRows.map((row) => [num(row, 'ID'), str(row, 'AreaName_lang')])),
+        instances: instanceMaps(maps),
+      }));
+      const { instanceMapIds } = curation ?? (yield* readLootCuration);
+      const atlas = yield* AtlasLoot.use((source) => source.load(areas));
+      const loot = lootInstances(atlas, instances, instanceMapIds);
+      if (loot.unplaced.length) {
+        return yield* new DatasetError({
+          message: `No instance map matches these AtlasLoot tables; add them to curated/dungeon-loot.json: ${loot.unplaced.join(', ')}`,
         });
       }
-      if (unplaced.length) {
-        throw new Error(
-          `No instance map matches these AtlasLoot tables; add them to curated/dungeon-loot.json: ${unplaced.join(', ')}`,
-        );
-      }
-      return { instances } as unknown as LuaTable;
-    },
+      const value: DungeonLoot = { instances: loot.instances };
+      return value;
+    }),
   };
 }
