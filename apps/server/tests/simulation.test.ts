@@ -5,13 +5,13 @@ import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcess
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
-import { ConfigProvider, Effect, FileSystem, Layer, Path } from 'effect';
+import { ConfigProvider, Effect, FileSystem, Layer, Path, Schema } from 'effect';
 import { ChildProcessSpawner } from 'effect/process';
 import { TestClock } from 'effect/testing';
 import * as AppConfig from '../src/app-config.ts';
 import * as Simulation from '../src/integrations/simulation/simulator.ts';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
-import type { ClassMetadata } from '../src/integrations/simulation/adapters/types.ts';
+import { ClassMetadata } from '../src/integrations/simulation/adapters/types.ts';
 import { adapters } from '../src/integrations/simulation/adapters/index.ts';
 import { replaceEquipment, type CatalogItem } from '../src/integrations/simulation/equipment.ts';
 
@@ -56,6 +56,10 @@ const slowSpawner = Layer.effect(
   }),
 ).pipe(Layer.provide(NodeChildProcessSpawner.layer));
 
+const decodeOutput = Schema.decodeUnknownEffect(Simulation.SimulationOutput);
+const firstPlayer = (output: typeof Simulation.SimulationOutput.Type) =>
+  output.raidMetrics?.parties?.[0]?.players?.[0];
+
 const hasBinary = existsSync('simulator/wowsimcli.exe');
 const native = 60000;
 const input = { plans: [{ label: 'Frostbolt', priority: [{ spellId: 205 }] }] };
@@ -90,10 +94,10 @@ export function mageSnapshot(level = 11) {
   };
 }
 
-const classMetadata = JSON.parse(readFileSync('simulator/classes.json', 'utf8')) as Record<
-  string,
-  ClassMetadata
->;
+// Read once while the suite loads, before any Effect runs.
+const classMetadata = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, ClassMetadata)),
+)(readFileSync('simulator/classes.json', 'utf8'));
 const baselineFamilies: Record<string, string> = {
   MAGE: 'Fireball',
   WARRIOR: 'HeroicStrike',
@@ -137,6 +141,33 @@ function classFixture(token: string, level: number) {
 /** Asserts that preparing the request fails with a `SimulationError`. */
 const rejects = <A, R>(effect: Effect.Effect<A, Simulation.SimulationError, R>) =>
   Effect.flip(effect).pipe(Effect.map((error) => assert.equal(error._tag, 'SimulationError')));
+
+it.effect('fails with a SimulationError naming a malformed pinned data file', () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fs.makeTempDirectoryScoped();
+    yield* fs.makeDirectory(path.join(root, 'simulator'));
+    yield* fs.writeFileString(path.join(root, 'simulator', 'manifest.json'), '{"name": 1}');
+    const simulator = Layer.fresh(Simulation.layer).pipe(
+      Layer.provide([
+        NodeChildProcessSpawner.layer,
+        AppConfig.layer.pipe(
+          Layer.provide(
+            ConfigProvider.layer(ConfigProvider.fromEnv({ env: { WISP_RESOURCE_ROOT: root } })),
+          ),
+        ),
+        NodeCrypto.layerDigest,
+      ]),
+    );
+    const error = yield* Simulation.Simulator.use((s) => s.prepare(mageSnapshot(), input)).pipe(
+      Effect.provide(simulator),
+      Effect.flip,
+    );
+    assert.equal(error._tag, 'SimulationError');
+    assert.match(error.message, /^manifest\.json is invalid: /);
+  }).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer))),
+);
 
 layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
   it.effect('hypothetical input removes live dependency and helper gameplay policies', () =>
@@ -186,17 +217,16 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
         assert.equal(nativeResult.status, 'native', JSON.stringify(nativeResult));
         if (nativeResult.status === 'native') {
           assert.deepEqual(nativeResult.request, original);
-          assert.ok(
-            nativeResult.result.raidMetrics.parties[0].players[0].actions.some(
-              (a: any) => a.id?.spellId === 2948,
-            ),
-          );
+          const player = firstPlayer(yield* decodeOutput(nativeResult.result));
+          assert.ok(player?.actions?.some((a) => a.id?.spellId === 2948));
         }
         request.raid.parties[0].players[0].rotation.priorityList = [];
         const zero = yield* simulator.run(undefined, { nativeRequest: request });
         assert.equal(zero.status, 'native', JSON.stringify(zero));
         if (zero.status === 'native') {
-          assert.equal(zero.result.raidMetrics.parties[0].players[0].dps.avg ?? 0, 0);
+          const player = firstPlayer(yield* decodeOutput(zero.result));
+          assert.ok(player?.dps, JSON.stringify(zero.result));
+          assert.equal(player.dps.avg ?? 0, 0);
         }
         const invalid = yield* simulator.run(undefined, {
           nativeRequest: { unsupportedEngineField: true },

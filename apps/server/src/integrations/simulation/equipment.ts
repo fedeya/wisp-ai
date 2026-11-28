@@ -1,18 +1,22 @@
-export interface CatalogItem {
-  id: number;
-  name: string;
-  type: number;
-  armorType?: number;
-  weaponType?: number;
-  handType?: number;
-  rangedWeaponType?: number;
-  reqLvl?: number;
-  classAllowlist?: number[];
-  unique?: boolean;
-  limitCategory?: number;
-  requiredProfession?: number;
-  factionRestriction?: number;
-}
+import { Schema } from 'effect';
+
+/** An item in the pinned simulator/items.json. */
+export const CatalogItem = Schema.Struct({
+  id: Schema.Int,
+  name: Schema.String,
+  type: Schema.optionalKey(Schema.Int),
+  armorType: Schema.optionalKey(Schema.Int),
+  weaponType: Schema.optionalKey(Schema.Int),
+  handType: Schema.optionalKey(Schema.Int),
+  rangedWeaponType: Schema.optionalKey(Schema.Int),
+  reqLvl: Schema.optionalKey(Schema.Int),
+  classAllowlist: Schema.optionalKey(Schema.Array(Schema.Int)),
+  unique: Schema.optionalKey(Schema.Boolean),
+  limitCategory: Schema.optionalKey(Schema.Int),
+  requiredProfession: Schema.optionalKey(Schema.Int),
+  factionRestriction: Schema.optionalKey(Schema.Int),
+});
+export type CatalogItem = typeof CatalogItem.Type;
 export interface EquippedItem {
   slot: number;
   id: number;
