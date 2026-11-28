@@ -40,7 +40,7 @@ test('negotiated compact ACKs are checked 16-byte control frames and never messa
       payload: Buffer.alloc(0),
     });
     const damaged = Buffer.from(frame);
-    damaged[4] ^= 1;
+    damaged.writeUInt8(damaged.readUInt8(4) ^ 1, 4);
     expect(decodeFrame(damaged)).toBeNull();
   }
   expect(() =>
@@ -101,7 +101,7 @@ test('own v2 frame has stable byte layout and rejects corrupt, malformed and wro
   expect(decodeFrame(frame)).toMatchObject({ generation: 0xfedcba98, sequence: 65535 });
   for (const index of [0, 2, 3, 4, 8, 10, 12, 91, 95]) {
     const corrupt = Buffer.from(frame);
-    corrupt[index] ^= 1;
+    corrupt.writeUInt8(corrupt.readUInt8(index) ^ 1, index);
     expect(decodeFrame(corrupt)).toBeNull();
   }
   const padding = Buffer.from(frame);
@@ -155,7 +155,7 @@ test('omitted enabled helpers decode a valid uplink and missing downlink lines a
   const sparse = [
     'Other: disabled',
     ...UPLINK_HELPERS.flatMap((name, index) =>
-      frame[index >> 3] & (1 << (index % 8)) ? [] : [`${name}: disabled`],
+      frame.readUInt8(index >> 3) & (1 << (index % 8)) ? [] : [`${name}: disabled`],
     ),
     'Tail: enabled',
   ].join('\r\n');
@@ -178,8 +178,11 @@ test('multilingual compression survives frame duplication and uint16 sequence wr
     JSON.stringify({ text: '¿Qué hago ahora? Frost Nova ❄'.repeat(200), seq: 7 }),
   );
   const frames = encodeMessage(deflateSync(original), UPLINK_KIND, 0xfedcba98, 65535, true);
-  expect(frames.length).toBeGreaterThan(1);
-  expect(decodeFrame(frames[1])?.sequence).toBe(0);
+  const [, second] = frames;
+  if (!second) {
+    throw Error('Expected the message to span more than one frame');
+  }
+  expect(decodeFrame(second)?.sequence).toBe(0);
   const decoder = new MailboxDecoder(UPLINK_KIND);
   let result;
   for (const frame of frames) {

@@ -164,4 +164,5 @@ export function decodeUplink(message: MailboxMessage) {
   if (ack) return { kind: 'ack' as const, ack };
   const packet = Option.getOrUndefined(decodePacket(value));
   if (packet) return { kind: 'packet' as const, packet };
+  return undefined;
 }
