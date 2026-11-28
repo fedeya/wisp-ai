@@ -26,6 +26,13 @@ function list(value: LuaJson | undefined): LuaJson[] {
     .sort(([a], [b]) => Number(a) - Number(b))
     .map(([, entry]) => entry);
 }
+// A Lua string or number as text; anything else (nil, a table) reads as fallback.
+function text(value: LuaJson | undefined, fallback: string): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return typeof value === 'number' ? String(value) : fallback;
+}
 // Instance names carry WoW color and texture escapes (AtlasLoot's "new" icon).
 function plain(text: string) {
   return text
@@ -157,8 +164,8 @@ function lootInstances(
   const instances: LootInstance[] = [];
   const unplaced: string[] = [];
   for (const [key, table] of Object.entries(atlas.tables).sort(([a], [b]) => a.localeCompare(b))) {
-    const atlasName = plain(String(table.name ?? key));
-    const content = String(table.ContentType ?? '');
+    const atlasName = plain(text(table.name, key));
+    const content = text(table.ContentType, '');
     const kind = key === 'WorldBosses' ? 'world' : /raid/i.test(content) ? 'raid' : 'dungeon';
     const curated = instanceMapIds[key];
     const instanceId = table.InstanceID;
@@ -187,7 +194,7 @@ function lootInstances(
       const npcIds = (Number.isInteger(npc) ? [npc] : list(npc)).filter(
         (id): id is number => typeof id === 'number' && Number.isInteger(id),
       );
-      const bossName = String(boss.name ?? '');
+      const bossName = text(boss.name, '');
       const items = bossItems(boss, npcIds, atlas.droprates);
       if (!items.length && !NO_DROPS.test(bossName)) {
         continue;
