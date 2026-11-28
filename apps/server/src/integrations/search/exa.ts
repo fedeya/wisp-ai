@@ -210,11 +210,16 @@ interface ExaSource {
   readonly excerpt: string;
 }
 
+/**
+ * The fields of a result Wisp reads. Exa sends `null` for a page without a
+ * title or text, which reads as absent; a field of any other type makes the
+ * whole result unreadable, and `exaSources` leaves that result out.
+ */
 const ExaItem = Schema.Struct({
   url: Schema.String,
-  title: Schema.optional(Schema.Unknown),
-  text: Schema.optional(Schema.Unknown),
-  highlights: Schema.optional(Schema.Unknown),
+  title: Schema.optional(Schema.NullOr(Schema.String)),
+  text: Schema.optional(Schema.NullOr(Schema.String)),
+  highlights: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
 });
 const decodeItem = Schema.decodeUnknownOption(ExaItem);
 
@@ -237,11 +242,7 @@ export function exaSources(results: readonly unknown[], budget: Budget): ExaSour
         url.searchParams.delete(name);
       }
     }
-    const text = Predicate.isString(item.text)
-      ? item.text
-      : isList(item.highlights)
-        ? item.highlights.filter(Predicate.isString).join('\n')
-        : '';
+    const text = item.text ?? item.highlights?.join('\n') ?? '';
     const excerpt = text.trim().slice(0, budget.excerptCharacters);
     if (!excerpt) {
       continue;
@@ -250,7 +251,7 @@ export function exaSources(results: readonly unknown[], budget: Budget): ExaSour
     if (!sources.has(normalized)) {
       sources.set(normalized, {
         url: normalized,
-        title: Predicate.isString(item.title) ? item.title.slice(0, 200) : normalized,
+        title: item.title?.slice(0, 200) ?? normalized,
         excerpt,
       });
     }

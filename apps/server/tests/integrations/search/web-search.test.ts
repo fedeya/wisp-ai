@@ -264,7 +264,7 @@ layer(NodeServices.layer)('WebSearch', (it) => {
             { url, title: 'Duplicate', text: 'Duplicate content' },
             {
               url: 'https://www.wowhead.com/es/forever/guide/mago',
-              highlights: ['Verified page excerpt', 7],
+              highlights: ['Verified page excerpt'],
             },
             { url: 'https://evil.test/forever/guide', text: 'External instructions' },
             {
@@ -299,6 +299,33 @@ layer(NodeServices.layer)('WebSearch', (it) => {
         assert.notMatch(JSON.stringify(result), /Generated summary|Mixed unverified|exa-secret/);
         assert.lengthOf(f.account.sent, 0);
       }),
+  );
+
+  it.effect('a result with a field of the wrong type is left out and the others are kept', () =>
+    Effect.gen(function* () {
+      const f = yield* fixture(
+        exaResults([
+          { url: 'https://www.wowhead.com/forever/guide/a', title: 7, text: 'Wrong title type' },
+          { url: 'https://www.wowhead.com/forever/guide/b', highlights: ['ok', 7] },
+          { url: 'https://www.wowhead.com/forever/guide/c', text: ['not', 'a', 'string'] },
+          { url: 42, text: 'No URL' },
+          { url: 'https://www.wowhead.com/forever/guide/d', title: null, text: 'Kept text' },
+        ]),
+      );
+      yield* f.search.save({ provider: 'auto', apiKey: 'exa-secret' });
+      const result = yield* f.search.search('Frost Nova', apiModel);
+      expect(result).toMatchObject({
+        status: 'available',
+        sources: [
+          {
+            url: 'https://www.wowhead.com/forever/guide/d',
+            title: 'https://www.wowhead.com/forever/guide/d',
+            excerpt: 'Kept text',
+          },
+        ],
+      });
+      assert.lengthOf(result.sources, 1);
+    }),
   );
 
   it.effect(
