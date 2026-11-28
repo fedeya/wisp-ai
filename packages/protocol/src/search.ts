@@ -37,7 +37,14 @@ export const wowheadQuery = Schema.Struct({
 });
 export type WebSearchQuery = typeof wowheadQuery.Type;
 export type WebSearchInput = string | typeof wowheadQuery.Encoded;
-const decodeQuery = Schema.decodeSync(wowheadQuery);
+const decodeQuery = Schema.decodeEffect(wowheadQuery);
+
+/** The query broke the search contract, so nothing was sent. */
+export class InvalidWebSearchQuery extends Schema.TaggedError<InvalidWebSearchQuery>()(
+  'InvalidWebSearchQuery',
+  { message: Schema.String },
+) {}
+
 const searchProfiles = {
   quick: {
     maxResults: 3,
@@ -61,9 +68,8 @@ const searchProfiles = {
     reasoning: 'medium',
   },
 } as const;
-/** The query with its depth's budget; throws when `raw` breaks the query's constraints. */
-export function resolveWebSearch(raw: WebSearchInput) {
-  const input = decodeQuery(typeof raw === 'string' ? { query: raw } : raw, rejectUnknownKeys);
+/** A query that has already been decoded, with its depth's budget. */
+export function searchBudget(input: WebSearchQuery) {
   const profile = searchProfiles[input.depth];
   return {
     query: input.query,
@@ -76,6 +82,13 @@ export function resolveWebSearch(raw: WebSearchInput) {
     reasoning: profile.reasoning,
   };
 }
+
+/** The query with its depth's budget, or why `raw` breaks the query's constraints. */
+export const resolveWebSearch = (raw: WebSearchInput) =>
+  decodeQuery(typeof raw === 'string' ? { query: raw } : raw, rejectUnknownKeys).pipe(
+    Effect.map(searchBudget),
+    Effect.mapError((error) => new InvalidWebSearchQuery({ message: error.message })),
+  );
 export const searchConfig = Schema.Struct({
   provider: Schema.Literals(['auto', 'exa', 'chatgpt', 'disabled']).pipe(
     Schema.withDecodingDefault(Effect.succeed('auto' as const)),

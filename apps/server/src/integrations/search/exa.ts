@@ -1,10 +1,10 @@
 // @effect-migrated
 import { Effect, Option, Predicate, Redacted, Schema, Stream } from 'effect';
 import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
-import type { resolveWebSearch } from '@wisp/protocol/search';
+import type { searchBudget } from '@wisp/protocol/search';
 import { publicSourceUrl } from './public.ts';
 
-type Budget = ReturnType<typeof resolveWebSearch>;
+type Budget = ReturnType<typeof searchBudget>;
 
 const ENDPOINT = 'https://api.exa.ai/search';
 const PUBLIC_ENDPOINT = 'https://mcp.exa.ai/mcp?tools=web_search_advanced_exa';

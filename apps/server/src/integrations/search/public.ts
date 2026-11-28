@@ -1,12 +1,12 @@
 // @effect-migrated
 import { Effect, Option, Schema, SchemaGetter } from 'effect';
 import type { ChatGPTAuth } from '#/auth';
-import type { resolveWebSearch } from '@wisp/protocol/search';
+import type { searchBudget } from '@wisp/protocol/search';
 import { safeErrorMessage } from '@wisp/agent/contract/model-errors';
 import { searchResponses, withDeadline } from './responses.ts';
 import type { SearchResponse } from './responses.ts';
 
-type Budget = ReturnType<typeof resolveWebSearch>;
+type Budget = ReturnType<typeof searchBudget>;
 
 /** Validated like `z.string().url()`: trimmed, without tabs or newlines, and parseable. */
 const FindingUrl = Schema.String.pipe(

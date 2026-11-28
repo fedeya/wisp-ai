@@ -22,7 +22,7 @@ it.effect('ChatGPT searches globally with citations and explicit version instruc
   const account = chatgpt(() => completed(response));
   return Effect.gen(function* () {
     const result = yield* searchPublicWeb(
-      resolveWebSearch('Forever mage Invisibility training'),
+      yield* resolveWebSearch('Forever mage Invisibility training'),
       'gpt-test',
     );
     const [request] = account.sent;
@@ -205,7 +205,7 @@ it.effect('ChatGPT receives the chosen research depth and bounds returned findin
   );
   return Effect.gen(function* () {
     const result = yield* searchPublicWeb(
-      resolveWebSearch({
+      yield* resolveWebSearch({
         query: 'Compare acquisition routes',
         depth: 'deep',
         maxResults: 2,
@@ -253,7 +253,7 @@ it.effect('a refusal, an interrupted stream and a missed deadline are unavailabl
     const refused = chatgpt(() =>
       Response.json({ detail: 'Bearer secret-token is over quota' }, { status: 429 }),
     );
-    const quota = yield* searchPublicWeb(resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
+    const quota = yield* searchPublicWeb(yield* resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
       Effect.provide(refused.layer),
     );
     expect(quota).toMatchObject({
@@ -262,9 +262,10 @@ it.effect('a refusal, an interrupted stream and a missed deadline are unavailabl
     });
 
     const silent = chatgpt(() => new Response('{}', { status: 503 }));
-    const unavailable = yield* searchPublicWeb(resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
-      Effect.provide(silent.layer),
-    );
+    const unavailable = yield* searchPublicWeb(
+      yield* resolveWebSearch('Frost Nova'),
+      'gpt-test',
+    ).pipe(Effect.provide(silent.layer));
     expect(unavailable).toMatchObject({ error: 'Web search provider unavailable' });
 
     const partial = chatgpt(
@@ -273,9 +274,10 @@ it.effect('a refusal, an interrupted stream and a missed deadline are unavailabl
           'data: ' + JSON.stringify({ type: 'response.output_text.delta', delta: 'x' }) + '\n\n',
         ),
     );
-    const interrupted = yield* searchPublicWeb(resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
-      Effect.provide(partial.layer),
-    );
+    const interrupted = yield* searchPublicWeb(
+      yield* resolveWebSearch('Frost Nova'),
+      'gpt-test',
+    ).pipe(Effect.provide(partial.layer));
     expect(interrupted).toMatchObject({ error: 'ChatGPT response was interrupted.' });
 
     // The agent sees what the request failed with, as before.
@@ -283,7 +285,7 @@ it.effect('a refusal, an interrupted stream and a missed deadline are unavailabl
       Effect.fail(new ChatGPTRequestError({ cause: new TypeError('fetch failed') })),
     );
     expect(
-      yield* searchPublicWeb(resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
+      yield* searchPublicWeb(yield* resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
         Effect.provide(offline.layer),
       ),
     ).toMatchObject({ error: 'fetch failed' });
@@ -291,14 +293,14 @@ it.effect('a refusal, an interrupted stream and a missed deadline are unavailabl
       Effect.fail(new ChatGPTAuthError({ message: 'Sign in to ChatGPT first.' })),
     );
     expect(
-      yield* searchPublicWeb(resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
+      yield* searchPublicWeb(yield* resolveWebSearch('Frost Nova'), 'gpt-test').pipe(
         Effect.provide(signedOut.layer),
       ),
     ).toMatchObject({ error: 'Sign in to ChatGPT first.' });
 
     const stalled = chatgpt(() => Effect.never);
     const fiber = yield* searchPublicWeb(
-      resolveWebSearch({ query: 'Frost Nova', depth: 'quick' }),
+      yield* resolveWebSearch({ query: 'Frost Nova', depth: 'quick' }),
       'gpt-test',
     ).pipe(Effect.provide(stalled.layer), Effect.forkChild({ startImmediately: true }));
     yield* TestClock.adjust('35 seconds');

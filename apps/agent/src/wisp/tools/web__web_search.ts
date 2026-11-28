@@ -2,7 +2,7 @@ import { defineTool, effectToolInput } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
-import { wowheadQuery, resolveWebSearch } from '@wisp/protocol/search';
+import { wowheadQuery, searchBudget } from '@wisp/protocol/search';
 
 function displayQuery(query: string) {
   const singleLine = query.replace(/\s+/g, ' ');
@@ -26,7 +26,7 @@ export default enabledTool(
         'wowhead',
         { agentSession: ctx.session.id, ...args },
         ctx.abortSignal,
-        resolveWebSearch(args).timeoutSeconds * 1000 + 15000,
+        searchBudget(args).timeoutSeconds * 1000 + 15000,
       ),
   }),
 );
