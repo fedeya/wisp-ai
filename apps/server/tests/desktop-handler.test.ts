@@ -28,8 +28,8 @@ function setup() {
       cancel: vi.fn(async () => {}),
     },
     connections: {
-      models: vi.fn(async () => [{ slug: 'luna', displayName: 'Luna', efforts: [] }]),
-      remove: vi.fn(async () => {}),
+      models: Effect.succeed([{ slug: 'luna', displayName: 'Luna', efforts: [] }]),
+      remove: vi.fn(() => Effect.void),
     },
     panelStore: {
       list: vi.fn(() => [{ id: 'materials' }]),

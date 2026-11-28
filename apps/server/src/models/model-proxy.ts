@@ -3,7 +3,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readCompletedResponse } from './response-stream.ts';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
-import type { ModelConnections } from './model-connections.ts';
+import type { PromiseModelConnections } from './connections.ts';
 import { modelTiming } from './model-timing.ts';
 import { Effect } from 'effect';
 import {
@@ -16,7 +16,7 @@ import {
 export async function proxyConnectionModel(
   req: IncomingMessage,
   res: ServerResponse,
-  connections: ModelConnections,
+  connections: Pick<PromiseModelConnections, 'forward'>,
   failures?: ModelFailures,
 ) {
   const route = /^\/model\/connections\/([0-9a-f-]{36})(\/.*)$/i.exec(req.url || '');

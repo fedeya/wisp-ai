@@ -5,7 +5,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { createModelProxy, proxyConnectionModel } from '../src/models/model-proxy.ts';
 import { runBridgeEffect } from './capture-logs.ts';
 import { ModelFailures } from '../src/models/model-failures.ts';
-import type { ModelConnections } from '../src/models/model-connections.ts';
+import type { PromiseModelConnections } from '../src/models/connections.ts';
 import type { PromiseChatGPTAuth } from '../src/auth/index.ts';
 import { subscriptionCallOptions } from '@wisp/agent/model-tools';
 
@@ -129,7 +129,7 @@ test('connection proxy records the provider status of failed requests by session
       if (status === 0) throw new TypeError('fetch failed');
       return Response.json({ error: { message: 'Private provider error' } }, { status });
     },
-  } as unknown as ModelConnections;
+  } satisfies Pick<PromiseModelConnections, 'forward'>;
   const failures = new ModelFailures();
   const server = createServer((req, res) => {
     void proxyConnectionModel(req, res, connections, failures).catch(() => {
@@ -180,7 +180,7 @@ test('connection proxy records a stream that breaks after a 200', async () => {
         }),
         { status: 200, headers: { 'content-type': 'text/event-stream' } },
       ),
-  } as unknown as ModelConnections;
+  } satisfies Pick<PromiseModelConnections, 'forward'>;
   const failures = new ModelFailures();
   const server = createServer((req, res) => {
     void proxyConnectionModel(req, res, connections, failures).catch(() => res.destroy());
@@ -225,7 +225,7 @@ test('connection proxy records nothing when the agent cancels mid-stream', async
         }),
         { status: 200, headers: { 'content-type': 'text/event-stream' } },
       ),
-  } as unknown as ModelConnections;
+  } satisfies Pick<PromiseModelConnections, 'forward'>;
   const failures = new ModelFailures();
   const server = createServer((req, res) => {
     void proxyConnectionModel(req, res, connections, failures)

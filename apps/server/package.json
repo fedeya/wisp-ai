@@ -55,7 +55,7 @@
     "./errors": "./src/errors.ts",
     "./runtime-resources": "./src/runtime-resources.ts",
     "./chat": "./src/chat/chat.ts",
-    "./model-connections": "./src/models/model-connections.ts",
+    "./models/connections": "./src/models/connections.ts",
     "./web-search": "./src/integrations/search/web-search.ts"
   },
   "scripts": {
