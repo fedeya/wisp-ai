@@ -212,16 +212,29 @@ merges.
 
 ### 0. Standard and guardrails
 
-- [ ] This plan and the Effect rules in `AGENTS.md`.
-- [ ] `@effect/vitest` in the workspaces with Effect tests, with
-      `packages/db`'s tests as the example.
-- [ ] Ratchets: Effect language service diagnostics as errors where the code is
+- [x] This plan and the Effect rules in `AGENTS.md` ([#312](https://github.com/fedeya/wisp-ai/pull/312), [#317](https://github.com/fedeya/wisp-ai/pull/317), [#320](https://github.com/fedeya/wisp-ai/pull/320)).
+- [x] `@effect/vitest` in the workspaces with Effect tests, with
+      `packages/db`'s tests as the example ([#313](https://github.com/fedeya/wisp-ai/pull/313)).
+- [x] Ratchets: Effect language service diagnostics as errors where the code is
       already clean, restricted imports for clean folders, and a scoreboard
-      test that fails when a count of non-Effect patterns goes up.
-- [ ] Domain boundaries: the `imports` field in `apps/server/package.json` and a
+      test that fails when a count of non-Effect patterns goes up ([#314](https://github.com/fedeya/wisp-ai/pull/314)).
+- [x] The `// @effect-migrated` marker: a marked file fails on any scoreboard
+      pattern, `JSON.parse`, or a type-aware lint finding for unchecked casts,
+      `any`, non-null assertions, `ts-ignore` and plain `as` casts ([#321](https://github.com/fedeya/wisp-ai/pull/321),
+      [#330](https://github.com/fedeya/wisp-ai/pull/330), [#331](https://github.com/fedeya/wisp-ai/pull/331)).
+- [x] Domain boundaries: the `imports` field in `apps/server/package.json` and a
       test that fails on a relative import that leaves its domain folder, a cycle
       between folders, or a new file at the `src/` root. It covers the migrated
-      domains and grows with them.
+      domains and grows with them ([#325](https://github.com/fedeya/wisp-ai/pull/325)).
+- [ ] Stricter compiler, one workspace at a time: `noUncheckedIndexedAccess` is
+      on in `protocol`, `db` and `releases` ([#327](https://github.com/fedeya/wisp-ai/pull/327)), `apps/agent` ([#328](https://github.com/fedeya/wisp-ai/pull/328)) and
+      `scripts` ([#332](https://github.com/fedeya/wisp-ai/pull/332)); left are `game-data` (1 error), `tests` (22 of its own),
+      `wow-bridge` (52) and `apps/server` (390, 346 of them in its tests).
+- [ ] `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
+      in `tsconfig.base.json` (about 10 errors across workspaces, one in `runtime.ts`).
+- [ ] The type-aware lint rules (`no-unsafe-*`, `no-unsafe-type-assertion`,
+      `consistent-type-assertions`, `no-non-null-assertion`, `no-explicit-any`) go
+      from `warn` to `error` repo-wide once their counts reach zero.
 
 ### 1. Schema
 
@@ -241,9 +254,10 @@ merges.
 - [x] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
 - [x] `Simulator` on `ChildProcess` and `Stream`.
 - [ ] One `HttpClient` layer; TheWoWDB, web search (Exa, public, Wowhead) and
-      model discovery on it. (TheWoWDB done)
-- [ ] `ChatGPTAuth`: `HttpClient`, `effect/jose`, `Redacted`, refresh on a
-      `Schedule`, callback server on `HttpRouter`.
+      model discovery on it. TheWoWDB is on it ([#316](https://github.com/fedeya/wisp-ai/pull/316)); web search and model
+      discovery are left.
+- [x] `ChatGPTAuth`: `HttpClient`, `effect/jose`, `Redacted`, refresh on a
+      `Schedule`, callback server on `HttpRouter` ([#329](https://github.com/fedeya/wisp-ai/pull/329)).
 
 ### 3. Domain services and state
 
@@ -302,8 +316,9 @@ Independent of the other phases; these PRs can run in parallel.
       and `HttpClient`.
 - [ ] Build and staging scripts.
 - [ ] Verify and smoke scripts.
-- [ ] `@wisp/game-data`: `effect/cli`, `HttpClient` for wago.tools and the
-      `Csv` module from `effect/encoding`.
+- [x] `@wisp/game-data`: `effect/cli`, `HttpClient` for wago.tools, and its JSON
+      inputs decoded with `Schema` ([#326](https://github.com/fedeya/wisp-ai/pull/326)). It keeps its own CSV parser; see
+      phase 9.
 
 ### 8. Desktop UI (optional)
 
@@ -317,10 +332,14 @@ migration. Each lands in its own PR after its module is migrated, with a release
 note when players can notice it. A migration PR that leaves one out adds it here
 with a link to itself.
 
-- [ ] Simulator: decode the pinned data files (`classes.json`, `items.json`,
+- [x] Simulator: decode the pinned data files (`classes.json`, `items.json`,
       `manifest.json`) and the CLI's `output.json` with `Schema` instead of
       `JSON.parse` into loose types, so malformed data fails with a typed error
-      instead of reaching the simulation ([#319](https://github.com/fedeya/wisp-ai/pull/319)).
+      instead of reaching the simulation ([#333](https://github.com/fedeya/wisp-ai/pull/333)).
+- [ ] Game data: parse wago.tools tables with `effect/encoding`'s `Csv`, which
+      strips a BOM, fails on stray quotes and keeps `""`-only lines where the
+      current parser does not, and decode table rows with `Schema` instead of the
+      `num`/`str` helpers ([#326](https://github.com/fedeya/wisp-ai/pull/326)).
 - [ ] TheWoWDB: decode responses into typed schemas instead of checking unknown
       JSON with `Schema.is`; the record the agent receives may then lose the
       source's key order ([#316](https://github.com/fedeya/wisp-ai/pull/316)).
@@ -344,6 +363,9 @@ with a link to itself.
   remains only in entry points and SDK callbacks, and `Effect.tryPromise` only
   in adapters.
 - Every migrated workspace is under the restricted-imports rule.
+- Every workspace compiles with `noUncheckedIndexedAccess`, `noImplicitOverride`,
+  `noImplicitReturns` and `noFallthroughCasesInSwitch`, and the type-aware lint
+  rules above are errors repo-wide.
 
 ## Working in parallel
 
