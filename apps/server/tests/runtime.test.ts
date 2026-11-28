@@ -1,5 +1,6 @@
 import { test, expect, vi } from 'vitest';
 import { ConfigProvider, Effect, Exit, Layer, Redacted, Schema } from 'effect';
+import { FetchHttpClient } from 'effect/http';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -48,6 +49,8 @@ function start(f: Awaited<ReturnType<typeof fixture>>, options: ServerOptions = 
       // The migrated services, ChatGPTAuth among them, use the fake vault.
       Effect.provide(Layer.merge(ServerServices.pipe(Layer.provideMerge(vault)), bridgeLogging)),
       Effect.provideService(ConfigProvider.ConfigProvider, f.config),
+      // The HttpClient reads `fetch` once; this one follows `vi.stubGlobal`.
+      Effect.provideService(FetchHttpClient.Fetch, (input, init) => globalThis.fetch(input, init)),
     ),
   );
 }

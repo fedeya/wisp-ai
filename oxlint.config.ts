@@ -123,6 +123,7 @@ export default defineConfig({
     {
       files: [
         'apps/server/src/auth/**',
+        'apps/server/src/integrations/search/**',
         'apps/server/src/memory/**',
         'packages/game-data/src/**',
         'packages/releases/src/**',

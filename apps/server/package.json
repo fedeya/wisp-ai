@@ -37,8 +37,6 @@
     "./sessions": "./src/chat/sessions.ts",
     "./simulation": "./src/integrations/simulation/simulator.ts",
     "./thewowdb": "./src/integrations/thewowdb/index.ts",
-    "./public-web-search": "./src/integrations/search/public-web-search.ts",
-    "./wowhead-search": "./src/integrations/search/wowhead-search.ts",
     "./runtime": "./src/runtime.ts",
     "./agent-server": "./src/agent/agent-server.ts",
     "./desktop-handler": "./src/api/desktop-handler.ts",
@@ -55,8 +53,7 @@
     "./integration-state": "./src/integrations/integration-state.ts",
     "./runtime-resources": "./src/runtime-resources.ts",
     "./chat": "./src/chat/chat.ts",
-    "./model-connections": "./src/models/model-connections.ts",
-    "./web-search": "./src/integrations/search/web-search.ts"
+    "./model-connections": "./src/models/model-connections.ts"
   },
   "scripts": {
     "start": "node src/main.ts",
