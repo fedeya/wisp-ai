@@ -17,6 +17,7 @@ import * as Everloot from '@wisp/agent/everloot';
 import { PRESENT_UI_TOOL, SKIP_TIP_TOOL } from '@wisp/agent/contract/reply-presentation';
 import { AppConfig } from '#/platform/config';
 import { AppVersion } from '#/platform/app-version';
+import { Features } from '#/features';
 import { modelFailureKinds } from '../models/model-failures.ts';
 import { PostHogClient } from './posthog.ts';
 import type { Properties } from './posthog.ts';
@@ -194,18 +195,20 @@ export class UsageTelemetry extends Context.Service<
     readonly toolObserver: (
       isCustomMcpConnection: (connection: string) => boolean,
     ) => Effect.Effect<ToolObserver>;
-    /** The feature flags that are on, attached to every event. */
-    readonly setFeatures: (names: readonly string[]) => Effect.Effect<void>;
   }
 >()('@wisp/server/telemetry/UsageTelemetry') {}
 
-/** The service on `PostHogClient`; its scope drains the events on their way when it closes. */
+/**
+ * The service on `PostHogClient` and `Features`. Closing its scope waits for
+ * the events on their way.
+ */
 export const make = Effect.gen(function* () {
   const config = yield* AppConfig;
   const { version } = yield* AppVersion;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const client = yield* PostHogClient;
+  const features = yield* Features;
   const release = config.telemetryRelease;
   const preferencesFile = path.join(config.paths.dataRoot, 'telemetry.json');
   const common = {
@@ -227,8 +230,6 @@ export const make = Effect.gen(function* () {
   const activeDay = yield* Ref.make('');
   const addonDay = yield* Ref.make('');
   const gameConnectionStartedAt = yield* Ref.make(Option.none<number>());
-  // Flag names come from the built-in registry, never from user input.
-  const features = yield* Ref.make<readonly string[]>([]);
   const pending = yield* FiberSet.make<void>();
 
   yield* Effect.addFinalizer(() =>
@@ -255,7 +256,8 @@ export const make = Effect.gen(function* () {
       yield* Ref.set(addonDay, '');
       return;
     }
-    const enabled = (yield* Ref.get(features)).join(',');
+    // Flag names come from the built-in registry, never from user input.
+    const enabled = (yield* features.enabledNames).join(',');
     yield* client.capture({
       distinctId: preferences.installationId,
       event,
@@ -460,10 +462,6 @@ export const make = Effect.gen(function* () {
     } satisfies ToolObserver;
   });
 
-  const setFeatures = Effect.fn('UsageTelemetry.setFeatures')(function* (names: readonly string[]) {
-    yield* Ref.set(features, names);
-  });
-
   return UsageTelemetry.of({
     chat,
     webSearch,
@@ -472,6 +470,5 @@ export const make = Effect.gen(function* () {
     gameConnectionProgress,
     usageObserver,
     toolObserver,
-    setFeatures,
   });
 });
