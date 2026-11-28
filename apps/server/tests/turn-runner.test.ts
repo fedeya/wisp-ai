@@ -2,7 +2,7 @@ import { test, expect, vi } from 'vitest';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import type { TurnInput } from '@wisp/agent/engine';
 import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
-import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
+import { ChatGPTAuthError } from '../src/auth/index.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/chat/context.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
@@ -222,7 +222,7 @@ test('chat telemetry distinguishes early failures before a turn reaches the engi
   const f = fixture(true, telemetry);
   f.isReady.mockReturnValueOnce(false);
   f.accountBusy.mockReturnValueOnce(true);
-  f.prepare.mockRejectedValueOnce(new ChatGPTAuthError('Private account details'));
+  f.prepare.mockRejectedValueOnce(new ChatGPTAuthError({ message: 'Private account details' }));
   f.prepare.mockRejectedValueOnce(new Error('Private model details'));
   f.models.mockRejectedValueOnce(new Error('Private model catalog details'));
 

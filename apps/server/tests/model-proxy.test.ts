@@ -6,7 +6,7 @@ import { createModelProxy, proxyConnectionModel } from '../src/models/model-prox
 import { runBridgeEffect } from './capture-logs.ts';
 import { ModelFailures } from '../src/models/model-failures.ts';
 import type { ModelConnections } from '../src/models/model-connections.ts';
-import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../src/auth/index.ts';
 import { subscriptionCallOptions } from '@wisp/agent/model-tools';
 
 test('SDK streams via bridge, forces private responses, and preserves terminal failures', async () => {
@@ -55,7 +55,7 @@ test('SDK streams via bridge, forces private responses, and preserves terminal f
         headers: { 'content-type': 'text/event-stream' },
       });
     },
-  } as unknown as ChatGPTAuth;
+  } as unknown as PromiseChatGPTAuth;
   const failures = new ModelFailures();
   const proxyModel = runBridgeEffect(createModelProxy(auth, failures));
   const server = createServer((req, res) => {

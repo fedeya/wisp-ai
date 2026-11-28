@@ -7,9 +7,12 @@ import {
   Fiber,
   FileSystem,
   Layer,
+  Option,
   Redacted,
   Scope,
+  Stream,
 } from 'effect';
+import { HttpClientRequest, HttpClientResponse } from 'effect/http';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
@@ -63,7 +66,7 @@ import { createModelCatalogRefresh } from './models/model-catalog.ts';
 import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
-import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
+import * as ChatGPTAuth from './auth/index.ts';
 import * as TheWoWDB from './integrations/thewowdb/index.ts';
 import * as HttpClient from './platform/http-client.ts';
 import * as Simulation from './integrations/simulation/simulator.ts';
@@ -83,21 +86,38 @@ import { AgentHistory } from './agent/agent-history.ts';
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 
 /**
- * The migrated services `makeServer` receives from its caller. Each migrated
- * adapter adds its layer here; `main.ts` and `startServer` provide it.
+ * The migrated services `makeServer` receives from its caller, on the
+ * `SecretVault` the caller provides. Each migrated adapter adds its layer
+ * here; `ServerLayer` provides the native vault.
  */
-export const ServerLayer = Layer.mergeAll(
+export const ServerServices = Layer.mergeAll(
   AppConfig.layer,
   wowPlatform,
-  SecretVault.layer.pipe(
-    Layer.provide(AppConfig.layer),
-    Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
-  ),
   Simulation.layer.pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
     Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerDigest]),
   ),
   TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer)),
+  ChatGPTAuth.layer.pipe(
+    Layer.provide([
+      AppConfig.layer,
+      wowPlatform,
+      HttpClient.layer,
+      NodeCrypto.layerDigest,
+      NodeCrypto.layerSecureRandom,
+      NodeCrypto.layerSignature,
+    ]),
+  ),
+);
+
+/** The migrated services; `main.ts` and `startServer` provide it. */
+export const ServerLayer = ServerServices.pipe(
+  Layer.provideMerge(
+    SecretVault.layer.pipe(
+      Layer.provide(AppConfig.layer),
+      Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
+    ),
+  ),
 );
 
 export interface ServerOptions {
@@ -175,6 +195,8 @@ export const makeServer = Effect.fn('Server.make')(
       read: (key) => runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
       write: (key, value) => runPromise(secretVault.write(key, Redacted.make(value))),
     };
+    const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
+    const auth = promiseChatGPTAuth(chatgpt, context);
     // End of adapters.
     const mcpManager = McpManager.make(
       ROOT,
@@ -200,14 +222,12 @@ export const makeServer = Effect.fn('Server.make')(
       enabledFeatures: () => features.enabledNames(),
     });
     yield* releaseRuntimeResource(() => telemetry.close());
-    const auth = yield* ChatGPTAuth.make(runtime, vault);
-    yield* startup(() => auth.load());
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     yield* startup(() => connections.load());
     const modelFailures = new ModelFailures();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     yield* startup(() => webSearch.load());
-    yield* releaseRuntimeResource(() => auth.cancel());
+    yield* Effect.addFinalizer(() => chatgpt.cancel);
     const database = yield* TheWoWDB.TheWoWDB;
     const storage = yield* Layer.build(
       MemoryRepository.layer.pipe(Layer.provideMerge(Sql.layer(databaseFile))),
@@ -688,6 +708,95 @@ export const makeServer = Effect.fn('Server.make')(
 function startup<A>(operation: () => Promise<A>) {
   return Effect.tryPromise({ try: operation, catch: (error) => error });
 }
+
+// Adapter for unmigrated consumers: `makeServer` and the eval bridge build it.
+// Remove it when the consumers of `PromiseChatGPTAuth` migrate.
+/**
+ * Runs `ChatGPTAuth` with `context` behind the Promise interface its
+ * unmigrated consumers take. Their checks see the rejections they saw before:
+ * a `ChatGPTAuthError` or vault error as is, a failed request as what `fetch`
+ * failed with, and an aborted `authorized` call as its signal's reason.
+ */
+export function promiseChatGPTAuth(
+  auth: ChatGPTAuth.ChatGPTAuth['Service'],
+  context: Context.Context<never>,
+): ChatGPTAuth.PromiseChatGPTAuth {
+  const runPromise = Effect.runPromiseWith(context);
+  const runSync = Effect.runSyncWith(context);
+  const runFork = Effect.runForkWith(context);
+  const run = <A>(
+    effect: Effect.Effect<
+      A,
+      ChatGPTAuth.ChatGPTAuthError | ChatGPTAuth.ChatGPTRequestError | SecretVault.SecretVaultError
+    >,
+    options?: Effect.RunOptions,
+  ) =>
+    runPromise(
+      effect.pipe(Effect.catchTag('ChatGPTRequestError', (error) => Effect.fail(error.cause))),
+      options,
+    );
+  const authorized = (url: string, init: ChatGPTAuth.ChatGPTRequestInit) => {
+    const { signal } = init;
+    const base = HttpClientRequest.make(init.method)(url, { headers: init.headers });
+    const request =
+      init.body === undefined
+        ? base
+        : HttpClientRequest.bodyText(
+            base,
+            init.body,
+            new Headers(init.headers).get('content-type') ?? undefined,
+          );
+    return run(
+      Effect.gen(function* () {
+        // The response body stays open until the caller's signal aborts or the body ends.
+        const scope = yield* Scope.make();
+        const release = () => {
+          runFork(Scope.close(scope, Exit.void));
+        };
+        signal?.addEventListener('abort', release, { once: true });
+        const response = yield* auth.authorized(request).pipe(
+          Scope.provide(scope),
+          Effect.onError(() => Scope.close(scope, Exit.void)),
+        );
+        const web = Option.getOrElse(
+          HttpClientResponse.toWeb(response),
+          () =>
+            new Response(Stream.toReadableStream(response.stream), {
+              status: response.status,
+              headers: response.headers,
+            }),
+        );
+        if (!web.body) {
+          release();
+          return web;
+        }
+        // Like a fetch body, it fails with the signal's reason when the signal aborts.
+        const body = web.body.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({ flush: release }),
+          signal ? { signal } : {},
+        );
+        return new Response(body, web);
+      }),
+      { signal },
+    ).catch((error: unknown) => {
+      throw signal?.aborted ? signal.reason : error;
+    });
+  };
+  return {
+    state: () => runSync(auth.state),
+    get pending() {
+      return runSync(auth.state).status === 'authorizing';
+    },
+    beginSignIn: (profileId, newAccount) => run(auth.beginSignIn({ profileId, newAccount })),
+    cancel: () => runPromise(auth.cancel),
+    select: (id) => run(auth.select(id)),
+    accessToken: () => run(auth.accessToken.pipe(Effect.map(Redacted.value))),
+    disconnect: () => run(auth.disconnect),
+    models: () => run(auth.models),
+    authorized,
+  };
+}
+// End of adapter.
 
 export function startServer(options: ServerOptions = {}) {
   const server = startServerEffect(options).pipe(

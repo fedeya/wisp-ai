@@ -12,7 +12,7 @@ import { databaseRequest } from '@wisp/agent/contract/database';
 import { wowheadQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
@@ -30,7 +30,7 @@ import { characterIdentity, conversationTitle } from '../chat/context.ts';
 interface AgentDependencies {
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
-  auth: ChatGPTAuth;
+  auth: PromiseChatGPTAuth;
   connections: ModelConnections;
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
