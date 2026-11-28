@@ -5,7 +5,7 @@ import { HttpClient } from 'effect/http';
 import { parseConnectionModel } from '@wisp/protocol/providers';
 import { resolveWebSearch } from '@wisp/protocol/search';
 import type { searchSetup, searchState, WebSearchInput } from '@wisp/protocol/search';
-import { AppConfig } from '../../app-config.ts';
+import { AppConfig } from '#/platform/config';
 import { ChatGPTAuth } from '#/auth';
 import { SecretVault } from '#/platform/secret-vault';
 import type { SecretVaultError } from '#/platform/secret-vault';
