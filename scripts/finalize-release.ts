@@ -6,6 +6,7 @@ import { newerNightly } from '@wisp/releases';
 import { Config, Console, Effect, FileSystem, Option, Path, Predicate, Schema } from 'effect';
 import { Command } from 'effect/cli';
 import { inherit, output } from './child-process.ts';
+import type { CommandFailed } from './child-process.ts';
 import { runScript } from './run-script.ts';
 
 export class FinalizeReleaseError extends Schema.TaggedError<FinalizeReleaseError>()(
@@ -25,6 +26,9 @@ const ReleaseAssets = Schema.fromJsonString(
 );
 
 const gh = (args: readonly string[]) => output('gh', args);
+
+/** What `gh release view` prints on stderr, whatever its version, for a tag with no release. */
+const isReleaseNotFound = (error: CommandFailed) => error.message.includes('release not found');
 const ghShown = (args: readonly string[]) => inherit('gh', args);
 
 /** Whether `candidate` is a later Nightly than `previous`; fails unless both are Nightly versions. */
@@ -37,13 +41,20 @@ const isNewerNightly = (candidate: string, previous: string) =>
       }),
   });
 
-/** Points the moving Nightly feed at this build unless it already has a newer one. */
-const moveNightlyFeed = Effect.fnUntraced(function* (version: string) {
+/**
+ * Points the moving Nightly feed at this build unless it already has a newer
+ * one. The feed is created only when gh says there is no such release; any
+ * other failure to read it, bad JSON included, fails the script.
+ */
+export const moveNightlyFeed = Effect.fnUntraced(function* (version: string) {
   // The moving feed is updated last. Installer URLs remain immutable versioned URLs.
-  const existing = yield* gh(['release', 'view', 'nightly', '--json', 'assets']).pipe(
-    Effect.flatMap(Schema.decodeEffect(ReleaseAssets)),
-    Effect.option,
+  const viewed = yield* gh(['release', 'view', 'nightly', '--json', 'assets']).pipe(
+    Effect.map(Option.some),
+    Effect.catchIf(isReleaseNotFound, () => Effect.succeed(Option.none<string>())),
   );
+  const existing = Option.isSome(viewed)
+    ? Option.some(yield* Schema.decodeEffect(ReleaseAssets)(viewed.value))
+    : Option.none();
   if (Option.isNone(existing)) {
     const sha = yield* Config.String('GITHUB_SHA');
     yield* ghShown([
@@ -118,4 +129,6 @@ const finalize = Command.make(
   }),
 ).pipe(Command.withDescription('Attach the updater manifest with its release notes'));
 
-finalize.pipe(Command.run({ version: '1.0.0' }), runScript);
+if (import.meta.main) {
+  finalize.pipe(Command.run({ version: '1.0.0' }), runScript);
+}
