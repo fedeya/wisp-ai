@@ -1,9 +1,19 @@
 import { test, expect, vi } from 'vitest';
-import { Deferred, Effect } from 'effect';
+import { it } from '@effect/vitest';
+import { Deferred, Effect, Latch, Layer } from 'effect';
+import type { EngineEvent, EngineResult, TurnInput } from '@wisp/agent/engine';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
-import { createTurnRunner } from '../src/agent/turn-runner.ts';
+import { SnapshotPublisher } from '../src/game/snapshot-publisher.ts';
+import { bridgeLogging } from '../src/logger.ts';
+import { ModelConnections } from '../src/models/connections.ts';
+import { ModelFailures } from '../src/models/model-failures.ts';
+import type { Chat } from '../src/chat/events.ts';
+import { CapabilitySettings } from '#/capabilities';
 import { initialSession, SessionState } from '#/session';
+import { UsageTelemetry } from '#/telemetry';
+import * as Turns from '#/turns';
+import type { TurnRequest } from '#/turns';
 import { current, sessionState } from './session-fixture.ts';
 import { unsavedCapabilities } from './capabilities/fixture.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
@@ -25,10 +35,12 @@ function fixture(
 ) {
   const database = new ApplicationDatabase('unused');
   const capabilities = unsavedCapabilities();
-  const cancel = vi.fn();
   const end = vi.fn(async (_session: string) => {});
-  const interrupt = vi.fn();
-  const run = vi.fn(async (..._args: unknown[]) => {});
+  // The turns the packets start, run, interrupt and cancel.
+  const start = vi.fn((_turn: TurnRequest) => Effect.void);
+  const run = vi.fn((_turn: TurnRequest) => Effect.void);
+  const interrupt = vi.fn((_chat: Chat) => Effect.void);
+  const cancel = vi.fn((_chat: Chat) => Effect.void);
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
   const receiveEffect = runBridgeEffect(
     createPacketReceiver({
@@ -36,7 +48,6 @@ function fixture(
       capabilitySettings: capabilities.settings,
       integrationState: capabilities.integrations,
       engine: { end },
-      cancel,
       models: { models: Effect.promise(() => models()) },
       routineStore: new RoutineStore(database),
       panelStore: new PanelStore(database),
@@ -44,8 +55,7 @@ function fixture(
       catalog: { refresh: Effect.void },
       setCapability: () => Effect.void,
       memorySnapshot: () => Effect.succeed({ status: 'available', entries: [] }),
-      run,
-      interrupt,
+      turns: { start, run, interrupt, cancel },
       runtime: 'unused',
       snapshot: { invalidate: Effect.void },
       ...overrides,
@@ -54,83 +64,97 @@ function fixture(
   const receive = (packet: Parameters<typeof receiveEffect>[0]) =>
     runBridgeEffect(receiveEffect(packet));
   const state = () => current(session);
-  return { state, receive, receiveEffect, cancel, end, interrupt, run, models };
+  return { state, receive, receiveEffect, cancel, end, interrupt, start, run, models };
 }
 
-test('Stop during first-turn model preparation prevents engine dispatch', async () => {
-  const chat = newChat('chat', 'one');
-  const session = sessionState({
-    ...initialSession([chat]),
-    activeTransport: 'one',
-    activeChat: chat.id,
-  });
-  const state = () => current(session);
-  let releasePreparation!: () => void;
-  const preparation = new Promise<void>((resolve) => {
-    releasePreparation = resolve;
-  });
-  const prepare = vi.fn(() => preparation);
-  const send = vi.fn(() => ({
-    events: (async function* () {})(),
-    result: Promise.resolve({ status: 'completed' as const }),
-  }));
-  const newSessionId = vi.fn(() => 'session');
-  const engine = { newSessionId, send, end: vi.fn(async () => {}) };
-  const capabilities = unsavedCapabilities();
-  const run = runBridgeEffect(
-    createTurnRunner({
-      engine,
-      models: {
-        prepare,
-        models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
-        complete: vi.fn(async () => 'Unused title'),
-      },
-      capabilitySettings: capabilities.turnCapabilities,
-      currentTransport: () => state().activeTransport,
-      activeChat: () => state().activeChat,
-      defaultModel: () => 'model',
-      isReady: () => true,
-      isStopping: () => false,
-      accountBusy: () => false,
-      isCurrent: (candidate) => state().chats.includes(candidate),
-    }).pipe(Effect.provideService(SessionState, session)),
-  );
-  const { receive } = fixture(
-    {
-      engine,
-      capabilitySettings: capabilities.settings,
-      integrationState: capabilities.integrations,
-      run,
-      interrupt: run.interrupt,
-      cancel: run.cancel,
-    },
-    session,
-  );
-  try {
-    receive(
-      gameEvent({
-        type: 'say',
-        session: 'one',
-        chat: chat.id,
-        text: 'Question',
-        seq: 1,
-        at: 1,
-      }),
+it.effect('Stop during first-turn model preparation prevents engine dispatch', () =>
+  Effect.gen(function* () {
+    const chat = newChat('chat', 'one');
+    const session = sessionState({
+      ...initialSession([chat]),
+      activeTransport: 'one',
+      activeChat: chat.id,
+    });
+    const preparing = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const prepare = vi.fn((_model: string) =>
+      Deferred.succeed(preparing, undefined).pipe(Effect.andThen(Deferred.await(release))),
     );
-    await vi.waitFor(() => expect(prepare).toHaveBeenCalledWith('model'));
+    const send = vi.fn((_session: string, _input: TurnInput, _signal: AbortSignal) => ({
+      events: (async function* (): AsyncGenerator<EngineEvent> {})(),
+      result: Promise.resolve<EngineResult>({ status: 'completed' }),
+    }));
+    const newSessionId = vi.fn(() => 'session');
+    const engine = { newSessionId, send, end: vi.fn(async (_session: string) => {}) };
+    const capabilities = unsavedCapabilities();
+    const turns = yield* Turns.make({
+      engine,
+      ready: yield* Latch.make(true),
+      stopping: yield* Latch.make(),
+      defaultModel: Effect.succeed('model'),
+      accountBusy: Effect.succeed(false),
+      modelFailures: new ModelFailures(),
+      isCustomMcpConnection: () => false,
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.succeed(SessionState, session),
+          Layer.mock(ModelConnections, {
+            prepare,
+            models: Effect.succeed([{ slug: 'model', displayName: 'Model', efforts: [] }]),
+            complete: () => Effect.succeed('Unused title'),
+            hasProvider: Effect.succeed(true),
+            provider: () => Effect.succeed(undefined),
+          }),
+          // Publishing would write the agent's capability file.
+          Layer.succeed(
+            CapabilitySettings,
+            CapabilitySettings.of({ ...capabilities.settings, publish: Effect.void }),
+          ),
+          Layer.mock(UsageTelemetry, {
+            chat: () => Effect.void,
+            toolObserver: () => Effect.succeed({ observe: () => Effect.void }),
+            usageObserver: Effect.succeed({
+              observe: () => Effect.void,
+              usage: Effect.succeed({
+                modelCalls: 0,
+                inputTokens: 0,
+                outputTokens: 0,
+                cacheReadTokens: 0,
+              }),
+            }),
+          }),
+          Layer.mock(SnapshotPublisher, { flush: Effect.void, invalidate: Effect.void }),
+        ),
+      ),
+    );
+    const { receiveEffect } = fixture(
+      {
+        engine,
+        capabilitySettings: capabilities.settings,
+        integrationState: capabilities.integrations,
+        turns,
+      },
+      session,
+    );
+    yield* receiveEffect(
+      gameEvent({ type: 'say', session: 'one', chat: chat.id, text: 'Question', seq: 1, at: 1 }),
+    );
+    yield* Deferred.await(preparing);
+    expect(prepare).toHaveBeenCalledWith('model');
     expect(chat.status).toBe('working');
     expect(chat.agentSession).toBeUndefined();
     expect(newSessionId).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
-    receive(gameEvent({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }));
-  } finally {
-    releasePreparation();
-    await run.drain();
-  }
-  expect(send).not.toHaveBeenCalled();
-  expect(newSessionId).not.toHaveBeenCalled();
-  expect(chat.status).toBe('cancelled');
-});
+    yield* receiveEffect(
+      gameEvent({ type: 'cancel', session: 'one', chat: chat.id, seq: 2, at: 2 }),
+    );
+    yield* Deferred.succeed(release, undefined);
+    expect(send).not.toHaveBeenCalled();
+    expect(newSessionId).not.toHaveBeenCalled();
+    expect(chat.status).toBe('cancelled');
+  }).pipe(Effect.provide(bridgeLogging)),
+);
 
 test('Stop cancels the turn in the bridge and keeps its session', () => {
   const f = fixture();
@@ -174,13 +198,13 @@ test('a player message starts a turn with the original chat message ID', () => {
     messageId: 'message',
   });
   f.receive(packet);
-  expect(f.run).toHaveBeenCalledTimes(1);
-  expect(f.run).toHaveBeenCalledWith(
-    expect.objectContaining({ id: 'old' }),
-    'Hello',
-    'message',
-    undefined,
-  );
+  expect(f.start).toHaveBeenCalledTimes(1);
+  expect(f.start).toHaveBeenCalledWith({
+    chat: expect.objectContaining({ id: 'old' }),
+    text: 'Hello',
+    messageId: 'message',
+    context: undefined,
+  });
 });
 
 test('quest sync primes turn context but a new addon session cannot reuse its revision', () => {
@@ -215,7 +239,7 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
       context: { questRevision: 1, sections: { character } },
     }),
   );
-  expect(f.run.mock.calls.at(-1)?.[3]).toMatchObject({ sections: { quests } });
+  expect(f.start.mock.calls.at(-1)?.[0].context).toMatchObject({ sections: { quests } });
   f.receive(gameEvent({ type: 'hello', session: 'two', seq: 1, at: 3 }));
   f.receive(
     gameEvent({
@@ -228,9 +252,9 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
       context: { questRevision: 1, sections: { character } },
     }),
   );
-  expect(f.run.mock.calls.at(-1)?.[3]).toMatchObject({ sections: { character } });
-  const context = f.run.mock.calls.at(-1)?.[3] as { sections: { quests?: unknown } } | undefined;
-  expect(context?.sections.quests).toBeUndefined();
+  const context = f.start.mock.calls.at(-1)?.[0].context;
+  expect(context).toMatchObject({ sections: { character } });
+  expect(context).not.toMatchObject({ sections: { quests: expect.anything() } });
 });
 
 test("changing models keeps the chat's agent session and its visible conversation", async () => {
@@ -285,7 +309,7 @@ test('reload interrupts old turns and clears character-specific commands', async
   expect(f.state().panelCommand).toBeUndefined();
   expect(f.state().inlineChat).toBe('');
   f.receive(gameEvent({ type: 'say', session: 'one', chat: 'old', text: 'stale', seq: 2, at: 2 }));
-  expect(f.run).not.toHaveBeenCalled();
+  expect(f.start).not.toHaveBeenCalled();
 });
 
 test('deleting an active conversation prevents delayed messages from recreating it', async () => {
@@ -294,7 +318,7 @@ test('deleting an active conversation prevents delayed messages from recreating 
   f.receive(gameEvent({ type: 'say', session: 'one', chat: 'old', text: 'late', seq: 3, at: 3 }));
   expect(f.state().chats).toEqual([]);
   expect(f.end).toHaveBeenCalledTimes(1);
-  expect(f.run).not.toHaveBeenCalled();
+  expect(f.start).not.toHaveBeenCalled();
 });
 
 test('retry reuses the failed question and ignores retries while working', () => {
@@ -303,10 +327,15 @@ test('retry reuses the failed question and ignores retries while working', () =>
   chat.messages.push({ role: 'user', id: 'question', text: 'Which quest?' });
   chat.status = 'error';
   f.receive(gameEvent({ type: 'retry', chat: 'old', session: 'one', seq: 11, at: 1 }));
-  expect(f.run).toHaveBeenCalledWith(chat, 'Which quest?', 'question', undefined);
+  expect(f.start).toHaveBeenCalledWith({
+    chat,
+    text: 'Which quest?',
+    messageId: 'question',
+    context: undefined,
+  });
   chat.status = 'working';
   f.receive(gameEvent({ type: 'retry', chat: 'old', session: 'one', seq: 12, at: 1 }));
-  expect(f.run).toHaveBeenCalledTimes(1);
+  expect(f.start).toHaveBeenCalledTimes(1);
 });
 
 test('a packet waits for character adoption before handling its routine event', async () => {

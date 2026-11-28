@@ -6,6 +6,8 @@ import { layer as SessionStateLayer } from '#/session';
 import { runBridgeEffect } from './capture-logs.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { ReplyProjection } from '../src/reply/reply-stream.ts';
+import type { Chat } from '../src/chat/events.ts';
+import { PresentationFailed } from '#/turns';
 
 test('presentation RPC authenticates, scopes the active character and reports bridge acceptance errors', async () => {
   const chat = newChat('presentation', 'addon');
@@ -13,8 +15,12 @@ test('presentation RPC authenticates, scopes the active character and reports br
   chat.agentSession = 'eve';
   let transport = 'addon';
   const projection = new ReplyProjection();
-  const presentReply = vi.fn((_chat, callId, input, signal) =>
-    projection.acceptPresentation(callId, input, signal),
+  const presentReply = vi.fn((_chat: Chat, callId: string, input: unknown) =>
+    Effect.tryPromise({
+      try: (signal) => projection.acceptPresentation(callId, input, signal),
+      catch: (error) =>
+        new PresentationFailed({ message: error instanceof Error ? error.message : String(error) }),
+    }),
   );
   const server = createServer(
     runBridgeEffect(

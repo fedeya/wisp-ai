@@ -8,7 +8,6 @@ import { z } from 'zod';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { SessionState, type MemoryView, type Session } from '#/session';
-import type { Chat } from '../chat/events.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
 import type { CapabilitySettings, IntegrationState } from '#/capabilities';
 import type { ModelCatalog } from '../models/catalog.ts';
@@ -30,6 +29,7 @@ import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '#/telemetry';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
 import type { SnapshotPublisher } from './snapshot-publisher.ts';
+import type { TurnRunner } from '#/turns';
 import { Effect, Option, Schema } from 'effect';
 // The addon's routine packets are strict, like the protocol schemas.
 const decodeRoutineEvent = Schema.decodeUnknownOption(routineEvent, rejectUnknownKeys);
@@ -47,10 +47,8 @@ interface ReceiverDependencies {
   catalog: Pick<ModelCatalog['Service'], 'refresh'>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
-  run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
-  interrupt: (chat: Chat) => void;
-  /** Stops a turn the player cancelled. */
-  cancel?: (chat: Chat) => void;
+  /** Runs the chats' turns; a cancel packet stops a turn as cancelled. */
+  turns: Pick<TurnRunner['Service'], 'start' | 'run' | 'interrupt' | 'cancel'>;
   runtime: string;
   /** Told when routines or capabilities the snapshot shows change. */
   snapshot: Pick<SnapshotPublisher['Service'], 'invalidate'>;
@@ -80,8 +78,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     catalog,
     setCapability,
     memorySnapshot,
-    run,
-    interrupt,
+    turns,
     runtime,
     snapshot,
   } = deps;
@@ -127,7 +124,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       for (const chat of before.chats.filter(
         (chat) => chat.owner === before.activeTransport && isWorking(chat),
       )) {
-        interrupt(chat);
+        yield* turns.interrupt(chat);
         settleTurn(chat, 'interrupted');
       }
       const transportSession = packet.session;
@@ -394,16 +391,17 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       }
       // Told before the turn starts, which tells them again in the same go.
       yield* session.update((state) => ({ ...state, inlineChat: id }));
-      void run(
+      yield* turns.start({
         chat,
-        node.action.prompt +
+        text:
+          node.action.prompt +
           '\n\nPersistent panel: ' +
           panel.id +
           '\nSelected values: ' +
           JSON.stringify(values),
-        packet.messageId,
-        packet.context,
-      );
+        messageId: packet.messageId,
+        context: packet.context,
+      });
       return;
     }
     if (packet.type === 'ui_action') {
@@ -422,11 +420,12 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       void (async () => {
         if (node.action.kind === 'ask') {
           const values = selectionValues(message!.ui || [], packet.values);
-          await run(
-            chat,
-            node.action.prompt + '\n\nSelected panel values: ' + JSON.stringify(values),
-            undefined,
-            packet.context,
+          await runPromise(
+            turns.run({
+              chat,
+              text: node.action.prompt + '\n\nSelected panel values: ' + JSON.stringify(values),
+              context: packet.context,
+            }),
           );
         } else {
           const undo = node.action.kind === 'undo_settings',
@@ -522,7 +521,12 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       const id = chat.id;
       // Told before the turn starts, which tells them again in the same go.
       yield* session.update((state) => ({ ...state, inlineChat: id }));
-      void run(chat, packet.text, packet.messageId, packet.context);
+      yield* turns.start({
+        chat,
+        text: packet.text,
+        messageId: packet.messageId,
+        context: packet.context,
+      });
       return;
     }
     if (packet.type === 'promote_inline' && packet.chat) {
@@ -621,7 +625,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       const deleted = packet.chat;
       const removed = chatFor(yield* session.get, deleted);
       if (removed) {
-        interrupt(removed);
+        yield* turns.interrupt(removed);
       }
       const nextChat = packet.nextChat;
       yield* session.update((state) => {
@@ -672,14 +676,24 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           chat.proactive = false;
           chat.dismissed = true;
         }
-        void run(chat, packet.text, packet.messageId, packet.context);
+        yield* turns.start({
+          chat,
+          text: packet.text,
+          messageId: packet.messageId,
+          context: packet.context,
+        });
       }
     }
     if (packet.type === 'retry') {
       const chat = chatFor(yield* session.get, chatId);
       const message = chat?.messages.findLast((entry) => entry.role === 'user');
       if (chat?.status === 'error' && message?.id) {
-        void run(chat, message.text, message.id, packet.context);
+        yield* turns.start({
+          chat,
+          text: message.text,
+          messageId: message.id,
+          context: packet.context,
+        });
       }
     }
     if (packet.type === 'select') {
@@ -693,7 +707,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.type === 'cancel') {
       const chat = chatFor(yield* session.get, chatId);
       if (chat) {
-        (deps.cancel ?? interrupt)(chat);
+        yield* turns.cancel(chat);
       }
     }
     // Tells the subscribers what this packet staged and edited in its chats.

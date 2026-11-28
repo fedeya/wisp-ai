@@ -5,7 +5,9 @@ import {
   Effect,
   Exit,
   Fiber,
+  FiberHandle,
   FileSystem,
+  Latch,
   Layer,
   Option,
   Redacted,
@@ -20,7 +22,7 @@ import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
 import * as UsageTelemetry from './telemetry/index.ts';
 import { ModelFailures } from './models/model-failures.ts';
-import { startRoutineScheduler } from './routines/routine-scheduler.ts';
+import * as RoutineScheduler from './routines/scheduler.ts';
 import { createPacketReceiver } from './game/packet-receiver.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
 import { readCharacterNames } from './chat/character-keys.ts';
@@ -39,8 +41,7 @@ import type { TransportConnection } from './game/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
 import { applicationDatabaseFile } from '@wisp/db/application-file';
 import { ApplicationDatabase } from './application-database.ts';
-import { createTurnRunner } from './agent/turn-runner.ts';
-import type { TurnTelemetry } from './agent/turn-runner.ts';
+import * as Turns from './turns/index.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogging } from './logger.ts';
 import * as MemoryRepository from './memory/repository.ts';
@@ -183,8 +184,12 @@ export const makeServer = Effect.fn('Server.make')(
     const context = yield* Effect.context<never>();
     const runFork = Effect.runForkWith(context);
     const runPromise = Effect.runPromiseWith(context);
-    // Checked by everything that starts work, so nothing new begins while resources close.
-    let shutdownRequested = false;
+    // Opens when the scope starts closing (its first finalizer, registered last
+    // below) or when the desktop asks Wisp to stop. Everything that starts work
+    // checks it, so nothing new begins while resources close.
+    const stopping = yield* Latch.make();
+    // Opens once, when the agent engine has loaded.
+    const engineReady = yield* Latch.make();
     // Migrated: the unmigrated consumers below receive plain values read from it.
     const appConfig = yield* AppConfig.AppConfig;
     const { paths } = appConfig;
@@ -224,14 +229,12 @@ export const makeServer = Effect.fn('Server.make')(
     const auth = promiseChatGPTAuth(chatgpt, context);
     const modelConnections = yield* ModelConnections.ModelConnections;
     const modelCatalog = yield* ModelCatalog.ModelCatalog;
-    // For the turn runner and the agent server.
+    // For the agent server.
     const connections = promiseModelConnections(modelConnections, context);
-    // For the synchronous readers: the turn runner and the desktop status.
+    // For the synchronous readers: the desktop status.
     const connectionReads = {
       list: () => runSync(modelConnections.list),
-      hasProvider: () => runSync(modelConnections.hasProvider),
       connected: (model: string) => runSync(modelConnections.connected(model)),
-      provider: (model: string) => runSync(modelConnections.provider(model)),
     };
     const telemetry = yield* UsageTelemetry.UsageTelemetry;
     const searchTelemetry = {
@@ -239,27 +242,6 @@ export const makeServer = Effect.fn('Server.make')(
         runFork(telemetry.webSearch(search));
       },
     };
-    // The turn runner observes stream events synchronously.
-    const turnTelemetry = (
-      isCustomMcpConnection: (connection: string) => boolean,
-    ): TurnTelemetry => ({
-      chat: (mode, outcome, duration, errorCode, firstTextMs, usage, details = {}) => {
-        runFork(
-          telemetry.chat({ mode, outcome, duration, errorCode, firstTextMs, usage, ...details }),
-        );
-      },
-      toolObserver: () => {
-        const observer = runSync(telemetry.toolObserver(isCustomMcpConnection));
-        return (event) => runSync(observer.observe(event));
-      },
-      usageObserver: () => {
-        const observer = runSync(telemetry.usageObserver);
-        return {
-          observe: (event) => runSync(observer.observe(event)),
-          usage: () => runSync(observer.usage),
-        };
-      },
-    });
     const features = yield* Features.Features;
     // Rejects as `saveSettings` does when the override cannot be saved.
     const setFeature = (id: string, enabled: boolean | null) =>
@@ -271,21 +253,17 @@ export const makeServer = Effect.fn('Server.make')(
     const capabilitySettings = yield* Capabilities.CapabilitySettings;
     const integrationState = yield* Capabilities.IntegrationState;
     // For the synchronous readers of the capabilities: the agent server, the
-    // agent's game access, the routine scheduler and the status and snapshot.
+    // agent's game access and the status and snapshot.
     const capabilityReads = {
       enabled: (id: string) => runSync(capabilitySettings.enabled(id)),
       snapshot: () => runSync(capabilitySettings.snapshot),
     };
-    // The turn runner also publishes them before each turn.
-    const turnCapabilities = {
-      ...capabilityReads,
-      publish: () => runPromise(capabilitySettings.publish),
-    };
     const sessionState = yield* SessionState.SessionState;
-    // For the synchronous readers of the session: the turn runner, the routine
-    // scheduler, the agent server, the agent's game access and memory reads,
-    // chat persistence and the status.
+    // For the synchronous readers of the session: the agent server, the
+    // agent's game access and memory reads, chat persistence and the status.
     const session = () => runSync(sessionState.get);
+    // For the unmigrated consumers that check whether Wisp is stopping.
+    const isStopping = () => stopping.isOpen();
     // End of adapters.
     const { mcpConfig } = yield* settings.get;
     const mcpFile = mcpConfig
@@ -374,7 +352,7 @@ export const makeServer = Effect.fn('Server.make')(
     yield* sessionState.changes.pipe(
       Stream.runForEachArray(() =>
         Effect.sync(() => {
-          if (!shutdownRequested) {
+          if (!isStopping()) {
             chatStore.schedule(() => session().chats);
           }
         }),
@@ -389,7 +367,7 @@ export const makeServer = Effect.fn('Server.make')(
     const defaultModel = () =>
       resolveDefaultModel(runSync(settings.get).model, session().modelCatalog);
     const accounts = createAccountOperations({
-      isStopping: () => shutdownRequested,
+      isStopping,
       hasActiveTurn: () => session().chats.some((c) => c.status === 'working'),
       afterOperation: refreshModelCatalog,
     });
@@ -400,7 +378,7 @@ export const makeServer = Effect.fn('Server.make')(
       inputs: Effect.sync(() => {
         const { currentCharacterKey: character, modelCatalog: catalog } = session();
         return {
-          connected: engineReady,
+          connected: engineReady.isOpen(),
           bridgeVersion,
           expectedAddonVersion,
           appUpdateVersion,
@@ -442,7 +420,6 @@ export const makeServer = Effect.fn('Server.make')(
       capabilities: capabilitySettings,
       snapshot: memorySnapshot,
     });
-    let engineReady = false;
     const gameAccess = AgentGameAccess.make({
       getChats: () => session().chats,
       currentTransport: () => session().activeTransport,
@@ -504,39 +481,22 @@ export const makeServer = Effect.fn('Server.make')(
       Stream.runForEach(() => featuresChanged),
       Effect.forkScoped({ startImmediately: true }),
     );
-    const run = yield* createTurnRunner({
-      // Tools of the MCP connections the player added stay generic.
-      telemetry: turnTelemetry((name) =>
-        Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
-      ),
-      modelFailures,
-      modelProvider: connectionReads.provider,
+    // Closing interrupts the turns still running and waits for them and for the
+    // titles being generated, before the publisher stops and the chats flush.
+    const turns = yield* Turns.make({
       engine,
-      models: connections,
-      capabilitySettings: turnCapabilities,
-      currentTransport: () => session().activeTransport,
-      activeChat: () => session().activeChat,
-      defaultModel,
-      isReady: () => engineReady,
-      isStopping: () => shutdownRequested,
-      accountBusy: accounts.busy,
-      hasProvider: connectionReads.hasProvider,
-      isCurrent: (chat) => session().chats.includes(chat),
-      snapshot: publisher,
-    });
-    yield* releaseRuntimeResource(async () => {
-      session().chats.forEach(run.interrupt);
-      await run.drain();
-    });
-    const stopRoutineScheduler = yield* startRoutineScheduler({
-      session,
-      routineStore,
-      capabilitySettings: capabilityReads,
-      run,
-      isStopping: () => shutdownRequested,
-      isReady: () => engineReady,
-    });
-    yield* releaseRuntimeResource(stopRoutineScheduler);
+      ready: engineReady,
+      stopping,
+      defaultModel: Effect.sync(defaultModel),
+      accountBusy: Effect.sync(accounts.busy),
+      modelFailures,
+      // Tools of the MCP connections the player added stay generic.
+      isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
+    }).pipe(Effect.provideService(SnapshotPublisher.SnapshotPublisher, publisher));
+    // Closing stops the ticks once a routine that is running has finished.
+    yield* RoutineScheduler.start(routineStore).pipe(
+      Effect.provideService(Turns.TurnRunner, turns),
+    );
     const adoptCharacter = yield* createCharacterAdoption({ db: sql, panelStore });
     const receivePacket = yield* createPacketReceiver({
       telemetry,
@@ -551,10 +511,8 @@ export const makeServer = Effect.fn('Server.make')(
       catalog: modelCatalog,
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
-      run,
+      turns,
       adoptCharacter,
-      interrupt: run.interrupt,
-      cancel: run.cancel,
       runtime,
       snapshot: publisher,
     });
@@ -580,7 +538,7 @@ export const makeServer = Effect.fn('Server.make')(
       capabilitySettings,
       receive,
       saveWow: (wow) => saveSettings({ wow }),
-      isStopping: () => shutdownRequested,
+      isStopping,
     }).pipe(Effect.provide(wowPlatform));
     yield* Effect.addFinalizer(() => transport.serialize(transport.disconnect));
     const server = createServer(
@@ -600,7 +558,7 @@ export const makeServer = Effect.fn('Server.make')(
         currentTransport: () => session().activeTransport,
         defaultModel,
         readSimulationCharacter,
-        presentReply: run.present,
+        presentReply: turns.present,
         snapshot: publisher,
       }),
     );
@@ -642,8 +600,7 @@ export const makeServer = Effect.fn('Server.make')(
     );
     const engineStartup = engine.preload().then(
       () => {
-        engineReady = true;
-        runFork(publisher.invalidate);
+        runFork(engineReady.open.pipe(Effect.andThen(publisher.invalidate)));
       },
       (error: unknown) =>
         runFork(
@@ -655,7 +612,7 @@ export const makeServer = Effect.fn('Server.make')(
     function desktopStatus(): Status {
       const characters = readCharacterNames(applicationDatabase.orm);
       return {
-        ready: engineReady,
+        ready: engineReady.isOpen(),
         gameConnected: runSync(transport.gameConnected),
         auth: auth.state(),
         connections: connectionReads.list(),
@@ -679,7 +636,8 @@ export const makeServer = Effect.fn('Server.make')(
         features: runSync(features.state),
       };
     }
-    let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
+    // The stop the desktop asked for, once its response has had time to leave.
+    const stopRequest = yield* FiberHandle.make();
     const desktopApp = yield* createDesktopApp({
       auth,
       connections: modelConnections,
@@ -696,7 +654,7 @@ export const makeServer = Effect.fn('Server.make')(
       setWowTransport: (input) =>
         transport.serialize(
           Effect.gen(function* () {
-            if (shutdownRequested) return yield* Effect.fail(Error('Wisp is stopping.'));
+            if (isStopping()) return yield* Effect.fail(Error('Wisp is stopping.'));
             if (input.action === 'pause') {
               if ((yield* sessionState.get).chats.some((chat) => chat.status === 'working')) {
                 return yield* Effect.fail(
@@ -718,16 +676,25 @@ export const makeServer = Effect.fn('Server.make')(
       },
       getStatus: desktopStatus,
       updateModel: async (model) => {
-        if (shutdownRequested) {
+        if (isStopping()) {
           throw Error('Wisp is stopping.');
         }
         await saveSettings({ model });
       },
-      requestStop: () => {
-        shutdownRequested = true;
-        // Let the desktop response reach the caller before we close its listener.
-        desktopStopTimer ??= setTimeout(requestStop, 200);
-      },
+      requestStop: () =>
+        runSync(
+          stopping.open.pipe(
+            // Let the desktop response reach the caller before we close its listener.
+            Effect.andThen(
+              FiberHandle.run(
+                stopRequest,
+                Effect.sleep('200 millis').pipe(Effect.andThen(Effect.sync(requestStop))),
+                { onlyIfMissing: true },
+              ),
+            ),
+            Effect.asVoid,
+          ),
+        ),
     });
     const desktopServer = yield* startup(() =>
       startDesktopServer(runtime, desktopApp, options.desktopPort),
@@ -759,12 +726,14 @@ export const makeServer = Effect.fn('Server.make')(
       }),
     );
     yield* releaseRuntimeResource(() => clearInterval(publish));
-    // Prevent new work before draining resources on shutdown.
+    // The scope starts closing: prevent new work before draining resources.
     yield* Effect.addFinalizer(() =>
-      Effect.sync(() => {
-        shutdownRequested = true;
-        clearTimeout(desktopStopTimer);
-        session().chats.forEach(run.interrupt);
+      Effect.gen(function* () {
+        yield* stopping.open;
+        yield* FiberHandle.clear(stopRequest);
+        yield* Effect.forEach((yield* sessionState.get).chats, turns.interrupt, {
+          discard: true,
+        });
       }),
     );
     yield* startup(() => engineStartup);
