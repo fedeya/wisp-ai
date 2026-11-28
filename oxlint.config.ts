@@ -82,13 +82,19 @@ export default defineConfig({
         'no-restricted-imports': [
           'error',
           {
+            paths: effectRestrictedImports.paths,
             patterns: [
-              '@wisp/server',
-              '@wisp/server/*',
-              '@wisp/agent',
-              '@wisp/agent/*',
-              '@wisp/desktop',
-              '@wisp/desktop/*',
+              ...effectRestrictedImports.patterns,
+              {
+                group: [
+                  '@wisp/server',
+                  '@wisp/server/*',
+                  '@wisp/agent',
+                  '@wisp/agent/*',
+                  '@wisp/desktop',
+                  '@wisp/desktop/*',
+                ],
+              },
             ],
           },
         ],
