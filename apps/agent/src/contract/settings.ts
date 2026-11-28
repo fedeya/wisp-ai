@@ -1,16 +1,23 @@
+import { Schema } from 'effect';
 import { z } from 'zod';
-export const settingsRead = z.object({
-  sections: z
-    .array(z.enum(['options', 'addons', 'action_bars', 'keybindings']))
-    .min(1)
-    .max(4)
-    .default(['options']),
-  provider: z.enum(['all', 'game', 'ace']).default('all'),
-  addon: z.string().min(1).max(120).optional(),
-  query: z.string().min(1).max(100).optional(),
-  ids: z.array(z.string().min(1).max(400)).max(30).default([]),
-  offset: z.number().int().min(0).max(10000).default(0),
-  limit: z.number().int().min(1).max(60).default(30),
+import { IntBetween, LimitedString, withDefault } from './tool-inputs.ts';
+
+// The read is an inspection and decodes with Schema; the update and undo are
+// game actions, still zod until their family moves.
+export const settingsRead = Schema.Struct({
+  sections: withDefault(
+    Schema.Array(Schema.Literals(['options', 'addons', 'action_bars', 'keybindings'])).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(4),
+    ),
+    () => ['options'] as const,
+  ),
+  provider: withDefault(Schema.Literals(['all', 'game', 'ace']), () => 'all' as const),
+  addon: Schema.optionalKey(LimitedString(1, 120)),
+  query: Schema.optionalKey(LimitedString(1, 100)),
+  ids: withDefault(Schema.Array(LimitedString(1, 400)).check(Schema.isMaxLength(30)), () => []),
+  offset: withDefault(IntBetween(0, 10000), () => 0),
+  limit: withDefault(IntBetween(1, 60), () => 30),
 });
 export const settingValue = z.union([z.boolean(), z.number().finite(), z.string().max(1000)]);
 export const settingsUpdate = z.discriminatedUnion('operation', [

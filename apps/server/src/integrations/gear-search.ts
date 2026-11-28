@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import {
   typelessArmorSlots,
   type gearSearchInspectionSchema,
@@ -10,7 +9,7 @@ import type { GameInspection, InspectionResult } from '@wisp/agent/game-access';
 // slot/type listing checked so far (all under 100 per quality) complete.
 const PAGE = 100;
 
-export type GearSearch = z.output<typeof gearSearchInspectionSchema>;
+export type GearSearch = typeof gearSearchInspectionSchema.Type;
 
 interface Category {
   class: string;

@@ -1,4 +1,5 @@
-import { defineTool } from '@wisp/agent/tool';
+import { defineTool, effectToolInput } from '@wisp/agent/tool';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { armorSearchInput } from '../../contract/game-inspection.ts';
 import { runGame } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
@@ -8,7 +9,10 @@ export default enabledTool(
     deferred: false,
     description:
       'Lists every armor, cloak, ring, necklace or trinket for one slot from the Forever game-file catalog (Everloot) that the character can equip by required level (or the given range), read live from the game with name, quality, item level, required level, stats and raw stat differences against the weakest matching equipped slot. Give the armor type of the character for body slots. Returns all matches ordered by item level gain; choosing among them is yours. Catalog entries are unconfirmed game-file data: confirm a source before recommending. Not stat weights or DPS; loadingIds were not cached yet.',
-    inputSchema: armorSearchInput,
+    inputSchema: effectToolInput(armorSearchInput, {
+      parseOptions: rejectUnknownKeys,
+      layout: 'zod',
+    }),
     label: { start: () => 'Searching armor', complete: () => 'Searched armor' },
     execute: async (args, ctx) =>
       runGame(ctx, (game) => game.searchArmor(ctx.session.id, args), 60_000),
