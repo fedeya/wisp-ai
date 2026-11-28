@@ -1,5 +1,5 @@
 // @effect-migrated
-import { Config, Context, Effect, Layer, Option, Schema, Stream } from 'effect';
+import { Config, Context, Effect, Layer, Option, Schedule, Schema, Stream } from 'effect';
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
 
 /** The part of a GitHub release the release scripts read. */
@@ -33,13 +33,17 @@ const failed = (cause: { readonly message: string }) =>
 
 /**
  * Lists releases through the GitHub API, signed in with `GH_TOKEN` when it is
- * set. A page is requested only when the one before it was read.
+ * set, trying each page up to three times when GitHub fails transiently. A
+ * page is requested only when the one before it was read.
  */
 export const layer = Layer.effect(
   GitHubReleases,
   Effect.gen(function* () {
     const token = yield* Config.option(Config.Redacted('GH_TOKEN'));
     const client = (yield* HttpClient.HttpClient).pipe(
+      // Network errors, 408, 429 and 5xx get two more tries, 500 ms then 1 s
+      // apart (a `Retry-After` header lengthens the wait); anything else fails at once.
+      HttpClient.retryTransient({ schedule: Schedule.exponential('500 millis'), times: 2 }),
       HttpClient.mapRequest((request) => {
         const accepting = request.pipe(
           HttpClientRequest.setHeader('Accept', 'application/vnd.github+json'),
