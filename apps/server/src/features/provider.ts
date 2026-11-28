@@ -55,9 +55,9 @@ export class ChannelFeatureProvider implements Provider {
         errorMessage: `Unknown feature flag: ${flagKey}`,
       };
     }
-    if (Object.hasOwn(this.overrides, flagKey)) {
-      const value = this.overrides[flagKey];
-      return { value, variant: value ? 'on' : 'off', reason: OVERRIDE_REASON };
+    const override = Object.hasOwn(this.overrides, flagKey) ? this.overrides[flagKey] : undefined;
+    if (override !== undefined) {
+      return { value: override, variant: override ? 'on' : 'off', reason: OVERRIDE_REASON };
     }
     if (!isChannel(context.channel)) {
       return {

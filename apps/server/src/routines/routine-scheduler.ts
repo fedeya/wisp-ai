@@ -1,7 +1,6 @@
 import type { SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
 import type { RoutineStore } from './routine-store.ts';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { newChat } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import { endedOnUsageLimit } from '../agent/turn-runner.ts';
@@ -10,7 +9,7 @@ import { Effect } from 'effect';
 interface SchedulerDependencies {
   state: SessionState;
   routineStore: RoutineStore;
-  capabilitySettings: CapabilitySettings;
+  capabilitySettings: { enabled: (id: string) => boolean };
   isStopping: () => boolean;
   isReady: () => boolean;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;

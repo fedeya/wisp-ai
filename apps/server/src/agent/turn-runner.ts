@@ -10,7 +10,7 @@ import { ChatGPTAuthError } from '../auth/index.ts';
 import { safeErrorMessage } from '@wisp/agent/contract/model-errors';
 import { errorMessage } from '../errors.ts';
 import { Effect } from 'effect';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
+import type { CapabilityView } from '@wisp/protocol/capabilities';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import type { ChatErrorCode, ChatMode, ChatOutcome, TurnUsage } from '#/telemetry';
@@ -95,7 +95,12 @@ interface TurnDependencies {
   telemetry?: TurnTelemetry;
   engine: AgentEngine;
   models: ModelCatalog;
-  capabilitySettings: Pick<CapabilitySettings, 'publish' | 'enabled' | 'snapshot'>;
+  /** Published to the agent before each turn, which then reads them. */
+  capabilitySettings: {
+    publish: () => Promise<void>;
+    enabled: (id: string) => boolean;
+    snapshot: () => CapabilityView[];
+  };
   currentTransport: () => string;
   activeChat: () => string;
   defaultModel: () => string;

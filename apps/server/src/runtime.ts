@@ -47,8 +47,7 @@ import * as MemoryRepository from './memory/repository.ts';
 import * as AgentMemoryAccess from './memory/agent-access.ts';
 import * as Sql from '@wisp/db/sql-database';
 import { importProductData } from './migrations/product-json.ts';
-import { IntegrationState } from './integrations/integration-state.ts';
-import { CapabilitySettings } from './integrations/capabilities.ts';
+import * as Capabilities from './capabilities/index.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
@@ -76,7 +75,7 @@ import { addonVersionFromToc } from './game/addon-version.ts';
 import * as Features from './features/index.ts';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import * as Agent from '@wisp/agent/engine';
-import * as Capabilities from '@wisp/agent/capabilities';
+import * as AgentCapabilities from '@wisp/agent/capabilities';
 import * as AgentMcp from '@wisp/agent/mcp-tools';
 import * as Game from '@wisp/agent/game-access';
 import * as Memory from '@wisp/agent/memory';
@@ -91,6 +90,10 @@ const settingsLayer = Settings.layer.pipe(
 );
 const featuresLayer = Features.layer.pipe(
   Layer.provide([AppConfig.layer, appVersion, settingsLayer, NodeCrypto.layerSecureRandom]),
+);
+// One CapabilitySettings for the server and the integration state it records.
+const capabilitySettingsLayer = Capabilities.settingsLayer.pipe(
+  Layer.provide([AppConfig.layer, wowPlatform, featuresLayer, NodeCrypto.layerSecureRandom]),
 );
 
 /**
@@ -122,6 +125,8 @@ export const ServerServices = Layer.mergeAll(
   UsageTelemetry.layer.pipe(
     Layer.provide([AppConfig.layer, appVersion, wowPlatform, featuresLayer]),
   ),
+  capabilitySettingsLayer,
+  Capabilities.integrationsLayer.pipe(Layer.provide(capabilitySettingsLayer)),
 );
 
 /** The migrated services; `main.ts` and `startServer` provide it. */
@@ -238,6 +243,19 @@ export const makeServer = Effect.fn('Server.make')(
           .set(id, enabled)
           .pipe(Effect.catchTag('PlatformError', (error) => Effect.fail(error.cause ?? error))),
       );
+    const capabilitySettings = yield* Capabilities.CapabilitySettings;
+    const integrationState = yield* Capabilities.IntegrationState;
+    // For the synchronous readers of the capabilities: the agent server, the
+    // agent's game access, the routine scheduler and the status and snapshot.
+    const capabilityReads = {
+      enabled: (id: string) => runSync(capabilitySettings.enabled(id)),
+      snapshot: () => runSync(capabilitySettings.snapshot),
+    };
+    // The turn runner also publishes them before each turn.
+    const turnCapabilities = {
+      ...capabilityReads,
+      publish: () => runPromise(capabilitySettings.publish),
+    };
     // End of adapters.
     const { mcpConfig } = yield* settings.get;
     const mcpFile = mcpConfig
@@ -295,21 +313,18 @@ export const makeServer = Effect.fn('Server.make')(
     yield* startup(() => panelStore.load());
     const routineStore = new RoutineStore(applicationDatabase);
     yield* startup(() => routineStore.load());
-    const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
-    yield* startup(() => capabilitySettings.load());
-    capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
-    capabilitySettings.features = runSync(features.values);
-    const integrationState = new IntegrationState(capabilitySettings);
     const simulatorAvailable = yield* simulator.available;
-    capabilitySettings.availability.set('integration:wowsims', {
-      available: simulatorAvailable,
-      status: simulatorAvailable ? 'ready' : 'missing',
-      reason: 'Experimental local mage engine, levels 1–60.',
+    yield* capabilitySettings.setAvailability({
+      'integration:wowsims': {
+        available: simulatorAvailable,
+        status: simulatorAvailable ? 'ready' : 'missing',
+        reason: 'Experimental local mage engine, levels 1–60.',
+      },
     });
     const mcpCapabilities = createMcpCapabilities(mcpManager, capabilitySettings);
-    mcpCapabilities.refreshCatalog();
+    yield* mcpCapabilities.refreshCatalog;
     yield* mcpCapabilities.applySavedSettings();
-    yield* startup(() => capabilitySettings.publish());
+    yield* capabilitySettings.publish;
     const chatStore = new ChatStore(applicationDatabase, (error) =>
       runFork(
         Effect.logError('Conversation save failed').pipe(
@@ -354,8 +369,8 @@ export const makeServer = Effect.fn('Server.make')(
           routineRuns: character
             ? routineStore.history({ characterKey: character, includeSilent: false, limit: 50 })
             : [],
-          routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
-          capabilities: capabilitySettings.snapshot(),
+          routinesAllowed: !!character && capabilityReads.enabled('tool:manage_routine'),
+          capabilities: capabilityReads.snapshot(),
           features: runSync(features.values),
         };
       },
@@ -384,7 +399,7 @@ export const makeServer = Effect.fn('Server.make')(
       getChats: () => state.chats,
       currentTransport: () => state.activeTransport,
       requestGame: (call) => transport.request(call),
-      capabilitySettings,
+      capabilitySettings: capabilityReads,
       mcpManager,
     });
     const agentConfig = Agent.EngineConfig.of({
@@ -393,8 +408,8 @@ export const makeServer = Effect.fn('Server.make')(
     });
     const agentMcp = AgentMcp.layerFromManager(mcpManager, {
       allowed: (server, tool) =>
-        capabilitySettings.enabled('mcp:' + server) &&
-        (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
+        capabilityReads.enabled('mcp:' + server) &&
+        (!tool || capabilityReads.enabled('mcp_tool:' + server + ':' + tool)),
       readOnly: (session) =>
         state.chats.some(
           (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
@@ -402,7 +417,7 @@ export const makeServer = Effect.fn('Server.make')(
     });
     const agentLayer = Agent.layer.pipe(
       Layer.provide(agentMcp),
-      Layer.provide(Capabilities.layerFromFile(() => capabilitySettings.agentFile)),
+      Layer.provide(AgentCapabilities.layerFromFile(() => capabilitySettings.agentFile)),
       Layer.provide(NodeFileSystem.layer),
       Layer.provide(Agent.SessionHistory.layer(agentHistory)),
       Layer.provide(Layer.succeed(Agent.EngineConfig, agentConfig)),
@@ -412,7 +427,7 @@ export const makeServer = Effect.fn('Server.make')(
     );
     const engine = Agent.make(agentLayer);
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
-      if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
+      if (!state.activeTransport || !capabilityReads.enabled('tool:query_character')) {
         throw Error('Connect WoW and enable Character readings first.');
       }
       return runPromise(
@@ -430,23 +445,19 @@ export const makeServer = Effect.fn('Server.make')(
       }
     }
     // A saved override changed a flag: the agent reads it on its next turn, the
-    // addon on its next snapshot and the desktop on its next status poll.
-    function featuresChanged(values: Features.FeatureValues) {
-      capabilitySettings.features = values;
-      void capabilitySettings
-        .publish()
-        .catch((error) =>
-          runFork(
-            Effect.logWarning('Feature flags could not reach the agent').pipe(
-              Effect.annotateLogs({ event: 'features.publish_failed', error: errorMessage(error) }),
-            ),
-          ),
-        );
-      changed();
-    }
+    // addon on its next snapshot and the desktop on its next status poll. The
+    // capabilities read the flags from `Features`, so they only need publishing.
+    const featuresChanged = capabilitySettings.publish.pipe(
+      Effect.catch((error) =>
+        Effect.logWarning('Feature flags could not reach the agent').pipe(
+          Effect.annotateLogs({ event: 'features.publish_failed', error: errorMessage(error) }),
+        ),
+      ),
+      Effect.andThen(Effect.sync(changed)),
+    );
     // Subscribed before this returns, so no saved override is missed.
     yield* features.changes.pipe(
-      Stream.runForEach((values) => Effect.sync(() => featuresChanged(values))),
+      Stream.runForEach(() => featuresChanged),
       Effect.forkScoped({ startImmediately: true }),
     );
     const run = yield* createTurnRunner({
@@ -458,7 +469,7 @@ export const makeServer = Effect.fn('Server.make')(
       modelProvider: (model) => connections.provider(model),
       engine,
       models: connections,
-      capabilitySettings,
+      capabilitySettings: turnCapabilities,
       changed,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
@@ -477,7 +488,7 @@ export const makeServer = Effect.fn('Server.make')(
     const stopRoutineScheduler = yield* startRoutineScheduler({
       state,
       routineStore,
-      capabilitySettings,
+      capabilitySettings: capabilityReads,
       run,
       changed,
       isStopping: () => shutdownRequested,
@@ -544,7 +555,7 @@ export const makeServer = Effect.fn('Server.make')(
         auth,
         connections,
         webSearch,
-        capabilitySettings,
+        capabilitySettings: capabilityReads,
         routineStore,
         panelStore,
         database,
@@ -616,10 +627,10 @@ export const makeServer = Effect.fn('Server.make')(
         search: webSearch.state(),
         model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
-        integrations: capabilitySettings.snapshot(),
+        integrations: capabilityReads.snapshot(),
         mcps: mcpManager.list().map((s) => ({
           ...s,
-          enabled: s.enabled && capabilitySettings.enabled('mcp:' + s.name),
+          enabled: s.enabled && capabilityReads.enabled('mcp:' + s.name),
         })),
         panels: panelStore.panels.map((p) => ({
           ...p,
@@ -703,24 +714,11 @@ export const makeServer = Effect.fn('Server.make')(
             Effect.catch((error) => Effect.sync(() => transport.logError(error))),
           )
     ).pipe(Effect.forkChild());
-    const integrationHealth = setInterval(() => {
-      const before = JSON.stringify(capabilitySettings.snapshot());
-      integrationState.refresh();
-      if (JSON.stringify(capabilitySettings.snapshot()) !== before) {
-        void capabilitySettings.publish().catch((error) =>
-          runFork(
-            Effect.logWarning('Integration update failed').pipe(
-              Effect.annotateLogs({
-                event: 'integration.update_failed',
-                error: errorMessage(error),
-              }),
-            ),
-          ),
-        );
-        changed();
-      }
-    }, 30000);
-    yield* releaseRuntimeResource(() => clearInterval(integrationHealth));
+    // A report that stopped counting changes what the addon and the desktop see.
+    yield* integrationState.healthChecks.pipe(
+      Stream.runForEach(() => Effect.sync(changed)),
+      Effect.forkScoped,
+    );
     // Snapshots publish from changed(); this tick only polls what has no event:
     // the addon's acknowledged revision, and a publish that is still dirty
     // because the transport was missing or its last write failed.

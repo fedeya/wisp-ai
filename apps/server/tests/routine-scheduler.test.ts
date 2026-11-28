@@ -7,7 +7,7 @@ import { ApplicationDatabase } from '../src/application-database.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { unsavedCapabilities } from './capabilities/fixture.ts';
 import { Schema } from 'effect';
 import { routineDefinition } from '@wisp/protocol/routines';
 
@@ -74,7 +74,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
       startRoutineScheduler({
         state,
         routineStore: store,
-        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        capabilitySettings: unsavedCapabilities().reads,
         isStopping: () => false,
         isReady: () => true,
         changed: () => settled.resolve(),
@@ -166,7 +166,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
       startRoutineScheduler({
         state,
         routineStore: store,
-        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        capabilitySettings: unsavedCapabilities().reads,
         isStopping: () => false,
         isReady: () => true,
         changed: () => settledA.resolve(),

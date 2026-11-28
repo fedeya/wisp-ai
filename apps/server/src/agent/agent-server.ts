@@ -15,7 +15,6 @@ import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { TheWoWDB } from '../integrations/thewowdb/index.ts';
@@ -37,7 +36,7 @@ interface AgentDependencies {
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
   webSearch: WowheadSearch;
-  capabilitySettings: CapabilitySettings;
+  capabilitySettings: { enabled: (id: string) => boolean };
   routineStore: RoutineStore;
   panelStore: PanelStore;
   database: TheWoWDB['Service'];

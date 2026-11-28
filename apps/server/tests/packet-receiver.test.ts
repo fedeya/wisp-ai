@@ -4,8 +4,7 @@ import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { CapabilitySettings } from '../src/integrations/capabilities.ts';
-import { IntegrationState } from '../src/integrations/integration-state.ts';
+import { unsavedCapabilities } from './capabilities/fixture.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { ApplicationDatabase } from '../src/application-database.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
@@ -21,7 +20,7 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   state.currentCharacterKey = 'old-character';
   state.inlineChat = 'old-inline';
   state.panelCommand = { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' };
-  const capabilitySettings = new CapabilitySettings('unused');
+  const capabilities = unsavedCapabilities();
   const cancel = vi.fn();
   const end = vi.fn(async (_session: string) => {});
   const interrupt = vi.fn();
@@ -31,8 +30,8 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
     createPacketReceiver({
       state,
       request: () => Effect.void,
-      capabilitySettings,
-      integrationState: new IntegrationState(capabilitySettings),
+      capabilitySettings: capabilities.settings,
+      integrationState: capabilities.integrations,
       engine: { end },
       cancel,
       models: { models },
@@ -70,7 +69,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
   }));
   const newSessionId = vi.fn(() => 'session');
   const engine = { newSessionId, send, end: vi.fn(async () => {}) };
-  const capabilitySettings = new CapabilitySettings('unused');
+  const capabilities = unsavedCapabilities();
   const run = runBridgeEffect(
     createTurnRunner({
       engine,
@@ -79,7 +78,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
         models: async () => [{ slug: 'model', displayName: 'Model', efforts: [] }],
         complete: vi.fn(async () => 'Unused title'),
       },
-      capabilitySettings,
+      capabilitySettings: capabilities.turnCapabilities,
       currentTransport: () => state.activeTransport,
       activeChat: () => state.activeChat,
       defaultModel: () => 'model',
@@ -93,7 +92,8 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
   const { receive } = fixture({
     state,
     engine,
-    capabilitySettings,
+    capabilitySettings: capabilities.settings,
+    integrationState: capabilities.integrations,
     run,
     interrupt: run.interrupt,
     cancel: run.cancel,
@@ -311,12 +311,10 @@ test('a packet waits for character adoption before handling its routine event', 
     }),
   );
   const observe = vi.fn(async () => void calls.push('observe'));
-  const capabilitySettings = new CapabilitySettings('unused');
-  vi.spyOn(capabilitySettings, 'enabled').mockReturnValue(true);
+  // Routines are on in the default catalog.
   const f = fixture({
     adoptCharacter,
     routineStore: { observe } as unknown as RoutineStore,
-    capabilitySettings,
   });
   const character = {
     status: 'available',

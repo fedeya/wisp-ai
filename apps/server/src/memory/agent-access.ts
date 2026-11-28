@@ -4,7 +4,7 @@ import * as Memory from '@wisp/agent/memory';
 import { MemoryEntries } from '@wisp/agent/contract/memory';
 import type { MemorySlot } from '@wisp/agent/contract/memory';
 import type { Chat } from '../chat/chat.ts';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
+import type { CapabilitySettings } from '#/capabilities';
 import type { MemoryView } from '../session-state.ts';
 import type { MemoryRepository } from './repository.ts';
 
@@ -12,7 +12,7 @@ interface Dependencies {
   repository: MemoryRepository['Service'];
   chats: () => readonly Chat[];
   currentTransport: () => string;
-  capabilities: Pick<CapabilitySettings, 'enabled'>;
+  capabilities: Pick<CapabilitySettings['Service'], 'enabled'>;
   snapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
   setView: (view: MemoryView) => void;
   changed: () => void;
@@ -37,7 +37,7 @@ export function make(deps: Dependencies) {
   });
 
   const scope = Effect.fnUntraced(function* (chat: Chat, slot: MemorySlot) {
-    if (!deps.capabilities.enabled('memory:' + slot)) {
+    if (!(yield* deps.capabilities.enabled('memory:' + slot))) {
       return yield* new MemoryAccessDenied({
         message: 'This memory capability is disabled in Settings',
       });

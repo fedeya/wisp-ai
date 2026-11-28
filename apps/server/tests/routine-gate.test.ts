@@ -8,7 +8,7 @@ import { RoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createRoutineGate, routineFingerprint } from '../src/routines/routine-gate.ts';
 import { createSessionState } from '../src/session-state.ts';
-import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { unsavedCapabilities } from './capabilities/fixture.ts';
 import { Schema } from 'effect';
 import { routineDefinition } from '@wisp/protocol/routines';
 
@@ -111,7 +111,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
       startRoutineScheduler({
         state,
         routineStore: store,
-        capabilitySettings: new CapabilitySettings(path.join(root, 'capabilities.json')),
+        capabilitySettings: unsavedCapabilities().reads,
         isStopping: () => false,
         isReady: () => true,
         changed: () => {},

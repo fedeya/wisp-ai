@@ -21,7 +21,6 @@ import * as Everloot from '@wisp/agent/everloot';
 import type { Connection, GameCall } from '@wisp/wow-bridge';
 import type { Chat } from '../chat/events.ts';
 import { queryCharacterSections } from '../chat/context.ts';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import { searchGear } from '../integrations/gear-search.ts';
 import { itemSources } from '../integrations/item-sources.ts';
 import { readLoadedItems, retriesItemLoading } from './item-loading.ts';
@@ -61,7 +60,7 @@ interface Dependencies {
   getChats: () => readonly Chat[];
   currentTransport: () => string;
   requestGame: Connection['request'];
-  capabilitySettings: Pick<CapabilitySettings, 'enabled'>;
+  capabilitySettings: { enabled: (id: string) => boolean };
   mcpManager: Pick<McpManager, 'call'>;
 }
 

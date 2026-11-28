@@ -88,7 +88,7 @@ test('memory access refuses changes from automatic suggestions and rejects unkno
     },
     chats: () => [chat],
     currentTransport: () => 'addon',
-    capabilities: { enabled: () => true },
+    capabilities: { enabled: () => Effect.succeed(true) },
     snapshot: () => Effect.succeed({ status: 'available', entries: [] }),
     setView: () => {},
     changed: () => {},
