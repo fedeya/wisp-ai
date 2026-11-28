@@ -51,7 +51,7 @@ test('workspace sources declare their direct package imports', () => {
             }
             const dependency = specifier.startsWith('@')
               ? specifier.split('/').slice(0, 2).join('/')
-              : specifier.split('/')[0];
+              : specifier.replace(/\/.*$/s, '');
             if (!declared.has(dependency)) {
               missing.push(`${file}: ${dependency}`);
             }

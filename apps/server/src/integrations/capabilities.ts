@@ -48,7 +48,8 @@ export class CapabilitySettings {
   /** Whether a feature flag that is off removes this capability everywhere. */
   hidden(id: string): boolean {
     const tool = id.startsWith('tool:') ? id.slice(5) : '';
-    return Object.hasOwn(this.toolFlags, tool) && this.features[this.toolFlags[tool]] !== true;
+    const flag = Object.hasOwn(this.toolFlags, tool) ? this.toolFlags[tool] : undefined;
+    return flag !== undefined && this.features[flag] !== true;
   }
   agentFile = '';
   /** Resolved feature flags, published to the agent next to the capability switches. */

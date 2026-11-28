@@ -124,13 +124,13 @@ test('fresh sparse AddOns.txt in a numeric realm connects and receives its first
     const sparse = [
       'Other: disabled',
       ...UPLINK_HELPERS.flatMap((name, index) =>
-        frame[index >> 3] & (1 << (index % 8)) ? [] : [`${name}: disabled`],
+        frame.readUInt8(index >> 3) & (1 << (index % 8)) ? [] : [`${name}: disabled`],
       ),
     ].join('\r\n');
     await writeFile(f.file, sparse);
     await Effect.runPromise(f.bridge.read(f.file, false));
     expect(f.packets.length).toBe(1);
-    expect(f.packets[0].type).toBe('hello');
+    expect(f.packets[0]?.type).toBe('hello');
     await Effect.runPromise(
       f.bridge.publish({ rev: 1, session: 'v2', connected: true, text: 'first connection' }),
     );
@@ -159,7 +159,7 @@ test('initial scan baselines a cached hello and fresh hello retry preserves nego
     expect(f.packets.length, 'an unchanged persisted frame stays suppressed').toBe(0);
     const [freshHello] = await f.send(f.hello, 10);
     expect(f.packets.length).toBe(1);
-    expect(f.packets[0].transportVersion).toBe(2);
+    expect(f.packets[0]?.transportVersion).toBe(2);
     await Effect.runPromise(f.bridge.publish({ rev: 2, session: 'v2', text: 'ready after reset' }));
     const current = await readFile(f.file, 'utf8');
     const ready = decodeFrame(readDownlink(current)!);
@@ -255,10 +255,10 @@ test('only fully decoded, CRC-valid, schema-valid v2 application messages reach 
       true,
     );
     expect(frames.length).toBeGreaterThan(2);
-    for (let index = 0; index < frames.length; index++) {
-      const frame = Buffer.from(frames[index]);
+    for (const [index, encoded] of frames.entries()) {
+      const frame = Buffer.from(encoded);
       if (index === 1) {
-        frame[15] ^= 1;
+        frame.writeUInt8(frame.readUInt8(15) ^ 1, 15);
       }
       await writeFile(f.file, replaceUplink(await readFile(f.file, 'utf8'), frame));
       await Effect.runPromise(f.bridge.read(f.file, false));
@@ -266,7 +266,7 @@ test('only fully decoded, CRC-valid, schema-valid v2 application messages reach 
     expect(f.packets.length, 'damaged partial body cannot dispatch').toBe(1);
     await f.send(say, 100, true);
     expect(f.packets.length).toBe(2);
-    expect(f.packets[1].text).toBe(say.text);
+    expect(f.packets[1]?.text).toBe(say.text);
     await f.send({ ...say, seq: 3, text: '' }, 200);
     expect(f.packets.length, 'schema-invalid body cannot dispatch').toBe(2);
     expect(f.errors).toStrictEqual([]);
@@ -374,6 +374,7 @@ async function drainMailbox(
           return { bytes, frame };
         }
       }
+      return undefined;
     });
     previous = bytes;
     const message = decoder.add(bytes);

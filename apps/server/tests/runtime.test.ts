@@ -383,18 +383,27 @@ test('desktop API saves a provider and model without WoW', async () => {
       provider: 'compatible',
       name: 'Local model',
       baseURL: 'http://localhost:1234/v1',
-      models: [{ id: 'local-test', contextWindow: 64000 }],
+      models: [
+        { id: 'local-test', contextWindow: 64000 },
+        { id: 'local-other', contextWindow: 32000 },
+      ],
     });
     const { models } = await request('/auth/models');
-    expect(models).toMatchObject([{ slug: `connection:${id}:local-test`, efforts: [] }]);
-    await request('/auth/model', { model: models[0].slug });
+    expect(models).toMatchObject([
+      { slug: `connection:${id}:local-test`, efforts: [] },
+      { slug: `connection:${id}:local-other`, efforts: [] },
+    ]);
+    // Without a saved model the default is the first; the saved one wins as soon as it is saved.
+    expect(decodeStatus(await request('/status')).model).toBe(models[0].slug);
+    await request('/auth/model', { model: models[1].slug });
     const status = decodeStatus(await request('/status'));
+    expect(status.model).toBe(models[1].slug);
     expect(status).toMatchObject({ ready: true, gameConnected: false, modelConnected: true });
     expect(status.auth.status).toBe('signed_out');
     expect(
       JSON.parse(await readFile(path.join(f.dataDirectory, 'config.local.json'), 'utf8')),
     ).toEqual({
-      model: models[0].slug,
+      model: models[1].slug,
     });
     expect(status.connections[0]?.models[0]?.contextWindow).toBe(64000);
     await request('/connections/remove', { id });

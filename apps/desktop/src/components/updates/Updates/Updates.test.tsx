@@ -102,7 +102,11 @@ test('installation locks app operations, reports waiting, and can retry after fa
   expect(screen.getByRole('progressbar', { name: 'Update download' }).hasAttribute('value')).toBe(
     false,
   );
-  const callback = vi.mocked(listen).mock.calls[0][1];
+  const listener = vi.mocked(listen).mock.calls[0];
+  if (!listener) {
+    throw new Error('Expected the update-progress listener to be registered');
+  }
+  const callback = listener[1];
   callback({
     event: 'update-progress',
     id: 0,

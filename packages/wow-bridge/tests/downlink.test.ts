@@ -40,8 +40,13 @@ test('incremental chat updates avoid retransmitting acknowledged history and rep
   };
   const next = structuredClone(base);
   next.rev = 21;
-  next.chats[29].messages[0].text += ' Respuesta nueva ❄';
-  next.chats[29].status = 'working';
+  const chat = next.chats[29];
+  const message = chat?.messages[0];
+  if (!chat || !message) {
+    throw Error('Expected the last chat to have a message');
+  }
+  message.text += ' Respuesta nueva ❄';
+  chat.status = 'working';
   const prepared = prepareDownlink(next, base);
   expect(prepared.full).toBe(false);
   const envelope = unpack(prepared);
@@ -54,7 +59,7 @@ test('incremental chat updates avoid retransmitting acknowledged history and rep
   ]);
   expect(applyDownlink(envelope, base)).toEqual(next);
   expect(base.rev).toBe(20);
-  expect(base.chats[29].status).toBe('idle');
+  expect(base.chats[29]?.status).toBe('idle');
   expect(() => applyDownlink(envelope, { ...base, rev: 19 })).toThrow(/base revision/);
   expect(() => applyDownlink(envelope)).toThrow();
 });

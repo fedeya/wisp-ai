@@ -110,7 +110,8 @@ end
       });
       run(
         DOWNLINK_HELPERS.map(
-          (name, index) => `disk['${name}']=${Boolean(frame[index >> 3] & (1 << (index % 8)))}`,
+          (name, index) =>
+            `disk['${name}']=${Boolean(frame.readUInt8(index >> 3) & (1 << (index % 8)))}`,
         ).join(';'),
       );
     },

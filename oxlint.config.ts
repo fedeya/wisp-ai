@@ -129,6 +129,8 @@ export default defineConfig({
         'apps/server/src/auth/**',
         'apps/server/src/integrations/search/**',
         'apps/server/src/memory/**',
+        'apps/server/src/platform/**',
+        'apps/server/src/settings/**',
         'packages/game-data/src/**',
         'packages/releases/src/**',
         'packages/wow-bridge/src/**',

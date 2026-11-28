@@ -29,7 +29,6 @@ import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 import { readJson, writeJson } from './json-file.ts';
-import { loadBridgeConfig } from './bridge-config.ts';
 import { createAgentHandler } from './agent/agent-server.ts';
 import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
@@ -67,6 +66,7 @@ import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import * as WebSearch from './integrations/search/index.ts';
 import * as ChatGPTAuth from './auth/index.ts';
+import * as Settings from './settings/index.ts';
 import * as TheWoWDB from './integrations/thewowdb/index.ts';
 import * as HttpClient from './platform/http-client.ts';
 import * as Simulation from './integrations/simulation/simulator.ts';
@@ -120,6 +120,7 @@ export const ServerServices = Layer.mergeAll(
       chatGPTAuth,
     ]),
   ),
+  Settings.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom])),
 );
 
 /** The migrated services; `main.ts` and `startServer` provide it. */
@@ -187,21 +188,19 @@ export const makeServer = Effect.fn('Server.make')(
     const databaseFile = applicationDatabaseFile(runtime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
     yield* releaseRuntimeResource(() => applicationDatabase.close());
-    const config = yield* startup(() => loadBridgeConfig(paths.config));
-    const features = yield* startup(() =>
-      Features.start({
-        channel: featureChannel(bridgeVersion, appConfig.releaseBuild),
-        overrides: config.get().features ?? {},
-        saveOverrides: (overrides) => config.update({ features: overrides }),
-        onChange: () => featuresChanged(),
-      }),
-    );
-    const mcpConfig = config.get().mcpConfig;
-    const mcpFile = mcpConfig
-      ? path.resolve(paths.dataRoot, mcpConfig)
-      : path.join(runtime, 'mcp.json');
     // Adapters for unmigrated consumers, which take Promise interfaces built
     // here from migrated services. Remove each one when its consumers migrate.
+    // For the synchronous readers of the settings below.
+    const runSync = Effect.runSyncWith(context);
+    const settings = yield* Settings.Settings;
+    // Rejects with what Node's file system failed with, as the consumers saw before.
+    const saveSettings = (patch: Partial<Settings.SettingsValues>) =>
+      runPromise(
+        settings.update(patch).pipe(
+          Effect.asVoid,
+          Effect.catchTag('PlatformError', (error) => Effect.fail(error.cause ?? error)),
+        ),
+      );
     const secretVault = yield* SecretVault.SecretVault;
     const vault: SecretVault.PromiseSecretVault = {
       read: (key) => runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
@@ -210,6 +209,18 @@ export const makeServer = Effect.fn('Server.make')(
     const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
     const auth = promiseChatGPTAuth(chatgpt, context);
     // End of adapters.
+    const { features: featureOverrides, mcpConfig } = yield* settings.get;
+    const features = yield* startup(() =>
+      Features.start({
+        channel: featureChannel(bridgeVersion, appConfig.releaseBuild),
+        overrides: featureOverrides ?? {},
+        saveOverrides: (overrides) => saveSettings({ features: overrides }),
+        onChange: () => featuresChanged(),
+      }),
+    );
+    const mcpFile = mcpConfig
+      ? path.resolve(paths.dataRoot, mcpConfig)
+      : path.join(runtime, 'mcp.json');
     const mcpManager = McpManager.make(
       ROOT,
       {
@@ -299,7 +310,7 @@ export const makeServer = Effect.fn('Server.make')(
     });
     const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
     // The default follows the providers the player connected, not one vendor's model.
-    const defaultModel = () => resolveDefaultModel(config.get().model, state.modelCatalog);
+    const defaultModel = () => resolveDefaultModel(runSync(settings.get).model, state.modelCatalog);
     if (connections.hasProvider()) void refreshModelCatalog();
     const accounts = createAccountOperations({
       isStopping: () => shutdownRequested,
@@ -489,7 +500,7 @@ export const makeServer = Effect.fn('Server.make')(
       integrationState,
       capabilitySettings,
       receive,
-      saveWow: (wow) => config.update({ wow }),
+      saveWow: (wow) => saveSettings({ wow }),
       changed,
       isStopping: () => shutdownRequested,
     }).pipe(Effect.provide(wowPlatform));
@@ -622,7 +633,10 @@ export const makeServer = Effect.fn('Server.make')(
               }
               yield* transport.disconnect;
             } else {
-              yield* transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
+              yield* transport.connect(
+                input.wow ?? (yield* settings.get).wow,
+                input.wow !== undefined,
+              );
             }
           }),
         ),
@@ -644,7 +658,7 @@ export const makeServer = Effect.fn('Server.make')(
         if (shutdownRequested) {
           throw Error('Wisp is stopping.');
         }
-        await config.update({ model });
+        await saveSettings({ model });
       },
       requestStop: () => {
         shutdownRequested = true;
@@ -659,7 +673,7 @@ export const makeServer = Effect.fn('Server.make')(
     const transportStartup = yield* (
       appConfig.deferWowTransport
         ? Effect.void
-        : transport.serialize(transport.connect(config.get().wow)).pipe(
+        : transport.serialize(transport.connect((yield* settings.get).wow)).pipe(
             Effect.catchDefect((error) => Effect.fail(error)),
             Effect.catch((error) => Effect.sync(() => transport.logError(error))),
           )

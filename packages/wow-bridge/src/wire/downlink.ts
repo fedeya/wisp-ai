@@ -86,12 +86,14 @@ function diff(before: Json, after: Json, path: StatePath, operations: StateOpera
     operations.push(operation);
   };
   if (Array.isArray(before) && Array.isArray(after)) {
-    for (let index = 0; index < after.length; index++) {
+    for (const [index, value] of after.entries()) {
       const next = [...path, index];
-      if (index >= before.length) {
-        add(['s', next, after[index]]);
+      // JSON arrays are dense, so only an index past the end of `before` reads as undefined.
+      const previous = before[index];
+      if (previous === undefined) {
+        add(['s', next, value]);
       } else {
-        diff(before[index], after[index], next, operations);
+        diff(previous, value, next, operations);
       }
     }
     if (after.length < before.length) {
@@ -104,10 +106,12 @@ function diff(before: Json, after: Json, path: StatePath, operations: StateOpera
       }
     }
     for (const [key, child] of Object.entries(after)) {
-      if (!own(before, key)) {
-        add(['s', [...path, key], child as Json]);
+      // JSON holds no undefined values, so only a field `before` lacks reads as undefined.
+      const previous = own(before, key) ? before[key] : undefined;
+      if (previous === undefined) {
+        add(['s', [...path, key], child]);
       } else {
-        diff(before[key] as Json, child as Json, [...path, key], operations);
+        diff(previous, child, [...path, key], operations);
       }
     }
   } else if (
@@ -175,13 +179,17 @@ function path(value: unknown): asserts value is StatePath {
 }
 
 function child(container: Json, key: string | number): Json {
-  if (
-    (Array.isArray(container) && typeof key === 'number' && key < container.length) ||
-    (record(container) && typeof key === 'string' && own(container, key))
-  ) {
-    return (container as Record<string | number, Json>)[key];
+  // JSON holds no undefined values, so only a missing element or field reads as undefined.
+  const value =
+    Array.isArray(container) && typeof key === 'number'
+      ? container[key]
+      : record(container) && typeof key === 'string' && own(container, key)
+        ? container[key]
+        : undefined;
+  if (value === undefined) {
+    throw Error('Downlink path does not exist');
   }
-  throw Error('Downlink path does not exist');
+  return value;
 }
 
 export function applyDownlink(envelope: unknown, base?: unknown): { [key: string]: Json } {
@@ -221,13 +229,15 @@ export function applyDownlink(envelope: unknown, base?: unknown): { [key: string
       if (kind === 's') {
         validateJson(value);
       }
+      // The last path part, absent only for the root path.
+      const key = location.at(-1);
       if (kind === 'l') {
         const target = location.reduce<Json>((container, key) => child(container, key), result);
         if (!Array.isArray(target) || !unsigned(value, target.length)) {
           throw Error('Invalid downlink array truncation');
         }
         target.length = value;
-      } else if (!location.length) {
+      } else if (key === undefined) {
         if (kind !== 's') {
           throw Error('Cannot delete downlink root');
         }
@@ -236,7 +246,6 @@ export function applyDownlink(envelope: unknown, base?: unknown): { [key: string
         const container = location
           .slice(0, -1)
           .reduce<Json>((current, key) => child(current, key), result);
-        const key = location[location.length - 1];
         let assignment: Json = value;
         if (kind === 'a') {
           const previous = child(container, key);

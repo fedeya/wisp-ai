@@ -74,12 +74,14 @@ export function encodeChat(
       return;
     }
     const matches = old.filter((m) => m.sourceId === row.sourceId);
+    const [match] = matches;
     if (
+      match &&
       matches.length === 1 &&
       rows.filter((m) => m.sourceId === row.sourceId).length === 1 &&
-      !used.has(matches[0].id)
+      !used.has(match.id)
     ) {
-      assign(index, matches[0].id);
+      assign(index, match.id);
     }
   });
   rows.forEach((row, index) => {
@@ -138,7 +140,11 @@ export function encodeChat(
             : randomUUID();
         used.add(storageId);
       }
-      identities.set(entries[index], { chatId: id, id: storageId });
+      // `rows` is mapped from `entries`, so the entry at this index always exists.
+      const entry = entries[index];
+      if (entry) {
+        identities.set(entry, { chatId: id, id: storageId });
+      }
       return { ...row, id: storageId };
     }),
   };
