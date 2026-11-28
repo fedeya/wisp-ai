@@ -7,6 +7,7 @@ import { createAgentHandler } from '../src/agent/agent-server.ts';
 import { Simulator } from '../src/integrations/simulation/simulator.ts';
 import { bridgeLogging } from '../src/logger.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { layer as SessionStateLayer } from '#/session';
 
 it.live(
   'simulation RPC skips game reads and transport freshness for hypothetical requests only',
@@ -74,5 +75,8 @@ it.live(
       enabled = false;
       expect(yield* post({ nativeRequest })).toBe(503);
       expect(run).toHaveBeenCalledTimes(3);
-    }).pipe(Effect.scoped, Effect.provide([bridgeLogging, FetchHttpClient.layer])),
+    }).pipe(
+      Effect.scoped,
+      Effect.provide([bridgeLogging, FetchHttpClient.layer, SessionStateLayer]),
+    ),
 );

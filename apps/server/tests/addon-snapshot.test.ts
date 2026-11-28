@@ -8,7 +8,7 @@ import {
   ROUTINE_TRIGGER_MAX_LENGTH,
   type AddonSnapshotInputs,
 } from '../src/game/addon-snapshot.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession } from '#/session';
 import type { Chat } from '../src/chat/events.ts';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
@@ -29,11 +29,8 @@ function routine(overrides: Partial<Routine> = {}): Routine {
 }
 
 function inputs(overrides: Partial<AddonSnapshotInputs> = {}): AddonSnapshotInputs {
-  const state = createSessionState();
-  state.activeTransport = 'session-1';
-  state.currentCharacterKey = 'Realm-Hero';
   return {
-    state,
+    state: { ...initialSession(), activeTransport: 'session-1', currentCharacterKey: 'Realm-Hero' },
     connected: true,
     bridgeVersion: '1.2.3',
     expectedAddonVersion: '1.2.3',
@@ -81,15 +78,16 @@ test('keeps the payload key order the snapshot gate signs', () => {
 
 test('prefers the active chat model window over the default model window', () => {
   const base = inputs();
-  base.state.modelCatalog = [{ slug: 'big', contextWindow: 400_000 } as AccountModel];
-  base.state.chats = [
-    { id: 'chat-1', messages: [], modelSettings: { model: 'big' } } as unknown as Chat,
-  ];
+  base.state = {
+    ...base.state,
+    modelCatalog: [{ slug: 'big', contextWindow: 400_000 } as AccountModel],
+    chats: [{ id: 'chat-1', messages: [], modelSettings: { model: 'big' } } as unknown as Chat],
+  };
   assert.deepEqual(buildAddonSnapshot(base).contextPolicy, {
     windowTokens: 200_000,
     compactAt: COMPACTION_THRESHOLD,
   });
-  base.state.activeChat = 'chat-1';
+  base.state = { ...base.state, activeChat: 'chat-1' };
   assert.equal(buildAddonSnapshot(base).contextPolicy.windowTokens, 400_000);
 });
 
@@ -173,7 +171,7 @@ test('omits run summaries from routine history', () => {
 
 test('shows no character content before a character is known', () => {
   const base = inputs({ routines: [routine()] });
-  base.state.currentCharacterKey = undefined;
+  base.state = { ...base.state, currentCharacterKey: undefined };
   const snapshot = buildAddonSnapshot(base);
   assert.deepEqual(snapshot.panels, []);
   assert.deepEqual(snapshot.routines, []);

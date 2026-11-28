@@ -3,7 +3,8 @@ import { Deferred, Effect } from 'effect';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { createPacketReceiver } from '../src/game/packet-receiver.ts';
 import { createTurnRunner } from '../src/agent/turn-runner.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession, SessionState } from '#/session';
+import { current, sessionState } from './session-fixture.ts';
 import { unsavedCapabilities } from './capabilities/fixture.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { ApplicationDatabase } from '../src/application-database.ts';
@@ -12,14 +13,17 @@ import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { gameEvent } from './game-event-fixture.ts';
 import type { AccountModel } from '../src/chat/chat-model.ts';
 
-function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {}) {
+function fixture(
+  overrides: Partial<Parameters<typeof createPacketReceiver>[0]> = {},
+  session = sessionState({
+    ...initialSession([{ ...newChat('old', 'one'), agentSession: 'eve', status: 'working' }]),
+    activeTransport: 'one',
+    currentCharacterKey: 'old-character',
+    inlineChat: 'old-inline',
+    panelCommand: { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' },
+  }),
+) {
   const database = new ApplicationDatabase('unused');
-  const chat = { ...newChat('old', 'one'), agentSession: 'eve', status: 'working' as const };
-  const state = createSessionState([chat]);
-  state.activeTransport = 'one';
-  state.currentCharacterKey = 'old-character';
-  state.inlineChat = 'old-inline';
-  state.panelCommand = { seq: 1, id: 'panel', characterKey: 'old-character', action: 'show' };
   const capabilities = unsavedCapabilities();
   const cancel = vi.fn();
   const end = vi.fn(async (_session: string) => {});
@@ -28,7 +32,6 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
   const models = vi.fn(async (): Promise<AccountModel[]> => []);
   const receiveEffect = runBridgeEffect(
     createPacketReceiver({
-      state,
       request: () => Effect.void,
       capabilitySettings: capabilities.settings,
       integrationState: capabilities.integrations,
@@ -44,20 +47,24 @@ function fixture(overrides: Partial<Parameters<typeof createPacketReceiver>[0]> 
       run,
       interrupt,
       runtime: 'unused',
-      changed: () => {},
+      snapshot: { invalidate: Effect.void },
       ...overrides,
-    }),
+    }).pipe(Effect.provideService(SessionState, session)),
   );
   const receive = (packet: Parameters<typeof receiveEffect>[0]) =>
     runBridgeEffect(receiveEffect(packet));
+  const state = () => current(session);
   return { state, receive, receiveEffect, cancel, end, interrupt, run, models };
 }
 
 test('Stop during first-turn model preparation prevents engine dispatch', async () => {
   const chat = newChat('chat', 'one');
-  const state = createSessionState([chat]);
-  state.activeTransport = 'one';
-  state.activeChat = chat.id;
+  const session = sessionState({
+    ...initialSession([chat]),
+    activeTransport: 'one',
+    activeChat: chat.id,
+  });
+  const state = () => current(session);
   let releasePreparation!: () => void;
   const preparation = new Promise<void>((resolve) => {
     releasePreparation = resolve;
@@ -79,25 +86,26 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
         complete: vi.fn(async () => 'Unused title'),
       },
       capabilitySettings: capabilities.turnCapabilities,
-      currentTransport: () => state.activeTransport,
-      activeChat: () => state.activeChat,
+      currentTransport: () => state().activeTransport,
+      activeChat: () => state().activeChat,
       defaultModel: () => 'model',
       isReady: () => true,
       isStopping: () => false,
       accountBusy: () => false,
-      isCurrent: (candidate) => state.chats.includes(candidate),
-      changed: () => {},
-    }),
+      isCurrent: (candidate) => state().chats.includes(candidate),
+    }).pipe(Effect.provideService(SessionState, session)),
   );
-  const { receive } = fixture({
-    state,
-    engine,
-    capabilitySettings: capabilities.settings,
-    integrationState: capabilities.integrations,
-    run,
-    interrupt: run.interrupt,
-    cancel: run.cancel,
-  });
+  const { receive } = fixture(
+    {
+      engine,
+      capabilitySettings: capabilities.settings,
+      integrationState: capabilities.integrations,
+      run,
+      interrupt: run.interrupt,
+      cancel: run.cancel,
+    },
+    session,
+  );
   try {
     receive(
       gameEvent({
@@ -127,7 +135,7 @@ test('Stop during first-turn model preparation prevents engine dispatch', async 
 test('Stop cancels the turn in the bridge and keeps its session', () => {
   const f = fixture();
   f.receive(gameEvent({ type: 'cancel', session: 'one', chat: 'old', seq: 1, at: 1 }));
-  expect(f.cancel).toHaveBeenCalledExactlyOnceWith(f.state.chats[0]);
+  expect(f.cancel).toHaveBeenCalledExactlyOnceWith(f.state().chats[0]);
   expect(f.interrupt).not.toHaveBeenCalled();
   expect(f.end).not.toHaveBeenCalled();
 });
@@ -137,19 +145,21 @@ test('a stale-session cancel cannot interrupt or cancel the current chat', () =>
   f.receive(gameEvent({ type: 'cancel', session: 'stale', chat: 'old', seq: 1, at: 1 }));
   expect(f.interrupt).not.toHaveBeenCalled();
   expect(f.cancel).not.toHaveBeenCalled();
-  expect(f.state.chats[0].status).toBe('working');
+  expect(f.state().chats[0].status).toBe('working');
 });
 
 test('leaving a new empty conversation discards it while keeping conversations with activity', () => {
   const f = fixture();
   f.receive(gameEvent({ type: 'new', chat: 'draft', session: 'one', seq: 20, at: 1 }));
-  expect(f.state.chats.some((chat) => chat.id === 'draft')).toBe(true);
+  expect(f.state().chats.some((chat) => chat.id === 'draft')).toBe(true);
   f.receive(gameEvent({ type: 'select', chat: 'old', session: 'one', seq: 21, at: 2 }));
-  expect(f.state.chats.map((chat) => chat.id)).toEqual(['old']);
+  expect(f.state().chats.map((chat) => chat.id)).toEqual(['old']);
   f.receive(gameEvent({ type: 'new', chat: 'used', session: 'one', seq: 22, at: 3 }));
-  f.state.chats.find((chat) => chat.id === 'used')!.messages.push({ role: 'user', text: 'Hi' });
+  f.state()
+    .chats.find((chat) => chat.id === 'used')!
+    .messages.push({ role: 'user', text: 'Hi' });
   f.receive(gameEvent({ type: 'new', chat: 'next', session: 'one', seq: 23, at: 4 }));
-  expect(f.state.chats.map((chat) => chat.id)).toEqual(['old', 'used', 'next']);
+  expect(f.state().chats.map((chat) => chat.id)).toEqual(['old', 'used', 'next']);
 });
 
 test('a player message starts a turn with the original chat message ID', () => {
@@ -175,7 +185,7 @@ test('a player message starts a turn with the original chat message ID', () => {
 
 test('quest sync primes turn context but a new addon session cannot reuse its revision', () => {
   const f = fixture();
-  f.state.chats[0]!.status = 'done';
+  f.state().chats[0]!.status = 'done';
   const character = { status: 'available', data: { name: 'Mage', realm: 'Realm' } };
   const quests = {
     status: 'available',
@@ -225,7 +235,7 @@ test('quest sync primes turn context but a new addon session cannot reuse its re
 
 test("changing models keeps the chat's agent session and its visible conversation", async () => {
   const f = fixture();
-  const chat = f.state.chats[0]!;
+  const chat = f.state().chats[0]!;
   chat.status = 'done';
   chat.modelSettings = { model: 'chatgpt-model', effort: 'medium' };
   chat.messages.push({ role: 'user', text: 'Keep this conversation' });
@@ -268,12 +278,12 @@ test("changing models keeps the chat's agent session and its visible conversatio
 test('reload interrupts old turns and clears character-specific commands', async () => {
   const f = fixture();
   f.receive(gameEvent({ type: 'hello', session: 'two', seq: 1, at: 1 }));
-  expect(f.state.chats[0].status).toBe('interrupted');
+  expect(f.state().chats[0].status).toBe('interrupted');
   expect(f.cancel).not.toHaveBeenCalled();
   expect(f.interrupt).toHaveBeenCalledTimes(1);
-  expect(f.state.currentCharacterKey).toBeUndefined();
-  expect(f.state.panelCommand).toBeUndefined();
-  expect(f.state.inlineChat).toBe('');
+  expect(f.state().currentCharacterKey).toBeUndefined();
+  expect(f.state().panelCommand).toBeUndefined();
+  expect(f.state().inlineChat).toBe('');
   f.receive(gameEvent({ type: 'say', session: 'one', chat: 'old', text: 'stale', seq: 2, at: 2 }));
   expect(f.run).not.toHaveBeenCalled();
 });
@@ -282,14 +292,14 @@ test('deleting an active conversation prevents delayed messages from recreating 
   const f = fixture();
   f.receive(gameEvent({ type: 'delete', session: 'one', chat: 'old', seq: 2, at: 2 }));
   f.receive(gameEvent({ type: 'say', session: 'one', chat: 'old', text: 'late', seq: 3, at: 3 }));
-  expect(f.state.chats).toEqual([]);
+  expect(f.state().chats).toEqual([]);
   expect(f.end).toHaveBeenCalledTimes(1);
   expect(f.run).not.toHaveBeenCalled();
 });
 
 test('retry reuses the failed question and ignores retries while working', () => {
   const f = fixture();
-  const chat = f.state.chats[0]!;
+  const chat = f.state().chats[0]!;
   chat.messages.push({ role: 'user', id: 'question', text: 'Which quest?' });
   chat.status = 'error';
   f.receive(gameEvent({ type: 'retry', chat: 'old', session: 'one', seq: 11, at: 1 }));
@@ -334,7 +344,7 @@ test('a packet waits for character adoption before handling its routine event', 
   );
   await Effect.runPromise(Deferred.await(started));
   expect(observe).not.toHaveBeenCalled();
-  expect(f.state.currentCharacterKey).toBe('old-character');
+  expect(f.state().currentCharacterKey).toBe('old-character');
   await Effect.runPromise(Deferred.succeed(release, undefined));
   await handled;
   const key = JSON.stringify(['WoW Forever', 'Player-1-00A']);
@@ -361,7 +371,7 @@ test('a new game window logs why it took the bridge and how long the old one was
       takeover: true,
     }),
   );
-  expect(f.state.activeTransport).toBe('two');
+  expect(f.state().activeTransport).toBe('two');
   expect(logs('transport.session_changed')).toContainEqual(
     expect.objectContaining({ reason: 'takeover', previousIdleMs: 30_000 }),
   );

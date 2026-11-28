@@ -1,4 +1,4 @@
-import type { SessionState } from '../session-state.ts';
+import { SessionState, type Session } from '#/session';
 import type { Chat } from '../chat/events.ts';
 import type { RoutineStore } from './routine-store.ts';
 import { newChat } from '../chat/chat-lifecycle.ts';
@@ -7,28 +7,31 @@ import { endedOnUsageLimit } from '../agent/turn-runner.ts';
 import { createRoutineGate, routineFingerprint } from './routine-gate.ts';
 import { Effect } from 'effect';
 interface SchedulerDependencies {
-  state: SessionState;
+  /** The session as it is now, read synchronously by the timer below. */
+  session: () => Session;
   routineStore: RoutineStore;
   capabilitySettings: { enabled: (id: string) => boolean };
   isStopping: () => boolean;
   isReady: () => boolean;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
-  changed: () => void;
   /** Whether a finished routine chat failed on a usage limit; tests replace it. */
   usageLimited?: (chat: Chat) => boolean;
 }
 export const startRoutineScheduler = Effect.fnUntraced(function* (deps: SchedulerDependencies) {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
-  const { state, routineStore, capabilitySettings, isStopping, isReady, run, changed } = deps;
+  const sessionState = yield* SessionState;
+  const { session, routineStore, capabilitySettings, isStopping, isReady, run } = deps;
+  // Staged: the turn that runs it tells the subscribers as it begins.
   const createChat = (id: string) => {
-    const chat = newChat(id, state.activeTransport);
-    state.chats.push(chat);
+    const chat = newChat(id, session().activeTransport);
+    runFork(sessionState.stage((state) => ({ ...state, chats: [...state.chats, chat] })));
     return chat;
   };
   let dispatchingRoutine = false;
   let dispatch: Promise<void> | undefined;
   const gate = createRoutineGate();
   const timer = setInterval(() => {
+    const state = session();
     if (
       dispatchingRoutine ||
       gate.paused() ||
@@ -58,7 +61,7 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
         await routineStore.defer(claimed.run.id, claimed.event);
         return;
       }
-      const fingerprint = routineFingerprint(presence.context, state.questRevision);
+      const fingerprint = routineFingerprint(presence.context, session().questRevision);
       const quietKey = JSON.stringify([
         presence.identity,
         claimed.routine.id,
@@ -73,10 +76,11 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
       chat.proactive = true;
       chat.titleGenerated = true;
       chat.title = claimed.routine.title + ' · ' + new Date(claimed.run.startedAt).toLocaleString();
+      const current = session();
       if (
-        presence.session !== state.activeTransport ||
-        state.chats.some((c) => c !== chat && c.status === 'working') ||
-        !state.routinePresence?.ready ||
+        presence.session !== current.activeTransport ||
+        current.chats.some((c) => c !== chat && c.status === 'working') ||
+        !current.routinePresence?.ready ||
         !capabilitySettings.enabled('tool:manage_routine') ||
         !routineStore
           .list(presence.identity)
@@ -85,7 +89,12 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
               r.id === claimed.routine.id && r.enabled && r.updatedAt === claimed.routine.updatedAt,
           )
       ) {
-        state.chats = state.chats.filter((c) => c !== chat);
+        runFork(
+          sessionState.stage((state) => ({
+            ...state,
+            chats: state.chats.filter((c) => c !== chat),
+          })),
+        );
         await routineStore.defer(chat.id, claimed.event);
         return;
       }
@@ -131,7 +140,8 @@ export const startRoutineScheduler = Effect.fnUntraced(function* (deps: Schedule
       })
       .finally(() => {
         dispatchingRoutine = false;
-        changed();
+        // The routine's run and its chat changed.
+        runFork(sessionState.commit);
       });
   }, 3000);
   return async () => {

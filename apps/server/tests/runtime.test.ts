@@ -77,8 +77,9 @@ test('addon maintenance switches WoW folders without stopping the agent or the d
     const second = await game('second');
     const config = path.join(f.dataDirectory, 'config.local.json');
     await writeFile(config, JSON.stringify({ wow: first.folder }));
-    bridge = await start(f);
-    const state = bridge.state;
+    const started = await start(f);
+    bridge = started;
+    const state = () => Effect.runSync(started.session.get);
     const { port, token } = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
@@ -94,17 +95,17 @@ test('addon maintenance switches WoW folders without stopping the agent or the d
       request('/addon/transport', { action, wow });
 
     await first.hello('cached', 1);
-    expect(state.activeTransport).toBe('');
+    expect(state().activeTransport).toBe('');
     expect((await request('/status')).status).toBe(200);
 
     // The upgrade path resumes the configured folder once the addon is ready.
     expect((await transport('resume')).status).toBe(200);
-    expect(state.activeTransport).toBe('');
+    expect(state().activeTransport).toBe('');
     await first.hello('first', 2);
-    await vi.waitFor(() => expect(state.activeTransport).toBe('first'), { timeout: 3000 });
+    await vi.waitFor(() => expect(state().activeTransport).toBe('first'), { timeout: 3000 });
 
     expect((await transport('pause')).status).toBe(200);
-    expect(state.activeTransport).toBe('');
+    expect(state().activeTransport).toBe('');
     const saved = await request('/connections/save', {
       provider: 'compatible',
       name: 'Local model',
@@ -120,7 +121,7 @@ test('addon maintenance switches WoW folders without stopping the agent or the d
     expect((await transport('resume', second.folder)).status).toBe(200);
     await first.hello('old-folder', 3);
     await second.hello('second', 4);
-    await vi.waitFor(() => expect(state.activeTransport).toBe('second'), { timeout: 3000 });
+    await vi.waitFor(() => expect(state().activeTransport).toBe('second'), { timeout: 3000 });
     expect(JSON.parse(await readFile(config, 'utf8')).wow).toBe(second.folder);
     expect((await request('/status')).status).toBe(200);
     expect((await request('/status')).data.ready).toBe(true);
@@ -211,7 +212,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     chat.agentSession = 'eve-search';
     chat.status = 'working';
     chat.modelSettings = { model: `connection:${id}:local`, effort: 'provider-default' };
-    bridge.state.chats.push(chat);
+    Effect.runSync(bridge.session.update((state) => ({ ...state, chats: [...state.chats, chat] })));
     const agent = async (route: string, body?: unknown) => {
       const r = await actualFetch(origin + route, {
         method: body ? 'POST' : 'GET',
@@ -287,8 +288,8 @@ test('the assembled runtime serves validated status, receives packets, persists 
     expect(decodeStatus(await response.json()).auth.status).toBe('signed_out');
     bridge.receive(gameEvent({ type: 'hello', session: 'test', seq: 1, at: 1 }));
     bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }));
-    bridge.state.chats
-      .find((chat) => chat.id === 'chat')!
+    Effect.runSync(bridge.session.get)
+      .chats.find((chat) => chat.id === 'chat')!
       .messages.push({
         role: 'user',
         text: 'Hello',

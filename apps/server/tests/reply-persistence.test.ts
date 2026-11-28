@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession } from '#/session';
 import { ReplyProjection } from '../src/reply/reply-stream.ts';
 import { applyEvent } from '../src/chat/events.ts';
 
@@ -57,8 +57,7 @@ test('old Markdown tables reach the addon without rewriting canonical history or
     await writeFile(f.legacy, original);
     const store = f.store(),
       restored = await store.load();
-    const state = createSessionState(restored);
-    state.activeChat = chat.id;
+    const state = { ...initialSession(restored), activeChat: chat.id };
     const reply = projectChats(state).chats[0].messages![0];
     expect(reply.ui).toEqual([]);
     expect(reply.text).toBe(text);
@@ -67,8 +66,7 @@ test('old Markdown tables reach the addon without rewriting canonical history or
     expect(restored[0].messages[0]).toEqual(chat.messages[0]);
     await store.flush(restored);
     const again = await f.store().load(),
-      stateAgain = createSessionState(again);
-    stateAgain.activeChat = chat.id;
+      stateAgain = { ...initialSession(again), activeChat: chat.id };
     expect(projectChats(stateAgain).chats[0].messages![0]).toEqual(reply);
     expect(again[0].messages[0].ui).toEqual([]);
     expect(await readFile(f.legacy, 'utf8')).toBe(original);
@@ -90,8 +88,7 @@ test('transport preserves Markdown source and legacy native components for every
     );
     await writeFile(f.legacy, JSON.stringify([chat]));
     const restored = await f.store().load(),
-      state = createSessionState(restored);
-    state.activeChat = chat.id;
+      state = { ...initialSession(restored), activeChat: chat.id };
     expect(restored[0].messages.slice(0, 3)).toEqual(chat.messages.slice(0, 3));
     const reply = projectChats(state).chats[0].messages![3];
     expect(reply).toMatchObject(chat.messages[3]);
@@ -116,8 +113,7 @@ test('SQLite preserves exact reply source on a display failure; only the view co
     await store.flush([chat]);
     const restored = await f.store().load(),
       before = JSON.stringify(restored);
-    const state = createSessionState(restored);
-    state.activeChat = chat.id;
+    const state = { ...initialSession(restored), activeChat: chat.id };
     const display = projectChats(state);
     expect(display.chats[0].messages?.[0].role).toBe('system');
     expect(display.chats[0].messages?.[0].text).toContain('could not be displayed');
@@ -181,8 +177,7 @@ test('SQLite preserves interleaved panels and interrupted plain text without pre
       ],
     });
     expect(restored[0].activity).toEqual([]);
-    const state = createSessionState(restored);
-    state.activeChat = chat.id;
+    const state = { ...initialSession(restored), activeChat: chat.id };
     expect(projectChats(state).chats[0].messages![0].parts).toEqual(restored[0].messages[0].parts);
     expect(projectChats(state).chats[0].messages![0]).not.toHaveProperty('replyFormat');
   } finally {
@@ -218,8 +213,7 @@ test('SQLite retains source beyond display limits, including interrupted and aut
     );
     await store.flush([chat]);
     const restored = await f.store().load(),
-      state = createSessionState(restored);
-    state.activeChat = chat.id;
+      state = { ...initialSession(restored), activeChat: chat.id };
     expect(restored[0].messages[0].text).toBe(raw);
     expect(projectChats(state).chats[0].messages?.[0].text.length).toBeLessThanOrEqual(20000);
     expect(chat.messages).toHaveLength(1);

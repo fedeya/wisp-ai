@@ -24,7 +24,7 @@ import { startRoutineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './game/packet-receiver.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
 import { readCharacterNames } from './chat/character-keys.ts';
-import { createSessionState } from './session-state.ts';
+import * as SessionState from './session/index.ts';
 import { createDesktopApp } from './api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 import { writeJson } from './json-file.ts';
@@ -50,8 +50,7 @@ import { importProductData } from './migrations/product-json.ts';
 import * as Capabilities from './capabilities/index.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
 import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
-import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
-import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
+import * as SnapshotPublisher from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
@@ -141,6 +140,7 @@ export const ServerServices = Layer.mergeAll(
   ),
   capabilitySettingsLayer,
   Capabilities.integrationsLayer.pipe(Layer.provide(capabilitySettingsLayer)),
+  SessionState.layer,
 );
 
 /** The migrated services; `main.ts` and `startServer` provide it. */
@@ -165,7 +165,7 @@ export interface ServerOptions {
 /**
  * Composition root of the Wisp server: loads stores and settings, wires the
  * in-process agent, the WoW bridge and the HTTP listeners, and returns
- * `{ state, receive }` in the caller's scope.
+ * `{ session, receive }` in the caller's scope.
  *
  * Cleanup is registered on the scope and runs in reverse (LIFO), so
  * the registration order below is the shutdown order read bottom-up. Orderings
@@ -281,6 +281,11 @@ export const makeServer = Effect.fn('Server.make')(
       ...capabilityReads,
       publish: () => runPromise(capabilitySettings.publish),
     };
+    const sessionState = yield* SessionState.SessionState;
+    // For the synchronous readers of the session: the turn runner, the routine
+    // scheduler, the agent server, the agent's game access and memory reads,
+    // chat persistence and the status.
+    const session = () => runSync(sessionState.get);
     // End of adapters.
     const { mcpConfig } = yield* settings.get;
     const mcpFile = mcpConfig
@@ -355,38 +360,51 @@ export const makeServer = Effect.fn('Server.make')(
         ),
       ),
     );
-    const state = createSessionState(yield* startup(() => chatStore.load()));
+    const loadedChats = yield* startup(() => chatStore.load());
+    yield* sessionState.update((state) => ({ ...state, chats: loadedChats }));
     yield* releaseRuntimeResource(async () => {
       try {
-        await chatStore.flush(state.chats);
+        await chatStore.flush(session().chats);
       } finally {
         await chatStore.close();
       }
     });
+    // Adapter for the unmigrated ChatStore: each burst of session changes
+    // schedules its debounced save of the chats as they are when it runs.
+    yield* sessionState.changes.pipe(
+      Stream.runForEachArray(() =>
+        Effect.sync(() => {
+          if (!shutdownRequested) {
+            chatStore.schedule(() => session().chats);
+          }
+        }),
+      ),
+      Effect.forkScoped({ startImmediately: true }),
+    );
+    // End of adapter.
     const refreshModelCatalog = () => {
       runFork(modelCatalog.refresh);
     };
     // The default follows the providers the player connected, not one vendor's model.
-    const defaultModel = () => resolveDefaultModel(runSync(settings.get).model, state.modelCatalog);
+    const defaultModel = () =>
+      resolveDefaultModel(runSync(settings.get).model, session().modelCatalog);
     const accounts = createAccountOperations({
       isStopping: () => shutdownRequested,
-      hasActiveTurn: () => state.chats.some((c) => c.status === 'working'),
+      hasActiveTurn: () => session().chats.some((c) => c.status === 'working'),
       afterOperation: refreshModelCatalog,
     });
     // The app update the desktop last reported; the desktop resends it after a restart.
     let appUpdateVersion: string | null = null;
-    const publisher: SnapshotPublisher = yield* createSnapshotPublisher({
-      state,
-      transport: () => transport.current(),
-      inputs: () => {
-        const character = state.currentCharacterKey;
+    const publisher = yield* SnapshotPublisher.make({
+      transport: Effect.sync(() => Option.fromNullishOr(transport.current())),
+      inputs: Effect.sync(() => {
+        const { currentCharacterKey: character, modelCatalog: catalog } = session();
         return {
           connected: engineReady,
           bridgeVersion,
           expectedAddonVersion,
           appUpdateVersion,
-          contextWindowTokens: state.modelCatalog.find((m) => m.slug === defaultModel())
-            ?.contextWindow,
+          contextWindowTokens: catalog.find((m) => m.slug === defaultModel())?.contextWindow,
           defaultModel: defaultModel(),
           panels: character ? panelStore.list(character) : [],
           routines: character ? routineStore.list(character) : [],
@@ -397,23 +415,20 @@ export const makeServer = Effect.fn('Server.make')(
           capabilities: capabilityReads.snapshot(),
           features: runSync(features.values),
         };
-      },
+      }),
     });
-    yield* releaseRuntimeResource(() => publisher.stop());
-    // Adapter for SessionState, which is not migrated: each catalog a refresh
-    // loads is copied into it, once `changed()` can publish it. Subscribed
+    // Each catalog a refresh loads is copied into the session. Subscribed
     // before the first refresh starts, so its catalog is not missed.
     yield* modelCatalog.changes.pipe(
       Stream.runForEach(({ models, error }) =>
-        Effect.sync(() => {
-          state.modelCatalog = [...models];
-          state.modelCatalogError = Option.getOrUndefined(error);
-          changed();
-        }),
+        sessionState.update((state) => ({
+          ...state,
+          modelCatalog: [...models],
+          modelCatalogError: Option.getOrUndefined(error),
+        })),
       ),
       Effect.forkScoped({ startImmediately: true }),
     );
-    // End of adapter.
     if (yield* modelConnections.hasProvider) refreshModelCatalog();
     const bridge = Context.get(
       yield* Layer.build(WowBridge.layer.pipe(Layer.provide(wowPlatform))),
@@ -422,21 +437,15 @@ export const makeServer = Effect.fn('Server.make')(
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
-    const memoryAccess = AgentMemoryAccess.make({
+    const memoryAccess = yield* AgentMemoryAccess.make({
       repository: memoryRepository,
-      chats: () => state.chats,
-      currentTransport: () => state.activeTransport,
       capabilities: capabilitySettings,
       snapshot: memorySnapshot,
-      setView: (view) => {
-        state.memoryView = view;
-      },
-      changed,
     });
     let engineReady = false;
     const gameAccess = AgentGameAccess.make({
-      getChats: () => state.chats,
-      currentTransport: () => state.activeTransport,
+      getChats: () => session().chats,
+      currentTransport: () => session().activeTransport,
       requestGame: (call) => transport.request(call),
       capabilitySettings: capabilityReads,
       mcpManager,
@@ -449,9 +458,10 @@ export const makeServer = Effect.fn('Server.make')(
       allowed: (server, tool) =>
         capabilityReads.enabled('mcp:' + server) &&
         (!tool || capabilityReads.enabled('mcp_tool:' + server + ':' + tool)),
-      readOnly: (session) =>
-        state.chats.some(
-          (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
+      readOnly: (agentSession) =>
+        session().chats.some(
+          (chat) =>
+            chat.agentSession === agentSession && chat.proactive && chat.status === 'working',
         ),
     });
     const agentLayer = Agent.layer.pipe(
@@ -466,22 +476,17 @@ export const makeServer = Effect.fn('Server.make')(
     );
     const engine = Agent.make(agentLayer);
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
-      if (!state.activeTransport || !capabilityReads.enabled('tool:query_character')) {
+      const { activeTransport } = session();
+      if (!activeTransport || !capabilityReads.enabled('tool:query_character')) {
         throw Error('Connect WoW and enable Character readings first.');
       }
       return runPromise(
         transport.request({
           chat,
-          session: state.activeTransport,
+          session: activeTransport,
           operation: { kind: 'read', sections: ['character', 'talents', 'spells', 'gear'] },
         }),
       );
-    }
-    function changed() {
-      publisher.changed();
-      if (!shutdownRequested) {
-        chatStore.schedule(() => state.chats);
-      }
     }
     // A saved override changed a flag: the agent reads it on its next turn, the
     // addon on its next snapshot and the desktop on its next status poll. The
@@ -492,7 +497,7 @@ export const makeServer = Effect.fn('Server.make')(
           Effect.annotateLogs({ event: 'features.publish_failed', error: errorMessage(error) }),
         ),
       ),
-      Effect.andThen(Effect.sync(changed)),
+      Effect.andThen(publisher.invalidate),
     );
     // Subscribed before this returns, so no saved override is missed.
     yield* features.changes.pipe(
@@ -509,40 +514,32 @@ export const makeServer = Effect.fn('Server.make')(
       engine,
       models: connections,
       capabilitySettings: turnCapabilities,
-      changed,
-      currentTransport: () => state.activeTransport,
-      activeChat: () => state.activeChat,
+      currentTransport: () => session().activeTransport,
+      activeChat: () => session().activeChat,
       defaultModel,
       isReady: () => engineReady,
       isStopping: () => shutdownRequested,
       accountBusy: accounts.busy,
       hasProvider: connectionReads.hasProvider,
-      isCurrent: (chat) => state.chats.includes(chat),
-      flushSnapshot: publisher.flush,
+      isCurrent: (chat) => session().chats.includes(chat),
+      snapshot: publisher,
     });
     yield* releaseRuntimeResource(async () => {
-      state.chats.forEach(run.interrupt);
+      session().chats.forEach(run.interrupt);
       await run.drain();
     });
     const stopRoutineScheduler = yield* startRoutineScheduler({
-      state,
+      session,
       routineStore,
       capabilitySettings: capabilityReads,
       run,
-      changed,
       isStopping: () => shutdownRequested,
       isReady: () => engineReady,
     });
     yield* releaseRuntimeResource(stopRoutineScheduler);
-    const adoptCharacter = createCharacterAdoption({
-      db: sql,
-      panelStore,
-      chats: () => state.chats,
-      changed,
-    });
+    const adoptCharacter = yield* createCharacterAdoption({ db: sql, panelStore });
     const receivePacket = yield* createPacketReceiver({
       telemetry,
-      state,
       engine,
       request: (call) => transport.request(call),
       integrationState,
@@ -559,30 +556,30 @@ export const makeServer = Effect.fn('Server.make')(
       interrupt: run.interrupt,
       cancel: run.cancel,
       runtime,
-      changed,
+      snapshot: publisher,
     });
     const observeGameConnection = Effect.suspend(() =>
-      telemetry.gameConnectionProgress({
-        connected: transport.gameConnected(),
-        hasReadySnapshot: transport.current()?.status().readyPublished ?? false,
-      }),
+      Effect.flatMap(transport.gameConnected, (connected) =>
+        telemetry.gameConnectionProgress({
+          connected,
+          hasReadySnapshot: transport.current()?.status().readyPublished ?? false,
+        }),
+      ),
     );
     const receive = Effect.fnUntraced(function* (packet: Parameters<typeof receivePacket>[0]) {
-      const previousSession = state.activeTransport;
+      const previousSession = (yield* sessionState.get).activeTransport;
       yield* observeGameConnection;
       yield* receivePacket(packet);
-      if (state.activeTransport !== previousSession) {
+      if ((yield* sessionState.get).activeTransport !== previousSession) {
         yield* telemetry.gameConnectionStarted;
       }
     });
     const transport: TransportConnection = yield* createTransportConnection({
-      state,
       bridge,
       integrationState,
       capabilitySettings,
       receive,
       saveWow: (wow) => saveSettings({ wow }),
-      changed,
       isStopping: () => shutdownRequested,
     }).pipe(Effect.provide(wowPlatform));
     yield* Effect.addFinalizer(() => transport.serialize(transport.disconnect));
@@ -599,12 +596,12 @@ export const makeServer = Effect.fn('Server.make')(
         panelStore,
         database,
         simulator,
-        getChats: () => state.chats,
-        currentTransport: () => state.activeTransport,
+        getChats: () => session().chats,
+        currentTransport: () => session().activeTransport,
         defaultModel,
         readSimulationCharacter,
         presentReply: run.present,
-        changed,
+        snapshot: publisher,
       }),
     );
     yield* releaseRuntimeResource(() => closeServer(server));
@@ -646,7 +643,7 @@ export const makeServer = Effect.fn('Server.make')(
     const engineStartup = engine.preload().then(
       () => {
         engineReady = true;
-        changed();
+        runFork(publisher.invalidate);
       },
       (error: unknown) =>
         runFork(
@@ -659,13 +656,13 @@ export const makeServer = Effect.fn('Server.make')(
       const characters = readCharacterNames(applicationDatabase.orm);
       return {
         ready: engineReady,
-        gameConnected: transport.gameConnected(),
+        gameConnected: runSync(transport.gameConnected),
         auth: auth.state(),
         connections: connectionReads.list(),
         modelConnected: connectionReads.connected(defaultModel()),
         search: webSearch.state(),
         model: defaultModel(),
-        activeTurns: state.chats.filter((c) => c.status === 'working').length,
+        activeTurns: session().chats.filter((c) => c.status === 'working').length,
         integrations: capabilityReads.snapshot(),
         mcps: mcpManager.list().map((s) => ({
           ...s,
@@ -695,13 +692,13 @@ export const makeServer = Effect.fn('Server.make')(
       readSimulationCharacter,
       setCapability: mcpCapabilities.setCapability,
       refreshMcpCatalog: mcpCapabilities.refreshCatalog,
-      changed,
+      snapshot: publisher,
       setWowTransport: (input) =>
         transport.serialize(
           Effect.gen(function* () {
             if (shutdownRequested) return yield* Effect.fail(Error('Wisp is stopping.'));
             if (input.action === 'pause') {
-              if (state.chats.some((chat) => chat.status === 'working')) {
+              if ((yield* sessionState.get).chats.some((chat) => chat.status === 'working')) {
                 return yield* Effect.fail(
                   Error('Wait for the active turn before installing the addon.'),
                 );
@@ -720,15 +717,6 @@ export const makeServer = Effect.fn('Server.make')(
         appUpdateVersion = version;
       },
       getStatus: desktopStatus,
-      getChats: () => state.chats,
-      currentCharacterKey: () => state.currentCharacterKey,
-      sendPanelCommand: (command) => {
-        state.panelCommand = command;
-      },
-      openRoutine: (id) => {
-        state.activeChat = id;
-        state.routineCommand = { seq: Date.now(), id };
-      },
       updateModel: async (model) => {
         if (shutdownRequested) {
           throw Error('Wisp is stopping.');
@@ -755,15 +743,13 @@ export const makeServer = Effect.fn('Server.make')(
     ).pipe(Effect.forkChild());
     // A report that stopped counting changes what the addon and the desktop see.
     yield* integrationState.healthChecks.pipe(
-      Stream.runForEach(() => Effect.sync(changed)),
+      Stream.runForEach(() => publisher.invalidate),
       Effect.forkScoped,
     );
-    // Snapshots publish from changed(); this tick only polls what has no event:
-    // the addon's acknowledged revision, and a publish that is still dirty
-    // because the transport was missing or its last write failed.
+    // Snapshots publish from the session's changes; this tick only polls what
+    // has no event: whether the addon acknowledged a snapshot.
     const publish = setInterval(() => {
       runFork(observeGameConnection);
-      publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
     yield* Effect.logInfo('Wisp started').pipe(
       Effect.annotateLogs({
@@ -778,13 +764,13 @@ export const makeServer = Effect.fn('Server.make')(
       Effect.sync(() => {
         shutdownRequested = true;
         clearTimeout(desktopStopTimer);
-        state.chats.forEach(run.interrupt);
+        session().chats.forEach(run.interrupt);
       }),
     );
     yield* startup(() => engineStartup);
     yield* Fiber.join(transportStartup);
     return {
-      state,
+      session: sessionState,
       receive: (packet: Parameters<typeof receive>[0]) => runPromise(receive(packet)),
     };
   },

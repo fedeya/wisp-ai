@@ -15,10 +15,10 @@ import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '#/capabilities';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
-import type { Chat } from '../chat/events.ts';
 import { openChat, isWorking } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
-import type { PanelCommand } from '../session-state.ts';
+import { SessionState } from '#/session';
+import type { SnapshotPublisher } from '../game/snapshot-publisher.ts';
 // Called by the Rust host around addon installs; not part of the webview contract.
 export const wowTransportInput = Schema.Union([
   Schema.Struct({ action: Schema.Literal('pause') }),
@@ -38,10 +38,6 @@ interface DesktopDependencies {
   accountOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   updateModel: (model: string) => Promise<void>;
   getStatus: () => Status;
-  getChats: () => Chat[];
-  currentCharacterKey: () => string | undefined;
-  sendPanelCommand: (command: PanelCommand) => void;
-  openRoutine: (id: string) => void;
   readSimulationCharacter: () => Promise<unknown>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   setWowTransport: (input: typeof wowTransportInput.Type) => Effect.Effect<void, unknown>;
@@ -49,7 +45,8 @@ interface DesktopDependencies {
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
   refreshMcpCatalog: Effect.Effect<void>;
   requestStop: () => void;
-  changed: () => void;
+  /** Told when the desktop changes routines, panels, capabilities or the app update. */
+  snapshot: Pick<SnapshotPublisher['Service'], 'invalidate'>;
 }
 // Decodes the JSON body. A failure throws, so onError answers 400 with its
 // message like any other failure.
@@ -60,6 +57,7 @@ const json = <S extends Schema.Codec<unknown, unknown>>(schema: S) => {
 const ok = { ok: true } as const;
 export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDependencies) {
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+  const session = yield* SessionState;
   const {
     auth,
     connections,
@@ -69,8 +67,8 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     panelStore,
     routineStore,
     accountOperation,
+    snapshot,
   } = deps;
-  const chatFor = (id: string) => deps.getChats().find((chat) => chat.id === id);
   return new Hono()
     .onError((error, c) => c.json({ error: errorMessage(error) }, 400))
     .notFound((c) => c.json({ error: 'Unknown desktop request' }, 404))
@@ -132,8 +130,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     )
     .post('/integrations/set', json(routes['/integrations/set'].input), async (c) => {
       const { id, enabled } = c.req.valid('json');
-      await runPromise(deps.setCapability(id, enabled));
-      deps.changed();
+      await runPromise(deps.setCapability(id, enabled).pipe(Effect.andThen(snapshot.invalidate)));
       return c.json(ok);
     })
     .post('/mcps/test', json(routes['/mcps/test'].input), async (c) =>
@@ -146,7 +143,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
           const tested = yield* mcpManager.save(setup);
           yield* deps.refreshMcpCatalog;
           yield* capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled);
-          deps.changed();
+          yield* snapshot.invalidate;
           return tested;
         }),
       );
@@ -159,7 +156,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
           yield* mcpManager.remove(name);
           yield* deps.refreshMcpCatalog;
           yield* capabilitySettings.publish;
-          deps.changed();
+          yield* snapshot.invalidate;
         }),
       );
       return c.json(ok);
@@ -171,25 +168,27 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       }
       if (action === 'remove') {
         await panelStore.mutate(characterKey, { operation: 'remove', id });
+        await runPromise(snapshot.invalidate);
       } else {
-        if (characterKey !== deps.currentCharacterKey()) {
+        if (characterKey !== (await runPromise(session.get)).currentCharacterKey) {
           throw Error('Log into this character first');
         }
-        deps.sendPanelCommand({ seq: Date.now(), id, characterKey, action });
+        const panelCommand = { seq: Date.now(), id, characterKey, action };
+        await runPromise(session.update((state) => ({ ...state, panelCommand })));
       }
-      deps.changed();
       return c.json(ok);
     })
     .post('/routines/action', json(routes['/routines/action'].input), async (c) => {
       const { characterKey, operation, id } = c.req.valid('json');
       await routineStore.mutate(characterKey, { operation, id });
-      deps.changed();
+      await runPromise(snapshot.invalidate);
       return c.json(ok);
     })
     .post('/routines/open', json(routes['/routines/open'].input), async (c) => {
-      const key = deps.currentCharacterKey();
+      const state = await runPromise(session.get);
+      const key = state.currentCharacterKey;
       const run = key ? routineStore.getRun(c.req.valid('json').id, key) : undefined;
-      const chat = run && chatFor(run.id);
+      const chat = run && state.chats.find((chat) => chat.id === run.id);
       if (!run || !chat) {
         throw Error('Log into the character first; the conversation must still exist');
       }
@@ -197,14 +196,17 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
         throw Error('Wait for the routine to finish');
       }
       openChat(chat);
-      deps.openRoutine(run.id);
-      deps.changed();
+      const routineCommand = { seq: Date.now(), id: run.id };
+      // Also tells the subscribers that the chat was opened in place.
+      await runPromise(
+        session.update((current) => ({ ...current, activeChat: run.id, routineCommand })),
+      );
       return c.json(ok);
     })
     .post('/simulator/character', async (c) => c.json(await deps.readSimulationCharacter()))
-    .post('/app-update', json(routes['/app-update'].input), (c) => {
+    .post('/app-update', json(routes['/app-update'].input), async (c) => {
       deps.setAppUpdate(c.req.valid('json').version);
-      deps.changed();
+      await runPromise(snapshot.invalidate);
       return c.json(ok);
     })
     .post('/features/set', json(routes['/features/set'].input), async (c) => {
@@ -216,8 +218,8 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await runPromise(deps.setWowTransport(c.req.valid('json')));
       return c.json(ok);
     })
-    .post('/stop', (c) => {
-      if (deps.getChats().some(isWorking)) {
+    .post('/stop', async (c) => {
+      if ((await runPromise(session.get)).chats.some(isWorking)) {
         throw Error('Wait for the active turn before stopping Wisp');
       }
       deps.requestStop();

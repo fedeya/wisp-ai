@@ -35,7 +35,11 @@ export function accountModel(input: AccountModelInput): AccountModel {
         : undefined,
   };
 }
-export function chooseChatModel(models: AccountModel[], model: string, effort?: string): ChatModel {
+export function chooseChatModel(
+  models: readonly AccountModel[],
+  model: string,
+  effort?: string,
+): ChatModel {
   const entry = models.find((entry) => entry.slug === model);
   if (!entry) {
     throw Error('This model is not available. Choose a connected provider in Wisp > Connections.');
@@ -66,7 +70,10 @@ export function chooseChatModel(models: AccountModel[], model: string, effort?: 
  * connections). An empty catalog says nothing yet, so the saved choice stands.
  * Returns '' when nothing is saved and nothing is available.
  */
-export function resolveDefaultModel(saved: string | undefined, models: AccountModel[]): string {
+export function resolveDefaultModel(
+  saved: string | undefined,
+  models: readonly AccountModel[],
+): string {
   if (!models.length || models.some((m) => m.slug === saved)) return saved || '';
   return models[0]!.slug;
 }

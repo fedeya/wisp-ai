@@ -20,7 +20,7 @@ export function isAutomaticEmptyChat(chat: Chat): boolean {
     chat.status === 'idle'
   );
 }
-export function resumeChat(chats: Chat[], requested?: string): Chat | undefined {
+export function resumeChat(chats: readonly Chat[], requested?: string): Chat | undefined {
   const requestedRun = chats.find(
     (chat) => chat.id === requested && chat.routineId && !chat.proactive,
   );

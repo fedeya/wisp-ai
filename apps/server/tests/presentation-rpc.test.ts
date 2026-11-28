@@ -1,6 +1,8 @@
 import { test, expect, vi } from 'vitest';
+import { Effect } from 'effect';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { layer as SessionStateLayer } from '#/session';
 import { runBridgeEffect } from './capture-logs.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { ReplyProjection } from '../src/reply/reply-stream.ts';
@@ -21,7 +23,9 @@ test('presentation RPC authenticates, scopes the active character and reports br
         getChats: () => [chat],
         currentTransport: () => transport,
         presentReply,
-      } as unknown as Parameters<typeof createAgentHandler>[0]),
+      } as unknown as Parameters<typeof createAgentHandler>[0]).pipe(
+        Effect.provide(SessionStateLayer),
+      ),
     ),
   );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
