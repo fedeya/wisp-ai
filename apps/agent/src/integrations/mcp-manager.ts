@@ -35,7 +35,7 @@ const decodeDefinition = Schema.decodeUnknownEffect(mcpDefinition);
 const decodeSavedFile = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
     Schema.Struct({
-      servers: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+      servers: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
     }),
   ),
 );
@@ -186,6 +186,10 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     ]),
   );
   const servers = yield* Ref.make<Readonly<Record<string, SavedServer>>>({});
+  // Saved entries that did not decode, as they were read, and the saved key
+  // order: every rewrite keeps them, so a player can repair one by hand.
+  const kept = yield* Ref.make<Readonly<Record<string, Schema.Json>>>({});
+  const savedOrder = yield* Ref.make<readonly string[]>([]);
   const updates = yield* Semaphore.make(1);
 
   /** Saved changes run one at a time; a caller can cancel while waiting, but a started write finishes. */
@@ -217,7 +221,8 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     }
     const file = yield* decodeSavedFile(text).pipe(Effect.mapError(configurationError));
     // A malformed entry is skipped and reported, so one bad server does not
-    // keep the others, or the host, from starting.
+    // keep the others, or the host, from starting. It stays in the file.
+    yield* Ref.set(savedOrder, Object.keys(file.servers ?? {}));
     const loaded = yield* Effect.forEach(Object.entries(file.servers ?? {}), ([key, saved]) =>
       Effect.gen(function* () {
         const name = yield* customName(key);
@@ -236,6 +241,7 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
               server: key,
               reason: error.message,
             }),
+            Effect.andThen(Ref.update(kept, (current) => ({ ...current, [key]: saved }))),
             Effect.as(Option.none()),
           ),
         ),
@@ -376,11 +382,29 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     };
   });
 
+  /**
+   * Writes `next` with the entries that did not decode, in the saved order. A
+   * server saved under a broken entry's name, or removed by it, replaces it.
+   */
   const persist = Effect.fn('McpManager.persist')(function* (
     next: Readonly<Record<string, SavedServer>>,
+    removed?: string,
   ) {
-    yield* storage.writeConfig(next).pipe(Effect.mapError(configurationError));
+    const rest = Object.fromEntries(
+      Object.entries(yield* Ref.get(kept)).filter(([name]) => !(name in next) && name !== removed),
+    );
+    const all: Readonly<Record<string, SavedServer | Schema.Json>> = { ...rest, ...next };
+    const order = (yield* Ref.get(savedOrder)).filter((name) => name in all);
+    const written = Object.fromEntries(
+      [...order, ...Object.keys(all).filter((name) => !order.includes(name))].flatMap((name) => {
+        const entry = all[name];
+        return entry === undefined ? [] : [[name, entry] as const];
+      }),
+    );
+    yield* storage.writeConfig(written).pipe(Effect.mapError(configurationError));
     yield* Ref.set(servers, next);
+    yield* Ref.set(kept, rest);
+    yield* Ref.set(savedOrder, Object.keys(written));
   });
 
   const saveTestedSetup = Effect.fn('McpManager.saveTestedSetup')(function* (
@@ -440,7 +464,7 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     const next = Object.fromEntries(
       Object.entries(yield* Ref.get(servers)).filter(([name]) => name !== key),
     );
-    yield* persist(next);
+    yield* persist(next, key);
     yield* disconnectConnection(key);
     yield* writeSecret('mcp:' + key + ':token', '');
     yield* writeSecret('mcp:' + key + ':env', '');

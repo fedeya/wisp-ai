@@ -735,6 +735,61 @@ describe('McpManager settings', () => {
     }),
   );
 
+  it.effect('a malformed saved server stays in the file through saves, switches and removals', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const valid = { url: 'https://example.com/mcp', args: [], enabled: true };
+      const broken = { url: 'ftp://example.com/mcp', extra: [1, { nested: null }, 'x'], tools: 5 };
+      const saved = yield* makeSaved(
+        JSON.stringify({ servers: { first: valid, broken, last: valid } }),
+      );
+      const written = Effect.map(Ref.get(saved.config), (text) =>
+        text === undefined ? undefined : JSON.parse(text),
+      );
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        assert.deepStrictEqual(
+          (yield* manager.list()).map(({ name }) => name),
+          ['first', 'last'],
+        );
+        yield* manager.save(
+          parseSetup({ server: { name: 'added', url: 'https://example.com/mcp' } }),
+        );
+        const afterSave = yield* written;
+        assert.deepStrictEqual(Object.keys(afterSave.servers), [
+          'first',
+          'broken',
+          'last',
+          'added',
+        ]);
+        assert.deepStrictEqual(afterSave.servers.broken, broken);
+        assert.deepStrictEqual(
+          (yield* manager.list()).map(({ name }) => name),
+          ['first', 'last', 'added'],
+        );
+        yield* manager.setEnabled('first', false);
+        yield* manager.remove('last');
+        const afterChanges = yield* written;
+        assert.deepStrictEqual(Object.keys(afterChanges.servers), ['first', 'broken', 'added']);
+        assert.deepStrictEqual(afterChanges.servers.broken, broken);
+        // A server saved under the broken entry's name replaces it.
+        yield* manager.save(
+          parseSetup({ server: { name: 'broken', url: 'https://example.com/mcp' } }),
+        );
+        const afterReplace = yield* written;
+        assert.deepStrictEqual(Object.keys(afterReplace.servers), ['first', 'broken', 'added']);
+        assert.strictEqual(afterReplace.servers.broken.url, 'https://example.com/mcp');
+        assert.strictEqual(afterReplace.servers.broken.extra, undefined);
+        // Removing by name removes a broken entry too.
+        yield* Ref.set(saved.config, JSON.stringify({ servers: { first: valid, broken } }));
+        yield* manager.load();
+        yield* manager.remove('broken');
+        assert.deepStrictEqual(Object.keys((yield* written).servers), ['first', 'added']);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
   it.effect('a malformed saved environment fails the open without naming its values', () =>
     Effect.gen(function* () {
       const connection = yield* fakeConnection();
