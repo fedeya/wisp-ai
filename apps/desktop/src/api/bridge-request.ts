@@ -13,7 +13,7 @@ export async function bridgeRequest(route: string, body?: unknown): Promise<unkn
     throw Error('Unsupported desktop operation.');
   }
   const contract = desktopRoutes[route];
-  const result = await desktop<unknown>('bridge_request', {
+  const result = await desktop('bridge_request', {
     method: contract.method.toUpperCase(),
     route,
     body: 'input' in contract ? await Schema.decodeUnknownPromise(contract.input)(body) : null,

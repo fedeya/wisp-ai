@@ -224,7 +224,7 @@ function createDesktopSession() {
 
   async function pickFolder() {
     if (getState().detectingGame) return;
-    const folder = await desktop<string | null>('pick_folder');
+    const folder = await desktop('pick_folder');
     if (folder) update({ wow: folder });
   }
 
@@ -258,7 +258,7 @@ function createDesktopSession() {
   }
 
   async function importPrevious() {
-    const source = await desktop<string | null>('pick_folder');
+    const source = await desktop('pick_folder');
     if (!source || disposed) return;
     await work(
       'Importing previous installation',
@@ -274,11 +274,7 @@ function createDesktopSession() {
   }
 
   async function showLogs() {
-    await work(
-      'Reading logs',
-      async () => update({ logs: await desktop<string>('read_logs') }),
-      null,
-    );
+    await work('Reading logs', async () => update({ logs: await desktop('read_logs') }), null);
   }
 
   async function setIntegration(id: string, enabled: boolean) {
@@ -357,7 +353,7 @@ function createDesktopSession() {
     try {
       const onFound = new Channel<string>();
       onFound.onmessage = addFolder;
-      (await desktop<string[]>('detect_game_folders', { onFound })).forEach(addFolder);
+      (await desktop('detect_game_folders', { onFound })).forEach(addFolder);
     } catch {
       update({ detectionFailed: true });
     } finally {

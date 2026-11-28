@@ -1,18 +1,22 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { Schema } from 'effect';
-import { desktopInfoSchema, type DesktopInfo } from '@wisp/protocol/desktop';
+import {
+  nativeCommands,
+  type NativeCommand,
+  type NativeReply,
+} from '@wisp/protocol/native-commands';
 export const native = isTauri();
-const decodeInfo = Schema.decodeUnknownPromise(desktopInfoSchema);
 /**
- * Runs a native host command. What the host reports about the app is decoded
- * here, at the IPC boundary; other replies are whatever the caller expects.
+ * Runs a native host command and decodes its reply with the command's
+ * contract schema, at the IPC boundary; a reply of another shape rejects.
  */
-export function desktop(command: 'desktop_info'): Promise<DesktopInfo>;
-export function desktop<T>(command: string, args?: Record<string, unknown>): Promise<T>;
-export async function desktop(command: string, args?: Record<string, unknown>): Promise<unknown> {
+export async function desktop<C extends NativeCommand>(
+  command: C,
+  args?: Record<string, unknown>,
+): Promise<NativeReply<C>> {
   if (!native) {
     return Promise.reject(Error('This action is available in the Wisp desktop app.'));
   }
-  const result = await invoke(command, args);
-  return command === 'desktop_info' ? decodeInfo(result) : result;
+  const reply: (typeof nativeCommands)[C] = nativeCommands[command];
+  return Schema.decodeUnknownPromise(reply)(await invoke(command, args));
 }

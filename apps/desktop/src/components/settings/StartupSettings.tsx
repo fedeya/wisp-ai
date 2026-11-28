@@ -12,7 +12,7 @@ export default function StartupSettings() {
   useEffect(() => {
     if (!native) return;
     let active = true;
-    void desktop<boolean>('autostart_enabled')
+    void desktop('autostart_enabled')
       .then((value) => active && setEnabled(value))
       .catch(() => active && setError('Could not read the startup setting.'));
     return () => {
@@ -25,7 +25,7 @@ export default function StartupSettings() {
     setPending(value);
     setError('');
     try {
-      setEnabled(await desktop<boolean>('set_autostart', { enabled: value }));
+      setEnabled(await desktop('set_autostart', { enabled: value }));
     } catch {
       setError('Could not change the startup setting. Try again.');
     } finally {
