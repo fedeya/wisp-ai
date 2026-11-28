@@ -1,6 +1,8 @@
-// @effect-migrated allow=jsonParse: malformed settings fail with a SyntaxError cause, which tests/capabilities.test.ts checks; decoding with Schema would change it
-import { Effect, type FileSystem } from 'effect';
+// @effect-migrated
+import { Effect, Schema, type FileSystem } from 'effect';
 import { HostError } from '../execution/engine-errors.ts';
+
+const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 /** An absent settings file uses defaults; malformed JSON and other I/O errors fail. */
 export const readSettings = Effect.fnUntraced(function* (
@@ -17,8 +19,5 @@ export const readSettings = Effect.fnUntraced(function* (
     Effect.mapError((cause) => new HostError({ cause })),
   );
   if (text === undefined) return undefined;
-  return yield* Effect.try({
-    try: (): unknown => JSON.parse(text),
-    catch: (cause) => new HostError({ cause }),
-  });
+  return yield* decodeJson(text).pipe(Effect.mapError((cause) => new HostError({ cause })));
 });
