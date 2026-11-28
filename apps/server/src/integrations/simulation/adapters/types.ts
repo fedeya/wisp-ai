@@ -1,3 +1,5 @@
+import { Schema } from 'effect';
+
 export interface ClassAdapter {
   token: string;
   engineClass: string;
@@ -14,14 +16,27 @@ export interface ClassAdapter {
   options?: Record<string, unknown>;
   assumptions: string[];
 }
-export interface SpellRank {
-  id: number;
-  level: number;
-  minRange: number;
-  maxRange: number;
-}
-export interface ClassMetadata {
-  talents: { id: number; name?: string; max: number; row?: number; prerequisiteId?: number }[][];
-  ranks: Record<string, SpellRank[]>;
-  triggerParents: Record<string, number>;
-}
+// One class in the pinned simulator/classes.json. Fields are in the file's
+// order, so a decoded entry serializes as the file has it.
+const SpellRank = Schema.Struct({
+  id: Schema.Int,
+  level: Schema.Int,
+  minRange: Schema.Finite,
+  maxRange: Schema.Finite,
+});
+export const ClassMetadata = Schema.Struct({
+  talents: Schema.Array(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.Int,
+        name: Schema.optionalKey(Schema.String),
+        max: Schema.Int,
+        row: Schema.optionalKey(Schema.Int),
+        prerequisiteId: Schema.optionalKey(Schema.Int),
+      }),
+    ),
+  ),
+  ranks: Schema.Record(Schema.String, Schema.Array(SpellRank)),
+  triggerParents: Schema.Record(Schema.String, Schema.Int),
+});
+export type ClassMetadata = typeof ClassMetadata.Type;

@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
-import { Deferred, Effect, Exit, FileSystem, Layer, Scope, Stream } from 'effect';
+import { Deferred, Effect, Exit, FileSystem, Layer, Scope, Semaphore, Stream } from 'effect';
+import { systemError } from 'effect/PlatformError';
 import { encodeMessage, readUplink, replaceUplink, UPLINK_KIND } from '../src/wire/mailbox.ts';
 import { layer, WowBridge, type GameEvent } from '../src/wow-bridge.ts';
 import { captureLogs } from './log-fixture.ts';
@@ -23,6 +24,13 @@ test('the connection publishes and resolves game requests without routing them t
   const writeStarted = Deferred.makeUnsafe<void>();
   const releaseWrite = Deferred.makeUnsafe<void>();
   let holdPayload = false;
+  // The fake game saves each uplink frame once, and unlike the addon it never
+  // retries one. The bridge's control write rereads AddOns.txt and then renames
+  // over it, so a fake save that landed between the two came back as the old
+  // frame and the test waited for a frame that was gone. Fake saves and that
+  // rename take turns, and the rename fails as if the game held the file when
+  // the uplink changed after the bridge read it.
+  const gameSave = Semaphore.makeUnsafe(1);
   const observeReads = Layer.effect(
     FileSystem.FileSystem,
     Effect.map(FileSystem.FileSystem, (fs) => ({
@@ -37,6 +45,21 @@ test('the connection publishes and resolves game requests without routing them t
             }),
           ),
         ),
+      rename: (from, to) =>
+        to === file || to === otherFile
+          ? gameSave.withPermit(
+              Effect.gen(function* () {
+                const control = readUplink(yield* fs.readFileString(from));
+                const saved = readUplink(yield* fs.readFileString(to));
+                if (control && saved && !control.equals(saved)) {
+                  return yield* Effect.fail(
+                    systemError({ _tag: 'Busy', module: 'FileSystem', method: 'rename' }),
+                  );
+                }
+                yield* fs.rename(from, to);
+              }),
+            )
+          : fs.rename(from, to),
       writeFileString: (filename, data, options) => {
         const write = fs.writeFileString(filename, data, options);
         return holdPayload && filename === payload + '.tmp'
@@ -60,7 +83,13 @@ test('the connection publishes and resolves game requests without routing them t
     const frames = encodeMessage(body, UPLINK_KIND, 1, wireSequence);
     wireSequence += frames.length;
     for (const frame of frames) {
-      await writeFile(target, replaceUplink(await readFile(target, 'utf8'), frame));
+      await Effect.runPromise(
+        gameSave.withPermit(
+          Effect.promise(async () =>
+            writeFile(target, replaceUplink(await readFile(target, 'utf8'), frame)),
+          ),
+        ),
+      );
       await vi.waitFor(() => expect(lastRead.get(target)).toEqual(frame), { timeout: 2500 });
     }
   }

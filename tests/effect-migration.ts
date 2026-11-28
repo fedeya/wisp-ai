@@ -1,5 +1,6 @@
 import { Effect, FileSystem, Path, Schema } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
+import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 
 /**
  * Effect migration scoreboard: how often each workspace's shipped TypeScript
@@ -40,6 +41,7 @@ const codePatternNames = [
   'effectPromises',
   'throwStatements',
   'tryBlocks',
+  'jsonParse',
 ] as const;
 
 /** Every pattern, in the order reports list them. */
@@ -73,6 +75,8 @@ const codePatterns: Record<CodePattern, RegExp> = {
   effectPromises: /\bEffect\.(?:promise|tryPromise)\s*\(/g,
   throwStatements: /\bthrow\b/g,
   tryBlocks: /\btry\s*\{/g,
+  // Its result is `any`: decode with Schema.fromJsonString instead.
+  jsonParse: /\bJSON\.parse\s*\(/g,
 };
 
 const specifierPattern = /(?:\bfrom\s*|^\s*import\s*|\bimport\s*\(\s*)['"]([^'"]+)['"]/g;
@@ -118,6 +122,7 @@ const emptyCounts = (): Counts => ({
   effectPromises: 0,
   throwStatements: 0,
   tryBlocks: 0,
+  jsonParse: 0,
 });
 
 /** Counts every pattern in one source text, adding to `counts`. */
@@ -201,19 +206,97 @@ export const readBaseline = Effect.gen(function* () {
 });
 
 /**
+ * Type-aware oxlint rules that report an unchecked type: a cast, `any`, a
+ * non-null assertion or a `@ts-` comment. A migrated file has no findings.
+ */
+export const lintRuleNames = [
+  'typescript/ban-ts-comment',
+  'typescript/no-explicit-any',
+  'typescript/no-non-null-assertion',
+  'typescript/no-unsafe-argument',
+  'typescript/no-unsafe-assignment',
+  'typescript/no-unsafe-call',
+  'typescript/no-unsafe-member-access',
+  'typescript/no-unsafe-return',
+  'typescript/no-unsafe-type-assertion',
+] as const;
+export type LintRuleName = (typeof lintRuleNames)[number];
+const isLintRuleName = Schema.is(Schema.Literals(lintRuleNames));
+
+/** The part of `oxlint --format json` output the checks read. */
+const LintReport = Schema.Struct({
+  diagnostics: Schema.Array(
+    Schema.Struct({
+      // Like `typescript(no-explicit-any)`; absent on a parse error.
+      code: Schema.optionalKey(Schema.String),
+      message: Schema.String,
+      filename: Schema.String,
+      labels: Schema.Array(Schema.Struct({ span: Schema.Struct({ line: Schema.Int }) })),
+    }),
+  ),
+});
+const decodeLintReport = Schema.decodeEffect(Schema.fromJsonString(LintReport));
+
+export type LintFinding = {
+  /** Relative to the repository root, with `/` separators. */
+  readonly file: string;
+  readonly rule: LintRuleName;
+  readonly line: number;
+  readonly message: string;
+};
+
+/**
+ * Runs oxlint with the repository's config on files relative to the
+ * repository root and returns what the rules in `lintRuleNames` report. The
+ * config turns on type-aware linting, as in `pnpm lint`.
+ */
+export const lintFindings = Effect.fnUntraced(function* (files: readonly string[]) {
+  if (files.length === 0) {
+    return [];
+  }
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const root = yield* repositoryRoot;
+  const oxlint = path.join(root, 'node_modules', 'oxlint', 'bin', 'oxlint');
+  // oxlint exits non-zero when any rule errors; the report is still complete.
+  const output = yield* spawner.string(
+    ChildProcess.make('node', [oxlint, '-c', 'oxlint.config.ts', '--format', 'json', ...files], {
+      cwd: root,
+    }),
+  );
+  const { diagnostics } = yield* decodeLintReport(output);
+  return diagnostics.flatMap(({ code = '', message, filename, labels }): LintFinding[] => {
+    const rule = code.replace(/^(\w+)\((.+)\)$/, '$1/$2');
+    return isLintRuleName(rule)
+      ? [
+          {
+            file: filename.split(path.sep).join('/'),
+            rule,
+            line: labels[0]?.span.line ?? 0,
+            message,
+          },
+        ]
+      : [];
+  });
+});
+
+/**
  * A migrated file says so in a comment: `// @effect-migrated`, or
  * `// @effect-migrated allow=effectPromises: adapter around the MCP SDK` to
- * keep patterns for a stated reason.
+ * keep scoreboard patterns or lint findings (`allow=typescript/no-unsafe-call`)
+ * for a stated reason.
  */
 const markerLine = /^\/\/ @effect-migrated\b(.*)$/m;
-const allowance = /^ allow=([\w,]+): *(\S.*)$/;
+const allowance = /^ allow=([\w/,-]+): *(\S.*)$/;
 const isPatternName = Schema.is(Schema.Literals(patternNames));
+const isAllowanceName = (name: string): name is PatternName | LintRuleName =>
+  isPatternName(name) || isLintRuleName(name);
 
-export const markerFormat = '// @effect-migrated [allow=<pattern>[,<pattern>]: <reason>]';
+export const markerFormat = '// @effect-migrated [allow=<pattern|rule>[,<pattern|rule>]: <reason>]';
 
 export type Marker =
   | { readonly kind: 'unmarked' }
-  | { readonly kind: 'migrated'; readonly allow: readonly PatternName[] }
+  | { readonly kind: 'migrated'; readonly allow: readonly (PatternName | LintRuleName)[] }
   | { readonly kind: 'invalid'; readonly problem: string };
 
 /** Reads a source file's migration marker. */
@@ -230,14 +313,14 @@ export const readMarker = (source: string): Marker => {
   if (reason === '') {
     return { kind: 'invalid', problem: `its marker must read \`${markerFormat}\`` };
   }
-  const unknown = names.split(',').filter((name) => !isPatternName(name));
+  const unknown = names.split(',').filter((name) => !isAllowanceName(name));
   if (unknown.length > 0) {
     return {
       kind: 'invalid',
-      problem: `its marker allows unknown patterns (${unknown.join(', ')}); use names from tests/effect-migration.ts`,
+      problem: `its marker allows unknown patterns or rules (${unknown.join(', ')}); use names from tests/effect-migration.ts`,
     };
   }
-  return { kind: 'migrated', allow: names.split(',').filter(isPatternName) };
+  return { kind: 'migrated', allow: names.split(',').filter(isAllowanceName) };
 };
 
 export const writeBaseline = Effect.fnUntraced(function* (board: Scoreboard) {

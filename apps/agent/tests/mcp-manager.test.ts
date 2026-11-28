@@ -124,19 +124,21 @@ await server.connect(new StdioServerTransport());
         tools.map((tool) => tool.name),
         ['test-server__echo', 'test-server__write'],
       );
-      assert.deepEqual(tools[0].inputSchema, echoSchema);
+      const [echo, write] = tools;
+      assert.ok(echo && write);
+      assert.deepEqual(echo.inputSchema, echoSchema);
       assert.deepEqual(
         (await list('automatic')).map((tool) => tool.name),
         ['test-server__echo'],
       );
-      assert.deepEqual(await Effect.runPromise(tools[0].call({})), {
+      assert.deepEqual(await Effect.runPromise(echo.call({})), {
         content: [{ type: 'text', text: JSON.stringify({ ok: true, bridgeTokenLeaked: false }) }],
       });
       // A different automatic session must not block a manual write.
-      await Effect.runPromise(tools[1].call({}));
+      await Effect.runPromise(write.call({}));
       readOnlySession = 'manual';
       await assert.rejects(
-        Effect.runPromise(tools[1].call({})),
+        Effect.runPromise(write.call({})),
         (error: Error) =>
           error.cause instanceof Error &&
           error.cause.message ===
@@ -145,21 +147,26 @@ await server.connect(new StdioServerTransport());
       toolsAllowed = false;
       assert.deepEqual(await list('manual'), []);
       await assert.rejects(
-        Effect.runPromise(tools[0].call({})),
+        Effect.runPromise(echo.call({})),
         (error: Error) =>
           error.cause instanceof Error && error.cause.message === 'MCP tool disabled',
       );
       serverAllowed = false;
       assert.deepEqual(await list('manual'), []);
+      const savedServer = () => {
+        const [server] = manager.list();
+        assert.ok(server, 'test_server is saved');
+        return server;
+      };
       await Effect.runPromise(manager.setEnabled('test_server', false));
-      assert.equal(manager.list()[0].enabled, false);
+      assert.equal(savedServer().enabled, false);
       await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
-      const savedTools = manager.list()[0].tools;
+      const savedTools = savedServer().tools;
       await Effect.runPromise(manager.setEnabled('test_server', true));
-      assert.deepEqual(manager.list()[0].tools, savedTools, 'switching preserves discovery');
+      assert.deepEqual(savedServer().tools, savedTools, 'switching preserves discovery');
       assert.equal(secrets.get('mcp:test_server:env'), JSON.stringify(input.env));
       const reopened = await Effect.runPromise(manager.connect('test_server'));
-      assert.equal(reopened.tools[0].name, 'echo');
+      assert.equal(reopened.tools[0]?.name, 'echo');
       await Effect.runPromise(manager.remove('test_server'));
       assert.equal(manager.list().length, 0);
       assert.equal(secrets.get('mcp:test_server:env'), '');
