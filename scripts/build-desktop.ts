@@ -128,14 +128,16 @@ await writeFile(
 );
 const version = JSON.parse(await readFile('package.json', 'utf8')).version;
 const folder = 'apps/desktop/src-tauri/target/release/bundle/nsis';
-const installers = (await readdir(folder)).filter((file) => file.endsWith('-setup.exe'));
-if (installers.length !== 1) {
+const [installer, ...otherInstallers] = (await readdir(folder)).filter((file) =>
+  file.endsWith('-setup.exe'),
+);
+if (installer === undefined || otherInstallers.length > 0) {
   throw Error('Expected one Windows installer.');
 }
 const destination = 'dist/WispAI-' + version + '-windows-x64-setup.exe';
-await copyFile(path.join(folder, installers[0]), destination);
+await copyFile(path.join(folder, installer), destination);
 if (signed) {
-  await copyFile(path.join(folder, installers[0] + '.sig'), destination + '.sig');
+  await copyFile(path.join(folder, installer + '.sig'), destination + '.sig');
   await writeUpdateManifest(version, destination);
 }
 const hash = createHash('sha256')

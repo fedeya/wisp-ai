@@ -1,4 +1,4 @@
-// @effect-migrated allow=jsonParse,typescript/no-explicit-any,typescript/no-unsafe-argument,typescript/no-unsafe-assignment,typescript/no-unsafe-call,typescript/no-unsafe-member-access,typescript/no-unsafe-return: the simulator's JSON files are read with JSON.parse until they are decoded with Schema (docs/effect-migration.md phase 9, #319)
+// @effect-migrated
 import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
 import { Digest } from 'effect/crypto';
 import type { PlatformError } from 'effect/PlatformError';
@@ -7,8 +7,8 @@ import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/
 import type { RotationAction, SimulationInput } from '@wisp/agent/contract/simulation';
 import { AppConfig } from '../../app-config.ts';
 import { adapters } from './adapters/index.ts';
-import type { ClassMetadata } from './adapters/types.ts';
-import { equipmentSlots, replaceEquipment, type CatalogItem } from './equipment.ts';
+import { ClassMetadata } from './adapters/types.ts';
+import { CatalogItem, equipmentSlots, replaceEquipment } from './equipment.ts';
 const positiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 const intBetween = (minimum: number, maximum: number) =>
   Schema.Int.check(Schema.isBetween({ minimum, maximum }));
@@ -49,15 +49,76 @@ const Reading = Schema.Struct({
   }),
 });
 const decodeReading = Schema.decodeUnknownOption(Reading);
-interface Manifest {
-  wandIds: number[];
-  name: string;
-  source: string;
-  upstream: string;
-  commit: string;
-  sha256: string;
-  patches?: { file: string; sha256: string }[];
-}
+/**
+ * The pinned simulator/manifest.json. A native run returns it whole, so the
+ * fields are all of the file's, in its order.
+ */
+const Manifest = Schema.Struct({
+  name: Schema.String,
+  source: Schema.String,
+  upstream: Schema.String,
+  commit: Schema.String,
+  sha256: Schema.String,
+  minLevel: Schema.Int,
+  maxLevel: Schema.Int,
+  wandIds: Schema.Array(Schema.Int),
+  supportedClasses: Schema.Array(Schema.String),
+  patches: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ file: Schema.String, sha256: Schema.String })),
+  ),
+});
+type Manifest = typeof Manifest.Type;
+const Classes = Schema.Record(Schema.String, ClassMetadata);
+const Catalog = Schema.Array(CatalogItem);
+/**
+ * What the checks read from the CLI's output.json: `error` is null after a
+ * run, and an action names a spell or another action. The checks treat
+ * missing fields as before. A native run returns the whole file.
+ */
+const PlayerMetrics = Schema.Struct({
+  dps: Schema.optionalKey(
+    Schema.Struct({
+      avg: Schema.optionalKey(Schema.Finite),
+      stdev: Schema.optionalKey(Schema.Finite),
+      min: Schema.optionalKey(Schema.Finite),
+      max: Schema.optionalKey(Schema.Finite),
+    }),
+  ),
+  actions: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.optionalKey(
+          Schema.Struct({
+            spellId: Schema.optionalKey(Schema.Int),
+            otherId: Schema.optionalKey(Schema.Union([Schema.String, Schema.Finite])),
+          }),
+        ),
+        targets: Schema.optionalKey(
+          Schema.Array(
+            Schema.Struct({
+              damage: Schema.optionalKey(Schema.Finite),
+              casts: Schema.optionalKey(Schema.Finite),
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+  secondsOomAvg: Schema.optionalKey(Schema.Finite),
+});
+export const SimulationOutput = Schema.Struct({
+  error: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ message: Schema.optionalKey(Schema.String) })),
+  ),
+  iterationsDone: Schema.optionalKey(Schema.Finite),
+  raidMetrics: Schema.optionalKey(
+    Schema.Struct({
+      parties: Schema.optionalKey(
+        Schema.Array(Schema.Struct({ players: Schema.optionalKey(Schema.Array(PlayerMetrics)) })),
+      ),
+    }),
+  ),
+});
 const raceMap: Record<string, string> = {
   Human: 'RaceHuman',
   Gnome: 'RaceGnome',
@@ -82,7 +143,10 @@ const failure = (message: string) => new SimulationError({ message });
 /** The message Node gave the failed file or process call, as `fs` and `execFile` reported it. */
 const platformFailure = (error: PlatformError) =>
   failure(error.reason.cause instanceof Error ? error.reason.cause.message : error.message);
-/** Runs a throwing plain helper (contract parsing, `JSON.parse`, equipment rules). */
+/** A data file or CLI output that does not have the expected shape. */
+const invalidData = (what: string) => (error: Schema.SchemaError) =>
+  failure(what + ' is invalid: ' + error.message);
+/** Runs a throwing plain helper (contract parsing, equipment rules). */
 const attempt = <A>(evaluate: () => A) =>
   Effect.try({
     try: evaluate,
@@ -106,10 +170,19 @@ const make = Effect.gen(function* () {
   const executable = path.resolve(paths.simulatorExecutable);
   const runtime = path.resolve(paths.runtime);
 
-  const readJson = (file: string) =>
+  /** Reads a JSON file and decodes it with `schema`. */
+  const readJson = <S extends Schema.Decoder<unknown>>(file: string, schema: S) =>
     fs.readFileString(file).pipe(
       Effect.mapError(platformFailure),
-      Effect.flatMap((text) => attempt(() => JSON.parse(text))),
+      Effect.flatMap((text) =>
+        Schema.decodeEffect(Schema.fromJsonString(schema))(text).pipe(
+          Effect.mapError(invalidData(path.basename(file))),
+        ),
+      ),
+    );
+  const decodeOutput = (output: Schema.Json) =>
+    Schema.decodeUnknownEffect(SimulationOutput)(output).pipe(
+      Effect.mapError(invalidData('Simulator output')),
     );
 
   const verifyExecutable = Effect.fnUntraced(function* (manifest: Manifest) {
@@ -181,7 +254,7 @@ const make = Effect.gen(function* () {
       .writeFileString(infile, JSON.stringify(request))
       .pipe(Effect.mapError(platformFailure));
     yield* execute(['sim', '--infile', infile, '--outfile', outfile]);
-    return yield* readJson(outfile);
+    return yield* readJson(outfile, Schema.Json);
   }, Effect.scoped);
 
   const prepare = Effect.fn('Simulator.prepare')(function* (
@@ -236,16 +309,14 @@ const make = Effect.gen(function* () {
     if (!race) {
       return yield* failure('The current race has not been validated for this simulator adapter.');
     }
-    const manifest: Manifest = yield* readJson(path.join(directory, 'manifest.json'));
-    const classes: Record<string, ClassMetadata> = yield* readJson(
-      path.join(directory, 'classes.json'),
-    );
+    const manifest = yield* readJson(path.join(directory, 'manifest.json'), Manifest);
+    const classes = yield* readJson(path.join(directory, 'classes.json'), Classes);
     const metadata = classes[c.class];
     if (!metadata) {
       return yield* failure('Missing pinned metadata for class ' + c.class + '.');
     }
     const trees = metadata.talents;
-    const catalogItems: CatalogItem[] = yield* readJson(path.join(directory, 'items.json'));
+    const catalogItems = yield* readJson(path.join(directory, 'items.json'), Catalog);
     const catalog = new Map(catalogItems.map((i) => [i.id, i]));
     const equipped = yield* attempt(() =>
       replaceEquipment(
@@ -451,13 +522,15 @@ const make = Effect.gen(function* () {
 
   /** Runs an engine request the agent wrote itself. */
   const executeRequest = Effect.fnUntraced(function* (request: Record<string, unknown>) {
-    const manifest: Manifest = yield* readJson(path.join(directory, 'manifest.json'));
+    const manifest = yield* readJson(path.join(directory, 'manifest.json'), Manifest);
     yield* verifyExecutable(manifest);
     const result = yield* simulate(request);
-    if (result.error) {
-      return yield* failure(result.error.message || 'Simulator rejected the native request.');
+    const output = yield* decodeOutput(result);
+    if (output.error) {
+      return yield* failure(output.error.message || 'Simulator rejected the native request.');
     }
-    if (!Number.isInteger(result.iterationsDone) || result.iterationsDone <= 0) {
+    const iterations = output.iterationsDone;
+    if (iterations === undefined || !Number.isInteger(iterations) || iterations <= 0) {
       return yield* failure('Simulator did not complete a valid iteration count.');
     }
     return { result, manifest };
@@ -472,36 +545,42 @@ const make = Effect.gen(function* () {
   ) {
     const prepared = yield* prepare(snapshot, input, replacements, equipmentBase);
     yield* verifyExecutable(prepared.manifest);
-    const result = yield* simulate(prepared.request);
+    const result = yield* decodeOutput(yield* simulate(prepared.request));
     if (result.error) {
       return yield* failure(result.error.message || 'Simulator rejected this character.');
     }
     const player = result.raidMetrics?.parties?.[0]?.players?.[0];
     const dps = { avg: 0, stdev: 0, min: 0, max: 0, ...player?.dps };
+    const iterations = result.iterationsDone;
     if (
       !player ||
       !Number.isFinite(dps.avg) ||
       dps.avg < 0 ||
-      result.iterationsDone !== prepared.scenario.iterations
+      iterations === undefined ||
+      iterations !== prepared.scenario.iterations
     ) {
       return yield* failure('Simulator did not finish with a valid nonnegative DPS result.');
     }
     const damage = new Map<
       string,
-      { spellId?: number; otherId?: string | number; damagePerFight: number }
+      {
+        spellId: number | undefined;
+        otherId: string | number | undefined;
+        damagePerFight: number;
+      }
     >();
     const casts = new Map<number, number>();
     for (const action of player.actions ?? []) {
       const rawSpellId = action.id?.spellId;
-      const spellId = prepared.metadata.triggerParents[rawSpellId] ?? rawSpellId;
+      const spellId =
+        rawSpellId === undefined
+          ? undefined
+          : (prepared.metadata.triggerParents[String(rawSpellId)] ?? rawSpellId);
       const otherId = action.id?.otherId;
       const key = spellId ? 'spell:' + spellId : 'other:' + otherId;
-      const damagePerFight =
-        (action.targets ?? []).reduce((sum: number, t: any) => sum + (t.damage ?? 0), 0) /
-        result.iterationsDone;
-      const castCount =
-        (action.targets ?? []).reduce((sum: number, t: any) => sum + (t.casts ?? 0), 0) /
-        result.iterationsDone;
+      const targets = action.targets ?? [];
+      const damagePerFight = targets.reduce((sum, t) => sum + (t.damage ?? 0), 0) / iterations;
+      const castCount = targets.reduce((sum, t) => sum + (t.casts ?? 0), 0) / iterations;
       if (rawSpellId && prepared.scenario.spellIds.includes(rawSpellId)) {
         casts.set(rawSpellId, (casts.get(rawSpellId) ?? 0) + castCount);
       }
@@ -529,7 +608,7 @@ const make = Effect.gen(function* () {
       dps: {
         average: dps.avg,
         standardDeviation: dps.stdev,
-        standardError: dps.stdev / Math.sqrt(result.iterationsDone),
+        standardError: dps.stdev / Math.sqrt(iterations),
         min: dps.min,
         max: dps.max,
       },
@@ -611,9 +690,7 @@ const make = Effect.gen(function* () {
         Option.getOrUndefined(
           Option.map(decodeReading(snapshot), (r) => r.sections.character.data.class),
         );
-      const catalog: Record<string, ClassMetadata> = yield* readJson(
-        path.join(directory, 'classes.json'),
-      );
+      const catalog = yield* readJson(path.join(directory, 'classes.json'), Classes);
       if (!token || !catalog[token]) {
         return {
           status: 'unavailable' as const,
@@ -630,13 +707,14 @@ const make = Effect.gen(function* () {
     }
     const results: ScenarioResult[] = [];
     const deadline = (yield* Clock.currentTimeMillis) + scenarioDeadlineMillis;
+    const noReplacements: Replacement[] = [];
     const sets = [
       ...(options.data.includeCurrentEquipment
         ? [
             {
               label: 'Current equipment',
               base: 'current' as const,
-              replacements: [] as Replacement[],
+              replacements: noReplacements,
             },
           ]
         : []),
