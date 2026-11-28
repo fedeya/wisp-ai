@@ -1,18 +1,18 @@
 {
   "apps/server": {
-    "zodImports": 23,
+    "zodImports": 22,
     "honoImports": 9,
-    "nodeIoImports": 20,
+    "nodeIoImports": 17,
     "fetchCalls": 2,
-    "timers": 16,
+    "timers": 13,
     "processEnv": 7,
-    "newPromise": 12,
-    "asyncFunctions": 154,
-    "effectRuns": 28,
-    "effectPromises": 15,
-    "throwStatements": 188,
-    "tryBlocks": 67,
-    "jsonParse": 38
+    "newPromise": 8,
+    "asyncFunctions": 138,
+    "effectRuns": 27,
+    "effectPromises": 14,
+    "throwStatements": 156,
+    "tryBlocks": 62,
+    "jsonParse": 35
   },
   "apps/agent": {
     "zodImports": 32,
@@ -92,17 +92,17 @@
   "packages/game-data": {
     "zodImports": 0,
     "honoImports": 0,
-    "nodeIoImports": 6,
-    "fetchCalls": 2,
+    "nodeIoImports": 0,
+    "fetchCalls": 0,
     "timers": 0,
     "processEnv": 0,
     "newPromise": 0,
-    "asyncFunctions": 11,
+    "asyncFunctions": 0,
     "effectRuns": 0,
     "effectPromises": 0,
-    "throwStatements": 20,
+    "throwStatements": 7,
     "tryBlocks": 0,
-    "jsonParse": 4
+    "jsonParse": 0
   },
   "packages/releases": {
     "zodImports": 0,
