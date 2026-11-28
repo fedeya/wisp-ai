@@ -20,7 +20,6 @@ const rootFiles = new Set([
   'account-operations.ts',
   'app-config.ts',
   'application-database.ts',
-  'bridge-config.ts',
   'errors.ts',
   'features.ts',
   'json-file.ts',
