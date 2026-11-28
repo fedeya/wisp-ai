@@ -1,18 +1,13 @@
 import { Effect, FileSystem, Predicate } from 'effect';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { HostError } from '../execution/engine-errors.ts';
 
 /**
- * The authored instructions and skills. The packaged engine ships them as
- * assets next to its entry point and names that folder in WISP_AGENT_CONTENT.
+ * The authored instructions and skills in the source tree. The packaged engine
+ * ships them as assets next to its entry point instead; `AgentConfig` picks
+ * the folder.
  */
-export function agentContentRoot() {
-  if (process.env.WISP_AGENT_CONTENT) {
-    return process.env.WISP_AGENT_CONTENT;
-  }
-  return fileURLToPath(new URL('./', import.meta.url));
-}
+export const sourceContentRoot = new URL('./', import.meta.url);
 
 export interface AuthoredSkill {
   name: string;
@@ -30,7 +25,7 @@ const readInstructions = Effect.fnUntraced(function* (root: string) {
  * Entries are listed by name only: the packaged engine reads these files from
  * pkg's snapshot, whose readdir ignores `withFileTypes`.
  */
-export const readSkills = Effect.fnUntraced(function* (root = agentContentRoot()) {
+export const readSkills = Effect.fnUntraced(function* (root: string) {
   const fs = yield* FileSystem.FileSystem;
   const directory = path.join(root, 'skills');
   const names = yield* fs
@@ -81,9 +76,7 @@ function parseSkill(folder: string, file: string): AuthoredSkill {
   return { name, description, instructions: match[2]!.trim() };
 }
 
-export const readContent = Effect.fn('WispAgent.readContent')(function* (
-  root = agentContentRoot(),
-) {
+export const readContent = Effect.fn('WispAgent.readContent')(function* (root: string) {
   const [instructions, skills] = yield* Effect.all(
     [
       readInstructions(root).pipe(Effect.mapError((cause) => new HostError({ cause }))),

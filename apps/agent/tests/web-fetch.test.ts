@@ -15,10 +15,10 @@ import * as Capabilities from '../src/host/capabilities.ts';
 import { toolOffered } from '../src/tools/enabled-tool.ts';
 
 // The tool as the engine offers it: absent while its capability is off.
-const dynamicEvaluate = (tool: typeof definition) => async (_ctx: unknown) => {
+const dynamicEvaluate = (tool: typeof definition, file?: string) => async (_ctx: unknown) => {
   const capabilities = await Effect.runPromise(
     Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
-      Effect.provide(Capabilities.layerFromFile()),
+      Effect.provide(Capabilities.layerFromFile(() => file)),
       Effect.provide(NodeFileSystem.layer),
     ),
   );
@@ -40,13 +40,11 @@ vi.mock('node:dns/promises', () => ({ lookup: dnsLookup }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.unstubAllEnvs();
   vi.clearAllMocks();
   vi.useRealTimers();
 });
 
 async function tool() {
-  vi.stubEnv('WOW_CAPABILITIES_FILE', '');
   const resolved = (await dynamicEvaluate(definition)({} as never))!;
   return {
     async execute(input: WebFetchInput, ctx: Parameters<typeof resolved.execute>[1]) {
@@ -66,11 +64,10 @@ test('fetch is registered independently of Wowhead search and respects its own s
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-fetch-'));
   try {
     const file = path.join(directory, 'capabilities.json');
-    vi.stubEnv('WOW_CAPABILITIES_FILE', file);
     await writeFile(file, JSON.stringify({ enabled: { 'tool:web_search': false } }));
-    expect(await dynamicEvaluate(definition)({} as never)).toMatchObject({ deferred: false });
+    expect(await dynamicEvaluate(definition, file)({} as never)).toMatchObject({ deferred: false });
     await writeFile(file, JSON.stringify({ enabled: { 'tool:web_fetch': false } }));
-    expect(await dynamicEvaluate(definition)({} as never)).toBeNull();
+    expect(await dynamicEvaluate(definition, file)({} as never)).toBeNull();
     expect(publicToolName('web_fetch')).toBe('web_fetch');
     expect(defaultCapabilities().find((c) => c.id === 'tool:web_fetch')).toMatchObject({
       parent: 'integration:web',

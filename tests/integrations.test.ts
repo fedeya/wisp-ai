@@ -14,11 +14,9 @@ import { z } from 'zod';
 
 test('integration availability and master switches govern real tool definitions and backend admission, preserving preferences', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-integrations-'));
-  const previous = process.env.WOW_CAPABILITIES_FILE;
   try {
     const settings = new CapabilitySettings(path.join(directory, 'choices.json'));
     settings.agentFile = path.join(directory, 'agent.json');
-    process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
     await settings.load();
     let now = 1000;
     const state = new IntegrationState(settings, () => now);
@@ -28,7 +26,7 @@ test('integration availability and master switches govern real tool definitions 
       execute: () => null,
     });
     const readCapabilities = Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
-      Effect.provide(Capabilities.layerFromFile()),
+      Effect.provide(Capabilities.layerFromFile(() => settings.agentFile)),
       Effect.provide(NodeFileSystem.layer),
     );
     const resolve = async (_ctx: unknown) =>
@@ -94,11 +92,6 @@ test('integration availability and master switches govern real tool definitions 
     assert.equal(settings.enabled('unknown:tool'), false);
     assert.throws(() => enabledTool('unregistered', definition), /Unregistered/);
   } finally {
-    if (previous === undefined) {
-      delete process.env.WOW_CAPABILITIES_FILE;
-    } else {
-      process.env.WOW_CAPABILITIES_FILE = previous;
-    }
     await rm(directory, { recursive: true, force: true });
   }
 });

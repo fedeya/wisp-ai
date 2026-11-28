@@ -1,5 +1,5 @@
 import { test, vi } from 'vitest';
-import { Effect, Layer, Schema } from 'effect';
+import { ConfigProvider, Effect, Layer, Schema } from 'effect';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,24 +13,34 @@ import { createServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import * as AgentConfig from '../src/host/agent-config.ts';
+
+/** A source checkout's settings: none of the agent's variables are set. */
+const sourceConfig = AgentConfig.layer.pipe(
+  Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+);
+const build = (manager: ReturnType<typeof McpManager.make>) =>
+  Effect.runPromise(manager.pipe(Effect.provide(sourceConfig)));
 
 function makeManager(
   file: string,
   root: string,
   vault: Pick<McpStorage, 'readSecret' | 'writeSecret'>,
 ) {
-  return McpManager.make(root, {
-    ...vault,
-    async readConfig() {
-      try {
-        return await readFile(file, 'utf8');
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        return undefined;
-      }
-    },
-    writeConfig: (servers) => writeFile(file, JSON.stringify({ servers })),
-  });
+  return build(
+    McpManager.make(root, {
+      ...vault,
+      async readConfig() {
+        try {
+          return await readFile(file, 'utf8');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+          return undefined;
+        }
+      },
+      writeConfig: (servers) => writeFile(file, JSON.stringify({ servers })),
+    }),
+  );
 }
 
 const parseSetup = Schema.decodeUnknownSync(mcpSetup);
@@ -70,7 +80,7 @@ test(
       },
     };
     const file = path.join(root, 'mcp.json');
-    const manager = makeManager(file, root, vault);
+    const manager = await makeManager(file, root, vault);
     await Effect.runPromise(manager.load());
     const script = path.join(root, 'server.mjs');
     const echoSchema = {
@@ -179,7 +189,7 @@ await server.connect(new StdioServerTransport());
 );
 
 test('Everloot model tools and game lookups share one connection and keep Forever arguments fixed', async () => {
-  const manager = McpManager.make('.', undefined, [Everloot.profile]);
+  const manager = await build(McpManager.make('.', undefined, [Everloot.profile]));
   using connect = vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
   using discover = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({
     tools: [
@@ -269,14 +279,16 @@ test('configured HTTP servers are called directly using the saved token', async 
     await transport.handleRequest(req, res);
   });
   const secrets = new Map<string, string>();
-  const manager = McpManager.make('.', {
-    readConfig: async () => undefined,
-    writeConfig: async () => {},
-    readSecret: async (key) => secrets.get(key) ?? '',
-    writeSecret: async (key, value) => {
-      secrets.set(key, value);
-    },
-  });
+  const manager = await build(
+    McpManager.make('.', {
+      readConfig: async () => undefined,
+      writeConfig: async () => {},
+      readSecret: async (key) => secrets.get(key) ?? '',
+      writeSecret: async (key, value) => {
+        secrets.set(key, value);
+      },
+    }),
+  );
   try {
     await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
     const address = http.address();
@@ -304,9 +316,52 @@ test('configured HTTP servers are called directly using the saved token', async 
   }
 });
 
+test('an HTTP server without a saved token sends the variable its configuration names', async () => {
+  const requests: (string | undefined)[] = [];
+  const http = createServer(async (req, res) => {
+    requests.push(req.headers.authorization);
+    const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
+    server.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
+    }));
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    await server.connect(transport);
+    await transport.handleRequest(req, res);
+  });
+  const manager = await build(McpManager.make());
+  const tokenEnv = 'WISP_TEST_MCP_TOKEN';
+  let port = 0;
+  const probe = (environment: Record<string, string>) =>
+    Effect.runPromise(
+      manager
+        .test(
+          parseSetup({
+            server: { name: 'env_test', url: `http://127.0.0.1:${port}/upstream`, tokenEnv },
+          }),
+        )
+        .pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(environment)))),
+    );
+  try {
+    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
+    const address = http.address();
+    assert.ok(address && typeof address === 'object');
+    port = address.port;
+    assert.equal((await probe({ [tokenEnv]: 'env-test-token' })).count, 1);
+    assert.deepEqual([...new Set(requests)], ['Bearer env-test-token']);
+    // An empty or unset variable sends no credentials.
+    requests.length = 0;
+    await probe({ [tokenEnv]: '' });
+    await probe({});
+    assert.deepEqual([...new Set(requests)], [undefined]);
+  } finally {
+    await Effect.runPromise(manager.close());
+    http.close();
+  }
+});
+
 test('disabling MCP cancels an opening connection and a later enable opens a fresh client', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const manager = makeManager(path.join(root, 'mcp.json'), root, {
+  const manager = await makeManager(path.join(root, 'mcp.json'), root, {
     readSecret: async () => '',
     writeSecret: async () => {},
   });
@@ -357,7 +412,7 @@ test('disabling MCP cancels an opening connection and a later enable opens a fre
 });
 
 test('a failed MCP opening releases the client and allows a fresh attempt', async () => {
-  const manager = McpManager.make();
+  const manager = await build(McpManager.make());
   using connect = vi
     .spyOn(Client.prototype, 'connect')
     .mockRejectedValueOnce(Error('Handshake failed'))
@@ -384,7 +439,7 @@ test('concurrent MCP updates preserve both changes after an earlier update fails
   const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
   const vault = { readSecret: async () => '', writeSecret: async () => {} };
   const file = path.join(root, 'mcp.json');
-  const manager = makeManager(file, root, vault);
+  const manager = await makeManager(file, root, vault);
   try {
     for (const name of ['first', 'second']) {
       manager.servers[name] = parseSetup({
@@ -399,7 +454,7 @@ test('concurrent MCP updates preserve both changes after an earlier update fails
       Effect.runPromise(manager.setEnabled('first', false)),
       Effect.runPromise(manager.setEnabled('second', false)),
     ]);
-    const restored = makeManager(file, root, vault);
+    const restored = await makeManager(file, root, vault);
     await Effect.runPromise(restored.load());
     assert.deepEqual(
       restored.list().map(({ name, enabled }) => [name, enabled]),
@@ -417,12 +472,14 @@ test('concurrent MCP updates preserve both changes after an earlier update fails
 
 test('a missing MCP config loads no custom servers and malformed JSON fails', async () => {
   let config: string | undefined;
-  const manager = McpManager.make('.', {
-    readConfig: async () => config,
-    writeConfig: async () => {},
-    readSecret: async () => '',
-    writeSecret: async () => {},
-  });
+  const manager = await build(
+    McpManager.make('.', {
+      readConfig: async () => config,
+      writeConfig: async () => {},
+      readSecret: async () => '',
+      writeSecret: async () => {},
+    }),
+  );
   try {
     await Effect.runPromise(manager.load());
     assert.deepEqual(manager.list(), []);
@@ -437,7 +494,7 @@ test('a missing MCP config loads no custom servers and malformed JSON fails', as
 });
 
 test('MCP shutdown waits for client cleanup and rejects new connections', async () => {
-  const manager = McpManager.make();
+  const manager = await build(McpManager.make());
   let onClosing!: () => void;
   const closing = new Promise<void>((resolve) => {
     onClosing = resolve;
@@ -491,7 +548,7 @@ test('MCP setup rejects embedded URL credentials and keeps command arguments str
 });
 
 test('the manager reserves bundled MCP names and their model namespaces', async () => {
-  const manager = McpManager.make('.', undefined, [Everloot.profile]);
+  const manager = await build(McpManager.make('.', undefined, [Everloot.profile]));
   try {
     for (const name of ['everloot', 'everloot_search', 'everloot_changes']) {
       const input = parseSetup({ server: { name, url: 'https://example.com/mcp' } });
@@ -502,3 +559,58 @@ test('the manager reserves bundled MCP names and their model namespaces', async 
     await Effect.runPromise(manager.close());
   }
 });
+
+test('a stdio server inherits the set variables, with the bundled runtimes first on PATH', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
+  const script = path.join(root, 'server.mjs');
+  // The server reports what it inherited as its only tool's description.
+  await writeFile(
+    script,
+    `
+import { Server } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/index.js'))};
+import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/stdio.js'))};
+import { ListToolsRequestSchema } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/types.js'))};
+
+const inherited = {
+  PATH: process.env.PATH,
+  ComSpec: process.env.ComSpec ?? null,
+  PATHEXT: process.env.PATHEXT ?? null,
+  WOW_BRIDGE_TOKEN: process.env.WOW_BRIDGE_TOKEN ?? null,
+};
+const server = new Server({ name: 'Test', version: '1' }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [{ name: 'env', description: JSON.stringify(inherited), inputSchema: { type: 'object' } }],
+}));
+await server.connect(new StdioServerTransport());
+`,
+  );
+  const manager = await build(McpManager.make(root));
+  const environment = ConfigProvider.fromUnknown({
+    PATH: 'inherited-path',
+    ComSpec: 'inherited-shell',
+    PATHEXT: '',
+    WOW_BRIDGE_TOKEN: 'not-inherited',
+  });
+  try {
+    const { tools } = await Effect.runPromise(
+      manager
+        .test(
+          parseSetup({
+            server: { name: 'env_test', transport: 'stdio', command: 'node', args: [script] },
+          }),
+        )
+        .pipe(Effect.provide(ConfigProvider.layer(environment))),
+    );
+    assert.deepEqual(JSON.parse(tools[0]?.description ?? ''), {
+      PATH: [path.join(root, 'runtime'), path.dirname(process.execPath), 'inherited-path'].join(
+        path.delimiter,
+      ),
+      ComSpec: 'inherited-shell',
+      PATHEXT: null,
+      WOW_BRIDGE_TOKEN: null,
+    });
+  } finally {
+    await Effect.runPromise(manager.close());
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);

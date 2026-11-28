@@ -47,14 +47,12 @@ test('item and spell references can opt into cooldown readings', () => {
 
 test('actual tool definitions follow per-API readiness, parent switches and expiration', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'wisp-addon-tools-'));
-  const previous = process.env.WOW_CAPABILITIES_FILE;
   try {
     const settings = new CapabilitySettings(path.join(directory, 'choices.json'));
     settings.agentFile = path.join(directory, 'agent.json');
-    process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
     const state = new IntegrationState(settings);
     const readCapabilities = Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
-      Effect.provide(Capabilities.layerFromFile()),
+      Effect.provide(Capabilities.layerFromFile(() => settings.agentFile)),
       Effect.provide(NodeFileSystem.layer),
     );
     // A tool as the agent offers it this turn, or null while its capability is off.
@@ -124,11 +122,6 @@ test('actual tool definitions follow per-API readiness, parent switches and expi
     assert.equal(await resolve(chain), null);
     assert.equal(await resolve(flightPaths), null);
   } finally {
-    if (previous === undefined) {
-      delete process.env.WOW_CAPABILITIES_FILE;
-    } else {
-      process.env.WOW_CAPABILITIES_FILE = previous;
-    }
     await rm(directory, { recursive: true, force: true });
   }
 });

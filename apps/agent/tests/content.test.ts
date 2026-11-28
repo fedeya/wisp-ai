@@ -2,10 +2,16 @@ import { expect, test } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { Effect, FileSystem, PlatformError } from 'effect';
+import { ConfigProvider, Effect, FileSystem, Layer, PlatformError } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as AgentConfig from '../src/host/agent-config.ts';
 import { readSkills } from '../src/wisp/content.ts';
 import * as Wisp from '../src/wisp/wisp-agent.ts';
+
+/** A source checkout's settings: none of the agent's variables are set. */
+const sourceConfig = AgentConfig.layer.pipe(
+  Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+);
 
 test('skills are the folders with a SKILL.md; other entries are skipped', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-skills-'));
@@ -32,7 +38,11 @@ test('skills are the folders with a SKILL.md; other entries are skipped', async 
 });
 
 test("Wisp's own skills all load", async () => {
-  const skills = await Effect.runPromise(readSkills().pipe(Effect.provide(NodeFileSystem.layer)));
+  const skills = await Effect.runPromise(
+    Effect.flatMap(AgentConfig.AgentConfig, ({ contentRoot }) => readSkills(contentRoot)).pipe(
+      Effect.provide([NodeFileSystem.layer, sourceConfig]),
+    ),
+  );
   expect(skills.length).toBeGreaterThan(0);
 });
 
@@ -63,6 +73,8 @@ test('content retries a failed read and shares the successful load across turns'
     expect(loaded[1]).toBe(loaded[0]);
     expect(yield* content).toBe(loaded[0]);
   });
-  await Effect.runPromise(program.pipe(Effect.provide(Wisp.layer), Effect.provide(fs)));
+  await Effect.runPromise(
+    program.pipe(Effect.provide(Wisp.layer), Effect.provide([fs, sourceConfig])),
+  );
   expect(reads).toBe(2);
 });

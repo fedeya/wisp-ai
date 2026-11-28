@@ -6,8 +6,9 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { mcpDefinition } from '@wisp/protocol/mcp-setup';
-import { Cause, Deferred, Duration, Effect, Exit, Fiber } from 'effect';
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Option, Redacted } from 'effect';
 import type { Scope } from 'effect';
+import * as Environment from '../host/environment.ts';
 
 export class McpConnectionError extends Error {
   readonly _tag = 'McpConnectionError';
@@ -16,57 +17,78 @@ export class McpConnectionError extends Error {
 const connectionError = (cause: unknown) =>
   new McpConnectionError(cause instanceof Error ? cause.message : String(cause), { cause });
 
-function makeTransport(
-  root: string,
-  server: typeof mcpDefinition.Type,
-  secret: string | undefined,
-  env: Record<string, string>,
-  redirect?: RequestRedirect,
-) {
-  return Effect.try({
+/** The variables of Wisp's environment a stdio MCP server inherits. */
+const inheritedVariables = [
+  'SystemRoot',
+  'WINDIR',
+  'PATH',
+  'Path',
+  'PATHEXT',
+  'TEMP',
+  'TMP',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'HOME',
+  'ComSpec',
+];
+
+/** The inherited variables that are set, with the bundled runtimes first on `PATH`. */
+const inheritedEnvironment = Effect.fnUntraced(function* (root: string) {
+  const values = yield* Effect.forEach(inheritedVariables, (name) =>
+    Effect.map(Environment.variable(name), (value) => ({ name, value })),
+  );
+  const allowedEnv = Object.fromEntries(
+    values.flatMap(({ name, value }): [string, string][] =>
+      Option.isSome(value) ? [[name, value.value]] : [],
+    ),
+  );
+  allowedEnv.PATH =
+    path.join(root, 'runtime') +
+    path.delimiter +
+    path.dirname(process.execPath) +
+    path.delimiter +
+    (allowedEnv.PATH || allowedEnv.Path || '');
+  return allowedEnv;
+});
+
+interface TransportInput {
+  readonly root: string;
+  readonly server: typeof mcpDefinition.Type;
+  readonly secret: Redacted.Redacted | undefined;
+  readonly env: Record<string, string>;
+  /** The packaged engine runs `node` and `npx` from its own runtime. */
+  readonly packagedEngine: boolean;
+  readonly redirect?: RequestRedirect | undefined;
+}
+
+const makeTransport = Effect.fnUntraced(function* ({
+  root,
+  server,
+  secret,
+  env,
+  packagedEngine,
+  redirect,
+}: TransportInput) {
+  const allowedEnv =
+    server.transport === 'stdio'
+      ? yield* inheritedEnvironment(root).pipe(Effect.mapError(connectionError))
+      : {};
+  return yield* Effect.try({
     try: (): Transport => {
       if (server.transport === 'stdio') {
         let command = server.command!,
           args = [...server.args];
         if (/^node(?:\.exe)?$/i.test(command)) {
-          command = process.env.WISP_ENGINE_EXECUTABLE
-            ? path.join(root, 'runtime/node.exe')
-            : process.execPath;
+          command = packagedEngine ? path.join(root, 'runtime/node.exe') : process.execPath;
         }
         if (/^npx(?:\.cmd)?$/i.test(command)) {
           command = process.execPath;
           args = [
-            process.env.WISP_ENGINE_EXECUTABLE
-              ? '--npx'
-              : path.join(root, 'runtime', 'npm', 'bin', 'npx-cli.js'),
+            packagedEngine ? '--npx' : path.join(root, 'runtime', 'npm', 'bin', 'npx-cli.js'),
             ...args,
           ];
         }
-        const allowedEnv = Object.fromEntries(
-          [
-            'SystemRoot',
-            'WINDIR',
-            'PATH',
-            'Path',
-            'PATHEXT',
-            'TEMP',
-            'TMP',
-            'USERPROFILE',
-            'APPDATA',
-            'LOCALAPPDATA',
-            'HOME',
-            'ComSpec',
-          ].flatMap((key) => {
-            const value = process.env[key];
-            return value ? [[key, value]] : [];
-          }),
-        );
-        allowedEnv.PATH =
-          path.join(root, 'runtime') +
-          path.delimiter +
-          path.dirname(process.execPath) +
-          path.delimiter +
-          (process.env.PATH || process.env.Path || '');
         const transport = new StdioClientTransport({
           command,
           args,
@@ -77,7 +99,8 @@ function makeTransport(
         transport.stderr?.on('data', () => {});
         return transport;
       }
-      const headers: Record<string, string> = secret ? { authorization: 'Bearer ' + secret } : {};
+      const token = secret === undefined ? undefined : Redacted.value(secret);
+      const headers: Record<string, string> = token ? { authorization: 'Bearer ' + token } : {};
       const url = new URL(server.url!);
       const requestInit = { headers, ...(redirect !== undefined ? { redirect } : {}) };
       return server.transport === 'sse'
@@ -96,7 +119,7 @@ function makeTransport(
     },
     catch: connectionError,
   });
-}
+});
 
 const discoverTools = Effect.fn('McpConnection.discoverTools')(function* (client: Client) {
   const tools: Tool[] = [];

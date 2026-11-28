@@ -1,8 +1,9 @@
 import { test, expect } from 'vitest';
-import { Effect, Layer, Logger } from 'effect';
+import { ConfigProvider, Effect, Layer, Logger } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as Game from '@wisp/agent/game-access';
 import * as Memory from '@wisp/agent/memory';
+import * as AgentConfig from '@wisp/agent/agent-config';
 import * as Capabilities from '@wisp/agent/capabilities';
 import * as Mcp from '@wisp/agent/mcp-tools';
 import * as Everloot from '@wisp/agent/everloot';
@@ -238,6 +239,12 @@ test(
         ),
         Layer.provide(Mcp.layer([Everloot.profile])),
         Layer.provide(Capabilities.layerFromFile(() => flags)),
+        Layer.provide(
+          AgentConfig.layer.pipe(
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+            Layer.orDie,
+          ),
+        ),
         Layer.provide(NodeFileSystem.layer),
         Layer.provideMerge(Logger.layer([])),
       ),

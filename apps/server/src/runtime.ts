@@ -76,6 +76,7 @@ import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import * as Agent from '@wisp/agent/engine';
+import * as AgentConfig from '@wisp/agent/agent-config';
 import * as Capabilities from '@wisp/agent/capabilities';
 import * as AgentMcp from '@wisp/agent/mcp-tools';
 import * as Game from '@wisp/agent/game-access';
@@ -93,6 +94,7 @@ const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
  */
 export const ServerServices = Layer.mergeAll(
   AppConfig.layer,
+  AgentConfig.layer,
   wowPlatform,
   Simulation.layer.pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
@@ -199,7 +201,7 @@ export const makeServer = Effect.fn('Server.make')(
     const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
     const auth = promiseChatGPTAuth(chatgpt, context);
     // End of adapters.
-    const mcpManager = McpManager.make(
+    const mcpManager = yield* McpManager.make(
       ROOT,
       {
         async readConfig() {
@@ -368,6 +370,7 @@ export const makeServer = Effect.fn('Server.make')(
       Layer.provide(NodeFileSystem.layer),
       Layer.provide(Agent.SessionHistory.layer(agentHistory)),
       Layer.provide(Layer.succeed(Agent.EngineConfig, agentConfig)),
+      Layer.provide(Layer.succeed(AgentConfig.AgentConfig, yield* AgentConfig.AgentConfig)),
       Layer.provide(Layer.succeed(Game.Service, gameAccess)),
       Layer.provide(Layer.succeed(Memory.Service, memoryAccess)),
       Layer.provideMerge(bridgeLogging),
