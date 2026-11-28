@@ -20,8 +20,8 @@ vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }));
 
 const release = { version: '0.3.0', notes: 'Improved game connection.', downgrade: false };
 
-/** What the mocked host answers; `install_update` never settles. */
-type Replies = { autoInstall: boolean; gameRunning: boolean };
+/** What the mocked host answers; `install_update` never settles, nor does a hanging download. */
+type Replies = { autoInstall: boolean; gameRunning: boolean; downloadHangs?: boolean };
 
 beforeEach(() => {
   vi.mocked(invoke).mockReset();
@@ -45,7 +45,7 @@ const start = (replies: Replies, props: Partial<UpdateState> = {}) =>
         case 'check_update':
           return Promise.resolve({ supported: true, update: release });
         case 'download_update':
-          return Promise.resolve(release.version);
+          return replies.downloadHangs ? new Promise(() => {}) : Promise.resolve(release.version);
         case 'game_running':
           return Promise.resolve(replies.gameRunning);
         case 'install_update':
@@ -96,6 +96,26 @@ it.effect('checks at startup and every six hours until the session stops', () =>
     yield* stop;
     yield* TestClock.adjust(UPDATE_CHECK_MS * 2);
     expect(yield* calledSince).not.toContain('check_update');
+  }),
+);
+
+it.effect('a download restarts only when what it depends on changes', () =>
+  Effect.gen(function* () {
+    const { called, store } = yield* start({
+      autoInstall: true,
+      gameRunning: false,
+      downloadHangs: true,
+    });
+    yield* called('download_update');
+    store.setState({ dismissed: release.version });
+    store.setState({ idle: true, locked: true });
+    // A new check retries the download; the changes before it did not.
+    store.setState({ lastChecked: 'later' });
+    yield* called('download_update');
+    const downloads = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === 'download_update');
+    expect(downloads).toHaveLength(2);
   }),
 );
 
