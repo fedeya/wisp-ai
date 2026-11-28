@@ -1,89 +1,127 @@
+// @effect-migrated
+// Fingerprints what the optimized native executable is built from, and keeps
+// one executable per fingerprint so a release build can reuse it.
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+import { Console, Effect, FileSystem, Option, Path, Schema } from 'effect';
+import type { PlatformError } from 'effect/PlatformError';
+import { output } from './child-process.ts';
+import { environmentVariable, environmentVariables } from './environment.ts';
 
 export interface NativeBuildContext {
-  platform: string;
-  arch: string;
-  rustc: string;
-  cargo: string;
-  image: string;
-  flags: Record<string, string>;
+  readonly platform: string;
+  readonly arch: string;
+  readonly rustc: string;
+  readonly cargo: string;
+  readonly image: string;
+  readonly flags: Readonly<Record<string, string>>;
 }
 
-export function nativeBuildContext(root = process.cwd()): NativeBuildContext {
+export class UnsupportedBuildInput extends Schema.TaggedError<UnsupportedBuildInput>()(
+  'UnsupportedBuildInput',
+  { message: Schema.String },
+) {}
+
+const flagNames = new Set([
+  'RUSTC',
+  'RUSTFLAGS',
+  'SOURCE_DATE_EPOCH',
+  'CARGO_ENCODED_RUSTFLAGS',
+  'CARGO_BUILD_RUSTFLAGS',
+  'CARGO_BUILD_TARGET',
+  'CARGO_INCREMENTAL',
+  'RUSTC_WRAPPER',
+  'RUSTC_WORKSPACE_WRAPPER',
+  'TAURI_CONFIG',
+  'CC',
+  'CXX',
+  'CFLAGS',
+  'CXXFLAGS',
+  'LDFLAGS',
+  'LIB',
+  'INCLUDE',
+  'LIBPATH',
+]);
+
+const isBuildFlag = (name: string) =>
+  flagNames.has(name) ||
+  name.startsWith('CARGO_PROFILE_RELEASE_') ||
+  /^CARGO_TARGET_.*_(RUSTFLAGS|LINKER)$/.test(name);
+
+/** The compiler, platform, runner image and flags the native executable is built with. */
+export const nativeBuildContext = Effect.fnUntraced(function* (root: string) {
+  const path = yield* Path.Path;
   const flags = Object.fromEntries(
-    Object.entries(process.env)
-      .filter(
-        ([name, value]) =>
-          value !== undefined &&
-          ([
-            'RUSTC',
-            'RUSTFLAGS',
-            'SOURCE_DATE_EPOCH',
-            'CARGO_ENCODED_RUSTFLAGS',
-            'CARGO_BUILD_RUSTFLAGS',
-            'CARGO_BUILD_TARGET',
-            'CARGO_INCREMENTAL',
-            'RUSTC_WRAPPER',
-            'RUSTC_WORKSPACE_WRAPPER',
-            'TAURI_CONFIG',
-            'CC',
-            'CXX',
-            'CFLAGS',
-            'CXXFLAGS',
-            'LDFLAGS',
-            'LIB',
-            'INCLUDE',
-            'LIBPATH',
-          ].includes(name) ||
-            name.startsWith('CARGO_PROFILE_RELEASE_') ||
-            /^CARGO_TARGET_.*_(RUSTFLAGS|LINKER)$/.test(name)),
-      )
-      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
-  ) as Record<string, string>;
-  return {
+    (yield* environmentVariables)
+      .filter(([name]) => isBuildFlag(name))
+      .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+  );
+  const cwd = path.join(root, 'apps/desktop/src-tauri');
+  const rustc = (yield* environmentVariable('RUSTC')) || 'rustc';
+  const image = [yield* environmentVariable('ImageOS'), yield* environmentVariable('ImageVersion')];
+  const context: NativeBuildContext = {
     platform: process.platform,
     arch: process.arch,
-    rustc: execFileSync(process.env.RUSTC || 'rustc', ['-vV'], {
-      cwd: path.join(root, 'apps/desktop/src-tauri'),
-      encoding: 'utf8',
-      windowsHide: true,
-    }).trim(),
-    cargo: execFileSync('cargo', ['-V'], {
-      cwd: path.join(root, 'apps/desktop/src-tauri'),
-      encoding: 'utf8',
-      windowsHide: true,
-    }).trim(),
-    image: [process.env.ImageOS || '', process.env.ImageVersion || ''].join('/'),
+    rustc: (yield* output(rustc, ['-vV'], { cwd })).trim(),
+    cargo: (yield* output('cargo', ['-V'], { cwd })).trim(),
+    image: image.join('/'),
     flags,
   };
-}
+  return context;
+});
 
-async function sourceFiles(root: string, relative: string): Promise<string[]> {
-  const entries = await readdir(path.join(root, relative), { withFileTypes: true });
-  const files: string[] = [];
-  for (const entry of entries) {
-    if (
-      relative === 'apps/desktop/src-tauri' &&
-      ['target', 'resources', 'gen'].includes(entry.name)
-    ) {
-      continue;
+const sourceFiles = (
+  root: string,
+  relative: string,
+): Effect.Effect<
+  string[],
+  UnsupportedBuildInput | PlatformError,
+  FileSystem.FileSystem | Path.Path
+> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const files: string[] = [];
+    for (const entry of yield* fs.readDirectoryEntries(path.join(root, relative))) {
+      if (
+        relative === 'apps/desktop/src-tauri' &&
+        ['target', 'resources', 'gen'].includes(entry.name)
+      ) {
+        continue;
+      }
+      const child = relative + '/' + entry.name;
+      if (entry.type === 'Directory') {
+        files.push(...(yield* sourceFiles(root, child)));
+      } else if (entry.type === 'File') {
+        files.push(child);
+      } else {
+        return yield* new UnsupportedBuildInput({
+          message: 'Unsupported native build input: ' + child,
+        });
+      }
     }
-    const child = relative + '/' + entry.name;
-    if (entry.isDirectory()) {
-      files.push(...(await sourceFiles(root, child)));
-    } else if (entry.isFile()) {
-      files.push(child);
-    } else {
-      throw Error('Unsupported native build input: ' + child);
-    }
-  }
-  return files;
-}
+    return files;
+  });
 
-export async function nativeBuildKey(root: string, context: NativeBuildContext): Promise<string> {
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+/** Whether `file` can be read; only a missing file is not. */
+const readable = Effect.fnUntraced(function* (file: string) {
+  const fs = yield* FileSystem.FileSystem;
+  return yield* fs.readFile(file).pipe(
+    Effect.as(true),
+    Effect.catchTag('PlatformError', (error) =>
+      error.reason._tag === 'NotFound' ? Effect.succeed(false) : Effect.fail(error),
+    ),
+  );
+});
+
+/** The fingerprint of the native executable's inputs in `root`, built in `context`. */
+export const nativeBuildKey = Effect.fnUntraced(function* (
+  root: string,
+  context: NativeBuildContext,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const optional: string[] = [];
   for (const file of [
     'Cargo.toml',
@@ -93,18 +131,13 @@ export async function nativeBuildKey(root: string, context: NativeBuildContext):
     'rust-toolchain',
     'rust-toolchain.toml',
   ]) {
-    try {
-      await readFile(path.join(root, file));
+    if (yield* readable(path.join(root, file))) {
       optional.push(file);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
     }
   }
   const inputs = [
-    ...(await sourceFiles(root, 'apps/desktop/src-tauri')),
-    ...(await sourceFiles(root, 'apps/desktop/dist')),
+    ...(yield* sourceFiles(root, 'apps/desktop/src-tauri')),
+    ...(yield* sourceFiles(root, 'apps/desktop/dist')),
     'pnpm-lock.yaml',
     'package.json',
     'apps/desktop/package.json',
@@ -112,56 +145,70 @@ export async function nativeBuildKey(root: string, context: NativeBuildContext):
     'scripts/native-cache.ts',
     'scripts/native-cache-key.ts',
     ...optional,
-  ].sort();
-  const files = await Promise.all(
-    inputs.map(async (file) => ({
-      file,
-      sha256: createHash('sha256')
-        .update(await readFile(path.join(root, file)))
-        .digest('hex'),
-    })),
+  ].toSorted();
+  const files = yield* Effect.forEach(
+    inputs,
+    (file) =>
+      Effect.map(fs.readFile(path.join(root, file)), (bytes) => ({ file, sha256: sha256(bytes) })),
+    { concurrency: 'unbounded' },
   );
   return createHash('sha256')
     .update(JSON.stringify({ schema: 1, context, files }))
     .digest('hex');
-}
+});
 
-export async function restoreNativeBinary(
+/** The cache's record of the executable it holds. */
+const CacheManifest = Schema.fromJsonString(
+  Schema.Struct({ schema: Schema.Literal(1), key: Schema.String, sha256: Schema.String }),
+);
+
+/**
+ * Copies the cached executable to `destination` when it was built from `key`'s
+ * inputs and is intact. A missing, malformed or different cache is a miss.
+ */
+export const restoreNativeBinary = Effect.fnUntraced(function* (
   cache: string,
   key: string,
   destination: string,
-): Promise<boolean> {
-  try {
-    const manifest = JSON.parse(await readFile(path.join(cache, 'build.json'), 'utf8'));
-    if (manifest.schema !== 1 || manifest.key !== key) {
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const restored = Effect.gen(function* () {
+    const text = yield* fs.readFileString(path.join(cache, 'build.json'));
+    const manifest = yield* Schema.decodeEffect(CacheManifest)(text).pipe(Effect.option);
+    if (Option.isNone(manifest) || manifest.value.key !== key) {
       return false;
     }
-    const binary = await readFile(path.join(cache, 'wisp.exe'));
-    if (!binary.length || createHash('sha256').update(binary).digest('hex') !== manifest.sha256) {
+    const binary = yield* fs.readFile(path.join(cache, 'wisp.exe'));
+    if (!binary.length || sha256(binary) !== manifest.value.sha256) {
       return false;
     }
-    await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, binary);
-    console.log('Native binary reused; SHA-256: ' + manifest.sha256);
+    yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
+    yield* fs.writeFile(destination, binary);
+    yield* Console.log('Native binary reused; SHA-256: ' + manifest.value.sha256);
     return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) {
-      return false;
-    }
-    throw error;
-  }
-}
+  });
+  return yield* restored.pipe(
+    Effect.catchTag('PlatformError', (error) =>
+      error.reason._tag === 'NotFound' ? Effect.succeed(false) : Effect.fail(error),
+    ),
+  );
+});
 
-export async function saveNativeBinary(
+/** Keeps `executable` in the cache as the build of `key`'s inputs. */
+export const saveNativeBinary = Effect.fnUntraced(function* (
   cache: string,
   key: string,
   executable: string,
-): Promise<void> {
-  const sha256 = createHash('sha256')
-    .update(await readFile(executable))
-    .digest('hex');
-  await mkdir(cache, { recursive: true });
-  await copyFile(executable, path.join(cache, 'wisp.exe'));
-  await writeFile(path.join(cache, 'build.json'), JSON.stringify({ schema: 1, key, sha256 }));
-  console.log('Optimized native binary cached; SHA-256: ' + sha256);
-}
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const digest = sha256(yield* fs.readFile(executable));
+  yield* fs.makeDirectory(cache, { recursive: true });
+  yield* fs.copyFile(executable, path.join(cache, 'wisp.exe'));
+  yield* fs.writeFileString(
+    path.join(cache, 'build.json'),
+    JSON.stringify({ schema: 1, key, sha256: digest }),
+  );
+  yield* Console.log('Optimized native binary cached; SHA-256: ' + digest);
+});
