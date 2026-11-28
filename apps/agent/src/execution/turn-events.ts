@@ -1,6 +1,7 @@
+// @effect-migrated
 import type { TextStreamPart, ToolSet } from 'ai';
+import { Option, Result, Schema } from 'effect';
 import type { Effect } from 'effect';
-import { z } from 'zod';
 import { CONTROL_TOOLS, TOOL_CALL, type assembleTools } from '../tools/turn-tools.ts';
 import { errorText } from './engine-errors.ts';
 import { stepUsage } from './usage.ts';
@@ -13,18 +14,15 @@ export interface EngineEvent {
 
 export type Emit = (event: EngineEvent) => Effect.Effect<unknown>;
 
-function safeLabel(label: () => string | undefined) {
-  try {
-    return label();
-  } catch {
-    return undefined;
-  }
-}
+/** A tool's label, or none when its label function throws. */
+const safeLabel = (label: () => string | undefined) => Result.getOrUndefined(Result.try(label));
 
 type Labels = Pick<ReturnType<typeof assembleTools>, 'labels' | 'deferred'>;
 
 /** The input of a `tool_call`: the deferred tool it runs and that tool's input. */
-const deferredCall = z.object({ name: z.string(), input: z.unknown().optional() });
+const decodeDeferredCall = Schema.decodeUnknownOption(
+  Schema.Struct({ name: Schema.String, input: Schema.optionalKey(Schema.Unknown) }),
+);
 
 /**
  * The bridge events of one turn's AI SDK stream. A deferred call is shown as
@@ -44,10 +42,11 @@ export class TurnEvents {
   }
 
   private shown(name: string, input: unknown) {
-    const deferred = name === TOOL_CALL ? deferredCall.safeParse(input) : undefined;
-    return deferred?.success
-      ? { name: deferred.data.name, input: deferred.data.input ?? {} }
-      : { name, input };
+    const deferred = name === TOOL_CALL ? decodeDeferredCall(input) : Option.none();
+    return Option.match(deferred, {
+      onNone: () => ({ name, input }),
+      onSome: (call) => ({ name: call.name, input: call.input ?? {} }),
+    });
   }
 
   read(part: TextStreamPart<ToolSet>): EngineEvent[] {
@@ -80,7 +79,7 @@ export class TurnEvents {
       case 'tool-call': {
         const call = this.shown(part.toolName, part.input);
         this.calls.set(part.toolCallId, call);
-        const label = safeLabel(() => this.label(call.name)?.start?.(call.input as never));
+        const label = safeLabel(() => this.label(call.name)?.start?.(call.input));
         return [
           {
             type: 'call.requested',
@@ -97,15 +96,12 @@ export class TurnEvents {
         ];
       }
       case 'tool-result': {
-        if ((part as { preliminary?: boolean }).preliminary) {
+        if (part.preliminary) {
           return [];
         }
         const call = this.calls.get(part.toolCallId);
         const label =
-          call &&
-          safeLabel(() =>
-            this.label(call.name)?.complete?.(call.input as never, part.output as never),
-          );
+          call && safeLabel(() => this.label(call.name)?.complete?.(call.input, part.output));
         return [
           {
             type: 'call.settled',

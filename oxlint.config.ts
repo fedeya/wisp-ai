@@ -109,6 +109,8 @@ export default defineConfig({
       // apps/agent and apps/desktop repeat the server boundary.
       files: [
         'apps/agent/src/*',
+        'apps/agent/src/contract/**',
+        'apps/agent/src/execution/**',
         'apps/agent/src/session/**',
         'apps/desktop/src/*',
         'apps/desktop/src/components/**',

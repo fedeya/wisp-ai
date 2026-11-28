@@ -2,7 +2,8 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { createOpenAI } from '@ai-sdk/openai';
 import { generateText, tool, stepCountIs } from 'ai';
-import { z } from 'zod';
+import { effectToolInput } from '../src/tools/tool.ts';
+import { NoArgs } from '../src/contract/tool-inputs.ts';
 import { subscriptionCallOptions } from '../src/models/model-tools.ts';
 
 test('a stateless tool round trip resends encrypted reasoning instead of referencing unpersisted items', async () => {
@@ -49,7 +50,7 @@ test('a stateless tool round trip resends encrypted reasoning instead of referen
     stopWhen: stepCountIs(2),
     tools: {
       lookup: tool({
-        inputSchema: z.object({}),
+        inputSchema: effectToolInput(NoArgs),
         execute: async () => {
           toolCalls++;
           return { answer: 'Ready' };

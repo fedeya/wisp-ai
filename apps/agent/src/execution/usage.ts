@@ -1,30 +1,34 @@
-import { Effect } from 'effect';
-import { z } from 'zod';
+// @effect-migrated
+import { Effect, Option, Schema } from 'effect';
 import type { TokenUsage } from '../session/session-history.ts';
 import type * as SessionHistory from '../session/session-history.ts';
 import type { Assistant } from '../session/session-message.ts';
 
-const tokenCount = z.number().nullish();
-const tokenDetails = z.object({
+// zod's `nullish()`: a missing key, `undefined` or `null`, as providers report a count they lack.
+const nullish = <S extends Schema.Top>(schema: S) => Schema.optional(Schema.NullOr(schema));
+const tokenCount = nullish(Schema.Finite);
+const tokenDetails = Schema.Struct({
   total: tokenCount,
   cacheRead: tokenCount,
   cacheWrite: tokenCount,
   reasoning: tokenCount,
 });
 /** Provider usage: counts arrive as numbers or as `{ total, cacheRead, ... }` objects. */
-const providerUsage = z.object({
-  inputTokens: z.union([z.number(), tokenDetails]).nullish(),
-  outputTokens: z.union([z.number(), tokenDetails]).nullish(),
+const providerUsage = Schema.Struct({
+  inputTokens: nullish(Schema.Union([Schema.Finite, tokenDetails])),
+  outputTokens: nullish(Schema.Union([Schema.Finite, tokenDetails])),
   cachedInputTokens: tokenCount,
   reasoningTokens: tokenCount,
 });
+const decodeUsage = Schema.decodeUnknownOption(providerUsage);
 
 export function stepUsage(raw: unknown): TokenUsage | undefined {
-  const parsed = providerUsage.safeParse(raw);
-  if (!parsed.success) {
+  const decoded = decodeUsage(raw);
+  if (Option.isNone(decoded)) {
     return undefined;
   }
-  const { inputTokens: input, outputTokens: output } = parsed.data;
+  const parsed = decoded.value;
+  const { inputTokens: input, outputTokens: output } = parsed;
   const details = (value: typeof input) =>
     typeof value === 'object' && value !== null ? value : undefined;
   const inputTokens = typeof input === 'number' ? input : details(input)?.total;
@@ -33,9 +37,9 @@ export function stepUsage(raw: unknown): TokenUsage | undefined {
     return undefined;
   }
   const usage: TokenUsage = { inputTokens, outputTokens };
-  const cacheReadTokens = parsed.data.cachedInputTokens ?? details(input)?.cacheRead;
+  const cacheReadTokens = parsed.cachedInputTokens ?? details(input)?.cacheRead;
   if (typeof cacheReadTokens === 'number') usage.cacheReadTokens = cacheReadTokens;
-  const reasoningTokens = parsed.data.reasoningTokens ?? details(output)?.reasoning;
+  const reasoningTokens = parsed.reasoningTokens ?? details(output)?.reasoning;
   if (typeof reasoningTokens === 'number') usage.reasoningTokens = reasoningTokens;
   const cacheWriteTokens = details(input)?.cacheWrite;
   if (typeof cacheWriteTokens === 'number') usage.cacheWriteTokens = cacheWriteTokens;

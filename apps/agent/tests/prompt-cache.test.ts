@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { z } from 'zod';
+import { Schema } from 'effect';
 import { generateText } from 'ai';
 import type { LanguageModelV4Prompt } from '@ai-sdk/provider';
 
@@ -10,10 +10,14 @@ import { withAnthropicCache } from '../src/models/prompt-cache.ts';
 
 const cached = { anthropic: { cacheControl: { type: 'ephemeral' } } };
 /** The parts of an Anthropic Messages request these tests read. */
-const anthropicRequest = z.object({
-  system: z.unknown(),
-  messages: z.array(z.object({ content: z.unknown() })),
-});
+const decodeAnthropicRequest = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      system: Schema.Unknown,
+      messages: Schema.Array(Schema.Struct({ content: Schema.Unknown })),
+    }),
+  ),
+);
 const text = (value: string) => [{ type: 'text' as const, text: value }];
 
 test('marks the last system message and the last two messages as cache breakpoints', () => {
@@ -100,7 +104,7 @@ test('an Anthropic connection sends the breakpoints as cache_control', async () 
         { role: 'user', content: 'Second' },
       ],
     });
-    const request = anthropicRequest.parse(JSON.parse(bodies[0] ?? '{}'));
+    const request = decodeAnthropicRequest(bodies[0] ?? '{}');
     expect(request.system).toEqual([
       { type: 'text', text: 'Instructions', cache_control: { type: 'ephemeral' } },
     ]);

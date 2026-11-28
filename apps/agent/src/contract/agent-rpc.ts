@@ -1,5 +1,5 @@
-import { z } from 'zod';
-import { Schema } from 'effect';
+// @effect-migrated
+import { Schema, Tuple } from 'effect';
 import type { StandardSchemaV1 } from 'effect/StandardSchema';
 import { panelInput } from './panels.ts';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
@@ -9,9 +9,8 @@ import { databaseRequest } from './database.ts';
 import { wowheadQuery } from '@wisp/protocol/search';
 import { providerId } from '@wisp/protocol/providers';
 import { replyPresentation } from './reply-presentation.ts';
-import { LimitedString } from './tool-inputs.ts';
+import { KeyedRecord, LimitedString } from './tool-inputs.ts';
 
-const session = { agentSession: z.string().min(1) };
 const agentSession = Schema.String.check(Schema.isMinLength(1));
 /**
  * A request built on `@wisp/protocol` schemas, strict like them. The agent and
@@ -42,15 +41,16 @@ export const rpcRequests = {
       unsafePreserveChecks: true,
     }),
   ),
-  database: z.discriminatedUnion('operation', [
-    databaseRequest.options[0].extend(session),
-    databaseRequest.options[1].extend(session),
-  ]),
+  database: protocolRequest(
+    databaseRequest.mapMembers(Tuple.map(Schema.fieldsAssign({ agentSession }))),
+  ),
   wowhead: protocolRequest(Schema.Struct({ ...wowheadQuery.fields, agentSession })),
 };
 export type RpcEndpoint = keyof typeof rpcRequests;
 export type RpcInput<K extends RpcEndpoint> = StandardSchemaV1.InferInput<(typeof rpcRequests)[K]>;
-const reading = z.record(z.string(), z.unknown());
+// What the bridge read or did, checked only as an object. `KeyedRecord` drops an
+// own `__proto__` key, as zod's `z.record` did and `Schema.Record` does not.
+const reading = openMessage(KeyedRecord(Schema.String, Schema.Unknown));
 export const rpcResponses = {
   title: openMessage(Schema.Struct({ title: Schema.String })),
   present: openMessage(replyPresentation),
