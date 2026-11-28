@@ -2,8 +2,8 @@ import { cp, copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { verifySimulator } from './verify-simulator.ts';
-import { findNpmDirectory } from './node-runtime.ts';
+import { verifySimulator } from './simulator/verify.ts';
+import { findNpmDirectory } from './engine/node-runtime.ts';
 import { addonReleaseVersion, stampAddonReleaseVersion } from './addon-release-version.ts';
 
 function payloadDirectory(root: string) {

@@ -16,6 +16,7 @@ Load the skill that matches the area you are changing, along with the references
 | [Vitest](vitest/SKILL.md)                                           | Deterministic async tests, mocks and cleanup                                                             | [Anthony Fu](https://github.com/antfu/skills/tree/d524ed287eef22757297827ce42e3cad88abd20c/skills/vitest)                                                             |
 | [Zustand](zustand/SKILL.md)                                         | The desktop's vanilla store, selectors and test isolation                                                | [oakoss](https://github.com/oakoss/agent-skills/tree/85e3a3919d9e0ec7f7302a5143ec4b3e66f5f6ad/skills/zustand)                                                         |
 | [Effect](effect-ts/SKILL.md)                                        | Writing and reviewing Effect v4 code: service layers, runtime boundaries, and scoped resources           | Wisp adaptation of [Effect-TS](https://github.com/Effect-TS/skills/tree/155c50c911f9c99c294ef8a4461981c5bbe6453e/skills/effect-ts)                                    |
+| [Effect patterns](effect/SKILL.md)                                  | Opinionated Effect v4 defaults for schemas, config, schedules, caches, streams, HTTP clients and tests   | [Kit Langton](https://github.com/kitlangton/skills/tree/71195e36024ebd2e66c5beac946e81eafd5abc43/skills/effect)                                                       |
 | [Visual PR](visual-pr/SKILL.md)                                     | Preparing a pull request description                                                                     | Wisp adaptation of [HumanLayer](https://github.com/humanlayer/humanlayer)                                                                                             |
 | [Evals Start](evals-start/SKILL.md)                                 | Choosing the eval skill for agent eval work in `apps/agent/evals`                                        | [AI Evals Course](https://github.com/ai-evals-course/evals-skills/tree/80d5f7b0127c7572ed9e9339937adbfd7240ffeb/skills/evals-start)                                   |
 | [Eval Audit](eval-audit/SKILL.md)                                   | Auditing the agent evals, the grader and its scenarios                                                   | [AI Evals Course](https://github.com/ai-evals-course/evals-skills/tree/80d5f7b0127c7572ed9e9339937adbfd7240ffeb/skills/eval-audit)                                    |
@@ -29,6 +30,15 @@ Load the skill that matches the area you are changing, along with the references
 | [Tool Design](tool-design/SKILL.md)                                 | Agent tool descriptions, schemas, response size and errors in `apps/agent/src/wisp/tools` and the bridge | [Context Engineering skills](https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering/tree/d9202c76d6dc8351e648badb576a6e9b5aae1e7f/skills/tool-design) |
 
 For TanStack Form, use the official [validation](https://tanstack.com/form/latest/docs/framework/react/guides/validation) and [async initial values](https://tanstack.com/form/latest/docs/framework/react/guides/async-initial-values) guides with the version pinned by the workspace.
+
+For Effect work, start with [Effect](effect-ts/SKILL.md), which records Wisp's own conventions;
+[Effect patterns](effect/SKILL.md) adds general v4 recipes and gives way to those conventions where they differ.
+
+For all TypeScript work, read [Type System Discipline](principle-type-system-discipline/SKILL.md)
+and [TypeScript Best Practices](typescript-best-practices/SKILL.md). Both are
+copied unchanged from [Cursor's pstack plugin](https://github.com/cursor/plugins/tree/b7b93c36be9bcc36a74db438e0fd385d660bc559/pstack/skills).
+The Best Practices skill includes its examples; its Boundary Discipline reference
+is [available upstream](https://github.com/cursor/plugins/blob/b7b93c36be9bcc36a74db438e0fd385d660bc559/pstack/skills/principle-boundary-discipline/SKILL.md).
 
 Imported skills keep their upstream formatting. References outside the copied trees link to the pinned source. Tool Design names sibling skills from its collection (such as `project-development` and `evaluation`) that are not copied here; the eval skills cover evaluation.
 

@@ -95,7 +95,7 @@ test('empty listings skip the game read', async () => {
     weapons({ weaponType: 'wands', quality: ['epic'] }),
     async () => {
       reads++;
-      return {};
+      throw new Error('Unexpected game read');
     },
     readEverloot,
   );
@@ -108,6 +108,12 @@ test('catalog failures surface as tool errors', async () => {
     throw Error('Everloot unavailable');
   };
   await expect(
-    searchGear(weapons({ weaponType: 'staves' }), async () => ({}), failing),
+    searchGear(
+      weapons({ weaponType: 'staves' }),
+      async () => {
+        throw new Error('Unexpected game read');
+      },
+      failing,
+    ),
   ).rejects.toThrow('Everloot item catalog could not list this category');
 });

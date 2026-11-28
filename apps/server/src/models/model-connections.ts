@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
+import { Option, Schema } from 'effect';
 import {
   connectionConfig,
+  contextWindow,
   connectionSetup,
   connectionDiscovery,
   discoveredConnectionModel,
@@ -9,7 +10,6 @@ import {
   parseConnectionModel,
   providerDefinitions,
   reasoningEffort,
-  type ReasoningEffort,
   type ConnectionConfig,
   type DiscoveredConnectionModel,
   type ProviderId,
@@ -19,11 +19,18 @@ import { modelReasoningEfforts } from '@wisp/agent/reasoning';
 import { modelToolSupport } from '@wisp/agent/tool-support';
 import { modelContextWindow } from '@wisp/agent/context-windows';
 import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
-import type { SecretVault } from '../auth/secret-vault.ts';
+import type { PromiseSecretVault as SecretVault } from '../platform/secret-vault.ts';
 import { readJson, writeJson } from '../json-file.ts';
+
+const decodeSetup = Schema.decodeUnknownSync(connectionSetup);
+const decodeConfig = Schema.decodeUnknownSync(connectionConfig);
+const decodeDiscovery = Schema.decodeUnknownSync(connectionDiscovery);
+const decodeDiscovered = Schema.decodeUnknownOption(discoveredConnectionModel);
+const decodeContextWindow = Schema.decodeUnknownOption(contextWindow);
+const isReasoningEffort = Schema.is(reasoningEffort);
 
 /**
  * Whether a discovered model accepts function tools: true or false when the
@@ -97,16 +104,16 @@ export interface ModelCatalog {
 }
 
 export class ModelConnections implements ModelCatalog {
-  private connections: ConnectionConfig[] = [];
+  private connections: ReadonlyArray<ConnectionConfig> = [];
   private keys = new Set<string>();
   private file: string;
   private vault: SecretVault;
-  private chatgpt: ChatGPTAuth;
+  private chatgpt: PromiseChatGPTAuth;
   private fetcher: typeof fetch;
   constructor(
     file: string,
     vault: SecretVault,
-    chatgpt: ChatGPTAuth,
+    chatgpt: PromiseChatGPTAuth,
     fetcher: typeof fetch = fetch,
   ) {
     this.file = file;
@@ -115,7 +122,7 @@ export class ModelConnections implements ModelCatalog {
     this.fetcher = fetcher;
   }
   async load() {
-    this.connections = await readJson(this.file, z.array(connectionConfig), () => []);
+    this.connections = await readJson(this.file, Schema.Array(connectionConfig), () => []);
     for (const connection of this.connections) {
       if (await this.vault.read(this.key(connection.id))) {
         this.keys.add(connection.id);
@@ -187,7 +194,7 @@ export class ModelConnections implements ModelCatalog {
     return key;
   }
   async save(raw: unknown) {
-    const input = connectionSetup.parse(raw);
+    const input = decodeSetup(raw);
     if (input.id && this.get(input.id).provider !== input.provider) {
       throw Error('Create a new connection to change provider.');
     }
@@ -197,7 +204,7 @@ export class ModelConnections implements ModelCatalog {
     }
     const secret = await this.credential(input);
     const id = input.id || randomUUID();
-    const config = connectionConfig.parse({
+    const config = decodeConfig({
       ...input,
       id,
       name: input.name ?? (input.id ? this.get(input.id).name : this.defaultName(input.provider)),
@@ -358,7 +365,7 @@ export class ModelConnections implements ModelCatalog {
     throw Error(safeErrorMessage(message));
   }
   async discover(raw: unknown): Promise<{ models: DiscoveredConnectionModel[] }> {
-    const input = connectionDiscovery.parse(raw);
+    const input = decodeDiscovery(raw);
     const secret = await this.credential(input);
     const baseURL = this.baseURL(input);
     const officialEndpoint =
@@ -424,10 +431,10 @@ export class ModelConnections implements ModelCatalog {
               .flatMap((option: { type?: string; values?: unknown[] }) =>
                 option.type === 'effort' && Array.isArray(option.values) ? option.values : [],
               )
-              .filter((value): value is ReasoningEffort => reasoningEffort.safeParse(value).success)
+              .filter(isReasoningEffort)
           : undefined;
       const supportsTools = discoveredToolSupport(input.provider, id, m, officialEndpoint);
-      const model = discoveredConnectionModel.safeParse({
+      const model = decodeDiscovered({
         id,
         name:
           [m.display_name, m.displayName, m.name].find(
@@ -435,14 +442,14 @@ export class ModelConnections implements ModelCatalog {
               typeof name === 'string' && name.trim().length > 0 && name.trim().length <= 200,
           ) ?? id,
         contextWindow:
-          discoveredConnectionModel.shape.contextWindow.safeParse(context).data ??
+          Option.getOrUndefined(decodeContextWindow(context)) ??
           modelContextWindow(input.provider, id),
         reasoningEfforts: metadataEfforts?.length
           ? metadataEfforts
           : modelReasoningEfforts(input.provider, id),
         supportsTools,
       });
-      if (model.success) models.set(model.data.id, model.data);
+      if (Option.isSome(model)) models.set(model.value.id, model.value);
     }
     if (!models.size) {
       throw Error('This provider did not return a model list. Enter model IDs manually.');
@@ -549,7 +556,7 @@ export class ModelConnections implements ModelCatalog {
       .join('');
   }
   async test(raw: unknown) {
-    const input = connectionSetup.parse(raw);
+    const input = decodeSetup(raw);
     const secret = await this.credential(input);
     const model = this.providerModel(input, input.models[0]!.id, secret);
     const result = await model.doGenerate({

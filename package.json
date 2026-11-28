@@ -23,7 +23,7 @@
     "desktop:dev": "turbo run dev:native --filter=@wisp/desktop",
     "build:desktop": "turbo run package:windows --filter=@wisp/desktop",
     "package:windows": "pnpm build:desktop",
-    "package:engine": "turbo run build --filter=@wisp/agent... && node scripts/build-engine.ts",
+    "package:engine": "turbo run build --filter=@wisp/server... && node scripts/engine/build.ts",
     "format": "oxfmt --write && stylua --verify .busted .luacheckrc addon tests && prettier --write \"apps/desktop/src/**/*.{css,html}\"",
     "format:check": "oxfmt --check && stylua --check .busted .luacheckrc addon tests && prettier --check \"apps/desktop/src/**/*.{css,html}\"",
     "lint": "oxlint apps packages scripts tests addon/tests vitest.config.ts && pnpm lint:addon",
@@ -32,11 +32,13 @@
     "test:core": "turbo run test --concurrency=2 --filter=!@wisp/addon --filter=!@wisp/desktop",
     "test:addon": "turbo run test --filter=@wisp/addon",
     "test:watch": "turbo watch test --concurrency=2",
-    "typecheck:root": "tsc --noEmit",
+    "typecheck:root": "effect-tsgo tsc --noEmit",
+    "typecheck:editor": "effect-tsgo patch --typescript --no-oxlint",
     "test:integration": "turbo run test --filter=@wisp/tests"
   },
   "devDependencies": {
     "@cloudflare/oxlint-config": "0.2.0",
+    "@effect/tsgo": "0.73.7",
     "@johnnymorganz/stylua-bin": "2.6.0",
     "@types/node": "26.6.6",
     "changie": "1.26.0",
@@ -47,7 +49,7 @@
     "prettier": "3.9.10",
     "tsrs": "7.1.0-beta.tsrs5",
     "turbo": "2.11.10",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vitest": "5.1.0"
   },
   "engines": {

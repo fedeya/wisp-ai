@@ -1,3 +1,4 @@
+// @effect-migrated
 import type { ModelMessage, TextStreamPart, ToolSet } from 'ai';
 import { Predicate } from 'effect';
 import type { Assistant, AssistantPart, Native, Tool, ToolState } from './session-message.ts';
@@ -69,8 +70,8 @@ export function stepMessage(response: readonly ModelMessage[], info: StepInfo): 
   const settle = (id: string, output: ToolResultOutput, options: unknown) => {
     const index = tools.get(id);
     const tool = index === undefined ? undefined : content[index];
-    if (tool?.type === 'tool') {
-      content[index!] = { ...tool, state: settled(tool.state.input, output, options) };
+    if (index !== undefined && tool?.type === 'tool') {
+      content[index] = { ...tool, state: settled(tool.state.input, output, options) };
     }
   };
   for (const message of response) {
@@ -152,8 +153,8 @@ export class StepDraft {
       case 'text-delta': {
         const index = this.texts.get(chunk.id);
         const part = index === undefined ? undefined : this.parts[index];
-        if (part?.type === 'text') {
-          this.parts[index!] = { ...part, text: part.text + chunk.text };
+        if (index !== undefined && part?.type === 'text') {
+          this.parts[index] = { ...part, text: part.text + chunk.text };
         } else {
           this.texts.set(chunk.id, this.parts.length);
           this.parts.push({ type: 'text', text: chunk.text });
@@ -194,8 +195,8 @@ export class StepDraft {
   private settle(id: string, state: (tool: Tool) => ToolState) {
     const index = this.tools.get(id);
     const part = index === undefined ? undefined : this.parts[index];
-    if (part?.type === 'tool') {
-      this.parts[index!] = { ...part, state: state(part) };
+    if (index !== undefined && part?.type === 'tool') {
+      this.parts[index] = { ...part, state: state(part) };
     }
   }
 

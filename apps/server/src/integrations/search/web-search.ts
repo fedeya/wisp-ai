@@ -5,13 +5,15 @@ import {
   type WebSearchInput,
 } from '@wisp/protocol/search';
 import { parseConnectionModel } from '@wisp/protocol/providers';
-import type { z } from 'zod';
-import type { SecretVault } from '../../auth/secret-vault.ts';
-import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
+import { Schema } from 'effect';
+import type { PromiseSecretVault as SecretVault } from '../../platform/secret-vault.ts';
+import type { PromiseChatGPTAuth } from '../../auth/index.ts';
 import { readJson, writeJson } from '../../json-file.ts';
 import { isPublicSourceUrl, searchPublicWeb } from './public-web-search.ts';
 
 const secretKey = 'search:exa';
+const decodeSetup = Schema.decodeUnknownSync(searchSetup);
+const decodeConfig = Schema.decodeUnknownSync(searchConfig);
 const exaEndpoint = 'https://api.exa.ai/search';
 const exaPublicEndpoint = 'https://mcp.exa.ai/mcp?tools=web_search_advanced_exa';
 
@@ -45,20 +47,25 @@ export interface WowheadSearch {
 // Search credentials and routing belong to the bridge, separately from each
 // chat's language model. Providers return reference data to that model's tool.
 export class WebSearch implements WowheadSearch {
-  private config: z.infer<typeof searchConfig> = { provider: 'auto' };
+  private config: typeof searchConfig.Type = { provider: 'auto' };
   private hasKey = false;
   private file: string;
   private vault: SecretVault;
-  private auth: ChatGPTAuth;
+  private auth: PromiseChatGPTAuth;
   private fetcher: typeof fetch;
-  constructor(file: string, vault: SecretVault, auth: ChatGPTAuth, fetcher: typeof fetch = fetch) {
+  constructor(
+    file: string,
+    vault: SecretVault,
+    auth: PromiseChatGPTAuth,
+    fetcher: typeof fetch = fetch,
+  ) {
     this.file = file;
     this.vault = vault;
     this.auth = auth;
     this.fetcher = fetcher;
   }
   async load() {
-    this.config = await readJson(this.file, searchConfig, () => ({ provider: 'auto' }));
+    this.config = await readJson(this.file, searchConfig, () => ({ provider: 'auto' as const }));
     this.hasKey = !!(await this.vault.read(secretKey));
   }
   state() {
@@ -81,13 +88,13 @@ export class WebSearch implements WowheadSearch {
     return !!this.provider(model);
   }
   async save(raw: unknown) {
-    const input = searchSetup.parse(raw);
+    const input = decodeSetup(raw);
     const previous = await this.vault.read(secretKey);
     const key = input.apiKey || previous;
     if (input.apiKey) {
       await this.vault.write(secretKey, key);
     }
-    const next = searchConfig.parse(input);
+    const next = decodeConfig(input);
     try {
       await writeJson(this.file, next);
     } catch (error) {
@@ -106,7 +113,7 @@ export class WebSearch implements WowheadSearch {
     return this.state();
   }
   async test(raw: unknown) {
-    const input = searchSetup.parse(raw);
+    const input = decodeSetup(raw);
     const key = input.apiKey || (await this.vault.read(secretKey));
     // The same bounded, global request used by chats checks authentication and
     // search access. Empty results still prove the API accepted the request.

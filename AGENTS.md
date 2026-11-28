@@ -5,24 +5,30 @@ local Node bridge, which runs an agent runtime and is shipped inside a Tauri
 desktop app for Windows. It is a pnpm + Turborepo monorepo (one lockfile,
 `hoist: false`). Human-facing setup lives in [docs/development.md](docs/development.md).
 
+Before moving code between workspaces or adding a cross-workspace dependency,
+consult [Package boundaries](docs/package-boundaries.md) for the target
+ownership and dependency direction.
+
 Nested guides apply on top of this file: [addon/AGENTS.md](addon/AGENTS.md) and
 [apps/web/AGENTS.md](apps/web/AGENTS.md).
 
 ## Workspaces
 
-| Path                 | Package           | What it is                                                                                                        |
-| -------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `apps/server`        | `@wisp/server`    | Local Node host: composes the agent, WoW bridge, Desktop API, SQLite storage and other Wisp services              |
-| `apps/agent`         | `@wisp/agent`     | Agent runtime on the AI SDK and Effect, run in the server: models, tools, skills and instructions                 |
-| `apps/desktop`       | `@wisp/desktop`   | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                                     |
-| `apps/web`           | `@wisp/web`       | Next.js website (setup guide, changelog from GitHub Releases)                                                     |
-| `packages/protocol`  | `@wisp/protocol`  | Zod schemas the desktop and bridge share (providers, capabilities, features, routines, search), and addon helpers |
-| `packages/releases`  | `@wisp/releases`  | Release channel/version helpers shared by desktop, web, scripts                                                   |
-| `packages/game-data` | `@wisp/game-data` | Generates game data files (e.g. `addon/WispAI/Data/`) from Forever’s game tables on wago.tools                    |
-| `addon/WispAI`       | `@wisp/addon`     | The WoW addon (Lua 5.1); sources must be listed in `WispAI.toc`                                                   |
-| `simulator/`         | —                 | Checked-in metadata and license for the pinned WoWSims simulator (not a workspace)                                |
-| `scripts/`           | `@wisp/scripts`   | Build, staging, packaging and release scripts (`.ts` run directly with `node`, some `.ps1`)                       |
-| `tests/`             | `@wisp/tests`     | Cross-component integration tests and repository-wide checks                                                      |
+| Path                  | Package            | What it is                                                                                                        |
+| --------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `apps/server`         | `@wisp/server`     | Local Node host: composes the agent, WoW bridge, Desktop API, SQLite storage and other Wisp services              |
+| `apps/agent`          | `@wisp/agent`      | Agent runtime on the AI SDK and Effect, run in the server: models, tools, skills and instructions                 |
+| `apps/desktop`        | `@wisp/desktop`    | Tauri desktop app: React + Vite frontend in `src/`, Rust host in `src-tauri/`                                     |
+| `apps/web`            | `@wisp/web`        | Next.js website (setup guide, changelog from GitHub Releases)                                                     |
+| `packages/db`         | `@wisp/db`         | SQLite database for the server: Drizzle schema, migrations, opening and migrating the file                        |
+| `packages/protocol`   | `@wisp/protocol`   | Zod schemas the desktop and bridge share (providers, capabilities, features, routines, search), and addon helpers |
+| `packages/releases`   | `@wisp/releases`   | Release channel/version helpers shared by desktop, web, scripts                                                   |
+| `packages/wow-bridge` | `@wisp/wow-bridge` | WoW addon transport, mailbox codecs and pending game requests                                                     |
+| `packages/game-data`  | `@wisp/game-data`  | Generates game data files (e.g. `addon/WispAI/Data/`) from Forever’s game tables on wago.tools                    |
+| `addon/WispAI`        | `@wisp/addon`      | The WoW addon (Lua 5.1); sources must be listed in `WispAI.toc`                                                   |
+| `simulator/`          | —                  | Checked-in metadata and license for the pinned WoWSims simulator (not a workspace)                                |
+| `scripts/`            | `@wisp/scripts`    | Build, staging, packaging and release scripts (`.ts` run directly with `node`, some `.ps1`)                       |
+| `tests/`              | `@wisp/tests`      | Cross-component integration tests and repository-wide checks                                                      |
 
 ## Commands
 
@@ -51,7 +57,7 @@ Run from the repository root. Toolchain: Node 26.13.1+ and pnpm 12.18.0
 
 Native Rust checks run in CI with `cargo fmt --check` and `cargo test` against
 `apps/desktop/src-tauri/Cargo.toml`. `apps/server/tests/simulation.test.ts` needs
-the simulator binary (`scripts/build-simulator.ps1`); Linux CI excludes it.
+the simulator binary (`scripts/simulator/build.ps1`); Linux CI excludes it.
 
 ### Lua toolchain
 
@@ -75,18 +81,20 @@ not on `PATH` by default. In PowerShell, add it before running addon checks:
 - `addon/tests/*_spec.lua`: Busted addon specs with WoW stubs and fixtures.
 - `scripts/tests/`: release and build-script tests.
 
-## Current priority: code quality with Effect
+## Current priority: an Effect-native codebase
 
-Improve the codebase's readability and maintainability, using Effect where it
-makes dependencies, error handling, cancellation, or resource lifetimes clearer.
-Prefer the simplest implementation that fits: keep pure logic as plain
-TypeScript, and don't add a service or layer unless it earns its place. Keep
-cleanup separate from behavior changes so reviewers can verify each on its own.
+The TypeScript workspaces are moving to idiomatic Effect; the
+[Effect migration plan](docs/effect-migration.md) has the rules, the phases and
+what stays as it is. Every side effect, dependency, failure, resource and piece
+of background work goes through Effect, and data is modeled with `Schema`. Pure
+logic stays plain TypeScript, called from Effect code. Keep cleanup separate
+from behavior changes so reviewers can verify each on its own.
 
 When working with Effect, load the [Effect skill](.agents/skills/effect-ts/SKILL.md)
-for local examples and verification guidance. Before writing any Effect code,
-first read `node_modules/effect/AGENTS.md` **completely**, and follow the links
-in the file when required.
+for local examples and verification guidance, and the matching reference of the
+[Effect contributor skill](.agents/skills/effect/SKILL.md). Before writing any
+Effect code, first read `node_modules/effect/AGENTS.md` **completely**, and
+follow the links in the file when required.
 
 If you need to learn more about particular Effect apis and concepts that the
 guide doesn't cover, search through the source code in `node_modules/effect/src`.
@@ -94,19 +102,30 @@ guide doesn't cover, search through the source code in `node_modules/effect/src`
 The root `package.json` declares `effect` so that `node_modules/effect` exists
 despite `hoist: false`; keep it on the same version as the workspaces.
 
-### Effect patterns for the bridge
+### Effect rules
 
-- **Compose Effects before running them.** Internal operations return Effects
-  so callers can compose them with `yield*`. Run the composed operation at the
-  process entry point or at a boundary that expects a `Promise`, such as an HTTP
-  handler or SDK callback. Capture the caller's Effect context when a callback
-  runs later. Avoid a Promise wrapper that runs each method separately.
-- **Use small factories for stateful modules.** A module can expose
-  `Module.make(...)` and return an object of operations, with state private to
-  the factory. If construction only captures dependencies, keep it synchronous
-  and make I/O explicit in operations such as `start` and `close`. Use named
-  `Effect.fn` for operations that benefit from tracing. Use `Context.Service`
-  and `Layer` when Effect should provide the dependency or own its lifecycle.
+- **Replace, don't wrap.** A migrated module has no `async`, `new Promise`,
+  `try`/`catch`, thrown expected failures or `Effect.run*` inside it.
+  `Effect.tryPromise` belongs only in adapters around third-party Promise APIs
+  and maps the failure to a `Schema.TaggedError`. Don't use `Effect.promise` for
+  work that can fail: a rejection becomes a defect.
+- **Run Effects only at the edges.** Internal operations return Effects that
+  callers compose with `yield*`. Run them at the process entry point or where a
+  library expects a `Promise`, such as an SDK callback, and capture the caller's
+  Effect context when that callback runs later.
+- **Services by default.** Anything with dependencies, state or a lifecycle is
+  a `Context.Service` with a layer and `Effect.fn('Service.operation')`
+  methods. Don't pass bags of callbacks (`changed`, `saveChats`) between
+  modules: shared state lives in a service backed by `SubscriptionRef`, and
+  whatever reacts to it subscribes to its changes.
+- **Leaves before the root.** Migrate adapters and domain services before
+  `apps/server/src/runtime.ts`. Until then the root declares migrated services
+  in its requirements and `main.ts` provides them; no `Layer.build` with
+  `Context.get` inside the root.
+- **Keep layers closed.** Consumers depend on the domain service, not on the
+  infrastructure under it such as `SqlDatabase`. Don't `Layer.provideMerge` it
+  out to them, and don't use `Layer.mergeAll` or `provideMerge` just to make
+  types check.
 - **Give each resource one owner.** For a keyed connection cache, the manager
   decides when to reuse, replace, or invalidate an entry; the connection owns
   the handshake, timeout, and cleanup. Register cleanup before starting work
@@ -117,31 +136,41 @@ despite `hoist: false`; keep it on the same version as the workspaces.
   operations. The agent owns MCP connections and tool execution; the host
   provides settings storage, access to the vault, and the current turn's
   policy. Keep upstream tool schemas intact except for arguments fixed by Wisp.
+- **Test through Effect.** Use `@effect/vitest` (`it.effect`, `layer(...)`),
+  test layers instead of objects cast with `as unknown as`, and `TestClock`
+  instead of real sleeps or fake timers.
 
 ### Effect service layers
 
 Prefer exporting a service's layer separately from its `Context.Service` tag.
 Keep both in the same module when that makes them easy to find. At the runtime
 composition point, use a module namespace import so the implementation reads
-clearly, for example `Capabilities.layerFromFile(...)`. Consumers can import
-the `AgentCapabilities` tag directly.
+clearly, for example `Capabilities.layerFromFile(...)`. Consumers can use
+`Capabilities.Service` from the same module.
 
 ## Conventions observed in the code
 
-- **Server layout:** `apps/server/src/wow-bridge/` owns the addon transport;
-  `game/` connects it to Wisp's state and workflows, and `api/` serves Desktop.
-  Other domains include `agent/` (engine wiring, agent server, turns, model history),
-  `auth/`, `chat/`, `reply/`, `models/`, `integrations/` (search, MCP,
-  simulation, TheWoWDB), `panels/`, `routines/`, `db/` and `migrations/`.
-  Composition and process-wide helpers (`runtime.ts`, `main.ts`, `errors.ts`,
-  `logger.ts`, `app-paths.ts`) stay at the root. Package export names do not
-  follow file moves.
+- **Server layout:** `apps/server/src/` is moving to the
+  [target structure](docs/effect-migration.md#target-structure): one folder per
+  domain (`game/`, `chat/`, `turns/`, `routines/`, …) that owns its services,
+  repository, schemas and API handlers; `platform/` for configuration, logging,
+  the HTTP client, JSON files and the vault; `http/` for the servers; and only
+  `main.ts` and the layer graph at the root. A domain's `index.ts` is its public
+  surface: other domains import it as `#/<domain>` and platform modules as
+  `#/platform/<name>` (the `imports` field of `apps/server/package.json`), never
+  another domain's files. Inside a domain, files are named by role (`repo.ts`,
+  `api.ts`, `scheduler.ts`) without repeating the domain. Put new and migrated
+  modules in their target folder, never at the root. Each domain keeps its own
+  table access; the schema and connection live in `@wisp/db`. Moving a file keeps
+  its package export name; when a change replaces a module's API, rename or
+  remove the export and update every consumer in the same PR. All consumers live
+  in this repository, so don't add compatibility aliases.
 - **Shared schemas:** shapes are zod schemas owned by the workspace that defines
   the contract. The desktop–bridge contract is in `packages/protocol/src/`
   (`@wisp/protocol/providers`); what the agent asks of its host, such as tool
   inputs, game inspections and presentation, is in `apps/agent/src/contract/`
   (`@wisp/agent/contract/game-inspection`), which the bridge implements; the
-  addon's packets, mailbox frames and downlink are in `apps/server/src/wow-bridge/`.
+  addon's packets, mailbox frames and downlink are in `packages/wow-bridge/src/`.
   Change a shape where it lives rather than redefining it in another app.
 - **Package boundaries:** `tests/package-boundaries.test.ts` requires every
   workspace to declare each package it imports in its own `package.json`
@@ -168,6 +197,12 @@ the `AgentCapabilities` tag directly.
   See [releases/README.md](releases/README.md) for style and the release process.
 
 ## Contributor skills and PRs
+
+For every task that reads, writes, or reviews `.ts` or `.tsx` files, read and
+apply both [Type System Discipline](.agents/skills/principle-type-system-discipline/SKILL.md)
+and [TypeScript Best Practices](.agents/skills/typescript-best-practices/SKILL.md),
+in that order, before working on the TypeScript. If the harness does not
+auto-load these skills, read their linked files directly.
 
 Project skills live in `.agents/skills/`; [its README](.agents/skills/README.md)
 says which skill fits which area (Base UI, React Router, Testing Library, Tauri

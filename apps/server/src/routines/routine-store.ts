@@ -5,18 +5,18 @@ import {
   type Routine,
   type RoutineRun,
   type RoutineEvent,
-  type routineInput,
+  type RoutineInput,
 } from '@wisp/protocol/routines';
-import type { z } from 'zod';
-import { ApplicationDatabase, type ApplicationOrm } from '../db/application-database.ts';
-import { routines, routineRuns } from '../db/schema.ts';
+import type { ApplicationOrm } from '@wisp/db/database';
+import { ApplicationDatabase } from '../application-database.ts';
+import { routines, routineRuns } from '@wisp/db/schema';
 import {
   decodeRoutine,
   decodeRun,
   encodeRoutine,
   encodeRun,
   type RoutineRow,
-} from '../db/routine-record.ts';
+} from './routine-record.ts';
 
 interface HistoryOptions {
   characterKey?: string;
@@ -100,12 +100,7 @@ export class RoutineStore {
     await this.database.initializeProducts();
     return this.database.transaction(work);
   }
-  mutate(
-    characterKey: string,
-    input: z.infer<typeof routineInput>,
-    sourceChatId?: string,
-    now = Date.now(),
-  ) {
+  mutate(characterKey: string, input: RoutineInput, sourceChatId?: string, now = Date.now()) {
     return this.transact((db) => {
       if (input.operation === 'save') {
         const row = this.row(db, characterKey, input.routine.id);

@@ -7,14 +7,15 @@ import { z } from 'zod';
 import { chatSchema, type Chat } from './chat.ts';
 import { isEmptyDraft } from './sessions.ts';
 import { cancelRunningCalls } from './chat-lifecycle.ts';
-import { ApplicationDatabase, type ApplicationOrm } from '../db/application-database.ts';
-import { writeMigrationBackup } from '../db/private-file.ts';
+import type { ApplicationOrm } from '@wisp/db/database';
+import { ApplicationDatabase } from '../application-database.ts';
+import { writeMigrationBackup } from '@wisp/db/private-file';
 import {
   agentSessions,
   chats as chatTable,
   messages as messageTable,
   chatInstanceState,
-} from '../db/schema.ts';
+} from '@wisp/db/schema';
 import {
   encodeChat,
   decodeChat,
@@ -22,7 +23,7 @@ import {
   type StoredChat,
   type MessageRow,
   type MessageIdentities,
-} from '../db/chat-record.ts';
+} from './chat-record.ts';
 
 interface StoreOptions {
   instanceId?: string;

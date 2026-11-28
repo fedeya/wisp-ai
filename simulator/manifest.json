@@ -27,7 +27,7 @@
   ],
   "patches": [
     {
-      "file": "scripts/simulator-downranking.patch",
+      "file": "scripts/simulator/downranking.patch",
       "sha256": "3eab3162c7cd6258dcebdffa6d587d18d94ebed75b8e423a86e2ec9fd32f40bd"
     }
   ]

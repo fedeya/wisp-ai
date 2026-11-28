@@ -1,5 +1,11 @@
 import { afterEach, expect, test } from 'vitest';
-import { Logger, References } from 'effect';
+import { Effect, Layer, Logger, References } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as Game from '../src/host/game-access.ts';
+import * as Memory from '../src/host/memory.ts';
+import * as Capabilities from '../src/host/capabilities.ts';
+import * as Mcp from '../src/integrations/mcp-tools.ts';
+import * as Everloot from '../src/integrations/everloot.ts';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,10 +14,12 @@ import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { setAgentHost } from '../src/host/agent-host.ts';
 import {
   compactionSplit,
-  createAgentEngine,
+  make,
+  layer as agentLayer,
+  EngineConfig,
+  SessionHistory,
   searchTools,
   type EngineEvent,
-  type EngineOptions,
   type Entry,
   type TurnInput,
 } from '../src/engine.ts';
@@ -82,7 +90,7 @@ async function fixture(
   options: {
     appendFails?: (count: number) => boolean;
     beforeAppend?: (entries: readonly Entry[]) => Promise<void>;
-    logging?: EngineOptions['logging'];
+    logging?: Layer.Layer<never>;
     /** Game reads answer after this long, for a turn stopped while a tool runs. */
     inspectDelayMs?: number;
   } = {},
@@ -116,12 +124,6 @@ async function fixture(
       res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(value));
     if (req.url?.startsWith('/session-model?')) {
       json({ model: 'offline-test', effort: 'provider-default', contextWindow });
-    } else if (req.url === '/inspect') {
-      inspections.push(JSON.parse(body));
-      setTimeout(
-        () => json({ status: 'completed', data: { settings: [], verified: true } }),
-        options.inspectDelayMs ?? 0,
-      );
     } else {
       const request = JSON.parse(body) as Item;
       requests.push(request);
@@ -161,12 +163,36 @@ async function fixture(
     history.entries(session).filter(({ entry }) => entry.type !== 'compaction');
   const compactionsOf = (session: string) =>
     history.entries(session).filter(({ entry }) => entry.type === 'compaction');
-  const engine = createAgentEngine({
-    origin: () => origin,
-    token: 'offline-token',
-    history,
-    logging: options.logging,
+  const gameAccess = Game.Service.of({
+    ...Game.unavailableGameAccess,
+    readSettings: (agentSession, args) =>
+      Effect.gen(function* () {
+        inspections.push({ agentSession, inspection: { kind: 'settings', args } });
+        if (options.inspectDelayMs) yield* Effect.sleep(options.inspectDelayMs);
+        return {
+          status: 'available' as const,
+          data: { applications: [], options: [], verified: true },
+        };
+      }),
   });
+  const engine = make(
+    agentLayer.pipe(
+      Layer.provide(SessionHistory.layer(history)),
+      Layer.provide(Layer.succeed(Game.Service, gameAccess)),
+      Layer.provide(
+        Layer.succeed(Memory.Service, {
+          characterKey: () => Effect.succeed(null),
+          read: () => Effect.succeed([]),
+          update: () => Effect.succeed([]),
+        }),
+      ),
+      Layer.provide(Layer.succeed(EngineConfig, { origin: () => origin, token: 'offline-token' })),
+      Layer.provide(Mcp.layer([Everloot.profile])),
+      Layer.provide(Capabilities.layerFromFile(() => flags)),
+      Layer.provide(NodeFileSystem.layer),
+      Layer.provideMerge(options.logging ?? Logger.layer([])),
+    ),
+  );
   async function send(
     session: string,
     input: string | TurnInput,

@@ -1,6 +1,6 @@
 import { runMain } from '@effect/platform-node/NodeRuntime';
-import { Cause, Deferred, Effect, Exit, Runtime, Scope } from 'effect';
-import { makeServer } from './runtime.ts';
+import { Cause, Deferred, Effect, Exit, Layer, Runtime, Scope } from 'effect';
+import { makeServer, ServerLayer } from './runtime.ts';
 import { closeRuntimeScope } from './runtime-resources.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogging } from './logger.ts';
@@ -71,7 +71,7 @@ const program = Effect.gen(function* () {
         ),
       ),
   );
-}).pipe(Effect.scoped, Effect.provide(bridgeLogging));
+}).pipe(Effect.scoped, Effect.provide(Layer.merge(ServerLayer, bridgeLogging)));
 
 runMain(program, {
   disableErrorReporting: true,

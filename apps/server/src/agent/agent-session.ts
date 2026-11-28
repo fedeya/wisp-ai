@@ -1,12 +1,9 @@
-import type { createAgentEngine, TurnInput } from '@wisp/agent/engine';
+import type * as Agent from '@wisp/agent/engine';
 import type { Chat } from '../chat/events.ts';
 import { withConversationHistory } from '../chat/context.ts';
 import { resetContextUsage } from '@wisp/agent/contract/context-usage';
 
-export type AgentEngine = Pick<
-  ReturnType<typeof createAgentEngine>,
-  'newSessionId' | 'send' | 'end'
->;
+export type AgentEngine = Pick<ReturnType<typeof Agent.make>, 'newSessionId' | 'send' | 'end'>;
 
 /**
  * Starts a turn on the chat's agent session, or a new one when the chat has
@@ -17,7 +14,7 @@ export type AgentEngine = Pick<
 export function sendChatTurn(
   engine: AgentEngine,
   chat: Chat,
-  input: TurnInput,
+  input: Agent.TurnInput,
   signal: AbortSignal,
 ) {
   const resumed = Boolean(chat.agentSession);

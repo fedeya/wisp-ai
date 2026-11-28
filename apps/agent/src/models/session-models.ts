@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto';
 import type { LanguageModel } from 'ai';
-import { Context, Effect, Layer } from 'effect';
-import type { z } from 'zod';
-import { selectedModel } from '../contract/agent-rpc.ts';
-import { AgentCapabilities } from '../host/capabilities.ts';
+import { Context, Effect, Layer, Schema } from 'effect';
+import { selectedModel, type SelectedModel } from '../contract/agent-rpc.ts';
+import * as Capabilities from '../host/capabilities.ts';
 import { connectionModel } from './connection-model.ts';
 import { EngineConfig } from '../host/engine-config.ts';
-import { hostCall, type HostError } from '../execution/engine-errors.ts';
+import { HostError, hostCall } from '../execution/engine-errors.ts';
 
 /** The model a session runs on, as the bridge's chat settings choose it. */
-export type SelectedModel = z.infer<typeof selectedModel>;
+export type { SelectedModel };
+const decodeSelectedModel = Schema.decodeUnknownEffect(selectedModel);
 
 /** Which model each session uses, and that model for the AI SDK. */
 export class SessionModels extends Context.Service<
@@ -24,7 +24,7 @@ export class SessionModels extends Context.Service<
     SessionModels,
     Effect.gen(function* () {
       const { origin, token } = yield* EngineConfig;
-      const settings = yield* AgentCapabilities;
+      const settings = yield* Capabilities.Service;
       const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
       const webSearchEnabled = settings.read.pipe(
         Effect.map((capabilities) => capabilities.enabled('tool:web_search')),
@@ -45,8 +45,14 @@ export class SessionModels extends Context.Service<
                 (await response.text()) || 'Could not load model settings for this conversation.',
               );
             }
-            return selectedModel.parse(await response.json());
-          }).pipe(Effect.withSpan('SessionModels.selected')),
+            const body: unknown = await response.json();
+            return body;
+          }).pipe(
+            Effect.flatMap((body) =>
+              decodeSelectedModel(body).pipe(Effect.mapError((cause) => new HostError({ cause }))),
+            ),
+            Effect.withSpan('SessionModels.selected'),
+          ),
         model: (session, selected, cache) =>
           connectionModel(
             selected,

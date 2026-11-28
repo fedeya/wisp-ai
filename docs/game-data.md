@@ -9,7 +9,7 @@ them. `@wisp/game-data` (`packages/game-data`) does the generation.
   from (`wowf` is wago.tools' product name for Forever), and the AtlasLoot
   release the loot tables come from.
 - `src/datasets/` holds one module per generated file: the tables it reads,
-  its output and a `build()` that returns plain data. Output is either Lua for
+  its output and a `build` Effect that returns plain data. Output is either Lua for
   the addon (`addon/WispAI/Data/<Name>.lua` as `ns.Data.<Name>`, listed in
   `WispAI.toc`; it loads in game, so keep it small) or JSON for the bridge (for
   data the agent uses directly or that is too large for the game's memory).
@@ -36,7 +36,7 @@ kept: item and NPC IDs, boss and instance names, levels and rates. Forever's
 instances, which AtlasLoot names but does not number, are placed by their
 Map.db2 name; `curated/dungeon-loot.json` holds the few that need a hand
 (Dire Maul's wings, instances the build does not have yet). The output is
-`apps/server/src/integrations/dungeon-loot.json`, read by `wow__dungeon_loot`.
+`apps/agent/src/wisp/dungeon-loot.json`, read by `wow__dungeon_loot`.
 
 To update it, set the newer file's ID, name and sha256 in `build.json` (the
 file page on CurseForge lists the name) and run `pnpm data:generate dungeon-loot`.
@@ -76,5 +76,5 @@ Prefer a live game API when one exists: it is always current. Add a dataset for
 facts only the client tables hold. Server-side facts (loot, drop rates,
 trainers) are not in the client tables; take them only from a pinned,
 licence-compatible source, as `dungeon-loot` does. Write the module in
-`src/datasets/`, add it to `datasets()` in `src/index.ts`, and test it with
-`memoryTables` fixtures copied from real rows.
+`src/datasets/`, add it to `datasets` in `src/index.ts`, and test it with
+`layerMemory` (from `src/wago.ts`) fixtures copied from real rows.

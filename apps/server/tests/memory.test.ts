@@ -4,18 +4,17 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
 import { characterIdentity } from '../src/chat/context.ts';
 
 test(
-  'memory survives new store instances, isolates characters, and serializes concurrent updates',
+  'memory survives new repository instances, isolates characters, and serializes concurrent updates',
   { timeout: 30_000 },
   async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'wow-wisp-memory-'));
     const scope = databaseScope();
     try {
       const file = path.join(directory, 'wisp.sqlite');
-      const store = new MemoryStore(scope.open(file));
+      const store = scope.memory(scope.open(file));
       await Promise.all([
         store.update(
           'character',
@@ -27,7 +26,8 @@ test(
         store.update('character', 'warrior', 'guide', 'Following Guide B'),
         store.update('preferences', 'local-player', 'pace', 'Prefers exploration'),
       ]);
-      const restarted = new MemoryStore(scope.open(file));
+      await store.close();
+      const restarted = scope.memory(scope.open(file));
       assert.equal((await restarted.read('character', 'mage')).length, 2);
       assert.equal((await restarted.read('character', 'warrior'))[0].text, 'Following Guide B');
       await restarted.update('character', 'mage', 'guide', 'Stopped following Guide A');
@@ -36,7 +36,7 @@ test(
         1,
       );
       await restarted.update('character', 'mage', 'guide');
-      assert.equal((await new MemoryStore(scope.open(file)).read('character', 'mage')).length, 1);
+      assert.equal((await scope.memory(scope.open(file)).read('character', 'mage')).length, 1);
       assert.equal(
         (await restarted.read('preferences', 'local-player'))[0].text,
         'Prefers exploration',

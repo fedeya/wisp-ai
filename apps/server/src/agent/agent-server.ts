@@ -1,65 +1,50 @@
-import { expectedCharacter } from '@wisp/protocol/character-key';
 import { timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
-import { rpcRequests, rpcResponses } from '@wisp/agent/contract/agent-rpc';
-import { actionTools } from '@wisp/agent/contract/game-actions';
-import { routineInput, routineEvents } from '@wisp/protocol/routines';
+import { rpcRequests } from '@wisp/agent/contract/agent-rpc';
+import { Effect, Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
+import { routineEvents } from '@wisp/protocol/routines';
 import { panelInput } from '@wisp/agent/contract/panels';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import { databaseRequest } from '@wisp/agent/contract/database';
-import { wowheadQuery } from '@wisp/protocol/search';
+import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
-import type { McpManager } from '@wisp/agent/mcp-manager';
-import * as Everloot from '@wisp/agent/everloot';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from './memory-store.ts';
-import type { GameRequests } from '../wow-bridge/game-requests.ts';
-import type { TheWoWDB } from '../integrations/thewowdb.ts';
+import type { TheWoWDB } from '../integrations/thewowdb/index.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
-import { Effect } from 'effect';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
-import { readLoadedItems, retriesItemLoading } from '../wow-bridge/item-loading.ts';
-import { searchGear } from '../integrations/gear-search.ts';
-import { dungeonLoot } from '../integrations/dungeon-loot.ts';
-import { itemSources } from '../integrations/item-sources.ts';
-import { characterIdentity, conversationTitle, queryCharacterSections } from '../chat/context.ts';
-import type { MemoryView } from '../session-state.ts';
+import { characterIdentity, conversationTitle } from '../chat/context.ts';
 interface AgentDependencies {
   telemetry?: Pick<UsageTelemetry, 'webSearch'>;
   token: string;
-  auth: ChatGPTAuth;
+  auth: PromiseChatGPTAuth;
   connections: ModelConnections;
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
   webSearch: WowheadSearch;
-  mcpManager: Pick<McpManager, 'call'>;
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
-  memoryStore: MemoryStore;
-  pending: GameRequests;
-  database: TheWoWDB;
-  simulator: Simulator;
+  database: TheWoWDB['Service'];
+  simulator: Simulator['Service'];
   getChats: () => Chat[];
   currentTransport: () => string;
   defaultModel: () => string;
   readSimulationCharacter: (chat?: string) => Promise<unknown>;
-  memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
-  setMemoryView: (view: MemoryView) => void;
   changed: () => void;
   presentReply: (
     chat: Chat,
@@ -69,6 +54,8 @@ interface AgentDependencies {
   ) => Promise<ReplyPresentation>;
 }
 type AgentContext = Context<{ Bindings: HttpBindings }>;
+// Web search requests are strict, like the protocol schema they use.
+const decodeWebSearch = Schema.decodeUnknownSync(wowheadQuery, rejectUnknownKeys);
 // The agent shows these messages to the model, so they are passed through unsanitized.
 const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
 // Aborts the game, simulator or search work when the agent hangs up before the reply is written.
@@ -82,56 +69,23 @@ function abortOnHangUp(c: AgentContext) {
   });
   return abort.signal;
 }
-const inspectionTools = {
-  settings: 'get_settings',
-  npc_locations: 'find_npc_locations',
-  questie_quest: 'get_quest',
-  questie_chain: 'get_quest_chain',
-  object_locations: 'find_object_locations',
-  stored_item: 'find_item',
-  item_prices: 'get_item_prices',
-  polestar_guide: 'get_guide_step',
-  reference: 'inspect_reference',
-  progression: 'query_progression',
-  target: 'inspect_target',
-  trainer: 'inspect_trainer',
-  flight_paths: 'inspect_flight_paths',
-  dungeons: 'query_dungeons',
-  training: 'query_training',
-  chat: 'read_chat',
-  combat: 'read_combat',
-  resources: 'query_resources',
-  compare_items: 'compare_items',
-  search_armor: 'search_armor',
-  search_weapons: 'search_weapons',
-  item_sources: 'item_sources',
-  dungeon_loot: 'dungeon_loot',
-  auctions: 'inspect_auctions',
-  macros: 'inspect_macros',
-  map: 'inspect_map',
-  hearthstone: 'inspect_hearthstone',
-} as const;
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
+  // Runs migrated services from the Hono handlers; a hang-up interrupts the run.
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
     connections,
     webSearch,
-    mcpManager,
     capabilitySettings,
     routineStore,
     panelStore,
-    memoryStore,
-    pending,
     database,
     simulator,
     getChats,
     currentTransport,
     defaultModel,
     readSimulationCharacter,
-    memorySnapshot,
-    setMemoryView,
     changed,
   } = deps;
   const expected = Buffer.from('Bearer ' + token);
@@ -206,7 +160,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     signal: () => AbortSignal;
   }
   const operationShape = z.object({
-    operation: z.string().optional(),
     input: z.object({ operation: z.string().optional() }).optional(),
   });
   function tool(
@@ -238,10 +191,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
           }
           if (
             chat.proactive &&
-            (route === '/action' ||
-              (route === '/routines' &&
-                !['catalog', 'list', 'get'].includes(operation.input?.operation || '')) ||
-              (route === '/memory' && operation.operation !== 'list') ||
+            ((route === '/routines' &&
+              !['catalog', 'list', 'get'].includes(operation.input?.operation || '')) ||
               (route === '/panels' &&
                 ['save', 'remove'].includes(operation.input?.operation || '')))
           ) {
@@ -286,7 +237,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       ) {
         throw Error('The character changed. Request a new simulation.');
       }
-      return simulator.run(snapshot, input, abort);
+      return runPromise(simulator.run(snapshot, input), { signal: abort });
     },
     1024 * 1024,
   );
@@ -306,19 +257,16 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       const abort = signal();
       const { agentSession: _session, ...args } = data;
       return route === '/database'
-        ? database.query(databaseRequest.parse(args), abort)
+        ? // Hanging up interrupts the lookup, which cancels its request.
+          runPromise(database.query(databaseRequest.parse(args)), { signal: abort })
         : measuredWebSearch(
-            wowheadQuery.parse(args),
+            decodeWebSearch(args),
             chat.modelSettings?.model || defaultModel(),
             abort,
           );
     });
   // Web search is the slowest tool, so record its budget and outcome to tune depth defaults.
-  async function measuredWebSearch(
-    query: z.output<typeof wowheadQuery>,
-    model: string,
-    abort: AbortSignal,
-  ) {
+  async function measuredWebSearch(query: WebSearchQuery, model: string, abort: AbortSignal) {
     const started = performance.now();
     try {
       const result = await webSearch.search(query, model, abort);
@@ -352,7 +300,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     if (!chat.characterKey) {
       throw Error('A fresh character identity is required');
     }
-    const input = routineInput.parse(data.input);
+    const { input } = data;
     const routines = ['save', 'pause', 'resume', 'remove'].includes(input.operation)
       ? await routineStore.mutate(chat.characterKey, input, chat.id)
       : routineStore.list(chat.characterKey);
@@ -405,47 +353,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
         : { panels };
   });
 
-  tool('/identity', async ({ chat }) => ({ characterKey: chat.characterKey || null }));
-
-  tool('/memory', async ({ raw, chat }) => {
-    const data = rpcRequests.memory.parse(raw);
-    if (data.slot !== 'preferences' && data.slot !== 'character') {
-      throw new Error('Invalid memory scope');
-    }
-    if (!capabilitySettings.enabled('memory:' + data.slot)) {
-      throw new Error('This memory capability is disabled in Settings');
-    }
-    const owner = data.slot === 'preferences' ? 'local-player' : chat.characterKey;
-    if (!owner) {
-      throw new Error('No fresh character identity for this memory');
-    }
-    let entries;
-    if (data.operation === 'list') {
-      entries = await memoryStore.read(data.slot, owner);
-    } else if (data.operation === 'save' || data.operation === 'remove') {
-      if (
-        typeof data.key !== 'string' ||
-        (data.operation === 'save' && typeof data.text !== 'string')
-      ) {
-        throw new Error('Invalid memory entry');
-      }
-      entries = await memoryStore.update(
-        data.slot,
-        owner,
-        data.key,
-        data.operation === 'save' ? data.text : undefined,
-      );
-      const snapshot = await memorySnapshot(chat.characterKey);
-      if (chat.owner === currentTransport()) {
-        setMemoryView(snapshot);
-      }
-      changed();
-    } else {
-      throw new Error('Invalid memory operation');
-    }
-    return { entries };
-  });
-
   tool('/title', async ({ raw, chat }) => {
     const data = rpcRequests.title.parse(raw);
     if (!capabilitySettings.enabled('tool:set_conversation_title')) {
@@ -461,99 +368,6 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     return { title };
   });
 
-  // Game reads and actions go to the addon through the pending-request mailbox.
-  const game = (route: '/state' | '/inspect' | '/action') =>
-    tool(route, async ({ raw, chat, signal }) => {
-      const inspection =
-        route === '/inspect' ? rpcRequests.inspect.parse(raw).inspection : undefined;
-      const action = route === '/action' ? rpcRequests.action.parse(raw).action : undefined;
-      const name = action
-        ? actionTools[action.kind]
-        : inspection
-          ? inspectionTools[inspection.kind]
-          : 'query_character';
-      if (!capabilitySettings.enabled('tool:' + name)) {
-        throw new Error('This tool is disabled in Settings');
-      }
-      // A character switch reloads the addon and replaces its transport, which
-      // `tool` already rejects. The expected character is a second check that
-      // is sent only when the turn knew who was playing.
-      const stateRequest = !inspection && !action ? rpcRequests.state.parse(raw) : undefined;
-      const abort = signal();
-      if (stateRequest) {
-        return queryCharacterSections(
-          chat,
-          stateRequest.sections,
-          async (sections) =>
-            rpcResponses.state.parse(
-              await pending.request(
-                { chat: chat.id, session: currentTransport(), sections, agent: true },
-                abort,
-              ),
-            ),
-          stateRequest.refresh,
-        );
-      }
-      const request = (gameInspection = inspection as unknown) =>
-        pending.request(
-          {
-            chat: chat.id,
-            session: currentTransport(),
-            agent: true,
-            ...(action
-              ? {
-                  action: { ...action, expectedCharacter: expectedCharacter(chat.characterKey) },
-                }
-              : gameInspection
-                ? { inspection: gameInspection }
-                : {}),
-          },
-          abort,
-        );
-      const everlootAllowed = (tool: Everloot.LookupTool) =>
-        capabilitySettings.enabled('mcp:' + Everloot.name) &&
-        capabilitySettings.enabled('mcp_tool:' + Everloot.name + ':' + tool);
-      const readEverloot: Everloot.Lookup = (tool, args) =>
-        runPromise(
-          Everloot.read(mcpManager, tool, args, () => everlootAllowed(tool)),
-          {
-            signal: abort,
-          },
-        );
-      if (inspection?.kind === 'search_armor' || inspection?.kind === 'search_weapons') {
-        if (!everlootAllowed('item_categories')) {
-          throw new Error(
-            'Gear search needs the Everloot integration and its item categories tool, which are off in Settings',
-          );
-        }
-        return searchGear(
-          inspection,
-          (candidates) => readLoadedItems(() => request(candidates), abort),
-          readEverloot,
-        );
-      }
-      if (inspection?.kind === 'dungeon_loot') {
-        return dungeonLoot(inspection.args, (candidates) =>
-          readLoadedItems(() => request(candidates), abort),
-        );
-      }
-      if (inspection?.kind === 'item_sources') {
-        return itemSources(inspection.args.itemIds, (names) => request(names), {
-          everloot: everlootAllowed('entity_relations'),
-          questie: capabilitySettings.enabled('integration:questie'),
-          auctionator:
-            capabilitySettings.enabled('integration:auctionator') &&
-            capabilitySettings.enabled('tool:get_item_prices'),
-          readEverloot,
-        });
-      }
-      return inspection && retriesItemLoading(inspection)
-        ? readLoadedItems(() => request(), abort)
-        : request();
-    });
-  game('/state');
-  game('/inspect');
-  game('/action');
   return app;
 });
 // Node listener for the loopback agent server.

@@ -1,46 +1,55 @@
-import { readFileSync } from 'node:fs';
-import { type AtlasLootData, type AtlasLootPin, readAtlasLoot, runAtlasLoot } from './atlasloot.ts';
-import type { Dataset } from './dataset.ts';
+// @effect-migrated
+import { Schema } from 'effect';
+import type { Effect, FileSystem, Path } from 'effect';
+import { AtlasLootPin, type AtlasLoot } from './atlasloot.ts';
+import { readPackageJson, type Dataset, type DatasetError } from './dataset.ts';
 import { dungeonEntrances } from './datasets/dungeon-entrances.ts';
 import { dungeonLoot } from './datasets/dungeon-loot.ts';
 import { groupFinderNames } from './datasets/group-finder-names.ts';
 import { itemProficiencies } from './datasets/item-proficiencies.ts';
+import type { GameTables } from './wago.ts';
 
 export { parseCsv, type Row } from './csv.ts';
 export { mapPosition, zonesAt, type MapPoint } from './coordinates.ts';
-export { render, type Curated, type Dataset, type Output } from './dataset.ts';
+export {
+  Curated,
+  DatasetError,
+  render,
+  type Dataset,
+  type DatasetFailure,
+  type Output,
+} from './dataset.ts';
 export { luaModule, luaString, luaValue, type LuaTable, type LuaValue } from './lua.ts';
 export { byId, num, str } from './rows.ts';
-export { latestBuild, memoryTables, wagoTables, type Locale, type TableSource } from './wago.ts';
+export { BuildListError, GameTables, TableReadError, latestBuild, type Locale } from './wago.ts';
 
-export { atlasLootUrl, type AtlasLootData, type AtlasLootPin } from './atlasloot.ts';
+export {
+  AtlasLoot,
+  AtlasLootError,
+  atlasLootUrl,
+  type AtlasLootData,
+  type AtlasLootPin,
+} from './atlasloot.ts';
 export { unzip } from './zip.ts';
 
 // The Forever build every dataset is generated from; product is wago.tools'
 // name for it ("wowf"); atlasloot pins the loot tables' release.
-export const pinned: { product: string; build: string; atlasloot: AtlasLootPin } = JSON.parse(
-  readFileSync(new URL('../build.json', import.meta.url), 'utf8'),
-);
+const Pinned = Schema.Struct({
+  product: Schema.String,
+  build: Schema.String,
+  atlasloot: AtlasLootPin,
+});
+export type Pinned = typeof Pinned.Type;
 
-// Where datasets read sources other than the game tables.
-export interface DatasetSources {
-  atlasLoot(areas: Map<number, string>): Promise<AtlasLootData>;
-}
+export const readPinned: Effect.Effect<Pinned, DatasetError, FileSystem.FileSystem | Path.Path> =
+  readPackageJson('build.json', Pinned);
 
-export function pinnedSources(cacheDir: string, refresh = false): DatasetSources {
-  return {
-    async atlasLoot(areas) {
-      return runAtlasLoot(await readAtlasLoot(pinned.atlasloot, cacheDir, refresh), areas);
-    },
-  };
-}
+// What building every dataset reads besides the game tables' rows.
+export type DatasetSources = GameTables | AtlasLoot | FileSystem.FileSystem | Path.Path;
 
-export function datasets(sources?: DatasetSources): Dataset[] {
-  const loot = (areas: Map<number, string>) => {
-    if (!sources) {
-      throw new Error('dungeon-loot needs the AtlasLoot source');
-    }
-    return sources.atlasLoot(areas);
-  };
-  return [dungeonEntrances(), dungeonLoot(loot), groupFinderNames(), itemProficiencies()];
-}
+export const datasets: ReadonlyArray<Dataset<DatasetSources>> = [
+  dungeonEntrances(),
+  dungeonLoot(),
+  groupFinderNames(),
+  itemProficiencies(),
+];

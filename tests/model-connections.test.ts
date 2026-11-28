@@ -6,7 +6,10 @@ import { ModelConnections } from '@wisp/server/model-connections';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { providerDefinitions, connectionModelSlug } from '@wisp/protocol/providers';
 import { desktopRoutes } from '@wisp/protocol/desktop-routes';
-import type { ChatGPTAuth } from '@wisp/server/chatgpt-auth';
+import { Schema } from 'effect';
+import type { PromiseChatGPTAuth } from '@wisp/server/auth';
+
+const decodeDiscovered = Schema.decodeUnknownSync(desktopRoutes['/connections/discover'].output);
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -33,7 +36,12 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
     models: vi.fn(async () => []),
   };
   const file = path.join(directory, 'connections.json');
-  const manager = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth, fetcher);
+  const manager = new ModelConnections(
+    file,
+    vault,
+    chatgpt as unknown as PromiseChatGPTAuth,
+    fetcher,
+  );
   await manager.load();
   return { manager, secrets, vault, chatgpt, file };
 }
@@ -56,7 +64,7 @@ test('connections persist metadata separately from secrets and work without Chat
   expect(await manager.models()).toEqual([
     { slug, displayName: 'claude-test', efforts: [], contextWindow: 200000, group: 'Claude' },
   ]);
-  const restored = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth);
+  const restored = new ModelConnections(file, vault, chatgpt as unknown as PromiseChatGPTAuth);
   await restored.load();
   expect(restored.list()[0]?.hasKey).toBe(true);
   await restored.save({ ...setup, id, name: 'Renamed', apiKey: undefined });
@@ -102,7 +110,7 @@ test('saved API models expose reasoning choices while keeping the existing defau
     ...setup,
     models: [{ id: 'claude-sonnet-4-6', contextWindow: 200000 }],
   });
-  const restored = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth);
+  const restored = new ModelConnections(file, vault, chatgpt as unknown as PromiseChatGPTAuth);
   await restored.load();
   expect((await restored.models())[0]).toMatchObject({
     slug: connectionModelSlug(id, 'claude-sonnet-4-6'),
@@ -160,7 +168,7 @@ test.each(['openrouter', 'gateway', 'compatible'] as const)(
       apiKey: 'key',
       baseURL: provider === 'compatible' ? 'http://localhost:1234/v1' : undefined,
     });
-    const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+    const { models } = decodeDiscovered(found);
     expect(models.map(({ id, supportsTools }) => [id, supportsTools])).toEqual([
       ['lab/tools', true],
       ['lab/text', false],
@@ -200,7 +208,7 @@ test('anthropic discovery marks native models as supporting tools', async () => 
     name: 'Anthropic / Claude',
     apiKey: 'key',
   });
-  const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+  const { models } = decodeDiscovered(found);
   expect(models).toEqual([
     expect.objectContaining({
       id: 'claude-sonnet-4-6',
@@ -215,7 +223,7 @@ test('anthropic discovery marks native models as supporting tools', async () => 
     apiKey: 'key',
     baseURL: 'https://proxy.example.com/v1',
   });
-  const { models: customModels } = desktopRoutes['/connections/discover'].output.parse(custom);
+  const { models: customModels } = decodeDiscovered(custom);
   expect(customModels[0]?.supportsTools).toBeUndefined();
 });
 
@@ -403,7 +411,7 @@ test.each([
   async ({ provider, body, expected }) => {
     const { manager } = await fixture(async () => Response.json(body));
     const found = await manager.discover({ provider, name: provider, apiKey: 'key' });
-    const { models } = desktopRoutes['/connections/discover'].output.parse(found);
+    const { models } = decodeDiscovered(found);
     expect(Object.fromEntries(models.map((m) => [m.id, m.supportsTools]))).toEqual(expected);
   },
 );

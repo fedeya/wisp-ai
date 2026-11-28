@@ -7,16 +7,19 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import type { ApplicationDatabase } from '../src/db/application-database.ts';
+import type { ApplicationDatabase } from '../src/application-database.ts';
 import { databaseScope } from './database-fixture.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
+import { Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { savedRoutine } from '@wisp/protocol/routines';
 
-const routine = savedRoutine.parse({
+const decodeSavedRoutine = Schema.decodeUnknownSync(savedRoutine, rejectUnknownKeys);
+
+const routine = decodeSavedRoutine({
   id: 'review',
   title: 'Review',
   instruction: 'Review spells',
@@ -65,12 +68,13 @@ async function fixture(
     root: string,
     file: string,
     openDb: (file: string) => ApplicationDatabase,
+    openMemory: ReturnType<typeof databaseScope>['memory'],
   ) => Promise<void>,
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-product-storage-'));
   const scope = databaseScope();
   try {
-    await work(root, path.join(root, 'wisp.sqlite'), scope.open);
+    await work(root, path.join(root, 'wisp.sqlite'), scope.open, scope.memory);
   } finally {
     await scope.close();
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -101,7 +105,7 @@ function inspect<T>(file: string, work: (db: DatabaseSync) => T): T {
 }
 
 test('imports all product data into the same database as chats, retaining exact sources, backups and extensions', async () =>
-  fixture(async (root, file, openDb) => {
+  fixture(async (root, file, openDb, openMemory) => {
     const sources = await legacy(root);
     const chat = {
       ...newChat('history', 'game'),
@@ -122,7 +126,7 @@ test('imports all product data into the same database as chats, retaining exact 
     expect(routines.list()).toEqual([routine]);
     expect(routines.history()).toEqual([run]);
     expect(panels.panels).toEqual([panel]);
-    expect(await new MemoryStore(openDb(file)).read('character', 'mage')).toEqual(memory.entries);
+    expect(await openMemory(openDb(file)).read('character', 'mage')).toEqual(memory.entries);
     for (const [name, original] of sources) {
       const originalFile = path.join(root, name);
       expect(await readFile(originalFile, 'utf8')).toBe(original);
@@ -150,7 +154,7 @@ test('imports all product data into the same database as chats, retaining exact 
 test.each(['null', '{invalid', '[{}]'])(
   'invalid panels %s stop the whole import and retry succeeds after repair',
   async (invalid) =>
-    fixture(async (root, file, openDb) => {
+    fixture(async (root, file, openDb, openMemory) => {
       await legacy(root);
       await writeFile(path.join(root, 'panels.json'), invalid);
       const database = openDb(file);
@@ -164,7 +168,7 @@ test.each(['null', '{invalid', '[{}]'])(
       expect(await readFile(path.join(root, 'panels.json'), 'utf8')).toBe(invalid);
       await writeFile(path.join(root, 'panels.json'), JSON.stringify([panel]));
       await database.initializeProducts();
-      expect(await new MemoryStore(openDb(file)).read('character', 'mage')).toEqual(memory.entries);
+      expect(await openMemory(database).read('character', 'mage')).toEqual(memory.entries);
     }),
 );
 
@@ -222,8 +226,33 @@ test('memory ownership mismatches fail closed; a conflicting backup is never ove
     expect(await readFile(backup, 'utf8')).toBe('unrelated backup');
   }));
 
+test('a failed memory insert rolls back the product import and leaves it retryable', async () =>
+  fixture(async (root, file, openDb, openMemory) => {
+    await legacy(root);
+    const database = openDb(file);
+    await database.initialize();
+    inspect(file, (db) =>
+      db.exec(`
+      CREATE TRIGGER reject_import BEFORE INSERT ON memory_entries
+      BEGIN SELECT RAISE(ABORT, 'memory import rejected'); END
+    `),
+    );
+    await expect(database.initializeProducts()).rejects.toThrow();
+    inspect(file, (db) => {
+      for (const table of ['routines', 'routine_runs', 'panels', 'memory_scopes']) {
+        expect(db.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n).toBe(0);
+      }
+      expect(
+        db.prepare("SELECT value FROM metadata WHERE key='product-json-import-v1'").get(),
+      ).toBeUndefined();
+      db.exec('DROP TRIGGER reject_import');
+    });
+    await database.initializeProducts();
+    expect(await openMemory(database).read('character', 'mage')).toEqual(memory.entries);
+  }));
+
 test('deletions remain authoritative after restart even when legacy files are stale or invalid', async () =>
-  fixture(async (root, file, openDb) => {
+  fixture(async (root, file, openDb, openMemory) => {
     await legacy(root);
     const routines = new RoutineStore(openDb(file));
     await routines.load();
@@ -231,7 +260,7 @@ test('deletions remain authoritative after restart even when legacy files are st
     const panels = new PanelStore(openDb(file));
     await panels.load();
     await panels.mutate('mage', { operation: 'remove', id: panel.id });
-    await new MemoryStore(openDb(file)).update('character', 'mage', 'guide');
+    await openMemory(openDb(file)).update('character', 'mage', 'guide');
     await writeFile(path.join(root, 'routines.json'), 'invalid stale JSON');
     await writeFile(path.join(root, 'memory', memoryName), 'invalid stale JSON');
     const reopened = new RoutineStore(openDb(file));
@@ -241,11 +270,11 @@ test('deletions remain authoritative after restart even when legacy files are st
     const reopenedPanels = new PanelStore(openDb(file));
     await reopenedPanels.load();
     expect(reopenedPanels.panels).toEqual([]);
-    expect(await new MemoryStore(openDb(file)).read('character', 'mage')).toEqual([]);
+    expect(await openMemory(openDb(file)).read('character', 'mage')).toEqual([]);
   }));
 
 test('independent stores preserve concurrent edits and a routine can only be claimed once', async () =>
-  fixture(async (_root, file, openDb) => {
+  fixture(async (_root, file, openDb, openMemory) => {
     const first = new RoutineStore(openDb(file)),
       second = new RoutineStore(openDb(file));
     await Promise.all([first.load(), second.load()]);
@@ -264,8 +293,8 @@ test('independent stores preserve concurrent edits and a routine can only be cla
     ]);
     await p1.load();
     expect(p1.panels).toHaveLength(2);
-    const m1 = new MemoryStore(openDb(file)),
-      m2 = new MemoryStore(openDb(file));
+    const m1 = openMemory(openDb(file)),
+      m2 = openMemory(openDb(file));
     await Promise.all([
       m1.update('character', 'mage', 'one', 'first'),
       m2.update('character', 'mage', 'two', 'second'),
@@ -277,14 +306,27 @@ test('independent stores preserve concurrent edits and a routine can only be cla
   }));
 
 test("three processes import once and update memory without losing each other's entries", async () =>
-  fixture(async (root, file, openDb) => {
+  fixture(async (root, file, openDb, openMemory) => {
     const sources = await legacy(root);
-    const source = `import { MemoryStore } from '@wisp/server/memory-store';
-    import { ApplicationDatabase } from '@wisp/server/db/application-database';
-    const database = new ApplicationDatabase(process.argv[1]);
-    try {
-    await new MemoryStore(database).update('character', 'mage', process.argv[2], 'Concurrent entry');
-    } finally { await database.close(); }`;
+    const source = `
+      import { Effect, Layer } from 'effect';
+      import * as Sql from '@wisp/db/sql-database';
+      import * as Memory from '@wisp/server/memory-repository';
+      import { ApplicationDatabase } from '@wisp/server/db/application-database';
+      const [, file, key] = process.argv;
+      const database = new ApplicationDatabase(file);
+      try {
+        await database.initializeProducts();
+        const edit = Effect.flatMap(Memory.MemoryRepository, (memory) =>
+          memory.update({ slot: 'character', owner: 'mage' }, { operation: 'save', key, text: 'Concurrent entry' }),
+        );
+        await Effect.runPromise(edit.pipe(
+          Effect.provide(Memory.layer.pipe(Layer.provide(Sql.layer(file)))),
+        ));
+      } finally {
+        await database.close();
+      }
+    `;
     const settled = await Promise.allSettled(
       ['one', 'two', 'three'].map((key) =>
         promisify(execFile)(process.execPath, ['--input-type=module', '-e', source, file, key], {
@@ -299,9 +341,7 @@ test("three processes import once and update memory without losing each other's 
       }
     }
     expect(
-      (await new MemoryStore(openDb(file)).read('character', 'mage'))
-        .map((entry) => entry.key)
-        .sort(),
+      (await openMemory(openDb(file)).read('character', 'mage')).map((entry) => entry.key).sort(),
     ).toEqual(['guide', 'one', 'three', 'two']);
     inspect(file, (db) =>
       expect(db.prepare('SELECT count(*) AS n FROM routine_runs').get()!.n).toBe(1),
@@ -315,6 +355,26 @@ test("three processes import once and update memory without losing each other's 
         (await readdir(path.dirname(backup))).filter((entry) => entry.startsWith(prefix)),
       ).toEqual([path.basename(backup)]);
     }
+  }));
+
+test('memory rolls back a deletion if reordering the remaining entries fails', async () =>
+  fixture(async (_root, file, openDb, openMemory) => {
+    const repository = openMemory(openDb(file));
+    await repository.update('character', 'mage', 'first', 'First note');
+    const before = await repository.update('character', 'mage', 'second', 'Second note');
+    inspect(file, (db) =>
+      db.exec(`
+        CREATE TRIGGER reject_reorder BEFORE UPDATE OF sort_index ON memory_entries
+        BEGIN SELECT RAISE(ABORT, 'reorder rejected'); END
+      `),
+    );
+    await expect(repository.update('character', 'mage', 'first')).rejects.toMatchObject({
+      _tag: 'MemoryStorageError',
+      operation: 'write',
+    });
+    expect(await repository.read('character', 'mage')).toEqual(before);
+    inspect(file, (db) => db.exec('DROP TRIGGER reject_reorder'));
+    expect(await repository.update('character', 'mage', 'first')).toEqual(before.slice(1));
   }));
 
 test('a failed SQL mutation rolls back records and the next valid mutation still works', async () =>

@@ -1,10 +1,18 @@
 import { test, expect } from 'vitest';
+import { Effect, Layer, Logger } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as Game from '@wisp/agent/game-access';
+import * as Memory from '@wisp/agent/memory';
+import * as Capabilities from '@wisp/agent/capabilities';
+import * as Mcp from '@wisp/agent/mcp-tools';
+import * as Everloot from '@wisp/agent/everloot';
 import { createServer } from 'node:http';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setAgentHost } from '@wisp/agent/agent-host';
-import { createAgentEngine, type TurnInput } from '@wisp/agent/engine';
+import { make, layer as agentLayer, EngineConfig, SessionHistory } from '@wisp/agent/engine';
+import type { TurnInput } from '@wisp/agent/engine';
 import { MemoryHistory } from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { newChat } from '@wisp/server/chat-lifecycle';
@@ -70,24 +78,6 @@ test(
         } catch (error) {
           res.writeHead(503).end((error as Error).message);
         }
-        return;
-      }
-      if (req.url === '/inspect') {
-        const request = JSON.parse(body);
-        toolCalls.push(request);
-        const result =
-          request.inspection.kind === 'questie_quest'
-            ? {
-                status: 'available',
-                data: {
-                  status: 'available',
-                  questId: 166,
-                  data: { name: 'The Defias Brotherhood' },
-                  reference: { kind: 'quest', id: 166 },
-                },
-              }
-            : { status: 'completed', data: { settings: [], verified: true } };
-        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result));
         return;
       }
       requests.push(JSON.parse(body));
@@ -208,12 +198,50 @@ test(
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
     setAgentHost({ origin, token: 'offline-token' });
     const history = new MemoryHistory();
-    const engine = createAgentEngine({
-      origin: () => origin,
-      token: 'offline-token',
-      capabilitiesFile: () => flags,
-      history,
+    const gameAccess = Game.Service.of({
+      ...Game.unavailableGameAccess,
+      readSettings: (agentSession, args) =>
+        Effect.sync(() => {
+          toolCalls.push({ agentSession, inspection: { kind: 'settings', args } });
+          return {
+            status: 'available' as const,
+            data: { applications: [], options: [], verified: true },
+          };
+        }),
+      readQuestieQuest: (agentSession, args) =>
+        Effect.sync(() => {
+          toolCalls.push({ agentSession, inspection: { kind: 'questie_quest', args } });
+          return {
+            status: 'available',
+            data: {
+              status: 'available',
+              questId: 166,
+              data: { name: 'The Defias Brotherhood' },
+              reference: { kind: 'quest', id: 166 },
+            },
+          } as const;
+        }),
     });
+    const engine = make(
+      agentLayer.pipe(
+        Layer.provide(SessionHistory.layer(history)),
+        Layer.provide(Layer.succeed(Game.Service, gameAccess)),
+        Layer.provide(
+          Layer.succeed(Memory.Service, {
+            characterKey: () => Effect.succeed(null),
+            read: () => Effect.succeed([]),
+            update: () => Effect.succeed([]),
+          }),
+        ),
+        Layer.provide(
+          Layer.succeed(EngineConfig, { origin: () => origin, token: 'offline-token' }),
+        ),
+        Layer.provide(Mcp.layer([Everloot.profile])),
+        Layer.provide(Capabilities.layerFromFile(() => flags)),
+        Layer.provide(NodeFileSystem.layer),
+        Layer.provideMerge(Logger.layer([])),
+      ),
+    );
     const session = engine.newSessionId();
     const send = (input: TurnInput) =>
       engine.send(session, input, AbortSignal.timeout(15000), 'chat');
@@ -320,7 +348,7 @@ test(
         expect.objectContaining({ inspection: expect.objectContaining({ kind: 'settings' }) }),
       ]);
       expect(JSON.parse(String(output(4, 'tool-call-4')))).toMatchObject({
-        status: 'completed',
+        status: 'available',
         data: { verified: true },
       });
 

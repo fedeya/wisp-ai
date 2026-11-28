@@ -5,7 +5,7 @@ import {
   requestSession,
   thrownFailureKind,
 } from '../src/models/model-failures.ts';
-import { ChatGPTAuthError } from '../src/auth/chatgpt-auth.ts';
+import { ChatGPTAuthError } from '../src/auth/index.ts';
 
 test('provider HTTP statuses map to fixed failure kinds', () => {
   expect([400, 401, 403, 404, 409, 413, 422, 429, 500, 503].map(httpFailureKind)).toEqual([
@@ -25,7 +25,7 @@ test('provider HTTP statuses map to fixed failure kinds', () => {
 test('thrown proxy errors are classified without reading their messages', () => {
   expect(thrownFailureKind(new DOMException('Private', 'TimeoutError'))).toBe('timeout');
   expect(thrownFailureKind(new TypeError('fetch failed'))).toBe('network');
-  expect(thrownFailureKind(new ChatGPTAuthError('Private account'))).toBe('auth');
+  expect(thrownFailureKind(new ChatGPTAuthError({ message: 'Private account' }))).toBe('auth');
   expect(thrownFailureKind(new Error('Choose a configured model.'))).toBe('wisp_rejected');
   // The agent abandoning a request is not a failure.
   expect(thrownFailureKind(new DOMException('Private', 'AbortError'))).toBeUndefined();

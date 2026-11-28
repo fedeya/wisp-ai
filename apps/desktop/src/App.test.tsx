@@ -1,4 +1,5 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Types } from 'effect';
 import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 
 import App, { createDesktopRouter } from './App';
@@ -14,7 +15,8 @@ vi.mock('./api/bridge-request', () => ({ bridgeRequest: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
 }));
-let status: Status;
+// A fixture the tests change in place, so it is not the decoded status's readonly type.
+let status: Types.DeepMutable<Status>;
 const routers: ReturnType<typeof createDesktopRouter>[] = [];
 
 function renderApp(reactStrictMode = false) {

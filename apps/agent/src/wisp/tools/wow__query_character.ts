@@ -1,7 +1,7 @@
 import { defineTool } from '@wisp/agent/tool';
 import { z } from 'zod';
-import { characterSections } from '../../contract/agent-rpc.ts';
-import { agentRPC } from '@wisp/agent/agent-rpc';
+import { characterSections } from '../../contract/game-inspection.ts';
+import { readCharacter } from '../../tools/game-tool.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 export default enabledTool(
   'query_character',
@@ -19,7 +19,6 @@ export default enabledTool(
       start: ({ sections }) => 'Reading ' + sections.join(', '),
       complete: ({ sections }) => 'Read ' + sections.join(', '),
     },
-    execute: ({ sections, refresh }, ctx) =>
-      agentRPC('state', { agentSession: ctx.session.id, sections, refresh }, ctx.abortSignal),
+    execute: ({ sections, refresh }, ctx) => readCharacter(ctx, sections, refresh),
   }),
 );

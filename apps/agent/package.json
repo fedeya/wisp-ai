@@ -11,6 +11,8 @@
   "exports": {
     "./package.json": "./package.json",
     "./agent-rpc": "./src/host/agent-rpc.ts",
+    "./game-access": "./src/host/game-access.ts",
+    "./memory": "./src/host/memory.ts",
     "./agent-host": "./src/host/agent-host.ts",
     "./agent-memory": "./src/wisp/agent-memory.ts",
     "./enabled-tool": "./src/tools/enabled-tool.ts",
@@ -34,7 +36,7 @@
     "./contract/*": "./src/contract/*.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "effect-tsgo tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "cd ../.. && vitest run --config apps/agent/vitest.config.ts",
     "eval": "vitest run --config vitest.evals.config.ts"
@@ -74,6 +76,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@effect/vitest": "4.1.3",
     "@types/node": "26.6.6",
     "@types/turndown": "5.0.6",
     "typescript": "5.9.3",

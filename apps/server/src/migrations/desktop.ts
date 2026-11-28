@@ -3,12 +3,12 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ChatStore, conversationInstanceId } from '../chat/chat-store.ts';
-import { ApplicationDatabase } from '../db/application-database.ts';
+import { ApplicationDatabase } from '../application-database.ts';
 import {
   copyDatabaseSnapshot,
   findApplicationDatabase,
   DATABASE_NAME,
-} from '../db/application-file.ts';
+} from '@wisp/db/application-file';
 
 async function stopPreviousBridge(source: string) {
   let identity: { port?: number; token?: string };

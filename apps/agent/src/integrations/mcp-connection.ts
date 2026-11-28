@@ -8,7 +8,6 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { mcpDefinition } from '@wisp/protocol/mcp-setup';
 import { Cause, Deferred, Duration, Effect, Exit, Fiber } from 'effect';
 import type { Scope } from 'effect';
-import type { z } from 'zod';
 
 export class McpConnectionError extends Error {
   readonly _tag = 'McpConnectionError';
@@ -19,7 +18,7 @@ const connectionError = (cause: unknown) =>
 
 function makeTransport(
   root: string,
-  server: z.infer<typeof mcpDefinition>,
+  server: typeof mcpDefinition.Type,
   secret: string | undefined,
   env: Record<string, string>,
   redirect?: RequestRedirect,

@@ -1,7 +1,8 @@
-import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../../auth/index.ts';
 import { readCompletedResponse } from '../../models/response-stream.ts';
 import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
 
+import { Schema } from 'effect';
 import { wowheadQuery } from '@wisp/protocol/search';
 
 export function isForeverWowheadUrl(value: string): boolean {
@@ -77,11 +78,11 @@ export function verifiedWowheadResult(response: SearchResponse, query: string) {
 
 export async function searchWowhead(
   query: string,
-  auth: ChatGPTAuth,
+  auth: PromiseChatGPTAuth,
   model: string,
   signal?: AbortSignal,
 ) {
-  const input = wowheadQuery.parse({ query });
+  const input = Schema.decodeSync(wowheadQuery)({ query });
   const scopedQuery = 'site:www.wowhead.com/forever/ ' + input.query;
   const timeout = AbortSignal.timeout(55000);
   const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;

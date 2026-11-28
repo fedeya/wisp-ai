@@ -11,10 +11,11 @@ import {
   type Provider,
   type ResolutionDetails,
 } from '@openfeature/web-sdk';
+import { Schema } from 'effect';
 import {
   channelDefault,
-  featureChannels,
   featureFlags,
+  featuresStateSchema,
   type FeatureChannel,
   type FeatureFlag,
   type FeatureOverrides,
@@ -25,9 +26,7 @@ import {
 /** Reason reported when the user's saved choice decided the value. */
 export const OVERRIDE_REASON = 'OVERRIDE';
 
-function isChannel(value: unknown): value is FeatureChannel {
-  return featureChannels.includes(value as FeatureChannel);
-}
+const isChannel = Schema.is(featuresStateSchema.fields.channel);
 
 /**
  * Resolves Wisp's flags from the registry: the user's override wins, otherwise

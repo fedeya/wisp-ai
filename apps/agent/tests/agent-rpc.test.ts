@@ -30,15 +30,14 @@ test('strict domain schemas accept their RPC session envelope without accepting 
   expect(rpcRequests.database.safeParse({ ...search, arbitraryCode: 'bad' }).success).toBe(false);
 });
 
-test('RPC validates inputs and memory responses instead of trusting JSON casts', async () => {
-  const fetch = vi.fn(async () => Response.json({ entries: [{ key: 'plan', text: 42 }] }));
+test('RPC validates requests and responses instead of trusting JSON casts', async () => {
+  const fetch = vi.fn(async () => Response.json({ title: 42 }));
   vi.stubGlobal('fetch', fetch);
-  await expect(
-    agentRPC('memory', { agentSession: 'session', slot: 'character', operation: 'list' }),
-  ).rejects.toThrow();
-  await expect(agentRPC('state', { agentSession: 'session', sections: [] })).rejects.toThrow();
+  await expect(agentRPC('title', { agentSession: 'session', title: 'Plan' })).rejects.toThrow();
+  await expect(agentRPC('title', { agentSession: '', title: 'Plan' })).rejects.toThrow();
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+
 test('RPC preserves caller cancellation alongside its timeout', async () => {
   const abort = new AbortController();
   let signal: AbortSignal | undefined;
@@ -46,12 +45,14 @@ test('RPC preserves caller cancellation alongside its timeout', async () => {
     'fetch',
     vi.fn(async (_url, init) => {
       signal = init.signal;
-      return Response.json({ characterKey: null });
+      return Response.json({ title: 'Plan' });
     }),
   );
-  expect(await agentRPC('identity', { agentSession: 'session' }, abort.signal)).toEqual({
-    characterKey: null,
-  });
+  expect(await agentRPC('title', { agentSession: 'session', title: 'Plan' }, abort.signal)).toEqual(
+    {
+      title: 'Plan',
+    },
+  );
   abort.abort();
   expect(signal?.aborted).toBe(true);
 });
@@ -81,7 +82,7 @@ test('search budgets survive the RPC envelope and reject out-of-bound overrides'
     { depth: 'unlimited' },
     { maxResults: 0 },
   ]) {
-    expect(rpcRequests.wowhead.safeParse({ ...payload, ...invalid }).success).toBe(false);
+    expect(() => rpcRequests.wowhead.parse({ ...payload, ...invalid })).toThrow();
   }
   expect(fetcher).toHaveBeenCalledTimes(1);
 });

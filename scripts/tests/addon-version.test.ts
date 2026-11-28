@@ -4,7 +4,7 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { addonVersionFromToc } from '../../apps/server/src/wow-bridge/addon-version.ts';
+import { addonVersionFromToc } from '../../apps/server/src/game/addon-version.ts';
 import { addonReleaseVersion, stampAddonReleaseVersion } from '../addon-release-version.ts';
 
 test('release patch counts addon and helper changes from the current base version', async () => {

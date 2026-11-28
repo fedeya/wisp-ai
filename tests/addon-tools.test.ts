@@ -5,7 +5,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { Effect } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
-import { AgentCapabilities, layerFromFile } from '@wisp/agent/capabilities';
+import * as Capabilities from '@wisp/agent/capabilities';
 import { CapabilitySettings } from '@wisp/server/capabilities';
 import { IntegrationState } from '../apps/server/src/integrations/integration-state.ts';
 import { toolOffered } from '@wisp/agent/enabled-tool';
@@ -53,8 +53,8 @@ test('actual tool definitions follow per-API readiness, parent switches and expi
     settings.agentFile = path.join(directory, 'agent.json');
     process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
     const state = new IntegrationState(settings);
-    const readCapabilities = Effect.flatMap(AgentCapabilities, (settings) => settings.read).pipe(
-      Effect.provide(layerFromFile()),
+    const readCapabilities = Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
+      Effect.provide(Capabilities.layerFromFile()),
       Effect.provide(NodeFileSystem.layer),
     );
     // A tool as the agent offers it this turn, or null while its capability is off.

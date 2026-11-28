@@ -2,14 +2,13 @@ import { createProviderModel } from './providers.ts';
 import { createOpenAI } from '@ai-sdk/openai';
 import { wrapLanguageModel } from 'ai';
 import { normalizeModelError } from '../contract/model-errors.ts';
-import { MODEL_SESSION_HEADER, selectedModel } from '../contract/agent-rpc.ts';
-import type { z } from 'zod';
+import { MODEL_SESSION_HEADER, type SelectedModel } from '../contract/agent-rpc.ts';
 import { subscriptionCallOptions, filterWebSearch } from './model-tools.ts';
 import { applyModelReasoning } from './reasoning.ts';
 import { withAnthropicCache } from './prompt-cache.ts';
 
 export function connectionModel(
-  selected: z.infer<typeof selectedModel>,
+  selected: SelectedModel,
   origin: string,
   token: string,
   webSearchEnabled: (signal?: AbortSignal) => Promise<boolean>,

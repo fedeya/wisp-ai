@@ -1,5 +1,5 @@
 import { test, vi } from 'vitest';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Schema } from 'effect';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,8 +7,7 @@ import path from 'node:path';
 import { McpManager, mcpSetup, type McpStorage } from '../src/integrations/mcp-manager.ts';
 import * as Mcp from '../src/integrations/mcp-tools.ts';
 import * as Everloot from '../src/integrations/everloot.ts';
-import { AgentCapabilities } from '../src/host/capabilities.ts';
-import { EngineConfig } from '../src/host/engine-config.ts';
+import * as Capabilities from '../src/host/capabilities.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { createServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -33,6 +32,7 @@ function makeManager(
   });
 }
 
+const parseSetup = Schema.decodeUnknownSync(mcpSetup);
 const capabilities = { enabled: () => true, disabledMcpTools: () => [] };
 
 function listTools(
@@ -40,19 +40,12 @@ function listTools(
   allowed: (name: string, tool?: string) => boolean,
   readOnly: (session: string) => boolean = () => false,
 ) {
-  const layer = Mcp.layer().pipe(
+  const layer = Mcp.layerFromManager(manager, { allowed, readOnly }).pipe(
     Layer.provide(
-      Layer.merge(
-        Layer.succeed(EngineConfig, {
-          origin: () => '',
-          token: '',
-          mcp: { manager, allowed, readOnly },
-        }),
-        Layer.succeed(AgentCapabilities, {
-          read: Effect.succeed(capabilities),
-          featureEnabled: () => Effect.succeed(false),
-        }),
-      ),
+      Layer.succeed(Capabilities.Service, {
+        read: Effect.succeed(capabilities),
+        featureEnabled: () => Effect.succeed(false),
+      }),
     ),
   );
   return (session: string) =>
@@ -109,7 +102,7 @@ server.setRequestHandler(CallToolRequestSchema, async () => ({
 await server.connect(new StdioServerTransport());
 `,
     );
-    const input = mcpSetup.parse({
+    const input = parseSetup({
       server: { name: 'test_server', transport: 'stdio', command: 'node', args: [script] },
       env: { TEST_SECRET: 'private-test-value' },
     });
@@ -131,19 +124,21 @@ await server.connect(new StdioServerTransport());
         tools.map((tool) => tool.name),
         ['test-server__echo', 'test-server__write'],
       );
-      assert.deepEqual(tools[0].inputSchema, echoSchema);
+      const [echo, write] = tools;
+      assert.ok(echo && write);
+      assert.deepEqual(echo.inputSchema, echoSchema);
       assert.deepEqual(
         (await list('automatic')).map((tool) => tool.name),
         ['test-server__echo'],
       );
-      assert.deepEqual(await Effect.runPromise(tools[0].call({})), {
+      assert.deepEqual(await Effect.runPromise(echo.call({})), {
         content: [{ type: 'text', text: JSON.stringify({ ok: true, bridgeTokenLeaked: false }) }],
       });
       // A different automatic session must not block a manual write.
-      await Effect.runPromise(tools[1].call({}));
+      await Effect.runPromise(write.call({}));
       readOnlySession = 'manual';
       await assert.rejects(
-        Effect.runPromise(tools[1].call({})),
+        Effect.runPromise(write.call({})),
         (error: Error) =>
           error.cause instanceof Error &&
           error.cause.message ===
@@ -152,21 +147,26 @@ await server.connect(new StdioServerTransport());
       toolsAllowed = false;
       assert.deepEqual(await list('manual'), []);
       await assert.rejects(
-        Effect.runPromise(tools[0].call({})),
+        Effect.runPromise(echo.call({})),
         (error: Error) =>
           error.cause instanceof Error && error.cause.message === 'MCP tool disabled',
       );
       serverAllowed = false;
       assert.deepEqual(await list('manual'), []);
+      const savedServer = () => {
+        const [server] = manager.list();
+        assert.ok(server, 'test_server is saved');
+        return server;
+      };
       await Effect.runPromise(manager.setEnabled('test_server', false));
-      assert.equal(manager.list()[0].enabled, false);
+      assert.equal(savedServer().enabled, false);
       await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
-      const savedTools = manager.list()[0].tools;
+      const savedTools = savedServer().tools;
       await Effect.runPromise(manager.setEnabled('test_server', true));
-      assert.deepEqual(manager.list()[0].tools, savedTools, 'switching preserves discovery');
+      assert.deepEqual(savedServer().tools, savedTools, 'switching preserves discovery');
       assert.equal(secrets.get('mcp:test_server:env'), JSON.stringify(input.env));
       const reopened = await Effect.runPromise(manager.connect('test_server'));
-      assert.equal(reopened.tools[0].name, 'echo');
+      assert.equal(reopened.tools[0]?.name, 'echo');
       await Effect.runPromise(manager.remove('test_server'));
       assert.equal(manager.list().length, 0);
       assert.equal(secrets.get('mcp:test_server:env'), '');
@@ -282,7 +282,7 @@ test('configured HTTP servers are called directly using the saved token', async 
     assert.ok(address && typeof address === 'object');
     await Effect.runPromise(
       manager.save(
-        mcpSetup.parse({
+        parseSetup({
           server: { name: 'http_test', url: `http://127.0.0.1:${address.port}/upstream` },
           token: 'private-test-token',
         }),
@@ -326,7 +326,7 @@ test('disabling MCP cancels an opening connection and a later enable opens a fre
     .mockResolvedValue(undefined);
   using close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
   using listTools = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
-  manager.servers.test_server = mcpSetup.parse({
+  manager.servers.test_server = parseSetup({
     server: { name: 'test_server', url: 'https://example.com/mcp' },
   }).server;
   try {
@@ -363,7 +363,7 @@ test('a failed MCP opening releases the client and allows a fresh attempt', asyn
     .mockResolvedValue(undefined);
   using close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
   using listTools = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
-  manager.servers.test_server = mcpSetup.parse({
+  manager.servers.test_server = parseSetup({
     server: { name: 'test_server', url: 'https://example.com/mcp' },
   }).server;
   try {
@@ -386,7 +386,7 @@ test('concurrent MCP updates preserve both changes after an earlier update fails
   const manager = makeManager(file, root, vault);
   try {
     for (const name of ['first', 'second']) {
-      manager.servers[name] = mcpSetup.parse({
+      manager.servers[name] = parseSetup({
         server: { name, url: 'https://example.com/mcp' },
       }).server;
     }
@@ -451,7 +451,7 @@ test('MCP shutdown waits for client cleanup and rejects new connections', async 
     onClosing();
     await release;
   });
-  manager.servers.test_server = mcpSetup.parse({
+  manager.servers.test_server = parseSetup({
     server: { name: 'test_server', url: 'https://example.com/mcp' },
   }).server;
   try {
@@ -476,13 +476,13 @@ test('MCP shutdown waits for client cleanup and rejects new connections', async 
 
 test('MCP setup rejects embedded URL credentials and keeps command arguments structured', () => {
   assert.throws(() =>
-    mcpSetup.parse({ server: { name: 'test', url: 'https://user:secret@example.com/mcp' } }),
+    parseSetup({ server: { name: 'test', url: 'https://user:secret@example.com/mcp' } }),
   );
   for (const name of ['wow', 'questie', 'wisp']) {
-    assert.throws(() => mcpSetup.parse({ server: { name, url: 'https://example.com/mcp' } }));
+    assert.throws(() => parseSetup({ server: { name, url: 'https://example.com/mcp' } }));
   }
   assert.equal(
-    mcpSetup.parse({
+    parseSetup({
       server: { name: 'test', transport: 'stdio', command: 'node', args: ['literal; not a shell'] },
     }).server.args[0],
     'literal; not a shell',
@@ -493,7 +493,7 @@ test('the manager reserves bundled MCP names and their model namespaces', async 
   const manager = McpManager.make('.', undefined, [Everloot.profile]);
   try {
     for (const name of ['everloot', 'everloot_search', 'everloot_changes']) {
-      const input = mcpSetup.parse({ server: { name, url: 'https://example.com/mcp' } });
+      const input = parseSetup({ server: { name, url: 'https://example.com/mcp' } });
       await assert.rejects(Effect.runPromise(manager.test(input)), /MCP name is reserved/);
       await assert.rejects(Effect.runPromise(manager.save(input)), /MCP name is reserved/);
     }

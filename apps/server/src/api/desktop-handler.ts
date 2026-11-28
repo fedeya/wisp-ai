@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
-import { Effect } from 'effect';
-import { z } from 'zod';
+import { validator } from 'hono/validator';
+import { Effect, Schema } from 'effect';
 import {
   desktopRoutes as routes,
   type DesktopRoute,
@@ -12,7 +11,7 @@ import type { Status } from '@wisp/protocol/desktop';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
@@ -21,12 +20,15 @@ import { openChat, isWorking } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import type { PanelCommand } from '../session-state.ts';
 // Called by the Rust host around addon installs; not part of the webview contract.
-export const wowTransportInput = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('pause') }),
-  z.object({ action: z.literal('resume'), wow: z.string().min(1).optional() }),
+export const wowTransportInput = Schema.Union([
+  Schema.Struct({ action: Schema.Literal('pause') }),
+  Schema.Struct({
+    action: Schema.Literal('resume'),
+    wow: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
+  }),
 ]);
 interface DesktopDependencies {
-  auth: ChatGPTAuth;
+  auth: PromiseChatGPTAuth;
   connections: ModelConnections;
   webSearch: WebSearch;
   capabilitySettings: CapabilitySettings;
@@ -42,20 +44,19 @@ interface DesktopDependencies {
   openRoutine: (id: string) => void;
   readSimulationCharacter: () => Promise<unknown>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
-  setWowTransport: (input: z.infer<typeof wowTransportInput>) => Promise<void>;
+  setWowTransport: (input: typeof wowTransportInput.Type) => Effect.Effect<void, unknown>;
   setAppUpdate: (version: string | null) => void;
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
   refreshMcpCatalog: () => void;
   requestStop: () => void;
   changed: () => void;
 }
-// Validation failures throw so onError reports them like any other failure.
-const json = <T extends z.ZodType>(schema: T) =>
-  zValidator('json', schema, (result) => {
-    if (!result.success) {
-      throw result.error;
-    }
-  });
+// Decodes the JSON body. A failure throws, so onError answers 400 with its
+// message like any other failure.
+const json = <S extends Schema.Codec<unknown, unknown>>(schema: S) => {
+  const decode = Schema.decodeUnknownSync(schema);
+  return validator('json', (body): S['Type'] => decode(body));
+};
 const ok = { ok: true } as const;
 export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDependencies) {
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
@@ -216,7 +217,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       return c.json(ok);
     })
     .post('/addon/transport', json(wowTransportInput), async (c) => {
-      await deps.setWowTransport(c.req.valid('json'));
+      await runPromise(deps.setWowTransport(c.req.valid('json')));
       return c.json(ok);
     })
     .post('/stop', (c) => {

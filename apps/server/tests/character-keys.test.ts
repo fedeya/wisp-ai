@@ -1,23 +1,23 @@
 import { test, expect } from 'vitest';
-import { runBridgeEffect } from './capture-logs.ts';
+import { Effect, ManagedRuntime, Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
+import { SqlDatabase, layer as sqlLayer } from '@wisp/db/sql-database';
+import type { SqlOrm } from '@wisp/db/sql-database';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { savedRoutine } from '@wisp/protocol/routines';
 import { databaseScope } from './database-fixture.ts';
-import { adoptCharacterKey, readCharacterNames } from '../src/db/character-keys.ts';
-import {
-  importRoutines,
-  readMemory,
-  readPanels,
-  saveMemory,
-  savePanels,
-} from '../src/db/product-store.ts';
-import { chats, metadata, routineRuns, routines } from '../src/db/schema.ts';
+import { adoptCharacterKey, readCharacterNames } from '../src/chat/character-keys.ts';
+import { importMemory } from '../src/memory/repository.ts';
+import { readPanels, savePanels } from '../src/panels/panel-record.ts';
+import { encodeRoutine, encodeRun } from '../src/routines/routine-record.ts';
+import { chats, metadata, routineRuns, routines } from '@wisp/db/schema';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
+
+const decodeSavedRoutine = Schema.decodeUnknownSync(savedRoutine, rejectUnknownKeys);
 
 const key = (...parts: string[]) => JSON.stringify(['WoW Forever', ...parts]);
 const oldRealm = key('CAMWOW US2 Realm 2 PvP', 'Fedrath');
@@ -34,7 +34,7 @@ const fedrath = {
 };
 
 const routine = (id: string, characterKey: string) =>
-  savedRoutine.parse({
+  decodeSavedRoutine({
     id,
     title: id,
     instruction: 'Check',
@@ -60,50 +60,64 @@ const memory = (entryKey: string, text: string) => ({
 });
 
 async function withDatabase(
-  work: (database: ReturnType<ReturnType<typeof databaseScope>['open']>) => Promise<void>,
+  work: (
+    database: ReturnType<ReturnType<typeof databaseScope>['open']>,
+    openMemory: ReturnType<typeof databaseScope>['memory'],
+    sql: SqlOrm,
+  ) => Promise<void>,
 ) {
   const dir = await mkdtemp(path.join(tmpdir(), 'wisp-character-keys-'));
   const scope = databaseScope();
+  const database = scope.open(path.join(dir, 'wisp.sqlite'));
+  const sql = ManagedRuntime.make(sqlLayer(database.file));
   try {
-    const database = scope.open(path.join(dir, 'wisp.sqlite'));
     await database.initializeProducts();
-    await work(database);
+    await work(database, scope.memory, (await sql.runPromise(SqlDatabase)).db);
   } finally {
+    await sql.dispose();
     await scope.close();
     await rm(dir, { recursive: true, force: true });
   }
 }
 
+const adoptKey = (db: SqlOrm, character = fedrath) =>
+  Effect.runPromise(db.$client.withTransaction(adoptCharacterKey(db, character.key, character)));
+
 test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on conflicts', async () => {
-  await withDatabase(async (database) => {
+  await withDatabase(async (database, openMemory, sql) => {
     await database.transaction((db) => {
-      importRoutines(db, {
-        routines: [
-          routine('daily', oldRealm),
-          routine('shared', noRealm),
-          routine('shared', current),
-          routine('mage', someoneElse),
-          routine('alt', otherGuid),
-        ],
-        runs: [
-          {
-            id: 'run-1',
-            characterKey: oldRealm,
-            routineId: 'daily',
-            title: 'daily',
-            startedAt: 1,
-            event: 'interval',
-            status: 'done',
-          },
-        ],
-      });
+      db.insert(routines)
+        .values(
+          [
+            routine('daily', oldRealm),
+            routine('shared', noRealm),
+            routine('shared', current),
+            routine('mage', someoneElse),
+            routine('alt', otherGuid),
+          ].map(encodeRoutine),
+        )
+        .run();
+      db.insert(routineRuns)
+        .values(
+          encodeRun(
+            {
+              id: 'run-1',
+              characterKey: oldRealm,
+              routineId: 'daily',
+              title: 'daily',
+              startedAt: 1,
+              event: 'interval',
+              status: 'done',
+            },
+            0,
+          ),
+        )
+        .run();
       savePanels(db, [
         panel('goal', noRealm, 'Old goal'),
         panel('goal', current, 'Current goal'),
         panel('farm', oldRealm),
       ]);
-      saveMemory(db, 'character', oldRealm, [memory('spec', 'Old spec'), memory('pet', 'Wolf')]);
-      saveMemory(db, 'character', current, [memory('spec', 'Frost')]);
       db.insert(chats)
         .values(
           [oldRealm, someoneElse].map((characterKey, sortIndex) => ({
@@ -118,8 +132,28 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
         )
         .run();
     });
+    await Effect.runPromise(
+      sql.$client.withTransaction(
+        Effect.gen(function* () {
+          yield* importMemory(
+            sql,
+            { slot: 'character', owner: oldRealm },
+            [memory('spec', 'Old spec'), memory('pet', 'Wolf')],
+            '{}',
+          );
+          yield* importMemory(
+            sql,
+            { slot: 'character', owner: current },
+            [memory('spec', 'Frost')],
+            '{}',
+          );
+        }),
+      ),
+    );
 
-    const merged = await database.transaction((db) => adoptCharacterKey(db, current, fedrath));
+    const repository = openMemory(database);
+    expect(await repository.read('character', oldRealm)).toHaveLength(2);
+    const merged = await adoptKey(sql);
     expect(merged.sort()).toEqual([oldRealm, noRealm].sort());
 
     const db = database.orm;
@@ -148,14 +182,12 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
       [current, 'goal', 'Current goal', undefined],
     ]);
     expect(
-      readMemory(db, 'character', current)
-        .map((m) => [m.key, m.text])
-        .sort(),
+      (await repository.read('character', current)).map((m) => [m.key, m.text]).sort(),
     ).toEqual([
       ['pet', 'Wolf'],
       ['spec', 'Frost'],
     ]);
-    expect(readMemory(db, 'character', oldRealm)).toEqual([]);
+    expect(await repository.read('character', oldRealm)).toEqual([]);
     expect(
       db
         .select({ key: chats.characterKey })
@@ -165,20 +197,18 @@ test('a character with a GUID adopts its pre-GUID keys and keeps GUID data on co
         .sort(),
     ).toEqual([current, someoneElse].sort());
 
-    expect(await database.transaction((db) => adoptCharacterKey(db, current, fedrath))).toEqual([]);
+    expect(await adoptKey(sql)).toEqual([]);
   });
 });
 
 test('a name saved on several realms stays put, since the empty realm cannot pick one', async () => {
   const pvp = key('Realm 2 PvP', 'Fedrath');
   const pve = key('Realm 1 PvE', 'Fedrath');
-  await withDatabase(async (database) => {
+  await withDatabase(async (database, _openMemory, sql) => {
     await database.transaction((db) =>
       savePanels(db, [panel('a', pvp), panel('b', pve), panel('c', noRealm)]),
     );
-    expect(await database.transaction((db) => adoptCharacterKey(db, current, fedrath))).toEqual([
-      noRealm,
-    ]);
+    expect(await adoptKey(sql)).toEqual([noRealm]);
     expect(
       readPanels(database.orm)
         .map((p) => [p.id, p.characterKey])
@@ -191,23 +221,50 @@ test('a name saved on several realms stays put, since the empty realm cannot pic
   });
 });
 
+test('a failed memory move rolls back character adoption across domains', async () => {
+  await withDatabase(async (database, openMemory, sql) => {
+    await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
+    const repository = openMemory(database);
+    await repository.update('character', oldRealm, 'guide', 'Keep this note');
+    database.connection.exec(`
+      CREATE TRIGGER reject_adoption BEFORE DELETE ON memory_scopes
+      BEGIN SELECT RAISE(ABORT, 'memory move rejected'); END
+    `);
+    const adopt = createCharacterAdoption({
+      db: sql,
+      panelStore: { refresh: () => {} },
+      chats: () => [],
+      changed: () => {},
+    });
+    await Effect.runPromise(adopt(fedrath));
+    expect(readCharacterNames(database.orm)).toEqual({});
+    expect(readPanels(database.orm).map((entry) => entry.characterKey)).toEqual([oldRealm]);
+    expect(await repository.read('character', current)).toEqual([]);
+    expect(await repository.read('character', oldRealm)).toHaveLength(1);
+    database.connection.exec('DROP TRIGGER reject_adoption');
+    await Effect.runPromise(adopt(fedrath));
+    expect(readPanels(database.orm).map((entry) => entry.characterKey)).toEqual([current]);
+    expect(await repository.read('character', current)).toHaveLength(1);
+  });
+});
+
 test('adoption saves the name, moves in-memory chats and runs once per character', async () => {
-  await withDatabase(async (database) => {
+  await withDatabase(async (database, _openMemory, sql) => {
     await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
     const chat = { ...newChat('unsaved', 'addon'), characterKey: noRealm };
     const other = { ...newChat('other', 'addon'), characterKey: someoneElse };
     let refreshes = 0,
       changes = 0;
     const adopt = createCharacterAdoption({
-      database,
+      db: sql,
       panelStore: { refresh: () => void refreshes++ },
       chats: () => [chat, other],
       changed: () => void changes++,
     });
-    runBridgeEffect(adopt({ ...fedrath, key: oldRealm, guid: undefined }));
+    await Effect.runPromise(adopt({ ...fedrath, key: oldRealm, guid: undefined }));
     expect([refreshes, changes]).toEqual([0, 0]);
-    runBridgeEffect(adopt(fedrath));
-    runBridgeEffect(adopt(fedrath));
+    await Effect.runPromise(adopt(fedrath));
+    await Effect.runPromise(adopt(fedrath));
     expect([chat.characterKey, other.characterKey]).toEqual([current, someoneElse]);
     expect(readPanels(database.orm).map((p) => p.characterKey)).toEqual([current]);
     expect(readCharacterNames(database.orm)).toEqual({
@@ -220,7 +277,7 @@ test('adoption saves the name, moves in-memory chats and runs once per character
     expect(Object.keys(readCharacterNames(database.orm))).toEqual([current]);
 
     // A rename keeps the key and only updates the saved name.
-    runBridgeEffect(adopt({ ...fedrath, name: 'Fedrath Vorn' }));
+    await Effect.runPromise(adopt({ ...fedrath, name: 'Fedrath Vorn' }));
     expect(readCharacterNames(database.orm)[current]).toEqual({
       name: 'Fedrath Vorn',
       realm: '',
@@ -230,10 +287,14 @@ test('adoption saves the name, moves in-memory chats and runs once per character
 });
 
 test('memory merged over quota can still be trimmed but not grown', async () => {
-  await withDatabase(async (database) => {
+  await withDatabase(async (database, openMemory, sql) => {
     const entries = Array.from({ length: 42 }, (_, i) => memory('k' + i, 'note ' + i));
-    await database.transaction((db) => saveMemory(db, 'character', current, entries));
-    const store = new MemoryStore(database);
+    await Effect.runPromise(
+      sql.$client.withTransaction(
+        importMemory(sql, { slot: 'character', owner: current }, entries, '{}'),
+      ),
+    );
+    const store = openMemory(database);
     await expect(store.update('character', current, 'extra', 'more')).rejects.toThrow(
       'Memory is full',
     );
@@ -246,9 +307,9 @@ test('memory merged over quota can still be trimmed but not grown', async () => 
 });
 
 test('editing an adopted panel keeps the key it was moved from', async () => {
-  await withDatabase(async (database) => {
+  await withDatabase(async (database, _openMemory, sql) => {
     await database.transaction((db) => savePanels(db, [panel('farm', oldRealm)]));
-    await database.transaction((db) => adoptCharacterKey(db, current, fedrath));
+    await adoptKey(sql);
     const store = new PanelStore(database);
     await store.load();
     const [saved] = await store.mutate(current, {

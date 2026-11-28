@@ -1,20 +1,23 @@
-import { readFile } from 'node:fs/promises';
-import { describe, expect, it } from 'vitest';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { describe, expect, it } from '@effect/vitest';
+import { Effect, FileSystem, Layer, Path, Schema } from 'effect';
 import {
   datasets,
+  latestBuild,
   luaModule,
   luaValue,
   mapPosition,
-  memoryTables,
   num,
   parseCsv,
-  pinned,
+  readPinned,
   render,
   str,
   zonesAt,
   type Dataset,
 } from '../src/index.ts';
 import { dungeonEntrances, type EntranceCuration } from '../src/datasets/dungeon-entrances.ts';
+import * as Wago from '../src/wago.ts';
+import { cannedHttp } from './canned-http.ts';
 
 // Real rows from Forever 1.60.1.71037: Durotar, The Barrens and Orgrimmar.
 const ASSIGNMENTS = parseCsv(
@@ -32,6 +35,20 @@ const UI_MAPS = parseCsv(
 // and The Barrens' bounds; Ragefire Chasm only inside Orgrimmar's.
 const WAILING = [-751.131, -2209.24] as const;
 const RAGEFIRE = [1816.756, -4423.372] as const;
+// A JSON dataset file as render() writes it.
+const decodeJsonOutput = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      generated: Schema.Struct({
+        dataset: Schema.String,
+        build: Schema.String,
+        tables: Schema.Array(Schema.String),
+        note: Schema.String,
+      }),
+      data: Schema.Json,
+    }),
+  ),
+);
 
 describe('csv and rows', () => {
   it('reads quoted cells, doubled quotes, commas and CRLF line ends', () => {
@@ -42,24 +59,109 @@ describe('csv and rows', () => {
   });
 
   it('reads typed columns and fails on missing or non-numeric ones', () => {
-    const [row] = parseCsv('ID,Level,Name\n7,abc,Orgrimmar');
-    expect(num(row!, 'ID')).toBe(7);
-    expect(str(row!, 'Name')).toBe('Orgrimmar');
-    expect(() => num(row!, 'Level')).toThrow('not a number');
-    expect(() => str(row!, 'Missing')).toThrow('Column Missing is missing');
+    const [row = {}] = parseCsv('ID,Level,Name\n7,abc,Orgrimmar');
+    expect(num(row, 'ID')).toBe(7);
+    expect(str(row, 'Name')).toBe('Orgrimmar');
+    expect(() => num(row, 'Level')).toThrow('not a number');
+    expect(() => str(row, 'Missing')).toThrow('Column Missing is missing');
   });
 });
 
 describe('tables', () => {
-  it('reads a locale separately from the default enUS table', async () => {
-    const tables = memoryTables({
-      Map: [{ ID: '389', MapName_lang: 'Ragefire Chasm' }],
-      'Map:esMX': [{ ID: '389', MapName_lang: 'Sima Ígnea' }],
-    });
-    expect((await tables.read('Map'))[0]!.MapName_lang).toBe('Ragefire Chasm');
-    expect((await tables.read('Map', 'esMX'))[0]!.MapName_lang).toBe('Sima Ígnea');
-    await expect(tables.read('Map', 'deDE')).rejects.toThrow('Map:deDE');
+  it.effect('reads a locale separately from the default enUS table', () =>
+    Effect.gen(function* () {
+      const tables = yield* Wago.GameTables;
+      expect((yield* tables.read('Map'))[0]?.MapName_lang).toBe('Ragefire Chasm');
+      expect((yield* tables.read('Map', 'esMX'))[0]?.MapName_lang).toBe('Sima Ígnea');
+      const missing = yield* Effect.flip(tables.read('Map', 'deDE'));
+      expect(missing.message).toContain('Map:deDE');
+    }).pipe(
+      Effect.provide(
+        Wago.layerMemory({
+          Map: [{ ID: '389', MapName_lang: 'Ragefire Chasm' }],
+          'Map:esMX': [{ ID: '389', MapName_lang: 'Sima Ígnea' }],
+        }),
+      ),
+    ),
+  );
+
+  it.effect('downloads a table from wago.tools once and then reads it from the cache', () => {
+    const http = cannedHttp(() => new Response('ID,MapName_lang\n389,"Ragefire Chasm"\n'));
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cacheDir = yield* fs.makeTempDirectoryScoped();
+      const read = (refresh: boolean) =>
+        Wago.GameTables.use((tables) => tables.read('Map', 'esMX')).pipe(
+          Effect.provide(
+            Wago.layer({ build: '1.2.3', cacheDir, refresh }).pipe(Layer.provide(http.layer)),
+          ),
+        );
+      expect(yield* read(false)).toEqual([{ ID: '389', MapName_lang: 'Ragefire Chasm' }]);
+      expect(yield* read(false)).toEqual([{ ID: '389', MapName_lang: 'Ragefire Chasm' }]);
+      expect(http.sent).toHaveLength(1);
+      expect(http.sent[0]?.url.href).toBe('https://wago.tools/db2/Map/csv?build=1.2.3&locale=esMX');
+      expect(http.sent[0]?.request.headers['user-agent']).toBe('wisp-game-data');
+      expect(yield* fs.readFileString(path.join(cacheDir, '1.2.3', 'esMX', 'Map.csv'))).toBe(
+        'ID,MapName_lang\n389,"Ragefire Chasm"\n',
+      );
+      yield* read(true);
+      expect(http.sent).toHaveLength(2);
+    }).pipe(Effect.provide(NodeServices.layer));
   });
+
+  it.effect('names the table, locale and build when wago.tools refuses a download', () => {
+    const http = cannedHttp(() => new Response('Not found', { status: 404 }));
+    return Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const cacheDir = yield* fs.makeTempDirectoryScoped();
+      const error = yield* Wago.GameTables.use((tables) => tables.read('UiMap')).pipe(
+        Effect.provide(
+          Wago.layer({ build: '1.2.3', cacheDir, refresh: false }).pipe(Layer.provide(http.layer)),
+        ),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({
+        _tag: 'TableReadError',
+        message: 'wago.tools UiMap (enUS) for build 1.2.3: HTTP 404',
+      });
+      expect(http.sent[0]?.url.href).toBe('https://wago.tools/db2/UiMap/csv?build=1.2.3');
+    }).pipe(Effect.provide(NodeServices.layer));
+  });
+});
+
+describe('latest build', () => {
+  it.effect("reads the newest build of a product from wago.tools' build list", () => {
+    const http = cannedHttp(() =>
+      Response.json({
+        wowf: [
+          { version: '1.60.1.71139', created_at: '2026-11-25 19:13:07', is_bgdl: false },
+          { version: '1.60.1.71091', created_at: '2026-11-24 15:21:07', is_bgdl: false },
+        ],
+        wow: [{ unexpected: true }],
+      }),
+    );
+    return Effect.gen(function* () {
+      expect(yield* latestBuild('wowf')).toEqual({
+        version: '1.60.1.71139',
+        created: '2026-11-25 19:13:07',
+      });
+      expect(http.sent[0]?.url.href).toBe('https://wago.tools/api/builds');
+      expect(http.sent[0]?.request.headers['user-agent']).toBe('wisp-game-data');
+      const missing = yield* Effect.flip(latestBuild('wowx'));
+      expect(missing.message).toBe('wago.tools lists no builds for wowx');
+    }).pipe(Effect.provide(http.layer));
+  });
+
+  it.effect('fails with the HTTP status when the build list is unavailable', () =>
+    Effect.gen(function* () {
+      const error = yield* Effect.flip(latestBuild('wowf'));
+      expect(error).toMatchObject({
+        _tag: 'BuildListError',
+        message: 'wago.tools builds: HTTP 403',
+      });
+    }).pipe(Effect.provide(cannedHttp(() => new Response('', { status: 403 })).layer)),
+  );
 });
 
 describe('output', () => {
@@ -74,20 +176,24 @@ describe('output', () => {
     expect(() => luaValue({ a: Number.NaN })).toThrow();
   });
 
-  it('renders Lua for the addon and sorted JSON for the bridge, both naming the build', () => {
-    const base = {
-      name: 'sample',
-      description: 'Sample.',
-      tables: ['Map'],
-      build: async () => ({}),
-    };
-    const lua: Dataset = { ...base, output: { format: 'lua', path: 'a.lua', name: 'Sample' } };
-    const json: Dataset = { ...base, output: { format: 'json', path: 'a.json' } };
-    expect(render(lua, { a: 1 }, '1.2')).toContain('build 1.2 game tables (Map)');
-    const parsed = JSON.parse(render(json, { b: 1, a: { d: 2, c: undefined } }, '1.2'));
-    expect(parsed.generated).toMatchObject({ dataset: 'sample', build: '1.2', tables: ['Map'] });
-    expect(JSON.stringify(parsed.data)).toBe('{"a":{"d":2},"b":1}');
-  });
+  it.effect('renders Lua for the addon and sorted JSON for the bridge, both naming the build', () =>
+    Effect.gen(function* () {
+      const base = {
+        name: 'sample',
+        description: 'Sample.',
+        tables: ['Map'],
+        build: Effect.succeed({}),
+      };
+      const lua: Dataset = { ...base, output: { format: 'lua', path: 'a.lua', name: 'Sample' } };
+      const json: Dataset = { ...base, output: { format: 'json', path: 'a.json' } };
+      expect(render(lua, { a: 1 }, '1.2')).toContain('build 1.2 game tables (Map)');
+      const parsed = yield* decodeJsonOutput(
+        render(json, { b: 1, a: { d: 2, c: undefined } }, '1.2'),
+      );
+      expect(parsed.generated).toMatchObject({ dataset: 'sample', build: '1.2', tables: ['Map'] });
+      expect(JSON.stringify(parsed.data)).toBe('{"a":{"d":2},"b":1}');
+    }),
+  );
 });
 
 describe('coordinates', () => {
@@ -132,48 +238,65 @@ describe('dungeon entrances', () => {
     entrances: { '2999': { value: [1458, 72.5, 11.4], source: 'test' } },
     skip: { '44': 'unused' },
   };
-  const tables = memoryTables({ Map: MAPS, UiMap: UI_MAPS, UiMapAssignment: ASSIGNMENTS });
+  const tables = Layer.mergeAll(
+    Wago.layerMemory({ Map: MAPS, UiMap: UI_MAPS, UiMapAssignment: ASSIGNMENTS }),
+    NodeServices.layer,
+  );
   const build = (change: Partial<EntranceCuration>) =>
-    dungeonEntrances({ ...curation, ...change }).build(tables);
+    dungeonEntrances({ ...curation, ...change }).build.pipe(Effect.provide(tables));
+  const problem = (change: Partial<EntranceCuration>) =>
+    build(change).pipe(
+      Effect.flip,
+      Effect.map((error) => error.message),
+    );
 
-  it('places entrances on the only zone or the curated one and adds curated points', async () => {
-    expect(await build({})).toEqual({
-      '43': { name: 'Wailing Caverns', raid: false, entrances: [[1413, 47.7, 35]] },
-      '389': { name: 'Ragefire Chasm', raid: false, entrances: [[1454, 53, 48.9]] },
-      '2999': { name: 'Ruins of Lordaeron', raid: false, entrances: [[1458, 72.5, 11.4]] },
-    });
-  });
+  it.effect('places entrances on the only zone or the curated one and adds curated points', () =>
+    Effect.gen(function* () {
+      expect(yield* build({})).toEqual({
+        '43': { name: 'Wailing Caverns', raid: false, entrances: [[1413, 47.7, 35]] },
+        '389': { name: 'Ragefire Chasm', raid: false, entrances: [[1454, 53, 48.9]] },
+        '2999': { name: 'Ruins of Lordaeron', raid: false, entrances: [[1458, 72.5, 11.4]] },
+      });
+    }),
+  );
 
-  it('asks for a zone with its candidates, and rejects curation that is wrong or not needed', async () => {
-    await expect(build({ zones: {} })).rejects.toThrow(
-      'Wailing Caverns (43): choose its zone in curated/dungeon-entrances.json from 1411 Durotar',
-    );
-    await expect(build({ zones: { '43': [1454] } })).rejects.toThrow(
-      'zone 1454 does not contain its entrance',
-    );
-    await expect(build({ zones: { '43': [1413], '389': [1454] } })).rejects.toThrow(
-      'Ragefire Chasm (389): only one zone contains its entrance',
-    );
-    await expect(build({ zones: { '43': [1413], '9999': [1413] } })).rejects.toThrow(
-      'Curated instance 9999',
-    );
-  });
+  it.effect(
+    'asks for a zone with its candidates, and rejects curation that is wrong or not needed',
+    () =>
+      Effect.gen(function* () {
+        expect(yield* problem({ zones: {} })).toContain(
+          'Wailing Caverns (43): choose its zone in curated/dungeon-entrances.json from 1411 Durotar',
+        );
+        expect(yield* problem({ zones: { '43': [1454] } })).toContain(
+          'zone 1454 does not contain its entrance',
+        );
+        expect(yield* problem({ zones: { '43': [1413], '389': [1454] } })).toContain(
+          'Ragefire Chasm (389): only one zone contains its entrance',
+        );
+        expect(yield* problem({ zones: { '43': [1413], '9999': [1413] } })).toContain(
+          'Curated instance 9999',
+        );
+      }),
+  );
 });
 
 describe('generated files', () => {
-  it('each dataset output is generated from the pinned build', async () => {
-    for (const dataset of datasets()) {
-      const file = await readFile(
-        new URL(`../../../${dataset.output.path}`, import.meta.url),
-        'utf8',
-      );
-      if (dataset.output.format === 'json') {
-        const { generated } = JSON.parse(file);
-        expect(generated).toMatchObject({ dataset: dataset.name, build: pinned.build });
-      } else {
-        expect(file).toContain(`(dataset "${dataset.name}")`);
-        expect(file).toContain(`build ${pinned.build} game tables`);
+  it.effect('each dataset output is generated from the pinned build', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* path.fromFileUrl(new URL('../../..', import.meta.url));
+      const pinned = yield* readPinned;
+      for (const dataset of datasets) {
+        const file = yield* fs.readFileString(path.join(root, dataset.output.path));
+        if (dataset.output.format === 'json') {
+          const { generated } = yield* decodeJsonOutput(file);
+          expect(generated).toMatchObject({ dataset: dataset.name, build: pinned.build });
+        } else {
+          expect(file).toContain(`(dataset "${dataset.name}")`);
+          expect(file).toContain(`build ${pinned.build} game tables`);
+        }
       }
-    }
-  });
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

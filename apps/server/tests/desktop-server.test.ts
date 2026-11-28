@@ -1,10 +1,15 @@
 import { test } from 'vitest';
+import { it } from '@effect/vitest';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { Effect, Layer, Redacted } from 'effect';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { NativeVault } from '../src/auth/secret-vault.ts';
+import * as SecretVault from '../src/platform/secret-vault.ts';
 import { startDesktopServer } from '../src/api/desktop-server.ts';
 test('desktop controls require the session token and reject browser origins', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-desktop-'));
@@ -37,29 +42,29 @@ test('desktop controls require the session token and reject browser origins', as
     await rm(root, { recursive: true, force: true });
   }
 });
-test(
+// Compile the desktop helper first; the test skips without it.
+const desktopHelper =
+  process.env.WISP_TEST_DESKTOP_EXE ||
+  fileURLToPath(new URL('../../desktop/src-tauri/target/release/wisp.exe', import.meta.url));
+it.effect.skipIf(process.platform !== 'win32' || !existsSync(desktopHelper))(
   'compiled Windows secret helper round-trips UTF-8 with per-user encryption',
-  { skip: process.platform !== 'win32' },
-  async (t) => {
-    const exe =
-      process.env.WISP_TEST_DESKTOP_EXE ||
-      fileURLToPath(new URL('../../desktop/src-tauri/target/release/wisp.exe', import.meta.url));
-    try {
-      await access(exe);
-    } catch {
-      t.skip('Compile desktop helper first');
-      return;
-    }
-    const vault = new NativeVault(exe),
-      key = 'test-' + Date.now();
-    try {
-      await vault.write(key, 'private-é-测试-value');
-      assert.equal(await vault.read(key), 'private-é-测试-value');
-      const large = 'é-测试-'.repeat(10000);
-      await vault.write(key, large);
-      assert.equal(await vault.read(key), large, 'stdout must be fully drained before resolving');
-    } finally {
-      await vault.write(key, '');
-    }
-  },
+  () =>
+    Effect.gen(function* () {
+      const vault = yield* SecretVault.SecretVault;
+      const key = 'test-' + randomUUID();
+      const roundTrip = Effect.fnUntraced(function* (value: string, message: string) {
+        yield* vault.write(key, Redacted.make(value));
+        assert.equal(Redacted.value(yield* vault.read(key)), value, message);
+      });
+      yield* Effect.gen(function* () {
+        yield* roundTrip('private-é-测试-value', 'the value must round-trip as UTF-8');
+        yield* roundTrip('é-测试-'.repeat(10000), 'stdout must be fully drained before resolving');
+      }).pipe(Effect.ensuring(Effect.orDie(vault.write(key, Redacted.make('')))));
+    }).pipe(
+      Effect.provide(
+        SecretVault.layerHelper({ command: [desktopHelper] }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    ),
 );

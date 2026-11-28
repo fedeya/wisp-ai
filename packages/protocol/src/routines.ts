@@ -1,4 +1,6 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Effect, Schema, SchemaTransformation, Struct } from 'effect';
+import { RecordOf, TrimmedString } from './checks.js';
 
 // This is the adapter boundary: new sources add an event and typed fields here,
 // while routine behavior remains data composed by the agent.
@@ -15,87 +17,109 @@ export const routineEvents = {
   talents_changed: { native: 'PLAYER_TALENT_UPDATE', fields: {} },
   zone_changed: { native: 'ZONE_CHANGED_NEW_AREA', fields: { zone: 'string' } },
 } as const;
-export const routineEventName = z.enum(
-  Object.keys(routineEvents) as [keyof typeof routineEvents, ...(keyof typeof routineEvents)[]],
-);
-const scalar = z.union([z.string().max(300), z.number().finite(), z.boolean()]);
-const filter = z
-  .object({
-    field: z.string().min(1).max(40),
-    op: z.enum(['eq', 'ne', 'gte', 'lte', 'contains', 'multiple_of']),
-    value: scalar,
-  })
-  .strict();
-export const routineTrigger = z
-  .discriminatedUnion('kind', [
-    z
-      .object({
-        kind: z.literal('event'),
-        event: routineEventName,
-        filters: z.array(filter).max(8).default([]),
-      })
-      .strict(),
-    z
-      .object({ kind: z.literal('interval'), seconds: z.number().int().min(60).max(2592000) })
-      .strict(),
-  ])
-  .superRefine((trigger, ctx) => {
-    if (trigger.kind !== 'event') {
-      return;
-    }
-    const fields = routineEvents[trigger.event].fields as Record<string, string>;
-    for (const f of trigger.filters) {
-      const type = fields[f.field];
-      if (
-        !type ||
-        typeof f.value !== type ||
-        (['gte', 'lte', 'multiple_of'].includes(f.op) && type !== 'number') ||
-        (f.op === 'contains' && type !== 'string') ||
-        (f.op === 'multiple_of' && (typeof f.value !== 'number' || f.value <= 0))
-      ) {
-        ctx.addIssue({
-          code: 'custom',
-          message: 'Unsupported field, value or operator for this event',
-        });
-      }
-    }
-  });
-export const routineDefinition = z
-  .object({
-    id: z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/),
-    title: z.string().trim().min(1).max(100),
-    instruction: z.string().trim().min(1).max(6000),
-    triggers: z.array(routineTrigger).min(1).max(8),
-    cooldownSeconds: z.number().int().min(60).max(86400).default(600),
-    once: z
-      .boolean()
-      .default(false)
-      .describe(
-        'Pause after the first successful non-silent result. Silent checks and failures keep watching.',
-      ),
-  })
-  .strict();
-export const routineInput = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('catalog') }).strict(),
-  z.object({ operation: z.literal('list') }).strict(),
-  z.object({ operation: z.literal('get'), id: z.string() }).strict(),
-  z.object({ operation: z.literal('save'), routine: routineDefinition }).strict(),
-  z.object({ operation: z.literal('pause'), id: z.string() }).strict(),
-  z.object({ operation: z.literal('resume'), id: z.string() }).strict(),
-  z.object({ operation: z.literal('remove'), id: z.string() }).strict(),
+export const routineEventName = Schema.Literals(Struct.keys(routineEvents));
+const scalar = Schema.Union([
+  Schema.String.check(Schema.isMaxLength(300)),
+  Schema.Finite,
+  Schema.Boolean,
 ]);
-export const routineEvent = z
-  .object({
-    event: routineEventName,
-    values: z.preprocess(
-      (value) => (Array.isArray(value) && value.length === 0 ? {} : value),
-      z.record(z.string().max(40), scalar).refine((v) => Object.keys(v).length <= 8),
+const filter = Schema.Struct({
+  field: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(40)),
+  op: Schema.Literals(['eq', 'ne', 'gte', 'lte', 'contains', 'multiple_of']),
+  value: scalar,
+});
+type RoutineFilter = typeof filter.Type;
+
+function supportedFilter(event: typeof routineEventName.Type, f: RoutineFilter) {
+  const fields: Readonly<Record<string, string>> = routineEvents[event].fields;
+  const type = fields[f.field];
+  return !(
+    !type ||
+    typeof f.value !== type ||
+    (['gte', 'lte', 'multiple_of'].includes(f.op) && type !== 'number') ||
+    (f.op === 'contains' && type !== 'string') ||
+    (f.op === 'multiple_of' && (typeof f.value !== 'number' || f.value <= 0))
+  );
+}
+
+// The routine schemas are a tool's input, so a default applies to a missing
+// key only: accepting `undefined` would add `null` to the model's JSON Schema.
+// They are strict: decode them with `rejectUnknownKeys` from `./checks.js`.
+const eventTrigger = Schema.Struct({
+  kind: Schema.Literal('event'),
+  event: routineEventName,
+  filters: Schema.Array(filter)
+    .check(Schema.isMaxLength(8))
+    .annotate({ default: [] })
+    .pipe(Schema.withDecodingDefaultKey(Effect.sync(() => []))),
+});
+const intervalTrigger = Schema.Struct({
+  kind: Schema.Literal('interval'),
+  seconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 2_592_000 })),
+});
+export const routineTrigger = Schema.Union([eventTrigger, intervalTrigger], {
+  mode: 'oneOf',
+}).check(
+  Schema.makeFilter((trigger) =>
+    trigger.kind === 'event'
+      ? trigger.filters
+          .filter((f) => !supportedFilter(trigger.event, f))
+          .map(() => 'Unsupported field, value or operator for this event')
+      : undefined,
+  ),
+);
+export type RoutineTrigger = typeof routineTrigger.Type;
+export const routineDefinition = Schema.Struct({
+  id: Schema.String.check(Schema.isPattern(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u)),
+  title: TrimmedString({ minLength: 1, maxLength: 100 }),
+  instruction: TrimmedString({ minLength: 1, maxLength: 6000 }),
+  triggers: Schema.Array(routineTrigger).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+  cooldownSeconds: Schema.Int.check(Schema.isBetween({ minimum: 60, maximum: 86_400 }))
+    .annotate({ default: 600 })
+    .pipe(Schema.withDecodingDefaultKey(Effect.succeed(600))),
+  once: Schema.Boolean.annotate({
+    description:
+      'Pause after the first successful non-silent result. Silent checks and failures keep watching.',
+    default: false,
+  }).pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+});
+const routineId = Schema.Struct({ id: Schema.String });
+/** Strict: decode it with `rejectUnknownKeys`. */
+export const routineInput = Schema.Union(
+  [
+    Schema.Struct({ operation: Schema.Literal('catalog') }),
+    Schema.Struct({ operation: Schema.Literal('list') }),
+    Schema.Struct({ operation: Schema.Literal('get'), ...routineId.fields }),
+    Schema.Struct({ operation: Schema.Literal('save'), routine: routineDefinition }),
+    Schema.Struct({ operation: Schema.Literal('pause'), ...routineId.fields }),
+    Schema.Struct({ operation: Schema.Literal('resume'), ...routineId.fields }),
+    Schema.Struct({ operation: Schema.Literal('remove'), ...routineId.fields }),
+  ],
+  { mode: 'oneOf' },
+);
+export type RoutineInput = typeof routineInput.Type;
+// The addon sends an empty Lua table, which it cannot tell from a list, as `[]`.
+const emptyList = Schema.Tuple([]);
+const isEmptyList = Schema.is(emptyList);
+const eventValues = RecordOf(Schema.String.check(Schema.isMaxLength(40)), scalar).check(
+  Schema.isMaxProperties(8),
+);
+/** Strict: decode it with `rejectUnknownKeys`. */
+export const routineEvent = Schema.Struct({
+  event: routineEventName,
+  values: Schema.Union([emptyList, eventValues]).pipe(
+    Schema.decodeTo(
+      eventValues,
+      SchemaTransformation.transform({
+        decode: (values) => (isEmptyList(values) ? {} : values),
+        encode: (values) => values,
+      }),
     ),
-  })
-  .strict();
-export type RoutineEvent = z.infer<typeof routineEvent>;
-export type RoutineDefinition = z.infer<typeof routineDefinition>;
-export function describeRoutineTrigger(trigger: RoutineDefinition['triggers'][number]): string {
+  ),
+});
+export type RoutineEvent = typeof routineEvent.Type;
+export type RoutineDefinition = typeof routineDefinition.Type;
+export function describeRoutineTrigger(trigger: RoutineTrigger): string {
   if (trigger.kind === 'interval') {
     return trigger.seconds % 3600 === 0
       ? `Every ${trigger.seconds / 3600} hours`
@@ -134,34 +158,38 @@ export function describeRoutineTrigger(trigger: RoutineDefinition['triggers'][nu
       : '')
   );
 }
-export const savedRoutine = routineDefinition.safeExtend({
-  characterKey: z.string().min(1),
-  sourceChatId: z.string().optional(),
-  enabled: z.boolean(),
-  updatedAt: z.number(),
-  nextAt: z.number(),
-  lastStartedAt: z.number().optional(),
-  pending: z
-    .object({ event: z.string(), values: z.record(z.string(), scalar), at: z.number() })
-    .optional(),
+/** Strict, like the definition it extends: decode it with `rejectUnknownKeys`. */
+export const savedRoutine = routineDefinition.mapFields(
+  Struct.assign({
+    characterKey: Schema.String.check(Schema.isMinLength(1)),
+    sourceChatId: Schema.optional(Schema.String),
+    enabled: Schema.Boolean,
+    updatedAt: Schema.Finite,
+    nextAt: Schema.Finite,
+    lastStartedAt: Schema.optional(Schema.Finite),
+    pending: Schema.optional(
+      Schema.Struct({
+        event: Schema.String,
+        values: Schema.Record(Schema.String, scalar),
+        at: Schema.Finite,
+      }),
+    ),
+  }),
+);
+export const routineRun = Schema.Struct({
+  id: Schema.String.check(Schema.isMinLength(1)),
+  routineId: Schema.String.check(Schema.isMinLength(1)),
+  characterKey: Schema.String.check(Schema.isMinLength(1)),
+  title: Schema.String,
+  startedAt: Schema.Finite,
+  finishedAt: Schema.optional(Schema.Finite),
+  event: Schema.String,
+  status: Schema.Literals(['running', 'done', 'no_tip', 'error', 'cancelled', 'interrupted']),
+  summary: Schema.optional(Schema.String),
 });
-export const routineRun = z.object({
-  id: z.string().min(1),
-  routineId: z.string().min(1),
-  characterKey: z.string().min(1),
-  title: z.string(),
-  startedAt: z.number(),
-  finishedAt: z.number().optional(),
-  event: z.string(),
-  status: z.enum(['running', 'done', 'no_tip', 'error', 'cancelled', 'interrupted']),
-  summary: z.string().optional(),
-});
-export type Routine = z.infer<typeof savedRoutine>;
-export type RoutineRun = z.infer<typeof routineRun>;
-export function matchesRoutineEvent(
-  trigger: z.infer<typeof routineTrigger>,
-  event: RoutineEvent,
-): boolean {
+export type Routine = typeof savedRoutine.Type;
+export type RoutineRun = typeof routineRun.Type;
+export function matchesRoutineEvent(trigger: RoutineTrigger, event: RoutineEvent): boolean {
   return (
     trigger.kind === 'event' &&
     trigger.event === event.event &&

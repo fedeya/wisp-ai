@@ -1,16 +1,17 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Schema, Struct } from 'effect';
 import type { FeatureFlag } from './features.js';
-export const capabilitySchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  group: z.enum(['core', 'integrations', 'memory']),
-  kind: z.enum(['game', 'addon', 'source', 'service', 'mcp']).optional(),
-  toolName: z.string().optional(),
-  description: z.string(),
-  parent: z.string().optional(),
-  defaultEnabled: z.boolean().optional(),
+export const capabilitySchema = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  group: Schema.Literals(['core', 'integrations', 'memory']),
+  kind: Schema.optional(Schema.Literals(['game', 'addon', 'source', 'service', 'mcp'])),
+  toolName: Schema.optional(Schema.String),
+  description: Schema.String,
+  parent: Schema.optional(Schema.String),
+  defaultEnabled: Schema.optional(Schema.Boolean),
 });
-export type Capability = z.infer<typeof capabilitySchema>;
+export type Capability = typeof capabilitySchema.Type;
 export const toolDescriptions: Record<string, [string, string]> = {
   manage_routine: [
     'Routines',
@@ -245,15 +246,17 @@ export function publicToolName(name: string): string {
   }
   return toolIntegration(name) + '__' + name;
 }
-export const capabilityViewSchema = capabilitySchema.extend({
-  enabled: z.boolean(),
-  effective: z.boolean(),
-  available: z.boolean(),
-  status: z.string(),
-  reason: z.string().optional(),
-  version: z.string().optional(),
-});
-export type CapabilityView = z.infer<typeof capabilityViewSchema>;
+export const capabilityViewSchema = capabilitySchema.mapFields(
+  Struct.assign({
+    enabled: Schema.Boolean,
+    effective: Schema.Boolean,
+    available: Schema.Boolean,
+    status: Schema.String,
+    reason: Schema.optional(Schema.String),
+    version: Schema.optional(Schema.String),
+  }),
+);
+export type CapabilityView = typeof capabilityViewSchema.Type;
 /**
  * Tools that exist only while a feature flag is on, keyed by their
  * `toolDescriptions` name. With the flag off, the bridge leaves the tool out of
@@ -296,7 +299,7 @@ export function defaultCapabilities(): Capability[] {
 }
 
 // Compact, authoritative availability for this turn; never addon descriptions or instructions.
-export function integrationContext(entries: CapabilityView[]) {
+export function integrationContext(entries: readonly CapabilityView[]) {
   return entries
     .filter((entry) => entry.group === 'integrations' && !entry.parent)
     .map((entry) => ({

@@ -1,20 +1,16 @@
 import type { z } from 'zod';
 import {
   typelessArmorSlots,
-  type armorSearchInput,
-  type weaponSearchInput,
+  type gearSearchInspectionSchema,
 } from '@wisp/agent/contract/game-inspection';
 import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
+import type { GameInspection, InspectionResult } from '@wisp/agent/game-access';
 
 // Everloot lists at most 100 items per call; one call per quality keeps every
 // slot/type listing checked so far (all under 100 per quality) complete.
 const PAGE = 100;
 
-type ArmorSearch = z.output<typeof armorSearchInput>;
-type WeaponSearch = z.output<typeof weaponSearchInput>;
-export type GearSearch =
-  | { kind: 'search_armor'; args: ArmorSearch }
-  | { kind: 'search_weapons'; args: WeaponSearch };
+export type GearSearch = z.output<typeof gearSearchInspectionSchema>;
 
 interface Category {
   class: string;
@@ -79,9 +75,11 @@ async function listCategory(
 // filter by level and compare them. Choosing among the results is the agent's.
 export async function searchGear(
   search: GearSearch,
-  readGame: (inspection: { kind: 'gear_candidates'; args: unknown }) => Promise<unknown>,
+  readGame: (
+    inspection: Extract<GameInspection, { kind: 'gear_candidates' }>,
+  ) => Promise<InspectionResult<'gear_candidates'>>,
   readEverloot: EverlootLookup,
-) {
+): Promise<InspectionResult<'search_armor' | 'search_weapons'>> {
   const category = gearCategory(search);
   const qualities = [...new Set(search.args.quality)];
   const pages = await Promise.all(
@@ -116,5 +114,5 @@ export async function searchGear(
       maxRequiredLevel: search.args.maxRequiredLevel,
     },
   });
-  return { catalog, ...(reading as Record<string, unknown>) };
+  return { ...reading, catalog };
 }

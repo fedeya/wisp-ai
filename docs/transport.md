@@ -6,16 +6,45 @@ Wisp exchanges checked W2 frames through WoW addon enable states and desktop
 state files. The game UI stays inside the addon. Reusable frames carry both
 directions; a finite bank of load-on-demand helpers can accelerate large replies.
 
+## Server and agent boundary
+
+The server opens a scoped [`WowBridge` connection](../packages/wow-bridge/src/wow-bridge.ts)
+for the selected WoW directory. It consumes `events` in order, submits game
+operations through `request`, publishes the current addon view through `publish`,
+and reads `status` for readiness. The connection adds pending requests and
+receipt acknowledgments to the view. It acknowledges reliable events after they
+enter the bounded server queue, and reannounces the ACK for a retry without
+enqueuing the event again. Game results are settled and acknowledged within the
+bridge. View updates replace one another, and one writer fiber handles the
+filesystem writes for the connection.
+
+The agent calls its in-process [`Game.Service`](../apps/agent/src/host/game-access.ts)
+for character reads, named inspection methods, and actions. The server resolves the
+agent session to its working chat, applies capability and read-only policy, and
+uses the current bridge connection. Cancelling a tool interrupts its pending
+request. Tests and evals can supply their own implementation without live WoW.
+
+Game tools no longer use the internal `/state`, `/inspect`, and `/action`
+routes. Other host RPCs and model streaming still use the loopback listener.
+
 ## Ownership and framing
 
-| Owner                                                  | Source                                                         |
-| ------------------------------------------------------ | -------------------------------------------------------------- |
-| Host scheduling, helper publication and bulk selection | [bridge transport](../apps/server/src/wow-bridge/transport.ts) |
-| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../apps/server/src/wow-bridge/mailbox.ts)      |
-| Full snapshots, patches and transport acknowledgements | [downlink contract](../apps/server/src/wow-bridge/downlink.ts) |
-| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)       |
-| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)         |
-| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua)   |
+| Owner                                                  | Source                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------- |
+| Active game window, inbound frames and polling         | [connection](../packages/wow-bridge/src/connection.ts)        |
+| Latest view, transfer in flight and confirmed revision | [delivery](../packages/wow-bridge/src/delivery.ts)            |
+| Finding, watching and replacing addon files            | [addon files](../packages/wow-bridge/src/addon-files.ts)      |
+| Frame format, CRC32 and bounded message assembly       | [mailbox codec](../packages/wow-bridge/src/wire/mailbox.ts)   |
+| Full snapshots and patches                             | [downlink codec](../packages/wow-bridge/src/wire/downlink.ts) |
+| Application packet and ACK validation                  | [protocol](../packages/wow-bridge/src/wire/protocol.ts)       |
+| Native addon reads, writes, queues and retries         | [Lua transport](../addon/WispAI/Transport/Transport.lua)      |
+| Canonical state reconstruction                         | [Lua downlink](../addon/WispAI/Transport/Downlink.lua)        |
+| Applying received state to conversations and UI        | [snapshot reconciliation](../addon/WispAI/Chat/Snapshot.lua)  |
+
+When a new view arrives during a reusable transfer, delivery replaces the
+waiting view and keeps sending the current transfer. The final acknowledgment
+sets the patch base and starts the latest waiting view. Changing the active
+window clears those three pieces of state and cancels its pending game requests.
 
 | Direction                          | Frame kind                           | Frame bytes | Payload bytes |
 | ---------------------------------- | ------------------------------------ | ----------- | ------------- |
@@ -112,8 +141,7 @@ The maintained regression suites execute production Lua with explicit native
 API mocks and exercise the host against temporary state files:
 
 ```sh
-pnpm exec vitest run --config packages/protocol/vitest.config.ts packages/protocol/tests/mailbox.test.ts packages/protocol/tests/downlink.test.ts
-pnpm exec vitest run --config apps/server/vitest.config.ts apps/server/tests/transport.test.ts apps/server/tests/transport-v2.test.ts
+pnpm exec turbo run test --filter=@wisp/wow-bridge
 pnpm exec vitest run --config tests/vitest.config.ts tests/addon/
 pnpm test:addon
 ```

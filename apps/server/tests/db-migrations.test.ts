@@ -9,8 +9,8 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/node-sqlite';
 import { migrate } from 'drizzle-orm/node-sqlite/migrator';
-import { ApplicationDatabase } from '../src/db/application-database.ts';
-import { migrateDatabase, migrationsFolder } from '../src/db/migrate.ts';
+import { ApplicationDatabase } from '../src/application-database.ts';
+import { migrateDatabase, migrationsFolder } from '@wisp/db/migrate';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { ChatStore } from '../src/chat/chat-store.ts';
 

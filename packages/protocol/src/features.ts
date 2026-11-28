@@ -1,4 +1,6 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Schema } from 'effect';
+import { RecordOf } from './checks.js';
 
 /**
  * Where a build runs. `development` is any unpackaged or debug build; packaged
@@ -39,30 +41,30 @@ export const featureFlags = {
 } as const satisfies FeatureRegistry;
 export type FeatureFlag = keyof typeof featureFlags;
 
-export const featureName = z
-  .string()
-  .regex(/^[a-z][a-z0-9_]{0,62}$/, 'Use lower_snake_case feature names.');
+export const featureName = Schema.String.check(
+  Schema.isPattern(/^[a-z][a-z0-9_]{0,62}$/u, { message: 'Use lower_snake_case feature names.' }),
+);
 /** Saved user choices; a missing entry follows the channel default. */
-export const featureOverrides = z.record(featureName, z.boolean());
-export type FeatureOverrides = z.infer<typeof featureOverrides>;
+export const featureOverrides = RecordOf(featureName, Schema.Boolean);
+export type FeatureOverrides = typeof featureOverrides.Type;
 
-export const featureViewSchema = z.object({
+export const featureViewSchema = Schema.Struct({
   id: featureName,
-  name: z.string(),
-  description: z.string(),
+  name: Schema.String,
+  description: Schema.String,
   /** The value every surface uses. */
-  enabled: z.boolean(),
+  enabled: Schema.Boolean,
   /** The value without an override, from the channel. */
-  channelDefault: z.boolean(),
+  channelDefault: Schema.Boolean,
   /** The user's choice, or null when the flag follows its channel. */
-  override: z.boolean().nullable(),
+  override: Schema.NullOr(Schema.Boolean),
 });
-export type FeatureView = z.infer<typeof featureViewSchema>;
-export const featuresStateSchema = z.object({
-  channel: z.enum(featureChannels),
-  flags: z.array(featureViewSchema),
+export type FeatureView = typeof featureViewSchema.Type;
+export const featuresStateSchema = Schema.Struct({
+  channel: Schema.Literals(featureChannels),
+  flags: Schema.Array(featureViewSchema),
 });
-export type FeaturesState = z.infer<typeof featuresStateSchema>;
+export type FeaturesState = typeof featuresStateSchema.Type;
 
 export function channelDefault(definition: FeatureDefinition, channel: FeatureChannel): boolean {
   return definition.channels.includes(channel);

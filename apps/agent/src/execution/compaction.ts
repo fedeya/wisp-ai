@@ -1,7 +1,9 @@
+// @effect-migrated
 import { generateText, type LanguageModel } from 'ai';
 import { Effect } from 'effect';
 import { summaryMessages } from '../session/replay.ts';
-import type { LoadedHistory, SessionHistory } from '../session/session-history.ts';
+import type { LoadedHistory } from '../session/session-history.ts';
+import type * as SessionHistory from '../session/session-history.ts';
 import type { Compaction, Message, Tool } from '../session/session-message.ts';
 import { errorText, modelCall } from './engine-errors.ts';
 import type { Emit } from './turn-events.ts';
@@ -19,9 +21,9 @@ export function estimateTokens(value: unknown) {
 export function compactionSplit<M extends { type: string }>(history: readonly M[], keepTurns = 4) {
   let turns = 0;
   for (let index = history.length - 1; index > 0; index--) {
-    if (history[index]!.type === 'user' && ++turns === keepTurns) {
+    if (history[index]?.type === 'user' && ++turns === keepTurns) {
       let start = index;
-      while (start > 0 && history[start - 1]!.type === 'synthetic') start--;
+      while (start > 0 && history[start - 1]?.type === 'synthetic') start--;
       return { older: history.slice(0, start), recent: history.slice(start) };
     }
   }
@@ -77,14 +79,16 @@ const SUMMARY_PROMPT =
 // messages stay stored. False when summarizing failed and the model goes on
 // with the recent turns only.
 const summarize = Effect.fn('AgentEngine.summarize')(function* (
-  history: SessionHistory['Service'],
+  history: SessionHistory.Service['Service'],
   session: string,
   loaded: LoadedHistory,
   model: LanguageModel,
   modelSlug: string,
 ) {
   const { older } = compactionSplit(loaded.messages.map((logged) => logged.message));
-  if (!older.length) {
+  // The first message the compaction keeps; with nothing older or nothing kept there is no split.
+  const kept = loaded.messages[older.length];
+  if (!older.length || kept === undefined) {
     return true;
   }
   const summary = yield* modelCall((abortSignal) =>
@@ -112,7 +116,7 @@ const summarize = Effect.fn('AgentEngine.summarize')(function* (
   // Without a summary the turn stays answerable by reading only the recent part.
   const compaction: Compaction = {
     type: 'compaction',
-    keptFrom: loaded.messages[older.length]!.seq,
+    keptFrom: kept.seq,
   };
   yield* history.append(
     session,
@@ -124,7 +128,7 @@ const summarize = Effect.fn('AgentEngine.summarize')(function* (
 
 /** Runs a compaction between `context` events. */
 export const compactHistory = Effect.fn('AgentEngine.compacting')(function* (
-  history: SessionHistory['Service'],
+  history: SessionHistory.Service['Service'],
   session: string,
   loaded: LoadedHistory,
   model: LanguageModel,

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { PostHog } from 'posthog-node';
 import path from 'node:path';
+import { Option, Schema } from 'effect';
 import { z } from 'zod';
 import { publicToolName, toolDescriptions } from '@wisp/protocol/capabilities';
 import * as Everloot from '@wisp/agent/everloot';
@@ -74,7 +75,9 @@ const chatErrorCodeSchema = z.enum([
 ]);
 export type ChatErrorCode = z.infer<typeof chatErrorCodeSchema>;
 // Provider ids are a fixed list; 'chatgpt' is the subscription sign-in. Never model ids or endpoints.
-const modelProviderSchema = z.union([providerId, z.literal('chatgpt')]);
+const decodeModelProvider = Schema.decodeUnknownOption(
+  Schema.Union([providerId, Schema.Literal('chatgpt')]),
+);
 const failureKindSchema = z.enum(modelFailureKinds);
 export type ChatDetails = { provider?: string; failureKind?: string };
 const webSearchDepthSchema = z.enum(['quick', 'standard', 'deep']);
@@ -121,7 +124,7 @@ export class UsageTelemetry {
   constructor(dataRoot: string, version: string, options: TelemetryOptions = {}) {
     this.dataRoot = dataRoot;
     this.version = version;
-    this.release = options.release ?? process.env.WISP_TELEMETRY_RELEASE === '1';
+    this.release = options.release ?? false;
     this.isCustomMcpConnection = options.isCustomMcpConnection;
     this.enabledFeatures = options.enabledFeatures;
   }
@@ -220,7 +223,7 @@ export class UsageTelemetry {
         : outcome === 'failed'
           ? (chatErrorCodeSchema.safeParse(errorCode).data ?? 'unknown')
           : undefined;
-    const provider = modelProviderSchema.safeParse(details.provider).data;
+    const provider = Option.getOrUndefined(decodeModelProvider(details.provider));
     const failureKind = failureCode
       ? failureKindSchema.safeParse(details.failureKind).data
       : undefined;

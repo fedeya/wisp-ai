@@ -1,6 +1,44 @@
 import cloudflare from '@cloudflare/oxlint-config';
 import { defineConfig } from 'oxlint';
 
+// @effect/vitest registers tests as `it.effect(...)`, `it.live(...)` and their
+// modifiers. Test-block rules only know plain `it`/`test`, so list every form
+// that takes a test body; `layer(...)` and `it.layer(...)` take suite bodies.
+const effectTestModifiers = ['', '.skip', '.only', '.fails', '.skipIf', '.runIf', '.each', '.prop'];
+const effectTestBlockFunctions = [
+  ...['it.effect', 'it.live'].flatMap((tester) =>
+    effectTestModifiers.map((modifier) => `${tester}${modifier}`),
+  ),
+  'it.prop',
+];
+
+/** Apps that only reach the server through its HTTP API. */
+const serverBoundary = { group: ['@wisp/server', '@wisp/server/*'] };
+
+// Folders with no zod, Hono or Node I/O imports must stay that way: Effect
+// Schema, HttpApi, FileSystem, ChildProcess and HttpClient replace them.
+const effectMigrationMessage = 'Use the Effect equivalent instead; see docs/effect-migration.md.';
+const effectRestrictedImports = {
+  paths: [
+    'zod',
+    'hono',
+    'fs',
+    'node:fs',
+    'child_process',
+    'node:child_process',
+    'http',
+    'node:http',
+    'https',
+    'node:https',
+  ].map((name) => ({ name, message: effectMigrationMessage })),
+  patterns: [
+    {
+      group: ['zod/*', 'hono/*', '@hono/*', 'fs/*', 'node:fs/*'],
+      message: effectMigrationMessage,
+    },
+  ],
+};
+
 export default defineConfig({
   extends: [cloudflare],
   env: cloudflare.env,
@@ -21,6 +59,10 @@ export default defineConfig({
   rules: {
     curly: ['error', 'multi-line'],
     'no-var': 'error',
+    'vitest/no-standalone-expect': [
+      'error',
+      { additionalTestBlockFunctions: effectTestBlockFunctions },
+    ],
   },
   overrides: [
     {
@@ -29,7 +71,7 @@ export default defineConfig({
         'no-restricted-imports': [
           'error',
           {
-            patterns: ['@wisp/server', '@wisp/server/*'],
+            patterns: [serverBoundary],
           },
         ],
       },
@@ -40,16 +82,54 @@ export default defineConfig({
         'no-restricted-imports': [
           'error',
           {
+            paths: effectRestrictedImports.paths,
             patterns: [
-              '@wisp/server',
-              '@wisp/server/*',
-              '@wisp/agent',
-              '@wisp/agent/*',
-              '@wisp/desktop',
-              '@wisp/desktop/*',
+              ...effectRestrictedImports.patterns,
+              {
+                group: [
+                  '@wisp/server',
+                  '@wisp/server/*',
+                  '@wisp/agent',
+                  '@wisp/agent/*',
+                  '@wisp/desktop',
+                  '@wisp/desktop/*',
+                ],
+              },
             ],
           },
         ],
+      },
+    },
+    {
+      // An override replaces the rule's options, so these folders inside
+      // apps/agent and apps/desktop repeat the server boundary.
+      files: [
+        'apps/agent/src/*',
+        'apps/agent/src/session/**',
+        'apps/desktop/src/*',
+        'apps/desktop/src/components/**',
+        'apps/desktop/src/routes/**',
+      ],
+      rules: {
+        'no-restricted-imports': [
+          'error',
+          {
+            paths: effectRestrictedImports.paths,
+            patterns: [...effectRestrictedImports.patterns, serverBoundary],
+          },
+        ],
+      },
+    },
+    {
+      files: [
+        'apps/server/src/auth/**',
+        'apps/server/src/memory/**',
+        'packages/game-data/src/**',
+        'packages/releases/src/**',
+        'packages/wow-bridge/src/**',
+      ],
+      rules: {
+        'no-restricted-imports': ['error', effectRestrictedImports],
       },
     },
     {
@@ -125,7 +205,10 @@ export default defineConfig({
         'unicorn/prefer-string-replace-all': 'warn', // 54
         'unicorn/prefer-structured-clone': 'warn', // 7
         'unicorn/prefer-top-level-await': 'warn', // 4
-        'vitest/expect-expect': 'warn', // 29
+        'vitest/expect-expect': [
+          'warn',
+          { additionalTestBlockFunctions: effectTestBlockFunctions },
+        ], // 29
         'vitest/no-conditional-expect': 'warn', // 18
         'vitest/require-mock-type-parameters': 'warn', // 154
         'vitest/require-to-throw-message': 'warn', // 45

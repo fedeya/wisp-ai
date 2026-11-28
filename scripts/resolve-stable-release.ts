@@ -78,9 +78,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     throw Error('Run the stable release from main.');
   }
   const main = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  const requestedNightly = process.env.NIGHTLY_TAG?.trim();
+  const requestedVersion = process.env.RELEASE_VERSION?.trim();
   const { sha, version, nightly } = await resolveStableRelease(main, {
-    nightly: process.env.NIGHTLY_TAG?.trim(),
-    version: process.env.RELEASE_VERSION?.trim(),
+    ...(requestedNightly === undefined ? {} : { nightly: requestedNightly }),
+    ...(requestedVersion === undefined ? {} : { version: requestedVersion }),
   });
   console.log(`Promoting ${nightly} (${sha}) as v${version}.`);
   if (process.env.GITHUB_OUTPUT) {

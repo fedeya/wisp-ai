@@ -58,8 +58,8 @@ test.each([
   'apps/agent/src/wisp/instructions.md',
   'apps/agent/src/wisp/skills/example/SKILL.md',
   'addon/WispAI/Core.lua',
-  'apps/server/src/wow-bridge/mailbox.ts',
-  'scripts/build-engine.ts',
+  'packages/wow-bridge/src/wire/mailbox.ts',
+  'scripts/engine/build.ts',
   'simulator/manifest.json',
 ])('%s still requires packaging, including in a mixed push', (file) => {
   expect(needsAppRelease([file])).toBe(true);

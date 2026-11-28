@@ -1,14 +1,51 @@
 {
+  "$schema": "./node_modules/@effect/tsgo/schema.json",
   "compilerOptions": {
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
+    "exactOptionalPropertyTypes": true,
     "erasableSyntaxOnly": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "ignoreEffectWarningsInTscExitCode": true,
+        "diagnosticSeverity": {
+          "floatingEffect": "error",
+          "missingStarInYieldEffectGen": "error",
+          "missingReturnYieldStar": "error",
+          "missingEffectContext": "error",
+          "missingEffectError": "error",
+          "missingLayerContext": "error",
+          "runEffectInsideEffect": "error",
+          "leakingRequirements": "error",
+          "returnEffectInGen": "error",
+          "nestedEffectGenYield": "error",
+          "effectInVoidSuccess": "error",
+          "effectInFailure": "error",
+          "promiseInEffectSuccess": "error",
+          "lazyPromiseInEffectSync": "error",
+          "scopeInLayerEffect": "error",
+          "layerMergeAllWithDependencies": "error",
+          "unsafeEffectTypeAssertion": "error",
+          "schemaSyncInEffect": "error",
+          "globalFetchInEffect": "error",
+          "globalConsoleInEffect": "error",
+          "globalRandomInEffect": "error",
+          "cryptoRandomUUIDInEffect": "error",
+          "abortControllerInEffect": "error",
+          "promiseAllInEffect": "error",
+          "promiseRaceInEffect": "error",
+          "outdatedApi": "error",
+          "obsoleteSchemaImport": "error"
+        }
+      }
+    ]
   }
 }

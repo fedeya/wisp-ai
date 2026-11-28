@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Context, Duration, Effect, Exit, FileSystem, Layer } from 'effect';
 import type { HostError } from '../execution/engine-errors.ts';
 import { readContent, type AuthoredSkill } from './content.ts';

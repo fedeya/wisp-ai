@@ -4,7 +4,7 @@ import {
   searchPublicWeb,
   verifiedWebResult,
 } from '../src/integrations/search/public-web-search.ts';
-import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../src/auth/index.ts';
 const url = 'https://github.com/fusionpit/WhatsTraining';
 const response = {
   output: [
@@ -21,7 +21,7 @@ test('ChatGPT searches globally with citations and explicit version instructions
         'data: ' + JSON.stringify({ type: 'response.completed', response }) + '\n\n',
       );
     },
-  } as unknown as ChatGPTAuth;
+  } as unknown as PromiseChatGPTAuth;
   const result = await searchPublicWeb('Forever mage Invisibility training', auth, 'gpt-test');
   expect(body.tools).toEqual([{ type: 'web_search' }]);
   expect(body.input[0].content[0].text).toBe('Forever mage Invisibility training');
@@ -171,7 +171,7 @@ test('ChatGPT receives the chosen research depth and bounds returned findings', 
           '\n\n',
       );
     },
-  } as unknown as ChatGPTAuth;
+  } as unknown as PromiseChatGPTAuth;
   const result = await searchPublicWeb(
     {
       query: 'Compare acquisition routes',

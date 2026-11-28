@@ -3,12 +3,15 @@ import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ApplicationDatabase } from '../src/db/application-database.ts';
+import { ApplicationDatabase } from '../src/application-database.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { Schema } from 'effect';
 import { routineDefinition } from '@wisp/protocol/routines';
+
+const decodeDefinition = Schema.decodeUnknownSync(routineDefinition);
 
 function signal() {
   let resolve!: () => void;
@@ -30,7 +33,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     const store = new RoutineStore(database);
     await store.mutate('mage', {
       operation: 'save',
-      routine: routineDefinition.parse({
+      routine: decodeDefinition({
         id: 'review',
         title: 'Review',
         instruction: 'Review current state.',
@@ -132,7 +135,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     for (const id of ['a', 'b']) {
       await store.mutate('mage', {
         operation: 'save',
-        routine: routineDefinition.parse({
+        routine: decodeDefinition({
           id,
           title: id,
           instruction: 'Review current state.',

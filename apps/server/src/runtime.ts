@@ -1,46 +1,63 @@
 import { characterLabel } from '@wisp/protocol/character-key';
-import { Effect, Exit, Scope } from 'effect';
+import {
+  ConfigProvider,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Option,
+  Redacted,
+  Schema,
+  Scope,
+  Stream,
+} from 'effect';
+import { HttpClientRequest, HttpClientResponse } from 'effect/http';
+import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
+import * as NodePath from '@effect/platform-node/NodePath';
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
 import { UsageTelemetry } from './telemetry.ts';
 import { ModelFailures } from './models/model-failures.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './game/packet-receiver.ts';
 import { createCharacterAdoption } from './chat/character-adoption.ts';
-import { readCharacterNames } from './db/character-keys.ts';
+import { readCharacterNames } from './chat/character-keys.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
 import { readJson, writeJson } from './json-file.ts';
 import { loadBridgeConfig } from './bridge-config.ts';
-import { z } from 'zod';
 import { createAgentHandler } from './agent/agent-server.ts';
-import { GameRequests } from './wow-bridge/game-requests.ts';
+import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createTransportConnection } from './game/transport-connection.ts';
 import type { TransportConnection } from './game/transport-connection.ts';
 import { ChatStore } from './chat/chat-store.ts';
-import { applicationDatabaseFile } from './db/application-file.ts';
-import { ApplicationDatabase } from './db/application-database.ts';
+import { applicationDatabaseFile } from '@wisp/db/application-file';
+import { ApplicationDatabase } from './application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogging } from './logger.ts';
-import { MemoryStore } from './agent/memory-store.ts';
+import * as MemoryRepository from './memory/repository.ts';
+import * as AgentMemoryAccess from './memory/agent-access.ts';
+import * as Sql from '@wisp/db/sql-database';
+import { importProductData } from './migrations/product-json.ts';
 import { IntegrationState } from './integrations/integration-state.ts';
-import { existsSync } from 'node:fs';
 import { CapabilitySettings } from './integrations/capabilities.ts';
 import { createMcpCapabilities } from './integrations/mcp/mcp-capabilities.ts';
-import { SnapshotGate } from './wow-bridge/snapshots.ts';
-import { PUBLISH_MIN_INTERVAL_MS } from './wow-bridge/publish-scheduler.ts';
+import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
-import { NativeVault, type SecretVault } from './auth/secret-vault.ts';
+import * as SecretVault from './platform/secret-vault.ts';
 import { startDesktopServer } from './api/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
@@ -49,23 +66,69 @@ import { createModelCatalogRefresh } from './models/model-catalog.ts';
 import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
-import { ChatGPTAuth } from './auth/chatgpt-auth.ts';
-import { TheWoWDB } from './integrations/thewowdb.ts';
-import { Simulator } from './integrations/simulation/simulator.ts';
-import { appPaths, retireLegacyEngine } from './app-paths.ts';
-import { addonVersionFromToc } from './wow-bridge/addon-version.ts';
+import * as ChatGPTAuth from './auth/index.ts';
+import * as TheWoWDB from './integrations/thewowdb/index.ts';
+import * as HttpClient from './platform/http-client.ts';
+import * as Simulation from './integrations/simulation/simulator.ts';
+import * as AppConfig from './app-config.ts';
+import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
 import { setAgentHost } from '@wisp/agent/agent-host';
-import { createAgentEngine } from '@wisp/agent/engine';
+import * as Agent from '@wisp/agent/engine';
+import * as Capabilities from '@wisp/agent/capabilities';
+import * as AgentMcp from '@wisp/agent/mcp-tools';
+import * as Game from '@wisp/agent/game-access';
+import * as Memory from '@wisp/agent/memory';
+import * as AgentGameAccess from './game/agent-game-access.ts';
 import { AgentHistory } from './agent/agent-history.ts';
+
+const packageMetadata = Schema.Struct({ version: Schema.String.check(Schema.isMinLength(1)) });
+const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
+
+/**
+ * The migrated services `makeServer` receives from its caller, on the
+ * `SecretVault` the caller provides. Each migrated adapter adds its layer
+ * here; `ServerLayer` provides the native vault.
+ */
+export const ServerServices = Layer.mergeAll(
+  AppConfig.layer,
+  wowPlatform,
+  Simulation.layer.pipe(
+    Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
+    Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerDigest]),
+  ),
+  TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer)),
+  ChatGPTAuth.layer.pipe(
+    Layer.provide([
+      AppConfig.layer,
+      wowPlatform,
+      HttpClient.layer,
+      NodeCrypto.layerDigest,
+      NodeCrypto.layerSecureRandom,
+      NodeCrypto.layerSignature,
+    ]),
+  ),
+);
+
+/** The migrated services; `main.ts` and `startServer` provide it. */
+export const ServerLayer = ServerServices.pipe(
+  Layer.provideMerge(
+    SecretVault.layer.pipe(
+      Layer.provide(AppConfig.layer),
+      Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
+    ),
+  ),
+);
+
 export interface ServerOptions {
-  resourceRoot?: string;
-  dataDirectory?: string;
   agentPort?: number;
   desktopPort?: number;
-  vault?: SecretVault;
-  deferWowTransport?: boolean;
+  /**
+   * Replaces the environment as the source of the `WISP_*` configuration in
+   * `startServer`. Effect callers provide a `ConfigProvider` instead.
+   */
+  configProvider?: ConfigProvider.ConfigProvider;
 }
 /**
  * Composition root of the Wisp server: loads stores and settings, wires the
@@ -87,16 +150,16 @@ export const makeServer = Effect.fn('Server.make')(
   function* (options: ServerOptions, requestStop: () => void) {
     const context = yield* Effect.context<never>();
     const runFork = Effect.runForkWith(context);
+    const runPromise = Effect.runPromiseWith(context);
     // Checked by everything that starts work, so nothing new begins while resources close.
     let shutdownRequested = false;
-    const ROOT =
-      options.resourceRoot ||
-      process.env.WISP_RESOURCE_ROOT ||
-      fileURLToPath(new URL('../../../', import.meta.url));
-    const paths = appPaths(ROOT, options.dataDirectory);
+    // Migrated: the unmigrated consumers below receive plain values read from it.
+    const appConfig = yield* AppConfig.AppConfig;
+    const { paths } = appConfig;
+    const ROOT = paths.root;
     const [bridgeVersion, expectedAddonVersion] = yield* startup(() =>
       Promise.all([
-        readJson(path.join(ROOT, 'package.json'), z.object({ version: z.string().min(1) }), () => ({
+        readJson(path.join(ROOT, 'package.json'), packageMetadata, () => ({
           version: 'unknown',
         }))
           .then((metadata) => metadata.version)
@@ -108,29 +171,15 @@ export const makeServer = Effect.fn('Server.make')(
       ]),
     );
     const runtime = paths.runtime;
-    const simulator = new Simulator(ROOT, runtime);
+    const simulator = yield* Simulation.Simulator;
     yield* startup(() => mkdir(runtime, { recursive: true }));
     const databaseFile = applicationDatabaseFile(runtime);
     const applicationDatabase = new ApplicationDatabase(databaseFile);
     yield* releaseRuntimeResource(() => applicationDatabase.close());
-    const memoryStore = new MemoryStore(applicationDatabase);
-    async function memorySnapshot(identity: string | undefined) {
-      const preferences = (await memoryStore.read('preferences', 'local-player')).map((entry) => ({
-        ...entry,
-        slot: 'preferences',
-      }));
-      const character = identity
-        ? (await memoryStore.read('character', identity)).map((entry) => ({
-            ...entry,
-            slot: 'character',
-          }))
-        : [];
-      return { status: 'available', entries: [...preferences, ...character] };
-    }
     const config = yield* startup(() => loadBridgeConfig(paths.config));
     const features = yield* startup(() =>
       Features.start({
-        channel: featureChannel(bridgeVersion, process.env.WISP_RELEASE_BUILD === '1'),
+        channel: featureChannel(bridgeVersion, appConfig.releaseBuild),
         overrides: config.get().features ?? {},
         saveOverrides: (overrides) => config.update({ features: overrides }),
         onChange: () => featuresChanged(),
@@ -140,7 +189,16 @@ export const makeServer = Effect.fn('Server.make')(
     const mcpFile = mcpConfig
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
-    const vault = options.vault || new NativeVault(paths.desktopExecutable);
+    // Adapters for unmigrated consumers, which take Promise interfaces built
+    // here from migrated services. Remove each one when its consumers migrate.
+    const secretVault = yield* SecretVault.SecretVault;
+    const vault: SecretVault.PromiseSecretVault = {
+      read: (key) => runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
+      write: (key, value) => runPromise(secretVault.write(key, Redacted.make(value))),
+    };
+    const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
+    const auth = promiseChatGPTAuth(chatgpt, context);
+    // End of adapters.
     const mcpManager = McpManager.make(
       ROOT,
       {
@@ -160,19 +218,40 @@ export const makeServer = Effect.fn('Server.make')(
     yield* Effect.addFinalizer(() => mcpManager.close());
     yield* mcpManager.load();
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
+      release: appConfig.telemetryRelease,
       isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
       enabledFeatures: () => features.enabledNames(),
     });
     yield* releaseRuntimeResource(() => telemetry.close());
-    const auth = yield* ChatGPTAuth.make(runtime, vault);
-    yield* startup(() => auth.load());
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     yield* startup(() => connections.load());
     const modelFailures = new ModelFailures();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     yield* startup(() => webSearch.load());
-    yield* releaseRuntimeResource(() => auth.cancel());
-    const database = new TheWoWDB();
+    yield* Effect.addFinalizer(() => chatgpt.cancel);
+    const database = yield* TheWoWDB.TheWoWDB;
+    const storage = yield* Layer.build(
+      MemoryRepository.layer.pipe(Layer.provideMerge(Sql.layer(databaseFile))),
+    );
+    const { db: sql } = Context.get(storage, Sql.SqlDatabase);
+    yield* importProductData(databaseFile, sql);
+    const memoryRepository = Context.get(storage, MemoryRepository.MemoryRepository);
+    const memorySnapshot = Effect.fn('Memory.snapshot')(function* (identity: string | undefined) {
+      const preferences = yield* memoryRepository.read({
+        slot: 'preferences',
+        owner: 'local-player',
+      });
+      const character = identity
+        ? yield* memoryRepository.read({ slot: 'character', owner: identity })
+        : [];
+      return {
+        status: 'available',
+        entries: [
+          ...preferences.map((entry) => ({ ...entry, slot: 'preferences' })),
+          ...character.map((entry) => ({ ...entry, slot: 'character' })),
+        ],
+      };
+    });
     const panelStore = new PanelStore(applicationDatabase);
     yield* startup(() => panelStore.load());
     const routineStore = new RoutineStore(applicationDatabase);
@@ -182,7 +261,7 @@ export const makeServer = Effect.fn('Server.make')(
     capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
     capabilitySettings.features = features.values();
     const integrationState = new IntegrationState(capabilitySettings);
-    const simulatorAvailable = existsSync(paths.simulatorExecutable);
+    const simulatorAvailable = yield* simulator.available;
     capabilitySettings.availability.set('integration:wowsims', {
       available: simulatorAvailable,
       status: simulatorAvailable ? 'ready' : 'missing',
@@ -218,10 +297,8 @@ export const makeServer = Effect.fn('Server.make')(
     });
     // The app update the desktop last reported; the desktop resends it after a restart.
     let appUpdateVersion: string | null = null;
-    const snapshots = new SnapshotGate();
     const publisher: SnapshotPublisher = yield* createSnapshotPublisher({
       state,
-      snapshots,
       transport: () => transport.current(),
       inputs: () => {
         const character = state.currentCharacterKey;
@@ -241,50 +318,71 @@ export const makeServer = Effect.fn('Server.make')(
           routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
           capabilities: capabilitySettings.snapshot(),
           features: features.values(),
-          requests: pending.snapshot(),
         };
       },
     });
     yield* releaseRuntimeResource(() => publisher.stop());
-    const pending = new GameRequests(changed, {
-      onTimeout: (timeout) =>
-        runFork(
-          Effect.logWarning('WoW did not answer a request').pipe(
-            Effect.annotateLogs({ event: 'game.request_timeout', ...timeout }),
-          ),
-        ),
-    });
-    yield* releaseRuntimeResource(() => pending.cancelAll('Bridge stopped'));
+    const bridge = Context.get(
+      yield* Layer.build(WowBridge.layer.pipe(Layer.provide(wowPlatform))),
+      WowBridge.WowBridge,
+    );
     const token = randomBytes(32).toString('hex');
     // The agent runs in process; its model history lives next to the chats.
     const agentHistory = new AgentHistory(applicationDatabase, { wispVersion: bridgeVersion });
+    const memoryAccess = AgentMemoryAccess.make({
+      repository: memoryRepository,
+      chats: () => state.chats,
+      currentTransport: () => state.activeTransport,
+      capabilities: capabilitySettings,
+      snapshot: memorySnapshot,
+      setView: (view) => {
+        state.memoryView = view;
+      },
+      changed,
+    });
     let engineReady = false;
-    const engine = createAgentEngine({
+    const gameAccess = AgentGameAccess.make({
+      getChats: () => state.chats,
+      currentTransport: () => state.activeTransport,
+      requestGame: (call) => transport.request(call),
+      capabilitySettings,
+      mcpManager,
+    });
+    const agentConfig = Agent.EngineConfig.of({
       origin: () => agentOrigin,
       token,
-      history: agentHistory,
-      capabilitiesFile: () => capabilitySettings.agentFile,
-      mcp: {
-        manager: mcpManager,
-        allowed: (server, tool) =>
-          capabilitySettings.enabled('mcp:' + server) &&
-          (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
-        readOnly: (session) =>
-          state.chats.some(
-            (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
-          ),
-      },
-      logging: bridgeLogging,
     });
+    const agentMcp = AgentMcp.layerFromManager(mcpManager, {
+      allowed: (server, tool) =>
+        capabilitySettings.enabled('mcp:' + server) &&
+        (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
+      readOnly: (session) =>
+        state.chats.some(
+          (chat) => chat.agentSession === session && chat.proactive && chat.status === 'working',
+        ),
+    });
+    const agentLayer = Agent.layer.pipe(
+      Layer.provide(agentMcp),
+      Layer.provide(Capabilities.layerFromFile(() => capabilitySettings.agentFile)),
+      Layer.provide(NodeFileSystem.layer),
+      Layer.provide(Agent.SessionHistory.layer(agentHistory)),
+      Layer.provide(Layer.succeed(Agent.EngineConfig, agentConfig)),
+      Layer.provide(Layer.succeed(Game.Service, gameAccess)),
+      Layer.provide(Layer.succeed(Memory.Service, memoryAccess)),
+      Layer.provideMerge(bridgeLogging),
+    );
+    const engine = Agent.make(agentLayer);
     async function readSimulationCharacter(chat = 'desktop-simulation'): Promise<unknown> {
       if (!state.activeTransport || !capabilitySettings.enabled('tool:query_character')) {
         throw Error('Connect WoW and enable Character readings first.');
       }
-      return pending.request({
-        chat,
-        session: state.activeTransport,
-        sections: ['character', 'talents', 'spells', 'gear'],
-      });
+      return runPromise(
+        transport.request({
+          chat,
+          session: state.activeTransport,
+          operation: { kind: 'read', sections: ['character', 'talents', 'spells', 'gear'] },
+        }),
+      );
     }
     function changed() {
       publisher.changed();
@@ -340,7 +438,7 @@ export const makeServer = Effect.fn('Server.make')(
     });
     yield* releaseRuntimeResource(stopRoutineScheduler);
     const adoptCharacter = createCharacterAdoption({
-      database: applicationDatabase,
+      db: sql,
       panelStore,
       chats: () => state.chats,
       changed,
@@ -349,45 +447,42 @@ export const makeServer = Effect.fn('Server.make')(
       telemetry,
       state,
       engine,
-      pending,
+      request: (call) => transport.request(call),
       integrationState,
       capabilitySettings,
       models: connections,
       routineStore,
       panelStore,
-      memoryStore,
-      transport: () => transport.current(),
+      memoryRepository,
       refreshModelCatalog,
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
       run,
-      flushAcknowledgment: publisher.flush,
       adoptCharacter,
       interrupt: run.interrupt,
       cancel: run.cancel,
       runtime,
       changed,
     });
-    const receive: typeof receivePacket = (packet) => {
+    const receive = Effect.fnUntraced(function* (packet: Parameters<typeof receivePacket>[0]) {
       const previousSession = state.activeTransport;
       observeGameConnection();
-      receivePacket(packet);
+      yield* receivePacket(packet);
       if (state.activeTransport !== previousSession) {
         telemetry.gameConnectionStarted();
       }
-    };
+    });
     const transport: TransportConnection = yield* createTransportConnection({
       state,
-      pending,
+      bridge,
       integrationState,
-      snapshots,
       capabilitySettings,
       receive,
       saveWow: (wow) => config.update({ wow }),
       changed,
       isStopping: () => shutdownRequested,
-    });
-    yield* releaseRuntimeResource(() => transport.serialize(transport.disconnect));
+    }).pipe(Effect.provide(wowPlatform));
+    yield* Effect.addFinalizer(() => transport.serialize(transport.disconnect));
     const server = createServer(
       yield* createAgentHandler({
         telemetry,
@@ -396,23 +491,16 @@ export const makeServer = Effect.fn('Server.make')(
         auth,
         connections,
         webSearch,
-        mcpManager,
         capabilitySettings,
         routineStore,
         panelStore,
-        memoryStore,
-        pending,
         database,
         simulator,
         getChats: () => state.chats,
         currentTransport: () => state.activeTransport,
         defaultModel,
         readSimulationCharacter,
-        memorySnapshot,
         presentReply: run.present,
-        setMemoryView: (view) => {
-          state.memoryView = view;
-        },
         changed,
       }),
     );
@@ -423,11 +511,15 @@ export const makeServer = Effect.fn('Server.make')(
     yield* startup(() => writeFile(path.join(runtime, 'bridge.pid'), String(process.pid)));
     setAgentHost({ origin: agentOrigin, token });
     yield* releaseRuntimeResource(() => accounts.drain());
-    void Promise.all([
-      retireLegacyEngine(paths.legacyEngine),
-      rm(path.join(runtime, 'eve.log'), { force: true }),
-    ]).catch((error: unknown) =>
-      runFork(
+    const fs = yield* FileSystem.FileSystem;
+    yield* Effect.all(
+      [
+        AppConfig.retireLegacyEngine(paths.legacyEngine),
+        fs.remove(path.join(runtime, 'eve.log'), { force: true }),
+      ],
+      { concurrency: 'unbounded', discard: true },
+    ).pipe(
+      Effect.catch((error) =>
         Effect.logWarning('Could not remove the old Eve engine folder').pipe(
           Effect.annotateLogs({
             event: 'agent.legacy_engine_cleanup_failed',
@@ -435,6 +527,7 @@ export const makeServer = Effect.fn('Server.make')(
           }),
         ),
       ),
+      Effect.forkDetach,
     );
     // Histories no conversation refers to belong to deleted chats or reset sessions.
     yield* startup(() => agentHistory.prune()).pipe(
@@ -462,7 +555,7 @@ export const makeServer = Effect.fn('Server.make')(
     function observeGameConnection() {
       telemetry.gameConnectionProgress(
         transport.gameConnected(),
-        Boolean(state.firstReadyRevision),
+        transport.current()?.status().readyPublished ?? false,
       );
     }
     function desktopStatus(): Status {
@@ -507,17 +600,21 @@ export const makeServer = Effect.fn('Server.make')(
       refreshMcpCatalog: mcpCapabilities.refreshCatalog,
       changed,
       setWowTransport: (input) =>
-        transport.serialize(async () => {
-          if (shutdownRequested) throw Error('Wisp is stopping.');
-          if (input.action === 'pause') {
-            if (state.chats.some((chat) => chat.status === 'working')) {
-              throw Error('Wait for the active turn before installing the addon.');
+        transport.serialize(
+          Effect.gen(function* () {
+            if (shutdownRequested) return yield* Effect.fail(Error('Wisp is stopping.'));
+            if (input.action === 'pause') {
+              if (state.chats.some((chat) => chat.status === 'working')) {
+                return yield* Effect.fail(
+                  Error('Wait for the active turn before installing the addon.'),
+                );
+              }
+              yield* transport.disconnect;
+            } else {
+              yield* transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
             }
-            await transport.disconnect();
-          } else {
-            await transport.connect(input.wow ?? config.get().wow, input.wow !== undefined);
-          }
-        }),
+          }),
+        ),
       setFeature: (id, enabled) => features.set(id, enabled),
       setAppUpdate: (version) => {
         appUpdateVersion = version;
@@ -548,10 +645,14 @@ export const makeServer = Effect.fn('Server.make')(
       startDesktopServer(runtime, desktopApp, options.desktopPort),
     );
     yield* releaseRuntimeResource(() => closeServer(desktopServer));
-    const transportStartup =
-      options.deferWowTransport || process.env.WISP_DEFER_WOW_TRANSPORT === '1'
-        ? Promise.resolve()
-        : transport.serialize(() => transport.connect(config.get().wow)).catch(transport.logError);
+    const transportStartup = yield* (
+      appConfig.deferWowTransport
+        ? Effect.void
+        : transport.serialize(transport.connect(config.get().wow)).pipe(
+            Effect.catchDefect((error) => Effect.fail(error)),
+            Effect.catch((error) => Effect.sync(() => transport.logError(error))),
+          )
+    ).pipe(Effect.forkChild());
     const integrationHealth = setInterval(() => {
       const before = JSON.stringify(capabilitySettings.snapshot());
       integrationState.refresh();
@@ -590,12 +691,15 @@ export const makeServer = Effect.fn('Server.make')(
       Effect.sync(() => {
         shutdownRequested = true;
         clearTimeout(desktopStopTimer);
-        pending.cancelAll('Bridge stopped');
         state.chats.forEach(run.interrupt);
       }),
     );
-    yield* startup(() => Promise.all([engineStartup, transportStartup]));
-    return { state, receive };
+    yield* startup(() => engineStartup);
+    yield* Fiber.join(transportStartup);
+    return {
+      state,
+      receive: (packet: Parameters<typeof receive>[0]) => runPromise(receive(packet)),
+    };
   },
   // The existing Promise-based acquisitions cannot be interrupted safely.
   Effect.uninterruptible,
@@ -606,8 +710,104 @@ function startup<A>(operation: () => Promise<A>) {
   return Effect.tryPromise({ try: operation, catch: (error) => error });
 }
 
+// Adapter for unmigrated consumers: `makeServer` and the eval bridge build it.
+// Remove it when the consumers of `PromiseChatGPTAuth` migrate.
+/**
+ * Runs `ChatGPTAuth` with `context` behind the Promise interface its
+ * unmigrated consumers take. Their checks see the rejections they saw before:
+ * a `ChatGPTAuthError` or vault error as is, a failed request as what `fetch`
+ * failed with, and an aborted `authorized` call as its signal's reason.
+ */
+export function promiseChatGPTAuth(
+  auth: ChatGPTAuth.ChatGPTAuth['Service'],
+  context: Context.Context<never>,
+): ChatGPTAuth.PromiseChatGPTAuth {
+  const runPromise = Effect.runPromiseWith(context);
+  const runSync = Effect.runSyncWith(context);
+  const runFork = Effect.runForkWith(context);
+  const run = <A>(
+    effect: Effect.Effect<
+      A,
+      ChatGPTAuth.ChatGPTAuthError | ChatGPTAuth.ChatGPTRequestError | SecretVault.SecretVaultError
+    >,
+    options?: Effect.RunOptions,
+  ) =>
+    runPromise(
+      effect.pipe(Effect.catchTag('ChatGPTRequestError', (error) => Effect.fail(error.cause))),
+      options,
+    );
+  const authorized = (url: string, init: ChatGPTAuth.ChatGPTRequestInit) => {
+    const { signal } = init;
+    const base = HttpClientRequest.make(init.method)(url, { headers: init.headers });
+    const request =
+      init.body === undefined
+        ? base
+        : HttpClientRequest.bodyText(
+            base,
+            init.body,
+            new Headers(init.headers).get('content-type') ?? undefined,
+          );
+    return run(
+      Effect.gen(function* () {
+        // The response body stays open until the caller's signal aborts or the body ends.
+        const scope = yield* Scope.make();
+        const release = () => {
+          runFork(Scope.close(scope, Exit.void));
+        };
+        signal?.addEventListener('abort', release, { once: true });
+        const response = yield* auth.authorized(request).pipe(
+          Scope.provide(scope),
+          Effect.onError(() => Scope.close(scope, Exit.void)),
+        );
+        const web = Option.getOrElse(
+          HttpClientResponse.toWeb(response),
+          () =>
+            new Response(Stream.toReadableStream(response.stream), {
+              status: response.status,
+              headers: response.headers,
+            }),
+        );
+        if (!web.body) {
+          release();
+          return web;
+        }
+        // Like a fetch body, it fails with the signal's reason when the signal aborts.
+        const body = web.body.pipeThrough(
+          new TransformStream<Uint8Array, Uint8Array>({ flush: release }),
+          signal ? { signal } : {},
+        );
+        return new Response(body, web);
+      }),
+      { signal },
+    ).catch((error: unknown) => {
+      throw signal?.aborted ? signal.reason : error;
+    });
+  };
+  return {
+    state: () => runSync(auth.state),
+    get pending() {
+      return runSync(auth.state).status === 'authorizing';
+    },
+    beginSignIn: (profileId, newAccount) => run(auth.beginSignIn({ profileId, newAccount })),
+    cancel: () => runPromise(auth.cancel),
+    select: (id) => run(auth.select(id)),
+    accessToken: () => run(auth.accessToken.pipe(Effect.map(Redacted.value))),
+    disconnect: () => run(auth.disconnect),
+    models: () => run(auth.models),
+    authorized,
+  };
+}
+// End of adapter.
+
 export function startServer(options: ServerOptions = {}) {
-  return Effect.runPromise(startServerEffect(options).pipe(Effect.provide(bridgeLogging)));
+  const server = startServerEffect(options).pipe(
+    Effect.provide(Layer.merge(ServerLayer, bridgeLogging)),
+  );
+  return Effect.runPromise(
+    options.configProvider
+      ? server.pipe(Effect.provideService(ConfigProvider.ConfigProvider, options.configProvider))
+      : server,
+  );
 }
 
 export const startServerEffect = Effect.fnUntraced(function* (options: ServerOptions = {}) {

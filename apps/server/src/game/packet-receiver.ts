@@ -1,6 +1,7 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
-import type { Packet } from '../wow-bridge/protocol.ts';
+import type { Connection, GameEvent } from '@wisp/wow-bridge';
 import { selectionValues } from '@wisp/agent/contract/ui-schema';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -8,14 +9,13 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MemoryView, SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
-import type { DiskTransport } from '../wow-bridge/transport.ts';
-import type { GameRequests } from '../wow-bridge/game-requests.ts';
 import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
-import type { MemoryStore } from '../agent/memory-store.ts';
+import type { MemoryRepository } from '../memory/repository.ts';
+import type { MemoryEdit } from '@wisp/agent/contract/memory';
 import {
   characterIdentity,
   characterProfile,
@@ -28,29 +28,30 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/c
 import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
-import { Effect } from 'effect';
+import { Effect, Option, Schema } from 'effect';
+// The addon's routine packets are strict, like the protocol schemas.
+const decodeRoutineEvent = Schema.decodeUnknownOption(routineEvent, rejectUnknownKeys);
+const decodeRoutineAction = Schema.decodeUnknownOption(routineInput, rejectUnknownKeys);
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
   engine: Pick<AgentEngine, 'end'>;
-  pending: GameRequests;
+  request: Connection['request'];
   integrationState: IntegrationState;
   capabilitySettings: CapabilitySettings;
   models: Pick<ModelCatalog, 'models'>;
   routineStore: RoutineStore;
   panelStore: PanelStore;
-  memoryStore: MemoryStore;
-  transport: () => Pick<DiskTransport, 'resetSession' | 'setCursor'> | undefined;
+  memoryRepository: MemoryRepository['Service'];
   refreshModelCatalog: () => Promise<void>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
-  memorySnapshot: (identity: string | undefined) => Promise<MemoryView>;
+  memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
   interrupt: (chat: Chat) => void;
   /** Stops a turn the player cancelled. */
   cancel?: (chat: Chat) => void;
   runtime: string;
   changed: () => void;
-  flushAcknowledgment?: () => void;
   /** Records a character's name and moves its pre-GUID data before the packet is handled. */
   adoptCharacter?: (character: CharacterProfile) => Effect.Effect<void>;
   now?: () => number;
@@ -58,19 +59,17 @@ interface ReceiverDependencies {
 export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverDependencies) {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
-  const runSync = Effect.runSyncWith(context);
   const runPromise = Effect.runPromiseWith(context);
   const {
     state,
     engine,
-    pending,
+    request,
     integrationState,
     capabilitySettings,
     models,
     routineStore,
     panelStore,
-    memoryStore,
-    transport,
+    memoryRepository,
     refreshModelCatalog,
     setCapability,
     memorySnapshot,
@@ -89,19 +88,17 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     state.chats.push(chat);
     return chat;
   };
-  return function receive(packet: Packet) {
+  return Effect.fnUntraced(function* receive(packet: GameEvent) {
     const receivedAt = now();
     if (state.activeTransport && packet.session === state.activeTransport) {
       activeSeenAt = receivedAt;
-      pending.heard();
     }
     const establishesSession =
       packet.type === 'hello' || (!state.activeTransport && packet.type === 'poll');
     if (!establishesSession && packet.session !== state.activeTransport) {
       return;
     }
-    // DiskTransport decides which window owns the bridge (see ACTIVE_SESSION_MS) before
-    // a hello reaches here, so the transport and this state always follow one window.
+    // The bridge has already selected the window that owns the connection.
     const beforeIntegrations = JSON.stringify(capabilitySettings.snapshot());
     const newTransport = establishesSession && state.activeTransport !== packet.session;
     if (newTransport) {
@@ -117,7 +114,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       activeSeenAt = receivedAt;
       contextCache = new TurnContextCache();
       lastDelivery = '';
-      pending.cancelAll('The addon reloaded or the character changed. Query again.');
       for (const chat of state.chats.filter(
         (chat) => chat.owner === state.activeTransport && isWorking(chat),
       )) {
@@ -131,35 +127,13 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       state.routineCommand = undefined;
       state.routinePresence = undefined;
       integrationState.reset();
-      state.firstReadyRevision = 0;
       state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
       state.memoryView = undefined;
-      state.acknowledgments = [];
-      state.handled.clear();
-      transport()?.resetSession();
       void refreshModelCatalog();
     }
-    packet.context = contextCache.resolve(packet.context);
+    packet = { ...packet, context: contextCache.resolve(packet.context) };
     state.questRevision = contextCache.revision;
     state.characterRevision = contextCache.characterRevision;
-    if (
-      packet.type !== 'poll' &&
-      !packet.heartbeat &&
-      !state.acknowledgments.includes(packet.seq)
-    ) {
-      state.acknowledgments.push(packet.seq);
-      state.acknowledgments = state.acknowledgments.slice(-32);
-    }
-    if (packet.messageId) {
-      deps.flushAcknowledgment?.();
-    }
-    if (
-      Number.isSafeInteger(packet.nextSlot) &&
-      packet.nextSlot! >= 1 &&
-      packet.nextSlot! <= 1024
-    ) {
-      transport()?.setCursor(packet.nextSlot!, Number(packet.receivedRev || 0));
-    }
     if (integrationState.receive(packet.integrations) && integrationState.report) {
       deps.telemetry?.game(integrationState.report.version);
     }
@@ -179,14 +153,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.heartbeat && !newTransport) {
       return;
     }
-    const packetKey = packet.session + ':' + packet.seq;
-    if (state.handled.has(packetKey)) {
-      if (packet.type !== 'poll') {
-        changed();
-      }
-      return;
-    }
-    state.handled.add(packetKey);
     const delivery = packet.transport?.delivery;
     if (delivery && delivery.messageId !== lastDelivery) {
       lastDelivery = delivery.messageId;
@@ -294,8 +260,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     if (packet.context) {
       const character = characterProfile(packet.context);
       if (character) {
+        if (deps.adoptCharacter) yield* deps.adoptCharacter(character);
+        const previous = state.currentCharacterKey;
         state.currentCharacterKey = character.key;
-        if (deps.adoptCharacter) runSync(deps.adoptCharacter(character));
+        if (packet.type === 'poll' && previous !== character.key) changed();
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -312,10 +280,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         session: packet.session,
       };
       if (packet.type === 'routine_event' && capabilitySettings.enabled('tool:manage_routine')) {
-        const event = routineEvent.safeParse({ event: data?.event, values: data?.values });
-        if (event.success) {
+        const event = decodeRoutineEvent({ event: data?.event, values: data?.values });
+        if (Option.isSome(event)) {
           void routineStore
-            .observe(identity, event.data)
+            .observe(identity, event.value)
             .then(changed)
             .catch((error) =>
               runFork(
@@ -333,14 +301,14 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     }
     if (packet.type === 'routine_action') {
       const identity = characterIdentity(packet.context);
-      const input = routineInput.safeParse(packet.data);
+      const input = decodeRoutineAction(packet.data);
       if (
         identity &&
-        input.success &&
-        ['pause', 'resume', 'remove'].includes(input.data.operation)
+        Option.isSome(input) &&
+        ['pause', 'resume', 'remove'].includes(input.value.operation)
       ) {
         void routineStore
-          .mutate(identity, input.data)
+          .mutate(identity, input.value)
           .then(changed)
           .catch((error) =>
             runFork(
@@ -437,11 +405,13 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           chat.status = 'working';
           changed();
           try {
-            const result = await pending.request({
-              chat: chat.id,
-              session: state.activeTransport,
-              action,
-            });
+            const result = await runPromise(
+              request({
+                chat: chat.id,
+                session: state.activeTransport,
+                operation: { kind: 'act', action },
+              }),
+            );
             chat.lastUIResult = result;
             const value = result as {
               status?: string;
@@ -542,6 +512,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         transportSession = state.activeTransport;
       state.memoryViewRequest = packet.requestId;
       void (async () => {
+        let readSnapshot = memorySnapshot(identity);
         if (packet.type !== 'memory_list') {
           if (packet.slot !== 'preferences' && packet.slot !== 'character') {
             throw new Error('Invalid memory scope');
@@ -550,17 +521,18 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           if (!owner || typeof packet.key !== 'string') {
             throw new Error('A fresh character identity and memory key are required');
           }
-          if (packet.type === 'memory_save' && typeof packet.text !== 'string') {
-            throw new Error('Memory text is required');
+          const scope = { slot: packet.slot, owner };
+          const key = packet.key;
+          let edit: MemoryEdit;
+          if (packet.type === 'memory_save') {
+            if (typeof packet.text !== 'string') throw new Error('Memory text is required');
+            edit = { operation: 'save', key, text: packet.text };
+          } else {
+            edit = { operation: 'remove', key };
           }
-          await memoryStore.update(
-            packet.slot,
-            owner,
-            packet.key,
-            packet.type === 'memory_save' ? packet.text : undefined,
-          );
+          readSnapshot = Effect.andThen(memoryRepository.update(scope, edit), readSnapshot);
         }
-        const snapshot = await memorySnapshot(identity);
+        const snapshot = await runPromise(readSnapshot);
         if (
           state.activeTransport === transportSession &&
           state.memoryViewRequest === packet.requestId
@@ -568,14 +540,14 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           state.memoryView = { ...snapshot, requestId: packet.requestId };
         }
       })()
-        .catch((error) => {
+        .catch((error: unknown) => {
           if (
             state.activeTransport === transportSession &&
             state.memoryViewRequest === packet.requestId
           ) {
             state.memoryView = {
               status: 'unavailable',
-              error: error.message,
+              error: errorMessage(error),
               requestId: packet.requestId,
             };
           }
@@ -591,7 +563,6 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       }
       state.deletedChatIds.add(packet.chat);
       state.chats = state.chats.filter((c) => c.id !== packet.chat);
-      pending.cancelChat(packet.chat);
       endSession(engine, removed?.agentSession);
       state.activeChat = resumeChat(state.chats, packet.nextChat)?.id || '';
       changed();
@@ -644,11 +615,8 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         (deps.cancel ?? interrupt)(chat);
       }
     }
-    if (packet.type === 'state_result' && packet.requestId) {
-      pending.receive(packet.requestId, packet.session, packet.chat, packet.data);
-    }
     if (packet.type !== 'poll') {
       changed();
     }
-  };
+  });
 });

@@ -2,7 +2,9 @@ import { Context, Effect, Layer } from 'effect';
 import { localMemory, memorySlots } from '../wisp/agent-memory.ts';
 import { toolOffered } from './enabled-tool.ts';
 import { EngineConfig } from '../host/engine-config.ts';
-import { AgentCapabilities } from '../host/capabilities.ts';
+import * as Capabilities from '../host/capabilities.ts';
+import * as Game from '../host/game-access.ts';
+import * as Memory from '../host/memory.ts';
 import type { HostError } from '../execution/engine-errors.ts';
 import { Mcp } from '../integrations/mcp-tools.ts';
 import type { ToolDefinition } from './tool.ts';
@@ -32,27 +34,34 @@ export class TurnToolbox extends Context.Service<
     TurnToolbox,
     Effect.gen(function* () {
       const { stub } = yield* EngineConfig;
-      const settings = yield* AgentCapabilities;
+      const settings = yield* Capabilities.Service;
       const mcp = yield* Mcp;
+      const gameAccess = yield* Game.Service;
+      const memoryAccess = yield* Memory.Service;
 
       const tools = Effect.fn('TurnToolbox.tools')(function* (session: string) {
         const capabilities = yield* settings.read;
         const direct: Record<string, ToolDefinition> = {};
         const deferred: DeferredTool[] = [];
         const memory: string[] = [];
+        const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
         for (const [name, tool] of Object.entries(authoredTools)) {
           if (!toolOffered(tool, capabilities)) continue;
-          if (tool.deferred) deferred.push(authored(name, tool, stub));
-          else direct[name] = tool;
+          const bound: ToolDefinition = {
+            ...tool,
+            execute: (input, ctx) =>
+              tool.execute(input, { ...ctx, gameAccess, runEffect: runPromise }),
+          };
+          if (tool.deferred) deferred.push(authored(name, bound, stub));
+          else direct[name] = bound;
         }
         for (const slot of memorySlots) {
-          const slotMemory = localMemory(slot);
+          const slotMemory = localMemory(slot, memoryAccess, runPromise);
           if (!(yield* slotMemory.scope(session, capabilities))) continue;
           Object.assign(direct, slotMemory.tools());
           const recalled = yield* slotMemory.recall(session);
           if (recalled) memory.push(recalled);
         }
-        const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
         for (const tool of yield* mcp.tools(session, capabilities)) {
           deferred.push({
             name: tool.name,

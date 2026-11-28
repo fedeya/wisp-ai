@@ -1,16 +1,21 @@
 import { test, expect, vi } from 'vitest';
+import { ConfigProvider, Effect, Exit, Layer, Redacted, Schema } from 'effect';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
-import { startServer, type ServerOptions } from '../src/runtime.ts';
-import { packetSchema } from '../src/wow-bridge/protocol.ts';
-import { UPLINK_KIND, encodeMessage, replaceUplink } from '../src/wow-bridge/mailbox.ts';
+import { ServerServices, startServerEffect, type ServerOptions } from '../src/runtime.ts';
+import { SecretVault } from '../src/platform/secret-vault.ts';
+import { bridgeLogging } from '../src/logger.ts';
+import { gameEvent } from './game-event-fixture.ts';
+import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/wow-bridge/mailbox';
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { agentHost } from '@wisp/agent/agent-host';
 
-async function fixture(configured = true) {
+const decodeStatus = Schema.decodeUnknownSync(statusSchema);
+
+async function fixture(configured = true, env: Record<string, string> = {}) {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
   if (configured) {
     await writeFile(
@@ -18,19 +23,38 @@ async function fixture(configured = true) {
       JSON.stringify({ wow: path.join(dataDirectory, 'wow') }),
     );
   }
-  const options: ServerOptions = {
+  return {
     dataDirectory,
-    agentPort: 0,
-    desktopPort: 0,
-    vault: { read: async () => '', write: async () => {} },
+    config: ConfigProvider.fromEnv({ env: { ...env, WISP_DATA_DIR: dataDirectory } }),
+    options: { agentPort: 0, desktopPort: 0 } satisfies ServerOptions,
+    secrets: new Map<string, string>(),
   };
-  return { dataDirectory, options };
+}
+
+/** Starts the server with `ServerServices` on a vault that keeps secrets in `f.secrets`. */
+function start(f: Awaited<ReturnType<typeof fixture>>, options: ServerOptions = f.options) {
+  const vault = Layer.succeed(
+    SecretVault,
+    SecretVault.of({
+      read: (key) => Effect.succeed(Redacted.make(f.secrets.get(key) || '')),
+      write: (key, value) =>
+        Effect.sync(() => {
+          f.secrets.set(key, Redacted.value(value));
+        }),
+    }),
+  );
+  return Effect.runPromise(
+    startServerEffect(options).pipe(
+      // The migrated services, ChatGPTAuth among them, use the fake vault.
+      Effect.provide(Layer.merge(ServerServices.pipe(Layer.provideMerge(vault)), bridgeLogging)),
+      Effect.provideService(ConfigProvider.ConfigProvider, f.config),
+    ),
+  );
 }
 
 test('addon maintenance switches WoW folders without stopping the agent or the desktop API', async () => {
-  const f = await fixture(false);
-  f.options.deferWowTransport = true;
-  let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
+  const f = await fixture(false, { WISP_DEFER_WOW_TRANSPORT: '1' });
+  let bridge: Awaited<ReturnType<typeof start>> | undefined;
   async function game(name: string) {
     const folder = path.join(f.dataDirectory, name);
     const addon = path.join(folder, 'Interface/AddOns/WispAI');
@@ -53,7 +77,7 @@ test('addon maintenance switches WoW folders without stopping the agent or the d
     const second = await game('second');
     const config = path.join(f.dataDirectory, 'config.local.json');
     await writeFile(config, JSON.stringify({ wow: first.folder }));
-    bridge = await startServer(f.options);
+    bridge = await start(f);
     const state = bridge.state;
     const { port, token } = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
@@ -110,9 +134,9 @@ test('a fresh addon installation starts before a default model is selected', asy
   const f = await fixture();
   const config = { wow: path.join(f.dataDirectory, 'wow'), model: '' };
   await writeFile(path.join(f.dataDirectory, 'config.local.json'), JSON.stringify(config));
-  let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
+  let bridge: Awaited<ReturnType<typeof start>> | undefined;
   try {
-    bridge = await startServer(f.options);
+    bridge = await start(f);
     const identity = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
@@ -120,7 +144,7 @@ test('a fresh addon installation starts before a default model is selected', asy
       headers: { authorization: 'Bearer ' + identity.token },
     });
     expect(response.ok).toBe(true);
-    expect(statusSchema.parse(await response.json())).toMatchObject({
+    expect(decodeStatus(await response.json())).toMatchObject({
       auth: { status: 'signed_out' },
       gameConnected: false,
       modelConnected: false,
@@ -133,13 +157,6 @@ test('a fresh addon installation starts before a default model is selected', asy
 
 test('an API chat searches Wowhead through Exa without a ChatGPT account', async () => {
   const f = await fixture();
-  const secrets = new Map<string, string>();
-  f.options.vault = {
-    read: async (key) => secrets.get(key) || '',
-    write: async (key, value) => {
-      secrets.set(key, value);
-    },
-  };
   const actualFetch = globalThis.fetch;
   const exaRequests: Record<string, unknown>[] = [];
   const exa = vi.fn(async () =>
@@ -167,9 +184,9 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
     }
     return actualFetch(input, init);
   });
-  let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
+  let bridge: Awaited<ReturnType<typeof start>> | undefined;
   try {
-    bridge = await startServer(f.options);
+    bridge = await start(f);
     const { origin, token: agentToken } = agentHost()!;
     const identity = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
@@ -189,7 +206,7 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
       baseURL: 'http://localhost:1234/v1',
       models: [{ id: 'local', contextWindow: 64000 }],
     });
-    bridge.receive(packetSchema.parse({ type: 'hello', session: 'live', seq: 1, at: 1 }));
+    bridge.receive(gameEvent({ type: 'hello', session: 'live', seq: 1, at: 1 }));
     const chat = newChat('search-chat', 'live');
     chat.agentSession = 'eve-search';
     chat.status = 'working';
@@ -258,29 +275,25 @@ test('an API chat searches Wowhead through Exa without a ChatGPT account', async
 
 test('the assembled runtime serves validated status, receives packets, persists and stops its process', async () => {
   const f = await fixture();
-  let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
+  let bridge: Awaited<ReturnType<typeof start>> | undefined;
   try {
-    bridge = await startServer(f.options);
+    bridge = await start(f);
     const identity = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
     const response = await fetch(`http://127.0.0.1:${identity.port}/status`, {
       headers: { authorization: 'Bearer ' + identity.token },
     });
-    expect(statusSchema.parse(await response.json()).auth.status).toBe('signed_out');
-    bridge.receive(packetSchema.parse({ type: 'hello', session: 'test', seq: 1, at: 1 }));
-    bridge.receive(
-      packetSchema.parse({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }),
-    );
+    expect(decodeStatus(await response.json()).auth.status).toBe('signed_out');
+    bridge.receive(gameEvent({ type: 'hello', session: 'test', seq: 1, at: 1 }));
+    bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }));
     bridge.state.chats
       .find((chat) => chat.id === 'chat')!
       .messages.push({
         role: 'user',
         text: 'Hello',
       });
-    bridge.receive(
-      packetSchema.parse({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }),
-    );
+    bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'draft', seq: 3, at: 3 }));
     await bridge.stop();
     const { ChatStore } = await import('../src/chat/chat-store.ts');
     const store = new ChatStore(path.join(f.dataDirectory, 'runtime/wisp.sqlite'), () => {});
@@ -303,9 +316,9 @@ test('occupied bridge ports fall back to free ones that the clients can reach', 
   const occupied = createServer();
   await new Promise<void>((resolve) => occupied.listen(0, '127.0.0.1', resolve));
   const port = (occupied.address() as { port: number }).port;
-  let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
+  let bridge: Awaited<ReturnType<typeof start>> | undefined;
   try {
-    bridge = await startServer({ ...f.options, agentPort: port, desktopPort: port });
+    bridge = await start(f, { ...f.options, agentPort: port, desktopPort: port });
     const { origin: WOW_BRIDGE_URL, token: WOW_BRIDGE_TOKEN } = agentHost()!;
     const agentPort = Number(new URL(WOW_BRIDGE_URL!).port);
     const desktop = JSON.parse(
@@ -323,7 +336,9 @@ test('occupied bridge ports fall back to free ones that the clients can reach', 
       headers: { authorization: 'Bearer ' + desktop.token },
     });
     expect(desktopResponse.status).toBe(200);
-    expect(statusSchema.safeParse(await desktopResponse.json()).success).toBe(true);
+    expect(
+      Exit.isSuccess(Schema.decodeUnknownExit(statusSchema)(await desktopResponse.json())),
+    ).toBe(true);
   } finally {
     await bridge?.stop();
     await new Promise<void>((resolve) => occupied.close(() => resolve()));
@@ -334,7 +349,7 @@ test('occupied bridge ports fall back to free ones that the clients can reach', 
 test('a late startup failure closes the agent and already-started runtime resources', async () => {
   const f = await fixture();
   try {
-    await expect(startServer({ ...f.options, desktopPort: -1 })).rejects.toMatchObject({
+    await expect(start(f, { ...f.options, desktopPort: -1 })).rejects.toMatchObject({
       code: 'ERR_SOCKET_BAD_PORT',
     });
     const { origin } = agentHost()!;
@@ -346,9 +361,9 @@ test('a late startup failure closes the agent and already-started runtime resour
 
 test('desktop API saves a provider and model without WoW', async () => {
   const f = await fixture(false);
-  let bridge: Awaited<ReturnType<typeof startServer>> | undefined;
+  let bridge: Awaited<ReturnType<typeof start>> | undefined;
   try {
-    bridge = await startServer(f.options);
+    bridge = await start(f);
     const identity = JSON.parse(
       await readFile(path.join(f.dataDirectory, 'runtime/desktop.json'), 'utf8'),
     );
@@ -370,7 +385,7 @@ test('desktop API saves a provider and model without WoW', async () => {
     const { models } = await request('/auth/models');
     expect(models).toMatchObject([{ slug: `connection:${id}:local-test`, efforts: [] }]);
     await request('/auth/model', { model: models[0].slug });
-    const status = statusSchema.parse(await request('/status'));
+    const status = decodeStatus(await request('/status'));
     expect(status).toMatchObject({ ready: true, gameConnected: false, modelConnected: true });
     expect(status.auth.status).toBe('signed_out');
     expect(

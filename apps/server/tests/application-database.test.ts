@@ -8,8 +8,7 @@ import {
   applicationDatabaseFile,
   copyDatabaseSnapshot,
   findApplicationDatabase,
-} from '../src/db/application-file.ts';
-import { MemoryStore } from '../src/agent/memory-store.ts';
+} from '@wisp/db/application-file';
 import { PanelStore } from '../src/panels/panel-store.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { databaseScope } from './database-fixture.ts';
@@ -93,7 +92,7 @@ test('a failed snapshot preserves its source and does not publish an empty datab
   }
 });
 
-test('all stores reuse the runtime connection and only its owner closes it', async () => {
+test('legacy stores reuse the runtime connection and only its owner closes it', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wisp-shared-connection-'));
   const scope = databaseScope();
   const database = scope.open(applicationDatabaseFile(root));
@@ -105,21 +104,17 @@ test('all stores reuse the runtime connection and only its owner closes it', asy
       database.initializeProducts(),
     ]);
     const connection = database.connection;
-    const memory = new MemoryStore(database),
-      panels = new PanelStore(database),
+    const panels = new PanelStore(database),
       routines = new RoutineStore(database);
     await chats.load();
     await chats.flush([chat()]);
     await panels.load();
     await routines.load();
-    await memory.update('character', 'mage', 'goal', 'Preserve this');
     await chats.close();
-    await memory.update('character', 'mage', 'another', 'Still open');
     expect(database.connection).toBe(connection);
-    expect(await memory.read('character', 'mage')).toHaveLength(2);
+    expect(connection.prepare('SELECT 1 AS open').get()?.open).toBe(1);
     await database.close();
     expect(() => connection.prepare('SELECT 1')).toThrow();
-    await expect(memory.read('character', 'mage')).rejects.toThrow('closed');
   } finally {
     await chats.close();
     await scope.close();

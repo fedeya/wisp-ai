@@ -1,6 +1,7 @@
 # Development
 
-[Home](../README.md) · [Usage](usage.md) · [Integrations](reference.md)
+[Home](../README.md) · [Usage](usage.md) · [Integrations](reference.md) ·
+[Package boundaries](package-boundaries.md)
 
 ## Prerequisites and checks
 
@@ -38,6 +39,36 @@ tools. Core tests, addon tests and build scripts declare their own dependencies 
 `tests`, `addon` and `scripts`. Optional native archive codecs from just-bash are
 excluded explicitly; installs do not need `--ignore-scripts`. The web deploy uses a filtered install and Turbo build;
 `turbo prune @wisp/web` can export an isolated web workspace from the same lockfile.
+
+### TypeScript and the Effect language service
+
+`pnpm typecheck` (also used by CI) runs the Effect build of native TypeScript 7
+for the root and non-web workspaces. The shared [`tsconfig.base.json`](../tsconfig.base.json)
+enables Effect diagnostics: errors fail the check, while warnings and suggestions
+are advisory. The shared config enables `exactOptionalPropertyTypes` to distinguish
+omitted properties from properties explicitly set to `undefined`. Agent, server,
+WoW bridge, and integration tests opt out until their existing optional types are
+migrated; desktop and web have separate configs. The website still generates route
+types with `next typegen` and checks them with its own TypeScript 5.9.
+Package builds also keep their existing TypeScript 5.9 emit; the package-boundary
+test uses that version's JavaScript compiler API.
+
+Run `pnpm exec turbo run typecheck --filter=@wisp/server` for a single workspace
+with its dependency builds, or `pnpm exec effect-tsgo tsc --noEmit --watch -p
+apps/agent/tsconfig.json` to watch a project after those dependencies are built.
+Both use `@effect/tsgo` directly, so installs and CI need no compiler patch.
+
+For VS Code or Cursor, install the [TypeScript native extension](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview)
+and run `pnpm typecheck:editor` from the repository root. This patches only the
+root workspace's native TypeScript SDK. Enable `js/ts.experimental.useTsgo`, set
+`js/ts.tsdk.path` to `./node_modules/typescript/bin`, and use **TypeScript: Select
+TypeScript Version → Use Workspace Version**. Rerun the patch if an install
+replaces the SDK. To restore it, run `pnpm exec effect-tsgo unpatch --typescript`.
+Use the JavaScript TypeScript server for the website if you need Next's editor plugin.
+
+In editors that accept an LSP command (for example Neovim or Zed), use
+`pnpm exec effect-tsgo tsc --lsp --stdio` from the repository root in place of
+the existing TypeScript server. This path needs no patch.
 
 ### Contributor skills
 
@@ -153,7 +184,7 @@ and partial-startup cleanup in temporary data directories.
 In addition to the workspace prerequisites, install Rust, Windows C++ build tools, Git, Go and protoc. Build the pinned simulator before starting the native app:
 
 ```powershell
-pwsh -File scripts/build-simulator.ps1
+pwsh -File scripts/simulator/build.ps1
 pnpm desktop:dev
 ```
 
@@ -305,7 +336,7 @@ Replace the example with the folder containing `Wow.exe`. Installation updates `
 | Desktop UI and native host    | [React](../apps/desktop/src), [Tauri, vault and installer](../apps/desktop/src-tauri)         |
 | Local Wisp server             | [entrypoint](../apps/server/src/main.ts), [runtime](../apps/server/src/runtime.ts)            |
 | Desktop HTTP API              | [API](../apps/server/src/api)                                                                 |
-| WoW bridge                    | [addon transport](../apps/server/src/wow-bridge)                                              |
+| WoW bridge                    | [addon transport](../packages/wow-bridge/src)                                                 |
 | Agent engine                  | [engine.ts](../apps/agent/src/engine.ts)                                                      |
 | Agent tools and behavior      | [definitions](../apps/agent/src/wisp), [instructions](../apps/agent/src/wisp/instructions.md) |
 | Shared contracts              | [protocol](../packages/protocol/src)                                                          |
@@ -461,8 +492,6 @@ Release builds depend on the reusable CI workflow, so formatting, lint, types, a
 Vitest projects and native tests must pass before packaging and signing.
 
 `pnpm format:check` checks Oxfmt, StyLua and CSS/HTML Prettier output. `pnpm format` writes across the workspace. For Rust, use `cargo fmt --check --manifest-path apps/desktop/src-tauri/Cargo.toml`. The [CI workflow](../.github/workflows/check.yml) contains native test prerequisites and tests the exact installer artifact after successful release builds. Packaging alone is not the full check suite.
-
-[smoke-agent.mjs](../scripts/smoke-agent.mjs) is an **opt-in live diagnostic**, not an offline test: it uses the signed-in subscription and external services, consumes usage, and may put private data in reports outside the repository. It requires Windows configuration and native credentials. Its isolated sessions block game writes but do not validate browser consent; snapshot replay does not replace fresh readings in normal use. Consult the script before running it.
 
 ## Adding integrations
 

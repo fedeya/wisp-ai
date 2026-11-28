@@ -12,8 +12,10 @@ test('workspace sources declare their direct package imports', () => {
     'apps/server',
     'apps/desktop',
     'apps/web',
+    'packages/db',
     'packages/protocol',
     'packages/releases',
+    'packages/wow-bridge',
     'scripts',
     'tests',
   ]) {
@@ -38,8 +40,10 @@ test('workspace sources declare their direct package imports', () => {
               continue;
             }
             const specifier = node.moduleSpecifier.text;
+            // `#` specifiers are the package's own subpath imports, not dependencies.
             if (
               specifier.startsWith('.') ||
+              specifier.startsWith('#') ||
               specifier.startsWith('node:') ||
               builtins.has(specifier)
             ) {

@@ -4,7 +4,8 @@ import { COMPACTION_THRESHOLD } from '../contract/context-usage.ts';
 import type { EngineConfig } from '../host/engine-config.ts';
 import type { SessionModels } from '../models/session-models.ts';
 import type { ReplayTarget } from '../session/replay.ts';
-import type { HistoryError, SessionHistory } from '../session/session-history.ts';
+import type { HistoryError } from '../session/session-history.ts';
+import type * as SessionHistory from '../session/session-history.ts';
 import type { Message } from '../session/session-message.ts';
 import { StepDraft, stepMessage } from '../session/session-step.ts';
 import type { TurnToolbox } from '../tools/turn-toolbox.ts';
@@ -18,7 +19,7 @@ import { logTokens, recordUsage, stepUsage } from './usage.ts';
 
 interface TurnDependencies {
   stub: EngineConfig['Service']['stub'];
-  history: SessionHistory['Service'];
+  history: SessionHistory.Service['Service'];
   wisp: WispAgent['Service'];
   models: SessionModels['Service'];
   toolbox: TurnToolbox['Service'];

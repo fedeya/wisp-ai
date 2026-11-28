@@ -36,3 +36,11 @@ minimumReleaseAgeExclude:
   - '@posthog/types@1.423.0'
   - posthog-js@1.447.10
   - posthog-node@5.68.2
+  - '@effect/tsgo-darwin-arm64@0.73.7'
+  - '@effect/tsgo-darwin-x64@0.73.7'
+  - '@effect/tsgo-linux-arm64@0.73.7'
+  - '@effect/tsgo-linux-arm@0.73.7'
+  - '@effect/tsgo-linux-x64@0.73.7'
+  - '@effect/tsgo-win32-arm64@0.73.7'
+  - '@effect/tsgo-win32-x64@0.73.7'
+  - '@effect/tsgo@0.73.7'
