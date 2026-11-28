@@ -5,6 +5,7 @@ import type { PlatformError } from 'effect/PlatformError';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import type { RotationAction, SimulationInput } from '@wisp/agent/contract/simulation';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { AppConfig } from '#/platform/config';
 import { adapters } from './adapters/index.ts';
 import { ClassMetadata } from './adapters/types.ts';
@@ -146,12 +147,15 @@ const platformFailure = (error: PlatformError) =>
 /** A data file or CLI output that does not have the expected shape. */
 const invalidData = (what: string) => (error: Schema.SchemaError) =>
   failure(what + ' is invalid: ' + error.message);
-/** Runs a throwing plain helper (contract parsing, equipment rules). */
+/** Runs a throwing plain helper (the equipment rules). */
 const attempt = <A>(evaluate: () => A) =>
   Effect.try({
     try: evaluate,
     catch: (cause) => failure(cause instanceof Error ? cause.message : 'Simulation failed'),
   });
+/** Decodes a simulation request, strict as the agent's tool. */
+const decodeRequest = (input: SimulationInput) =>
+  Schema.decodeEffect(simulationInput)(input, rejectUnknownKeys);
 
 /** The time one CLI run may take, and the budget of a whole structured request. */
 const timeLimit = '45 seconds';
@@ -260,10 +264,12 @@ const make = Effect.gen(function* () {
   const prepare = Effect.fn('Simulator.prepare')(function* (
     snapshot: unknown,
     input: SimulationInput,
-    replacements: Replacement[] = [],
+    replacements: readonly Replacement[] = [],
     equipmentBase: EquipmentBase = 'current',
   ) {
-    const parsedOptions = yield* attempt(() => simulationInput.parse(input));
+    const parsedOptions = yield* decodeRequest(input).pipe(
+      Effect.mapError((error) => failure(error.message)),
+    );
     if ((snapshot === null || snapshot === undefined) && simulationNeedsLiveState(parsedOptions)) {
       return yield* failure(
         'A fresh snapshot is required for the requested live character or equipment.',
@@ -540,7 +546,7 @@ const make = Effect.gen(function* () {
   const simulateScenario = Effect.fnUntraced(function* (
     snapshot: unknown,
     input: SimulationInput,
-    replacements: Replacement[],
+    replacements: readonly Replacement[],
     equipmentBase: EquipmentBase,
   ) {
     const prepared = yield* prepare(snapshot, input, replacements, equipmentBase);
@@ -638,7 +644,7 @@ const make = Effect.gen(function* () {
   const runSingle = (
     snapshot: unknown,
     input: SimulationInput,
-    replacements: Replacement[],
+    replacements: readonly Replacement[],
     equipmentBase: EquipmentBase,
   ) =>
     simulateScenario(snapshot, input, replacements, equipmentBase).pipe(
@@ -662,15 +668,16 @@ const make = Effect.gen(function* () {
    * Interrupting it stops the CLI and removes its temporary files.
    */
   const run = Effect.fn('Simulator.run')(function* (snapshot: unknown, input: SimulationInput) {
-    const options = simulationInput.safeParse(input);
-    if (!options.success) {
+    const decoded = yield* Effect.option(decodeRequest(input));
+    if (Option.isNone(decoded)) {
       return {
         status: 'unavailable' as const,
         version: 'forever',
         error: 'Invalid simulation plans or scenario. No DPS was calculated.',
       };
     }
-    const nativeRequest = options.data.nativeRequest;
+    const options = decoded.value;
+    const nativeRequest = options.nativeRequest;
     if (nativeRequest) {
       return yield* executeRequest(nativeRequest).pipe(
         Effect.map(({ result, manifest }) => ({
@@ -684,9 +691,9 @@ const make = Effect.gen(function* () {
         ),
       );
     }
-    if (options.data.catalogOnly) {
+    if (options.catalogOnly) {
       const token =
-        options.data.character?.class ??
+        options.character?.class ??
         Option.getOrUndefined(
           Option.map(decodeReading(snapshot), (r) => r.sections.character.data.class),
         );
@@ -709,7 +716,7 @@ const make = Effect.gen(function* () {
     const deadline = (yield* Clock.currentTimeMillis) + scenarioDeadlineMillis;
     const noReplacements: Replacement[] = [];
     const sets = [
-      ...(options.data.includeCurrentEquipment
+      ...(options.includeCurrentEquipment
         ? [
             {
               label: 'Current equipment',
@@ -718,10 +725,10 @@ const make = Effect.gen(function* () {
             },
           ]
         : []),
-      ...options.data.equipmentSets,
+      ...options.equipmentSets,
     ];
-    const totalScenarios = sets.length * options.data.plans.length;
-    let next = options.data.startIndex;
+    const totalScenarios = sets.length * options.plans.length;
+    let next = options.startIndex;
     const indices: number[] = [];
     const failures: { index: number; error: string }[] = [];
     // The budget interrupts the scenario in progress; the completed ones are kept.
@@ -730,11 +737,11 @@ const make = Effect.gen(function* () {
         if ((yield* Clock.currentTimeMillis) >= deadline) {
           break;
         }
-        const set = sets[Math.floor(next / options.data.plans.length)];
-        const plan = options.data.plans[next % options.data.plans.length];
+        const set = sets[Math.floor(next / options.plans.length)];
+        const plan = options.plans[next % options.plans.length];
         const result = yield* runSingle(
           snapshot,
-          { ...options.data, plans: [plan] },
+          { ...options, plans: [plan] },
           set.replacements,
           set.base,
         );
@@ -772,24 +779,24 @@ const make = Effect.gen(function* () {
       failures,
       results: results.map((r, i) => {
         const index = indices[i];
-        const planIndex = index % options.data.plans.length;
-        const setIndex = Math.floor(index / options.data.plans.length);
+        const planIndex = index % options.plans.length;
+        const setIndex = Math.floor(index / options.plans.length);
         const baseline = results[indices.indexOf(planIndex)];
         const first = results[indices.indexOf(0)];
         return {
           ...r,
-          label: options.data.plans[planIndex].label,
+          label: options.plans[planIndex].label,
           equipmentLabel: sets[setIndex].label,
           planIndex,
           equipmentSetIndex: setIndex,
           relativeToFirstPercent:
             first && first.dps.average > 0 ? (r.dps.average / first.dps.average - 1) * 100 : null,
           equipmentDeltaDps:
-            options.data.includeCurrentEquipment && baseline
+            options.includeCurrentEquipment && baseline
               ? r.dps.average - baseline.dps.average
               : null,
           equipmentDeltaPercent:
-            options.data.includeCurrentEquipment && baseline && baseline.dps.average > 0
+            options.includeCurrentEquipment && baseline && baseline.dps.average > 0
               ? (r.dps.average / baseline.dps.average - 1) * 100
               : null,
         };

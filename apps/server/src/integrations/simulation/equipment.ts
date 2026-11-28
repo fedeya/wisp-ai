@@ -25,7 +25,7 @@ export interface EquippedItem {
 export const equipmentSlots = [1, 2, 3, 15, 5, 9, 10, 6, 7, 8, 11, 12, 13, 14, 16, 17, 18];
 export function replaceEquipment(
   equipped: readonly EquippedItem[],
-  replacements: { slot: number; itemId: number }[],
+  replacements: readonly { slot: number; itemId: number }[],
   catalog: Map<number, CatalogItem>,
   _token: string,
   _level: number,

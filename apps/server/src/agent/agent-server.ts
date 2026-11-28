@@ -9,7 +9,7 @@ import { Effect, Schema } from 'effect';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { routineEvents } from '@wisp/protocol/routines';
 import { panelInput } from '@wisp/agent/contract/panels';
-import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
+import { simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import { databaseRequest } from '@wisp/agent/contract/database';
 import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
@@ -226,8 +226,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       if (chat.proactive || !capabilitySettings.enabled('tool:simulate_dps')) {
         throw Error('DPS simulation is disabled or not allowed for automatic suggestions.');
       }
-      const { agentSession: _session, ...args } = data;
-      const input = simulationInput.parse(args);
+      // The request decodes the simulation's own schema, defaults included.
+      const { agentSession: _session, ...input } = data;
       const abort = signal();
       const needsLiveState = simulationNeedsLiveState(input);
       const snapshot = needsLiveState ? await readSimulationCharacter(chat.id) : undefined;

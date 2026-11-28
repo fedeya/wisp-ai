@@ -41,7 +41,7 @@ export const refine = <T>(holds: (input: T) => boolean, message: string) =>
  * reads it, and it leaves it out of the JSON Schema.
  */
 export const zodJsonSchemaKey = 'wisp/zodJsonSchema';
-type ZodJsonSchema = 'const' | 'oneOf';
+type ZodJsonSchema = 'const' | 'oneOf' | 'record';
 const zodJsonSchema = (form: ZodJsonSchema) => ({ [zodJsonSchemaKey]: form });
 
 /** zod's `z.literal(value)`, shown to the model as `const` where Effect writes a one-value `enum`. */
@@ -57,6 +57,14 @@ export const Const = <const L extends string>(value: L) =>
 export const DiscriminatedUnion = <const Members extends readonly Schema.Constraint[]>(
   members: Members,
 ) => Schema.Union(members, { mode: 'oneOf' }).annotate(zodJsonSchema('oneOf'));
+
+/**
+ * zod's `z.record(z.string(), value)`: an object of `value`s under any keys.
+ * The model sees zod's `propertyNames` and `additionalProperties`, which
+ * Effect leaves out for a string key, and for an unknown value.
+ */
+export const StringRecord = <V extends Schema.Top>(value: V) =>
+  Schema.Record(Schema.String, value).annotate(zodJsonSchema('record'));
 
 /** zod's `z.object({})`: any object, read as no arguments. */
 export const NoArgs = Schema.Record(Schema.String, Schema.Unknown).pipe(
