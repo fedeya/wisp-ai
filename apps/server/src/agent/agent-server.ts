@@ -25,11 +25,12 @@ import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
-import type { UsageTelemetry } from '../telemetry.ts';
+import type { WebSearchTelemetry } from '#/telemetry';
 import { chooseChatModel } from '../chat/chat-model.ts';
 import { characterIdentity, conversationTitle } from '../chat/context.ts';
 interface AgentDependencies {
-  telemetry?: Pick<UsageTelemetry, 'webSearch'>;
+  /** `runtime.ts` adapts `UsageTelemetry` to it; remove it when this server migrates. */
+  telemetry?: { webSearch(search: WebSearchTelemetry): void };
   token: string;
   auth: PromiseChatGPTAuth;
   connections: ModelConnections;

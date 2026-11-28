@@ -130,6 +130,7 @@ export default defineConfig({
         'apps/server/src/memory/**',
         'apps/server/src/platform/**',
         'apps/server/src/settings/**',
+        'apps/server/src/telemetry/**',
         'packages/game-data/src/**',
         'packages/releases/src/**',
         'packages/wow-bridge/src/**',

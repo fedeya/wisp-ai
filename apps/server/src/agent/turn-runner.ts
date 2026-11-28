@@ -13,7 +13,25 @@ import { Effect } from 'effect';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
-import type { ChatErrorCode, ChatOutcome, UsageTelemetry } from '../telemetry.ts';
+import type { ChatErrorCode, ChatMode, ChatOutcome, TurnUsage } from '#/telemetry';
+
+/**
+ * What the turn runner records. `runtime.ts` adapts `UsageTelemetry` to it;
+ * remove it when the runner migrates and takes the service.
+ */
+export interface TurnTelemetry {
+  chat(
+    mode: ChatMode,
+    outcome: ChatOutcome,
+    duration: number,
+    errorCode?: ChatErrorCode,
+    firstTextMs?: number,
+    usage?: TurnUsage,
+    details?: { provider?: string | undefined; failureKind?: string | undefined },
+  ): void;
+  toolObserver(): (event: unknown) => void;
+  usageObserver(): { observe(event: unknown): void; usage(): TurnUsage };
+}
 
 function isTimeout(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
@@ -74,7 +92,7 @@ function isUsageLimit(error: unknown): boolean {
 }
 
 interface TurnDependencies {
-  telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>;
+  telemetry?: TurnTelemetry;
   engine: AgentEngine;
   models: ModelCatalog;
   capabilitySettings: Pick<CapabilitySettings, 'publish' | 'enabled' | 'snapshot'>;
