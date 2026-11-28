@@ -8,6 +8,10 @@
     "scripts"
   ],
   "type": "module",
+  "imports": {
+    "#/platform/*": "./src/platform/*.ts",
+    "#/*": "./src/*/index.ts"
+  },
   "exports": {
     "./package.json": "./package.json",
     "./routines": "./src/routines/routine-store.ts",
