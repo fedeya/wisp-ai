@@ -5,7 +5,6 @@ import { createHash } from 'node:crypto';
 import { stageEngine, stageTauri } from './stage-tauri.ts';
 import { buildEngine } from './engine/build.ts';
 import { createRequire } from 'node:module';
-import { writeUpdateManifest } from './update-manifest.ts';
 import {
   nativeBuildContext,
   nativeBuildKey,
@@ -138,7 +137,14 @@ const destination = 'dist/WispAI-' + version + '-windows-x64-setup.exe';
 await copyFile(path.join(folder, installer), destination);
 if (signed) {
   await copyFile(path.join(folder, installer + '.sig'), destination + '.sig');
-  await writeUpdateManifest(version, destination);
+  execFileSync(
+    process.execPath,
+    [path.resolve('scripts/update-manifest.ts'), version, destination],
+    {
+      stdio: 'inherit',
+      windowsHide: true,
+    },
+  );
 }
 const hash = createHash('sha256')
   .update(await readFile(destination))
