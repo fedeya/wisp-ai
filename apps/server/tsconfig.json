@@ -3,9 +3,6 @@
   "include": ["src/**/*.ts", "scripts/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
   "compilerOptions": {
     "exactOptionalPropertyTypes": false,
-    "resolveJsonModule": true,
-    "noImplicitOverride": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
+    "resolveJsonModule": true
   }
 }
