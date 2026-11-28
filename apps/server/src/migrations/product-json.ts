@@ -3,7 +3,6 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { Effect, Schema } from 'effect';
-import { z } from 'zod';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { savedRoutine, routineRun } from '@wisp/protocol/routines';
 import { panelContent } from '@wisp/agent/contract/panels';
@@ -23,10 +22,12 @@ import { encodePanel } from '../panels/panel-record.ts';
 import { encodeRoutine, encodeRun } from '../routines/routine-record.ts';
 import { errorMessage } from '../errors.ts';
 
-const savedPanel = panelContent.safeExtend({
-  characterKey: z.string().min(1),
-  updatedAt: z.number(),
-});
+// zod's `safeExtend` kept the panel's checks, which hold with these fields added.
+const savedPanel = panelContent.mapFields(
+  (fields) => ({ ...fields, characterKey: Schema.NonEmptyString, updatedAt: Schema.Finite }),
+  { unsafePreserveChecks: true },
+);
+const decodeSavedPanels = Schema.decodeUnknownSync(Schema.Array(savedPanel));
 export const productImportMarker = 'product-json-import-v1';
 const LegacyMemory = Schema.StructWithRest(
   Schema.Struct({
@@ -73,7 +74,7 @@ async function readProductFiles(file: string) {
   };
   const rawPanels = await read(path.join(root, 'panels.json'));
   const panelData = rawPanels === undefined ? [] : rawPanels;
-  const validatedPanels = z.array(savedPanel).parse(panelData);
+  const validatedPanels = decodeSavedPanels(panelData);
   const importedPanels = validatedPanels.map((panel, i) => ({
     ...panelData[i],
     bindings: panel.bindings,

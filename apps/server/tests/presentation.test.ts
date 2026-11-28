@@ -1,4 +1,5 @@
 import { test, expect } from 'vitest';
+import { Exit, Schema } from 'effect';
 import {
   replyPresentation,
   PRESENT_UI_TOOL,
@@ -11,6 +12,10 @@ import { rebuildHistory } from '../src/chat/history.ts';
 import { replyContent } from '../src/reply/reply-content.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
+
+// Whether the presentation tool accepts `input`.
+const presents = (input: unknown) =>
+  Exit.isSuccess(Schema.decodeUnknownExit(replyPresentation)(input));
 
 const panel = {
   nodes: [
@@ -607,13 +612,13 @@ test('presentation validation rejects broken trees, invalid comparison identitie
     [{ id: 'x', kind: 'slider', label: 'Bad', min: 5, max: 1, step: 1, value: 2 }],
     [{ id: 'x', kind: 'reference', reference: 'missing' }],
   ]) {
-    expect(replyPresentation.safeParse({ nodes }).success).toBe(false);
+    expect(presents({ nodes })).toBe(false);
   }
   expect(
-    replyPresentation.safeParse({
+    presents({
       nodes: Array.from({ length: 49 }, (_, i) => ({ id: 'x' + i, kind: 'card' })),
-    }).success,
+    }),
   ).toBe(false);
-  expect(replyPresentation.safeParse({ nodes: [], references: {} }).success).toBe(false);
-  expect(replyPresentation.parse(panel)).toEqual(panel);
+  expect(presents({ nodes: [], references: {} })).toBe(false);
+  expect(Schema.decodeUnknownSync(replyPresentation)(panel)).toEqual(panel);
 });

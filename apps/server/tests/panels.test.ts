@@ -5,7 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { databaseScope } from './database-fixture.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
+import { Schema } from 'effect';
 import { panelContent } from '@wisp/agent/contract/panels';
+
+const decodePanel = Schema.decodeUnknownSync(panelContent);
 const example = {
   id: 'materials',
   title: 'Materials',
@@ -23,14 +26,14 @@ test('persistent panels isolate characters, survive restart and update by ID wit
     const file = path.join(root, 'wisp.sqlite'),
       store = new PanelStore(scope.open(file));
     await store.load();
-    await store.mutate('mage', { operation: 'save', panel: panelContent.parse(example) });
+    await store.mutate('mage', { operation: 'save', panel: decodePanel(example) });
     await store.mutate('warrior', {
       operation: 'save',
-      panel: panelContent.parse({ ...example, title: 'Other character' }),
+      panel: decodePanel({ ...example, title: 'Other character' }),
     });
     await store.mutate('mage', {
       operation: 'save',
-      panel: panelContent.parse({ ...example, title: 'Updated materials' }),
+      panel: decodePanel({ ...example, title: 'Updated materials' }),
     });
     const next = new PanelStore(scope.open(file));
     await next.load();
@@ -49,16 +52,16 @@ test('persistent panels isolate characters, survive restart and update by ID wit
 });
 test('panel schema validates parents, bindings, IDs and excludes stale settings actions', () => {
   assert.throws(() =>
-    panelContent.parse({
+    decodePanel({
       ...example,
       bindings: [{ nodeId: 'missing', source: 'item_count', itemId: 1 }],
     }),
   );
   assert.throws(() =>
-    panelContent.parse({ ...example, bindings: [{ nodeId: 'count', source: 'item_count' }] }),
+    decodePanel({ ...example, bindings: [{ nodeId: 'count', source: 'item_count' }] }),
   );
   assert.throws(() =>
-    panelContent.parse({
+    decodePanel({
       ...example,
       ui: [
         {
@@ -71,7 +74,7 @@ test('panel schema validates parents, bindings, IDs and excludes stale settings 
     }),
   );
   assert.throws(() =>
-    panelContent.parse({
+    decodePanel({
       ...example,
       ui: [{ id: 'count', kind: 'stat', parent: 'missing', label: 'x', value: 'x' }],
     }),

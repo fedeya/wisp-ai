@@ -50,7 +50,7 @@ test('UI stream upserts stable components and rejects cycles, invalid inputs and
     { ...selectionValues(r.ui, { choice: 'b', unknown: 'ignored' }) },
     { choice: 'b' },
   );
-  assert.throws(() => selectionValues(r.ui, { choice: 'unregistered' }));
+  assert.equal(selectionValues(r.ui, { choice: 'unregistered' }), undefined);
   r.feed(
     '{"type":"ui_node","node":{"id":"continue","kind":"button","label":"Continue","action":{"kind":"ask","prompt":"Continue"}}} trailing garbage\n',
   );

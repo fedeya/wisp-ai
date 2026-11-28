@@ -11,12 +11,15 @@ import {
 } from '../../src/contract/game-inspection.ts';
 import {
   Const,
+  Described,
   DiscriminatedUnion,
+  KeyedRecord,
   LimitedString,
   NoArgs,
   NoArgsStrict,
   NumberBetween,
   StringRecord,
+  withDefault,
   zodJsonSchemaKey,
 } from '../../src/contract/tool-inputs.ts';
 import { effectToolInput } from '../../src/tools/tool.ts';
@@ -183,6 +186,69 @@ describe('a string record', () => {
     const json = JSON.stringify(modelSchema(Schema.Unknown, 'effect'));
     expect(json).toContain('"request":{"type":"object"}');
     expect(json).not.toContain(zodJsonSchemaKey);
+  });
+});
+
+describe('a keyed record', () => {
+  const key = Schema.String.check(
+    Schema.isPattern(/^[a-z]+$/u),
+    Schema.makeFilter((name: string) => name !== 'proto'),
+  );
+  const record = KeyedRecord(key, Schema.Finite);
+  const modelSchema = (layout: 'effect' | 'zod') =>
+    effectToolInput(Schema.Struct({ references: withDefault(record, () => ({})) }), { layout })[
+      '~standard'
+    ].jsonSchema.input({ target: 'draft-2020-12' });
+
+  it('rejects a key its key schema rejects, as zod’s z.record(key, …) did', () => {
+    const decode = Schema.decodeUnknownExit(record);
+    expect(decoded(decode({ a: 1, bc: 2 }))).toEqual({ a: 1, bc: 2 });
+    for (const input of [{ A: 1 }, { proto: 1 }, { a: '1' }, [], null]) {
+      expect(Exit.isFailure(decode(input)), JSON.stringify(input)).toBe(true);
+    }
+  });
+
+  it('drops an own __proto__ key without reading it, as zod did', () => {
+    const decode = Schema.decodeUnknownExit(record);
+    const value = decoded(decode(JSON.parse('{"__proto__":"not a number","a":1}')));
+    expect(value).toEqual({ a: 1 });
+    expect(Object.keys(value ?? {})).toEqual(['a']);
+  });
+
+  it('shows the model the key’s JSON Schema as propertyNames, as zod wrote it', () => {
+    expect(JSON.stringify(modelSchema('zod'))).toContain(
+      '"references":{"default":{},"type":"object","propertyNames":{"type":"string","pattern":"^[a-z]+$"},"additionalProperties":{"type":"number"}}',
+    );
+    expect(JSON.stringify(modelSchema('effect'))).not.toContain(zodJsonSchemaKey);
+  });
+});
+
+describe('a description zod wrote last', () => {
+  it('follows the schema’s own keywords, where a wrapper’s description leads them', () => {
+    const json = effectToolInput(
+      Schema.Struct({
+        title: Described(Schema.String, 'A title.').check(Schema.isMaxLength(60)),
+        open: withDefault(Schema.Boolean.annotate({ description: 'Open it.' }), () => true),
+      }),
+      { layout: 'zod' },
+    )['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+    expect(JSON.stringify(json)).toContain(
+      '"title":{"type":"string","maxLength":60,"description":"A title."},"open":{"default":true,"description":"Open it.","type":"boolean"}',
+    );
+  });
+});
+
+describe('a bounded string', () => {
+  it('shows the model zod’s minLength, in UTF-16 units', () => {
+    const json = effectToolInput(Schema.Struct({ guid: LimitedString(3, 150) }), {
+      layout: 'zod',
+    })['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+    expect(JSON.stringify(json)).toContain(
+      '"guid":{"type":"string","minLength":3,"maxLength":150}',
+    );
+    const decode = Schema.decodeUnknownExit(LimitedString(3, 150));
+    expect(Exit.isSuccess(decode('abc'))).toBe(true);
+    expect(Exit.isFailure(decode('ab'))).toBe(true);
   });
 });
 

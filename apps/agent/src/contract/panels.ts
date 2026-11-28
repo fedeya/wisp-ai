@@ -1,70 +1,86 @@
-import { z } from 'zod';
-import { uiNode, validateNode } from './ui-schema.ts';
+// @effect-migrated
+import { Schema } from 'effect';
+import { nodeError, UIKey, uiNode } from './ui-schema.ts';
 import { referenceSchema } from './rich-reference.ts';
-const key = z
-  .string()
-  .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
-  .refine((s) => !['__proto__', 'constructor', 'prototype'].includes(s));
-export const panelBinding = z
-  .object({
-    nodeId: key,
-    source: z.enum(['item_count', 'money', 'level', 'quest_completed']),
-    itemId: z.number().int().positive().optional(),
-    questId: z.number().int().positive().optional(),
-    target: z.number().positive().finite().optional(),
-  })
-  .superRefine((b, c) => {
-    if (b.source === 'item_count' && !b.itemId) {
-      c.addIssue({ code: 'custom', message: 'itemId is required' });
+import {
+  Const,
+  DiscriminatedUnion,
+  KeyedRecord,
+  LimitedString,
+  PositiveInt,
+  withDefault,
+} from './tool-inputs.ts';
+
+// Objects here drop unknown keys, as zod's `z.object` did.
+
+const bindingFields = Schema.Struct({
+  nodeId: UIKey,
+  source: Schema.Literals(['item_count', 'money', 'level', 'quest_completed']),
+  itemId: Schema.optionalKey(PositiveInt),
+  questId: Schema.optionalKey(PositiveInt),
+  target: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
+});
+export const panelBinding = bindingFields.check(
+  Schema.makeFilter((binding) =>
+    binding.source === 'item_count' && !binding.itemId
+      ? 'itemId is required'
+      : binding.source === 'quest_completed' && !binding.questId
+        ? 'questId is required'
+        : true,
+  ),
+);
+
+const boundKinds: readonly string[] = ['stat', 'progress'];
+const panelFields = {
+  id: UIKey,
+  title: LimitedString(1, 100),
+  ui: Schema.Array(uiNode).check(Schema.isMinLength(1), Schema.isMaxLength(48)),
+  references: withDefault(KeyedRecord(UIKey, referenceSchema), () => ({})),
+  bindings: withDefault(Schema.Array(panelBinding).check(Schema.isMaxLength(24)), () => []),
+};
+type PanelFields = Schema.Struct.Type<typeof panelFields>;
+
+/** Why a panel is invalid, or `undefined` when it is valid. */
+function panelError(panel: PanelFields): string | undefined {
+  if (new Set(panel.ui.map((n) => n.id)).size !== panel.ui.length) {
+    return 'Duplicate component ID';
+  }
+  for (const n of panel.ui) {
+    const error = nodeError(n, panel.ui);
+    if (error) {
+      return error;
     }
-    if (b.source === 'quest_completed' && !b.questId) {
-      c.addIssue({ code: 'custom', message: 'questId is required' });
+    if (n.parent && !panel.ui.some((parent) => parent.id === n.parent)) {
+      return 'Missing parent';
     }
-  });
-export const panelContent = z
-  .object({
-    id: key,
-    title: z.string().min(1).max(100),
-    ui: z.array(uiNode).min(1).max(48),
-    references: z.record(key, referenceSchema).default({}),
-    bindings: z.array(panelBinding).max(24).default([]),
-  })
-  .superRefine((p, c) => {
-    try {
-      if (new Set(p.ui.map((n) => n.id)).size !== p.ui.length) {
-        throw Error('Duplicate component ID');
-      }
-      for (const n of p.ui) {
-        validateNode(n, p.ui);
-        if (n.parent && !p.ui.some((parent) => parent.id === n.parent)) {
-          throw Error('Missing parent');
-        }
-        if (n.kind === 'button' && n.action.kind !== 'ask') {
-          throw Error('Persistent panel buttons must send follow-up questions');
-        }
-      }
-      if (Object.keys(p.references).length > 64 || JSON.stringify(p).length > 28000) {
-        throw Error('Panel is too large');
-      }
-      if (new Set(p.bindings.map((b) => b.nodeId)).size !== p.bindings.length) {
-        throw Error('Duplicate data binding');
-      }
-      for (const b of p.bindings) {
-        if (!p.ui.some((n) => n.id === b.nodeId && ['stat', 'progress'].includes(n.kind))) {
-          throw Error('Bind data only to stat/progress nodes');
-        }
-      }
-    } catch (e) {
-      c.addIssue({ code: 'custom', message: (e as Error).message });
+    if (n.kind === 'button' && n.action.kind !== 'ask') {
+      return 'Persistent panel buttons must send follow-up questions';
     }
-  });
-export const panelInput = z.discriminatedUnion('operation', [
-  z.object({ operation: z.literal('list') }),
-  z.object({ operation: z.literal('get'), id: key }),
-  z.object({ operation: z.literal('save'), panel: panelContent }),
-  z.object({ operation: z.literal('remove'), id: key }),
+  }
+  if (Object.keys(panel.references).length > 64 || JSON.stringify(panel).length > 28000) {
+    return 'Panel is too large';
+  }
+  if (new Set(panel.bindings.map((b) => b.nodeId)).size !== panel.bindings.length) {
+    return 'Duplicate data binding';
+  }
+  for (const b of panel.bindings) {
+    if (!panel.ui.some((n) => n.id === b.nodeId && boundKinds.includes(n.kind))) {
+      return 'Bind data only to stat/progress nodes';
+    }
+  }
+  return undefined;
+}
+export const panelContent = Schema.Struct(panelFields).check(
+  Schema.makeFilter((panel) => panelError(panel) ?? true),
+);
+export const panelInput = DiscriminatedUnion([
+  Schema.Struct({ operation: Const('list') }),
+  Schema.Struct({ operation: Const('get'), id: UIKey }),
+  Schema.Struct({ operation: Const('save'), panel: panelContent }),
+  Schema.Struct({ operation: Const('remove'), id: UIKey }),
 ]);
-export type Panel = z.infer<typeof panelContent> & {
+export type PanelInput = typeof panelInput.Type;
+export type Panel = typeof panelContent.Type & {
   characterKey: string;
   updatedAt: number;
   /** The pre-GUID key this panel moved from, so the addon can keep its saved layout. */

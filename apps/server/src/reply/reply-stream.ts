@@ -4,10 +4,12 @@ import {
   type ReplyPresentation,
 } from '@wisp/agent/contract/reply-presentation';
 import type { ReferenceCatalog } from '@wisp/agent/contract/rich-reference';
+import { Schema } from 'effect';
 import type { Chat, Message, ReplyPart } from '../chat/chat.ts';
 import { setReplyPreview, type PresentationProgress } from './reply-content.ts';
 
 const MAX_PRESENTATION_PREFIX = 32_768;
+const decodePresentation = Schema.decodeUnknownSync(replyPresentation);
 
 export class ReplyStream {
   text = '';
@@ -252,7 +254,7 @@ export class ReplyProjection {
     const presentation = this.presentations.get(callId)!;
     const existing = presentation.accepted ?? presentation.value;
     if (existing) {
-      if (JSON.stringify(existing) !== JSON.stringify(replyPresentation.parse(input))) {
+      if (JSON.stringify(existing) !== JSON.stringify(decodePresentation(input))) {
         throw Error('This presentation call already has a different payload. Use a new call.');
       }
       return existing;
@@ -268,7 +270,7 @@ export class ReplyProjection {
   }
 
   private validatePresentation(presentation: Presentation, input: unknown): ReplyPresentation {
-    const value = replyPresentation.parse(input);
+    const value = decodePresentation(input);
     const staged = [...this.presentations.values()]
       .filter((entry) => entry !== presentation && entry.pending && entry.accepted)
       .map((entry) => ({ group: entry.group, value: entry.accepted! }));

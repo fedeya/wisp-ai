@@ -17,9 +17,16 @@ export const IntBetween = (minimum: number, maximum: number) =>
 export const NumberBetween = (minimum: number, maximum: number) =>
   Schema.Finite.check(Schema.isBetween({ minimum, maximum }));
 
-/** zod's `z.string().min(minLength).max(maxLength)`, without trimming. */
+/**
+ * zod's `z.string().min(minLength).max(maxLength)`, without trimming. The model
+ * sees zod's `minLength`, in UTF-16 units as both count, where Effect writes
+ * the fewest code points that many units can hold.
+ */
 export const LimitedString = (minLength: number, maxLength: number) =>
-  Schema.String.check(Schema.isMinLength(minLength), Schema.isMaxLength(maxLength));
+  Schema.String.check(
+    Schema.isMinLength(minLength, { toJsonSchema: () => ({ minLength }) }),
+    Schema.isMaxLength(maxLength),
+  );
 
 /**
  * zod's `.default(value())`: `schema` with `value()` when its key is missing,
@@ -41,7 +48,7 @@ export const refine = <T>(holds: (input: T) => boolean, message: string) =>
  * reads it, and it leaves it out of the JSON Schema.
  */
 export const zodJsonSchemaKey = 'wisp/zodJsonSchema';
-type ZodJsonSchema = 'const' | 'oneOf' | 'record';
+type ZodJsonSchema = 'const' | 'oneOf' | 'record' | 'descriptionLast';
 const zodJsonSchema = (form: ZodJsonSchema) => ({ [zodJsonSchemaKey]: form });
 
 /** zod's `z.literal(value)`, shown to the model as `const` where Effect writes a one-value `enum`. */
@@ -65,6 +72,46 @@ export const DiscriminatedUnion = <const Members extends readonly Schema.Constra
  */
 export const StringRecord = <V extends Schema.Top>(value: V) =>
   Schema.Record(Schema.String, value).annotate(zodJsonSchema('record'));
+
+/** Any key but `__proto__`, as the pattern Effect writes for the record's values says. */
+const AnyKeyButProto = Schema.String.check(
+  Schema.makeFilter((name: string) => name !== '__proto__', {
+    toJsonSchema: () => ({ pattern: '^(?!__proto__$)' }),
+  }),
+);
+
+/**
+ * zod's `z.record(key, value)`: an object of `value`s whose keys all satisfy
+ * `key`. Another key fails the record, as it failed zod's and fails
+ * `RecordOf`'s, where `Schema.Record` would drop it. The model sees the key's
+ * JSON Schema as `propertyNames`. It checks keys as `RecordOf` does, on its own
+ * `Schema.Record`, so the annotation stays on the record and not on a check.
+ * zod dropped an own `__proto__` key without reading it; the record drops it
+ * as a key it does not have, which its decode options may reject instead.
+ */
+export const KeyedRecord = <V extends Schema.Top>(key: Schema.Codec<string>, value: V) => {
+  const isKey = Schema.is(key);
+  const propertyNames = Schema.toJsonSchemaDocument(key).schema;
+  return Schema.Record(AnyKeyButProto, value)
+    .annotate(zodJsonSchema('record'))
+    .check(
+      Schema.makeFilter(
+        (record) =>
+          Object.keys(record)
+            .filter((name) => !isKey(name))
+            .map((name) => ({ path: [name], issue: 'Invalid key in record' })),
+        { toJsonSchema: () => ({ propertyNames }) },
+      ),
+    );
+};
+
+/**
+ * zod's `.describe(description)` on a schema it does not wrap (no `.optional()`
+ * or `.default()` before it), which zod writes after the schema's own keywords.
+ * Add the schema's checks after this, so the annotation stays on the schema.
+ */
+export const Described = <S extends Schema.Top>(schema: S, description: string) =>
+  schema.annotate({ description, ...zodJsonSchema('descriptionLast') });
 
 /** zod's `z.object({})`: any object, read as no arguments. */
 export const NoArgs = Schema.Record(Schema.String, Schema.Unknown).pipe(

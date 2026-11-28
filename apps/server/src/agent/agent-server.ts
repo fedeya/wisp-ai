@@ -8,7 +8,6 @@ import { rpcRequests } from '@wisp/agent/contract/agent-rpc';
 import { Effect, Schema } from 'effect';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { routineEvents } from '@wisp/protocol/routines';
-import { panelInput } from '@wisp/agent/contract/panels';
 import { simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import { databaseRequest } from '@wisp/agent/contract/database';
 import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
@@ -334,7 +333,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     if (!chat.characterKey) {
       throw Error('A fresh character identity is required');
     }
-    const input = panelInput.parse(data.input);
+    // The request decodes the panel input's own schema.
+    const { input } = data;
     const panels =
       input.operation === 'save' || input.operation === 'remove'
         ? await panelStore.mutate(chat.characterKey, input)
