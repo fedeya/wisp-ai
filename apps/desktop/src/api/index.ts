@@ -1,5 +1,5 @@
 import type { Hono } from 'hono';
-import { hc, parseResponse } from 'hono/client';
+import { hc, parseResponse, type ClientResponse } from 'hono/client';
 import type {
   DesktopRoute,
   DesktopRoutes,
@@ -30,4 +30,6 @@ async function bridgeFetch(input: RequestInfo | URL, init?: RequestInit): Promis
 /** Typed client for the bridge: `await call(bridge.auth.start.$post({ json }))`. */
 export const bridge = hc<DesktopApp>('http://bridge.invalid', { fetch: bridgeFetch });
 export { parseResponse as call };
+/** A reply of the typed bridge client: every desktop route answers 200 with JSON. */
+export type BridgeResponse<T> = ClientResponse<T, 200, 'json'>;
 export type { DesktopInfo, Model, Mcp, Panel, Status } from '@wisp/protocol/desktop';

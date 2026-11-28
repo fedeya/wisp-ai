@@ -8,7 +8,7 @@ import {
   useNavigate,
 } from 'react-router';
 import { RouterProvider } from 'react-router/dom';
-import { desktop, native } from './api';
+import { native } from './api';
 import DesktopSidebar from './components/DesktopSidebar';
 import WindowTitleBar from './components/WindowTitleBar';
 import ConfirmationDialog from './components/ui/ConfirmationDialog';
@@ -43,6 +43,7 @@ function DesktopShell() {
     info: state.info,
     setBusy: state.actions.setBusy,
     setAppUpdate: state.actions.setAppUpdate,
+    reportScreen: state.actions.reportScreen,
     busy: state.busy,
     clearFeedback: state.actions.clearFeedback,
     failed: state.failed,
@@ -64,11 +65,10 @@ function DesktopShell() {
   useAppShortcuts(!loading && !app.onboarding);
   useNativeNotifications(busy ? '' : feedback, failed, readiness);
 
+  const { reportScreen } = app;
   useEffect(() => {
-    if (native && !loading && !app.onboarding) {
-      void desktop('telemetry_screen', { screen: page.name }).catch(() => {});
-    }
-  }, [app.onboarding, loading, page.name]);
+    if (native && !loading && !app.onboarding) reportScreen(page.name);
+  }, [app.onboarding, loading, page.name, reportScreen]);
 
   useEffect(() => {
     if (!feedback || busy) return;
