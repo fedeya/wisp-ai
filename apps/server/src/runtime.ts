@@ -179,19 +179,13 @@ export const makeServer = Effect.fn('Server.make')(
     yield* releaseRuntimeResource(() => applicationDatabase.close());
     // Adapters for unmigrated consumers, which take Promise interfaces built
     // here from migrated services. Remove each one when its consumers migrate.
+    // For the synchronous readers of the settings below.
+    const runSync = Effect.runSyncWith(context);
     const settings = yield* Settings.Settings;
-    // What `settings.get` reads, for the synchronous readers below. It changes
-    // only through `saveSettings`, which sets it before it resolves.
-    let savedSettings = yield* settings.get;
     // Rejects with what Node's file system failed with, as the consumers saw before.
     const saveSettings = (patch: Partial<Settings.SettingsValues>) =>
       runPromise(
         settings.update(patch).pipe(
-          Effect.tap((saved) =>
-            Effect.sync(() => {
-              savedSettings = saved;
-            }),
-          ),
           Effect.asVoid,
           Effect.catchTag('PlatformError', (error) => Effect.fail(error.cause ?? error)),
         ),
@@ -306,7 +300,7 @@ export const makeServer = Effect.fn('Server.make')(
     });
     const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
     // The default follows the providers the player connected, not one vendor's model.
-    const defaultModel = () => resolveDefaultModel(savedSettings.model, state.modelCatalog);
+    const defaultModel = () => resolveDefaultModel(runSync(settings.get).model, state.modelCatalog);
     if (connections.hasProvider()) void refreshModelCatalog();
     const accounts = createAccountOperations({
       isStopping: () => shutdownRequested,
@@ -669,7 +663,7 @@ export const makeServer = Effect.fn('Server.make')(
     const transportStartup = yield* (
       appConfig.deferWowTransport
         ? Effect.void
-        : transport.serialize(transport.connect(savedSettings.wow)).pipe(
+        : transport.serialize(transport.connect((yield* settings.get).wow)).pipe(
             Effect.catchDefect((error) => Effect.fail(error)),
             Effect.catch((error) => Effect.sync(() => transport.logError(error))),
           )
