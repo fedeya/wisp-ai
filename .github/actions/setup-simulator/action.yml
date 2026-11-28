@@ -36,5 +36,5 @@ runs:
       run: ./scripts/simulator/build.ps1
       shell: pwsh
     - name: Verify simulator binary and metadata
-      run: node --input-type=module -e "import { verifySimulator } from './scripts/simulator/verify.ts'; await verifySimulator(process.cwd());"
+      run: node scripts/simulator/verify.ts
       shell: pwsh

@@ -1,154 +1,157 @@
-import { execFileSync, spawn } from 'node:child_process';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
+// @effect-migrated
+// Builds the Windows installer into dist/ with its checksum, build metrics and,
+// when signed, its updater manifest. Only the optimized native executable is
+// reused from the cache; everything it bundles is staged fresh.
+//   node scripts/build-desktop.ts   (apps/desktop's package:windows)
 import { createHash } from 'node:crypto';
-import { stageEngine, stageTauri } from './stage-tauri.ts';
+import { delimiter } from 'node:path';
+import { Clock, Console, Effect, FileSystem, Path, Schema } from 'effect';
+import { Command } from 'effect/cli';
+import { inherit } from './child-process.ts';
 import { buildEngine } from './engine/build.ts';
-import { createRequire } from 'node:module';
-import * as NodeServices from '@effect/platform-node/NodeServices';
-import { Effect } from 'effect';
-import { writeUpdateManifest } from './update-manifest.ts';
+import { resolveModule } from './engine/node-runtime.ts';
+import { environmentVariable } from './environment.ts';
 import {
   nativeBuildContext,
   nativeBuildKey,
   restoreNativeBinary,
   saveNativeBinary,
 } from './native-cache.ts';
-const desktop = path.resolve('apps/desktop');
-const require = createRequire(path.join(desktop, 'package.json'));
-const cli = require.resolve('@tauri-apps/cli/tauri.js');
-const tauriOptions = {
-  windowsHide: true,
-  stdio: 'inherit',
-  cwd: desktop,
-  env: {
-    ...process.env,
-    PATH: path.dirname(process.execPath) + path.delimiter + (process.env.PATH || ''),
-  },
-} as const;
-function tauri(args: string[]) {
-  execFileSync(process.execPath, [cli, ...args], tauriOptions);
-}
-// Runs in the background, so other work can proceed while Tauri compiles.
-function startTauri(args: string[]) {
-  const child = spawn(process.execPath, [cli, ...args], tauriOptions);
-  const finished = new Promise<void>((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', (code, signal) =>
-      code === 0
-        ? resolve()
-        : reject(Error('tauri ' + args[0] + ' failed: ' + (signal || 'exit code ' + code))),
-    );
-  });
-  return { child, finished };
-}
-const started = performance.now();
-// Stages everything but the engine, which builds while the native executable compiles.
-await stageTauri({ packaged: true });
-const staged = performance.now();
-// Build the frontend first: its actual output, including VITE_* substitutions,
-// belongs to the cache key because Tauri embeds it in the native executable.
-execFileSync(
-  process.execPath,
-  [path.join(path.dirname(require.resolve('vite/package.json')), 'bin/vite.js'), 'build'],
-  {
+import { runScript } from './run-script.ts';
+import { stageEngine, stageTauri, stagingHttpClient } from './stage-tauri.ts';
+import { writeUpdateManifest } from './update-manifest.ts';
+
+export class DesktopBuildFailed extends Schema.TaggedError<DesktopBuildFailed>()(
+  'DesktopBuildFailed',
+  { message: Schema.String },
+) {}
+
+const PackageJson = Schema.fromJsonString(Schema.Struct({ version: Schema.String }));
+
+const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+/** Milliseconds on the monotonic clock, as fractions like performance.now. */
+const now = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nanos) / 1_000_000);
+
+const buildDesktop = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const root = path.resolve();
+  const desktop = path.resolve('apps/desktop');
+  const desktopPackage = path.join(desktop, 'package.json');
+  const cli = yield* resolveModule(desktopPackage, '@tauri-apps/cli/tauri.js');
+  // Tauri runs Node tools of its own, so it finds this script's Node first.
+  const env = {
+    PATH: path.dirname(process.execPath) + delimiter + (yield* environmentVariable('PATH')),
+  };
+  const tauri = (args: readonly string[]) =>
+    inherit(process.execPath, [cli, ...args], { cwd: desktop, env });
+
+  const started = yield* now;
+  // Stages everything but the engine, which builds while the native executable compiles.
+  yield* stageTauri({ packaged: true });
+  const staged = yield* now;
+  // Build the frontend first: its actual output, including VITE_* substitutions,
+  // belongs to the cache key because Tauri embeds it in the native executable.
+  const vite = yield* resolveModule(desktopPackage, 'vite/package.json');
+  yield* inherit(process.execPath, [path.join(path.dirname(vite), 'bin/vite.js'), 'build'], {
     cwd: desktop,
-    windowsHide: true,
-    stdio: 'inherit',
-  },
-);
-const frontendBuilt = performance.now();
-const context = nativeBuildContext();
-const key = await nativeBuildKey(process.cwd(), context);
-const cache = path.resolve('node_modules/.cache/wisp-native');
-const executable = path.join(desktop, 'src-tauri/target/release/wisp.exe');
-// Custom Tauri overrides may reference inputs outside the checked-in project.
-// They always use a fresh build rather than risk reusing the wrong executable.
-const cacheable = !process.env.TAURI_CONFIG;
-const reused =
-  cacheable &&
-  process.env.WISP_FORCE_NATIVE_BUILD !== '1' &&
-  (await restoreNativeBinary(cache, key, executable));
-// The native executable does not embed the payload: the bundle step reads it from
-// the source tree, as when a cached executable is reused. So the engine builds
-// while Rust compiles, and joins the payload only after the compiler is done with it.
-const native = reused ? undefined : startTauri(['build', '--no-bundle', '--', '--locked']);
-let engine: string;
-try {
-  engine = await buildEngine();
-} catch (error) {
-  native?.child.kill();
-  throw error;
-}
-const engineBuilt = performance.now();
-if (native) {
-  await native.finished;
-  if (cacheable) {
-    if (key !== (await nativeBuildKey(process.cwd(), context))) {
-      throw Error('Native build inputs changed during compilation. No binary was cached.');
+  });
+  const frontendBuilt = yield* now;
+  const context = yield* nativeBuildContext(root);
+  const key = yield* nativeBuildKey(root, context);
+  const cache = path.resolve('node_modules/.cache/wisp-native');
+  const executable = path.join(desktop, 'src-tauri/target/release/wisp.exe');
+  // Custom Tauri overrides may reference inputs outside the checked-in project.
+  // They always use a fresh build rather than risk reusing the wrong executable.
+  const cacheable = !(yield* environmentVariable('TAURI_CONFIG'));
+  const reused =
+    cacheable &&
+    (yield* environmentVariable('WISP_FORCE_NATIVE_BUILD')) !== '1' &&
+    (yield* restoreNativeBinary(cache, key, executable));
+  // The native executable does not embed the payload: the bundle step reads it from
+  // the source tree, as when a cached executable is reused. So the engine builds
+  // while Rust compiles, and joins the payload only after the compiler is done with
+  // it. Either failing stops the other.
+  const [[engine, engineBuilt]] = yield* Effect.all(
+    [
+      Effect.zip(buildEngine, now),
+      reused ? Effect.void : tauri(['build', '--no-bundle', '--', '--locked']),
+    ],
+    { concurrency: 'unbounded' },
+  );
+  if (!reused && cacheable) {
+    if (key !== (yield* nativeBuildKey(root, context))) {
+      return yield* new DesktopBuildFailed({
+        message: 'Native build inputs changed during compilation. No binary was cached.',
+      });
     }
-    await saveNativeBinary(cache, key, executable);
+    yield* saveNativeBinary(cache, key, executable);
   }
-}
-const nativeBuilt = performance.now();
-await stageEngine(engine);
-const nativeBinarySha256 = createHash('sha256')
-  .update(await readFile(executable))
-  .digest('hex');
-// Always assemble current bridge/agent/addon/simulator resources. Only the
-// unchanged, fully optimized native executable may be reused.
-const signed = Boolean(process.env.TAURI_SIGNING_PRIVATE_KEY);
-tauri([
-  'bundle',
-  '--bundles',
-  'nsis',
-  '--config',
-  JSON.stringify({ bundle: { createUpdaterArtifacts: signed } }),
-]);
-const bundled = performance.now();
-await mkdir('dist', { recursive: true });
-await writeFile(
-  'dist/build-metrics.json',
-  JSON.stringify(
-    {
-      nativeCacheHit: Boolean(reused),
-      nativeInputsKey: key,
-      nativeBinarySha256,
-      milliseconds: {
-        stage: staged - started,
-        frontend: frontendBuilt - staged,
-        // The engine and native executable build at the same time.
-        engine: engineBuilt - frontendBuilt,
-        native: nativeBuilt - frontendBuilt,
-        bundle: bundled - nativeBuilt,
-        total: bundled - started,
+  const nativeBuilt = yield* now;
+  yield* stageEngine(engine);
+  const nativeBinarySha256 = sha256(yield* fs.readFile(executable));
+  // Always assemble current bridge/agent/addon/simulator resources. Only the
+  // unchanged, fully optimized native executable may be reused.
+  const signed = Boolean(yield* environmentVariable('TAURI_SIGNING_PRIVATE_KEY'));
+  yield* tauri([
+    'bundle',
+    '--bundles',
+    'nsis',
+    '--config',
+    JSON.stringify({ bundle: { createUpdaterArtifacts: signed } }),
+  ]);
+  const bundled = yield* now;
+  yield* fs.makeDirectory('dist', { recursive: true });
+  yield* fs.writeFileString(
+    'dist/build-metrics.json',
+    JSON.stringify(
+      {
+        nativeCacheHit: reused,
+        nativeInputsKey: key,
+        nativeBinarySha256,
+        milliseconds: {
+          stage: staged - started,
+          frontend: frontendBuilt - staged,
+          // The engine and native executable build at the same time.
+          engine: engineBuilt - frontendBuilt,
+          native: nativeBuilt - frontendBuilt,
+          bundle: bundled - nativeBuilt,
+          total: bundled - started,
+        },
       },
-    },
-    null,
-    2,
-  ),
-);
-const version = JSON.parse(await readFile('package.json', 'utf8')).version;
-const folder = 'apps/desktop/src-tauri/target/release/bundle/nsis';
-const [installer, ...otherInstallers] = (await readdir(folder)).filter((file) =>
-  file.endsWith('-setup.exe'),
-);
-if (installer === undefined || otherInstallers.length > 0) {
-  throw Error('Expected one Windows installer.');
-}
-const destination = 'dist/WispAI-' + version + '-windows-x64-setup.exe';
-await copyFile(path.join(folder, installer), destination);
-if (signed) {
-  await copyFile(path.join(folder, installer + '.sig'), destination + '.sig');
-  // update-manifest.ts runs on Effect; this unmigrated script is its edge.
-  await Effect.runPromise(
-    writeUpdateManifest(version, destination, process.cwd()).pipe(
-      Effect.provide(NodeServices.layer),
+      null,
+      2,
     ),
   );
+  const { version } = yield* Schema.decodeEffect(PackageJson)(
+    yield* fs.readFileString('package.json'),
+  );
+  const folder = 'apps/desktop/src-tauri/target/release/bundle/nsis';
+  const [installer, ...otherInstallers] = (yield* fs.readDirectory(folder)).filter((file) =>
+    file.endsWith('-setup.exe'),
+  );
+  if (installer === undefined || otherInstallers.length > 0) {
+    return yield* new DesktopBuildFailed({ message: 'Expected one Windows installer.' });
+  }
+  const destination = 'dist/WispAI-' + version + '-windows-x64-setup.exe';
+  yield* fs.copyFile(path.join(folder, installer), destination);
+  if (signed) {
+    yield* fs.copyFile(path.join(folder, installer + '.sig'), destination + '.sig');
+    yield* writeUpdateManifest(version, destination, root);
+  }
+  yield* fs.writeFileString(
+    destination + '.sha256',
+    sha256(yield* fs.readFile(destination)) + '  ' + path.basename(destination) + '\n',
+  );
+  yield* Console.log(destination);
+});
+
+if (import.meta.main) {
+  Command.make('build-desktop', {}, () => buildDesktop).pipe(
+    Command.withDescription('Build the Windows installer into dist/'),
+    Command.run({ version: '1.0.0' }),
+    Effect.provide(stagingHttpClient),
+    runScript,
+  );
 }
-const hash = createHash('sha256')
-  .update(await readFile(destination))
-  .digest('hex');
-await writeFile(destination + '.sha256', hash + '  ' + path.basename(destination) + '\n');
-console.log(destination);

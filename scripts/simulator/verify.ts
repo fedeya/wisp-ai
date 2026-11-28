@@ -1,35 +1,81 @@
+// @effect-migrated
+// Checks the simulator binary against its pinned manifest, and its metadata
+// against the class adapters, before it is cached or packaged.
+//   node scripts/simulator/verify.ts   checks the checkout in the working directory
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
+import { Effect, FileSystem, Path, Schema } from 'effect';
+import { Command } from 'effect/cli';
 import { adapters } from '../../apps/server/src/integrations/simulation/adapters/index.ts';
+import { runScript } from '../run-script.ts';
 
-export async function verifySimulator(root: string) {
+export class SimulatorMismatch extends Schema.TaggedError<SimulatorMismatch>()(
+  'SimulatorMismatch',
+  { message: Schema.String },
+) {}
+
+const Manifest = Schema.fromJsonString(
+  Schema.Struct({
+    commit: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
+    sha256: Schema.String,
+    supportedClasses: Schema.optionalKey(Schema.Array(Schema.String)),
+  }),
+);
+const Items = Schema.fromJsonString(Schema.Array(Schema.Unknown));
+const Classes = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
+const ClassMetadata = Schema.Struct({
+  talents: Schema.Array(
+    Schema.Array(Schema.Struct({ row: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })),
+  ).check(Schema.isBetweenLength(3, 3)),
+  ranks: Schema.Record(Schema.String, Schema.Unknown),
+});
+const isClassMetadata = Schema.is(ClassMetadata);
+const isRanked = Schema.is(Schema.NonEmptyArray(Schema.Unknown));
+
+const mismatch = (message: string) => () => new SimulatorMismatch({ message });
+
+/** Fails unless the simulator in `root`'s simulator folder matches its pinned manifest and the adapters. */
+export const verifySimulator = Effect.fnUntraced(function* (root: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const directory = path.join(root, 'simulator');
-  const manifest = JSON.parse(await readFile(path.join(directory, 'manifest.json'), 'utf8'));
-  const binary = await readFile(path.join(directory, 'wowsimcli.exe'));
-  if (
-    !binary.length ||
-    !/^[a-f0-9]{40}$/.test(manifest.commit) ||
-    createHash('sha256').update(binary).digest('hex') !== manifest.sha256
-  ) {
-    throw Error('Simulator binary does not match its pinned manifest.');
+  const pinned = mismatch('Simulator binary does not match its pinned manifest.');
+  const manifestText = yield* fs.readFileString(path.join(directory, 'manifest.json'));
+  const binary = yield* fs.readFile(path.join(directory, 'wowsimcli.exe'));
+  const manifest = yield* Schema.decodeEffect(Manifest)(manifestText).pipe(Effect.mapError(pinned));
+  if (!binary.length || createHash('sha256').update(binary).digest('hex') !== manifest.sha256) {
+    return yield* pinned();
   }
-  if (!Array.isArray(JSON.parse(await readFile(path.join(directory, 'items.json'), 'utf8')))) {
-    throw Error('Invalid simulator metadata: items.json');
-  }
-  const classes = JSON.parse(await readFile(path.join(directory, 'classes.json'), 'utf8'));
+  yield* Schema.decodeEffect(Items)(
+    yield* fs.readFileString(path.join(directory, 'items.json')),
+  ).pipe(Effect.mapError(mismatch('Invalid simulator metadata: items.json')));
+  const classes = yield* Schema.decodeEffect(Classes)(
+    yield* fs.readFileString(path.join(directory, 'classes.json')),
+  ).pipe(Effect.mapError(mismatch('Invalid simulator metadata: classes.json')));
   for (const adapter of Object.values(adapters)) {
     const metadata = classes[adapter.token];
     if (
       !manifest.supportedClasses?.includes(adapter.token) ||
-      !Array.isArray(metadata?.talents) ||
-      metadata.talents.length !== 3 ||
-      metadata.talents.some((tree: { row?: number }[]) =>
-        tree.some((t) => !Number.isInteger(t.row) || t.row! < 0),
-      ) ||
-      adapter.families.some((f) => !metadata.ranks?.[f]?.length)
+      !isClassMetadata(metadata) ||
+      !adapter.families.every((family) => isRanked(metadata.ranks[family]))
     ) {
-      throw Error('Invalid simulator class metadata: ' + adapter.token);
+      return yield* new SimulatorMismatch({
+        message: 'Invalid simulator class metadata: ' + adapter.token,
+      });
     }
   }
+});
+
+if (import.meta.main) {
+  Command.make(
+    'verify',
+    {},
+    Effect.fn(function* () {
+      const path = yield* Path.Path;
+      yield* verifySimulator(path.resolve());
+    }),
+  ).pipe(
+    Command.withDescription('Check the simulator binary and metadata in the working directory'),
+    Command.run({ version: '1.0.0' }),
+    runScript,
+  );
 }

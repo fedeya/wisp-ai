@@ -1,6 +1,10 @@
+// @effect-migrated
 // Generate small antialiased native TGA icons; no font glyph dependency.
 // Icons are white line drawings so the addon can tint them with SetVertexColor.
-import { mkdirSync, writeFileSync } from 'node:fs';
+//   node scripts/textures/icons.ts   writes them under addon/WispAI/Textures in the working directory
+import { Effect, FileSystem } from 'effect';
+import { Command } from 'effect/cli';
+import { runScript } from '../run-script.ts';
 
 // Icons are drawn on a 64-unit design grid and written at 32 px, close to the
 // 15-30 px they appear at in game; corner pieces are 16 px and drawn 1:1. The
@@ -176,19 +180,39 @@ const collapse: Shape[] = [
 const DOT = 16;
 const dot: Shape[] = [{ kind: 'disc', center: [DOT / 2, DOT / 2], radius: DOT / 2 - 0.5 }];
 
-mkdirSync('addon/WispAI/Textures', { recursive: true });
-writeFileSync('addon/WispAI/Textures/Expand.tga', render(expand));
-writeFileSync('addon/WispAI/Textures/Collapse.tga', render(collapse));
-writeFileSync('addon/WispAI/Textures/Dot.tga', render(dot, DOT, DOT));
-writeFileSync('addon/WispAI/Textures/Settings.tga', render(settings));
-writeFileSync('addon/WispAI/Textures/Back.tga', render(back));
-writeFileSync('addon/WispAI/Textures/Send.tga', render(send));
-writeFileSync('addon/WispAI/Textures/Stop.tga', render(stop));
-writeFileSync('addon/WispAI/Textures/Plus.tga', render(plus));
-writeFileSync('addon/WispAI/Textures/Close.tga', render(close));
-writeFileSync('addon/WispAI/Textures/Sidebar.tga', render(sidebar));
-writeFileSync('addon/WispAI/Textures/Clock.tga', render(clock));
-writeFileSync('addon/WispAI/Textures/ChevronDown.tga', render(chevronDown));
-writeFileSync('addon/WispAI/Textures/Circle.tga', render(circle));
-writeFileSync('addon/WispAI/Textures/CornerFill.tga', render(cornerFill, CORNER, CORNER));
-writeFileSync('addon/WispAI/Textures/CornerEdge.tga', render(cornerEdge, CORNER, CORNER));
+// Each texture's file name and how it is drawn, in the order they are written.
+const textures: readonly (readonly [string, () => Buffer])[] = [
+  ['Expand', () => render(expand)],
+  ['Collapse', () => render(collapse)],
+  ['Dot', () => render(dot, DOT, DOT)],
+  ['Settings', () => render(settings)],
+  ['Back', () => render(back)],
+  ['Send', () => render(send)],
+  ['Stop', () => render(stop)],
+  ['Plus', () => render(plus)],
+  ['Close', () => render(close)],
+  ['Sidebar', () => render(sidebar)],
+  ['Clock', () => render(clock)],
+  ['ChevronDown', () => render(chevronDown)],
+  ['Circle', () => render(circle)],
+  ['CornerFill', () => render(cornerFill, CORNER, CORNER)],
+  ['CornerEdge', () => render(cornerEdge, CORNER, CORNER)],
+];
+
+if (import.meta.main) {
+  Command.make(
+    'icons',
+    {},
+    Effect.fn(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.makeDirectory('addon/WispAI/Textures', { recursive: true });
+      for (const [name, draw] of textures) {
+        yield* fs.writeFile(`addon/WispAI/Textures/${name}.tga`, draw());
+      }
+    }),
+  ).pipe(
+    Command.withDescription("Draw the addon's icon textures"),
+    Command.run({ version: '1.0.0' }),
+    runScript,
+  );
+}

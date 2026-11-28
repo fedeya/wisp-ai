@@ -13,6 +13,8 @@ export class CommandFailed extends Schema.TaggedError<CommandFailed>()('CommandF
 export interface CommandOptions {
   /** The working directory; this process's own when absent. */
   readonly cwd?: string | undefined;
+  /** Variables to set on top of this process's environment. */
+  readonly env?: Readonly<Record<string, string>> | undefined;
 }
 
 /** How a command that ran to its end finished. */
@@ -37,12 +39,18 @@ const text = <E>(stream: Stream.Stream<Uint8Array, E>) =>
 export const execute = Effect.fnUntraced(function* (
   command: string,
   args: readonly string[],
-  { cwd }: CommandOptions = {},
+  { cwd, env }: CommandOptions = {},
 ): Effect.fn.Return<Completed, CommandFailed, ChildProcessSpawner.ChildProcessSpawner> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   return yield* Effect.gen(function* () {
     const handle = yield* spawner.spawn(
-      ChildProcess.make(command, args, { cwd, detached: false, stdin: 'ignore' }),
+      ChildProcess.make(command, args, {
+        cwd,
+        env,
+        extendEnv: true,
+        detached: false,
+        stdin: 'ignore',
+      }),
     );
     const [stdout, stderr, exitCode] = yield* Effect.all(
       [text(handle.stdout), text(handle.stderr), handle.exitCode],
@@ -77,13 +85,15 @@ export const output = Effect.fnUntraced(function* (
 export const inherit = Effect.fnUntraced(function* (
   command: string,
   args: readonly string[],
-  { cwd }: CommandOptions = {},
+  { cwd, env }: CommandOptions = {},
 ): Effect.fn.Return<void, CommandFailed, ChildProcessSpawner.ChildProcessSpawner> {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const exitCode = yield* spawner
     .exitCode(
       ChildProcess.make(command, args, {
         cwd,
+        env,
+        extendEnv: true,
         detached: false,
         stdin: 'inherit',
         stdout: 'inherit',
