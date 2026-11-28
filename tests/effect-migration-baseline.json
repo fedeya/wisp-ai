@@ -38,7 +38,7 @@
     "processEnv": 0,
     "newPromise": 0,
     "asyncFunctions": 46,
-    "effectRuns": 1,
+    "effectRuns": 3,
     "effectPromises": 1,
     "throwStatements": 4,
     "tryBlocks": 24,

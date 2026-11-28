@@ -1,11 +1,12 @@
 import { beforeEach, afterEach, expect, test, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { listen } from '@tauri-apps/api/event';
-import { desktop } from '../../../api';
+import { desktop } from '../../../api/desktop';
 import { chooseOption } from '../../../select-test-helpers';
-import Updates, { AUTO_INSTALL_IDLE_MS, GAME_CHECK_MS } from './Updates';
+import Updates from './Updates';
+import { AUTO_INSTALL_IDLE_MS, GAME_CHECK_MS } from './updates-store';
 
-vi.mock('../../../api', () => ({ native: true, desktop: vi.fn() }));
+vi.mock('../../../api/desktop', () => ({ native: true, desktop: vi.fn() }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }));
 const release = { version: '0.3.0', notes: 'Improved game connection.' };
 const props = () => ({
@@ -334,4 +335,42 @@ test('a failed check after switching cannot offer the previous channel installer
   await chooseOption(screen.getByRole('combobox', { name: 'Update channel' }), 'Nightly');
   await screen.findByRole('alert');
   expect(screen.queryByRole('button', { name: 'Update and restart' })).toBeNull();
+});
+
+test('while an update waits, Wisp asks Windows about WoW every 30 seconds until unmounted', async () => {
+  vi.useFakeTimers();
+  autoInstallOn();
+  gameRunning = true;
+  const gameChecks = () =>
+    vi.mocked(desktop).mock.calls.filter(([command]) => command === 'game_running');
+  const view = render(<Updates {...props()} idle />);
+  await act(() => vi.advanceTimersByTimeAsync(0));
+  expect(gameChecks()).toHaveLength(1);
+  await act(() => vi.advanceTimersByTimeAsync(GAME_CHECK_MS - 1));
+  expect(gameChecks()).toHaveLength(1);
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(gameChecks()).toHaveLength(2);
+
+  view.unmount();
+  await act(() => vi.advanceTimersByTimeAsync(GAME_CHECK_MS * 3));
+  expect(gameChecks()).toHaveLength(2);
+});
+
+test('unmounting removes the progress listener, also one that registers afterwards', async () => {
+  const unlisten = vi.fn();
+  vi.mocked(listen).mockResolvedValueOnce(unlisten);
+  render(<Updates {...props()} />).unmount();
+  await waitFor(() => expect(unlisten).toHaveBeenCalledOnce());
+
+  let register: (stop: () => void) => void = () => {};
+  vi.mocked(listen).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        register = resolve;
+      }),
+  );
+  render(<Updates {...props()} />).unmount();
+  const late = vi.fn();
+  register(late);
+  await waitFor(() => expect(late).toHaveBeenCalledOnce());
 });
