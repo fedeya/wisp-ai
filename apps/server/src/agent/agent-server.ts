@@ -19,7 +19,7 @@ import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { TheWoWDB } from '../integrations/thewowdb/index.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
-import type { ModelConnections } from '../models/model-connections.ts';
+import type { PromiseModelConnections } from '../models/connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
@@ -32,7 +32,7 @@ interface AgentDependencies {
   telemetry?: { webSearch(search: WebSearchTelemetry): void };
   token: string;
   auth: PromiseChatGPTAuth;
-  connections: ModelConnections;
+  connections: Pick<PromiseModelConnections, 'models' | 'selection' | 'forward'>;
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
   webSearch: WowheadSearch;

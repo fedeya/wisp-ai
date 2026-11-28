@@ -10,7 +10,8 @@ import path from 'node:path';
 import type { MemoryView, SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
 import type { CapabilitySettings, IntegrationState } from '#/capabilities';
-import type { ModelCatalog } from '../models/model-connections.ts';
+import type { ModelCatalog } from '../models/catalog.ts';
+import type { ModelConnections } from '../models/connections.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { MemoryRepository } from '../memory/repository.ts';
@@ -38,11 +39,11 @@ interface ReceiverDependencies {
   request: Connection['request'];
   integrationState: IntegrationState['Service'];
   capabilitySettings: CapabilitySettings['Service'];
-  models: Pick<ModelCatalog, 'models'>;
+  models: Pick<ModelConnections['Service'], 'models'>;
   routineStore: RoutineStore;
   panelStore: PanelStore;
   memoryRepository: MemoryRepository['Service'];
-  refreshModelCatalog: () => Promise<void>;
+  catalog: Pick<ModelCatalog['Service'], 'refresh'>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
   memorySnapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
   run: (chat: Chat, text: string, messageId?: string, context?: unknown) => Promise<void>;
@@ -69,7 +70,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     routineStore,
     panelStore,
     memoryRepository,
-    refreshModelCatalog,
+    catalog,
     setCapability,
     memorySnapshot,
     run,
@@ -128,7 +129,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       yield* integrationState.reset;
       state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
       state.memoryView = undefined;
-      void refreshModelCatalog();
+      yield* Effect.forkDetach(catalog.refresh);
     }
     packet = { ...packet, context: contextCache.resolve(packet.context) };
     state.questRevision = contextCache.revision;
@@ -164,7 +165,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       );
     }
     if (packet.type === 'model_catalog') {
-      void refreshModelCatalog();
+      yield* Effect.forkDetach(catalog.refresh);
       return;
     }
     if (packet.type === 'chat_model_set') {
@@ -189,7 +190,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
             throw Error('Wait for this reply before changing model settings.');
           }
           const input = packet.data;
-          const available = await models.models();
+          const available = await runPromise(models.models);
           if (isWorking(chat)) {
             throw Error('Wait for this reply before changing model settings.');
           }

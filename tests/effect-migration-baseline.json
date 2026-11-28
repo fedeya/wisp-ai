@@ -8,7 +8,7 @@
     "processEnv": 7,
     "newPromise": 8,
     "asyncFunctions": 136,
-    "effectRuns": 28,
+    "effectRuns": 32,
     "effectPromises": 15,
     "throwStatements": 155,
     "tryBlocks": 61,

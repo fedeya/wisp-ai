@@ -12,7 +12,7 @@ import {
   Scope,
   Stream,
 } from 'effect';
-import { HttpClientRequest, HttpClientResponse } from 'effect/http';
+import { Headers as HttpHeaders, HttpClientRequest, HttpClientResponse } from 'effect/http';
 import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcessSpawner';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
@@ -59,8 +59,8 @@ import * as SecretVault from './platform/secret-vault.ts';
 import { startDesktopServer } from './api/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
 import { RoutineStore } from './routines/routine-store.ts';
-import { ModelConnections } from './models/model-connections.ts';
-import { createModelCatalogRefresh } from './models/model-catalog.ts';
+import * as ModelConnections from './models/connections.ts';
+import * as ModelCatalog from './models/catalog.ts';
 import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
 import { WebSearch } from './integrations/search/web-search.ts';
@@ -95,6 +95,27 @@ const featuresLayer = Features.layer.pipe(
 const capabilitySettingsLayer = Capabilities.settingsLayer.pipe(
   Layer.provide([AppConfig.layer, wowPlatform, featuresLayer, NodeCrypto.layerSecureRandom]),
 );
+// One ChatGPTAuth for the server and the model connections that use it.
+const chatgptLayer = ChatGPTAuth.layer.pipe(
+  Layer.provide([
+    AppConfig.layer,
+    wowPlatform,
+    HttpClient.layer,
+    NodeCrypto.layerDigest,
+    NodeCrypto.layerSecureRandom,
+    NodeCrypto.layerSignature,
+  ]),
+);
+// One ModelConnections for the server and the catalog loaded from it.
+const modelConnectionsLayer = ModelConnections.layer.pipe(
+  Layer.provide([
+    AppConfig.layer,
+    wowPlatform,
+    HttpClient.layer,
+    NodeCrypto.layerSecureRandom,
+    chatgptLayer,
+  ]),
+);
 
 /**
  * The migrated services `makeServer` receives from its caller, on the
@@ -109,16 +130,9 @@ export const ServerServices = Layer.mergeAll(
     Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerDigest]),
   ),
   TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer)),
-  ChatGPTAuth.layer.pipe(
-    Layer.provide([
-      AppConfig.layer,
-      wowPlatform,
-      HttpClient.layer,
-      NodeCrypto.layerDigest,
-      NodeCrypto.layerSecureRandom,
-      NodeCrypto.layerSignature,
-    ]),
-  ),
+  chatgptLayer,
+  modelConnectionsLayer,
+  ModelCatalog.layer.pipe(Layer.provide(modelConnectionsLayer)),
   settingsLayer,
   appVersion,
   featuresLayer,
@@ -208,6 +222,17 @@ export const makeServer = Effect.fn('Server.make')(
     };
     const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
     const auth = promiseChatGPTAuth(chatgpt, context);
+    const modelConnections = yield* ModelConnections.ModelConnections;
+    const modelCatalog = yield* ModelCatalog.ModelCatalog;
+    // For the turn runner and the agent server.
+    const connections = promiseModelConnections(modelConnections, context);
+    // For the synchronous readers: the turn runner and the desktop status.
+    const connectionReads = {
+      list: () => runSync(modelConnections.list),
+      hasProvider: () => runSync(modelConnections.hasProvider),
+      connected: (model: string) => runSync(modelConnections.connected(model)),
+      provider: (model: string) => runSync(modelConnections.provider(model)),
+    };
     const telemetry = yield* UsageTelemetry.UsageTelemetry;
     const searchTelemetry = {
       webSearch: (search: UsageTelemetry.WebSearchTelemetry) => {
@@ -280,8 +305,6 @@ export const makeServer = Effect.fn('Server.make')(
     );
     yield* Effect.addFinalizer(() => mcpManager.close());
     yield* mcpManager.load();
-    const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
-    yield* startup(() => connections.load());
     const modelFailures = new ModelFailures();
     const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
     yield* startup(() => webSearch.load());
@@ -340,14 +363,15 @@ export const makeServer = Effect.fn('Server.make')(
         await chatStore.close();
       }
     });
-    const refreshModelCatalog = createModelCatalogRefresh({ state, connections, changed });
+    const refreshModelCatalog = () => {
+      runFork(modelCatalog.refresh);
+    };
     // The default follows the providers the player connected, not one vendor's model.
     const defaultModel = () => resolveDefaultModel(runSync(settings.get).model, state.modelCatalog);
-    if (connections.hasProvider()) void refreshModelCatalog();
     const accounts = createAccountOperations({
       isStopping: () => shutdownRequested,
       hasActiveTurn: () => state.chats.some((c) => c.status === 'working'),
-      afterOperation: () => void refreshModelCatalog(),
+      afterOperation: refreshModelCatalog,
     });
     // The app update the desktop last reported; the desktop resends it after a restart.
     let appUpdateVersion: string | null = null;
@@ -376,6 +400,21 @@ export const makeServer = Effect.fn('Server.make')(
       },
     });
     yield* releaseRuntimeResource(() => publisher.stop());
+    // Adapter for SessionState, which is not migrated: each catalog a refresh
+    // loads is copied into it, once `changed()` can publish it. Subscribed
+    // before the first refresh starts, so its catalog is not missed.
+    yield* modelCatalog.changes.pipe(
+      Stream.runForEach(({ models, error }) =>
+        Effect.sync(() => {
+          state.modelCatalog = [...models];
+          state.modelCatalogError = Option.getOrUndefined(error);
+          changed();
+        }),
+      ),
+      Effect.forkScoped({ startImmediately: true }),
+    );
+    // End of adapter.
+    if (yield* modelConnections.hasProvider) refreshModelCatalog();
     const bridge = Context.get(
       yield* Layer.build(WowBridge.layer.pipe(Layer.provide(wowPlatform))),
       WowBridge.WowBridge,
@@ -466,7 +505,7 @@ export const makeServer = Effect.fn('Server.make')(
         Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
       ),
       modelFailures,
-      modelProvider: (model) => connections.provider(model),
+      modelProvider: connectionReads.provider,
       engine,
       models: connections,
       capabilitySettings: turnCapabilities,
@@ -477,7 +516,7 @@ export const makeServer = Effect.fn('Server.make')(
       isReady: () => engineReady,
       isStopping: () => shutdownRequested,
       accountBusy: accounts.busy,
-      hasProvider: () => connections.hasProvider(),
+      hasProvider: connectionReads.hasProvider,
       isCurrent: (chat) => state.chats.includes(chat),
       flushSnapshot: publisher.flush,
     });
@@ -508,11 +547,11 @@ export const makeServer = Effect.fn('Server.make')(
       request: (call) => transport.request(call),
       integrationState,
       capabilitySettings,
-      models: connections,
+      models: modelConnections,
       routineStore,
       panelStore,
       memoryRepository,
-      refreshModelCatalog,
+      catalog: modelCatalog,
       setCapability: mcpCapabilities.setCapability,
       memorySnapshot,
       run,
@@ -622,8 +661,8 @@ export const makeServer = Effect.fn('Server.make')(
         ready: engineReady,
         gameConnected: transport.gameConnected(),
         auth: auth.state(),
-        connections: connections.list(),
-        modelConnected: connections.connected(defaultModel()),
+        connections: connectionReads.list(),
+        modelConnected: connectionReads.connected(defaultModel()),
         search: webSearch.state(),
         model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
@@ -646,7 +685,7 @@ export const makeServer = Effect.fn('Server.make')(
     let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
     const desktopApp = yield* createDesktopApp({
       auth,
-      connections,
+      connections: modelConnections,
       webSearch,
       capabilitySettings,
       mcpManager,
@@ -772,20 +811,16 @@ export function promiseChatGPTAuth(
 ): ChatGPTAuth.PromiseChatGPTAuth {
   const runPromise = Effect.runPromiseWith(context);
   const runSync = Effect.runSyncWith(context);
-  const runFork = Effect.runForkWith(context);
   const run = <A>(
     effect: Effect.Effect<
       A,
       ChatGPTAuth.ChatGPTAuthError | ChatGPTAuth.ChatGPTRequestError | SecretVault.SecretVaultError
     >,
-    options?: Effect.RunOptions,
   ) =>
     runPromise(
       effect.pipe(Effect.catchTag('ChatGPTRequestError', (error) => Effect.fail(error.cause))),
-      options,
     );
   const authorized = (url: string, init: ChatGPTAuth.ChatGPTRequestInit) => {
-    const { signal } = init;
     const base = HttpClientRequest.make(init.method)(url, { headers: init.headers });
     const request =
       init.body === undefined
@@ -795,41 +830,13 @@ export function promiseChatGPTAuth(
             init.body,
             new Headers(init.headers).get('content-type') ?? undefined,
           );
-    return run(
-      Effect.gen(function* () {
-        // The response body stays open until the caller's signal aborts or the body ends.
-        const scope = yield* Scope.make();
-        const release = () => {
-          runFork(Scope.close(scope, Exit.void));
-        };
-        signal?.addEventListener('abort', release, { once: true });
-        const response = yield* auth.authorized(request).pipe(
-          Scope.provide(scope),
-          Effect.onError(() => Scope.close(scope, Exit.void)),
-        );
-        const web = Option.getOrElse(
-          HttpClientResponse.toWeb(response),
-          () =>
-            new Response(Stream.toReadableStream(response.stream), {
-              status: response.status,
-              headers: response.headers,
-            }),
-        );
-        if (!web.body) {
-          release();
-          return web;
-        }
-        // Like a fetch body, it fails with the signal's reason when the signal aborts.
-        const body = web.body.pipeThrough(
-          new TransformStream<Uint8Array, Uint8Array>({ flush: release }),
-          signal ? { signal } : {},
-        );
-        return new Response(body, web);
-      }),
-      { signal },
-    ).catch((error: unknown) => {
-      throw signal?.aborted ? signal.reason : error;
-    });
+    return promiseResponse(
+      auth
+        .authorized(request)
+        .pipe(Effect.catchTag('ChatGPTRequestError', (error) => Effect.fail(error.cause))),
+      init.signal,
+      context,
+    );
   };
   return {
     state: () => runSync(auth.state),
@@ -843,6 +850,98 @@ export function promiseChatGPTAuth(
     disconnect: () => run(auth.disconnect),
     models: () => run(auth.models),
     authorized,
+  };
+}
+
+/** Rejects like `fetch`: with the signal's reason once it aborted, else with `error`. */
+const rejectLikeFetch = (signal: AbortSignal | undefined) => (error: unknown) => {
+  throw signal?.aborted ? signal.reason : error;
+};
+
+/**
+ * Runs `effect` with `context` as a fetch-like call: the response body stays
+ * open in the effect's scope until it ends or `signal` aborts, and like a
+ * fetch body it fails with the signal's reason when the signal aborts.
+ */
+function promiseResponse<E>(
+  effect: Effect.Effect<HttpClientResponse.HttpClientResponse, E, Scope.Scope>,
+  signal: AbortSignal | undefined,
+  context: Context.Context<never>,
+): Promise<Response> {
+  const runFork = Effect.runForkWith(context);
+  return Effect.runPromiseWith(context)(
+    Effect.gen(function* () {
+      const scope = yield* Scope.make();
+      const release = () => {
+        runFork(Scope.close(scope, Exit.void));
+      };
+      signal?.addEventListener('abort', release, { once: true });
+      const response = yield* effect.pipe(
+        Scope.provide(scope),
+        Effect.onError(() => Scope.close(scope, Exit.void)),
+      );
+      const web = Option.getOrElse(
+        HttpClientResponse.toWeb(response),
+        () =>
+          new Response(Stream.toReadableStream(response.stream), {
+            status: response.status,
+            headers: response.headers,
+          }),
+      );
+      if (!web.body) {
+        release();
+        return web;
+      }
+      const body = web.body.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({ flush: release }),
+        signal ? { signal } : {},
+      );
+      return new Response(body, web);
+    }),
+    { signal },
+  ).catch(rejectLikeFetch(signal));
+}
+
+/**
+ * Runs `ModelConnections` with `context` behind the Promise interface its
+ * unmigrated consumers take. They see the rejections they saw before: Wisp's
+ * and the provider's refusals, ChatGPT and vault errors as they are, a failed
+ * request as what `fetch` or the AI SDK failed with, and an aborted call as
+ * its signal's reason.
+ */
+export function promiseModelConnections(
+  connections: ModelConnections.ModelConnections['Service'],
+  context: Context.Context<never>,
+): ModelConnections.PromiseModelConnections {
+  const runPromise = Effect.runPromiseWith(context);
+  return {
+    models: () =>
+      runPromise(
+        connections.models.pipe(
+          Effect.catchTag('ChatGPTRequestError', (error) => Effect.fail(error.cause)),
+        ),
+      ),
+    prepare: (model) => runPromise(connections.prepare(model)),
+    complete: (model, instructions, text, signal) =>
+      runPromise(
+        connections.complete(model, instructions, text).pipe(
+          Effect.catchTags({
+            ChatGPTRequestError: (error) => Effect.fail(error.cause),
+            ModelRequestError: (error) => Effect.fail(error.cause),
+          }),
+        ),
+        { signal },
+      ).catch(rejectLikeFetch(signal)),
+    selection: (model) =>
+      runPromise(connections.selection(model).pipe(Effect.map(Option.getOrElse(() => ({}))))),
+    forward: (id, suffix, body, headers, signal) =>
+      promiseResponse(
+        connections
+          .forward({ connection: id, path: suffix, body, headers: HttpHeaders.fromInput(headers) })
+          .pipe(Effect.catchTag('ModelRequestError', (error) => Effect.fail(error.cause))),
+        signal,
+        context,
+      ),
   };
 }
 // End of adapter.

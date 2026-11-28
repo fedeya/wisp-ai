@@ -9,7 +9,7 @@ import {
 } from '@wisp/protocol/desktop-routes';
 import type { Status } from '@wisp/protocol/desktop';
 import type { McpManager } from '@wisp/agent/mcp-manager';
-import type { ModelConnections } from '../models/model-connections.ts';
+import type { ModelConnections } from '../models/connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '#/capabilities';
@@ -29,7 +29,7 @@ export const wowTransportInput = Schema.Union([
 ]);
 interface DesktopDependencies {
   auth: PromiseChatGPTAuth;
-  connections: ModelConnections;
+  connections: ModelConnections['Service'];
   webSearch: WebSearch;
   capabilitySettings: Pick<CapabilitySettings['Service'], 'set' | 'publish'>;
   mcpManager: McpManager;
@@ -80,7 +80,9 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     })
     .get('/status', (c) => c.json(deps.getStatus()))
     .get('/auth/models', async (c) =>
-      c.json(await accountOperation(async () => ({ models: await connections.models() }))),
+      c.json(
+        await accountOperation(async () => ({ models: await runPromise(connections.models) })),
+      ),
     )
     .post('/auth/start', json(routes['/auth/start'].input), async (c) => {
       const { profileId, newAccount } = c.req.valid('json');
@@ -97,7 +99,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
     .post('/auth/model', json(routes['/auth/model'].input), async (c) => {
       const { model } = c.req.valid('json');
       await accountOperation(async () => {
-        if (!(await connections.models()).some((m) => m.slug === model)) {
+        if (!(await runPromise(connections.models)).some((m) => m.slug === model)) {
           throw Error('Choose an available model.');
         }
         await deps.updateModel(model);
@@ -105,17 +107,17 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       return c.json({ ok: true as const, model });
     })
     .post('/connections/save', json(routes['/connections/save'].input), async (c) =>
-      c.json(await accountOperation(() => connections.save(c.req.valid('json')))),
+      c.json(await accountOperation(() => runPromise(connections.save(c.req.valid('json'))))),
     )
     .post('/connections/test', json(routes['/connections/test'].input), async (c) => {
-      await accountOperation(() => connections.test(c.req.valid('json')));
+      await accountOperation(() => runPromise(connections.test(c.req.valid('json'))));
       return c.json(ok);
     })
     .post('/connections/discover', json(routes['/connections/discover'].input), async (c) =>
-      c.json(await accountOperation(() => connections.discover(c.req.valid('json')))),
+      c.json(await accountOperation(() => runPromise(connections.discover(c.req.valid('json'))))),
     )
     .post('/connections/remove', json(routes['/connections/remove'].input), async (c) => {
-      await accountOperation(() => connections.remove(c.req.valid('json').id));
+      await accountOperation(() => runPromise(connections.remove(c.req.valid('json').id)));
       return c.json(ok);
     })
     .post('/search/save', json(routes['/search/save'].input), async (c) =>
