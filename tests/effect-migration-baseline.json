@@ -1,21 +1,21 @@
 {
   "apps/server": {
-    "zodImports": 22,
+    "zodImports": 13,
     "honoImports": 9,
     "nodeIoImports": 17,
     "fetchCalls": 2,
     "timers": 13,
     "processEnv": 7,
     "newPromise": 8,
-    "asyncFunctions": 138,
+    "asyncFunctions": 136,
     "effectRuns": 28,
     "effectPromises": 14,
-    "throwStatements": 156,
-    "tryBlocks": 62,
-    "jsonParse": 35
+    "throwStatements": 155,
+    "tryBlocks": 61,
+    "jsonParse": 33
   },
   "apps/agent": {
-    "zodImports": 32,
+    "zodImports": 17,
     "honoImports": 0,
     "nodeIoImports": 1,
     "fetchCalls": 4,
@@ -27,7 +27,7 @@
     "effectPromises": 11,
     "throwStatements": 53,
     "tryBlocks": 9,
-    "jsonParse": 3
+    "jsonParse": 2
   },
   "apps/desktop": {
     "zodImports": 0,
@@ -45,7 +45,7 @@
     "jsonParse": 2
   },
   "packages/protocol": {
-    "zodImports": 9,
+    "zodImports": 0,
     "honoImports": 0,
     "nodeIoImports": 0,
     "fetchCalls": 0,
@@ -55,9 +55,9 @@
     "asyncFunctions": 0,
     "effectRuns": 0,
     "effectPromises": 0,
-    "throwStatements": 1,
-    "tryBlocks": 2,
-    "jsonParse": 1
+    "throwStatements": 0,
+    "tryBlocks": 0,
+    "jsonParse": 0
   },
   "packages/wow-bridge": {
     "zodImports": 0,
