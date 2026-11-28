@@ -116,10 +116,11 @@ export default function McpForm({
     onSubmitMeta: 'save' as SubmitMode,
     validators: {
       onSubmit: ({ value }) => {
-        if (value.transport !== 'stdio') return;
+        if (value.transport !== 'stdio') return undefined;
         const args = parseArgs(value.args) ? undefined : argsError;
         const env = value.env.trim() && !parseEnv(value.env) ? envError : undefined;
         if (args || env) return { fields: { args, env } };
+        return undefined;
       },
     },
     onSubmitInvalid: ({ formApi }) => {

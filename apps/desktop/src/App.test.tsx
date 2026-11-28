@@ -855,11 +855,15 @@ test('routines replace suggestion toggles and expose run history with character-
       once: false,
     },
   ];
+  const routine = status.routines[0];
+  if (!routine) {
+    throw new Error('Expected the routine fixture');
+  }
   status.routineRuns = [
     {
       id: 'run-one',
       routineId: 'mage-review',
-      characterKey: status.routines[0].characterKey,
+      characterKey: routine.characterKey,
       title: 'Mage review',
       startedAt: 1000000,
       event: 'level_up',
@@ -876,7 +880,7 @@ test('routines replace suggestion toggles and expose run history with character-
   await fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
   await waitFor(() =>
     expect(request).toHaveBeenCalledWith('/routines/action', {
-      characterKey: status.routines[0].characterKey,
+      characterKey: routine.characterKey,
       id: 'mage-review',
       operation: 'pause',
     }),
