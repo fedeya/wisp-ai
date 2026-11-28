@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { connectionModel } from '@wisp/agent/connection-model';
+import { connectionModel } from '../src/models/connection-model.ts';
 
 afterEach(() => {
   vi.unstubAllGlobals();
