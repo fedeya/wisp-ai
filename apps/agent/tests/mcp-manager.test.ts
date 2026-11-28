@@ -1,5 +1,7 @@
 import { test, vi } from 'vitest';
-import { ConfigProvider, Effect, Layer, Schema } from 'effect';
+import { it } from '@effect/vitest';
+import { ConfigProvider, Effect, FileSystem, Layer, Schema } from 'effect';
+import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,7 +11,7 @@ import * as Mcp from '../src/integrations/mcp-tools.ts';
 import * as Everloot from '../src/integrations/everloot.ts';
 import * as Capabilities from '../src/host/capabilities.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { createServer } from 'node:http';
+import { createServer, type Server as HttpServer } from 'node:http';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -316,48 +318,64 @@ test('configured HTTP servers are called directly using the saved token', async 
   }
 });
 
-test('an HTTP server without a saved token sends the variable its configuration names', async () => {
-  const requests: (string | undefined)[] = [];
-  const http = createServer(async (req, res) => {
-    requests.push(req.headers.authorization);
-    const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
-    }));
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    await transport.handleRequest(req, res);
-  });
-  const manager = await build(McpManager.make());
-  const tokenEnv = 'WISP_TEST_MCP_TOKEN';
-  let port = 0;
-  const probe = (environment: Record<string, string>) =>
-    Effect.runPromise(
-      manager
-        .test(
-          parseSetup({
-            server: { name: 'env_test', url: `http://127.0.0.1:${port}/upstream`, tokenEnv },
-          }),
-        )
-        .pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(environment)))),
-    );
-  try {
-    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
-    const address = http.address();
+/** A manager on a source checkout's settings, closed with the test's scope. */
+const scopedManager = (root?: string) =>
+  Effect.acquireRelease(McpManager.make(root), (manager) => manager.close()).pipe(
+    Effect.provide(sourceConfig),
+  );
+
+/** Runs `effect` with only `environment` as the process environment. */
+const withEnvironment = (environment: Record<string, string>) =>
+  Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(environment)));
+
+/**
+ * An MCP server over HTTP on a free loopback port, closed with the test's
+ * scope. It records the `authorization` header of every request.
+ */
+const httpMcpServer = (authorizations: (string | undefined)[]) =>
+  Effect.acquireRelease(
+    Effect.callback<HttpServer>((resume) => {
+      const http = createServer(async (req, res) => {
+        authorizations.push(req.headers.authorization);
+        const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
+        server.setRequestHandler(ListToolsRequestSchema, async () => ({
+          tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
+        }));
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+        await server.connect(transport);
+        await transport.handleRequest(req, res);
+      });
+      http.listen(0, '127.0.0.1', () => resume(Effect.succeed(http)));
+    }),
+    (http) =>
+      Effect.sync(() => {
+        http.closeAllConnections();
+        http.close();
+      }),
+  );
+
+it.effect('an HTTP server without a saved token sends the variable its configuration names', () =>
+  Effect.gen(function* () {
+    const authorizations: (string | undefined)[] = [];
+    const address = (yield* httpMcpServer(authorizations)).address();
     assert.ok(address && typeof address === 'object');
-    port = address.port;
-    assert.equal((await probe({ [tokenEnv]: 'env-test-token' })).count, 1);
-    assert.deepEqual([...new Set(requests)], ['Bearer env-test-token']);
+    const manager = yield* scopedManager();
+    const tokenEnv = 'WISP_TEST_MCP_TOKEN';
+    const probe = manager.test(
+      parseSetup({
+        server: { name: 'env_test', url: `http://127.0.0.1:${address.port}/upstream`, tokenEnv },
+      }),
+    );
+    const { count } = yield* probe.pipe(withEnvironment({ [tokenEnv]: 'env-test-token' }));
+    assert.equal(count, 1);
+    assert.deepEqual([...new Set(authorizations)], ['Bearer env-test-token']);
     // An empty or unset variable sends no credentials.
-    requests.length = 0;
-    await probe({ [tokenEnv]: '' });
-    await probe({});
-    assert.deepEqual([...new Set(requests)], [undefined]);
-  } finally {
-    await Effect.runPromise(manager.close());
-    http.close();
-  }
-});
+    authorizations.length = 0;
+    yield* probe.pipe(withEnvironment({ [tokenEnv]: '' }));
+    yield* probe.pipe(withEnvironment({}));
+    assert.deepEqual([...new Set(authorizations)], [undefined]);
+  }),
+);
 
 test('disabling MCP cancels an opening connection and a later enable opens a fresh client', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
@@ -560,13 +578,8 @@ test('the manager reserves bundled MCP names and their model namespaces', async 
   }
 });
 
-test('a stdio server inherits the set variables, with the bundled runtimes first on PATH', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const script = path.join(root, 'server.mjs');
-  // The server reports what it inherited as its only tool's description.
-  await writeFile(
-    script,
-    `
+/** A stdio MCP server whose only tool describes the variables it inherited. */
+const inheritanceServer = `
 import { Server } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/index.js'))};
 import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/stdio.js'))};
 import { ListToolsRequestSchema } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/types.js'))};
@@ -582,35 +595,40 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [{ name: 'env', description: JSON.stringify(inherited), inputSchema: { type: 'object' } }],
 }));
 await server.connect(new StdioServerTransport());
-`,
-  );
-  const manager = await build(McpManager.make(root));
-  const environment = ConfigProvider.fromUnknown({
-    PATH: 'inherited-path',
-    ComSpec: 'inherited-shell',
-    PATHEXT: '',
-    WOW_BRIDGE_TOKEN: 'not-inherited',
-  });
-  try {
-    const { tools } = await Effect.runPromise(
-      manager
+`;
+
+it.effect(
+  'a stdio server inherits the set variables, with the bundled runtimes first on PATH',
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: 'wow-mcp-' });
+      const script = path.join(root, 'server.mjs');
+      // The server reports what it inherited as its only tool's description.
+      yield* fs.writeFileString(script, inheritanceServer);
+      const manager = yield* scopedManager(root);
+      const { tools } = yield* manager
         .test(
           parseSetup({
             server: { name: 'env_test', transport: 'stdio', command: 'node', args: [script] },
           }),
         )
-        .pipe(Effect.provide(ConfigProvider.layer(environment))),
-    );
-    assert.deepEqual(JSON.parse(tools[0]?.description ?? ''), {
-      PATH: [path.join(root, 'runtime'), path.dirname(process.execPath), 'inherited-path'].join(
-        path.delimiter,
-      ),
-      ComSpec: 'inherited-shell',
-      PATHEXT: null,
-      WOW_BRIDGE_TOKEN: null,
-    });
-  } finally {
-    await Effect.runPromise(manager.close());
-    await rm(root, { recursive: true, force: true });
-  }
-}, 30000);
+        .pipe(
+          withEnvironment({
+            PATH: 'inherited-path',
+            ComSpec: 'inherited-shell',
+            PATHEXT: '',
+            WOW_BRIDGE_TOKEN: 'not-inherited',
+          }),
+        );
+      assert.deepEqual(JSON.parse(tools[0]?.description ?? ''), {
+        PATH: [path.join(root, 'runtime'), path.dirname(process.execPath), 'inherited-path'].join(
+          path.delimiter,
+        ),
+        ComSpec: 'inherited-shell',
+        PATHEXT: null,
+        WOW_BRIDGE_TOKEN: null,
+      });
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+  30000,
+);
