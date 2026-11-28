@@ -167,3 +167,4 @@ export const actionTools = {
   update_settings: 'update_settings',
   undo_settings: 'undo_settings',
 } as const;
+export type GameAction = z.input<typeof actionSchema>;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import { Effect } from 'effect';
+import { Effect, Exit, Schema } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as Capabilities from '@wisp/agent/capabilities';
 import { CapabilitySettings } from '@wisp/server/capabilities';
@@ -25,23 +25,32 @@ import {
   itemPricesInput,
   objectLocationsInput,
   polestarGuideInput,
+  inspectionParseOptions,
   inspectionSchema,
 } from '@wisp/agent/contract/game-inspection';
+import type { GameInspection } from '@wisp/agent/game-access';
 import { integrationContext } from '@wisp/protocol/capabilities';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
+
+// Inputs decode as their tools decode them; strict ones reject unknown keys.
+const accepts = (schema: Schema.Top & Schema.Decoder<unknown>, input: unknown) =>
+  Exit.isSuccess(Schema.decodeUnknownExit(schema)(input, rejectUnknownKeys));
+// An inspection as the server decodes it.
+const inspect = (kind: GameInspection['kind'], args: unknown) =>
+  Schema.decodeUnknownExit(inspectionSchema)({ kind, args }, inspectionParseOptions(kind));
+const inspected = (kind: GameInspection['kind'], args: unknown) =>
+  Exit.match(inspect(kind, args), { onSuccess: (value) => value, onFailure: () => undefined });
 
 test('item and spell references can opt into cooldown readings', () => {
   const args = { kind: 'item', id: 3827 };
-  assert.deepEqual(inspectionSchema.parse({ kind: 'reference', args }), {
-    kind: 'reference',
-    args,
-  });
+  assert.deepEqual(inspected('reference', args), { kind: 'reference', args });
   for (const kind of ['item', 'spell']) {
-    const request = { kind: 'reference', args: { ...args, kind, includeCooldown: true } };
-    assert.deepEqual(inspectionSchema.parse(request), request);
+    const request = { ...args, kind, includeCooldown: true };
+    assert.deepEqual(inspected('reference', request), { kind: 'reference', args: request });
   }
   for (const kind of ['quest', 'talent']) {
-    const request = { kind: 'reference', args: { ...args, kind, includeCooldown: true } };
-    assert.equal(inspectionSchema.safeParse(request).success, false);
+    const request = { ...args, kind, includeCooldown: true };
+    assert.equal(Exit.isSuccess(inspect('reference', request)), false);
   }
 });
 
@@ -133,30 +142,24 @@ test('actual tool definitions follow per-API readiness, parent switches and expi
   }
 });
 test('new inspection inputs bound work and reject executable or cross-version arguments', () => {
-  assert.equal(questChainInput.safeParse({ questId: 1, limit: 1000 }).success, false);
-  assert.equal(questChainInput.safeParse({ questId: 1, version: 'classic' }).success, false);
-  assert.equal(storedItemInput.safeParse({ itemId: 1, includeGuild: false }).success, true);
-  assert.equal(storedItemInput.safeParse({ itemId: 1, script: 'x' }).success, false);
-  assert.equal(itemPricesInput.safeParse({ itemIds: Array(21).fill(1) }).success, false);
-  assert.equal(objectLocationsInput.safeParse({}).success, false);
-  assert.deepEqual(polestarGuideInput.parse({}), { upcoming: 2 });
-  assert.equal(polestarGuideInput.safeParse({ upcoming: 6 }).success, false);
-  assert.equal(polestarGuideInput.safeParse({ guideId: 'x' }).success, false);
-  assert.equal(objectLocationsInput.safeParse({ objectId: 99, mapId: 1454 }).success, true);
-  assert.equal(inspectionSchema.safeParse({ kind: 'hearthstone', args: {} }).success, true);
-  assert.equal(
-    inspectionSchema.safeParse({ kind: 'hearthstone', args: { itemId: 1 } }).success,
-    false,
-  );
+  assert.equal(accepts(questChainInput, { questId: 1, limit: 1000 }), false);
+  assert.equal(accepts(questChainInput, { questId: 1, version: 'classic' }), false);
+  assert.equal(accepts(storedItemInput, { itemId: 1, includeGuild: false }), true);
+  assert.equal(accepts(storedItemInput, { itemId: 1, script: 'x' }), false);
+  assert.equal(accepts(itemPricesInput, { itemIds: Array(21).fill(1) }), false);
+  assert.equal(accepts(objectLocationsInput, {}), false);
+  assert.deepEqual(Schema.decodeUnknownSync(polestarGuideInput)({}), { upcoming: 2 });
+  assert.equal(accepts(polestarGuideInput, { upcoming: 6 }), false);
+  assert.equal(accepts(polestarGuideInput, { guideId: 'x' }), false);
+  assert.equal(accepts(objectLocationsInput, { objectId: 99, mapId: 1454 }), true);
+  assert.equal(Exit.isSuccess(inspect('hearthstone', {})), true);
+  assert.equal(Exit.isSuccess(inspect('hearthstone', { itemId: 1 })), false);
 });
 
 test('flight path inspection trims destination names and bounds the result limit', () => {
-  assert.deepEqual(
-    inspectionSchema.parse({ kind: 'flight_paths', args: { destination: ' Lakeshire ' } }),
-    { kind: 'flight_paths', args: { destination: 'Lakeshire', limit: 20 } },
-  );
-  assert.equal(
-    inspectionSchema.safeParse({ kind: 'flight_paths', args: { limit: 41 } }).success,
-    false,
-  );
+  assert.deepEqual(inspected('flight_paths', { destination: ' Lakeshire ' }), {
+    kind: 'flight_paths',
+    args: { destination: 'Lakeshire', limit: 20 },
+  });
+  assert.equal(Exit.isSuccess(inspect('flight_paths', { limit: 41 })), false);
 });

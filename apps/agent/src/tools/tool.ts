@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { JsonSchema, Schema } from 'effect';
+import { JsonSchema, Predicate, Schema } from 'effect';
 import type { SchemaAST } from 'effect';
 import type { Effect } from 'effect';
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from 'effect/StandardSchema';
@@ -28,7 +28,9 @@ export interface ToolDefinition<Input = any, Output = any> {
   inputSchema:
     | z.ZodType<Input>
     | (StandardSchemaV1<unknown, Input> & StandardJSONSchemaV1<unknown, Input>);
-  outputSchema?: z.ZodType<Output>;
+  outputSchema?:
+    | z.ZodType<Output>
+    | (StandardSchemaV1<unknown, Output> & StandardJSONSchemaV1<unknown, Output>);
   /**
    * Deferred tools stay out of every request until the model finds them with
    * `tool_search` and runs them with `tool_call`, which keeps the request's
@@ -74,21 +76,101 @@ function jsonSchemaFor(
   return { $schema: JsonSchema.META_SCHEMA_URI_DRAFT_07, ...draft07.schema, ...definitions };
 }
 
+// The order zod's JSON Schema generator writes keywords in: a wrapper's
+// `default` and `description` first, then the keywords of the type it wraps.
+const zodKeywordOrder = [
+  '$schema',
+  'default',
+  'description',
+  'minItems',
+  'maxItems',
+  'type',
+  'minLength',
+  'maxLength',
+  'exclusiveMinimum',
+  'minimum',
+  'exclusiveMaximum',
+  'maximum',
+  'enum',
+  'const',
+  'items',
+  'properties',
+  'required',
+  'additionalProperties',
+];
+const zodRank = (keyword: string) => {
+  const rank = zodKeywordOrder.indexOf(keyword);
+  return rank < 0 ? zodKeywordOrder.length : rank;
+};
+// Keywords whose value is a schema or a list of schemas, and those whose value
+// maps names to schemas.
+const schemaKeywords = new Set([
+  'items',
+  'additionalProperties',
+  'not',
+  'anyOf',
+  'oneOf',
+  'allOf',
+  'prefixItems',
+]);
+const schemaMapKeywords = new Set(['properties', 'patternProperties', '$defs', 'definitions']);
+
+const zodLayout = (schema: unknown) =>
+  Predicate.isObject(schema) ? zodLayoutObject(schema) : schema;
+const zodLayoutAll = (schemas: unknown) =>
+  Array.isArray(schemas) ? schemas.map(zodLayout) : zodLayout(schemas);
+
 /**
- * An Effect schema as a tool's input. With `rejectUnknownKeys`, an unknown key
- * fails validation and the model's JSON Schema closes every object, as
- * `Schema.toStandardJSONSchemaV1` cannot.
+ * A JSON Schema written as zod wrote it: keywords in zod's order, `properties`
+ * on every object, and open objects without `additionalProperties: true`.
  */
+function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
+  const entries = Object.entries(schema).flatMap(([keyword, value]): [string, unknown][] => {
+    if (keyword === 'additionalProperties' && value === true) return [];
+    if (schemaKeywords.has(keyword)) return [[keyword, zodLayoutAll(value)]];
+    if (schemaMapKeywords.has(keyword) && Predicate.isObject(value)) {
+      const schemas = Object.entries(value).map(([name, entry]) => [name, zodLayout(entry)]);
+      return [[keyword, Object.fromEntries(schemas)]];
+    }
+    return [[keyword, value]];
+  });
+  const closedBySchema = Predicate.isObject(schema.additionalProperties);
+  if (schema.type === 'object' && !('properties' in schema) && !closedBySchema) {
+    entries.push(['properties', {}]);
+  }
+  // Array sorts are stable: keywords zod does not write keep Effect's order, last.
+  entries.sort(([a], [b]) => zodRank(a) - zodRank(b));
+  return Object.fromEntries(entries);
+}
+
+interface ToolInputOptions {
+  /**
+   * How the input decodes. With `rejectUnknownKeys`, an unknown key fails
+   * validation and the model's JSON Schema closes every object, as
+   * `Schema.toStandardJSONSchemaV1` cannot.
+   */
+  readonly parseOptions?: SchemaAST.ParseOptions | undefined;
+  /**
+   * `'zod'` writes the model's JSON Schema as zod did (see `zodLayoutObject`), so a
+   * tool whose input moved from zod sends the model the same bytes.
+   */
+  readonly layout?: 'effect' | 'zod' | undefined;
+}
+
+/** An Effect schema as a tool's input. */
 export function effectToolInput<S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
-  parseOptions?: SchemaAST.ParseOptions,
+  { parseOptions, layout = 'effect' }: ToolInputOptions = {},
 ): StandardSchemaV1<S['Encoded'], S['Type']> & StandardJSONSchemaV1<S['Encoded'], S['Type']> {
   const standard = Schema.toStandardSchemaV1(schema, { parseOptions });
   // Effect's own converter answers any other target, or rejects it.
   const converter = Schema.toStandardJSONSchemaV1(schema)['~standard'].jsonSchema;
   const options = { onExcessProperty: parseOptions?.onExcessProperty };
+  const shape = (json: JsonSchema.JsonSchema) => (layout === 'zod' ? zodLayoutObject(json) : json);
   const convert = (side: Schema.Constraint, { target }: StandardJSONSchemaV1.Options) =>
-    isDraft(target) ? jsonSchemaFor(Schema.toJsonSchemaDocument(side, options), target) : undefined;
+    isDraft(target)
+      ? shape(jsonSchemaFor(Schema.toJsonSchemaDocument(side, options), target))
+      : undefined;
   return {
     '~standard': {
       ...standard['~standard'],

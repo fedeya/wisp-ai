@@ -1,6 +1,7 @@
+// @effect-migrated
 import { Context, Effect, Schema } from 'effect';
-import type { z } from 'zod';
-import type { actionSchema } from '../contract/game-actions.ts';
+import type { GameAction } from '../contract/game-actions.ts';
+export type { GameAction } from '../contract/game-actions.ts';
 import type { characterSections, itemSourcesInput } from '../contract/game-inspection.ts';
 import type { GameInspection, InspectionResult } from '../contract/game-inspection-results.ts';
 export { inspectionResults } from '../contract/game-inspection-results.ts';
@@ -11,9 +12,8 @@ export { itemSourcesResult } from '../contract/item-sources-result.ts';
 
 export const gameReading = Schema.Record(Schema.String, Schema.Unknown);
 export type GameReading = typeof gameReading.Type;
-export type GameAction = z.input<typeof actionSchema>;
-export type CharacterSections = z.infer<typeof characterSections>;
-export type ItemSourcesInput = z.input<typeof itemSourcesInput>;
+export type CharacterSections = typeof characterSections.Type;
+export type ItemSourcesInput = typeof itemSourcesInput.Encoded;
 
 type InspectionOperation<K extends GameInspection['kind']> = (
   session: string,
