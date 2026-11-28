@@ -5,17 +5,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { installerBuildVersion } from './installer-version.ts';
 import { addonVersionFromToc } from '../apps/server/src/game/addon-version.ts';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { Effect } from 'effect';
+import { addonReleaseVersion } from './addon-release-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {
   throw Error('Run installer verification in a disposable Windows CI profile.');
 }
 const sourceVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
-// The addon version script runs on Effect; this module calls it as a command.
-const addonVersion = (
-  await exec(process.execPath, ['scripts/addon-release-version.ts', 'version'], {
-    windowsHide: true,
-  })
-).stdout.trim();
+// addon-release-version.ts runs on Effect; this unmigrated script is its edge.
+const addonVersion = await Effect.runPromise(
+  addonReleaseVersion(process.cwd()).pipe(Effect.provide(NodeServices.layer)),
+);
 const installer = path.resolve(
   process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
 );
