@@ -13,7 +13,7 @@ import path from 'node:path';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import { make, layer as agentLayer, EngineConfig, SessionHistory } from '@wisp/agent/engine';
 import type { TurnInput } from '@wisp/agent/engine';
-import { MemoryHistory } from '@wisp/agent/memory-history';
+import * as MemoryHistory from '@wisp/agent/memory-history';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { newChat } from '@wisp/server/chat-lifecycle';
 import { applyEvent } from '@wisp/server/events';
@@ -197,7 +197,7 @@ test(
     await new Promise<void>((resolve) => model.listen(0, '127.0.0.1', resolve));
     const origin = 'http://127.0.0.1:' + (model.address() as { port: number }).port;
     setAgentHost({ origin, token: 'offline-token' });
-    const history = new MemoryHistory();
+    const history = Effect.runSync(MemoryHistory.make);
     const gameAccess = Game.Service.of({
       ...Game.unavailableGameAccess,
       readSettings: (agentSession, args) =>
@@ -224,7 +224,11 @@ test(
     });
     const engine = make(
       agentLayer.pipe(
-        Layer.provide(SessionHistory.layer(history)),
+        Layer.provide(
+          SessionHistory.layer.pipe(
+            Layer.provide(Layer.succeed(SessionHistory.HistoryStore, history)),
+          ),
+        ),
         Layer.provide(Layer.succeed(Game.Service, gameAccess)),
         Layer.provide(
           Layer.succeed(Memory.Service, {
@@ -452,7 +456,7 @@ test(
         },
       });
       // Every turn's model history persists for the next one.
-      expect(JSON.stringify(history.entries(session))).toContain(text);
+      expect(JSON.stringify(await Effect.runPromise(history.entries(session)))).toContain(text);
     } catch (error) {
       throw new Error(
         'Offline agent integration failed: ' +

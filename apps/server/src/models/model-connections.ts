@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Option, Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import {
   connectionConfig,
   contextWindow,
@@ -537,7 +537,7 @@ export class ModelConnections implements ModelCatalog {
       signal,
     });
     if (!response.ok) {
-      const error = await normalizeModelError(response);
+      const error = await Effect.runPromise(normalizeModelError(response));
       const body = (await error.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;

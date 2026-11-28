@@ -1,6 +1,7 @@
 import { createProviderModel } from './providers.ts';
 import { createOpenAI } from '@ai-sdk/openai';
 import { wrapLanguageModel } from 'ai';
+import { Effect } from 'effect';
 import { normalizeModelError } from '../contract/model-errors.ts';
 import { MODEL_SESSION_HEADER, type SelectedModel } from '../contract/agent-rpc.ts';
 import { subscriptionCallOptions, filterWebSearch } from './model-tools.ts';
@@ -40,7 +41,7 @@ export function connectionModel(
       const error = (await response.json()) as { error: { message: string } };
       throw Error(error.error.message);
     }
-    return native ? response : normalizeModelError(response);
+    return native ? response : Effect.runPromise(normalizeModelError(response));
   };
   const options = { apiKey: 'wisp-loopback', baseURL, fetch: transport };
   if (native && (!selected.provider || !selected.modelId)) {

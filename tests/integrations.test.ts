@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expectTypeOf, test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -8,7 +8,11 @@ import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as Capabilities from '@wisp/agent/capabilities';
 import { CapabilitySettings } from '@wisp/server/capabilities';
 import { IntegrationState } from '../apps/server/src/integrations/integration-state.ts';
-import { integrationContext, defaultCapabilities } from '@wisp/protocol/capabilities';
+import {
+  integrationContext,
+  defaultCapabilities,
+  type ToolName,
+} from '@wisp/protocol/capabilities';
 import { enabledTool, toolOffered } from '@wisp/agent/enabled-tool';
 import { z } from 'zod';
 
@@ -92,7 +96,9 @@ test('integration availability and master switches govern real tool definitions 
     state.reset();
     assert.equal(settings.state('integration:questie').status, 'waiting');
     assert.equal(settings.enabled('unknown:tool'), false);
-    assert.throws(() => enabledTool('unregistered', definition), /Unregistered/);
+    // Only a registered tool has a capability: the compiler rejects any other name.
+    expectTypeOf(enabledTool).parameter(0).toEqualTypeOf<ToolName>();
+    expectTypeOf<'unregistered'>().not.toExtend<ToolName>();
   } finally {
     if (previous === undefined) {
       delete process.env.WOW_CAPABILITIES_FILE;

@@ -1,3 +1,7 @@
+// @effect-migrated
+import { Effect, Predicate } from 'effect';
+import { HttpClientRequest, HttpClientResponse } from 'effect/http';
+
 export function safeErrorMessage(message: string): string {
   return message
     .replace(/Bearer\s+[^\s"',}]+/gi, 'Bearer [redacted]')
@@ -6,29 +10,33 @@ export function safeErrorMessage(message: string): string {
     .slice(0, 500);
 }
 
-// Subscription errors can use {detail} instead of the SDK's {error: {message}}.
-export async function normalizeModelError(response: Response): Promise<Response> {
+/**
+ * A failed model response in the form the AI SDK reads, `{error: {message}}`:
+ * subscription errors can send `{detail}` instead. The message is redacted and
+ * the status and `retry-after` are kept. Any other response comes back as is,
+ * its body unread.
+ */
+export const normalizeModelError = Effect.fnUntraced(function* (response: Response) {
   if (response.ok) {
     return response;
   }
-  const body = (await response
-    .clone()
-    .json()
-    .catch(() => null)) as {
-    detail?: unknown;
-    error?: { message?: unknown };
-  } | null;
-  const message = body?.error?.message ?? body?.detail;
-  if (typeof message !== 'string') {
+  const body = yield* HttpClientResponse.fromWeb(
+    HttpClientRequest.get(response.url),
+    response.clone(),
+  ).json.pipe(Effect.orElseSucceed(() => null));
+  const error = Predicate.hasProperty(body, 'error') ? body.error : undefined;
+  const message =
+    (Predicate.hasProperty(error, 'message') ? error.message : undefined) ??
+    (Predicate.hasProperty(body, 'detail') ? body.detail : undefined);
+  if (!Predicate.isString(message)) {
     return response;
   }
+  const retryAfter = response.headers.get('retry-after');
   return Response.json(
     { error: { message: safeErrorMessage(message) } },
     {
       status: response.status,
-      headers: response.headers.has('retry-after')
-        ? { 'retry-after': response.headers.get('retry-after')! }
-        : undefined,
+      headers: retryAfter === null ? undefined : { 'retry-after': retryAfter },
     },
   );
-}
+});

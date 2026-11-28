@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, it } from '@effect/vitest';
 import { APICallError, RetryError, simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { Effect, Layer, Stream } from 'effect';
@@ -12,7 +12,7 @@ import {
   WispAgent,
 } from '../src/engine.ts';
 import { modelError } from '../src/execution/engine-errors.ts';
-import { MemoryHistory } from '../src/session/memory-history.ts';
+import * as MemoryHistory from '../src/session/memory-history.ts';
 import { defineTool, type ToolDefinition } from '../src/tools/tool.ts';
 import type { DeferredTool } from '../src/tools/turn-tools.ts';
 
@@ -29,17 +29,19 @@ const usage = {
   outputTokens: { total: 1, text: 1, reasoning: undefined },
 };
 
-/** The engine with its host replaced by layers: no bridge, no HTTP. */
+/**
+ * The engine with its host replaced by layers: no bridge, no HTTP. The
+ * session's log is kept in memory, where the test reads it back.
+ */
 function engineLayer(
   model: MockLanguageModelV4,
-  history: MemoryHistory,
   direct: Record<string, ToolDefinition> = {},
   deferred: DeferredTool[] = [],
 ) {
   return AgentEngine.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        SessionHistory.layer(history),
+        SessionHistory.layer,
         Layer.succeed(
           WispAgent,
           WispAgent.of({ content: Effect.succeed({ system: 'You are Wisp.', skills: [] }) }),
@@ -58,27 +60,28 @@ function engineLayer(
       ),
     ),
     Layer.provide(Layer.succeed(EngineConfig, EngineConfig.of({ origin: () => '', token: '' }))),
+    // The tests read the log back through MemoryHistory.Service.
+    Layer.provideMerge(MemoryHistory.layer),
   );
 }
 
-test('a request the provider refuses fails the turn as a rejected model call', async () => {
-  const history = new MemoryHistory();
+it.effect('a request the provider refuses fails the turn as a rejected model call', () => {
   const model = new MockLanguageModelV4({
     doStream: async () => {
       throw apiError(400);
     },
   });
-  const failure = await Effect.runPromise(
-    Effect.flatMap(AgentEngine, (engine) =>
-      Stream.runDrain(engine.send('s', 'chat', { text: 'Hi' })),
-    ).pipe(Effect.flip, Effect.provide(engineLayer(model, history))),
-  );
-  expect(failure).toMatchObject({ _tag: 'ModelError', reason: 'rejected', status: 400 });
-  // The player's message was logged before the model was called.
-  expect(history.entries('s').map(({ entry }) => entry.type)).toEqual(['user']);
+  return Effect.gen(function* () {
+    const engine = yield* AgentEngine;
+    const failure = yield* Effect.flip(Stream.runDrain(engine.send('s', 'chat', { text: 'Hi' })));
+    expect(failure).toMatchObject({ _tag: 'ModelError', reason: 'rejected', status: 400 });
+    // The player's message was logged before the model was called.
+    const logged = yield* (yield* MemoryHistory.Service).entries('s');
+    expect(logged.map(({ entry }) => entry.type)).toEqual(['user']);
+  }).pipe(Effect.provide(engineLayer(model)));
 });
 
-test('text parts a provider reuses an ID for in a later step stream as separate parts', async () => {
+it.effect('text parts a provider reuses an ID for in a later step stream as separate parts', () => {
   let call = 0;
   const model = new MockLanguageModelV4({
     doStream: async () => {
@@ -114,20 +117,19 @@ test('text parts a provider reuses an ID for in a later step stream as separate 
       };
     },
   });
-  const events = await Effect.runPromise(
-    Effect.flatMap(AgentEngine, (engine) =>
-      Stream.runCollect(engine.send('s', 'chat', { text: 'Where?' })),
-    ).pipe(Effect.provide(engineLayer(model, new MemoryHistory()))),
-  );
-  const texts = Array.from(events).flatMap((event) =>
-    event.type === 'content.completed' ? [event.data as { partId: string; value: string }] : [],
-  );
-  // The AI SDK gives a reused provider ID a new one, so the bridge never merges the two.
-  expect(texts.map((text) => text.value)).toEqual(['Looking.', 'Found it.']);
-  expect(new Set(texts.map((text) => text.partId)).size).toBe(2);
+  return Effect.gen(function* () {
+    const engine = yield* AgentEngine;
+    const events = yield* Stream.runCollect(engine.send('s', 'chat', { text: 'Where?' }));
+    const texts = Array.from(events).flatMap((event) =>
+      event.type === 'content.completed' ? [event.data as { partId: string; value: string }] : [],
+    );
+    // The AI SDK gives a reused provider ID a new one, so the bridge never merges the two.
+    expect(texts.map((text) => text.value)).toEqual(['Looking.', 'Found it.']);
+    expect(new Set(texts.map((text) => text.partId)).size).toBe(2);
+  }).pipe(Effect.provide(engineLayer(model)));
 });
 
-test('an endsTurn tool run through tool_call ends the turn', async () => {
+it.effect('an endsTurn tool run through tool_call ends the turn', () => {
   let calls = 0;
   const model = new MockLanguageModelV4({
     doStream: async () => {
@@ -158,22 +160,21 @@ test('an endsTurn tool run through tool_call ends the turn', async () => {
     endsTurn: true,
     execute: () => ({ skipped: true }),
   });
-  await Effect.runPromise(
-    Effect.flatMap(AgentEngine, (engine) =>
-      Stream.runDrain(engine.send('s', 'chat', { text: 'Tip?' })),
-    ).pipe(
-      Effect.provide(
-        engineLayer(model, new MemoryHistory(), { skip_tip: skipTip }, [
-          // tool_call is offered when the turn has deferred tools, as every real turn does.
-          { name: 'map', description: 'Map.', inputSchema: {}, run: async () => ({}) },
-        ]),
-      ),
+  return Effect.gen(function* () {
+    const engine = yield* AgentEngine;
+    yield* Stream.runDrain(engine.send('s', 'chat', { text: 'Tip?' }));
+    expect(calls).toBe(1);
+  }).pipe(
+    Effect.provide(
+      engineLayer(model, { skip_tip: skipTip }, [
+        // tool_call is offered when the turn has deferred tools, as every real turn does.
+        { name: 'map', description: 'Map.', inputSchema: {}, run: async () => ({}) },
+      ]),
     ),
   );
-  expect(calls).toBe(1);
 });
 
-test('model errors are classified by the status of their last attempt', () => {
+it('model errors are classified by the status of their last attempt', () => {
   expect(modelError(apiError(401))).toMatchObject({ reason: 'auth', status: 401 });
   expect(modelError(apiError(503))).toMatchObject({ reason: 'unavailable', status: 503 });
   const retried = new RetryError({

@@ -1,14 +1,14 @@
-import { toolDescriptions } from '@wisp/protocol/capabilities';
+// @effect-migrated
+import type { ToolName } from '@wisp/protocol/capabilities';
 import type { ToolDefinition } from './tool.ts';
 import type { CapabilitySnapshot } from '../host/capabilities.ts';
 /**
  * Offers a tool while its capability is on. A tool in `toolFeatures` is also
  * off while its feature flag is, because the bridge publishes it as disabled.
+ * Only a tool `toolDescriptions` registers has a capability, so `name` is one
+ * of its names.
  */
-export function enabledTool<I, O>(name: string, definition: ToolDefinition<I, O>) {
-  if (!Object.hasOwn(toolDescriptions, name)) {
-    throw new Error('Unregistered tool: ' + name);
-  }
+export function enabledTool<I, O>(name: ToolName, definition: ToolDefinition<I, O>) {
   return { ...definition, capability: 'tool:' + name };
 }
 

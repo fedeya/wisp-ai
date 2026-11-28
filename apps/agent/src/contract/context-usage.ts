@@ -1,3 +1,6 @@
+// @effect-migrated
+import { Option, Schema } from 'effect';
+
 export const COMPACTION_THRESHOLD = 0.75;
 
 export interface ContextUsage {
@@ -17,9 +20,17 @@ export function resetContextUsage(chat: UsageChat) {
   }
 }
 
-function tokens(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-}
+/** A token count a model call reported: a non-negative safe integer. */
+const Tokens = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
+const isTokens = Schema.is(Tokens);
+
+/** The usage a model call's `usage.recorded` event reports; other fields are ignored. */
+const ReportedUsage = Schema.Struct({
+  inputTokens: Tokens,
+  outputTokens: Tokens,
+  cacheReadTokens: Schema.optional(Schema.Unknown),
+});
+const reportedUsage = Schema.decodeUnknownOption(ReportedUsage);
 
 export function recordContextUsage(
   chat: UsageChat,
@@ -51,18 +62,14 @@ export function recordContextUsage(
     }
     return true;
   }
-  if (data.kind !== 'model' || !data.usage || typeof data.usage !== 'object') {
+  const reported = data.kind === 'model' ? reportedUsage(data.usage) : Option.none();
+  if (Option.isNone(reported)) {
     return false;
   }
-  const reported = data.usage as Record<string, unknown>;
-  const input = tokens(reported.inputTokens);
-  const output = tokens(reported.outputTokens);
-  if (input === undefined || output === undefined) {
-    return false;
-  }
+  const { inputTokens: input, outputTokens: output, cacheReadTokens } = reported.value;
   usage.inputTokens += input;
   usage.outputTokens += output;
-  usage.cacheReadTokens += tokens(reported.cacheReadTokens) ?? 0;
+  usage.cacheReadTokens += isTokens(cacheReadTokens) ? cacheReadTokens : 0;
   if (!usage.compacting) {
     // Cache hits are already included in inputTokens. This is the most recent
     // measured input plus output, not a tokenizer estimate of the next request.

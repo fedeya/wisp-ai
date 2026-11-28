@@ -18,7 +18,7 @@ import { recordContextUsage } from '../../src/contract/context-usage.ts';
 import { make, layer as agentLayer, EngineConfig, SessionHistory } from '../../src/engine.ts';
 import type { ToolStubOutcome } from '../../src/engine.ts';
 import { agentHost } from '../../src/host/agent-host.ts';
-import { MemoryHistory } from '../../src/session/memory-history.ts';
+import * as MemoryHistory from '../../src/session/memory-history.ts';
 import { itemSourcesFixture, playerMessage } from '../fixtures/fedrath.ts';
 import { gameItemReadings } from '../fixtures/dungeon-loot.ts';
 
@@ -96,7 +96,7 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
     });
     const engine = make(
       agentLayer.pipe(
-        Layer.provide(SessionHistory.layer(new MemoryHistory())),
+        Layer.provide(SessionHistory.layer.pipe(Layer.provide(MemoryHistory.layer))),
         Layer.provide(Layer.succeed(Game.Service, gameAccess)),
         Layer.provide(
           Layer.succeed(Memory.Service, {

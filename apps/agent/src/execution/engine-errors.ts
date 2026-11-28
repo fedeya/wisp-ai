@@ -1,5 +1,6 @@
+// @effect-migrated allow=effectPromises: hostCall and modelCall adapt the host's fetch and the AI SDK's model calls
 import { APICallError, RetryError } from 'ai';
-import { Effect, Schema } from 'effect';
+import { Effect, Option, Schema } from 'effect';
 import { HistoryError } from '../session/session-history.ts';
 
 /**
@@ -45,15 +46,14 @@ export const turnCause = (failure: unknown) =>
       ? new Error('Compaction failed.')
       : failure;
 
+/** Any value as JSON, or none when it has no JSON form (a cycle, a BigInt, a function). */
+const asJson = Schema.encodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+
 export function errorText(error: unknown) {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   if (error === null || error === undefined) return 'The response failed.';
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return 'The response failed.';
-  }
+  return Option.getOrElse(asJson(error), () => 'The response failed.');
 }
 
 function reasonFor(status: number | undefined): ModelError['reason'] {

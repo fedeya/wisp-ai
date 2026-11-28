@@ -1,5 +1,6 @@
 import type { PromiseChatGPTAuth } from '../../auth/index.ts';
 import { readCompletedResponse } from '../../models/response-stream.ts';
+import { Effect } from 'effect';
 import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
 
 import { resolveWebSearch, type WebSearchInput } from '@wisp/protocol/search';
@@ -181,7 +182,7 @@ export async function searchPublicWeb(
         signal: requestSignal,
       });
       if (!response.ok) {
-        const error = await normalizeModelError(response);
+        const error = await Effect.runPromise(normalizeModelError(response));
         const body = (await error.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;

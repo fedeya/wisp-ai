@@ -1,3 +1,4 @@
+// @effect-migrated
 import { openaiModelCatalog } from '@ai-sdk/openai/internal';
 import { getAnthropicLanguageModelEntry } from '@ai-sdk/anthropic/internal';
 import { getGoogleLanguageModelEntry } from '@ai-sdk/google/internal';
