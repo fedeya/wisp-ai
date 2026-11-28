@@ -1,7 +1,10 @@
 // Offline migration only. The live renderer accepts structured references exclusively.
 import { linkedReferences } from '../chat/references.ts';
+import { Option, Schema } from 'effect';
 import { referenceSchema, type RichReference } from '@wisp/agent/contract/rich-reference';
 import type { Chat } from '../chat/events.ts';
+
+const decodeReference = Schema.decodeUnknownOption(referenceSchema);
 
 // Preserve the legacy migration's interpretation; live replies transport source
 // text and leave Markdown context and reference presentation to the addon.
@@ -26,20 +29,15 @@ export function migrateReplies(chats: Chat[]) {
           if (linked.kind === 'map') {
             continue;
           }
-          const candidate = {
-            kind: linked.kind,
-            id: linked.id,
-            label: linked.name,
-            payload: linked.nativeLink?.match(/\|H([^|]+)/)?.[1],
-          };
-          const parsed = referenceSchema.safeParse(candidate);
-          const clean = parsed.success
-            ? parsed
-            : referenceSchema.safeParse({ ...candidate, payload: undefined });
-          if (!clean.success) {
+          const bare = { kind: linked.kind, id: linked.id, label: linked.name };
+          const payload = linked.nativeLink?.match(/\|H([^|]+)/)?.[1];
+          // zod read an undefined payload as a missing one, which Schema rejects.
+          const parsed = decodeReference(payload === undefined ? bare : { ...bare, payload });
+          const clean = Option.isSome(parsed) ? parsed : decodeReference(bare);
+          if (Option.isNone(clean)) {
             continue;
           }
-          const ref = clean.data;
+          const ref = clean.value;
           const previous = aliases.get(ref.label);
           aliases.set(
             ref.label,
@@ -52,15 +50,15 @@ export function migrateReplies(chats: Chat[]) {
       }
       const catalog: Record<string, RichReference> = {};
       const add = (candidate: unknown, fallback: string) => {
-        const parsed = referenceSchema.safeParse(candidate);
-        if (!parsed.success) {
+        const parsed = decodeReference(candidate);
+        if (Option.isNone(parsed)) {
           return fallback;
         }
         const existing = Object.keys(catalog).find(
-          (key) => JSON.stringify(catalog[key]) === JSON.stringify(parsed.data),
+          (key) => JSON.stringify(catalog[key]) === JSON.stringify(parsed.value),
         );
         const key = existing || 'ref' + (Object.keys(catalog).length + 1);
-        catalog[key] = parsed.data;
+        catalog[key] = parsed.value;
         return '[[ref:' + key + ']]';
       };
       message.text = outsideCode(message.text, (prose) => {

@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest';
-import { uiNode, validateNode } from '@wisp/agent/contract/ui-schema';
+import { Schema } from 'effect';
+import { nodeError, uiNode } from '@wisp/agent/contract/ui-schema';
 import { LegacyReplyStream as ReplyStream } from '../src/reply/legacy-reply.ts';
 const sample = {
   id: 'sim',
@@ -40,8 +41,11 @@ test('comparison stream validates metrics and references before replacing a comp
   expect(stream.errors).toHaveLength(8);
   expect(stream.ui[0]).toEqual(sample);
   expect(() =>
-    uiNode.parse({ ...sample, items: [{ ...sample.items[0], value: Infinity }, sample.items[1]] }),
+    Schema.decodeUnknownSync(uiNode)({
+      ...sample,
+      items: [{ ...sample.items[0], value: Infinity }, sample.items[1]],
+    }),
   ).toThrow();
-  const lowerWins = uiNode.parse({ ...sample, unit: 'ms', winner: 'frost' });
-  expect(() => validateNode(lowerWins, [])).not.toThrow();
+  const lowerWins = Schema.decodeUnknownSync(uiNode)({ ...sample, unit: 'ms', winner: 'frost' });
+  expect(nodeError(lowerWins, [])).toBeUndefined();
 });

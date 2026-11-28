@@ -1,62 +1,71 @@
-import { z } from 'zod';
-const label = z
-  .string()
-  .min(1)
-  .max(160)
-  // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
-  .refine((value) => !/[|\x00-\x1f]/.test(value) && !value.includes('[[ref:'));
-const id = z.number().int().positive();
-const common = { label, source: z.string().max(500).optional() };
-const entity = (kind: 'spell' | 'item' | 'quest') =>
-  z
-    .object({
-      ...common,
-      kind: z.literal(kind),
-      id,
-      payload: z
-        .string()
-        .max(1000)
-        .regex(/^(spell|item|quest):[\d:+.-]+$/)
-        .optional(),
-    })
-    .refine(
+// @effect-migrated
+import { Schema } from 'effect';
+import { Const, LimitedString, NumberBetween, PositiveInt, refine } from './tool-inputs.ts';
+
+// Objects here drop unknown keys, as zod's `z.object` did. zod's refinements
+// without a message failed with its default, kept here.
+const invalid = 'Invalid input';
+
+const label = LimitedString(1, 160).check(
+  refine(
+    // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
+    (value) => !/[|\x00-\x1f]/.test(value) && !value.includes('[[ref:'),
+    invalid,
+  ),
+);
+const common = {
+  label,
+  source: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(500))),
+};
+const entity = <const K extends 'spell' | 'item' | 'quest'>(kind: K) =>
+  Schema.Struct({
+    ...common,
+    kind: Const(kind),
+    id: PositiveInt,
+    // The `u` flag lets the pattern reach the model; it matches the same payloads.
+    payload: Schema.optionalKey(
+      Schema.String.check(
+        Schema.isMaxLength(1000),
+        Schema.isPattern(/^(spell|item|quest):[\d:+.-]+$/u),
+      ),
+    ),
+  }).check(
+    refine(
       (value) =>
         !value.payload ||
         value.payload.startsWith(value.kind + ':' + value.id + ':') ||
         value.payload === value.kind + ':' + value.id,
-    );
-export const referenceSchema = z.union([
-  z.object({
+      invalid,
+    ),
+  );
+export const referenceSchema = Schema.Union([
+  Schema.Struct({
     ...common,
-    kind: z.literal('unit'),
-    guid: z
-      .string()
-      .min(3)
-      .max(150)
-      .regex(/^[A-Za-z]+-[A-Za-z0-9-]+$/),
+    kind: Const('unit'),
+    guid: LimitedString(3, 150).check(Schema.isPattern(/^[A-Za-z]+-[A-Za-z0-9-]+$/u)),
   }),
   entity('spell'),
   entity('item'),
   entity('quest'),
-  z
-    .object({
-      ...common,
-      kind: z.literal('map'),
-      mapId: id,
-      x: z.number().min(0).max(100).optional(),
-      y: z.number().min(0).max(100).optional(),
-    })
-    .refine((value) => (value.x === undefined) === (value.y === undefined)),
-  z.object({
+  Schema.Struct({
     ...common,
-    kind: z.literal('macro'),
-    name: z
-      .string()
-      .min(1)
-      .max(16)
-      // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
-      .refine((value) => Buffer.byteLength(value, 'utf8') <= 16 && !/[|\x00-\x1f]/.test(value)),
+    kind: Const('map'),
+    mapId: PositiveInt,
+    x: Schema.optionalKey(NumberBetween(0, 100)),
+    y: Schema.optionalKey(NumberBetween(0, 100)),
+  }).check(refine((value) => (value.x === undefined) === (value.y === undefined), invalid)),
+  Schema.Struct({
+    ...common,
+    kind: Const('macro'),
+    name: LimitedString(1, 16).check(
+      refine(
+        (value) =>
+          // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
+          Buffer.byteLength(value, 'utf8') <= 16 && !/[|\x00-\x1f]/.test(value),
+        invalid,
+      ),
+    ),
   }),
 ]);
-export type RichReference = z.infer<typeof referenceSchema>;
+export type RichReference = typeof referenceSchema.Type;
 export type ReferenceCatalog = Record<string, RichReference>;

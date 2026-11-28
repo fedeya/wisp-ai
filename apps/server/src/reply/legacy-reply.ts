@@ -1,6 +1,7 @@
 // Historical NDJSON replies only. New replies use text and presentation tools.
 import { z } from 'zod';
-import { uiNode, validateNode, type UINode } from '@wisp/agent/contract/ui-schema';
+import { Schema } from 'effect';
+import { nodeError, uiNode, type UINode } from '@wisp/agent/contract/ui-schema';
 import { referenceSchema, type ReferenceCatalog } from '@wisp/agent/contract/rich-reference';
 import { conversationTitle } from '../chat/conversation-title.ts';
 import type { ReplyPart } from '../chat/chat.ts';
@@ -8,6 +9,8 @@ const keySchema = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
   .refine((value) => !['__proto__', 'constructor', 'prototype'].includes(value));
+const decodeNode = Schema.decodeUnknownSync(uiNode);
+const decodeReference = Schema.decodeUnknownSync(referenceSchema);
 export class LegacyReplyStream {
   buffer = '';
   text = '';
@@ -86,7 +89,7 @@ export class LegacyReplyStream {
         this.records++;
       } else if (data.type === 'reference') {
         const key = keySchema.parse(data.key),
-          reference = referenceSchema.parse(data);
+          reference = decodeReference(data);
         if (Object.keys(this.references).length >= 64 && !this.references[key]) {
           throw new Error('Reference limit reached');
         }
@@ -109,7 +112,7 @@ export class LegacyReplyStream {
         this.noTip = true;
         this.records++;
       } else if (data.type === 'ui_node') {
-        const node = uiNode.parse(data.node);
+        const node = decodeNode(data.node);
         const index = this.ui.findIndex((n) => n.id === node.id);
         if (index < 0 && this.ui.length >= 48) {
           throw new Error('UI node limit');
@@ -119,7 +122,11 @@ export class LegacyReplyStream {
         if (existing && (existing.kind !== node.kind || existing.parent !== node.parent)) {
           throw new Error('UI identity changed');
         }
-        validateNode(node, this.ui);
+        if (nodeError(node, this.ui)) {
+          // Reported as the catch below reports a failure.
+          this.error('Invalid reply event');
+          return;
+        }
         const proposed =
           index < 0 ? [...this.ui, node] : this.ui.map((old, i) => (i === index ? node : old));
         if (JSON.stringify(proposed).length > 24000) {

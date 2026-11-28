@@ -124,24 +124,37 @@ const zodLayoutAll = (schemas: unknown) =>
 
 const isSingleValue = Schema.is(Schema.Tuple([Schema.Unknown]));
 
-/** A record as zod wrote it: its string keys, and the schema of every value. */
+/**
+ * A record as zod wrote it: the schema of its keys (any string by default) and
+ * of every value, which Effect writes under `additionalProperties`, or under
+ * the one pattern of a record whose keys have one.
+ */
 const zodRecord = ({
   [zodJsonSchemaKey]: _form,
+  patternProperties,
   ...schema
-}: JsonSchema.JsonSchema): JsonSchema.JsonSchema => ({
-  ...schema,
-  propertyNames: { type: 'string' },
-  additionalProperties: Predicate.isObject(schema.additionalProperties)
+}: JsonSchema.JsonSchema): JsonSchema.JsonSchema => {
+  const [patternValue] = Predicate.isObject(patternProperties)
+    ? Object.values(patternProperties)
+    : [];
+  const value = Predicate.isObject(schema.additionalProperties)
     ? schema.additionalProperties
-    : {},
-});
+    : patternValue;
+  return {
+    ...schema,
+    propertyNames: Predicate.isObject(schema.propertyNames)
+      ? schema.propertyNames
+      : { type: 'string' },
+    additionalProperties: Predicate.isObject(value) ? value : {},
+  };
+};
 
 /**
  * A JSON Schema written as zod wrote it: keywords in zod's order, `properties`
  * on every object, open objects without `additionalProperties: true`, and the
  * forms the `zodJsonSchemaKey` annotation names (`const` for a literal, `oneOf`
  * for a discriminated union, `propertyNames` and `additionalProperties` for a
- * record).
+ * record, and `description` after the other keywords for `descriptionLast`).
  */
 function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
   const form = schema[zodJsonSchemaKey];
@@ -164,8 +177,12 @@ function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
   if (schema.type === 'object' && !('properties' in schema) && !closedBySchema) {
     entries.push(['properties', {}]);
   }
+  const rank = (keyword: string) =>
+    form === 'descriptionLast' && keyword === 'description'
+      ? zodKeywordOrder.length + 1
+      : zodRank(keyword);
   // Array sorts are stable: keywords zod does not write keep Effect's order, last.
-  entries.sort(([a], [b]) => zodRank(a) - zodRank(b));
+  entries.sort(([a], [b]) => rank(a) - rank(b));
   return Object.fromEntries(entries);
 }
 

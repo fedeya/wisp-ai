@@ -1,6 +1,21 @@
 import { z } from 'zod';
+import { Result, Schema } from 'effect';
 import { uiNode } from '@wisp/agent/contract/ui-schema';
 import { referenceSchema } from '@wisp/agent/contract/rich-reference';
+
+/**
+ * A contract schema inside this zod schema until chats move to Schema: it
+ * decodes the value as the zod schema it replaced did, and reports its error.
+ */
+function fromSchema<A>(schema: Schema.Decoder<A>) {
+  const decode = Schema.decodeUnknownResult(schema);
+  return z.unknown().transform((value, ctx): A => {
+    const result = decode(value);
+    if (Result.isSuccess(result)) return result.success;
+    ctx.addIssue({ code: 'custom', message: result.failure.message });
+    return z.NEVER;
+  });
+}
 export const chatStatus = z.enum([
   'idle',
   'working',
@@ -36,8 +51,8 @@ export const chatSchema = z.object({
         .extend({ inputPreview: z.string().optional(), resultPreview: z.string().optional() })
         .optional(),
       phase: z.string().optional(),
-      references: z.record(z.string(), referenceSchema).optional(),
-      ui: z.array(uiNode).optional(),
+      references: z.record(z.string(), fromSchema(referenceSchema)).optional(),
+      ui: z.array(fromSchema(uiNode)).optional(),
       parts: z
         .array(
           z.discriminatedUnion('type', [

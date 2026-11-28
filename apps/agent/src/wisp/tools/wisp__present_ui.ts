@@ -1,4 +1,5 @@
-import { defineTool, toolOutput } from '@wisp/agent/tool';
+// @effect-migrated
+import { defineTool, effectToolInput, toolOutput } from '@wisp/agent/tool';
 import { replyPresentation } from '../../contract/reply-presentation.ts';
 import { agentRPC } from '@wisp/agent/agent-rpc';
 
@@ -7,7 +8,7 @@ export default defineTool({
   deferred: false,
   description:
     'Insert a complete native panel at this point in your reply, or register verified references for [[ref:key]] links. Write ordinary text before and after this call to interleave prose and panels. Use the component schema to compose cards, comparisons, tables and controls. This is presentation only: it performs no game action and saves no persistent panel. Never invent data to fill a panel. Use unique component IDs within the reply; reuse an ID only to update the same component.',
-  inputSchema: replyPresentation,
+  inputSchema: effectToolInput(replyPresentation, { layout: 'zod' }),
   execute: (input, ctx) =>
     agentRPC(
       'present',

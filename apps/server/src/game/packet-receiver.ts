@@ -335,10 +335,8 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       if (!panel || node?.kind !== 'button' || node.action.kind !== 'ask') {
         return;
       }
-      let values: ReturnType<typeof selectionValues>;
-      try {
-        values = selectionValues(panel.ui, packet.values);
-      } catch {
+      const values = selectionValues(panel.ui, packet.values);
+      if (!values) {
         return;
       }
       const id = packet.chat || 'panel-' + randomUUID();
@@ -378,6 +376,12 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       void (async () => {
         if (node.action.kind === 'ask') {
           const values = selectionValues(message!.ui || [], packet.values);
+          if (!values) {
+            // Reported as the catch below reports a failure.
+            chat.messages.push({ role: 'system', text: 'Invalid panel input' });
+            changed();
+            return;
+          }
           await run(
             chat,
             node.action.prompt + '\n\nSelected panel values: ' + JSON.stringify(values),

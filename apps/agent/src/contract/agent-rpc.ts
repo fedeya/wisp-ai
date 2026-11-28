@@ -9,6 +9,7 @@ import { databaseRequest } from './database.ts';
 import { wowheadQuery } from '@wisp/protocol/search';
 import { providerId } from '@wisp/protocol/providers';
 import { replyPresentation } from './reply-presentation.ts';
+import { LimitedString } from './tool-inputs.ts';
 
 const session = { agentSession: z.string().min(1) };
 const agentSession = Schema.String.check(Schema.isMinLength(1));
@@ -22,14 +23,18 @@ function protocolRequest<S extends Schema.Codec<unknown, unknown>>(schema: S) {
     parse: Schema.decodeUnknownSync(schema, rejectUnknownKeys),
   });
 }
+/** A request or response on Schema that drops unknown keys, as zod's `z.object` did. */
+function openMessage<S extends Schema.Codec<unknown, unknown>>(schema: S) {
+  return Object.assign(Schema.toStandardSchemaV1(schema), {
+    parse: Schema.decodeUnknownSync(schema),
+  });
+}
 export const rpcRequests = {
-  title: z.object({ ...session, title: z.string().min(1).max(500) }),
-  present: z.object({
-    ...session,
-    callId: z.string().min(1).max(200),
-    presentation: replyPresentation,
-  }),
-  panels: z.object({ ...session, input: panelInput }),
+  title: openMessage(Schema.Struct({ agentSession, title: LimitedString(1, 500) })),
+  present: openMessage(
+    Schema.Struct({ agentSession, callId: LimitedString(1, 200), presentation: replyPresentation }),
+  ),
+  panels: openMessage(Schema.Struct({ agentSession, input: panelInput })),
   routines: protocolRequest(Schema.Struct({ agentSession, input: routineInput })),
   // zod's `extend` kept the checks, which read only the simulation's own fields.
   simulate: protocolRequest(
@@ -47,15 +52,15 @@ export type RpcEndpoint = keyof typeof rpcRequests;
 export type RpcInput<K extends RpcEndpoint> = StandardSchemaV1.InferInput<(typeof rpcRequests)[K]>;
 const reading = z.record(z.string(), z.unknown());
 export const rpcResponses = {
-  title: z.object({ title: z.string() }),
-  present: replyPresentation,
+  title: openMessage(Schema.Struct({ title: Schema.String })),
+  present: openMessage(replyPresentation),
   panels: reading,
   routines: reading,
   simulate: reading,
   database: reading,
   wowhead: reading,
 };
-export type RpcOutput<K extends RpcEndpoint> = z.output<(typeof rpcResponses)[K]>;
+export type RpcOutput<K extends RpcEndpoint> = ReturnType<(typeof rpcResponses)[K]['parse']>;
 /** Names the agent session on model requests, so the bridge can tell which turn a failure belongs to. */
 export const MODEL_SESSION_HEADER = 'x-wisp-session';
 export const selectedModel = Schema.Struct({

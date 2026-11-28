@@ -1,4 +1,5 @@
 import { test, expect } from 'vitest';
+import { Exit, Schema } from 'effect';
 import { uiNode } from '@wisp/agent/contract/ui-schema';
 import { LegacyReplyStream as ReplyStream } from '../src/reply/legacy-reply.ts';
 const sample = {
@@ -21,7 +22,7 @@ test('tables validate bounded rectangular string cells before replacing existing
     { ...sample, rows: Array.from({ length: 21 }, () => ['Toga', '12']) },
     { ...sample, rows: [['x'.repeat(301), '12']] },
   ]) {
-    expect(uiNode.safeParse(invalid).success).toBe(false);
+    expect(Exit.isSuccess(Schema.decodeUnknownExit(uiNode)(invalid))).toBe(false);
     emit(invalid);
     expect(reply.ui).toEqual([sample]);
   }

@@ -1,108 +1,124 @@
-import { z } from 'zod';
-const key = z
-  .string()
-  .regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/)
-  .refine((k) => !['constructor', 'prototype', '__proto__'].includes(k));
-export const uiAction = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('ask'), prompt: z.string().min(1).max(1000) }),
-  z.object({ kind: z.literal('apply_settings'), transactionId: z.string().min(1).max(100) }),
-  z.object({ kind: z.literal('undo_settings'), transactionId: z.string().min(1).max(100) }),
+// @effect-migrated
+import { Predicate, Schema } from 'effect';
+import {
+  Const,
+  DiscriminatedUnion,
+  IntBetween,
+  LimitedString,
+  NumberBetween,
+  refine,
+} from './tool-inputs.ts';
+
+// Objects here drop unknown keys, as zod's `z.object` did.
+
+const reservedKeys: readonly string[] = ['constructor', 'prototype', '__proto__'];
+/** A component, reference or panel key; the `u` flag lets the pattern reach the model. */
+export const UIKey = Schema.String.check(
+  Schema.isPattern(/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/u),
+  refine((key) => !reservedKeys.includes(key), 'Invalid input'),
+);
+const MaxString = (maxLength: number) => Schema.String.check(Schema.isMaxLength(maxLength));
+const Finite = Schema.Finite;
+
+const transactionId = LimitedString(1, 100);
+export const uiAction = DiscriminatedUnion([
+  Schema.Struct({ kind: Const('ask'), prompt: LimitedString(1, 1000) }),
+  Schema.Struct({ kind: Const('apply_settings'), transactionId }),
+  Schema.Struct({ kind: Const('undo_settings'), transactionId }),
 ]);
-const base = { id: key, parent: key.optional() };
-const title = z.string().max(120).optional();
-export const uiNode = z.discriminatedUnion('kind', [
-  z.object({ ...base, kind: z.literal('column'), title }),
-  z.object({ ...base, kind: z.literal('row'), title }),
-  z.object({ ...base, kind: z.literal('card'), title }),
-  z
-    .object({
-      ...base,
-      kind: z.literal('table'),
-      title,
-      columns: z
-        .array(
-          z.object({
-            label: z.string().min(1).max(100),
-            align: z.enum(['left', 'center', 'right']).optional(),
-          }),
-        )
-        .min(2)
-        .max(6),
-      rows: z
-        .array(z.array(z.string().max(300)).min(2).max(6))
-        .min(1)
-        .max(20),
-    })
-    .refine(
+const base = { id: UIKey, parent: Schema.optionalKey(UIKey) };
+const title = Schema.optionalKey(MaxString(120));
+const container = (kind: 'column' | 'row' | 'card') =>
+  Schema.Struct({ ...base, kind: Const(kind), title });
+export const uiNode = DiscriminatedUnion([
+  container('column'),
+  container('row'),
+  container('card'),
+  Schema.Struct({
+    ...base,
+    kind: Const('table'),
+    title,
+    columns: Schema.Array(
+      Schema.Struct({
+        label: LimitedString(1, 100),
+        align: Schema.optionalKey(Schema.Literals(['left', 'center', 'right'])),
+      }),
+    ).check(Schema.isMinLength(2), Schema.isMaxLength(6)),
+    rows: Schema.Array(
+      Schema.Array(MaxString(300)).check(Schema.isMinLength(2), Schema.isMaxLength(6)),
+    ).check(Schema.isMinLength(1), Schema.isMaxLength(20)),
+  }).check(
+    refine(
       (node) => node.rows.every((row) => row.length === node.columns.length),
       'Table rows must match the columns',
     ),
-  z.object({
+  ),
+  Schema.Struct({
     ...base,
-    kind: z.literal('comparison'),
+    kind: Const('comparison'),
     title,
-    unit: z.string().max(24).optional(),
-    precision: z.number().int().min(0).max(4).optional(),
-    items: z
-      .array(
-        z.object({
-          id: key,
-          label: z.string().min(1).max(200),
-          value: z.number().finite().nonnegative(),
-          detail: z.string().max(300).optional(),
-        }),
-      )
-      .min(2)
-      .max(8),
-    winner: key.optional(),
-    winnerLabel: z.string().min(1).max(60).optional(),
-    baseline: key.optional(),
+    unit: Schema.optionalKey(MaxString(24)),
+    precision: Schema.optionalKey(IntBetween(0, 4)),
+    items: Schema.Array(
+      Schema.Struct({
+        id: UIKey,
+        label: LimitedString(1, 200),
+        value: Finite.check(Schema.isGreaterThanOrEqualTo(0)),
+        detail: Schema.optionalKey(MaxString(300)),
+      }),
+    ).check(Schema.isMinLength(2), Schema.isMaxLength(8)),
+    winner: Schema.optionalKey(UIKey),
+    winnerLabel: Schema.optionalKey(LimitedString(1, 60)),
+    baseline: Schema.optionalKey(UIKey),
   }),
-  z.object({ ...base, kind: z.literal('text'), text: z.string().max(3000) }),
-  z.object({
+  Schema.Struct({ ...base, kind: Const('text'), text: MaxString(3000) }),
+  Schema.Struct({
     ...base,
-    kind: z.literal('stat'),
-    label: z.string().max(100),
-    value: z.string().max(200),
-    detail: z.string().max(300).optional(),
+    kind: Const('stat'),
+    label: MaxString(100),
+    value: MaxString(200),
+    detail: Schema.optionalKey(MaxString(300)),
   }),
-  z.object({ ...base, kind: z.literal('reference'), reference: key }),
-  z.object({
+  Schema.Struct({ ...base, kind: Const('reference'), reference: UIKey }),
+  Schema.Struct({ ...base, kind: Const('button'), label: LimitedString(1, 80), action: uiAction }),
+  Schema.Struct({ ...base, kind: Const('toggle'), label: MaxString(100), value: Schema.Boolean }),
+  Schema.Struct({
     ...base,
-    kind: z.literal('button'),
-    label: z.string().min(1).max(80),
-    action: uiAction,
+    kind: Const('select'),
+    label: MaxString(100),
+    value: MaxString(100),
+    options: Schema.Array(Schema.Struct({ value: MaxString(100), label: MaxString(100) })).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(12),
+    ),
   }),
-  z.object({ ...base, kind: z.literal('toggle'), label: z.string().max(100), value: z.boolean() }),
-  z.object({
+  Schema.Struct({
     ...base,
-    kind: z.literal('select'),
-    label: z.string().max(100),
-    value: z.string().max(100),
-    options: z
-      .array(z.object({ value: z.string().max(100), label: z.string().max(100) }))
-      .min(1)
-      .max(12),
+    kind: Const('slider'),
+    label: MaxString(100),
+    value: Finite,
+    min: Finite,
+    max: Finite,
+    step: Finite.check(Schema.isGreaterThan(0)),
   }),
-  z.object({
+  Schema.Struct({
     ...base,
-    kind: z.literal('slider'),
-    label: z.string().max(100),
-    value: z.number().finite(),
-    min: z.number().finite(),
-    max: z.number().finite(),
-    step: z.number().positive().finite(),
+    kind: Const('progress'),
+    label: MaxString(100),
+    value: NumberBetween(0, 1),
   }),
-  z.object({
-    ...base,
-    kind: z.literal('progress'),
-    label: z.string().max(100),
-    value: z.number().min(0).max(1),
-  }),
-  z.object({ ...base, kind: z.literal('divider') }),
+  Schema.Struct({ ...base, kind: Const('divider') }),
 ]);
-export type UINode = z.infer<typeof uiNode>;
-export function validateNode(node: UINode, nodes: UINode[]) {
+export type UINode = typeof uiNode.Type;
+
+const containerKinds: readonly string[] = ['column', 'row', 'card'];
+
+/**
+ * Why `node` cannot join `nodes`, or `undefined` when it can: its references
+ * resolve, its control is consistent, and its parents are containers at most
+ * five deep without a cycle.
+ */
+export function nodeError(node: UINode, nodes: readonly UINode[]): string | undefined {
   if (node.kind === 'comparison') {
     const ids = new Set(node.items.map((item) => item.id));
     if (
@@ -110,11 +126,11 @@ export function validateNode(node: UINode, nodes: UINode[]) {
       (node.winner !== undefined && !ids.has(node.winner)) ||
       (node.baseline !== undefined && !ids.has(node.baseline))
     ) {
-      throw new Error('Invalid comparison item reference');
+      return 'Invalid comparison item reference';
     }
   }
   if (node.parent === node.id) {
-    throw new Error('UI cycle');
+    return 'UI cycle';
   }
   if (
     node.kind === 'slider' &&
@@ -123,14 +139,14 @@ export function validateNode(node: UINode, nodes: UINode[]) {
       node.value > node.max ||
       node.step > node.max - node.min)
   ) {
-    throw new Error('Invalid slider');
+    return 'Invalid slider';
   }
   if (
     node.kind === 'select' &&
     (!node.options.some((o) => o.value === node.value) ||
       new Set(node.options.map((o) => o.value)).size !== node.options.length)
   ) {
-    throw new Error('Invalid selection');
+    return 'Invalid selection';
   }
   const map = new Map(nodes.map((n) => [n.id, n]));
   map.set(node.id, node);
@@ -140,48 +156,57 @@ export function validateNode(node: UINode, nodes: UINode[]) {
       depth = 0;
     while (parent) {
       if (seen.has(parent) || ++depth > 5) {
-        throw new Error('UI nesting limit');
+        return 'UI nesting limit';
       }
       seen.add(parent);
       const p = map.get(parent);
-      if (p && !['column', 'row', 'card'].includes(p.kind)) {
-        throw new Error('Invalid UI parent');
+      if (p && !containerKinds.includes(p.kind)) {
+        return 'Invalid UI parent';
       }
       parent = p?.parent;
     }
   }
+  return undefined;
 }
-export function selectionValues(nodes: UINode[], input: unknown) {
-  const result: Record<string, string | number | boolean> = Object.create(null);
-  const supplied = input && typeof input === 'object' ? (input as Record<string, unknown>) : {};
+
+/** The value of each control in `nodes`: from `input` where it names one, else the control's own. */
+export type SelectionValues = Record<string, string | number | boolean>;
+
+/** The controls' values, or `undefined` when `input` gives one a value it cannot take. */
+export function selectionValues(
+  nodes: readonly UINode[],
+  input: unknown,
+): SelectionValues | undefined {
+  const values: [string, string | number | boolean][] = [];
   for (const node of nodes) {
-    if (!['toggle', 'select', 'slider'].includes(node.kind)) {
+    if (node.kind !== 'toggle' && node.kind !== 'select' && node.kind !== 'slider') {
       continue;
     }
-    const value = Object.hasOwn(supplied, node.id)
-      ? supplied[node.id]
-      : 'value' in node
-        ? node.value
-        : undefined;
-    if (node.kind === 'toggle' && typeof value === 'boolean') {
-      result[node.id] = value;
+    const value =
+      Predicate.isObjectOrArray(input) &&
+      Object.hasOwn(input, node.id) &&
+      Predicate.hasProperty(input, node.id)
+        ? input[node.id]
+        : node.value;
+    if (node.kind === 'toggle' && Predicate.isBoolean(value)) {
+      values.push([node.id, value]);
     } else if (
       node.kind === 'select' &&
-      typeof value === 'string' &&
+      Predicate.isString(value) &&
       node.options.some((o) => o.value === value)
     ) {
-      result[node.id] = value;
+      values.push([node.id, value]);
     } else if (
       node.kind === 'slider' &&
-      typeof value === 'number' &&
+      Predicate.isNumber(value) &&
       Number.isFinite(value) &&
       value >= node.min &&
       value <= node.max
     ) {
-      result[node.id] = value;
+      values.push([node.id, value]);
     } else {
-      throw new Error('Invalid panel input');
+      return undefined;
     }
   }
-  return result;
+  return Object.fromEntries(values);
 }

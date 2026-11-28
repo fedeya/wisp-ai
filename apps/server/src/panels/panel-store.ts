@@ -1,7 +1,9 @@
-import { z } from 'zod';
+import { Schema } from 'effect';
 import { readPanels, savePanels } from './panel-record.ts';
 import { ApplicationDatabase } from '../application-database.ts';
-import { panelContent, panelInput, type Panel } from '@wisp/agent/contract/panels';
+import { panelContent, type Panel, type PanelInput } from '@wisp/agent/contract/panels';
+
+const decodePanel = Schema.decodeUnknownSync(panelContent);
 export class PanelStore {
   readonly database: ApplicationDatabase;
   panels: Panel[] = [];
@@ -27,7 +29,7 @@ export class PanelStore {
   list(characterKey: string) {
     return this.panels.filter((p) => p.characterKey === characterKey);
   }
-  async mutate(characterKey: string, input: z.infer<typeof panelInput>) {
+  async mutate(characterKey: string, input: PanelInput) {
     const work = this.queue
       .catch(() => {})
       .then(async () => {
@@ -47,7 +49,7 @@ export class PanelStore {
             // still move its saved layout if it has not applied the move yet.
             const formerKey = previous?.formerKey;
             next.push({
-              ...panelContent.parse(input.panel),
+              ...decodePanel(input.panel),
               characterKey,
               updatedAt: Date.now(),
               ...(formerKey ? { formerKey } : {}),
