@@ -83,7 +83,10 @@ test('settings persist, filter offered tools, and preserve child settings when a
     await writeFile(settings.file, '{broken json');
     await assert.rejects(
       Effect.runPromise(readCapabilities),
-      (error) => error instanceof HostError && error.cause instanceof SyntaxError,
+      (error) =>
+        error instanceof HostError &&
+        error.cause instanceof Error &&
+        error.cause.message === 'Expected a valid JSON string',
       'corrupt settings must never silently re-enable tools',
     );
     await writeFile(settings.file, JSON.stringify({ enabled: { 'tool:search_database': 'off' } }));
