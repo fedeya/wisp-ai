@@ -1,14 +1,8 @@
 import { Button } from '@base-ui/react/button';
-import { invoke } from '@tauri-apps/api/core';
+import type { InstallerStatus } from '@wisp/protocol/native-commands';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { desktop } from '../../../api/desktop';
 import logo from '../../../../src-tauri/icons/128x128@2x.png';
-
-type UpdateState = {
-  phase: 'preparing' | 'installing' | 'reopening' | 'failed';
-  percent: number | null;
-  log: string[];
-  error: string | null;
-};
 
 const statuses = {
   preparing: 'Preparing the update',
@@ -18,7 +12,7 @@ const statuses = {
 };
 
 export default function UpdaterWindow() {
-  const [update, setUpdate] = useState<UpdateState>({
+  const [update, setUpdate] = useState<InstallerStatus>({
     phase: 'preparing',
     percent: null,
     log: [],
@@ -35,7 +29,7 @@ export default function UpdaterWindow() {
     async function refresh() {
       if (!active) return;
       try {
-        const next = await invoke<UpdateState>('updater_status');
+        const next = await desktop('updater_status');
         if (!active) return;
         setUpdate(next);
         if (next.phase === 'failed') return;
@@ -44,7 +38,7 @@ export default function UpdaterWindow() {
       }
       if (active) timer = setTimeout(refresh, 120);
     }
-    void invoke('updater_ready')
+    void desktop('updater_ready')
       .then(refresh)
       .catch(() => {});
     return () => {
@@ -104,7 +98,7 @@ export default function UpdaterWindow() {
             <Button
               className="min-w-[92px] rounded-[8px] border border-solid border-[#518178] bg-[#29443f] px-[17px] py-[8px] font-semibold text-[#dcf3ed] hover:bg-[#355951] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent"
               ref={closeButton}
-              onClick={() => void invoke('updater_close')}
+              onClick={() => void desktop('updater_close')}
             >
               Close
             </Button>

@@ -1,4 +1,5 @@
 import { listen } from '@tauri-apps/api/event';
+import type { Release } from '@wisp/protocol/native-commands';
 import { renderReleaseNotes } from '@wisp/releases';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -17,8 +18,6 @@ const AUTOMATIC_BUSY = 'Wisp is busy; the update will install later.';
 /** How often a scheduled update checks whether WoW is still running. */
 export const GAME_CHECK_MS = 30 * 1000;
 
-/** `downgrade`: older than the installed version, offered only when returning to Stable. */
-type Release = { version: string; notes: string | null; downgrade?: boolean };
 const updateChannels = [
   { value: 'stable', label: 'Stable' },
   { value: 'nightly', label: 'Nightly' },
@@ -174,9 +173,7 @@ export default function Updates({
     if (!native || !state.channel || state.operation) return;
     setState({ operation: { kind: 'checking' }, error: '' });
     try {
-      const { supported, update } = await desktop<{ supported: boolean; update: Release | null }>(
-        'check_update',
-      );
+      const { supported, update } = await desktop('check_update');
       setState({ supported, release: update, lastChecked: new Date().toLocaleString() });
     } catch {
       setState({
@@ -200,7 +197,7 @@ export default function Updates({
       error: '',
     });
     try {
-      const channel = await desktop<string>('update_channel', { channel: next });
+      const channel = await desktop('update_channel', { channel: next });
       setState({ channel, operation: null });
       await check();
     } catch (error) {
@@ -259,7 +256,7 @@ export default function Updates({
   async function changeAutoInstall(enabled: boolean) {
     setAutoInstallError('');
     try {
-      const saved = await desktop<boolean>('update_auto_install', { enabled });
+      const saved = await desktop('update_auto_install', { enabled });
       setState({ autoInstall: saved });
     } catch {
       setAutoInstallError('Could not change the automatic update setting. Try again.');
@@ -271,7 +268,7 @@ export default function Updates({
   useEffect(() => {
     if (!native || !autoInstall || downgrade || !available || prepared === available) return;
     let current = true;
-    void desktop<string>('download_update')
+    void desktop('download_update')
       .then((version) => {
         if (current && version === getState().release?.version) setState({ prepared: version });
       })
@@ -288,7 +285,7 @@ export default function Updates({
     if (!native || !scheduled) return;
     let current = true;
     const look = () =>
-      void desktop<boolean>('game_running')
+      void desktop('game_running')
         .then((running) => {
           if (current) setGameRunning(running);
         })
@@ -329,7 +326,7 @@ export default function Updates({
           setState({ error: 'Update progress is unavailable. Restart Wisp to try again.' });
         }
       });
-    void desktop<string>('update_channel')
+    void desktop('update_channel')
       .then((channel) => {
         if (disposed) return;
         setState({ channel });
@@ -340,7 +337,7 @@ export default function Updates({
           setState({ error: 'Could not load the update channel. Restart Wisp to try again.' });
         }
       });
-    void desktop<boolean>('update_auto_install')
+    void desktop('update_auto_install')
       .then((enabled) => {
         if (!disposed) setState({ autoInstall: enabled });
       })

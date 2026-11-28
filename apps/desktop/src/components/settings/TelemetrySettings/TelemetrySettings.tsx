@@ -11,7 +11,7 @@ export default function TelemetrySettings() {
   useEffect(() => {
     if (!native) return;
     let active = true;
-    void desktop<{ enabled: boolean }>('telemetry_settings')
+    void desktop('telemetry_settings')
       .then((settings) => {
         if (!active) return;
         setEnabled(settings.enabled);
@@ -29,7 +29,7 @@ export default function TelemetrySettings() {
     setPending(value);
     setError('');
     try {
-      const settings = await desktop<{ enabled: boolean }>('telemetry_settings', {
+      const settings = await desktop('telemetry_settings', {
         enabled: value,
       });
       setEnabled(settings.enabled);
