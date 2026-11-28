@@ -279,21 +279,31 @@ test('web search reports its depth, provider and outcome without the query', asy
   const chat = workingChat();
   const search = vi
     .fn()
-    .mockResolvedValueOnce({
-      status: 'available',
-      source: 'Web',
-      version: 'unspecified',
-      query: 'private query',
-      provider: 'Exa',
-      sources: [{ url: 'https://example.com/a' }, { url: 'https://example.com/b' }],
-    })
-    .mockRejectedValueOnce(Error('Private provider failure'));
+    .mockReturnValueOnce(
+      Effect.succeed({
+        status: 'available',
+        source: 'Web',
+        version: 'unspecified',
+        query: 'private query',
+        provider: 'Exa',
+        sources: [{ url: 'https://example.com/a' }, { url: 'https://example.com/b' }],
+      }),
+    )
+    .mockReturnValueOnce(Effect.die(Error('Private provider failure')))
+    .mockReturnValueOnce(Effect.never);
   const telemetry = { webSearch: vi.fn() };
   const server = await serve({
     getChats: () => [chat],
     defaultModel: () => 'model',
     telemetry,
-    webSearch: { search, available: () => true },
+    webSearch: {
+      search,
+      provider: () => Effect.succeed('Exa'),
+      state: Effect.never,
+      save: () => Effect.never,
+      removeExa: Effect.never,
+      test: () => Effect.never,
+    },
   });
   try {
     const found = await server.post('/wowhead', {
@@ -319,6 +329,29 @@ test('web search reports its depth, provider and outcome without the query', asy
       duration: expect.any(Number),
       resultCount: 0,
     });
+    // A hang-up cancels the search, which counts as unavailable from its provider.
+    const client = new AbortController();
+    const cancelled = server
+      .post(
+        '/wowhead',
+        { agentSession: 'eve', query: 'private query', depth: 'quick' },
+        {
+          signal: client.signal,
+        },
+      )
+      .catch(() => undefined);
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(3));
+    client.abort();
+    await cancelled;
+    await vi.waitFor(() =>
+      expect(telemetry.webSearch).toHaveBeenLastCalledWith({
+        depth: 'quick',
+        provider: 'Exa',
+        outcome: 'unavailable',
+        duration: expect.any(Number),
+        resultCount: 0,
+      }),
+    );
     expect(JSON.stringify(telemetry.webSearch.mock.calls)).not.toContain('private');
   } finally {
     await server.close();

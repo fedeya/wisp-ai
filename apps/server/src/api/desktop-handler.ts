@@ -10,7 +10,7 @@ import {
 import type { Status } from '@wisp/protocol/desktop';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 import type { ModelConnections } from '../models/model-connections.ts';
-import type { WebSearch } from '../integrations/search/web-search.ts';
+import type { WebSearch } from '#/integrations/search';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
@@ -30,14 +30,14 @@ export const wowTransportInput = Schema.Union([
 interface DesktopDependencies {
   auth: PromiseChatGPTAuth;
   connections: ModelConnections;
-  webSearch: WebSearch;
+  webSearch: WebSearch['Service'];
   capabilitySettings: CapabilitySettings;
   mcpManager: McpManager;
   panelStore: PanelStore;
   routineStore: RoutineStore;
   accountOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   updateModel: (model: string) => Promise<void>;
-  getStatus: () => Status;
+  getStatus: Effect.Effect<Status>;
   getChats: () => Chat[];
   currentCharacterKey: () => string | undefined;
   sendPanelCommand: (command: PanelCommand) => void;
@@ -78,7 +78,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await next();
       c.header('cache-control', 'no-store');
     })
-    .get('/status', (c) => c.json(deps.getStatus()))
+    .get('/status', async (c) => c.json(await runPromise(deps.getStatus)))
     .get('/auth/models', async (c) =>
       c.json(await accountOperation(async () => ({ models: await connections.models() }))),
     )
@@ -119,14 +119,14 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       return c.json(ok);
     })
     .post('/search/save', json(routes['/search/save'].input), async (c) =>
-      c.json(await accountOperation(() => webSearch.save(c.req.valid('json')))),
+      c.json(await accountOperation(() => runPromise(webSearch.save(c.req.valid('json'))))),
     )
     .post('/search/test', json(routes['/search/test'].input), async (c) => {
-      await accountOperation(() => webSearch.test(c.req.valid('json')));
+      await accountOperation(() => runPromise(webSearch.test(c.req.valid('json'))));
       return c.json(ok);
     })
     .post('/search/remove-exa', json(routes['/search/remove-exa'].input), async (c) =>
-      c.json(await accountOperation(() => webSearch.removeExa())),
+      c.json(await accountOperation(() => runPromise(webSearch.removeExa))),
     )
     .post('/integrations/set', json(routes['/integrations/set'].input), async (c) => {
       const { id, enabled } = c.req.valid('json');

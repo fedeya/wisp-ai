@@ -64,7 +64,7 @@ import { ModelConnections } from './models/model-connections.ts';
 import { createModelCatalogRefresh } from './models/model-catalog.ts';
 import { resolveDefaultModel } from './chat/chat-model.ts';
 import { createAccountOperations } from './account-operations.ts';
-import { WebSearch } from './integrations/search/web-search.ts';
+import * as WebSearch from './integrations/search/index.ts';
 import * as ChatGPTAuth from './auth/index.ts';
 import * as Settings from './settings/index.ts';
 import * as TheWoWDB from './integrations/thewowdb/index.ts';
@@ -85,6 +85,17 @@ import { AgentHistory } from './agent/agent-history.ts';
 
 const packageMetadata = Schema.Struct({ version: Schema.String.check(Schema.isMinLength(1)) });
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
+// One ChatGPTAuth for the server and the services that sign requests with it.
+const chatGPTAuth = ChatGPTAuth.layer.pipe(
+  Layer.provide([
+    AppConfig.layer,
+    wowPlatform,
+    HttpClient.layer,
+    NodeCrypto.layerDigest,
+    NodeCrypto.layerSecureRandom,
+    NodeCrypto.layerSignature,
+  ]),
+);
 
 /**
  * The migrated services `makeServer` receives from its caller, on the
@@ -99,14 +110,14 @@ export const ServerServices = Layer.mergeAll(
     Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerDigest]),
   ),
   TheWoWDB.layer.pipe(Layer.provide(HttpClient.layer)),
-  ChatGPTAuth.layer.pipe(
+  chatGPTAuth,
+  WebSearch.layer.pipe(
     Layer.provide([
       AppConfig.layer,
       wowPlatform,
       HttpClient.layer,
-      NodeCrypto.layerDigest,
       NodeCrypto.layerSecureRandom,
-      NodeCrypto.layerSignature,
+      chatGPTAuth,
     ]),
   ),
   Settings.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom])),
@@ -238,8 +249,7 @@ export const makeServer = Effect.fn('Server.make')(
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     yield* startup(() => connections.load());
     const modelFailures = new ModelFailures();
-    const webSearch = new WebSearch(path.join(runtime, 'search.json'), vault, auth);
-    yield* startup(() => webSearch.load());
+    const webSearch = yield* WebSearch.WebSearch;
     yield* Effect.addFinalizer(() => chatgpt.cancel);
     const database = yield* TheWoWDB.TheWoWDB;
     const storage = yield* Layer.build(
@@ -570,7 +580,7 @@ export const makeServer = Effect.fn('Server.make')(
         transport.current()?.status().readyPublished ?? false,
       );
     }
-    function desktopStatus(): Status {
+    const desktopStatus = Effect.map(webSearch.state, (search): Status => {
       const characters = readCharacterNames(applicationDatabase.orm);
       return {
         ready: engineReady,
@@ -578,7 +588,7 @@ export const makeServer = Effect.fn('Server.make')(
         auth: auth.state(),
         connections: connections.list(),
         modelConnected: connections.connected(defaultModel()),
-        search: webSearch.state(),
+        search,
         model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
         integrations: capabilitySettings.snapshot(),
@@ -596,7 +606,7 @@ export const makeServer = Effect.fn('Server.make')(
         appUpdate: appUpdateVersion,
         features: features.state(),
       };
-    }
+    });
     let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
     const desktopApp = yield* createDesktopApp({
       auth,

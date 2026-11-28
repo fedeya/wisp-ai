@@ -5,7 +5,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { rpcRequests } from '@wisp/agent/contract/agent-rpc';
-import { Effect, Schema } from 'effect';
+import { Cause, Effect, Exit, Schema } from 'effect';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { routineEvents } from '@wisp/protocol/routines';
 import { panelInput } from '@wisp/agent/contract/panels';
@@ -24,7 +24,7 @@ import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
-import type { WowheadSearch } from '../integrations/search/web-search.ts';
+import type { WebSearch } from '#/integrations/search';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
 import { characterIdentity, conversationTitle } from '../chat/context.ts';
@@ -35,7 +35,7 @@ interface AgentDependencies {
   connections: ModelConnections;
   /** Records why model requests failed, for chat telemetry. */
   modelFailures?: ModelFailures;
-  webSearch: WowheadSearch;
+  webSearch: WebSearch['Service'];
   capabilitySettings: CapabilitySettings;
   routineStore: RoutineStore;
   panelStore: PanelStore;
@@ -146,7 +146,8 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
         ...selected,
         ...(await connections.selection(selected.model)),
         webSearchAvailable:
-          capabilitySettings.enabled('tool:web_search') && webSearch.available(selected.model),
+          capabilitySettings.enabled('tool:web_search') &&
+          (await runPromise(webSearch.provider(selected.model))) !== undefined,
         contextWindow: models.find((m) => m.slug === selected.model)?.contextWindow,
       });
     } catch (error) {
@@ -267,28 +268,34 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
           );
     });
   // Web search is the slowest tool, so record its budget and outcome to tune depth defaults.
-  async function measuredWebSearch(query: WebSearchQuery, model: string, abort: AbortSignal) {
+  // A hang-up interrupts the search, which cancels its requests.
+  function measuredWebSearch(query: WebSearchQuery, model: string, abort: AbortSignal) {
     const started = performance.now();
-    try {
-      const result = await webSearch.search(query, model, abort);
-      deps.telemetry?.webSearch({
-        depth: query.depth,
-        provider: result.provider,
-        outcome: result.status,
-        duration: performance.now() - started,
-        resultCount: result.sources.length,
-      });
-      return result;
-    } catch (error) {
-      deps.telemetry?.webSearch({
-        depth: query.depth,
-        provider: undefined,
-        outcome: 'failed',
-        duration: performance.now() - started,
-        resultCount: 0,
-      });
-      throw error;
-    }
+    const record = (outcome: string, provider: string | undefined, resultCount: number) =>
+      Effect.sync(() =>
+        deps.telemetry?.webSearch({
+          depth: query.depth,
+          provider,
+          outcome,
+          duration: performance.now() - started,
+          resultCount,
+        }),
+      );
+    return runPromise(
+      webSearch.search(query, model).pipe(
+        Effect.onExit((exit) =>
+          Exit.isSuccess(exit)
+            ? record(exit.value.status, exit.value.provider, exit.value.sources.length)
+            : Cause.hasInterruptsOnly(exit.cause)
+              ? // A cancelled search counts as unavailable from the provider it chose.
+                Effect.flatMap(webSearch.provider(model), (provider) =>
+                  record('unavailable', provider, 0),
+                )
+              : record('failed', undefined, 0),
+        ),
+      ),
+      { signal: abort },
+    );
   }
   knowledge('/database');
   knowledge('/wowhead');

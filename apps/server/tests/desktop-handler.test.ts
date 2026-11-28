@@ -40,7 +40,7 @@ function setup() {
       return operation();
     }),
     updateModel: vi.fn(async () => {}),
-    getStatus: () => status,
+    getStatus: Effect.sync(() => status),
     getChats: () => [],
     currentCharacterKey: () => 'mage',
     sendPanelCommand: vi.fn(),
