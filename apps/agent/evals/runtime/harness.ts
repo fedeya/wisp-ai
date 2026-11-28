@@ -81,7 +81,9 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
         })),
       readGearCandidates: (_session, args) =>
         Effect.sync(() => {
-          const found = args.itemIds.map((id) => lootItems[id]).filter(Boolean);
+          const found = args.itemIds
+            .map((id) => lootItems[id])
+            .filter((entry) => entry !== undefined);
           return {
             status: 'available',
             data: {
