@@ -1,8 +1,9 @@
+// @effect-migrated
 import { Button } from '@base-ui/react/button';
-import type { InstallerStatus } from '@wisp/protocol/native-commands';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { desktop } from '../../../api/desktop';
+import { useStore } from 'zustand';
 import logo from '../../../../src-tauri/icons/128x128@2x.png';
+import { createUpdater } from './updater-store';
 
 const statuses = {
   preparing: 'Preparing the update',
@@ -12,40 +13,14 @@ const statuses = {
 };
 
 export default function UpdaterWindow() {
-  const [update, setUpdate] = useState<InstallerStatus>({
-    phase: 'preparing',
-    percent: null,
-    log: [],
-    error: null,
-  });
+  const [updater] = useState(createUpdater);
+  const update = useStore(updater.store);
   const logPanel = useRef<HTMLPreElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const failed = update.phase === 'failed';
   const status = statuses[update.phase];
 
-  useEffect(() => {
-    let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    async function refresh() {
-      if (!active) return;
-      try {
-        const next = await desktop('updater_status');
-        if (!active) return;
-        setUpdate(next);
-        if (next.phase === 'failed') return;
-      } catch {
-        // The installer can close while the last status request is in flight.
-      }
-      if (active) timer = setTimeout(refresh, 120);
-    }
-    void desktop('updater_ready')
-      .then(refresh)
-      .catch(() => {});
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, []);
+  useEffect(() => updater.mount(), [updater]);
 
   useLayoutEffect(() => {
     if (!failed) return;
@@ -98,7 +73,7 @@ export default function UpdaterWindow() {
             <Button
               className="min-w-[92px] rounded-[8px] border border-solid border-[#518178] bg-[#29443f] px-[17px] py-[8px] font-semibold text-[#dcf3ed] hover:bg-[#355951] focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent"
               ref={closeButton}
-              onClick={() => void desktop('updater_close')}
+              onClick={updater.close}
             >
               Close
             </Button>

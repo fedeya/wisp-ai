@@ -1,32 +1,21 @@
-import { listen } from '@tauri-apps/api/event';
+// @effect-migrated
 import type { Release } from '@wisp/protocol/native-commands';
 import { renderReleaseNotes } from '@wisp/releases';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { createStore } from 'zustand/vanilla';
-import { desktop, native } from '../../../api';
+import { native } from '../../../api/desktop';
 import { Spinner } from '../../ui/ActionProgress';
 import { Button, Card, Select } from '../../ui/Controls';
 import Icon from '../../ui/Icon';
 import { groupLabel } from '../../ui/Rows';
 import Toggle from '../../ui/Toggle';
-
-/** How long Wisp must stay idle before a downloaded update installs by itself. */
-export const AUTO_INSTALL_IDLE_MS = 10 * 60 * 1000;
-/** The native refusal when a reply started just before an automatic install. */
-const AUTOMATIC_BUSY = 'Wisp is busy; the update will install later.';
-/** How often a scheduled update checks whether WoW is still running. */
-export const GAME_CHECK_MS = 30 * 1000;
+import { availableVersion, createUpdates, scheduledVersion } from './updates-store';
+import type { Progress, UpdateOperation } from './updates-store';
 
 const updateChannels = [
   { value: 'stable', label: 'Stable' },
   { value: 'nightly', label: 'Nightly' },
 ];
-type Progress = {
-  phase: 'downloading' | 'waiting' | 'installing';
-  downloaded?: number;
-  total?: number;
-};
 
 type UpdatesProps = {
   showSettings: boolean;
@@ -41,27 +30,6 @@ type UpdatesProps = {
   idle?: boolean;
   /** The installable update found, or null; the game announces it. */
   onAvailable?: (version: string | null) => void;
-};
-
-type UpdateOperation =
-  | { kind: 'checking' }
-  | { kind: 'changing-channel'; channel: string }
-  | { kind: 'installing'; progress: Progress };
-
-type UpdateState = {
-  channel: string | null;
-  operation: UpdateOperation | null;
-  release: Release | null;
-  supported: boolean;
-  error: string;
-  dismissed: string;
-  lastChecked: string;
-  /** Install downloaded updates while idle; null until the saved setting loads. */
-  autoInstall: boolean | null;
-  /** The version downloaded in the background and ready to install. */
-  prepared: string;
-  /** A version whose automatic install failed; it waits for the user. */
-  autoFailed: string;
 };
 
 function downloadPercent(progress: Progress) {
@@ -116,21 +84,8 @@ export default function Updates({
   onAvailable,
 }: UpdatesProps) {
   const statusHeading = useRef<HTMLHeadingElement>(null);
-  const [updates] = useState(() =>
-    createStore<UpdateState>(() => ({
-      channel: null,
-      operation: null,
-      release: null,
-      supported: native,
-      error: '',
-      dismissed: '',
-      lastChecked: '',
-      autoInstall: null,
-      prepared: '',
-      autoFailed: '',
-    })),
-  );
-  const { getState, setState } = updates;
+  const [updates] = useState(createUpdates);
+  const state = useStore(updates.store);
   const {
     release,
     operation,
@@ -140,12 +95,8 @@ export default function Updates({
     lastChecked,
     channel: savedChannel,
     autoInstall,
-    prepared,
-    autoFailed,
-  } = useStore(updates);
-  const [autoInstallError, setAutoInstallError] = useState('');
-  /** Whether WoW is running; null until checked. Only a closed game counts as idle. */
-  const [gameRunning, setGameRunning] = useState<boolean | null>(null);
+    autoInstallError,
+  } = state;
   const channel = savedChannel ?? 'stable';
   const checking = operation?.kind === 'checking';
   const installing = operation?.kind === 'installing';
@@ -155,202 +106,22 @@ export default function Updates({
   const size = downloading ? downloadedSize(progress) : null;
   const channelLoaded = savedChannel !== null;
   const canInstall = supported && !!release;
-  const available = supported && release ? release.version : null;
+  const available = availableVersion(state);
   /** An older version never installs by itself: the user chooses to go back. */
   const downgrade = release?.downgrade === true;
   /** The version that installs by itself the next time Wisp stays idle. */
-  const scheduled =
-    autoInstall && !downgrade && available && prepared === available && autoFailed !== available
-      ? available
-      : null;
+  const scheduled = scheduledVersion(state);
 
   useEffect(() => {
     onAvailable?.(available);
   }, [available, onAvailable]);
 
-  const check = useCallback(async () => {
-    const state = getState();
-    if (!native || !state.channel || state.operation) return;
-    setState({ operation: { kind: 'checking' }, error: '' });
-    try {
-      const { supported, update } = await desktop('check_update');
-      setState({ supported, release: update, lastChecked: new Date().toLocaleString() });
-    } catch {
-      setState({
-        error:
-          'Could not check for updates. Check your connection and try again. Public releases may not be available yet.',
-      });
-    } finally {
-      setState({ operation: null });
-    }
-  }, [getState, setState]);
-
-  async function changeChannel(next: string) {
-    const state = getState();
-    if (!state.channel || state.operation || locked) return;
-    setState({
-      operation: { kind: 'changing-channel', channel: next },
-      release: null,
-      prepared: '',
-      dismissed: '',
-      lastChecked: '',
-      error: '',
-    });
-    try {
-      const channel = await desktop('update_channel', { channel: next });
-      setState({ channel, operation: null });
-      await check();
-    } catch (error) {
-      setState({ operation: null, error: `Could not change update channel: ${String(error)}` });
-    }
-  }
-
-  async function install() {
-    const state = getState();
-    if (!state.release || !state.supported || state.operation || locked) return;
-    statusHeading.current?.focus();
-    setState({
-      operation: { kind: 'installing', progress: { phase: 'downloading' } },
-      error: '',
-    });
-    onBusy('Updating Wisp');
-    try {
-      await desktop('install_update');
-    } catch (error) {
-      setState({
-        error: `Update failed: ${String(error).replace(/^Error: /, '')} You can try again.`,
-      });
-    } finally {
-      setState({ operation: null });
-      onBusy('');
-    }
-  }
-
-  const installAutomatically = useCallback(async () => {
-    const { release, operation } = getState();
-    if (!release || operation) return;
-    setState({
-      // The installer is already downloaded and nothing is running, so the next
-      // step is the Windows updater: never "waiting for the active reply".
-      operation: { kind: 'installing', progress: { phase: 'installing' } },
-      error: '',
-    });
-    onBusy('Updating Wisp');
-    try {
-      await desktop('install_update', { automatic: true });
-    } catch (error) {
-      const message = String(error).replace(/^Error: /, '');
-      // A reply that started at the last moment only postpones the install.
-      if (message !== AUTOMATIC_BUSY) {
-        setState({
-          autoFailed: release.version,
-          error: `Automatic update failed: ${message} You can install it yourself.`,
-        });
-      }
-    } finally {
-      setState({ operation: null });
-      onBusy('');
-    }
-  }, [getState, onBusy, setState]);
-
-  async function changeAutoInstall(enabled: boolean) {
-    setAutoInstallError('');
-    try {
-      const saved = await desktop('update_auto_install', { enabled });
-      setState({ autoInstall: saved });
-    } catch {
-      setAutoInstallError('Could not change the automatic update setting. Try again.');
-    }
-  }
-
-  // Download a found update in the background so the idle install is quick.
-  // Each successful check (`lastChecked`) retries a download that failed.
+  // Runs before the session mounts, so the session starts with the current props.
   useEffect(() => {
-    if (!native || !autoInstall || downgrade || !available || prepared === available) return;
-    let current = true;
-    void desktop('download_update')
-      .then((version) => {
-        if (current && version === getState().release?.version) setState({ prepared: version });
-      })
-      // Until the next check retries, the manual install still downloads by itself.
-      .catch(() => {});
-    return () => {
-      current = false;
-    };
-  }, [autoInstall, available, downgrade, getState, lastChecked, prepared, setState]);
+    updates.setProps({ idle, locked, onBusy });
+  }, [updates, idle, locked, onBusy]);
 
-  // The bridge keeps reporting the game as connected after WoW exits, so ask
-  // Windows for the process while an update waits to install.
-  useEffect(() => {
-    if (!native || !scheduled) return;
-    let current = true;
-    const look = () =>
-      void desktop('game_running')
-        .then((running) => {
-          if (current) setGameRunning(running);
-        })
-        .catch(() => {
-          if (current) setGameRunning(null);
-        });
-    look();
-    const timer = setInterval(look, GAME_CHECK_MS);
-    return () => {
-      current = false;
-      clearInterval(timer);
-    };
-  }, [scheduled]);
-
-  // Install once WoW has stayed closed and Wisp idle for the whole window; any
-  // activity or a game launch restarts it.
-  useEffect(() => {
-    if (!scheduled || !idle || gameRunning !== false || locked || operation) return;
-    const timer = setTimeout(() => void installAutomatically(), AUTO_INSTALL_IDLE_MS);
-    return () => clearTimeout(timer);
-  }, [gameRunning, idle, installAutomatically, locked, operation, scheduled]);
-
-  useEffect(() => {
-    if (!native) return;
-    let disposed = false;
-    let unsubscribe: (() => void) | undefined;
-    void listen<Progress>('update-progress', ({ payload }) => {
-      if (!disposed && getState().operation?.kind === 'installing') {
-        setState({ operation: { kind: 'installing', progress: payload } });
-      }
-    })
-      .then((stop) => {
-        if (disposed) stop();
-        else unsubscribe = stop;
-      })
-      .catch(() => {
-        if (!disposed) {
-          setState({ error: 'Update progress is unavailable. Restart Wisp to try again.' });
-        }
-      });
-    void desktop('update_channel')
-      .then((channel) => {
-        if (disposed) return;
-        setState({ channel });
-        return check();
-      })
-      .catch(() => {
-        if (!disposed) {
-          setState({ error: 'Could not load the update channel. Restart Wisp to try again.' });
-        }
-      });
-    void desktop('update_auto_install')
-      .then((enabled) => {
-        if (!disposed) setState({ autoInstall: enabled });
-      })
-      .catch(() => {
-        if (!disposed) setAutoInstallError('Could not read the automatic update setting.');
-      });
-    const timer = setInterval(() => void check(), 6 * 60 * 60 * 1000);
-    return () => {
-      disposed = true;
-      clearInterval(timer);
-      unsubscribe?.();
-    };
-  }, [check, getState, setState]);
+  useEffect(() => updates.mount(), [updates]);
 
   if (!showSettings) {
     if (!release || dismissed === release.version) return null;
@@ -377,7 +148,7 @@ export default function Updates({
           <Button
             intent="quiet"
             className="min-h-8 px-2.5 py-1 text-xs text-muted"
-            onClick={() => setState({ dismissed: release.version })}
+            onClick={() => updates.dismiss(release.version)}
           >
             Later
           </Button>
@@ -435,11 +206,19 @@ export default function Updates({
             {!installing && (
               <div className="flex flex-wrap items-center gap-1.5">
                 {canInstall && (
-                  <Button intent="primary" onClick={install} disabled={busy}>
+                  <Button
+                    intent="primary"
+                    onClick={() => updates.install(statusHeading.current)}
+                    disabled={busy}
+                  >
                     Update and restart
                   </Button>
                 )}
-                <Button intent={canInstall ? 'quiet' : 'default'} onClick={check} disabled={busy}>
+                <Button
+                  intent={canInstall ? 'quiet' : 'default'}
+                  onClick={updates.check}
+                  disabled={busy}
+                >
                   {checking ? 'Checking…' : 'Check for updates'}
                 </Button>
               </div>
@@ -529,7 +308,7 @@ export default function Updates({
             aria-describedby="wisp-update-channel-description"
             className="w-[128px]"
             value={operation?.kind === 'changing-channel' ? operation.channel : channel}
-            onValueChange={(next) => void changeChannel(next)}
+            onValueChange={updates.changeChannel}
             options={updateChannels}
             disabled={busy}
           />
@@ -546,7 +325,7 @@ export default function Updates({
             label="Install updates automatically"
             checked={autoInstall ?? false}
             disabled={!native || autoInstall === null || installing}
-            onChange={(enabled) => void changeAutoInstall(enabled)}
+            onChange={updates.changeAutoInstall}
           />
         </div>
         {autoInstallError && (
