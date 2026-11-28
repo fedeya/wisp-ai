@@ -14,13 +14,16 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import * as AgentConfig from '../src/host/agent-config.ts';
+import * as McpConnection from '../src/integrations/mcp-connection.ts';
 
 /** A source checkout's settings: none of the agent's variables are set. */
 const sourceConfig = AgentConfig.layer.pipe(
   Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
 );
 const build = (manager: ReturnType<typeof McpManager.make>) =>
-  Effect.runPromise(manager.pipe(Effect.provide(sourceConfig)));
+  Effect.runPromise(
+    manager.pipe(Effect.provide(McpConnection.layer.pipe(Layer.provide(sourceConfig)))),
+  );
 
 function makeManager(
   file: string,
@@ -398,11 +401,13 @@ test('disabling MCP cancels an opening connection and a later enable opens a fre
     await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
 
     await Effect.runPromise(manager.setEnabled('test_server', true));
-    const { client } = await Effect.runPromise(manager.connect('test_server'));
-    assert.notEqual(client, connect.mock.contexts[0]);
+    const { session } = await Effect.runPromise(manager.connect('test_server'));
+    const [cancelledClient, client] = connect.mock.contexts;
+    assert.notEqual(client, cancelledClient);
     finishHandshake();
     await handshake;
-    assert.equal((await Effect.runPromise(manager.connect('test_server'))).client, client);
+    assert.equal((await Effect.runPromise(manager.connect('test_server'))).session, session);
+    assert.equal(connect.mock.calls.length, 2);
     assert.deepEqual(listTools.mock.contexts, [client]);
   } finally {
     finishHandshake();
@@ -427,8 +432,9 @@ test('a failed MCP opening releases the client and allows a fresh attempt', asyn
       message: 'Handshake failed',
     });
     assert.deepEqual(close.mock.contexts, [connect.mock.contexts[0]]);
-    const { client } = await Effect.runPromise(manager.connect('test_server'));
-    assert.notEqual(client, connect.mock.contexts[0]);
+    await Effect.runPromise(manager.connect('test_server'));
+    const [failedClient, client] = connect.mock.contexts;
+    assert.notEqual(client, failedClient);
     assert.deepEqual(listTools.mock.contexts, [client]);
   } finally {
     await Effect.runPromise(manager.close());
@@ -513,7 +519,8 @@ test('MCP shutdown waits for client cleanup and rejects new connections', async 
     server: { name: 'test_server', url: 'https://example.com/mcp' },
   }).server;
   try {
-    const { client } = await Effect.runPromise(manager.connect('test_server'));
+    await Effect.runPromise(manager.connect('test_server'));
+    const [client] = connect.mock.contexts;
     let stopped = false;
     const shutdown = Effect.runPromise(manager.close()).then(() => {
       stopped = true;
