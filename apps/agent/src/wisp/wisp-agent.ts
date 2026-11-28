@@ -1,6 +1,7 @@
 // @effect-migrated
 import { Context, Duration, Effect, Exit, FileSystem, Layer } from 'effect';
 import type { HostError } from '../execution/engine-errors.ts';
+import { AgentConfig } from '../host/agent-config.ts';
 import { readContent, type AuthoredSkill } from './content.ts';
 import { SKILL } from '../tools/turn-tools.ts';
 
@@ -42,7 +43,8 @@ export const layer = Layer.effect(
   WispAgent,
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const load = readContent().pipe(
+    const { contentRoot } = yield* AgentConfig;
+    const load = readContent(contentRoot).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.map(({ instructions, skills }) => ({
         system: systemPrompt(instructions, skills),

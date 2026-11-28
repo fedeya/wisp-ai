@@ -1,8 +1,9 @@
 import { afterEach, expect, test } from 'vitest';
-import { Effect, Layer, Logger, References } from 'effect';
+import { ConfigProvider, Effect, Layer, Logger, References } from 'effect';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as Game from '../src/host/game-access.ts';
 import * as Memory from '../src/host/memory.ts';
+import * as AgentConfig from '../src/host/agent-config.ts';
 import * as Capabilities from '../src/host/capabilities.ts';
 import * as Mcp from '../src/integrations/mcp-tools.ts';
 import * as Everloot from '../src/integrations/everloot.ts';
@@ -189,6 +190,12 @@ async function fixture(
       Layer.provide(Layer.succeed(EngineConfig, { origin: () => origin, token: 'offline-token' })),
       Layer.provide(Mcp.layer([Everloot.profile])),
       Layer.provide(Capabilities.layerFromFile(() => flags)),
+      Layer.provide(
+        AgentConfig.layer.pipe(
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+          Layer.orDie,
+        ),
+      ),
       Layer.provide(NodeFileSystem.layer),
       Layer.provideMerge(options.logging ?? Logger.layer([])),
     ),

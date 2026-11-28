@@ -1,9 +1,11 @@
-import { Effect, Exit, Schema, Scope, Semaphore, type Duration } from 'effect';
+import { Effect, Exit, Option, Redacted, Schema, Scope, Semaphore, type Duration } from 'effect';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Capability } from '@wisp/protocol/capabilities';
 import { McpConnection, McpConnectionError } from './mcp-connection.ts';
 import type { Connection } from './mcp-connection.ts';
+import { AgentConfig } from '../host/agent-config.ts';
+import * as Environment from '../host/environment.ts';
 export { mcpDefinition, mcpSetup };
 export type MCPDefinition = typeof mcpDefinition.Type & {
   tools?: { name: string; description?: string }[];
@@ -52,7 +54,12 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 const configurationError = (cause: unknown) => new McpConfigurationError(message(cause), { cause });
 const vaultError = (cause: unknown) => new McpVaultError(message(cause), { cause });
 
-function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] = []) {
+const make = Effect.fnUntraced(function* (
+  root = '.',
+  storage?: McpStorage,
+  bundled: readonly BundledMcp[] = [],
+) {
+  const { packagedEngine } = yield* AgentConfig;
   const builtIns = new Map(bundled.map((profile) => [profile.definition.name, profile]));
   const reservedNames = new Set(
     bundled.flatMap(({ definition, toolGroups }) => [
@@ -132,14 +139,16 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
     providedEnv?: Record<string, string>,
     redirect?: RequestRedirect,
   ) {
-    let secret = token;
-    if (secret === undefined) {
-      secret = server.hasToken
-        ? yield* readSecret('mcp:' + server.name + ':token')
-        : server.tokenEnv
-          ? process.env[server.tokenEnv]
-          : undefined;
-    }
+    const secret =
+      token !== undefined
+        ? Redacted.make(token)
+        : server.hasToken
+          ? Redacted.make(yield* readSecret('mcp:' + server.name + ':token'))
+          : server.tokenEnv
+            ? Option.getOrUndefined(
+                yield* Environment.secret(server.tokenEnv).pipe(Effect.mapError(vaultError)),
+              )
+            : undefined;
     let env = providedEnv;
     if (env === undefined && server.envKeys?.length) {
       const stored = yield* readSecret('mcp:' + server.name + ':env');
@@ -148,7 +157,14 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
         catch: vaultError,
       });
     }
-    return yield* McpConnection.makeTransport(root, server, secret, env ?? {}, redirect);
+    return yield* McpConnection.makeTransport({
+      root,
+      server,
+      secret,
+      env: env ?? {},
+      packagedEngine,
+      redirect,
+    });
   });
 
   const connections = new Map<string, Connection<Effect.Error<ReturnType<typeof transportFor>>>>();
@@ -353,7 +369,7 @@ function make(root = '.', storage?: McpStorage, bundled: readonly BundledMcp[] =
     disconnect,
     close,
   };
-}
+});
 
-export type McpManager = ReturnType<typeof make>;
+export type McpManager = Effect.Success<ReturnType<typeof make>>;
 export const McpManager = { make };

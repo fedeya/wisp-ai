@@ -4,6 +4,7 @@ import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { inspectionResults, unavailableGameAccess } from '../../src/host/game-access.ts';
 import * as Game from '../../src/host/game-access.ts';
 import * as Memory from '../../src/host/memory.ts';
+import * as AgentConfig from '../../src/host/agent-config.ts';
 import * as Capabilities from '../../src/host/capabilities.ts';
 import * as Mcp from '../../src/integrations/mcp-tools.ts';
 import * as Everloot from '../../src/integrations/everloot.ts';
@@ -107,7 +108,8 @@ export const wispHarness = createHarness<WispInput, { reply: string }>({
         ),
         Layer.provide(Layer.succeed(EngineConfig, config)),
         Layer.provide(Mcp.layer([Everloot.profile])),
-        Layer.provide(Capabilities.layerFromFile()),
+        Layer.provide(Capabilities.layer),
+        Layer.provide(AgentConfig.layer.pipe(Layer.orDie)),
         Layer.provide(NodeFileSystem.layer),
         Layer.provideMerge(Logger.layer([])),
       ),

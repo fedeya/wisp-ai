@@ -14,6 +14,7 @@
     "./game-access": "./src/host/game-access.ts",
     "./memory": "./src/host/memory.ts",
     "./agent-host": "./src/host/agent-host.ts",
+    "./agent-config": "./src/host/agent-config.ts",
     "./agent-memory": "./src/wisp/agent-memory.ts",
     "./enabled-tool": "./src/tools/enabled-tool.ts",
     "./model-tools": "./src/models/model-tools.ts",

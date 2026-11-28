@@ -1,5 +1,4 @@
 import { Context, Effect, Layer } from 'effect';
-import type { Scope } from 'effect';
 import { HostError } from '../execution/engine-errors.ts';
 import * as Capabilities from '../host/capabilities.ts';
 import type { CapabilitySnapshot } from '../host/capabilities.ts';
@@ -78,19 +77,13 @@ interface McpPolicy {
 
 export const layer = (bundled: readonly BundledMcp[] = []) =>
   layerWithManager(
-    Effect.acquireRelease(
-      Effect.sync(() => McpManager.make('.', undefined, bundled)),
-      (manager) => manager.close(),
-    ),
+    Effect.acquireRelease(McpManager.make('.', undefined, bundled), (manager) => manager.close()),
   );
 
 export const layerFromManager = (manager: McpManager, policy: McpPolicy) =>
   layerWithManager(Effect.succeed(manager), policy);
 
-const layerWithManager = (
-  acquire: Effect.Effect<McpManager, never, Scope.Scope>,
-  policy?: McpPolicy,
-) =>
+const layerWithManager = <R>(acquire: Effect.Effect<McpManager, never, R>, policy?: McpPolicy) =>
   Layer.effect(
     Mcp,
     Effect.gen(function* () {
