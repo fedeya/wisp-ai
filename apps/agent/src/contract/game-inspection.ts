@@ -1,136 +1,152 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Schema } from 'effect';
+import { rejectUnknownKeys, TrimmedString } from '@wisp/protocol/checks';
 import { settingsRead } from './settings.ts';
+import {
+  IntBetween,
+  LimitedString,
+  NoArgs,
+  NoArgsStrict,
+  PositiveInt,
+  refine,
+  withDefault,
+} from './tool-inputs.ts';
 
-export const characterSections = z
-  .array(
-    z.enum([
-      'character',
-      'location',
-      'group',
-      'talents',
-      'spells',
-      'quests',
-      'gear',
-      'bags',
-      'pvp',
+// An input marked strict rejects unknown keys: decode it with `rejectUnknownKeys`.
+
+const Ids = (maxItems: number) => Schema.Array(PositiveInt).check(Schema.isMaxLength(maxItems));
+const SomeIds = (maxItems: number) =>
+  Schema.Array(PositiveInt).check(Schema.isMinLength(1), Schema.isMaxLength(maxItems));
+
+export const characterSections = Schema.Array(
+  Schema.Literals([
+    'character',
+    'location',
+    'group',
+    'talents',
+    'spells',
+    'quests',
+    'gear',
+    'bags',
+    'pvp',
+  ]),
+).check(Schema.isMinLength(1), Schema.isMaxLength(9));
+
+// Strict.
+export const npcLocationsInput = Schema.Struct({
+  mode: withDefault(Schema.Literals(['npc', 'class_trainers', 'services']), () => 'npc' as const),
+  service: Schema.optionalKey(
+    Schema.Literals([
+      'Transmogrifier',
+      'Barber',
+      'Banker',
+      'Auctioneer',
+      'Innkeeper',
+      'Flight Master',
+      'Repair',
+      'Battlemaster',
+      'Arcane Reforger',
+      'Weapon Master',
     ]),
-  )
-  .min(1)
-  .max(9);
-
-export const npcLocationsInput = z
-  .strictObject({
-    mode: z.enum(['npc', 'class_trainers', 'services']).default('npc'),
-    service: z
-      .enum([
-        'Transmogrifier',
-        'Barber',
-        'Banker',
-        'Auctioneer',
-        'Innkeeper',
-        'Flight Master',
-        'Repair',
-        'Battlemaster',
-        'Arcane Reforger',
-        'Weapon Master',
-      ])
-      .optional(),
-    npcId: z.number().int().positive().optional(),
-    name: z.string().trim().min(1).max(80).optional(),
-    class: z
-      .enum([
-        'MAGE',
-        'WARRIOR',
-        'PALADIN',
-        'HUNTER',
-        'ROGUE',
-        'PRIEST',
-        'SHAMAN',
-        'WARLOCK',
-        'DRUID',
-      ])
-      .optional(),
-    mapId: z.number().int().positive().optional(),
-    limit: z.number().int().min(1).max(10).default(5),
-  })
-  .refine(
+  ),
+  npcId: Schema.optionalKey(PositiveInt),
+  name: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 80 })),
+  class: Schema.optionalKey(
+    Schema.Literals([
+      'MAGE',
+      'WARRIOR',
+      'PALADIN',
+      'HUNTER',
+      'ROGUE',
+      'PRIEST',
+      'SHAMAN',
+      'WARLOCK',
+      'DRUID',
+    ]),
+  ),
+  mapId: Schema.optionalKey(PositiveInt),
+  limit: withDefault(IntBetween(1, 10), () => 5),
+}).check(
+  refine(
     (x) =>
       x.mode === 'services'
         ? x.service !== undefined
         : x.mode === 'class_trainers' || x.npcId !== undefined || x.name !== undefined,
     'Provide a service in services mode, an NPC name/ID, or class_trainers mode',
-  );
-export const questInput = z.strictObject({ questId: z.number().int().positive() });
-export const questChainInput = z.strictObject({
-  questId: z.number().int().positive(),
-  direction: z.enum(['prerequisites', 'followups', 'both']).default('both'),
-  maxDepth: z.number().int().min(1).max(4).default(2),
-  limit: z.number().int().min(1).max(30).default(15),
+  ),
+);
+// Strict.
+export const questInput = Schema.Struct({ questId: PositiveInt });
+// Strict.
+export const questChainInput = Schema.Struct({
+  questId: PositiveInt,
+  direction: withDefault(
+    Schema.Literals(['prerequisites', 'followups', 'both']),
+    () => 'both' as const,
+  ),
+  maxDepth: withDefault(IntBetween(1, 4), () => 2),
+  limit: withDefault(IntBetween(1, 30), () => 15),
 });
-export const objectLocationsInput = z
-  .strictObject({
-    objectId: z.number().int().positive().optional(),
-    name: z.string().trim().min(1).max(80).optional(),
-    mapId: z.number().int().positive().optional(),
-    limit: z.number().int().min(1).max(10).default(5),
-  })
-  .refine(
+// Strict.
+export const objectLocationsInput = Schema.Struct({
+  objectId: Schema.optionalKey(PositiveInt),
+  name: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 80 })),
+  mapId: Schema.optionalKey(PositiveInt),
+  limit: withDefault(IntBetween(1, 10), () => 5),
+}).check(
+  refine(
     (args) => args.objectId !== undefined || args.name !== undefined,
     'Provide an object ID or exact localized name',
-  );
-export const storedItemInput = z.strictObject({
-  itemId: z.number().int().positive(),
-  includeGuild: z.boolean().default(false),
-  limit: z.number().int().min(1).max(40).default(20),
+  ),
+);
+// Strict.
+export const storedItemInput = Schema.Struct({
+  itemId: PositiveInt,
+  includeGuild: withDefault(Schema.Boolean, () => false),
+  limit: withDefault(IntBetween(1, 40), () => 20),
 });
-export const itemPricesInput = z.strictObject({
-  itemIds: z.array(z.number().int().positive()).min(1).max(20),
+// Strict.
+export const itemPricesInput = Schema.Struct({ itemIds: SomeIds(20) });
+// Strict.
+export const polestarGuideInput = Schema.Struct({
+  upcoming: withDefault(
+    IntBetween(0, 5).annotate({ description: 'How many steps after the current one to include.' }),
+    () => 2,
+  ),
 });
-export const polestarGuideInput = z.strictObject({
-  upcoming: z
-    .number()
-    .int()
-    .min(0)
-    .max(5)
-    .default(2)
-    .describe('How many steps after the current one to include.'),
-});
-export const referenceInput = z
-  .object({
-    kind: z.enum(['item', 'spell', 'quest', 'talent']),
-    id: z.number().int().positive(),
-    includeCooldown: z
-      .boolean()
-      .optional()
-      .describe('Read the current timer for an item or spell.'),
-  })
-  .refine(
+export const referenceInput = Schema.Struct({
+  kind: Schema.Literals(['item', 'spell', 'quest', 'talent']),
+  id: PositiveInt,
+  includeCooldown: Schema.optionalKey(
+    Schema.Boolean.annotate({ description: 'Read the current timer for an item or spell.' }),
+  ),
+}).check(
+  refine(
     (args) => !args.includeCooldown || args.kind === 'item' || args.kind === 'spell',
     'Cooldowns require kind=item or kind=spell',
-  );
-export const progressionInput = z.object({
-  questIds: z.array(z.number().int().positive()).max(40).default([]),
-  factionIds: z.array(z.number().int().positive()).max(20).default([]),
+  ),
+);
+export const progressionInput = Schema.Struct({
+  questIds: withDefault(Ids(40), () => []),
+  factionIds: withDefault(Ids(20), () => []),
 });
-export const compareInput = z.object({
-  itemIds: z.array(z.number().int().positive()).min(1).max(5),
-  slot: z.number().int().min(1).max(19).optional(),
+export const compareInput = Schema.Struct({
+  itemIds: SomeIds(5),
+  slot: Schema.optionalKey(IntBetween(1, 19)),
 });
 const gearLevels = {
-  minRequiredLevel: z.number().int().min(0).max(100).optional(),
-  maxRequiredLevel: z
-    .number()
-    .int()
-    .min(1)
-    .max(100)
-    .optional()
-    .describe('Highest required level to keep; defaults to the character level.'),
-  quality: z
-    .array(z.enum(['poor', 'common', 'uncommon', 'rare', 'epic']))
-    .min(1)
-    .max(5)
-    .default(['common', 'uncommon', 'rare'])
-    .describe('Item qualities to search.'),
+  minRequiredLevel: Schema.optionalKey(IntBetween(0, 100)),
+  maxRequiredLevel: Schema.optionalKey(
+    IntBetween(1, 100).annotate({
+      description: 'Highest required level to keep; defaults to the character level.',
+    }),
+  ),
+  quality: withDefault(
+    Schema.Array(Schema.Literals(['poor', 'common', 'uncommon', 'rare', 'epic']))
+      .check(Schema.isMinLength(1), Schema.isMaxLength(5))
+      .annotate({ description: 'Item qualities to search.' }),
+    () => ['common', 'uncommon', 'rare'] as const,
+  ),
 };
 export const armorSlots = [
   'head',
@@ -148,19 +164,21 @@ export const armorSlots = [
 ] as const;
 // Jewelry, trinkets and cloaks have no armor type of their own.
 export const typelessArmorSlots: readonly string[] = ['neck', 'finger', 'trinket', 'back'];
-export const armorSearchInput = z
-  .strictObject({
-    slot: z.enum(armorSlots),
-    armorType: z
-      .enum(['cloth', 'leather', 'mail', 'plate'])
-      .optional()
-      .describe('Required for body slots; ignored for neck, finger, trinket and back.'),
-    ...gearLevels,
-  })
-  .refine(
+// Strict.
+export const armorSearchInput = Schema.Struct({
+  slot: Schema.Literals(armorSlots),
+  armorType: Schema.optionalKey(
+    Schema.Literals(['cloth', 'leather', 'mail', 'plate']).annotate({
+      description: 'Required for body slots; ignored for neck, finger, trinket and back.',
+    }),
+  ),
+  ...gearLevels,
+}).check(
+  refine(
     (args) => typelessArmorSlots.includes(args.slot) || args.armorType !== undefined,
     'armorType is required for this slot',
-  );
+  ),
+);
 export const weaponTypes = [
   'staves',
   'wands',
@@ -180,84 +198,86 @@ export const weaponTypes = [
   'shields',
   'held-in-off-hand',
 ] as const;
-export const weaponSearchInput = z.strictObject({
-  weaponType: z.enum(weaponTypes),
+// Strict.
+export const weaponSearchInput = Schema.Struct({
+  weaponType: Schema.Literals(weaponTypes),
   ...gearLevels,
 });
-export const itemSourcesInput = z.strictObject({
-  itemIds: z.array(z.number().int().positive()).min(1).max(20),
+// Strict.
+export const itemSourcesInput = Schema.Struct({ itemIds: SomeIds(20) });
+// Bridge-to-addon only: names for source entities plus cached prices. Strict.
+export const sourceNamesInput = Schema.Struct({
+  itemIds: Ids(20),
+  npcIds: Ids(200),
+  questIds: Ids(200),
+  spellIds: Ids(200),
+  useQuestie: Schema.Boolean,
 });
-// Bridge-to-addon only: names for source entities plus cached prices.
-export const sourceNamesInput = z.strictObject({
-  itemIds: z.array(z.number().int().positive()).max(20),
-  npcIds: z.array(z.number().int().positive()).max(200),
-  questIds: z.array(z.number().int().positive()).max(200),
-  spellIds: z.array(z.number().int().positive()).max(200),
-  useQuestie: z.boolean(),
-});
-// Internal item reading used after a tool resolves catalog IDs.
-export const gearCandidatesInput = z.strictObject({
-  itemIds: z.array(z.number().int().positive()).min(1).max(500),
-  minRequiredLevel: z.number().int().min(0).max(100).optional(),
-  maxRequiredLevel: z.number().int().min(1).max(100).optional(),
+// Internal item reading used after a tool resolves catalog IDs. Strict. No
+// model reads it, so its optional keys also take `undefined`, as zod's did.
+export const gearCandidatesInput = Schema.Struct({
+  itemIds: SomeIds(500),
+  minRequiredLevel: Schema.optional(IntBetween(0, 100)),
+  maxRequiredLevel: Schema.optional(IntBetween(1, 100)),
   // Also name the items that are not equipment (recipes, quest items).
-  includeOther: z.boolean().optional(),
+  includeOther: Schema.optional(Schema.Boolean),
 });
-export const dungeonLootInput = z
-  .strictObject({
-    instanceMapId: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .describe('instanceMapId from wow__query_dungeons; preferred.'),
-    dungeon: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .optional()
-      .describe('Part of the English instance name, when no instanceMapId is known.'),
-    boss: z
-      .string()
-      .trim()
-      .min(1)
-      .max(80)
-      .optional()
-      .describe('Part of an English boss name, to read one boss.'),
-    detail: z
-      .enum(['summary', 'full'])
-      .optional()
-      .describe(
+// Strict.
+export const dungeonLootInput = Schema.Struct({
+  instanceMapId: Schema.optionalKey(
+    PositiveInt.annotate({ description: 'instanceMapId from wow__query_dungeons; preferred.' }),
+  ),
+  dungeon: Schema.optionalKey(
+    TrimmedString({ minLength: 1, maxLength: 80 }).pipe(
+      Schema.annotateEncoded({
+        description: 'Part of the English instance name, when no instanceMapId is known.',
+      }),
+    ),
+  ),
+  boss: Schema.optionalKey(
+    TrimmedString({ minLength: 1, maxLength: 80 }).pipe(
+      Schema.annotateEncoded({
+        description: 'Part of an English boss name, to read one boss.',
+      }),
+    ),
+  ),
+  detail: Schema.optionalKey(
+    Schema.Literals(['summary', 'full']).annotate({
+      description:
         'summary: every drop per boss with name, drop chance and required level, plus item level gain and stat changes for upgrades; full: also the stats of every item and the equipped item. Default: full with boss, summary without. A full answer too large for one read comes back as the summary.',
-      ),
-    includeUnusable: z
-      .boolean()
-      .optional()
-      .describe(
+    }),
+  ),
+  includeUnusable: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
         "Also list weapons and armor this character's class can never use. Leave it unset for the player's own gear; set it only for loot for another class.",
-      ),
-  })
-  .refine(
+    }),
+  ),
+}).check(
+  refine(
     (args) => args.instanceMapId !== undefined || args.dungeon !== undefined,
     'Give instanceMapId or dungeon',
-  );
-export const auctionInput = z.object({
-  itemId: z.number().int().positive().optional(),
-  limit: z.number().int().min(1).max(50).default(20),
+  ),
+);
+export const auctionInput = Schema.Struct({
+  itemId: Schema.optionalKey(PositiveInt),
+  limit: withDefault(IntBetween(1, 50), () => 20),
 });
-export const dungeonsInput = z.strictObject({
-  dungeon: z.string().trim().min(1).max(80).optional(),
+// Strict.
+export const dungeonsInput = Schema.Struct({
+  dungeon: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 80 })),
 });
-export const flightPathsInput = z.strictObject({
-  origin: z.string().trim().min(1).max(120).optional(),
-  destination: z.string().trim().min(1).max(120).optional(),
-  limit: z.number().int().min(1).max(40).default(20),
+// Strict.
+export const flightPathsInput = Schema.Struct({
+  origin: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 120 })),
+  destination: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 120 })),
+  limit: withDefault(IntBetween(1, 40), () => 20),
 });
-export const chatHistoryInput = z.strictObject({
-  channels: z
-    .array(
-      z.enum([
+// Strict.
+export const chatHistoryInput = Schema.Struct({
+  channels: withDefault(
+    Schema.Array(
+      Schema.Literals([
         'say',
         'yell',
         'party',
@@ -268,88 +288,125 @@ export const chatHistoryInput = z.strictObject({
         'whisper',
         'channel',
       ]),
-    )
-    .max(9)
-    .default([]),
-  limit: z.number().int().min(1).max(50).default(30),
-  lastSeconds: z.number().int().min(1).max(1800).default(1800),
-  sender: z.string().trim().min(1).max(120).optional(),
-  query: z.string().trim().min(1).max(200).optional(),
-  channelName: z.string().trim().min(1).max(120).optional(),
-  channelIndex: z.number().int().min(1).max(99).optional(),
+    ).check(Schema.isMaxLength(9)),
+    () => [],
+  ),
+  limit: withDefault(IntBetween(1, 50), () => 30),
+  lastSeconds: withDefault(IntBetween(1, 1800), () => 1800),
+  sender: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 120 })),
+  query: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 200 })),
+  channelName: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 120 })),
+  channelIndex: Schema.optionalKey(IntBetween(1, 99)),
 });
 // `deaths` reads the game's Death Recap for the player's latest deaths (and,
-// optionally, group deaths); `fight` reads the game's damage meter.
-export const combatInput = z.strictObject({
-  view: z.enum(['deaths', 'fight']).default('deaths'),
-  deaths: z.number().int().min(1).max(5).default(1),
-  includeGroup: z.boolean().default(false),
-  eventLimit: z.number().int().min(1).max(30).default(20),
+// optionally, group deaths); `fight` reads the game's damage meter. Strict.
+export const combatInput = Schema.Struct({
+  view: withDefault(Schema.Literals(['deaths', 'fight']), () => 'deaths' as const),
+  deaths: withDefault(IntBetween(1, 5), () => 1),
+  includeGroup: withDefault(Schema.Boolean, () => false),
+  eventLimit: withDefault(IntBetween(1, 30), () => 20),
 });
-export const trainingInput = z
-  .object({
-    class: z
-      .enum([
-        'DRUID',
-        'HUNTER',
-        'MAGE',
-        'PALADIN',
-        'PRIEST',
-        'ROGUE',
-        'SHAMAN',
-        'WARLOCK',
-        'WARRIOR',
-      ])
-      .optional(),
-    query: z.string().trim().min(1).max(80).optional(),
-    spellId: z.number().int().positive().optional(),
-    minLevel: z.number().int().min(0).max(60).default(0),
-    maxLevel: z.number().int().min(0).max(60).default(60),
-    offset: z.number().int().min(0).max(5000).default(0),
-    limit: z.number().int().min(1).max(100).default(30),
-  })
-  .refine((input) => input.minLevel <= input.maxLevel, 'Invalid level range');
-export const gearSearchInspectionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('search_armor'), args: armorSearchInput }),
-  z.object({ kind: z.literal('search_weapons'), args: weaponSearchInput }),
+export const trainingInput = Schema.Struct({
+  class: Schema.optionalKey(
+    Schema.Literals([
+      'DRUID',
+      'HUNTER',
+      'MAGE',
+      'PALADIN',
+      'PRIEST',
+      'ROGUE',
+      'SHAMAN',
+      'WARLOCK',
+      'WARRIOR',
+    ]),
+  ),
+  query: Schema.optionalKey(TrimmedString({ minLength: 1, maxLength: 80 })),
+  spellId: Schema.optionalKey(PositiveInt),
+  minLevel: withDefault(IntBetween(0, 60), () => 0),
+  maxLevel: withDefault(IntBetween(0, 60), () => 60),
+  offset: withDefault(IntBetween(0, 5000), () => 0),
+  limit: withDefault(IntBetween(1, 100), () => 30),
+}).check(refine((input) => input.minLevel <= input.maxLevel, 'Invalid level range'));
+export const macrosInput = Schema.Struct({
+  names: withDefault(Schema.Array(LimitedString(1, 32)).check(Schema.isMaxLength(10)), () => []),
+  includeBodies: withDefault(Schema.Boolean, () => false),
+});
+export const mapInput = Schema.Struct({
+  mapIds: withDefault(Ids(20), () => []),
+  query: Schema.optionalKey(LimitedString(1, 80)),
+});
+
+const inspection = <const K extends string, A extends Schema.Top>(kind: K, args: A) =>
+  Schema.Struct({ kind: Schema.Literal(kind), args });
+
+export const gearSearchInspectionSchema = Schema.Union([
+  inspection('search_armor', armorSearchInput),
+  inspection('search_weapons', weaponSearchInput),
 ]);
 
-export const inspectionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('training'), args: trainingInput }),
-  z.object({ kind: z.literal('chat'), args: chatHistoryInput }),
-  z.object({ kind: z.literal('combat'), args: combatInput }),
-  z.object({ kind: z.literal('questie_quest'), args: questInput }),
-  z.object({ kind: z.literal('questie_chain'), args: questChainInput }),
-  z.object({ kind: z.literal('object_locations'), args: objectLocationsInput }),
-  z.object({ kind: z.literal('stored_item'), args: storedItemInput }),
-  z.object({ kind: z.literal('item_prices'), args: itemPricesInput }),
-  z.object({ kind: z.literal('polestar_guide'), args: polestarGuideInput }),
-  z.object({ kind: z.literal('npc_locations'), args: npcLocationsInput }),
-  z.object({ kind: z.literal('settings'), args: settingsRead }),
-  z.object({ kind: z.literal('reference'), args: referenceInput }),
-  z.object({ kind: z.literal('progression'), args: progressionInput }),
-  z.object({ kind: z.literal('compare_items'), args: compareInput }),
-  ...gearSearchInspectionSchema.options,
-  z.object({ kind: z.literal('gear_candidates'), args: gearCandidatesInput }),
-  z.object({ kind: z.literal('auctions'), args: auctionInput }),
-  z.object({ kind: z.literal('flight_paths'), args: flightPathsInput }),
-  z.object({ kind: z.literal('dungeons'), args: dungeonsInput }),
-  z.object({
-    kind: z.literal('macros'),
-    args: z.object({
-      names: z.array(z.string().min(1).max(32)).max(10).default([]),
-      includeBodies: z.boolean().default(false),
-    }),
-  }),
-  z.object({
-    kind: z.literal('map'),
-    args: z.object({
-      mapIds: z.array(z.number().int().positive()).max(20).default([]),
-      query: z.string().min(1).max(80).optional(),
-    }),
-  }),
-  z.object({ kind: z.literal('hearthstone'), args: z.strictObject({}) }),
-  z.object({ kind: z.literal('target'), args: z.object({}) }),
-  z.object({ kind: z.literal('trainer'), args: z.object({}) }),
-  z.object({ kind: z.literal('resources'), args: z.object({}) }),
+export const inspectionSchema = Schema.Union([
+  inspection('training', trainingInput),
+  inspection('chat', chatHistoryInput),
+  inspection('combat', combatInput),
+  inspection('questie_quest', questInput),
+  inspection('questie_chain', questChainInput),
+  inspection('object_locations', objectLocationsInput),
+  inspection('stored_item', storedItemInput),
+  inspection('item_prices', itemPricesInput),
+  inspection('polestar_guide', polestarGuideInput),
+  inspection('npc_locations', npcLocationsInput),
+  inspection('settings', settingsRead),
+  inspection('reference', referenceInput),
+  inspection('progression', progressionInput),
+  inspection('compare_items', compareInput),
+  ...gearSearchInspectionSchema.members,
+  inspection('gear_candidates', gearCandidatesInput),
+  inspection('auctions', auctionInput),
+  inspection('flight_paths', flightPathsInput),
+  inspection('dungeons', dungeonsInput),
+  inspection('macros', macrosInput),
+  inspection('map', mapInput),
+  inspection('hearthstone', NoArgsStrict),
+  inspection('target', NoArgs),
+  inspection('trainer', NoArgs),
+  inspection('resources', NoArgs),
 ]);
+
+type InspectionKind = (typeof inspectionSchema.Encoded)['kind'];
+
+// Whether each inspection's arguments reject unknown keys.
+const strictArgs = {
+  training: false,
+  chat: true,
+  combat: true,
+  questie_quest: true,
+  questie_chain: true,
+  object_locations: true,
+  stored_item: true,
+  item_prices: true,
+  polestar_guide: true,
+  npc_locations: true,
+  settings: false,
+  reference: false,
+  progression: false,
+  compare_items: false,
+  search_armor: true,
+  search_weapons: true,
+  gear_candidates: true,
+  auctions: false,
+  flight_paths: true,
+  dungeons: true,
+  macros: false,
+  map: false,
+  hearthstone: true,
+  target: false,
+  trainer: false,
+  resources: false,
+} satisfies Record<InspectionKind, boolean>;
+
+/**
+ * How to decode an inspection of `kind`: with `rejectUnknownKeys` when its
+ * arguments are strict, which also closes the `{ kind, args }` envelope.
+ */
+export const inspectionParseOptions = (kind: InspectionKind) =>
+  strictArgs[kind] ? rejectUnknownKeys : undefined;
