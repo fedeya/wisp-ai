@@ -23,7 +23,7 @@ simulation adapters). Effect code calls it directly.
    types and schemas from the contract module (`@wisp/agent/contract/...`,
    `@wisp/protocol/...`). A migrated file starts with `// @effect-migrated`,
    and `tests/effect-migrated.test.ts` fails while it still has a scoreboard
-   pattern. A migrated file has no unchecked casts, `any`, non-null
+   pattern. A migrated file has no `as` casts (`as const` aside), `any`, non-null
    assertions, `@ts-ignore` comments or `JSON.parse`: fix the type, or decode
    with `Schema` (the same test runs oxlint's type-aware rules on it).
 2. **Leaves before the root.** Migrate platform adapters, then domain services,

@@ -59,6 +59,10 @@ export default defineConfig({
   rules: {
     curly: ['error', 'multi-line'],
     'no-var': 'error',
+    // Every `as` (but `as const`) skips a check the compiler would make; type
+    // or decode the value instead. A warning, so files marked
+    // // @effect-migrated fail on it (tests/effect-migrated.test.ts).
+    'typescript/consistent-type-assertions': ['warn', { assertionStyle: 'never' }], // 362
     'vitest/no-standalone-expect': [
       'error',
       { additionalTestBlockFunctions: effectTestBlockFunctions },
