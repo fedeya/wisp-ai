@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { dungeonLootInput } from '../src/contract/game-inspection.ts';
 import { unavailableGameAccess } from '../src/host/game-access.ts';
 import { dungeonLoot } from '../src/wisp/dungeon-loot.ts';
@@ -352,7 +352,7 @@ describe('dungeon loot', () => {
         data,
       ),
     ).toMatchObject({ status: 'unavailable', error: 'Item API is unavailable' });
-    expect(dungeonLootInput.safeParse({ boss: 'Jergosh' }).success).toBe(false);
+    expect(Schema.is(dungeonLootInput)({ boss: 'Jergosh' })).toBe(false);
   });
 
   it('ships generated loot for classic and Forever instances', () => {

@@ -1,6 +1,7 @@
 import {
   characterSections,
   gearSearchInspectionSchema,
+  inspectionParseOptions,
   inspectionSchema,
   itemSourcesInput,
 } from '@wisp/agent/contract/game-inspection';
@@ -13,6 +14,7 @@ import {
 } from '@wisp/agent/game-access';
 import * as Game from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
@@ -66,6 +68,10 @@ interface Dependencies {
 const asError = (cause: unknown) =>
   cause instanceof Error ? cause : new Error(errorMessage(cause));
 const parseReading = Schema.decodeUnknownEffect(gameReading);
+const decodeInspection = Schema.decodeUnknownEffect(inspectionSchema);
+const decodeGearSearch = Schema.decodeUnknownEffect(gearSearchInspectionSchema);
+const decodeSections = Schema.decodeUnknownEffect(characterSections);
+const decodeItemSources = Schema.decodeUnknownEffect(itemSourcesInput);
 
 export function make(deps: Dependencies) {
   const { capabilitySettings } = deps;
@@ -118,9 +124,7 @@ export function make(deps: Dependencies) {
       session: string,
       args: InspectionArgs<K>,
     ) {
-      const parsed = inspectionSchema.safeParse({ kind, args });
-      if (!parsed.success) return yield* Effect.fail(parsed.error);
-      const inspection = parsed.data;
+      const inspection = yield* decodeInspection({ kind, args }, inspectionParseOptions(kind));
       const { request } = yield* authorize(session, inspectionTools[kind]);
       const read = request({ kind: 'inspect', inspection });
       if (!retriesItemLoading(inspection)) return yield* read.pipe(Effect.flatMap(decode));
@@ -135,9 +139,7 @@ export function make(deps: Dependencies) {
 
   const gearSearchMethod = <K extends 'search_armor' | 'search_weapons'>(kind: K) =>
     Effect.fn(`GameAccess.inspect.${kind}`)(function* (session: string, args: InspectionArgs<K>) {
-      const parsed = gearSearchInspectionSchema.safeParse({ kind, args });
-      if (!parsed.success) return yield* Effect.fail(parsed.error);
-      const inspection = parsed.data;
+      const inspection = yield* decodeGearSearch({ kind, args }, rejectUnknownKeys);
       const { request } = yield* authorize(session, inspectionTools[kind]);
       if (!everlootAllowed('item_categories')) {
         return yield* Effect.fail(
@@ -172,15 +174,14 @@ export function make(deps: Dependencies) {
 
   return Game.Service.of({
     readCharacter: Effect.fn('GameAccess.readCharacter')(function* (session, input, refresh) {
-      const sections = characterSections.safeParse(input);
-      if (!sections.success) return yield* Effect.fail(sections.error);
+      const sections = yield* decodeSections(input);
       const { chat, request } = yield* authorize(session, 'query_character');
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
       return yield* Effect.tryPromise({
         try: (signal) =>
           queryCharacterSections(
             chat,
-            sections.data,
+            sections,
             (sections) =>
               run(request({ kind: 'read', sections }).pipe(Effect.flatMap(parseReading)), {
                 signal,
@@ -191,14 +192,13 @@ export function make(deps: Dependencies) {
       });
     }),
     itemSources: Effect.fn('GameAccess.itemSources')(function* (session, input) {
-      const parsed = itemSourcesInput.safeParse(input);
-      if (!parsed.success) return yield* Effect.fail(parsed.error);
+      const { itemIds } = yield* decodeItemSources(input, rejectUnknownKeys);
       const { request } = yield* authorize(session, 'item_sources');
       const run = Effect.runPromiseWith(yield* Effect.context<never>());
       return yield* Effect.tryPromise({
         try: (signal) =>
           itemSources(
-            parsed.data.itemIds,
+            itemIds,
             (input) => run(request({ kind: 'inspect', inspection: input }), { signal }),
             {
               everloot: everlootAllowed('entity_relations'),

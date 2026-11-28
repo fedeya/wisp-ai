@@ -2,7 +2,6 @@ import { Option, Schema } from 'effect';
 import type { Lookup as EverlootLookup } from '@wisp/agent/everloot';
 import type { ItemSourcesResult } from '@wisp/agent/game-access';
 import type { sourceNamesInput } from '@wisp/agent/contract/game-inspection';
-import type { z } from 'zod';
 
 // How an item is obtained, by Everloot relation. Other relations (reagent for,
 // same icon, set membership) do not say where to get the item.
@@ -94,10 +93,10 @@ async function relations(itemId: number, readEverloot: EverlootLookup): Promise<
 // One call for several items: observed and game-file sources from Everloot,
 // named by the game (QuestieDB, spell API) with cached Auctionator prices.
 export async function itemSources(
-  itemIds: number[],
+  itemIds: readonly number[],
   readGame: (inspection: {
     kind: 'source_names';
-    args: z.output<typeof sourceNamesInput>;
+    args: typeof sourceNamesInput.Type;
   }) => Promise<unknown>,
   options: {
     everloot: boolean;

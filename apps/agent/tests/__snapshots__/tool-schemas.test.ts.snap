@@ -1,0 +1,4643 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the model sees the same auctionator__get_item_prices input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "itemIds": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    }
+  },
+  "required": [
+    "itemIds"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same polestar__create_guide input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {
+      "description": "The id of an earlier Wisp guide to replace its steps in place; omit for a new guide.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "steps": {
+      "minItems": 1,
+      "maxItems": 30,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "goals": {
+            "minItems": 1,
+            "maxItems": 8,
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "accept"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "questId",
+                    "questTitle"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "turnin"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "questId",
+                    "questTitle"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "complete"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "questTitle": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "questId",
+                    "questTitle"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "kill"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "objective": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "target": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "target"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "collect"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "objective": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "itemId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "itemName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "itemId",
+                    "itemName"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "goto"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "mapId",
+                    "x",
+                    "y"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "talk"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "npcId",
+                    "npcName"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "interact"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "objective": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "objectId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "objectName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "objectId",
+                    "objectName"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "use"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "questId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "objective": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    },
+                    "itemId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "itemName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "itemId",
+                    "itemName"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "buy"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "itemId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "itemName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 1000
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "itemId",
+                    "itemName"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "vendor"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "train"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "getfp"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "location"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "fly"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "location"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "hearth"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "location"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "sethome"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "location": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "npcId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "npcName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "location"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "level"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "level": {
+                      "type": "integer",
+                      "minimum": 2,
+                      "maximum": 60
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "level"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "note"
+                    },
+                    "text": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "note": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "mapId": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "x": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    "y": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "goals"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "open": {
+      "default": true,
+      "description": "Show the guide in Polestar’s active tab.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "title",
+    "steps"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same polestar__get_guide_step input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "upcoming": {
+      "default": 2,
+      "description": "How many steps after the current one to include.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same questie__find_npc_locations input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "default": "npc",
+      "type": "string",
+      "enum": [
+        "npc",
+        "class_trainers",
+        "services"
+      ]
+    },
+    "service": {
+      "type": "string",
+      "enum": [
+        "Transmogrifier",
+        "Barber",
+        "Banker",
+        "Auctioneer",
+        "Innkeeper",
+        "Flight Master",
+        "Repair",
+        "Battlemaster",
+        "Arcane Reforger",
+        "Weapon Master"
+      ]
+    },
+    "npcId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "class": {
+      "type": "string",
+      "enum": [
+        "MAGE",
+        "WARRIOR",
+        "PALADIN",
+        "HUNTER",
+        "ROGUE",
+        "PRIEST",
+        "SHAMAN",
+        "WARLOCK",
+        "DRUID"
+      ]
+    },
+    "mapId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "limit": {
+      "default": 5,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same questie__find_object_locations input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "objectId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "mapId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "limit": {
+      "default": 5,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same questie__get_quest input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "questId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "questId"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same questie__get_quest_chain input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "direction": {
+      "default": "both",
+      "type": "string",
+      "enum": [
+        "prerequisites",
+        "followups",
+        "both"
+      ]
+    },
+    "maxDepth": {
+      "default": 2,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4
+    },
+    "limit": {
+      "default": 15,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    }
+  },
+  "required": [
+    "questId"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same syndicator__find_item input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "itemId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "includeGuild": {
+      "default": false,
+      "type": "boolean"
+    },
+    "limit": {
+      "default": 20,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 40
+    }
+  },
+  "required": [
+    "itemId"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same thewowdb__get_database_entity input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "item",
+        "spell",
+        "quest",
+        "npc",
+        "zone"
+      ]
+    },
+    "id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "kind",
+    "id"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same thewowdb__search_database input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "item",
+        "spell",
+        "quest",
+        "npc",
+        "zone"
+      ]
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "page": {
+      "default": 1,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 200
+    },
+    "limit": {
+      "default": 10,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 20
+    }
+  },
+  "required": [
+    "kind",
+    "query"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same web__web_search input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "depth": {
+      "type": "string",
+      "enum": [
+        "quick",
+        "standard",
+        "deep"
+      ],
+      "description": "Choose quick for a simple fact, standard for normal research, deep for conflicting evidence, missing acquisition routes or broad comparisons.",
+      "default": "standard"
+    },
+    "maxResults": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12,
+      "description": "Maximum returned findings/sources. Overrides the depth default."
+    },
+    "maxQueries": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6,
+      "description": "Query budget including the primary query. Guidance for ChatGPT; bounds explicit query variants on Exa."
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 180,
+      "description": "Total time budget for this tool call, not per query."
+    },
+    "excerptCharacters": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 12000,
+      "description": "Maximum Exa excerpt length per source."
+    },
+    "queries": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Optional additional focused query variants. Exa executes these within maxQueries; ChatGPT can use them as research directions.",
+      "default": [],
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same web_fetch input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Public HTTPS URL. For continuation, reuse the original or returned URL."
+    },
+    "format": {
+      "type": "string",
+      "enum": [
+        "markdown",
+        "text",
+        "html"
+      ]
+    },
+    "timeout": {
+      "description": "Timeout in seconds; default 30, maximum 120.",
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "cursor": {
+      "description": "Copy nextCursor from the previous result to continue the same snapshot. Omit to fetch a fresh page.",
+      "type": "string",
+      "maxLength": 100
+    }
+  },
+  "required": [
+    "url"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wisp__manage_panel input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "list"
+        }
+      },
+      "required": [
+        "operation"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "get"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "save"
+        },
+        "panel": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "ui": {
+              "minItems": 1,
+              "maxItems": 48,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "column"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "row"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "card"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "table"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "columns": {
+                        "minItems": 2,
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "align": {
+                              "type": "string",
+                              "enum": [
+                                "left",
+                                "center",
+                                "right"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "label"
+                          ]
+                        }
+                      },
+                      "rows": {
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": {
+                          "minItems": 2,
+                          "maxItems": 6,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 300
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "columns",
+                      "rows"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "comparison"
+                      },
+                      "title": {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      "unit": {
+                        "type": "string",
+                        "maxLength": 24
+                      },
+                      "precision": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 4
+                      },
+                      "items": {
+                        "minItems": 2,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200
+                            },
+                            "value": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "detail": {
+                              "type": "string",
+                              "maxLength": 300
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "label",
+                            "value"
+                          ]
+                        }
+                      },
+                      "winner": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "winnerLabel": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 60
+                      },
+                      "baseline": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "items"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "text"
+                      },
+                      "text": {
+                        "type": "string",
+                        "maxLength": 3000
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "text"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "stat"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "value": {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      "detail": {
+                        "type": "string",
+                        "maxLength": 300
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "label",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "reference"
+                      },
+                      "reference": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "reference"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "button"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 80
+                      },
+                      "action": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "ask"
+                              },
+                              "prompt": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1000
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "prompt"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "apply_settings"
+                              },
+                              "transactionId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "transactionId"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "undo_settings"
+                              },
+                              "transactionId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "transactionId"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "label",
+                      "action"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "toggle"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "value": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "label",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "select"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "value": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "options": {
+                        "minItems": 1,
+                        "maxItems": 12,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "value": {
+                              "type": "string",
+                              "maxLength": 100
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "value",
+                            "label"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "label",
+                      "value",
+                      "options"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "slider"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "value": {
+                        "type": "number"
+                      },
+                      "min": {
+                        "type": "number"
+                      },
+                      "max": {
+                        "type": "number"
+                      },
+                      "step": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "label",
+                      "value",
+                      "min",
+                      "max",
+                      "step"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "progress"
+                      },
+                      "label": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind",
+                      "label",
+                      "value"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "parent": {
+                        "type": "string",
+                        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "divider"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "kind"
+                    ]
+                  }
+                ]
+              }
+            },
+            "references": {
+              "default": {},
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "unit"
+                      },
+                      "guid": {
+                        "type": "string",
+                        "minLength": 3,
+                        "maxLength": 150,
+                        "pattern": "^[A-Za-z]+-[A-Za-z0-9-]+$"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "guid"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "spell"
+                      },
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "payload": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "pattern": "^(spell|item|quest):[\\\\d:+.-]+$"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "item"
+                      },
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "payload": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "pattern": "^(spell|item|quest):[\\\\d:+.-]+$"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "quest"
+                      },
+                      "id": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "payload": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "pattern": "^(spell|item|quest):[\\\\d:+.-]+$"
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "map"
+                      },
+                      "mapId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "x": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "y": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 100
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "mapId"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "source": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "macro"
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "kind",
+                      "name"
+                    ]
+                  }
+                ]
+              }
+            },
+            "bindings": {
+              "default": [],
+              "maxItems": 24,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "nodeId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "item_count",
+                      "money",
+                      "level",
+                      "quest_completed"
+                    ]
+                  },
+                  "itemId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "questId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "target": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "nodeId",
+                  "source"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "ui"
+          ]
+        }
+      },
+      "required": [
+        "operation",
+        "panel"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "remove"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ]
+    }
+  ]
+}"
+`;
+
+exports[`the model sees the same wisp__manage_routine input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "catalog"
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "list"
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "get"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "save"
+          ]
+        },
+        "routine": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "instruction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6000
+            },
+            "triggers": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "event"
+                        ]
+                      },
+                      "event": {
+                        "type": "string",
+                        "enum": [
+                          "level_up",
+                          "equipment_changed",
+                          "money_changed",
+                          "bags_changed",
+                          "quests_changed",
+                          "spells_changed",
+                          "talents_changed",
+                          "zone_changed"
+                        ]
+                      },
+                      "filters": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "op": {
+                              "type": "string",
+                              "enum": [
+                                "eq",
+                                "ne",
+                                "gte",
+                                "lte",
+                                "contains",
+                                "multiple_of"
+                              ]
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "op",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 8,
+                        "default": []
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "event"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "interval"
+                        ]
+                      },
+                      "seconds": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 2592000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "seconds"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "cooldownSeconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400,
+              "default": 600
+            },
+            "once": {
+              "type": "boolean",
+              "description": "Pause after the first successful non-silent result. Silent checks and failures keep watching.",
+              "default": false
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "instruction",
+            "triggers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "operation",
+        "routine"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "pause"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "resume"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "remove"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}"
+`;
+
+exports[`the model sees the same wisp__present_ui input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "nodes": {
+      "default": [],
+      "description": "Complete native panel. Parent nodes precede their children. Omit for references only.",
+      "maxItems": 48,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "column"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "row"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "card"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "table"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "columns": {
+                "minItems": 2,
+                "maxItems": 6,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "align": {
+                      "type": "string",
+                      "enum": [
+                        "left",
+                        "center",
+                        "right"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "rows": {
+                "minItems": 1,
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "minItems": 2,
+                  "maxItems": 6,
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 300
+                  }
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "columns",
+              "rows"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "comparison"
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 120
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 24
+              },
+              "precision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4
+              },
+              "items": {
+                "minItems": 2,
+                "maxItems": 8,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "detail": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "label",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "winner": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "winnerLabel": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "baseline": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "text"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 3000
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "text"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "stat"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "detail": {
+                "type": "string",
+                "maxLength": 300
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "reference"
+              },
+              "reference": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "reference"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "button"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "action": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "ask"
+                      },
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "prompt"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "apply_settings"
+                      },
+                      "transactionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "transactionId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "undo_settings"
+                      },
+                      "transactionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "transactionId"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "action"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "toggle"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "value": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "select"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "options": {
+                "minItems": 1,
+                "maxItems": 12,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "value": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "label": {
+                      "type": "string",
+                      "maxLength": 100
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "label"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "value",
+              "options"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "slider"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "value": {
+                "type": "number"
+              },
+              "min": {
+                "type": "number"
+              },
+              "max": {
+                "type": "number"
+              },
+              "step": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "value",
+              "min",
+              "max",
+              "step"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "progress"
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "label",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "parent": {
+                "type": "string",
+                "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "const": "divider"
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "references": {
+      "default": {},
+      "description": "Verified entity references used by this panel or subsequent [[ref:key]] prose.",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "const": "unit"
+              },
+              "guid": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 150,
+                "pattern": "^[A-Za-z]+-[A-Za-z0-9-]+$"
+              }
+            },
+            "required": [
+              "label",
+              "kind",
+              "guid"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "const": "spell"
+              },
+              "id": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "payload": {
+                "type": "string",
+                "maxLength": 1000,
+                "pattern": "^(spell|item|quest):[\\\\d:+.-]+$"
+              }
+            },
+            "required": [
+              "label",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "const": "item"
+              },
+              "id": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "payload": {
+                "type": "string",
+                "maxLength": 1000,
+                "pattern": "^(spell|item|quest):[\\\\d:+.-]+$"
+              }
+            },
+            "required": [
+              "label",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "const": "quest"
+              },
+              "id": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "payload": {
+                "type": "string",
+                "maxLength": 1000,
+                "pattern": "^(spell|item|quest):[\\\\d:+.-]+$"
+              }
+            },
+            "required": [
+              "label",
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "const": "map"
+              },
+              "mapId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "x": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              "y": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "label",
+              "kind",
+              "mapId"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "source": {
+                "type": "string",
+                "maxLength": 500
+              },
+              "kind": {
+                "type": "string",
+                "const": "macro"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16
+              }
+            },
+            "required": [
+              "label",
+              "kind",
+              "name"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wisp__set_conversation_title input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "description": "A short title in the user’s language."
+    }
+  },
+  "required": [
+    "title"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wisp__skip_tip input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__clear_map_waypoint input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {}
+}"
+`;
+
+exports[`the model sees the same wow__compare_items input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "itemIds": {
+      "minItems": 1,
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "slot": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 19
+    }
+  },
+  "required": [
+    "itemIds"
+  ]
+}"
+`;
+
+exports[`the model sees the same wow__create_macro input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "perCharacter": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "body"
+  ]
+}"
+`;
+
+exports[`the model sees the same wow__dungeon_loot input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "instanceMapId": {
+      "description": "instanceMapId from wow__query_dungeons; preferred.",
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "dungeon": {
+      "description": "Part of the English instance name, when no instanceMapId is known.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "boss": {
+      "description": "Part of an English boss name, to read one boss.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "detail": {
+      "description": "summary: every drop per boss with name, drop chance and required level, plus item level gain and stat changes for upgrades; full: also the stats of every item and the equipped item. Default: full with boss, summary without. A full answer too large for one read comes back as the summary.",
+      "type": "string",
+      "enum": [
+        "summary",
+        "full"
+      ]
+    },
+    "includeUnusable": {
+      "description": "Also list weapons and armor this character's class can never use. Leave it unset for the player's own gear; set it only for loot for another class.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__get_settings input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "sections": {
+      "default": [
+        "options"
+      ],
+      "minItems": 1,
+      "maxItems": 4,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "options",
+          "addons",
+          "action_bars",
+          "keybindings"
+        ]
+      }
+    },
+    "provider": {
+      "default": "all",
+      "type": "string",
+      "enum": [
+        "all",
+        "game",
+        "ace"
+      ]
+    },
+    "addon": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "ids": {
+      "default": [],
+      "maxItems": 30,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 400
+      }
+    },
+    "offset": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "limit": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60
+    }
+  }
+}"
+`;
+
+exports[`the model sees the same wow__inspect_auctions input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "itemId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "limit": {
+      "default": 20,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    }
+  }
+}"
+`;
+
+exports[`the model sees the same wow__inspect_flight_paths input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "origin": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "destination": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "limit": {
+      "default": 20,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 40
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__inspect_hearthstone input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__inspect_macros input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "names": {
+      "default": [],
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+      }
+    },
+    "includeBodies": {
+      "default": false,
+      "type": "boolean"
+    }
+  }
+}"
+`;
+
+exports[`the model sees the same wow__inspect_map input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mapIds": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    }
+  }
+}"
+`;
+
+exports[`the model sees the same wow__inspect_reference input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "item",
+        "spell",
+        "quest",
+        "talent"
+      ]
+    },
+    "id": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "includeCooldown": {
+      "description": "Read the current timer for an item or spell.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "kind",
+    "id"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__inspect_target input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__inspect_trainer input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {}
+}"
+`;
+
+exports[`the model sees the same wow__item_sources input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "itemIds": {
+      "minItems": 1,
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    }
+  },
+  "required": [
+    "itemIds"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__query_character input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "sections": {
+      "minItems": 1,
+      "maxItems": 9,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "character",
+          "location",
+          "group",
+          "talents",
+          "spells",
+          "quests",
+          "gear",
+          "bags",
+          "pvp"
+        ]
+      }
+    },
+    "refresh": {
+      "description": "Bypass the turn-verified quest cache only when an updated reading is needed.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "sections"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__query_dungeons input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "dungeon": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__query_progression input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "questIds": {
+      "default": [],
+      "maxItems": 40,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    },
+    "factionIds": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "exclusiveMinimum": 0,
+        "maximum": 9007199254740991
+      }
+    }
+  }
+}"
+`;
+
+exports[`the model sees the same wow__query_resources input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {}
+}"
+`;
+
+exports[`the model sees the same wow__query_training input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "class": {
+      "type": "string",
+      "enum": [
+        "DRUID",
+        "HUNTER",
+        "MAGE",
+        "PALADIN",
+        "PRIEST",
+        "ROGUE",
+        "SHAMAN",
+        "WARLOCK",
+        "WARRIOR"
+      ]
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "spellId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "minLevel": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60
+    },
+    "maxLevel": {
+      "default": 60,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 60
+    },
+    "offset": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5000
+    },
+    "limit": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    }
+  }
+}"
+`;
+
+exports[`the model sees the same wow__read_chat input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "channels": {
+      "default": [],
+      "maxItems": 9,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "say",
+          "yell",
+          "party",
+          "raid",
+          "instance",
+          "guild",
+          "officer",
+          "whisper",
+          "channel"
+        ]
+      }
+    },
+    "limit": {
+      "default": 30,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "lastSeconds": {
+      "default": 1800,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1800
+    },
+    "sender": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "channelName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "channelIndex": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 99
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__read_combat input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "view": {
+      "default": "deaths",
+      "type": "string",
+      "enum": [
+        "deaths",
+        "fight"
+      ]
+    },
+    "deaths": {
+      "default": 1,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "includeGroup": {
+      "default": false,
+      "type": "boolean"
+    },
+    "eventLimit": {
+      "default": 20,
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30
+    }
+  },
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__search_armor input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "slot": {
+      "type": "string",
+      "enum": [
+        "head",
+        "neck",
+        "shoulder",
+        "back",
+        "chest",
+        "wrist",
+        "hands",
+        "waist",
+        "legs",
+        "feet",
+        "finger",
+        "trinket"
+      ]
+    },
+    "armorType": {
+      "description": "Required for body slots; ignored for neck, finger, trinket and back.",
+      "type": "string",
+      "enum": [
+        "cloth",
+        "leather",
+        "mail",
+        "plate"
+      ]
+    },
+    "minRequiredLevel": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "maxRequiredLevel": {
+      "description": "Highest required level to keep; defaults to the character level.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "quality": {
+      "default": [
+        "common",
+        "uncommon",
+        "rare"
+      ],
+      "description": "Item qualities to search.",
+      "minItems": 1,
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "poor",
+          "common",
+          "uncommon",
+          "rare",
+          "epic"
+        ]
+      }
+    }
+  },
+  "required": [
+    "slot"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__search_weapons input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "weaponType": {
+      "type": "string",
+      "enum": [
+        "staves",
+        "wands",
+        "daggers",
+        "one-handed-swords",
+        "two-handed-swords",
+        "one-handed-maces",
+        "two-handed-maces",
+        "one-handed-axes",
+        "two-handed-axes",
+        "polearms",
+        "fist-weapons",
+        "bows",
+        "guns",
+        "crossbows",
+        "thrown",
+        "shields",
+        "held-in-off-hand"
+      ]
+    },
+    "minRequiredLevel": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "maxRequiredLevel": {
+      "description": "Highest required level to keep; defaults to the character level.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "quality": {
+      "default": [
+        "common",
+        "uncommon",
+        "rare"
+      ],
+      "description": "Item qualities to search.",
+      "minItems": 1,
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "poor",
+          "common",
+          "uncommon",
+          "rare",
+          "epic"
+        ]
+      }
+    }
+  },
+  "required": [
+    "weaponType"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wow__set_map_waypoint input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "mapId": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "x": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "y": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "navigate": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "mapId",
+    "x",
+    "y",
+    "label",
+    "source"
+  ]
+}"
+`;
+
+exports[`the model sees the same wow__undo_settings input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "transactionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    }
+  },
+  "required": [
+    "transactionId"
+  ]
+}"
+`;
+
+exports[`the model sees the same wow__update_settings input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "preview"
+        },
+        "changes": {
+          "minItems": 1,
+          "maxItems": 12,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "value"
+            ]
+          }
+        }
+      },
+      "required": [
+        "operation",
+        "changes"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "apply"
+        },
+        "transactionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "operation",
+        "transactionId"
+      ]
+    }
+  ]
+}"
+`;
+
+exports[`the model sees the same wowsims__simulate_dps input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "nativeRequest": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    },
+    "startIndex": {
+      "default": 0,
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "character": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "enum": [
+            "MAGE",
+            "WARRIOR",
+            "ROGUE",
+            "HUNTER",
+            "PALADIN",
+            "PRIEST",
+            "SHAMAN",
+            "WARLOCK",
+            "DRUID"
+          ]
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "raceToken": {
+          "type": "string",
+          "enum": [
+            "Human",
+            "Gnome",
+            "Troll",
+            "Scourge",
+            "Undead",
+            "Dwarf",
+            "NightElf",
+            "Orc",
+            "Tauren"
+          ]
+        }
+      },
+      "required": [
+        "class",
+        "level",
+        "raceToken"
+      ],
+      "additionalProperties": false
+    },
+    "catalogOnly": {
+      "default": false,
+      "type": "boolean"
+    },
+    "plans": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "talents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "rank": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 5
+                }
+              },
+              "required": [
+                "id",
+                "rank"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "opener": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "spellId": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "manaBelowPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "manaAbovePercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "rageAbove": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "energyAbove": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "comboPointsAtLeast": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9
+                },
+                "dotRefreshBelowSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "spellId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "priority": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "spellId": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "manaBelowPercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "manaAbovePercent": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "rageAbove": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "energyAbove": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "comboPointsAtLeast": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9
+                },
+                "dotRefreshBelowSeconds": {
+                  "type": "number",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "spellId"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "label",
+          "priority"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "includeCurrentEquipment": {
+      "default": true,
+      "type": "boolean"
+    },
+    "equipmentSets": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "base": {
+            "default": "current",
+            "type": "string",
+            "enum": [
+              "current",
+              "empty"
+            ]
+          },
+          "replacements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slot": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 18
+                },
+                "itemId": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "slot",
+                "itemId"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "label",
+          "replacements"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "durationSeconds": {
+      "default": 30,
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "iterations": {
+      "default": 500,
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "targetLevelOffset": {
+      "default": 0,
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "targetDistanceYards": {
+      "type": "number",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}"
+`;

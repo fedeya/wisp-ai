@@ -1,4 +1,3 @@
-import type { z } from 'zod';
 import type { dungeonLootInput, gearCandidatesInput } from '../contract/game-inspection.ts';
 import type { InspectionResult } from '../contract/game-inspection-results.ts';
 import generated from './dungeon-loot.json' with { type: 'json' };
@@ -105,8 +104,8 @@ export interface LootResult {
 // reading of it: name, quality, levels, stats and, for equipment, the change
 // against the weakest equipped item in its slot.
 export async function dungeonLoot(
-  args: z.infer<typeof dungeonLootInput>,
-  readGearCandidates: (args: z.input<typeof gearCandidatesInput>) => Promise<GearReading>,
+  args: typeof dungeonLootInput.Type,
+  readGearCandidates: (args: typeof gearCandidatesInput.Encoded) => Promise<GearReading>,
   data: LootData = generated as LootData,
 ): Promise<LootResult> {
   const wanted = args.dungeon ? fold(args.dungeon) : undefined;
