@@ -133,6 +133,8 @@ export default defineConfig({
         'packages/game-data/src/**',
         'packages/releases/src/**',
         'packages/wow-bridge/src/**',
+        // engine/entry.mjs runs inside the packaged engine, without Effect.
+        'scripts/**/*.ts',
       ],
       rules: {
         'no-restricted-imports': ['error', effectRestrictedImports],

@@ -1,47 +1,203 @@
-import { execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
-import { mkdtemp, readFile, writeFile, access, mkdir, rm, readdir } from 'node:fs/promises';
+// @effect-migrated
+// Installs, starts, upgrades and uninstalls a built installer in a disposable
+// Windows CI profile, and writes what it saw to dist/installer-smoke.json.
+//   node scripts/verify-installer.ts [installer]   (dist/WispAI-<version>-windows-x64-setup.exe)
 import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { installerBuildVersion } from './installer-version.ts';
+import {
+  Clock,
+  Console,
+  Duration,
+  Effect,
+  FileSystem,
+  Option,
+  Path,
+  Ref,
+  Schedule,
+  Schema,
+  Stream,
+} from 'effect';
+import { Argument, Command } from 'effect/cli';
+import { HttpClient, HttpClientResponse } from 'effect/http';
+import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { addonVersionFromToc } from '../apps/server/src/game/addon-version.ts';
-import * as NodeServices from '@effect/platform-node/NodeServices';
-import { Effect, Result } from 'effect';
 import { addonReleaseVersion } from './addon-release-version.ts';
-const exec = promisify(execFile);
-if (!process.env.CI || !process.env.APPDATA) {
-  throw Error('Run installer verification in a disposable Windows CI profile.');
-}
-const sourceVersion = JSON.parse(await readFile('package.json', 'utf8')).version;
-// addon-release-version.ts runs on Effect; this unmigrated script is its edge.
-const addonVersion = await Effect.runPromise(
-  addonReleaseVersion(process.cwd()).pipe(Effect.provide(NodeServices.layer)),
+import { output } from './child-process.ts';
+import { environmentVariable } from './environment.ts';
+import { fetchHttpClient } from './http-client.ts';
+import { InstallerMismatch, installerBuildVersion } from './installer-version.ts';
+import { runScript } from './run-script.ts';
+
+export class InstallerCheckFailed extends Schema.TaggedError<InstallerCheckFailed>()(
+  'InstallerCheckFailed',
+  { message: Schema.String },
+) {}
+
+const failed = (message: string) => new InstallerCheckFailed({ message });
+
+const PackageJson = Schema.fromJsonString(Schema.Struct({ version: Schema.String }));
+/** The updater manifest beside the installer, as far as it identifies the signed build. */
+const SignedBuild = Schema.fromJsonString(
+  Schema.Struct({
+    version: Schema.String,
+    platforms: Schema.Record(
+      Schema.String,
+      Schema.Struct({ url: Schema.String, signature: Schema.optionalKey(Schema.String) }),
+    ),
+  }),
 );
-const installer = path.resolve(
-  process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
+/** runtime/desktop.json: the running bridge's process and how to reach it. */
+const DesktopIdentity = Schema.fromJsonString(
+  Schema.Struct({ pid: Schema.Int, port: Schema.Int, token: Schema.String }),
 );
-const checked = installerBuildVersion(
-  installer,
-  JSON.parse(await readFile(path.join(path.dirname(installer), 'latest.json'), 'utf8')),
-);
-if (Result.isFailure(checked)) {
-  throw checked.failure;
-}
-const version = checked.success;
-const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-installer-'));
-if (!temporary.startsWith(path.resolve(tmpdir()) + path.sep)) {
-  throw Error('Unsafe test directory.');
-}
-const target = path.join(temporary, 'Installed'),
-  data = path.join(process.env.APPDATA, 'com.wisp.ai');
-let child: ReturnType<typeof spawn> | undefined;
-try {
-  const installStarted = performance.now();
-  await exec(installer, ['/S', '/D=' + target], { windowsHide: true, timeout: 180000 });
-  const installMilliseconds = performance.now() - installStarted;
-  const executable = path.join(target, 'wisp.exe'),
-    payload = path.join(target, 'payload');
-  await access(executable);
+const ReadyStatus = Schema.Struct({ ready: Schema.optionalKey(Schema.Unknown) });
+const AuthStatus = Schema.Struct({ auth: Schema.Struct({ status: Schema.String }) });
+
+/** Milliseconds on the monotonic clock, as fractions like performance.now. */
+const now = Effect.map(Clock.monotonicTimeNanos, (nanos) => Number(nanos) / 1_000_000);
+
+/** The version of the signed build `installer` is, from the updater manifest beside it. */
+export const installerVersion = Effect.fnUntraced(function* (installer: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const manifest = yield* Schema.decodeEffect(SignedBuild)(
+    yield* fs.readFileString(path.join(path.dirname(installer), 'latest.json')),
+  ).pipe(
+    Effect.mapError(
+      () =>
+        new InstallerMismatch({
+          message: 'Installer and update manifest must identify the same signed build.',
+        }),
+    ),
+  );
+  return yield* Effect.fromResult(installerBuildVersion(installer, manifest));
+});
+
+/** Fails with `message` if `file` exists. */
+const absent = Effect.fnUntraced(function* (file: string, message: string) {
+  const fs = yield* FileSystem.FileSystem;
+  if (yield* fs.exists(file)) {
+    return yield* failed(message);
+  }
+});
+
+/** Runs a command that must exit with 0 within `timeout`, as execFile with a timeout did. */
+const run = (
+  command: string,
+  args: readonly string[],
+  timeout: Duration.Input,
+  options: { readonly cwd?: string; readonly env?: Readonly<Record<string, string>> } = {},
+) =>
+  output(command, args, options).pipe(
+    Effect.timeoutOrElse({
+      duration: timeout,
+      orElse: () => Effect.fail(failed(`Timed out: ${[command, ...args].join(' ')}`)),
+    }),
+  );
+
+/** The stages the installer's update log records, in order. */
+export const updateStages = (log: string) =>
+  log
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => {
+      const [milliseconds, stage] = line.split(' ');
+      return { milliseconds: Number(milliseconds), stage };
+    });
+
+const requiredStages = [
+  'installer-ready',
+  'helper-extracted',
+  'bridge-stopped',
+  'copying-files',
+  'files-installed',
+];
+
+/**
+ * Waits for the bridge `pid` to report ready through its runtime/desktop.json
+ * in `data`, trying 150 times 400 ms apart. A missing or unreadable identity,
+ * or a status request that fails, is another try; `exited` ends the wait.
+ */
+export const waitUntilReady = Effect.fnUntraced(function* (
+  data: string,
+  pid: number,
+  exited: Effect.Effect<boolean>,
+  log: Effect.Effect<string>,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const client = yield* HttpClient.HttpClient;
+  const ready = Effect.gen(function* () {
+    const running = yield* Schema.decodeEffect(DesktopIdentity)(
+      yield* fs.readFileString(path.join(data, 'runtime/desktop.json')),
+    );
+    if (running.pid !== pid) {
+      return false;
+    }
+    const response = yield* client.get('http://127.0.0.1:' + running.port + '/status', {
+      headers: { authorization: 'Bearer ' + running.token },
+    });
+    const status = yield* HttpClientResponse.schemaBodyJson(ReadyStatus)(response);
+    return status.ready === true;
+  }).pipe(Effect.catch(() => Effect.succeed(false)));
+  for (let attempt = 0; attempt < 150; attempt++) {
+    if (yield* ready) {
+      return;
+    }
+    if (yield* exited) {
+      return yield* failed('Installed bridge exited: ' + (yield* log));
+    }
+    yield* Effect.sleep('400 millis');
+  }
+  return yield* failed('Installed agent did not become ready: ' + (yield* log));
+});
+
+/** Removes `directory`, retrying as fs.rm's maxRetries 10 and retryDelay 200 did. */
+const removeWithRetries = Effect.fnUntraced(function* (directory: string) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* fs
+    .remove(directory, { recursive: true, force: true })
+    .pipe(
+      Effect.retry(
+        Schedule.recurs(10).pipe(
+          Schedule.modifyDelay(({ attempt }) => Effect.succeed(Duration.millis(200 * attempt))),
+        ),
+      ),
+    );
+});
+
+const verifyInstaller = Effect.fnUntraced(function* (installerArgument: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const client = yield* HttpClient.HttpClient;
+  const appData = yield* environmentVariable('APPDATA');
+  if (!(yield* environmentVariable('CI')) || !appData) {
+    return yield* failed('Run installer verification in a disposable Windows CI profile.');
+  }
+  const { version: sourceVersion } = yield* Schema.decodeEffect(PackageJson)(
+    yield* fs.readFileString('package.json'),
+  );
+  const addonVersion = yield* addonReleaseVersion(path.resolve());
+  const installer = path.resolve(
+    installerArgument || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
+  );
+  const version = yield* installerVersion(installer);
+  const temporary = yield* Effect.acquireRelease(
+    fs.makeTempDirectory({ directory: tmpdir(), prefix: 'wisp-installer-' }),
+    (directory) => Effect.orDie(removeWithRetries(directory)),
+  );
+  if (!temporary.startsWith(path.resolve(tmpdir()) + path.sep)) {
+    return yield* failed('Unsafe test directory.');
+  }
+  const target = path.join(temporary, 'Installed');
+  const data = path.join(appData, 'com.wisp.ai');
+
+  const installStarted = yield* now;
+  yield* run(installer, ['/S', '/D=' + target], '180 seconds');
+  const installMilliseconds = (yield* now) - installStarted;
+  const executable = path.join(target, 'wisp.exe');
+  const payload = path.join(target, 'payload');
+  yield* fs.access(executable);
   for (const name of [
     'config.local.json',
     '.eve',
@@ -56,174 +212,113 @@ try {
     'src-tauri',
     'node_modules/@wisp/desktop',
   ]) {
-    try {
-      await access(path.join(payload, name));
-      throw Error('Personal data included: ' + name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
+    yield* absent(path.join(payload, name), 'Personal data included: ' + name);
   }
-  await mkdir(data, { recursive: true });
-  try {
-    await access(path.join(data, 'config.local.json'));
-    throw Error('Installer verification requires a fresh user profile.');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
-  const env = {
-    ...process.env,
-    WISP_DATA_DIR: data,
-    WISP_RESOURCE_ROOT: payload,
-    WISP_DESKTOP_EXE: executable,
-  };
-  await exec(executable, ['--self-test'], { env, windowsHide: true, timeout: 30000 });
-  let log = '';
+  yield* fs.makeDirectory(data, { recursive: true });
+  yield* absent(
+    path.join(data, 'config.local.json'),
+    'Installer verification requires a fresh user profile.',
+  );
+  const env = { WISP_DATA_DIR: data, WISP_RESOURCE_ROOT: payload, WISP_DESKTOP_EXE: executable };
+  yield* run(executable, ['--self-test'], '30 seconds', { env });
   const node = path.join(payload, 'runtime/node.exe');
   const engine = path.join(payload, 'wisp-engine.exe');
-  await access(engine);
+  yield* fs.access(engine);
   const wow = path.join(temporary, 'fake WoW client');
-  await mkdir(wow);
-  await writeFile(path.join(wow, 'Wow.exe'), '');
-  await exec(engine, ['scripts/install.ts', wow], {
-    cwd: payload,
-    env,
-    windowsHide: true,
-    timeout: 60000,
-  });
+  yield* fs.makeDirectory(wow);
+  yield* fs.writeFileString(path.join(wow, 'Wow.exe'), '');
+  yield* run(engine, ['scripts/install.ts', wow], '60 seconds', { cwd: payload, env });
   for (const relative of [
     'WispAI/WispAI.toc',
     'WispAI_B001/WispAI_B001.toc',
     'WispAI_S0001/WispAI_S0001.toc',
   ]) {
-    const toc = await readFile(path.join(wow, 'Interface/AddOns', relative), 'utf8');
+    const toc = yield* fs.readFileString(path.join(wow, 'Interface/AddOns', relative));
     if (addonVersionFromToc(toc) !== addonVersion) {
-      throw Error(
+      return yield* failed(
         'Installed addon version does not match the expected release version: ' + relative,
       );
     }
   }
-  const payloadFiles = (await readdir(payload, { recursive: true, withFileTypes: true })).filter(
-    (entry) => entry.isFile(),
-  ).length;
+  // Files, not links or folders, as Dirent#isFile counts them.
+  let payloadFiles = 0;
+  for (const entry of yield* fs.readDirectory(payload, { recursive: true })) {
+    if ((yield* fs.lstat(path.join(payload, entry))).type === 'File') {
+      payloadFiles++;
+    }
+  }
   for (const name of ['node_modules', 'runtime/npm']) {
-    try {
-      await access(path.join(payload, name));
-      throw Error('Installer extracted loose dependencies: ' + name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
+    yield* absent(path.join(payload, name), 'Installer extracted loose dependencies: ' + name);
   }
-  child = spawn(engine, ['src/main.ts'], {
-    cwd: payload,
-    env: {
-      ...env,
-      PATH: path.dirname(node) + ';' + path.join(process.env.WINDIR || 'C:\\Windows', 'System32'),
-    },
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  child.stdout?.on('data', (bytes) => {
-    log = (log + bytes).slice(-8000);
-  });
-  child.stderr?.on('data', (bytes) => {
-    log = (log + bytes).slice(-8000);
-  });
+  const windows = (yield* environmentVariable('WINDIR')) || 'C:\\Windows';
+  // Closing the scope stops the bridge and its children if it is still running.
+  const bridge = yield* spawner.spawn(
+    ChildProcess.make(engine, ['src/main.ts'], {
+      cwd: payload,
+      env: { ...env, PATH: path.dirname(node) + ';' + path.join(windows, 'System32') },
+      extendEnv: true,
+      detached: false,
+      stdin: 'ignore',
+    }),
+  );
+  const log = yield* Ref.make('');
+  yield* bridge.all.pipe(
+    Stream.decodeText(),
+    Stream.runForEach((text) => Ref.update(log, (previous) => (previous + text).slice(-8000))),
+    Effect.ignore,
+    Effect.forkScoped,
+  );
+  const exited = bridge.isRunning.pipe(
+    Effect.map((running) => !running),
+    Effect.orElseSucceed(() => false),
+  );
   // The bridge reports ready once the in-process agent has loaded its tools and skills.
-  let ready = false;
-  for (let attempt = 0; attempt < 150; attempt++) {
-    try {
-      const running = JSON.parse(await readFile(path.join(data, 'runtime/desktop.json'), 'utf8'));
-      if (running.pid === child.pid) {
-        const response = await fetch('http://127.0.0.1:' + running.port + '/status', {
-          headers: { authorization: 'Bearer ' + running.token },
-        });
-        if (((await response.json()) as { ready?: boolean }).ready === true) {
-          ready = true;
-          break;
-        }
-      }
-    } catch {}
-    if (child.exitCode !== null) {
-      throw Error('Installed bridge exited: ' + log);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 400));
+  yield* waitUntilReady(data, bridge.pid, exited, Ref.get(log));
+  const identity = yield* Schema.decodeEffect(DesktopIdentity)(
+    yield* fs.readFileString(path.join(data, 'runtime/desktop.json')),
+  );
+  if (identity.pid !== bridge.pid) {
+    return yield* failed('Installer test reached a different bridge.');
   }
-  if (!ready) {
-    throw Error('Installed agent did not become ready: ' + log);
-  }
-  const identity = JSON.parse(await readFile(path.join(data, 'runtime/desktop.json'), 'utf8'));
-  if (identity.pid !== child.pid) {
-    throw Error('Installer test reached a different bridge.');
-  }
-  const headers = { authorization: 'Bearer ' + identity.token, 'content-type': 'application/json' };
-  const response = await fetch('http://127.0.0.1:' + identity.port + '/status', { headers });
-  const status = (await response.json()) as { auth: { status: string } };
+  const status = yield* client
+    .get('http://127.0.0.1:' + identity.port + '/status', {
+      headers: { authorization: 'Bearer ' + identity.token, 'content-type': 'application/json' },
+    })
+    .pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(AuthStatus)));
   if (status.auth.status !== 'signed_out') {
-    throw Error('Fresh installation unexpectedly has an account.');
+    return yield* failed('Fresh installation unexpectedly has an account.');
   }
-  await exec(executable, ['--prepare-update'], { env, windowsHide: true, timeout: 60000 });
-  await new Promise<void>((resolve, reject) => {
-    if (child!.exitCode !== null) {
-      resolve();
-      return;
-    }
-    const timeout = setTimeout(() => reject(Error('Bridge shutdown timed out.')), 20000);
-    child!.once('exit', () => {
-      clearTimeout(timeout);
-      resolve();
-    });
-  });
-  await writeFile(path.join(data, 'preserve-on-uninstall.txt'), 'keep user data');
-  await mkdir(path.join(payload, 'tests'), { recursive: true });
-  await writeFile(path.join(payload, 'tests/retired-file.txt'), 'obsolete application resource');
-  const upgradeStarted = performance.now();
-  await exec(installer, ['/S', '/UPDATE', '/D=' + target], {
-    env,
-    windowsHide: true,
-    timeout: 180000,
-  });
-  const upgradeMilliseconds = performance.now() - upgradeStarted;
-  await access(path.join(data, 'runtime/addon-update-pending'));
-  const updateStages = (await readFile(path.join(data, 'runtime/update.log'), 'utf8'))
-    .trim()
-    .split(/\r?\n/)
-    .map((line) => {
-      const [milliseconds, stage] = line.split(' ');
-      return { milliseconds: Number(milliseconds), stage };
-    });
-  if (
-    ![
-      'installer-ready',
-      'helper-extracted',
-      'bridge-stopped',
-      'copying-files',
-      'files-installed',
-    ].every((stage) => updateStages.some((entry) => entry.stage === stage))
-  ) {
-    throw Error('Upgrade did not record all installer stages.');
+  yield* run(executable, ['--prepare-update'], '60 seconds', { env });
+  yield* bridge.exitCode.pipe(
+    Effect.ignore,
+    Effect.timeoutOrElse({
+      duration: '20 seconds',
+      orElse: () => Effect.fail(failed('Bridge shutdown timed out.')),
+    }),
+  );
+  yield* fs.writeFileString(path.join(data, 'preserve-on-uninstall.txt'), 'keep user data');
+  yield* fs.makeDirectory(path.join(payload, 'tests'), { recursive: true });
+  yield* fs.writeFileString(
+    path.join(payload, 'tests/retired-file.txt'),
+    'obsolete application resource',
+  );
+  const upgradeStarted = yield* now;
+  yield* run(installer, ['/S', '/UPDATE', '/D=' + target], '180 seconds', { env });
+  const upgradeMilliseconds = (yield* now) - upgradeStarted;
+  yield* fs.access(path.join(data, 'runtime/addon-update-pending'));
+  const stages = updateStages(yield* fs.readFileString(path.join(data, 'runtime/update.log')));
+  if (!requiredStages.every((stage) => stages.some((entry) => entry.stage === stage))) {
+    return yield* failed('Upgrade did not record all installer stages.');
   }
-  try {
-    await access(path.join(payload, 'tests/retired-file.txt'));
-    throw Error('Upgrade retained a retired application resource.');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
-    }
-  }
-  await exec(executable, ['--self-test'], { env, windowsHide: true, timeout: 30000 });
-  await access(path.join(data, 'config.local.json'));
-  await access(path.join(data, 'runtime/wisp.sqlite'));
-  await exec(path.join(target, 'uninstall.exe'), ['/S', '_?=' + target], {
-    windowsHide: true,
-    timeout: 120000,
-  });
-  await access(path.join(data, 'preserve-on-uninstall.txt'));
+  yield* absent(
+    path.join(payload, 'tests/retired-file.txt'),
+    'Upgrade retained a retired application resource.',
+  );
+  yield* run(executable, ['--self-test'], '30 seconds', { env });
+  yield* fs.access(path.join(data, 'config.local.json'));
+  yield* fs.access(path.join(data, 'runtime/wisp.sqlite'));
+  yield* run(path.join(target, 'uninstall.exe'), ['/S', '_?=' + target], '120 seconds');
+  yield* fs.access(path.join(data, 'preserve-on-uninstall.txt'));
   const report = {
     version,
     addonVersion,
@@ -235,7 +330,7 @@ try {
     payloadFiles,
     installMilliseconds,
     upgradeMilliseconds,
-    updateStages,
+    updateStages: stages,
     agentReady: true,
     independentSignIn: true,
     noPersonalData: true,
@@ -243,13 +338,24 @@ try {
     upgradePreservesHistory: true,
     retiredResourcesRemoved: true,
   };
-  await writeFile('dist/installer-smoke.json', JSON.stringify(report, null, 2));
-  console.log(JSON.stringify(report));
-} finally {
-  if (child && child.exitCode === null && child.pid) {
-    await exec('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
-      windowsHide: true,
-    }).catch(() => {});
-  }
-  await rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  yield* fs.writeFileString('dist/installer-smoke.json', JSON.stringify(report, null, 2));
+  yield* Console.log(JSON.stringify(report));
+}, Effect.scoped);
+
+if (import.meta.main) {
+  Command.make(
+    'verify-installer',
+    {
+      installer: Argument.String('installer').pipe(
+        Argument.withDescription('The installer to verify; the built one in dist/ when absent'),
+        Argument.optional,
+      ),
+    },
+    ({ installer }) => verifyInstaller(Option.getOrElse(installer, () => '')),
+  ).pipe(
+    Command.withDescription('Install, run, upgrade and uninstall a built installer'),
+    Command.run({ version: '1.0.0' }),
+    Effect.provide(fetchHttpClient),
+    runScript,
+  );
 }
