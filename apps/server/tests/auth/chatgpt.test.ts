@@ -28,6 +28,7 @@ import {
 import { Jwk, Jwt } from 'effect/jose';
 import { TestClock } from 'effect/testing';
 import * as ChatGPTAuth from '../../src/auth/index.ts';
+import { MAX_ID_TOKEN_LENGTH } from '../../src/auth/issuer.ts';
 import { thrownFailureKind } from '../../src/models/model-failures.ts';
 import { SecretVault } from '../../src/platform/secret-vault.ts';
 import { promiseChatGPTAuth } from '../../src/runtime.ts';
@@ -44,6 +45,7 @@ const IdClaims = Schema.Struct({
   exp: Schema.Finite,
   nonce: Schema.String,
   email: Schema.String,
+  padding: Schema.optionalKey(Schema.String),
 });
 
 /** What the fake OpenAI answers, and what it was sent. */
@@ -62,6 +64,10 @@ interface Issuer {
   readonly calls: { readonly url: string; readonly body: URLSearchParams }[];
   tokens: number;
   refreshes: number;
+  /** A claim that makes the id tokens this much longer. */
+  padding: string;
+  /** The entries the model catalog answers with. */
+  catalog: unknown;
 }
 
 const transportError = (request: HttpClientRequest.HttpClientRequest, cause: unknown) =>
@@ -87,6 +93,11 @@ const fakeOpenAI = Effect.gen(function* () {
     calls: [],
     tokens: 0,
     refreshes: 0,
+    padding: '',
+    catalog: [
+      { slug: 'gpt-test', display_name: 'Test model', visibility: 'list' },
+      { slug: 'hidden', visibility: 'hide' },
+    ],
   };
   const idToken = Effect.gen(function* () {
     const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
@@ -100,6 +111,7 @@ const fakeOpenAI = Effect.gen(function* () {
         exp: now + 3600,
         nonce: issuer.nonce,
         email: 'player@example.test',
+        ...(issuer.padding ? { padding: issuer.padding } : {}),
       },
       key,
     );
@@ -164,12 +176,7 @@ const fakeOpenAI = Effect.gen(function* () {
           if (url.pathname === '/v1/responses') {
             return Response.json({ answered: request.headers['authorization'] });
           }
-          return Response.json({
-            models: [
-              { slug: 'gpt-test', display_name: 'Test model', visibility: 'list' },
-              { slug: 'hidden', visibility: 'hide' },
-            ],
-          });
+          return Response.json({ models: issuer.catalog });
       }
       return yield* Effect.die(new Error('Unexpected endpoint ' + url.href));
     });
@@ -524,6 +531,86 @@ layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layerSignature, FetchHttpCli
         const state = yield* f.auth.state;
         assert.strictEqual(state.status, 'reauth_required');
         assert.strictEqual(state.message, 'ChatGPT rejected this session. Please sign in again.');
+      }),
+    );
+
+    it.effect('skips a listed catalog entry of the wrong shape and offers the rest', () => {
+      const logs: { message: unknown; annotations: Readonly<Record<string, unknown>> }[] = [];
+      const capture = Logger.make((options) => {
+        logs.push({
+          message: options.message,
+          annotations: options.fiber.getRef(References.CurrentLogAnnotations),
+        });
+      });
+      return Effect.gen(function* () {
+        const f = yield* fixture;
+        assert.strictEqual((yield* f.redirect(yield* f.start())).status, 200);
+        f.issuer.catalog = [
+          {
+            slug: 'gpt-full',
+            display_name: 'Full model',
+            visibility: 'list',
+            supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high', description: 'x' }],
+            default_reasoning_level: 'high',
+            context_window: 400000,
+          },
+          { slug: 'gpt-nulls', display_name: null, visibility: 'list', context_window: null },
+          { slug: 'gpt-wrong', display_name: 42, visibility: 'list' },
+          { slug: 'gpt-levels', visibility: 'list', supported_reasoning_levels: 'high' },
+          { slug: 'not a slug', visibility: 'list' },
+          { slug: 'hidden', display_name: 42, visibility: 'hide' },
+          'not an entry',
+        ];
+        assert.deepStrictEqual(yield* f.auth.models, [
+          {
+            slug: 'gpt-full',
+            displayName: 'Full model',
+            efforts: ['low', 'high'],
+            defaultEffort: 'high',
+            contextWindow: 400000,
+          },
+          {
+            slug: 'gpt-nulls',
+            displayName: 'gpt-nulls',
+            efforts: [],
+            defaultEffort: undefined,
+            contextWindow: undefined,
+          },
+        ]);
+        const skipped = logs.filter((log) => log.annotations['event'] === 'auth.model_skipped');
+        assert.deepStrictEqual(
+          skipped.map((log) => log.annotations['index']),
+          [2, 3, 4],
+        );
+        assert.match(String(skipped[0]?.annotations['error']), /display_name/);
+      }).pipe(Effect.provide(Logger.layer([capture])));
+    });
+
+    it.effect('fails the whole catalog only when it has no list of models', () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        assert.strictEqual((yield* f.redirect(yield* f.start())).status, 200);
+        f.issuer.catalog = { 'gpt-test': { visibility: 'list' } };
+        const error = yield* Effect.flip(f.auth.models);
+        assert.strictEqual(error.message, 'ChatGPT returned an unexpected model catalog.');
+      }),
+    );
+
+    it.effect('refuses an id token longer than the bound before verifying it', () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        f.issuer.padding = 'x'.repeat(MAX_ID_TOKEN_LENGTH);
+        const refused = yield* f.redirect(yield* f.start());
+        assert.strictEqual(refused.status, 400);
+        assert.match(refused.html, /ChatGPT identity validation failed/);
+        assert.strictEqual(yield* f.status, 'signed_out');
+        // Refused before verification, which would fetch the issuer's keys.
+        assert.isFalse(f.issuer.calls.some((call) => call.url.endsWith('/jwks')));
+
+        // A long token within the bound still signs in.
+        f.issuer.padding = 'x'.repeat(MAX_ID_TOKEN_LENGTH / 2);
+        assert.strictEqual((yield* f.redirect(yield* f.start())).status, 200);
+        assert.strictEqual(yield* f.status, 'connected');
       }),
     );
 

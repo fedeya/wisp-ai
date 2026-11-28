@@ -32,7 +32,6 @@ import { serveCallback } from './callback-server.ts';
 import { ChatGPTAuthError, requestFailed, withDeadline } from './errors.ts';
 import type { ChatGPTRequestError } from './errors.ts';
 import { RESOURCE, idTokenOf, makeIssuer, tokenSet } from './issuer.ts';
-import { lenient } from './lenient.ts';
 import { ClientId, MAX_PROFILES, SavedJson, readHostId } from './profiles.ts';
 import type { Profile, Saved, TokenSet } from './profiles.ts';
 
@@ -51,18 +50,60 @@ const isClientId = Schema.is(ClientId);
 
 const ModelCatalog = Schema.Struct({ models: Schema.Array(Schema.Unknown) });
 
-/** A catalog entry Wisp offers: listed, with a slug it can send back. */
+/** A catalog entry the catalog lists for the player; others are not offered. */
+const Listed = Schema.Struct({ visibility: Schema.Literal('list') });
+const isListed = Schema.is(Listed);
+
+/** An optional field of a catalog entry; JSON null also means it is absent. */
+const optionalField = <S extends Schema.Top>(schema: S) => Schema.optional(Schema.NullOr(schema));
+
+/**
+ * A listed entry Wisp offers: a slug it can send back, and the details it
+ * shows. Every field it reads must have its type, or the entry is skipped.
+ */
 const ListedModel = Schema.Struct({
   visibility: Schema.Literal('list'),
   slug: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_.:-]{1,100}$/)),
-  display_name: lenient(Schema.String),
-  supported_reasoning_levels: lenient(
-    Schema.mutable(Schema.Array(Schema.Struct({ effort: lenient(Schema.String) }))),
+  display_name: optionalField(Schema.String),
+  supported_reasoning_levels: optionalField(
+    Schema.Array(Schema.Struct({ effort: optionalField(Schema.String) })),
   ),
-  default_reasoning_level: lenient(Schema.String),
-  context_window: lenient(Schema.Finite),
+  default_reasoning_level: optionalField(Schema.String),
+  context_window: optionalField(Schema.Finite),
 });
-const decodeListedModel = Schema.decodeUnknownOption(ListedModel);
+const decodeListedModel = Schema.decodeUnknownEffect(ListedModel);
+
+/**
+ * The model Wisp offers for one catalog entry, if any. A listed entry that
+ * does not decode is skipped with a warning, so the rest of the catalog stays
+ * usable.
+ */
+const offeredModel = (entry: unknown, index: number) =>
+  isListed(entry)
+    ? decodeListedModel(entry).pipe(
+        Effect.map((model): Option.Option<AccountModel> =>
+          Option.some(
+            accountModel({
+              slug: model.slug,
+              display_name: model.display_name ?? undefined,
+              supported_reasoning_levels: model.supported_reasoning_levels?.map((level) => ({
+                effort: level.effort ?? undefined,
+              })),
+              default_reasoning_level: model.default_reasoning_level ?? undefined,
+              context_window: model.context_window ?? undefined,
+            }),
+          ),
+        ),
+        Effect.catch((error) =>
+          Effect.logWarning(
+            'Skipped a ChatGPT model the catalog lists in an unexpected shape',
+          ).pipe(
+            Effect.annotateLogs({ event: 'auth.model_skipped', index, error: error.message }),
+            Effect.as(Option.none<AccountModel>()),
+          ),
+        ),
+      )
+    : Effect.succeedNone;
 
 export type ChatGPTAuthStatus =
   | 'signed_out'
@@ -768,11 +809,8 @@ const make = Effect.fnUntraced(function* (directory: string) {
         () => new ChatGPTAuthError({ message: 'ChatGPT returned an unexpected model catalog.' }),
       ),
     );
-    const listed = catalog.models.flatMap((entry) =>
-      Option.match(decodeListedModel(entry), {
-        onNone: () => [],
-        onSome: (model) => [accountModel(model)],
-      }),
+    const listed = (yield* Effect.forEach(catalog.models, offeredModel)).flatMap((model) =>
+      Option.toArray(model),
     );
     yield* Ref.set(
       modelsCache,
