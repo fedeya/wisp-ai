@@ -67,14 +67,28 @@ it.effect('missing application secret fails before any request', () =>
   }),
 );
 
-it.effect.each([401, 403, 503])('HTTP %s fails the invalidation', (status) =>
+it.effect.each([503, 429, 404])('HTTP %s fails the invalidation', (status) =>
   Effect.gen(function* () {
     const site = website(() => new Response(null, { status }));
     const error = yield* Effect.flip(
       revalidateWeb('https://wisp.test', secret('secret')).pipe(Effect.provide(site.layer)),
     );
     expect(error.message).toBe(`Web revalidation failed (${status}).`);
+    expect(error).toMatchObject({ transient: status !== 404 });
     expect(site.sent).toHaveLength(1);
+  }),
+);
+
+it.effect.each([401, 403])('HTTP %s says the secret was rejected', (status) =>
+  Effect.gen(function* () {
+    const site = website(() => new Response(null, { status }));
+    const error = yield* Effect.flip(
+      revalidateWeb('https://wisp.test', secret('secret')).pipe(Effect.provide(site.layer)),
+    );
+    expect(error.message).toBe(
+      `Web revalidation was rejected (${status}); check WEB_REVALIDATION_SECRET and VERCEL_AUTOMATION_BYPASS_SECRET.`,
+    );
+    expect(error).toMatchObject({ transient: false });
   }),
 );
 
@@ -85,6 +99,7 @@ it.effect('an unexpected success response does not report successful invalidatio
       revalidateWeb('https://wisp.test', secret('secret')).pipe(Effect.provide(site.layer)),
     );
     expect(error.message).toContain('Web revalidation failed');
+    expect(error).toMatchObject({ transient: false });
   }),
 );
 
@@ -121,5 +136,94 @@ it.effect(
       );
       expect(missing.message).toContain('Configure');
       expect(unconfigured.sent).toHaveLength(0);
+    }),
+);
+
+const configured = ConfigProvider.layer(
+  ConfigProvider.fromUnknown({
+    WEB_URL: 'https://wisp.test',
+    WEB_REVALIDATION_SECRET: 'secret',
+  }),
+);
+
+it.effect.each([
+  {
+    name: 'a rejected secret (401)',
+    respond: () => new Response(null, { status: 401 }),
+    message: 'was rejected (401)',
+  },
+  {
+    name: 'a rejected secret (403)',
+    respond: () => new Response(null, { status: 403 }),
+    message: 'was rejected (403)',
+  },
+  {
+    name: 'a missing route (404)',
+    respond: () => new Response(null, { status: 404 }),
+    message: 'failed (404)',
+  },
+  {
+    name: 'revalidated: false',
+    respond: () => Response.json({ revalidated: false }),
+    message: 'did not answer `revalidated: true`',
+  },
+])('a refresh stops at the first attempt on $name', ({ respond, message }) =>
+  Effect.gen(function* () {
+    const site = website(respond);
+    const error = yield* Effect.flip(refresh.pipe(Effect.provide([site.layer, configured])));
+    expect(error.message).toContain(message);
+    expect(site.sent).toHaveLength(1);
+  }),
+);
+
+it.effect.each([
+  { name: 'a network error', failure: () => Promise.reject(new TypeError('fetch failed')) },
+  { name: 'a 429', failure: () => Promise.resolve(new Response(null, { status: 429 })) },
+  { name: 'a 502', failure: () => Promise.resolve(new Response(null, { status: 502 })) },
+])('a refresh retries $name five seconds later and then succeeds', ({ failure }) =>
+  Effect.gen(function* () {
+    const sent: string[] = [];
+    const fetch: typeof globalThis.fetch = (input) => {
+      sent.push(new Request(input).url);
+      return sent.length < 3 ? failure() : Promise.resolve(Response.json({ revalidated: true }));
+    };
+    const layer = httpClientLayer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)));
+    const fiber = yield* refresh.pipe(Effect.provide([layer, configured]), Effect.forkChild);
+    yield* TestClock.adjust('5 seconds');
+    yield* TestClock.adjust('5 seconds');
+    yield* Fiber.join(fiber);
+    expect(sent).toHaveLength(3);
+  }),
+);
+
+it.effect(
+  'a refresh retries a response whose body cannot be read, but not one that is not JSON',
+  () =>
+    Effect.gen(function* () {
+      const sent: string[] = [];
+      const truncated = () =>
+        new Response(
+          new ReadableStream({
+            pull: (controller) => controller.error(new TypeError('terminated')),
+          }),
+        );
+      const fetch: typeof globalThis.fetch = (input) => {
+        sent.push(new Request(input).url);
+        return Promise.resolve(
+          sent.length < 2 ? truncated() : Response.json({ revalidated: true }),
+        );
+      };
+      const layer = httpClientLayer.pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+      );
+      const fiber = yield* refresh.pipe(Effect.provide([layer, configured]), Effect.forkChild);
+      yield* TestClock.adjust('5 seconds');
+      yield* Fiber.join(fiber);
+      expect(sent).toHaveLength(2);
+
+      const notJson = website(() => new Response('<html>', { status: 200 }));
+      const error = yield* Effect.flip(refresh.pipe(Effect.provide([notJson.layer, configured])));
+      expect(error.message).toContain('did not answer');
+      expect(notJson.sent).toHaveLength(1);
     }),
 );

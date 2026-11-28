@@ -6,7 +6,7 @@
 // Vercel's deployment protection.
 import { Config, Console, Effect, Layer, Option, Redacted, Schema } from 'effect';
 import { Command } from 'effect/cli';
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 import { runScript } from './run-script.ts';
 
 export class RevalidationSecretMissing extends Schema.TaggedError<RevalidationSecretMissing>()(
@@ -16,15 +16,21 @@ export class RevalidationSecretMissing extends Schema.TaggedError<RevalidationSe
 
 export class WebRevalidationFailed extends Schema.TaggedError<WebRevalidationFailed>()(
   'WebRevalidationFailed',
-  { message: Schema.String },
+  // A transient failure (network error, timeout, 429, 5xx) is worth trying
+  // again; anything else (a rejected secret, an unexpected answer) is not.
+  { message: Schema.String, transient: Schema.Boolean },
 ) {}
 
 const Revalidated = Schema.Struct({ revalidated: Schema.Literal(true) });
+const decodeRevalidated = Schema.decodeUnknownEffect(Schema.fromJsonString(Revalidated));
 
-const failed = (status?: number) =>
+const failed = (transient: boolean, status?: number) =>
   new WebRevalidationFailed({
     message: `Web revalidation failed${status === undefined ? '' : ` (${status})`}.`,
+    transient,
   });
+
+const isTransientStatus = (status: number) => status === 429 || status >= 500;
 
 /** Asks the site at `url` to expire its release data, signed with `secret`. */
 export const revalidateWeb = Effect.fnUntraced(function* (
@@ -51,15 +57,30 @@ export const revalidateWeb = Effect.fnUntraced(function* (
   }
   yield* Effect.gen(function* () {
     const response = yield* client.execute(request);
-    if (response.status < 200 || response.status > 299) {
-      return yield* failed(response.status);
+    if (response.status === 401 || response.status === 403) {
+      return yield* new WebRevalidationFailed({
+        message: `Web revalidation was rejected (${response.status}); check WEB_REVALIDATION_SECRET and VERCEL_AUTOMATION_BYPASS_SECRET.`,
+        transient: false,
+      });
     }
-    yield* HttpClientResponse.schemaBodyJson(Revalidated)(response).pipe(
-      Effect.mapError(() => failed(response.status)),
+    if (response.status < 200 || response.status > 299) {
+      return yield* failed(isTransientStatus(response.status), response.status);
+    }
+    // A body that cannot be read is a network failure, retried by the handler
+    // below; one that was read but is not the expected answer is not.
+    const body = yield* response.text;
+    yield* decodeRevalidated(body).pipe(
+      Effect.mapError(
+        () =>
+          new WebRevalidationFailed({
+            message: `Web revalidation failed (${response.status}): the site did not answer \`revalidated: true\`.`,
+            transient: false,
+          }),
+      ),
     );
   }).pipe(
-    Effect.catchTag('HttpClientError', () => Effect.fail(failed())),
-    Effect.timeoutOrElse({ duration: '30 seconds', orElse: () => Effect.fail(failed()) }),
+    Effect.catchTag('HttpClientError', () => Effect.fail(failed(true))),
+    Effect.timeoutOrElse({ duration: '30 seconds', orElse: () => Effect.fail(failed(true)) }),
   );
 });
 
@@ -82,7 +103,11 @@ export const httpClientLayer: Layer.Layer<HttpClient.HttpClient> = Layer.effect(
 
 const attempts = 5;
 
-/** Revalidates the configured site, retrying failures without crawling public pages from CI. */
+/**
+ * Revalidates the configured site, retrying transient failures (network
+ * errors, timeouts, 429 and 5xx) without crawling public pages from CI. Any
+ * other failure ends the script at once.
+ */
 export const refresh = Effect.gen(function* () {
   const url = yield* Config.String('WEB_URL').pipe(Config.withDefault('https://wisp.fedeya.sh'));
   const secret = yield* Config.option(Config.Redacted('WEB_REVALIDATION_SECRET'));
@@ -96,7 +121,7 @@ export const refresh = Effect.gen(function* () {
   > =>
     revalidateWeb(url, secret, bypass).pipe(
       Effect.catchTag('WebRevalidationFailed', (error) =>
-        number === attempts
+        number === attempts || !error.transient
           ? Effect.fail(error)
           : Console.error(`Web refresh attempt ${number} failed; retrying.`, error).pipe(
               Effect.andThen(Effect.sleep('5 seconds')),
