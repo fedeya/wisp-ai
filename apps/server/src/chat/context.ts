@@ -149,7 +149,7 @@ export function rememberTurnQuests(chat: QuestOwner, context: unknown) {
 
 export async function queryCharacterSections(
   chat: QuestOwner,
-  sections: string[],
+  sections: readonly string[],
   query: (sections: string[]) => Promise<Record<string, unknown>>,
   refresh = false,
 ): Promise<Record<string, unknown>> {

@@ -1,8 +1,8 @@
+// @effect-migrated
 import { Schema } from 'effect';
-import type { z } from 'zod';
 import type { inspectionSchema } from './game-inspection.ts';
 
-export type GameInspection = z.input<typeof inspectionSchema>;
+export type GameInspection = typeof inspectionSchema.Encoded;
 type InspectionKind = GameInspection['kind'];
 
 // Keep additional native/provider fields visible to the model. Only declared

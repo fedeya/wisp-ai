@@ -1,4 +1,5 @@
-import { defineTool } from '@wisp/agent/tool';
+import { defineTool, effectToolInput } from '@wisp/agent/tool';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { runGame } from '../../tools/game-tool.ts';
 import { questInput } from '../../contract/game-inspection.ts';
@@ -8,7 +9,7 @@ export default enabledTool(
     deferred: false,
     description:
       'Read a verified quest ID from installed QuestieDB Forever when details missing from the live quest log are needed: objectives, starters/finishers, level and race/class requirements, prerequisites and exclusions. For a simple next-quest recommendation, use the fresh quest log first. Sparse positional tuples are JSON objects with numeric-string keys; missing positions remain unknown. Static database data does not prove that the quest is currently offered or available to this character. Use wow__query_progression for fresh completion/progression. Resolve NPC and object objective IDs with the corresponding Questie location tools; never invent drop rates or coordinates.',
-    inputSchema: questInput,
+    inputSchema: effectToolInput(questInput, { parseOptions: rejectUnknownKeys, layout: 'zod' }),
     label: {
       start: ({ questId }) => `Reading details for quest #${questId}`,
       complete: ({ questId }, output) => {

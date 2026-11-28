@@ -4,15 +4,7 @@ import { asSchema } from 'ai';
 import { Effect } from 'effect';
 import type { ToolDefinition } from '../src/tools/tool.ts';
 import { authored, assembleTools } from '../src/tools/turn-tools.ts';
-import web__web_search from '../src/wisp/tools/web__web_search.ts';
-import wisp__manage_routine from '../src/wisp/tools/wisp__manage_routine.ts';
-
-// Tools whose input is a `@wisp/protocol` schema. The model must keep seeing the
-// same JSON Schema for them when that schema changes library.
-const protocolTools = { web__web_search, wisp__manage_routine } satisfies Record<
-  string,
-  ToolDefinition
->;
+import { authoredTools } from '../src/wisp/tool-registry.ts';
 
 /**
  * The JSON Schema the model receives for an authored tool: the AI SDK's for a
@@ -38,7 +30,9 @@ const modelInputSchema = Effect.fnUntraced(function* (
   return json;
 });
 
-for (const [name, tool] of Object.entries(protocolTools)) {
+// Every authored tool. The model must keep seeing the same JSON Schema for each
+// when its input schema changes library.
+for (const [name, tool] of Object.entries(authoredTools)) {
   it.effect(`the model sees the same ${name} input schema`, () =>
     Effect.gen(function* () {
       // Serialized, so the snapshot also keeps the key order the model reads.
