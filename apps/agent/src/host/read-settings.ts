@@ -1,4 +1,4 @@
-// @effect-migrated
+// @effect-migrated allow=jsonParse: malformed settings fail with a SyntaxError cause, which tests/capabilities.test.ts checks; decoding with Schema would change it
 import { Effect, type FileSystem } from 'effect';
 import { HostError } from '../execution/engine-errors.ts';
 
