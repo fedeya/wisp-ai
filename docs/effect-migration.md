@@ -322,6 +322,9 @@ with a link to itself.
 - [ ] TheWoWDB: decode responses into typed schemas instead of checking unknown
       JSON with `Schema.is`; the record the agent receives may then lose the
       source's key order ([#316](https://github.com/fedeya/wisp-ai/pull/316)).
+- [ ] ChatGPT sign-in: bound the id token's length before verifying it, as
+      `effect/jose` advises, and decode the model catalog strictly instead of
+      dropping fields of the wrong type ([#329](https://github.com/fedeya/wisp-ai/pull/329)).
 - [ ] Repositories, with phase 3 (proposed in [#307](https://github.com/fedeya/wisp-ai/pull/307)):
   - [ ] Transactions take `BEGIN IMMEDIATE`, including the startup read of
         chats.
