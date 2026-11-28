@@ -1,4 +1,4 @@
-// @effect-migrated
+// @effect-migrated allow=jsonParse,typescript/no-explicit-any,typescript/no-unsafe-argument,typescript/no-unsafe-assignment,typescript/no-unsafe-call,typescript/no-unsafe-member-access,typescript/no-unsafe-return: the simulator's JSON files are read with JSON.parse until they are decoded with Schema (docs/effect-migration.md phase 9, #319)
 import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
 import { Digest } from 'effect/crypto';
 import type { PlatformError } from 'effect/PlatformError';

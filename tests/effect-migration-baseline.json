@@ -11,7 +11,8 @@
     "effectRuns": 28,
     "effectPromises": 15,
     "throwStatements": 188,
-    "tryBlocks": 67
+    "tryBlocks": 67,
+    "jsonParse": 38
   },
   "apps/agent": {
     "zodImports": 32,
@@ -25,7 +26,8 @@
     "effectRuns": 4,
     "effectPromises": 11,
     "throwStatements": 53,
-    "tryBlocks": 9
+    "tryBlocks": 9,
+    "jsonParse": 3
   },
   "apps/desktop": {
     "zodImports": 0,
@@ -39,7 +41,8 @@
     "effectRuns": 0,
     "effectPromises": 0,
     "throwStatements": 4,
-    "tryBlocks": 24
+    "tryBlocks": 24,
+    "jsonParse": 2
   },
   "packages/protocol": {
     "zodImports": 9,
@@ -53,7 +56,8 @@
     "effectRuns": 0,
     "effectPromises": 0,
     "throwStatements": 1,
-    "tryBlocks": 2
+    "tryBlocks": 2,
+    "jsonParse": 1
   },
   "packages/wow-bridge": {
     "zodImports": 0,
@@ -67,7 +71,8 @@
     "effectRuns": 0,
     "effectPromises": 0,
     "throwStatements": 31,
-    "tryBlocks": 2
+    "tryBlocks": 2,
+    "jsonParse": 5
   },
   "packages/db": {
     "zodImports": 0,
@@ -81,7 +86,8 @@
     "effectRuns": 0,
     "effectPromises": 1,
     "throwStatements": 13,
-    "tryBlocks": 10
+    "tryBlocks": 10,
+    "jsonParse": 0
   },
   "packages/game-data": {
     "zodImports": 0,
@@ -95,7 +101,8 @@
     "effectRuns": 0,
     "effectPromises": 0,
     "throwStatements": 20,
-    "tryBlocks": 0
+    "tryBlocks": 0,
+    "jsonParse": 4
   },
   "packages/releases": {
     "zodImports": 0,
@@ -109,12 +116,13 @@
     "effectRuns": 0,
     "effectPromises": 0,
     "throwStatements": 2,
-    "tryBlocks": 1
+    "tryBlocks": 1,
+    "jsonParse": 0
   },
   "scripts": {
     "zodImports": 0,
     "honoImports": 0,
-    "nodeIoImports": 33,
+    "nodeIoImports": 32,
     "fetchCalls": 4,
     "timers": 3,
     "processEnv": 50,
@@ -122,7 +130,8 @@
     "asyncFunctions": 25,
     "effectRuns": 1,
     "effectPromises": 0,
-    "throwStatements": 89,
-    "tryBlocks": 17
+    "throwStatements": 88,
+    "tryBlocks": 17,
+    "jsonParse": 28
   }
 }
