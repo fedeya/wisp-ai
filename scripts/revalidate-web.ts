@@ -6,7 +6,7 @@
 // Vercel's deployment protection.
 import { Config, Console, Effect, Layer, Option, Redacted, Schema } from 'effect';
 import { Command } from 'effect/cli';
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from 'effect/http';
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 import { runScript } from './run-script.ts';
 
 export class RevalidationSecretMissing extends Schema.TaggedError<RevalidationSecretMissing>()(
@@ -22,6 +22,7 @@ export class WebRevalidationFailed extends Schema.TaggedError<WebRevalidationFai
 ) {}
 
 const Revalidated = Schema.Struct({ revalidated: Schema.Literal(true) });
+const decodeRevalidated = Schema.decodeUnknownEffect(Schema.fromJsonString(Revalidated));
 
 const failed = (transient: boolean, status?: number) =>
   new WebRevalidationFailed({
@@ -65,7 +66,10 @@ export const revalidateWeb = Effect.fnUntraced(function* (
     if (response.status < 200 || response.status > 299) {
       return yield* failed(isTransientStatus(response.status), response.status);
     }
-    yield* HttpClientResponse.schemaBodyJson(Revalidated)(response).pipe(
+    // A body that cannot be read is a network failure, retried by the handler
+    // below; one that was read but is not the expected answer is not.
+    const body = yield* response.text;
+    yield* decodeRevalidated(body).pipe(
       Effect.mapError(
         () =>
           new WebRevalidationFailed({

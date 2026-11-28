@@ -195,3 +195,35 @@ it.effect.each([
     expect(sent).toHaveLength(3);
   }),
 );
+
+it.effect(
+  'a refresh retries a response whose body cannot be read, but not one that is not JSON',
+  () =>
+    Effect.gen(function* () {
+      const sent: string[] = [];
+      const truncated = () =>
+        new Response(
+          new ReadableStream({
+            pull: (controller) => controller.error(new TypeError('terminated')),
+          }),
+        );
+      const fetch: typeof globalThis.fetch = (input) => {
+        sent.push(new Request(input).url);
+        return Promise.resolve(
+          sent.length < 2 ? truncated() : Response.json({ revalidated: true }),
+        );
+      };
+      const layer = httpClientLayer.pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+      );
+      const fiber = yield* refresh.pipe(Effect.provide([layer, configured]), Effect.forkChild);
+      yield* TestClock.adjust('5 seconds');
+      yield* Fiber.join(fiber);
+      expect(sent).toHaveLength(2);
+
+      const notJson = website(() => new Response('<html>', { status: 200 }));
+      const error = yield* Effect.flip(refresh.pipe(Effect.provide([notJson.layer, configured])));
+      expect(error.message).toContain('did not answer');
+      expect(notJson.sent).toHaveLength(1);
+    }),
+);
