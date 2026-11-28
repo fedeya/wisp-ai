@@ -1,4 +1,4 @@
-// @effect-migrated allow=jsonParse,typescript/consistent-type-assertions,typescript/no-unsafe-type-assertion: the saved configuration and env secret are read as before; decoding them with Schema is a phase 9 change
+// @effect-migrated allow=jsonParse,typescript/consistent-type-assertions,typescript/no-unsafe-type-assertion: read as before until the phase 9 item "MCP manager: decode the saved MCP configuration and its env secret with Schema (#336)"
 import type { Capability } from '@wisp/protocol/capabilities';
 import { mcpDefinition, mcpName, mcpSetup } from '@wisp/protocol/mcp-setup';
 import {
@@ -60,6 +60,10 @@ export class McpVaultError extends Schema.TaggedError<McpVaultError>()('McpVault
   cause: Schema.optionalKey(Schema.Defect()),
 }) {}
 
+/**
+ * The failure's own message. A storage failure already carries the text the
+ * host shows the player, such as Node's for a file or the vault's own.
+ */
 const messageOf = (cause: unknown) => (Predicate.isError(cause) ? cause.message : String(cause));
 const configurationError = (cause: unknown) =>
   new McpConfigurationError({ message: messageOf(cause), cause });

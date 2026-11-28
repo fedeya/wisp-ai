@@ -112,6 +112,30 @@ layer(NodeServices.layer)((it) => {
       }).pipe(Effect.scoped),
     );
 
+    it.effect('a failed write reports Node’s text, as the desktop showed it', () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const { dataRoot, manager } = yield* serverMcp({ mcpConfig: 'custom/servers.json' });
+        const folder = path.join(dataRoot, 'custom');
+        yield* fs.makeDirectory(folder);
+        yield* fs.writeFileString(
+          path.join(folder, 'servers.json'),
+          JSON.stringify({ servers: { notes } }),
+        );
+        const error = yield* Effect.gen(function* () {
+          const servers = yield* McpManager.Service;
+          yield* servers.load();
+          // The folder becomes a file, so the configuration cannot be written into it.
+          yield* fs.remove(folder, { recursive: true });
+          yield* fs.writeFileString(folder, '');
+          return yield* Effect.flip(servers.setEnabled('notes', false));
+        }).pipe(Effect.provide(manager));
+        assert.strictEqual(error._tag, 'McpConfigurationError');
+        assert.match(error.message, /^E[A-Z]+: /);
+      }).pipe(Effect.scoped),
+    );
+
     it.effect('starts with no custom servers when nothing is saved', () =>
       Effect.gen(function* () {
         const { manager } = yield* serverMcp();
