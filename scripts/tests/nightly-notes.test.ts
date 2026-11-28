@@ -1,6 +1,7 @@
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { expect, layer } from '@effect/vitest';
-import { Effect, FileSystem, Option } from 'effect';
+import { Effect, Fiber, FileSystem, Option } from 'effect';
+import { TestClock } from 'effect/testing';
 import {
   formatNightlyNotes,
   nightlyNotes,
@@ -153,15 +154,52 @@ layer(NodeServices.layer)((it) => {
             Effect.provide(githubReleases(releasePages()).layer),
           ),
         ).toEqual(Option.none());
-        const unavailable = githubReleases(() => new Response(null, { status: 503 }));
-        const failure = yield* Effect.flip(
-          previousPublishedNightly('0.0.8-nightly.3.1', buildSha, root).pipe(
-            Effect.provide(unavailable.layer),
-          ),
-        );
-        expect(failure.message).toContain('GitHub 503');
       }),
     30_000,
+  );
+
+  it.effect('listing releases retries a transient failure and then succeeds', () =>
+    Effect.gen(function* () {
+      const statuses = [503, 429];
+      const flaky = githubReleases((url) => {
+        const status = statuses.shift();
+        return status === undefined ? releasePages()(url) : new Response(null, { status });
+      });
+      const fiber = yield* publishedNightly(sha, '.').pipe(
+        Effect.provide(flaky.layer),
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust('500 millis');
+      yield* TestClock.adjust('1 second');
+      expect(yield* Fiber.join(fiber)).toEqual(Option.none());
+      expect(flaky.sent).toHaveLength(3);
+    }),
+  );
+
+  it.effect('listing releases gives up after three attempts at a persistent 503', () =>
+    Effect.gen(function* () {
+      const unavailable = githubReleases(() => new Response(null, { status: 503 }));
+      const fiber = yield* previousPublishedNightly('0.0.8-nightly.3.1', sha, '.').pipe(
+        Effect.provide(unavailable.layer),
+        Effect.flip,
+        Effect.forkChild,
+      );
+      yield* TestClock.adjust('500 millis');
+      yield* TestClock.adjust('1 second');
+      expect((yield* Fiber.join(fiber)).message).toContain('GitHub 503');
+      expect(unavailable.sent).toHaveLength(3);
+    }),
+  );
+
+  it.effect('listing releases does not retry a failure that is not transient', () =>
+    Effect.gen(function* () {
+      const forbidden = githubReleases(() => new Response(null, { status: 401 }));
+      const failure = yield* Effect.flip(
+        publishedNightly(sha, '.').pipe(Effect.provide(forbidden.layer)),
+      );
+      expect(failure.message).toContain('GitHub 401');
+      expect(forbidden.sent).toHaveLength(1);
+    }),
   );
 
   it.effect('releases are listed through the GitHub API, signed in when a token is set', () =>
