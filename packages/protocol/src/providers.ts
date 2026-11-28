@@ -137,7 +137,8 @@ export const connectionModel = Schema.Struct({
 export const discoveredConnectionModel = connectionModel.mapFields(
   Struct.assign({ supportsTools: Schema.optional(Schema.Boolean) }),
 );
-export const maxConnectionModels = 200;
+/** Room for an aggregator's whole tool-capable catalog (OpenRouter lists about 400). */
+export const maxConnectionModels = 1000;
 
 const connectionId = Schema.String.check(Schema.isUUID());
 const connectionName = TrimmedString({ minLength: 1, maxLength: 80 });

@@ -114,24 +114,15 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
             ns.Transport.Send({ type = "model_catalog" })
             return
         end
-        if MenuUtil and MenuUtil.CreateContextMenu then
-            MenuUtil.CreateContextMenu(self, function(_, root)
-                root:CreateTitle(L["model.title"])
-                for _, candidate in ipairs(models) do
-                    local option = candidate
-                    root:CreateRadio(option.displayName, function()
-                        local chat = current()
-                        return option.slug
-                            == (
-                                chat and chat.modelSettings and chat.modelSettings.model
-                                or ns.modelCatalog.defaultModel
-                            )
-                    end, function()
-                        choose(option.slug)
-                    end)
-                end
-            end)
-        end
+        local chat = current()
+        ns.UI.ModelPicker.Toggle(self, {
+            models = models,
+            selected = chat and chat.modelSettings and chat.modelSettings.model
+                or ns.modelCatalog.defaultModel,
+            choose = function(slug)
+                choose(slug)
+            end,
+        })
     end)
     controls.model:SetPoint("LEFT")
     controls.effort = selector(L["model.effortUnknown"], 110, function(self)
@@ -139,22 +130,21 @@ function ns.UI.CreateModelControls(parent, name, current, ensure)
         local model = chat and chat.modelSettings and chat.modelSettings.model
             or ns.modelCatalog.defaultModel
         for _, candidate in ipairs(ns.modelCatalog.models or {}) do
-            if candidate.slug == model and MenuUtil and MenuUtil.CreateContextMenu then
-                MenuUtil.CreateContextMenu(self, function(_, root)
-                    root:CreateTitle(L["model.reasoningEffort"])
-                    for _, effort in ipairs(candidate.efforts) do
-                        local option = effort
-                        root:CreateRadio(effortLabel(option), function()
-                            return option
-                                == (
-                                    chat and chat.modelSettings and chat.modelSettings.effort
-                                    or defaultEffort(candidate)
-                                )
-                        end, function()
-                            choose(model, option)
-                        end)
-                    end
-                end)
+            if candidate.slug == model then
+                local options = {}
+                for _, effort in ipairs(candidate.efforts) do
+                    options[#options + 1] = { slug = effort, displayName = effortLabel(effort) }
+                end
+                ns.UI.ModelPicker.Toggle(self, {
+                    models = options,
+                    title = L["model.reasoningEffort"],
+                    search = false,
+                    selected = chat and chat.modelSettings and chat.modelSettings.effort
+                        or defaultEffort(candidate),
+                    choose = function(effort)
+                        choose(model, effort)
+                    end,
+                })
             end
         end
     end)

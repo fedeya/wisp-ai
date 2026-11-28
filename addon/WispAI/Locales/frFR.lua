@@ -132,7 +132,8 @@ ns.Locales.frFR = {
     ["model.choose"] = "Modèle...",
     ["model.effort"] = "Effort : ",
     ["model.effortUnknown"] = "Effort : --",
-    ["model.title"] = "Modèle",
+    ["model.search"] = "Rechercher des modèles",
+    ["model.noMatches"] = "Aucun modèle ne correspond.",
     ["model.reasoningEffort"] = "Effort de raisonnement",
     ["model.appliesNext"] = "S'applique au prochain message de cette conversation.",
 

@@ -132,7 +132,8 @@ ns.Locales.esMX = {
     ["model.choose"] = "Modelo...",
     ["model.effort"] = "Esfuerzo: ",
     ["model.effortUnknown"] = "Esfuerzo: --",
-    ["model.title"] = "Modelo",
+    ["model.search"] = "Buscar modelos",
+    ["model.noMatches"] = "Ningún modelo coincide.",
     ["model.reasoningEffort"] = "Esfuerzo de razonamiento",
     ["model.appliesNext"] = "Se aplica al siguiente mensaje de esta conversación.",
 

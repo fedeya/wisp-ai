@@ -281,6 +281,7 @@ export class ModelConnections implements ModelCatalog {
               efforts: supported.length ? ['provider-default', ...supported] : [],
               ...(supported.length ? { defaultEffort: 'provider-default' } : {}),
               contextWindow: m.contextWindow,
+              group: c.name,
             } satisfies AccountModel,
           };
         }),
@@ -288,7 +289,9 @@ export class ModelConnections implements ModelCatalog {
     const account: AccountModel[] = [];
     if (this.chatgpt.state().status === 'connected') {
       try {
-        account.push(...(await this.chatgpt.models()));
+        account.push(
+          ...(await this.chatgpt.models()).map((model) => ({ ...model, group: 'ChatGPT' })),
+        );
       } catch (error) {
         if (!configured.length) {
           throw error;

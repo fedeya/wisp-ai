@@ -5,12 +5,6 @@ import {
   type DiscoveredConnectionModel,
 } from '@wisp/protocol/providers';
 
-/**
- * Above this many usable models (aggregators such as OpenRouter list hundreds)
- * adding them all would bury the model picker, so the player chooses instead.
- */
-export const autoAddLimit = 40;
-
 const snapshotSuffix = /-(?:\d{4}-\d{2}-\d{2}|\d{8})$/;
 
 /**

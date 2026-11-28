@@ -62,7 +62,7 @@ test('connections persist metadata separately from secrets and work without Chat
   await manager.prepare(slug);
   expect(chatgpt.accessToken).not.toHaveBeenCalled();
   expect(await manager.models()).toEqual([
-    { slug, displayName: 'claude-test', efforts: [], contextWindow: 200000 },
+    { slug, displayName: 'claude-test', efforts: [], contextWindow: 200000, group: 'Claude' },
   ]);
   const restored = new ModelConnections(file, vault, chatgpt as unknown as PromiseChatGPTAuth);
   await restored.load();

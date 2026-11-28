@@ -45,6 +45,23 @@ local function setup(env)
     end
 end
 
+local function shownRow(env, name)
+    for _, row in ipairs(env.UI_TEST.frames.WispAIModelPicker.rows) do
+        if row.entry and row.entry.model and row.entry.model.displayName == name then
+            return row
+        end
+    end
+end
+
+local function modelRow(env, name)
+    return shownRow(env, name) or error("no visible picker row " .. name)
+end
+
+local function pickModel(env, name)
+    local row = modelRow(env, name)
+    row.scripts.OnClick(row)
+end
+
 it(
     "chat model controls select account options, wait for confirmation and isolate conversations",
     function()
@@ -69,24 +86,13 @@ it(
                 },
             },
         }
-        local options = {}
-        MenuUtil = {
-            CreateContextMenu = function(_, build)
-                options = {}
-                build(nil, {
-                    CreateTitle = function() end,
-                    CreateRadio = function(_, label, selected, choose)
-                        options[label] = { selected = selected, choose = choose }
-                    end,
-                })
-            end,
-        }
         ns.UI.Refresh()
         local controls = UI_TEST.frames.WispAIChatModelControls
         assert(controls.model:GetText() == "Luna" and controls.effort:GetText() == "Effort: medium")
         controls.model.scripts.OnClick(controls.model)
-        assert(options.Luna.selected())
-        options.Sol.choose()
+        assert(modelRow(env, "Luna").mark:IsShown(), "the current model is marked")
+        pickModel(env, "Sol")
+        assert(not UI_TEST.frames.WispAIModelPicker:IsShown(), "a pick closes the picker")
         local packet = packets[#packets]
         assert(
             packet.type == "chat_model_set" and packet.chat == "main" and packet.data.model == "sol"
@@ -102,8 +108,15 @@ it(
         ns.UI.Refresh()
         assert(not ns.modelPending.main and controls.model:GetText() == "Sol")
         controls.effort.scripts.OnClick(controls.effort)
-        assert(options.ultra and not options.high, "efforts come from the selected model")
-        options.ultra.choose()
+        local picker = UI_TEST.frames.WispAIModelPicker
+        assert(not picker.search:IsShown(), "the effort list has no search box")
+        assert(picker.rows[1].entry.header == "Reasoning effort")
+        assert(modelRow(env, "medium").mark:IsShown(), "the current effort is marked")
+        assert(
+            shownRow(env, "ultra") and not shownRow(env, "high"),
+            "efforts come from the selected model"
+        )
+        pickModel(env, "ultra")
         assert(packets[#packets].data.effort == "ultra")
         chat.modelRequestId = packets[#packets].requestId
         chat.modelSettings.effort = "ultra"
@@ -115,7 +128,7 @@ it(
         ns.Inline.OpenInline()
         local inline = UI_TEST.frames.WispAIInlineModelControls
         inline.model.scripts.OnClick(inline.model)
-        options.Sol.choose()
+        pickModel(env, "Sol")
         packet = packets[#packets]
         assert(packet.data.inline and packet.chat == ns.inlineId and packet.chat ~= "main")
         assert(
@@ -147,24 +160,12 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
             },
         },
     }
-    local options = {}
-    MenuUtil = {
-        CreateContextMenu = function(_, build)
-            options = {}
-            build(nil, {
-                CreateTitle = function() end,
-                CreateRadio = function(_, label, selected, choose)
-                    options[label] = { selected = selected, choose = choose }
-                end,
-            })
-        end,
-    }
     ns.UI.Refresh()
     local controls = UI_TEST.frames.WispAIChatModelControls
     assert(controls.effort:GetText() == "Effort: Default")
     controls.effort.scripts.OnClick(controls.effort)
-    assert(options.Default.selected() and not options.medium.selected())
-    options.high.choose()
+    assert(modelRow(env, "Default").mark:IsShown() and not modelRow(env, "medium").mark:IsShown())
+    pickModel(env, "high")
     local packet = packets[#packets]
     assert(packet.data.effort == "high" and packet.chat == "main")
     local chat = ns.Chat.Current()
@@ -174,15 +175,15 @@ it("API reasoning defaults, toggle labels, and inline effort remain conversation
     ns.Inline.OpenInline()
     local inline = UI_TEST.frames.WispAIInlineModelControls
     inline.model.scripts.OnClick(inline.model)
-    options.Toggle.choose()
+    pickModel(env, "Toggle")
     packet = packets[#packets]
     local inlineChat = ns.Inline.InlineCurrent()
     inlineChat.modelSettings = { model = "toggle", effort = "provider-default" }
     inlineChat.modelRequestId = packet.requestId
     ns.UI.Refresh()
     inline.effort.scripts.OnClick(inline.effort)
-    assert(options.On and options.Off and options.Default)
-    options.On.choose()
+    assert(shownRow(env, "On") and shownRow(env, "Off") and shownRow(env, "Default"))
+    pickModel(env, "On")
     packet = packets[#packets]
     assert(packet.data.effort == "enabled" and packet.chat == ns.inlineId)
     assert(chat.modelSettings.effort == "high")
@@ -580,5 +581,80 @@ it(
         dialog = open()
         dialog.scripts.OnKeyDown(dialog, "ESCAPE")
         assert(saves == 2 and not dialog:IsShown())
+    end
+)
+
+it(
+    "the model picker groups a large catalog by provider and narrows it as the player types",
+    function()
+        local env = helper.env()
+        setfenv(1, env)
+        setup(env)
+
+        local models = {
+            { slug = "codex", displayName = "GPT-5 Codex", efforts = {}, group = "ChatGPT" },
+        }
+        for index = 1, 400 do
+            models[#models + 1] = {
+                slug = "connection:or:lab/model-" .. index,
+                displayName = "Model " .. index,
+                efforts = {},
+                group = "OpenRouter",
+            }
+        end
+        models[#models + 1] = {
+            slug = "connection:or:anthropic/claude-sonnet",
+            displayName = "Anthropic: Claude Sonnet",
+            efforts = {},
+            group = "OpenRouter",
+        }
+        ns.modelCatalog = { defaultModel = "codex", models = models }
+        ns.UI.Refresh()
+
+        local rows = ns.UI.ModelPicker._Rows(models, "")
+        assert(rows[1].header == "ChatGPT" and rows[2].model.slug == "codex")
+        assert(rows[3].header == "OpenRouter" and #rows == #models + 2)
+        local single = ns.UI.ModelPicker._Rows({ models[1] }, "")
+        assert(#single == 1 and single[1].model, "one group needs no heading")
+        -- Every word must match, in the name, the model ID or the group.
+        rows = ns.UI.ModelPicker._Rows(models, "openrouter SONNET")
+        assert(#rows == 2 and rows[2].model.displayName == "Anthropic: Claude Sonnet")
+        rows = ns.UI.ModelPicker._Rows(models, "anthropic/")
+        assert(#rows == 2 and rows[2].model.slug:find("anthropic/", 1, true))
+        assert(#ns.UI.ModelPicker._Rows(models, "gemini") == 0)
+
+        local controls = UI_TEST.frames.WispAIChatModelControls
+        controls.model.scripts.OnClick(controls.model)
+        local picker = UI_TEST.frames.WispAIModelPicker
+        assert(picker:IsShown() and #picker.rows == 12, "only the rows in view are drawn")
+        assert(modelRow(env, "GPT-5 Codex").mark:IsShown())
+        picker.search:SetText("sonnet")
+        picker.search.scripts.OnTextChanged(picker.search, true)
+        assert(picker.rows[1].entry.header == "OpenRouter")
+        assert(picker.rows[2].entry.model.displayName == "Anthropic: Claude Sonnet")
+        assert(not picker.rows[3]:IsShown() and not picker.empty:IsShown())
+        picker.search.scripts.OnEnterPressed(picker.search)
+        local packet = packets[#packets]
+        assert(packet.type == "chat_model_set" and packet.data.model:find("claude-sonnet", 1, true))
+        assert(not picker:IsShown())
+
+        ns.modelPending.main = nil
+        ns.UI.Refresh()
+        controls.model.scripts.OnClick(controls.model)
+        picker.search:SetText("no such model")
+        picker.search.scripts.OnTextChanged(picker.search, true)
+        assert(picker.empty:IsShown() and not picker.rows[1]:IsShown())
+        picker.search.scripts.OnEscapePressed(picker.search)
+        assert(not picker:IsShown())
+        -- Clicking the control again closes an open picker.
+        controls.model.scripts.OnClick(controls.model)
+        controls.model.scripts.OnClick(controls.model)
+        assert(not picker:IsShown())
+        -- A click anywhere else lands on the layer under the picker and closes it.
+        controls.model.scripts.OnClick(controls.model)
+        local catcher = UI_TEST.frames.WispAIModelPickerCatcher
+        assert(catcher:IsVisible())
+        catcher.scripts.OnMouseDown(catcher, "LeftButton")
+        assert(not picker:IsShown() and not catcher:IsVisible())
     end
 )

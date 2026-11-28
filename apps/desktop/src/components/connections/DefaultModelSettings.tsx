@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { bridge, call } from '../../api';
 import { ActionProgress } from '../ui/ActionProgress';
 import Icon from '../ui/Icon';
-import { Button, Card, Select } from '../ui/Controls';
+import { Button, Card, SearchSelect } from '../ui/Controls';
 import { desktopConnected, desktopLocked } from '../../desktop-controller';
 import { useDesktop, useDesktopActions } from '../../use-desktop';
 import { ProviderLogo, providerPresentation } from './provider-directory';
@@ -155,17 +155,22 @@ export default function DefaultModelSettings({
                 </label>
                 <modelForm.Field name="model">
                   {(field) => (
-                    <Select
+                    <SearchSelect
                       className="min-w-[180px] flex-1"
                       id="models"
                       name={field.name}
                       value={model || null}
                       onValueChange={field.handleChange}
-                      options={models.map(({ slug, displayName }) => ({
+                      options={models.map(({ slug, displayName, group }) => ({
                         value: slug,
                         label: modelLabel(slug, displayName),
+                        // One connection under review needs no headings.
+                        group: review ? undefined : group,
                       }))}
                       placeholder={models.length ? 'Choose a model' : 'No models available'}
+                      searchLabel="Search models"
+                      searchPlaceholder="Search by name, ID or provider"
+                      emptyText="No models match your search."
                       disabled={locked || !models.length}
                     />
                   )}

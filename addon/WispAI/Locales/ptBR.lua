@@ -132,7 +132,8 @@ ns.Locales.ptBR = {
     ["model.choose"] = "Modelo...",
     ["model.effort"] = "Esforço: ",
     ["model.effortUnknown"] = "Esforço: --",
-    ["model.title"] = "Modelo",
+    ["model.search"] = "Buscar modelos",
+    ["model.noMatches"] = "Nenhum modelo corresponde.",
     ["model.reasoningEffort"] = "Esforço de raciocínio",
     ["model.appliesNext"] = "Vale para a próxima mensagem desta conversa.",
 

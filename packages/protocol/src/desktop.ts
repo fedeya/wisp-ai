@@ -23,6 +23,8 @@ export const modelSchema = Schema.Struct({
   slug: Schema.String,
   displayName: Schema.String,
   efforts: Schema.Array(Schema.String),
+  /** Where the model comes from (a connection name or ChatGPT); pickers group by it. */
+  group: Schema.optional(Schema.String),
 });
 export const mcpSchema = Schema.Struct({
   name: Schema.String,

@@ -134,7 +134,8 @@ ns.Locales.enUS = {
     ["model.choose"] = "Model...",
     ["model.effort"] = "Effort: ",
     ["model.effortUnknown"] = "Effort: --",
-    ["model.title"] = "Model",
+    ["model.search"] = "Search models",
+    ["model.noMatches"] = "No models match.",
     ["model.reasoningEffort"] = "Reasoning effort",
     ["model.appliesNext"] = "Applies to the next message in this conversation.",
 

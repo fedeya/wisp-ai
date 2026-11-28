@@ -3,6 +3,8 @@
 // it rejects. They were checked against the zod schemas these replaced, so the
 // same inputs pass and fail as before.
 
+import { maxConnectionModels } from '../src/providers.ts';
+
 export interface ConstraintFixture {
   /** Decoded with unknown keys rejected, as zod's strict objects did. */
   readonly strict?: boolean;
@@ -194,7 +196,7 @@ export const constraintFixtures: Record<string, ConstraintFixture> = {
       { ...connection, baseURL: 'not a url' },
       { ...connection, baseURL: 'https://example.com/' + 'x'.repeat(1000) },
       { ...connection, models: [] },
-      { ...connection, models: Array.from({ length: 201 }, () => model) },
+      { ...connection, models: Array.from({ length: maxConnectionModels + 1 }, () => model) },
     ],
   },
   'providers.connectionSetup': {

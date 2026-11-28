@@ -4,6 +4,8 @@ export interface AccountModel {
   efforts: string[];
   defaultEffort?: string;
   contextWindow?: number;
+  /** Where the model comes from (a connection name or ChatGPT); pickers group by it. */
+  group?: string;
 }
 export interface ChatModel {
   model: string;
