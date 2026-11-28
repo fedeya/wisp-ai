@@ -96,9 +96,11 @@ test('the connection publishes and resolves game requests without routing them t
   async function requestId(chat = 'chat') {
     return vi.waitFor(async () => {
       const data = await readFile(payload, 'utf8');
-      const match = data.match(new RegExp(`"requests":\\[\\{"id":"([^"]+)","chat":"${chat}"`));
-      expect(match).not.toBeNull();
-      return match![1];
+      const id = data.match(new RegExp(`"requests":\\[\\{"id":"([^"]+)","chat":"${chat}"`))?.[1];
+      if (id === undefined) {
+        throw Error(`Expected a pending request for ${chat} in the payload`);
+      }
+      return id;
     });
   }
   try {

@@ -7,6 +7,15 @@ function makeRequests(...args: Parameters<typeof GameRequests.make>) {
   return Effect.runSync(GameRequests.make(...args));
 }
 
+/** The ID of the first request in the pending snapshot. */
+function pendingId(requests: GameRequests) {
+  const [request] = requests.snapshot();
+  if (!request) {
+    throw Error('Expected a pending game request');
+  }
+  return request.id;
+}
+
 function runRequest(
   requests: GameRequests,
   input: GameRequest,
@@ -26,7 +35,7 @@ test('responses are scoped to both transport session and conversation', async ()
     session: 'one',
     inspection: { kind: 'target' },
   });
-  const [{ id }] = requests.snapshot();
+  const id = pendingId(requests);
   expect(requests.receive(id, 'two', 'chat', { wrong: true })).toBe(false);
   expect(requests.receive(id, 'one', 'other', { wrong: true })).toBe(false);
   expect(requests.receive(id, 'one', 'chat', { correct: true })).toBe(true);
@@ -57,7 +66,7 @@ test('timeout removes a request before a late game response can settle it', asyn
     const requests = makeRequests(() => {});
     const result = runRequest(requests, { chat: 'chat', session: 'one' }, undefined, 50);
     const rejected = expect(result).rejects.toThrow('did not respond');
-    const [{ id }] = requests.snapshot();
+    const id = pendingId(requests);
     await vi.advanceTimersByTimeAsync(50);
     await rejected;
     expect(requests.receive(id, 'one', 'chat', {})).toBe(false);
@@ -81,9 +90,9 @@ test('interrupting a retried read clears its aliases, retries and timeout', asyn
       logs,
     );
     const rejected = expect(read).rejects.toThrow('interrupt');
-    const [{ id: original }] = requests.snapshot();
+    const original = pendingId(requests);
     await vi.advanceTimersByTimeAsync(10_000);
-    const [{ id: retry }] = requests.snapshot();
+    const retry = pendingId(requests);
     expect(retry).not.toBe(original);
     abort.abort();
     await rejected;
@@ -104,9 +113,9 @@ test('lost reads recover with fresh IDs within the original deadline; actions ne
     const changed = vi.fn();
     const requests = makeRequests(changed);
     const result = runRequest(requests, { chat: 'chat', session: 'one', sections: ['character'] });
-    const [{ id: first }] = requests.snapshot();
+    const first = pendingId(requests);
     await vi.advanceTimersByTimeAsync(10_000);
-    const [{ id: second }] = requests.snapshot();
+    const second = pendingId(requests);
     expect(second).not.toBe(first);
     expect(requests.receive(first, 'one', 'other', {})).toBe(false);
     expect(requests.receive(first, 'one', 'chat', { xp: 100 })).toBe(true);
@@ -114,10 +123,10 @@ test('lost reads recover with fresh IDs within the original deadline; actions ne
     expect(await result).toEqual({ xp: 100 });
     expect(vi.getTimerCount()).toBe(0);
     const action = runRequest(requests, { chat: 'chat', session: 'one', action: { kind: 'test' } });
-    const [{ id }] = requests.snapshot();
+    const id = pendingId(requests);
     const rejected = expect(action).rejects.toThrow('did not respond');
     await vi.advanceTimersByTimeAsync(29_000);
-    expect(requests.snapshot()[0].id).toBe(id);
+    expect(pendingId(requests)).toBe(id);
     await vi.advanceTimersByTimeAsync(1000);
     await rejected;
     expect(vi.getTimerCount()).toBe(0);
@@ -174,7 +183,7 @@ test('after one timeout, game requests fail at once until WoW answers or a minut
       agent: true,
       sections: ['gear'],
     });
-    const [{ id }] = requests.snapshot();
+    const id = pendingId(requests);
     requests.heard();
     expect(requests.receive(id, 'one', 'chat', { ok: true })).toBe(true);
     expect(await retried).toEqual({ ok: true });
@@ -248,9 +257,9 @@ test('a valid late answer to a timed-out read lets new requests through again', 
       agent: true,
       sections: ['gear'],
     });
-    const [{ id: first }] = requests.snapshot();
+    const first = pendingId(requests);
     await vi.advanceTimersByTimeAsync(10_000);
-    const [{ id: retried }] = requests.snapshot();
+    const retried = pendingId(requests);
     const rejected = expect(read).rejects.toThrow('did not respond');
     clock += 30_000;
     await vi.advanceTimersByTimeAsync(20_000);
@@ -304,7 +313,7 @@ test('requests the player starts are still sent while WoW is unresponsive, with 
       runRequest(requests, { chat: 'chat', session: 'one', agent: true }),
     ).rejects.toThrow('was not sent');
     const simulation = runRequest(requests, { chat: 'sim', session: 'one', sections: ['gear'] });
-    const [{ id }] = requests.snapshot();
+    const id = pendingId(requests);
     expect(requests.receive(id, 'one', 'sim', { ok: true })).toBe(true);
     expect(await simulation).toEqual({ ok: true });
     // Its answer shows WoW is back, so the agent's calls go through again.

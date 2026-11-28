@@ -42,7 +42,11 @@ test('Eve presentation parts reach the shared Lua view with source, order and re
   );
   emit('call.settled', { callId: 'panel', outcome: 'completed', output: accepted });
   emit('content.completed', { partId: 'after', kind: 'text', value: after });
-  const message = replyContent(chat.messages[0])!;
+  const first = chat.messages[0];
+  if (!first) {
+    throw new Error('Expected the chat to hold a reply message');
+  }
+  const message = replyContent(first)!;
   expect(message.text).toBe(before + after);
   expect(message.parts?.map((part) => part.type)).toEqual(['text', 'ui', 'text']);
   expect(chat.activity).toEqual([]);

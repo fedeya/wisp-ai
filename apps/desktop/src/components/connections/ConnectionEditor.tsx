@@ -52,6 +52,7 @@ function validateContextWindow({ value }: { value: number | undefined }) {
   if (!validContextWindow(value)) {
     return 'Enter a whole number between 1 and 100,000,000.';
   }
+  return undefined;
 }
 
 function connectionDetails(provider: ProviderId, id: string | undefined, value: ConnectionFields) {

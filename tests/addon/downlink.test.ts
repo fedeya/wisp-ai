@@ -28,6 +28,15 @@ const uplinkHelpers = Array.from({ length: 768 }, (_, index) =>
   to_luastring('WispAI_S' + String(index + 257).padStart(4, '0')),
 );
 
+/** Reads a fixture element, failing the test when the fixture is shorter than expected. */
+function at<T>(items: readonly T[], index: number): T {
+  const item = items[index];
+  if (item === undefined) {
+    throw new Error(`Expected a fixture element at index ${index}`);
+  }
+  return item;
+}
+
 // Native APIs are stubbed, but JSON/zlib bytes, frame CRCs, production Lua and
 // helper bit mapping are real. This is a correctness test, not native FPS data.
 function harness(compact = false) {
@@ -146,7 +155,7 @@ function harness(compact = false) {
     for (let index = 0; index < uplinkHelpers.length; index++) {
       lua.lua_getfield(state, 1, uplinkHelpers[index]);
       if (lua.lua_toboolean(state, -1)) {
-        bytes[index >> 3] |= 1 << (index & 7);
+        bytes.writeUInt8(bytes.readUInt8(index >> 3) | (1 << (index & 7)), index >> 3);
       }
       lua.lua_pop(state, 1);
     }
@@ -211,7 +220,7 @@ end
   function write(frame: Buffer) {
     lua.lua_getglobal(L, to_luastring('disk'));
     for (let index = 0; index < downlinkHelpers.length; index++) {
-      lua.lua_pushboolean(L, Boolean(frame[index >> 3] & (1 << (index & 7))));
+      lua.lua_pushboolean(L, Boolean(frame.readUInt8(index >> 3) & (1 << (index & 7))));
       lua.lua_setfield(L, -2, downlinkHelpers[index]);
     }
     lua.lua_pop(L, 1);
@@ -289,7 +298,7 @@ test('compact responses can progress at 50ms while application packets retain th
     0,
     true,
   );
-  h.receive(frames[0]);
+  h.receive(at(frames, 0));
   for (const frame of frames.slice(1)) {
     h.write(frame);
     h.run('now=now+.051;timers[.05]();now=now+.04;timers[.04]()');
@@ -305,10 +314,10 @@ test('compact delivery progresses on slightly early 50ms callbacks without skipp
   const expected = snapshot(1);
   const frames = encodeMessage(prepareDownlink(expected).body, COMPACT_DOWNLINK_KIND, 77, 0, true);
   expect(frames.length).toBeGreaterThan(1);
-  h.write(frames[0]);
+  h.write(at(frames, 0));
   h.run('now=1;timers[.1]();now=1.001;timers[.04]();assert(resets==1)');
   for (let index = 1; index < frames.length; index++) {
-    h.write(frames[index]);
+    h.write(at(frames, index));
     const receivedAt = 1 + index * 0.049;
     h.run(
       `now=${receivedAt};timers[.05]();assert(resets==${index + 1});now=${receivedAt + 0.001};timers[.04]();assert(#logs==0,logs[1])`,
@@ -343,7 +352,7 @@ test('the exhausted bank receives full snapshots and compressed sparse patches w
   for (const frame of initial) {
     h.receive(frame);
   }
-  const second = snapshot(2, first.chats[0].messages[0].text + ' ¡Listo!');
+  const second = snapshot(2, at(at(first.chats, 0).messages, 0).text + ' ¡Listo!');
   const next = prepareDownlink(second, first);
   expect(next.full).toBe(false);
   for (const frame of encodeMessage(next.body, DOWNLINK_KIND, 77, initial.length, true)) {
@@ -527,7 +536,7 @@ assert(#displayed.chats[1].messages==251,'optimistic UI state remains separate f
   expect(h.snapshots).toHaveLength(2);
   const expected = structuredClone(first);
   expected.rev = 2;
-  expected.chats[3].messages[249].text += ' one two';
+  at(at(expected.chats, 3).messages, 249).text += ' one two';
   expect(h.snapshots[1]).toEqual(expected);
 });
 
@@ -589,7 +598,7 @@ test('a damaged fragment waits for retransmission and a sequence gap requests a 
     h.receive(frame);
   }
   const corrupt = Buffer.from(frames.at(-1)!);
-  corrupt[15] ^= 1;
+  corrupt.writeUInt8(corrupt.readUInt8(15) ^ 1, 15);
   const before = h.saved.length;
   h.receive(corrupt);
   expect(h.saved).toHaveLength(before);
@@ -597,7 +606,7 @@ test('a damaged fragment waits for retransmission and a sequence gap requests a 
   h.receive(frames.at(-1)!);
   expect(h.snapshots).toHaveLength(1);
   const gap = encodeMessage(prepareDownlink(snapshot(2)).body, DOWNLINK_KIND, 77, 50, true);
-  h.receive(gap[0]);
+  h.receive(at(gap, 0));
   h.receive(gap.at(-1)!);
   expect(h.lastAck()).toMatchObject({ a: [77, 50 + gap.length - 1, 1], n: true });
   expect(h.snapshots).toHaveLength(1);
@@ -638,7 +647,7 @@ test('addon settings pause both reusable reads and ACK saves without discarding 
   const h = harness();
   const frames = encodeMessage(prepareDownlink(snapshot(1)).body, DOWNLINK_KIND, 77, 0, true);
   h.run('AddonList={IsShown=function()return true end};states.WispAI_S0257=false');
-  h.receive(frames[0]);
+  h.receive(at(frames, 0));
   h.run('assert(saves==0 and resets==0 and states.WispAI_S0257==false)');
   h.run('AddonList=nil');
   for (const frame of frames) {
@@ -654,10 +663,10 @@ test('incoming data and its ACK wait for the current multipart uplink to finish'
   h.run(
     `ns.Transport.Send({type='say',chat='chat',text=${JSON.stringify(text)}});now=.04;timers[.04]()`,
   );
-  const firstUplink = decodeFrame(h.saved[0])!;
+  const firstUplink = decodeFrame(at(h.saved, 0))!;
   expect(firstUplink.flags & 2).toBe(0);
   const data = encodeMessage(prepareDownlink(snapshot(1)).body, DOWNLINK_KIND, 77, 0, true);
-  h.receive(data[0], false);
+  h.receive(at(data, 0), false);
   h.run('assert(resets==0)');
   for (let i = 0; i < 20; i++) {
     if (decodeFrame(h.saved.at(-1)!)!.flags & 2) {
