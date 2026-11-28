@@ -1,11 +1,11 @@
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { describe, expect, it } from '@effect/vitest';
-import { Effect, FileSystem, Layer, Path } from 'effect';
+import { Effect, FileSystem, Layer, Path, Schema } from 'effect';
 import { Digest } from 'effect/crypto';
 import { atlasLootUrl, parseCsv, unzip, type AtlasLootPin } from '../src/index.ts';
 import * as AtlasLoot from '../src/atlasloot.ts';
-import { dungeonLoot, type LootInstance } from '../src/datasets/dungeon-loot.ts';
+import { DungeonLoot, dungeonLoot } from '../src/datasets/dungeon-loot.ts';
 import * as Wago from '../src/wago.ts';
 import { cannedHttp } from './canned-http.ts';
 
@@ -81,7 +81,7 @@ const TABLES = Wago.layerMemory({
 function build(files = FILES, instanceMapIds = {}) {
   return dungeonLoot({ instanceMapIds }).build.pipe(
     Effect.provide(Layer.mergeAll(TABLES, AtlasLoot.layerFromFiles(files), NodeServices.layer)),
-    Effect.map((value) => value as unknown as { instances: LootInstance[] }),
+    Effect.flatMap(Schema.decodeUnknownEffect(DungeonLoot)),
   );
 }
 
@@ -174,15 +174,15 @@ describe('dungeon loot dataset', () => {
   it.effect('lists each boss loot with Forever additions and drop rates', () =>
     Effect.gen(function* () {
       const { instances } = yield* build();
-      const ragefire = instances.find((instance) => instance.key === 'Ragefire')!;
+      const ragefire = instances.find((instance) => instance.key === 'Ragefire');
       expect(ragefire).toMatchObject({
         name: 'Ragefire Chasm',
         instanceMapId: 389,
         kind: 'dungeon',
         levels: { min: 10, recommended: 13, max: 18 },
       });
-      expect(ragefire.forever).toBeUndefined();
-      expect(ragefire.bosses).toEqual([
+      expect(ragefire?.forever).toBeUndefined();
+      expect(ragefire?.bosses).toEqual([
         {
           name: 'Jergosh the Invoker',
           npcIds: [11518],
@@ -210,9 +210,9 @@ describe('dungeon loot dataset', () => {
   it.effect('places Forever instances by name and keeps bosses without drops', () =>
     Effect.gen(function* () {
       const { instances } = yield* build();
-      const alcaz = instances.find((instance) => instance.key === 'TheAlcazPrison')!;
+      const alcaz = instances.find((instance) => instance.key === 'TheAlcazPrison');
       expect(alcaz).toMatchObject({ name: 'Alcaz Prison', instanceMapId: 2994, forever: true });
-      expect(alcaz.bosses).toEqual([
+      expect(alcaz?.bosses).toEqual([
         { name: 'Overseer Wrex', items: [{ id: 276732 }] },
         { name: 'Zarla Ober', noDropsYet: true, items: [] },
         { name: 'Trash', extra: true, items: [{ id: 287020 }] },

@@ -89,8 +89,10 @@ function proficiencies(
   const skills: Record<string, Record<string, number>> = {};
   for (const bySubclass of Object.values(subclasses)) {
     for (const skill of Object.values(bySubclass)) {
+      // gating() kept only skills that some class has.
+      const classes = classesBySkill.get(skill) ?? new Map<string, number>();
       skills[String(skill)] = Object.fromEntries(
-        [...classesBySkill.get(skill)!].sort(([a], [b]) => a.localeCompare(b)),
+        [...classes].sort(([a], [b]) => a.localeCompare(b)),
       );
     }
   }

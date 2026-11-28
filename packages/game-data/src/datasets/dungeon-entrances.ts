@@ -1,23 +1,26 @@
 // @effect-migrated
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import type { FileSystem, Path } from 'effect';
 import { zonesAt } from '../coordinates.ts';
 import type { Row } from '../csv.ts';
-import { DatasetError, fromRows, readPackageJson, type Curated, type Dataset } from '../dataset.ts';
+import { Curated, DatasetError, fromRows, readPackageJson, type Dataset } from '../dataset.ts';
 import type { LuaTable } from '../lua.ts';
 import { num, str } from '../rows.ts';
 import { GameTables } from '../wago.ts';
 
-type Point = [mapId: number, x: number, y: number];
-export interface EntranceCuration {
+// An entrance: UI map ID, x, y.
+const Point = Schema.Tuple([Schema.Int, Schema.Finite, Schema.Finite]);
+type Point = typeof Point.Type;
+const EntranceCuration = Schema.Struct({
   // Instance map ID -> the zone(s) to draw its entrance on, only where more
   // than one zone's bounds contain it; generation lists the candidates.
-  zones: Record<string, number[]>;
+  zones: Schema.Record(Schema.String, Schema.Array(Schema.Int)),
   // Instance map ID -> entrance, for instances Map.db2 gives no position.
-  entrances: Record<string, Curated<Point>>;
+  entrances: Schema.Record(Schema.String, Curated(Point)),
   // Instance map ID -> why it is left out (unused or test maps).
-  skip: Record<string, string>;
-}
+  skip: Schema.Record(Schema.String, Schema.String),
+});
+export type EntranceCuration = typeof EntranceCuration.Type;
 
 const INSTANCE = new Set(['1', '2']); // Map.InstanceType: dungeon, raid
 
@@ -25,7 +28,7 @@ export const readCuration: Effect.Effect<
   EntranceCuration,
   DatasetError,
   FileSystem.FileSystem | Path.Path
-> = readPackageJson('curated/dungeon-entrances.json');
+> = readPackageJson('curated/dungeon-entrances.json', EntranceCuration);
 
 // Each instance's entrances, and what the curation must fix before they can be written.
 function placeEntrances(
@@ -47,6 +50,7 @@ function placeEntrances(
     const [worldX, worldY] = [num(map, 'Corpse_0'), num(map, 'Corpse_1')];
     if (continent >= 0 && (worldX !== 0 || worldY !== 0)) {
       const candidates = zonesAt(assignments, uiMaps, continent, worldX, worldY);
+      const [only] = candidates;
       const chosen = zones[id];
       if (chosen) {
         used.add(id);
@@ -65,8 +69,8 @@ function placeEntrances(
             points.push([match.mapId, match.x, match.y]);
           }
         }
-      } else if (candidates.length === 1) {
-        points.push([candidates[0]!.mapId, candidates[0]!.x, candidates[0]!.y]);
+      } else if (only && candidates.length === 1) {
+        points.push([only.mapId, only.x, only.y]);
       } else if (candidates.length > 1) {
         problems.push(
           `${str(map, 'MapName_lang')} (${id}): choose its zone in curated/dungeon-entrances.json from ` +

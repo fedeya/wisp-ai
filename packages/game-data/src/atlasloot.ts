@@ -12,7 +12,7 @@ import {
 } from 'effect';
 import { Digest } from 'effect/crypto';
 import { HttpClient } from 'effect/http';
-import { createRequire } from 'node:module';
+import { lauxlib, lua, lualib, to_jsstring, to_luastring } from 'fengari';
 import { unzip } from './zip.ts';
 
 // The pinned AtlasLoot Classic Forever release (CurseForge project 1422985,
@@ -20,25 +20,46 @@ import { unzip } from './zip.ts';
 // including Forever's own instances and the drops Forever added to classic
 // bosses, plus per-NPC drop rates. Wisp keeps facts only (IDs, names, levels,
 // rates), not AtlasLoot's code. Bump file, name and sha256 together.
-export interface AtlasLootPin {
-  project: number;
-  file: number;
-  name: string;
-  sha256: string;
-}
+export const AtlasLootPin = Schema.Struct({
+  project: Schema.Int,
+  file: Schema.Int,
+  name: Schema.String,
+  sha256: Schema.String,
+});
+export type AtlasLootPin = typeof AtlasLootPin.Type;
 
 export function atlasLootUrl(pin: AtlasLootPin) {
   const id = String(pin.file);
   return `https://mediafilez.forgecdn.net/files/${id.slice(0, -3)}/${Number(id.slice(-3))}/${pin.name}`;
 }
 
+// A Lua value as WISP_RESULT writes it: a table becomes an object keyed by
+// tostring(key), without its functions and stubs; nil becomes null.
+export type LuaJson = string | number | boolean | null | LuaObject;
+export interface LuaObject {
+  readonly [key: string]: LuaJson;
+}
+const LuaObject: Schema.Codec<LuaObject> = Schema.Record(
+  Schema.String,
+  Schema.suspend((): Schema.Codec<LuaJson> => LuaJson),
+);
+const LuaJson: Schema.Codec<LuaJson> = Schema.Union([
+  Schema.String,
+  Schema.Finite,
+  Schema.Boolean,
+  Schema.Null,
+  LuaObject,
+]);
+
 // What running AtlasLoot's loot modules leaves behind: each loot table by
 // key (tables keyed by Lua's own keys, as strings) and drop rates
 // (npc ID -> item ID -> percent).
-export interface AtlasLootData {
-  tables: Record<string, Record<string, unknown>>;
-  droprates: Record<string, Record<string, number>>;
-}
+const AtlasLootData = Schema.Struct({
+  tables: Schema.Record(Schema.String, LuaObject),
+  droprates: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Finite)),
+});
+export type AtlasLootData = typeof AtlasLootData.Type;
+const decodeResult = Schema.decodeEffect(Schema.fromJsonString(AtlasLootData));
 
 /** The pinned AtlasLoot release could not be downloaded, verified or run. */
 export class AtlasLootError extends Schema.TaggedError<AtlasLootError>()('AtlasLootError', {
@@ -137,15 +158,18 @@ export const runAtlasLoot = Effect.fnUntraced(function* (
   files: Map<string, Buffer>,
   areas: Map<number, string>,
 ) {
-  const require = createRequire(import.meta.url);
-  const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
+  // The string on top of the stack; undefined when it is no string or number.
+  const top = () => {
+    const value = lua.lua_tolstring(L, -1);
+    return value === null ? undefined : to_jsstring(value);
+  };
   const check = (status: number, what: string) =>
     status === lua.LUA_OK
       ? Effect.void
       : Effect.fail(
-          new AtlasLootError({ message: `${what}: ${to_jsstring(lua.lua_tolstring(L, -1))}` }),
+          new AtlasLootError({ message: `${what}: ${top() ?? 'error is not a string'}` }),
         );
   lua.lua_createtable(L, 0, areas.size);
   for (const [id, name] of areas) {
@@ -166,12 +190,11 @@ export const runAtlasLoot = Effect.fnUntraced(function* (
   }
   lua.lua_getglobal(L, to_luastring('WISP_RESULT'));
   yield* check(lua.lua_pcall(L, 0, 1, 0), 'AtlasLoot result');
-  const result: string = to_jsstring(lua.lua_tolstring(L, -1));
-  const data: AtlasLootData = yield* Effect.try({
-    try: () => JSON.parse(result),
-    catch: failure,
-  });
-  return data;
+  const result = top();
+  if (result === undefined) {
+    return yield* new AtlasLootError({ message: 'AtlasLoot result: not a string' });
+  }
+  return yield* decodeResult(result).pipe(Effect.mapError(failure));
 });
 
 // AtlasLoot from the given archive files, for tests.

@@ -1,7 +1,7 @@
 // @effect-migrated
 import { Effect, FileSystem, Path, Predicate, Schema } from 'effect';
 import type { AtlasLootError } from './atlasloot.ts';
-import { luaModule, type LuaValue } from './lua.ts';
+import { isList, luaModule, type LuaValue } from './lua.ts';
 import type { TableReadError } from './wago.ts';
 
 // Where a dataset's file goes and in which form:
@@ -33,11 +33,8 @@ export interface Dataset<R = never> {
 }
 
 // A fact the game tables do not carry, kept with where it came from.
-export interface Curated<T> {
-  value: T;
-  source: string;
-  note?: string;
-}
+export const Curated = <S extends Schema.Top>(value: S) =>
+  Schema.Struct({ value, source: Schema.String, note: Schema.optionalKey(Schema.String) });
 
 const failure = (cause: unknown) =>
   new DatasetError({ message: Predicate.isError(cause) ? cause.message : String(cause) });
@@ -46,26 +43,32 @@ const failure = (cause: unknown) =>
 // missing or malformed column.
 export const fromRows = <A>(transform: () => A) => Effect.try({ try: transform, catch: failure });
 
-// Reads a JSON file of this package, such as build.json or curated/<name>.json.
-export const readPackageJson = Effect.fnUntraced(function* (file: string) {
+// Reads and decodes a JSON file of this package, such as build.json or
+// curated/<name>.json.
+export const readPackageJson = Effect.fnUntraced(function* <S extends Schema.Decoder<unknown>>(
+  file: string,
+  schema: S,
+) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const text = yield* path
     .fromFileUrl(new URL(`../${file}`, import.meta.url))
     .pipe(Effect.flatMap(fs.readFileString), Effect.mapError(failure));
-  return yield* Effect.try({ try: () => JSON.parse(text), catch: failure });
+  return yield* Schema.decodeEffect(Schema.fromJsonString(schema))(text).pipe(
+    Effect.mapError(failure),
+  );
 });
 
-function sorted(value: unknown): unknown {
-  if (Array.isArray(value)) {
+function sorted(value: LuaValue): LuaValue {
+  if (isList(value)) {
     return value.map(sorted);
   }
   if (value && typeof value === 'object') {
     return Object.fromEntries(
       Object.keys(value)
         .sort()
-        .filter((key) => (value as Record<string, unknown>)[key] !== undefined)
-        .map((key) => [key, sorted((value as Record<string, unknown>)[key])]),
+        .filter((key) => value[key] !== undefined)
+        .map((key) => [key, sorted(value[key])]),
     );
   }
   return value;

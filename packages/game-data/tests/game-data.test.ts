@@ -1,6 +1,6 @@
 import * as NodeServices from '@effect/platform-node/NodeServices';
 import { describe, expect, it } from '@effect/vitest';
-import { Effect, FileSystem, Layer, Path } from 'effect';
+import { Effect, FileSystem, Layer, Path, Schema } from 'effect';
 import {
   datasets,
   latestBuild,
@@ -35,6 +35,20 @@ const UI_MAPS = parseCsv(
 // and The Barrens' bounds; Ragefire Chasm only inside Orgrimmar's.
 const WAILING = [-751.131, -2209.24] as const;
 const RAGEFIRE = [1816.756, -4423.372] as const;
+// A JSON dataset file as render() writes it.
+const decodeJsonOutput = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      generated: Schema.Struct({
+        dataset: Schema.String,
+        build: Schema.String,
+        tables: Schema.Array(Schema.String),
+        note: Schema.String,
+      }),
+      data: Schema.Json,
+    }),
+  ),
+);
 
 describe('csv and rows', () => {
   it('reads quoted cells, doubled quotes, commas and CRLF line ends', () => {
@@ -45,11 +59,11 @@ describe('csv and rows', () => {
   });
 
   it('reads typed columns and fails on missing or non-numeric ones', () => {
-    const [row] = parseCsv('ID,Level,Name\n7,abc,Orgrimmar');
-    expect(num(row!, 'ID')).toBe(7);
-    expect(str(row!, 'Name')).toBe('Orgrimmar');
-    expect(() => num(row!, 'Level')).toThrow('not a number');
-    expect(() => str(row!, 'Missing')).toThrow('Column Missing is missing');
+    const [row = {}] = parseCsv('ID,Level,Name\n7,abc,Orgrimmar');
+    expect(num(row, 'ID')).toBe(7);
+    expect(str(row, 'Name')).toBe('Orgrimmar');
+    expect(() => num(row, 'Level')).toThrow('not a number');
+    expect(() => str(row, 'Missing')).toThrow('Column Missing is missing');
   });
 });
 
@@ -57,8 +71,8 @@ describe('tables', () => {
   it.effect('reads a locale separately from the default enUS table', () =>
     Effect.gen(function* () {
       const tables = yield* Wago.GameTables;
-      expect((yield* tables.read('Map'))[0]!.MapName_lang).toBe('Ragefire Chasm');
-      expect((yield* tables.read('Map', 'esMX'))[0]!.MapName_lang).toBe('Sima Ígnea');
+      expect((yield* tables.read('Map'))[0]?.MapName_lang).toBe('Ragefire Chasm');
+      expect((yield* tables.read('Map', 'esMX'))[0]?.MapName_lang).toBe('Sima Ígnea');
       const missing = yield* Effect.flip(tables.read('Map', 'deDE'));
       expect(missing.message).toContain('Map:deDE');
     }).pipe(
@@ -162,20 +176,24 @@ describe('output', () => {
     expect(() => luaValue({ a: Number.NaN })).toThrow();
   });
 
-  it('renders Lua for the addon and sorted JSON for the bridge, both naming the build', () => {
-    const base = {
-      name: 'sample',
-      description: 'Sample.',
-      tables: ['Map'],
-      build: Effect.succeed({}),
-    };
-    const lua: Dataset = { ...base, output: { format: 'lua', path: 'a.lua', name: 'Sample' } };
-    const json: Dataset = { ...base, output: { format: 'json', path: 'a.json' } };
-    expect(render(lua, { a: 1 }, '1.2')).toContain('build 1.2 game tables (Map)');
-    const parsed = JSON.parse(render(json, { b: 1, a: { d: 2, c: undefined } }, '1.2'));
-    expect(parsed.generated).toMatchObject({ dataset: 'sample', build: '1.2', tables: ['Map'] });
-    expect(JSON.stringify(parsed.data)).toBe('{"a":{"d":2},"b":1}');
-  });
+  it.effect('renders Lua for the addon and sorted JSON for the bridge, both naming the build', () =>
+    Effect.gen(function* () {
+      const base = {
+        name: 'sample',
+        description: 'Sample.',
+        tables: ['Map'],
+        build: Effect.succeed({}),
+      };
+      const lua: Dataset = { ...base, output: { format: 'lua', path: 'a.lua', name: 'Sample' } };
+      const json: Dataset = { ...base, output: { format: 'json', path: 'a.json' } };
+      expect(render(lua, { a: 1 }, '1.2')).toContain('build 1.2 game tables (Map)');
+      const parsed = yield* decodeJsonOutput(
+        render(json, { b: 1, a: { d: 2, c: undefined } }, '1.2'),
+      );
+      expect(parsed.generated).toMatchObject({ dataset: 'sample', build: '1.2', tables: ['Map'] });
+      expect(JSON.stringify(parsed.data)).toBe('{"a":{"d":2},"b":1}');
+    }),
+  );
 });
 
 describe('coordinates', () => {
@@ -272,7 +290,7 @@ describe('generated files', () => {
       for (const dataset of datasets) {
         const file = yield* fs.readFileString(path.join(root, dataset.output.path));
         if (dataset.output.format === 'json') {
-          const { generated } = JSON.parse(file);
+          const { generated } = yield* decodeJsonOutput(file);
           expect(generated).toMatchObject({ dataset: dataset.name, build: pinned.build });
         } else {
           expect(file).toContain(`(dataset "${dataset.name}")`);

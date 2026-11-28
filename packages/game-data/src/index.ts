@@ -1,6 +1,7 @@
 // @effect-migrated
+import { Schema } from 'effect';
 import type { Effect, FileSystem, Path } from 'effect';
-import type { AtlasLoot, AtlasLootPin } from './atlasloot.ts';
+import { AtlasLootPin, type AtlasLoot } from './atlasloot.ts';
 import { readPackageJson, type Dataset, type DatasetError } from './dataset.ts';
 import { dungeonEntrances } from './datasets/dungeon-entrances.ts';
 import { dungeonLoot } from './datasets/dungeon-loot.ts';
@@ -11,9 +12,9 @@ import type { GameTables } from './wago.ts';
 export { parseCsv, type Row } from './csv.ts';
 export { mapPosition, zonesAt, type MapPoint } from './coordinates.ts';
 export {
+  Curated,
   DatasetError,
   render,
-  type Curated,
   type Dataset,
   type DatasetFailure,
   type Output,
@@ -33,14 +34,15 @@ export { unzip } from './zip.ts';
 
 // The Forever build every dataset is generated from; product is wago.tools'
 // name for it ("wowf"); atlasloot pins the loot tables' release.
-export interface Pinned {
-  product: string;
-  build: string;
-  atlasloot: AtlasLootPin;
-}
+const Pinned = Schema.Struct({
+  product: Schema.String,
+  build: Schema.String,
+  atlasloot: AtlasLootPin,
+});
+export type Pinned = typeof Pinned.Type;
 
 export const readPinned: Effect.Effect<Pinned, DatasetError, FileSystem.FileSystem | Path.Path> =
-  readPackageJson('build.json');
+  readPackageJson('build.json', Pinned);
 
 // What building every dataset reads besides the game tables' rows.
 export type DatasetSources = GameTables | AtlasLoot | FileSystem.FileSystem | Path.Path;
