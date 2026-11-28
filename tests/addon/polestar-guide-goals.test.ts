@@ -1,25 +1,31 @@
 import { test, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { Exit, Schema } from 'effect';
 import { guideGoal, guideInput } from '@wisp/agent/contract/game-actions';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 
 const require = createRequire(import.meta.url);
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
 
-type ZodType = { safeParse(value: unknown): { success: boolean } };
-type Shape = Record<string, ZodType>;
-const goalTypes = (guideGoal as unknown as { options: { shape: Shape }[] }).options.map(
-  (option) => option.shape,
-);
+// A field of any goal type.
+type FieldOf<Goal> = Goal extends { readonly fields: infer Fields } ? Fields[keyof Fields] : never;
+type Field = FieldOf<(typeof guideGoal.members)[number]>;
+// Each goal's fields, typed as `Field`, which `Object.entries` cannot infer for a union.
+const fieldsOf = (fields: { readonly [key: string]: Field }) => Object.entries(fields);
+
+// Whether `field`, as a goal's `key`, accepts `goal`, which has that key or not.
+const accepts = (key: string, field: Field, goal: object) =>
+  Exit.isSuccess(Schema.decodeUnknownExit(Schema.Struct({ [key]: field }))(goal));
 
 // The first sample a field accepts: names, IDs, coordinates, levels.
-function sample(field: ZodType) {
-  return ['Name', 1, 50, 10, true].find((value) => field.safeParse(value).success);
+function sample(key: string, field: Field) {
+  return ['Name', 1, 50, 10, true].find((value) => accepts(key, field, { [key]: value }));
 }
 
-// The zod schema gates what the agent sends; the addon checks the same
-// required fields before handing goals to Polestar. A field zod lets through
-// but Lua requires would refuse valid requests in game, so both lists must match.
+// The schema gates what the agent sends; the addon checks the same required
+// fields before handing goals to Polestar. A field the schema lets through but
+// Lua requires would refuse valid requests in game, so both lists must match.
 test('the addon requires exactly the goal fields the protocol schema requires', () => {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
@@ -87,7 +93,10 @@ test('the addon requires exactly the goal fields the protocol schema requires', 
   check(lua.lua_pcall(L, 2, 0, 0));
 
   const create = (goal: Record<string, unknown>) => {
-    const args = guideInput.parse({ title: 'Sync', steps: [{ goals: [goal] }] });
+    const args = Schema.decodeUnknownSync(guideInput)(
+      { title: 'Sync', steps: [{ goals: [goal] }] },
+      rejectUnknownKeys,
+    );
     lua.lua_getglobal(L, to_luastring('create'));
     push(args);
     check(lua.lua_pcall(L, 1, 1, 0));
@@ -96,19 +105,19 @@ test('the addon requires exactly the goal fields the protocol schema requires', 
     return result;
   };
 
-  expect(goalTypes).toHaveLength(18);
-  for (const shape of goalTypes) {
-    const type = (shape.type as unknown as { value: string }).value;
-    const required = Object.entries(shape).filter(
-      ([key, field]) => key !== 'type' && !field.safeParse(undefined).success,
+  expect(guideGoal.members).toHaveLength(18);
+  for (const { fields } of guideGoal.members) {
+    const type = fields.type.literal;
+    const required = fieldsOf(fields).filter(
+      ([key, field]) => key !== 'type' && !accepts(key, field, {}),
     );
     const goal: Record<string, unknown> = { type };
     for (const [key, field] of required) {
-      goal[key] = sample(field);
+      goal[key] = sample(key, field);
     }
     expect(create(goal), `${type} with its required fields`).toBe('ok');
     for (const [key] of required) {
-      // Lua must refuse what zod refuses; skip zod's own parse to reach it.
+      // Lua must refuse what the schema refuses; skip its decode to reach it.
       const { [key]: _omitted, ...rest } = goal;
       lua.lua_getglobal(L, to_luastring('create'));
       push({ title: 'Sync', steps: [{ goals: [rest] }] });

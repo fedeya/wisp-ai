@@ -4,6 +4,7 @@ import type { SchemaAST } from 'effect';
 import type { Effect } from 'effect';
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from 'effect/StandardSchema';
 import type * as Game from '../host/game-access.ts';
+import { zodJsonSchemaKey } from '../contract/tool-inputs.ts';
 
 /** What a tool receives besides its input. */
 export interface ToolContext {
@@ -120,13 +121,23 @@ const zodLayout = (schema: unknown) =>
 const zodLayoutAll = (schemas: unknown) =>
   Array.isArray(schemas) ? schemas.map(zodLayout) : zodLayout(schemas);
 
+const isSingleValue = Schema.is(Schema.Tuple([Schema.Unknown]));
+
 /**
  * A JSON Schema written as zod wrote it: keywords in zod's order, `properties`
- * on every object, and open objects without `additionalProperties: true`.
+ * on every object, open objects without `additionalProperties: true`, and the
+ * forms the `zodJsonSchemaKey` annotation names (`const` for a literal, `oneOf`
+ * for a discriminated union).
  */
 function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
+  const form = schema[zodJsonSchemaKey];
   const entries = Object.entries(schema).flatMap(([keyword, value]): [string, unknown][] => {
+    if (keyword === zodJsonSchemaKey) return [];
     if (keyword === 'additionalProperties' && value === true) return [];
+    if (form === 'const' && keyword === 'enum' && isSingleValue(value)) {
+      return [['const', value[0]]];
+    }
+    if (form === 'oneOf' && keyword === 'anyOf') return [['oneOf', zodLayoutAll(value)]];
     if (schemaKeywords.has(keyword)) return [[keyword, zodLayoutAll(value)]];
     if (schemaMapKeywords.has(keyword) && Predicate.isObject(value)) {
       const schemas = Object.entries(value).map(([name, entry]) => [name, zodLayout(entry)]);
@@ -165,7 +176,10 @@ export function effectToolInput<S extends Schema.ConstraintDecoder<unknown>>(
   const standard = Schema.toStandardSchemaV1(schema, { parseOptions });
   // Effect's own converter answers any other target, or rejects it.
   const converter = Schema.toStandardJSONSchemaV1(schema)['~standard'].jsonSchema;
-  const options = { onExcessProperty: parseOptions?.onExcessProperty };
+  const options = {
+    onExcessProperty: parseOptions?.onExcessProperty,
+    includeAnnotationKey: (key: string) => layout === 'zod' && key === zodJsonSchemaKey,
+  };
   const shape = (json: JsonSchema.JsonSchema) => (layout === 'zod' ? zodLayoutObject(json) : json);
   const convert = (side: Schema.Constraint, { target }: StandardJSONSchemaV1.Options) =>
     isDraft(target)

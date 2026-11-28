@@ -1,9 +1,13 @@
+// @effect-migrated
 import { Schema } from 'effect';
-import { z } from 'zod';
-import { IntBetween, LimitedString, withDefault } from './tool-inputs.ts';
+import {
+  Const,
+  DiscriminatedUnion,
+  IntBetween,
+  LimitedString,
+  withDefault,
+} from './tool-inputs.ts';
 
-// The read is an inspection and decodes with Schema; the update and undo are
-// game actions, still zod until their family moves.
 export const settingsRead = Schema.Struct({
   sections: withDefault(
     Schema.Array(Schema.Literals(['options', 'addons', 'action_bars', 'keybindings'])).check(
@@ -19,15 +23,19 @@ export const settingsRead = Schema.Struct({
   offset: withDefault(IntBetween(0, 10000), () => 0),
   limit: withDefault(IntBetween(1, 60), () => 30),
 });
-export const settingValue = z.union([z.boolean(), z.number().finite(), z.string().max(1000)]);
-export const settingsUpdate = z.discriminatedUnion('operation', [
-  z.object({
-    operation: z.literal('preview'),
-    changes: z
-      .array(z.object({ id: z.string().min(1).max(400), value: settingValue }))
-      .min(1)
-      .max(12),
-  }),
-  z.object({ operation: z.literal('apply'), transactionId: z.string().min(1).max(100) }),
+export const settingValue = Schema.Union([
+  Schema.Boolean,
+  Schema.Finite,
+  Schema.String.check(Schema.isMaxLength(1000)),
 ]);
-export const settingsUndo = z.object({ transactionId: z.string().min(1).max(100) });
+export const settingsUpdate = DiscriminatedUnion([
+  Schema.Struct({
+    operation: Const('preview'),
+    changes: Schema.Array(Schema.Struct({ id: LimitedString(1, 400), value: settingValue })).check(
+      Schema.isMinLength(1),
+      Schema.isMaxLength(12),
+    ),
+  }),
+  Schema.Struct({ operation: Const('apply'), transactionId: LimitedString(1, 100) }),
+]);
+export const settingsUndo = Schema.Struct({ transactionId: LimitedString(1, 100) });
