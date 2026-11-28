@@ -93,6 +93,33 @@ layer(NodeServices.layer)('WebSearch', (it) => {
     }),
   );
 
+  it.effect('a failed settings write reports what Node reported', () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.makeDirectory(f.file);
+      const error = yield* Effect.flip(f.search.save({ provider: 'exa' })).pipe(TestClock.withLive);
+      assert.strictEqual(error._tag, 'SearchSettingsError');
+      // Node's own text, such as "EPERM: operation not permitted, rename '…' -> '…'".
+      assert.match(error.message, /^E[A-Z]+: .*rename '/);
+      assert.notMatch(error.message, /FileSystem\.rename/);
+    }),
+  );
+
+  it.effect('a search.json that starts with a byte order mark fails to load, as before', () =>
+    Effect.gen(function* () {
+      const f = yield* fixture();
+      const fs = yield* FileSystem.FileSystem;
+      yield* fs.writeFileString(f.file, '﻿{"provider":"exa"}');
+      const error = yield* Effect.flip(f.open);
+      assert.strictEqual(error._tag, 'SearchSettingsError');
+      assert.strictEqual(
+        error.message,
+        'Cannot load search.json; the original file was preserved.',
+      );
+    }),
+  );
+
   it.effect('damaged settings stop the service from loading, and the file is kept', () =>
     Effect.gen(function* () {
       const f = yield* fixture();
