@@ -462,7 +462,7 @@ used only for saved replies from earlier versions.
 
 The server entrypoint starts the runtime and handles process signals.
 `runtime.ts` composes services; `packet-receiver.ts` owns game-session coordination,
-`turn-runner.ts` executes agent turns, `game-requests.ts` scopes pending game reads,
+`turns/runner.ts` executes agent turns, `game-requests.ts` scopes pending game reads,
 and the agent and desktop handlers expose their respective HTTP contracts.
 Dependencies and ports can be supplied to `startServer` for isolated integration tests.
 

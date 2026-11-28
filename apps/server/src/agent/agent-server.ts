@@ -13,7 +13,7 @@ import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/
 import { databaseRequest } from '@wisp/agent/contract/database';
 import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
-import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
+import type { TurnRunner } from '#/turns';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
@@ -49,12 +49,8 @@ interface AgentDependencies {
   readSimulationCharacter: (chat?: string) => Promise<unknown>;
   /** Told when the agent changes routines or panels the snapshot shows. */
   snapshot: Pick<SnapshotPublisher['Service'], 'invalidate'>;
-  presentReply: (
-    chat: Chat,
-    callId: string,
-    presentation: ReplyPresentation,
-    signal: AbortSignal,
-  ) => Promise<ReplyPresentation>;
+  /** Accepts a presentation of the chat's running turn; a hang-up interrupts it. */
+  presentReply: TurnRunner['Service']['present'];
 }
 type AgentContext = Context<{ Bindings: HttpBindings }>;
 // Web search requests are strict, like the protocol schema they use.
@@ -220,7 +216,9 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
 
   tool('/present', async ({ raw, chat, signal }) => {
     const data = rpcRequests.present.parse(raw);
-    return deps.presentReply(chat, data.callId, data.presentation, signal());
+    return runPromise(deps.presentReply(chat, data.callId, data.presentation), {
+      signal: signal(),
+    });
   });
 
   tool(

@@ -35,16 +35,8 @@ export function unsavedCapabilities(catalog: readonly Capability[] = defaultCapa
     ),
   );
   const settings = Context.get(context, Capabilities.CapabilitySettings);
-  // What `runtime.ts` gives its synchronous readers.
-  const reads = {
-    enabled: (id: string) => Effect.runSync(settings.enabled(id)),
-    snapshot: () => Effect.runSync(settings.snapshot),
-  };
   return {
     settings,
     integrations: Context.get(context, Capabilities.IntegrationState),
-    reads,
-    /** What `runtime.ts` gives the turn runner, except that publishing does nothing. */
-    turnCapabilities: { ...reads, publish: async () => {} },
   };
 }

@@ -19,20 +19,16 @@ export const TITLE_INSTRUCTIONS =
 
 // Titles are generated beside the reply, not as an agent tool call before it, so
 // naming never delays the first words of a new conversation.
-export async function generateConversationTitle(
-  complete: (instructions: string, text: string, signal: AbortSignal) => Promise<string>,
-  message: string,
-  signal: AbortSignal,
-): Promise<string | undefined> {
-  const raw = await complete(
-    TITLE_INSTRUCTIONS,
-    `<user_message>\n${message.slice(0, 2000)}\n</user_message>`,
-    signal,
+/** What a title completion reads with `TITLE_INSTRUCTIONS`: the first message, as data. */
+export function titleRequest(message: string): string {
+  return `<user_message>\n${message.slice(0, 2000)}\n</user_message>`;
+}
+
+/** The title a completion of `TITLE_INSTRUCTIONS` gives, if it holds one. */
+export function titleFromCompletion(raw: string): string | undefined {
+  // `split` always returns at least one line.
+  const [line = ''] = raw.trim().split('\n');
+  return conversationTitle(
+    line.replace(/^(?:title|título)\s*:\s*/i, '').replace(/^["'“”«»*]+|["'“”«»*.]+$/g, ''),
   );
-  const line = raw
-    .trim()
-    .split('\n')[0]!
-    .replace(/^(?:title|título)\s*:\s*/i, '')
-    .replace(/^["'“”«»*]+|["'“”«»*.]+$/g, '');
-  return conversationTitle(line);
 }
