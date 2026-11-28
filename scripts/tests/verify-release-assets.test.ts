@@ -2,6 +2,7 @@ import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:cryp
 import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Effect } from 'effect';
 import { afterEach, expect, test } from 'vitest';
 import { updateManifest } from '../update-manifest.ts';
 import { verifyReleaseAssets, verifyUpdaterSignature } from '../verify-release-assets.ts';
@@ -9,6 +10,9 @@ import { verifyReleaseAssets, verifyUpdaterSignature } from '../verify-release-a
 const version = '0.3.3-nightly.217.1';
 const name = `WispAI-${version}-windows-x64-setup.exe`;
 const folders: string[] = [];
+// This file's tests are not on Effect yet; they run the manifest it would publish.
+const nightlyManifest = (manifestVersion: string, signature: string) =>
+  Effect.runSync(updateManifest(manifestVersion, signature, '', 'nightly'));
 
 afterEach(async () => {
   await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true })));
@@ -54,7 +58,7 @@ async function releaseFolder() {
   );
   await writeFile(
     path.join(folder, 'latest.json'),
-    JSON.stringify(updateManifest(version, signature, '', 'nightly')),
+    JSON.stringify(nightlyManifest(version, signature)),
   );
   return { folder, file, installer, signature, key };
 }
@@ -110,17 +114,11 @@ test('an installer whose checksum was rewritten still fails its signature', asyn
 test('a manifest with another signature or version is rejected', async () => {
   const { folder, key, signature } = await releaseFolder();
   const manifest = path.join(folder, 'latest.json');
-  await writeFile(
-    manifest,
-    JSON.stringify(updateManifest(version, signature + 'x', '', 'nightly')),
-  );
+  await writeFile(manifest, JSON.stringify(nightlyManifest(version, signature + 'x')));
   await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
     'different signature',
   );
-  await writeFile(
-    manifest,
-    JSON.stringify(updateManifest('0.3.3-nightly.218.1', signature, '', 'nightly')),
-  );
+  await writeFile(manifest, JSON.stringify(nightlyManifest('0.3.3-nightly.218.1', signature)));
   await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
     'different version',
   );

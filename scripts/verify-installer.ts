@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import { mkdtemp, readFile, writeFile, access, mkdir, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { Result } from 'effect';
 import { installerBuildVersion } from './installer-version.ts';
 import { addonVersionFromToc } from '../apps/server/src/game/addon-version.ts';
 import { addonReleaseVersion } from './addon-release-version.ts';
@@ -15,10 +16,14 @@ const addonVersion = addonReleaseVersion(process.cwd());
 const installer = path.resolve(
   process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
 );
-const version = installerBuildVersion(
+const checked = installerBuildVersion(
   installer,
   JSON.parse(await readFile(path.join(path.dirname(installer), 'latest.json'), 'utf8')),
 );
+if (Result.isFailure(checked)) {
+  throw checked.failure;
+}
+const version = checked.success;
 const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-installer-'));
 if (!temporary.startsWith(path.resolve(tmpdir()) + path.sep)) {
   throw Error('Unsafe test directory.');
