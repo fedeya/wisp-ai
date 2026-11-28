@@ -391,10 +391,12 @@ const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options)
     removed?: string,
   ) {
     const rest = Object.fromEntries(
-      Object.entries(yield* Ref.get(kept)).filter(([name]) => !(name in next) && name !== removed),
+      Object.entries(yield* Ref.get(kept)).filter(
+        ([name]) => !Object.hasOwn(next, name) && name !== removed,
+      ),
     );
     const all: Readonly<Record<string, SavedServer | Schema.Json>> = { ...rest, ...next };
-    const order = (yield* Ref.get(savedOrder)).filter((name) => name in all);
+    const order = (yield* Ref.get(savedOrder)).filter((name) => Object.hasOwn(all, name));
     const written = Object.fromEntries(
       [...order, ...Object.keys(all).filter((name) => !order.includes(name))].flatMap((name) => {
         const entry = all[name];

@@ -790,6 +790,27 @@ describe('McpManager settings', () => {
     }),
   );
 
+  it.effect('reserved names such as constructor and __proto__ are kept in the file as found', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const text =
+        '{"servers":{"constructor":{"url":"https://a.example/mcp"},"__proto__":{"url":"https://b.example/mcp"}}}';
+      const saved = yield* makeSaved(text);
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        assert.deepStrictEqual(yield* manager.list(), []);
+        yield* manager.save(
+          parseSetup({ server: { name: 'added', url: 'https://example.com/mcp' } }),
+        );
+        const after = (yield* Ref.get(saved.config)) ?? '';
+        assert.ok(after.includes('"constructor":{"url":"https://a.example/mcp"}'));
+        assert.ok(after.includes('"__proto__":{"url":"https://b.example/mcp"}'));
+        assert.ok(after.includes('"added"'));
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
   it.effect('a malformed saved environment fails the open without naming its values', () =>
     Effect.gen(function* () {
       const connection = yield* fakeConnection();
