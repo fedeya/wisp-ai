@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer } from 'node:http';
-import { ServerLayer, startServerEffect, type ServerOptions } from '../src/runtime.ts';
+import { ServerServices, startServerEffect, type ServerOptions } from '../src/runtime.ts';
 import { SecretVault } from '../src/platform/secret-vault.ts';
 import { bridgeLogging } from '../src/logger.ts';
 import { gameEvent } from './game-event-fixture.ts';
@@ -29,7 +29,7 @@ async function fixture(configured = true, env: Record<string, string> = {}) {
   };
 }
 
-/** Starts the server with `ServerLayer`, except for a vault that keeps secrets in `f.secrets`. */
+/** Starts the server with `ServerServices` on a vault that keeps secrets in `f.secrets`. */
 function start(f: Awaited<ReturnType<typeof fixture>>, options: ServerOptions = f.options) {
   const vault = Layer.succeed(
     SecretVault,
@@ -43,8 +43,8 @@ function start(f: Awaited<ReturnType<typeof fixture>>, options: ServerOptions = 
   );
   return Effect.runPromise(
     startServerEffect(options).pipe(
-      // Later layers win: the fake vault replaces the one in ServerLayer.
-      Effect.provide(Layer.mergeAll(ServerLayer, vault, bridgeLogging)),
+      // The migrated services, ChatGPTAuth among them, use the fake vault.
+      Effect.provide(Layer.merge(ServerServices.pipe(Layer.provideMerge(vault)), bridgeLogging)),
       Effect.provideService(ConfigProvider.ConfigProvider, f.config),
     ),
   );

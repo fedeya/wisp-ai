@@ -6,15 +6,17 @@
 //   node apps/server/src/evals/eval-bridge.ts serve     prints {"url","token"} and serves
 import { createServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
-import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeServices from '@effect/platform-node/NodeServices';
-import { Effect, Layer, Redacted } from 'effect';
+import { Effect, Layer } from 'effect';
 import { bridgeLogging } from '../logger.ts';
-import { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import * as ChatGPTAuth from '../auth/index.ts';
+import * as HttpClient from '../platform/http-client.ts';
 import * as SecretVault from '../platform/secret-vault.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
+import { promiseChatGPTAuth } from '../runtime.ts';
 
 const dataDir = path.resolve(
   process.env.WISP_EVAL_DATA_DIR || path.join(os.homedir(), '.wisp-evals'),
@@ -23,7 +25,7 @@ const desktop =
   process.env.WISP_DESKTOP_EXE ||
   path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Wisp AI', 'wisp.exe');
 
-async function signIn(auth: ChatGPTAuth) {
+async function signIn(auth: ChatGPTAuth.PromiseChatGPTAuth) {
   if (auth.state().status === 'connected') {
     console.log('Evals are already signed in to ChatGPT as ' + auth.state().account + '.');
     return;
@@ -46,7 +48,7 @@ async function signIn(auth: ChatGPTAuth) {
 }
 
 async function serve(
-  auth: ChatGPTAuth,
+  auth: ChatGPTAuth.PromiseChatGPTAuth,
   proxyModel: Effect.Success<ReturnType<typeof createModelProxy>>,
 ) {
   if (auth.state().status !== 'connected') {
@@ -106,6 +108,17 @@ async function serve(
 }
 
 const command = process.argv[2];
+// ChatGPTAuth keeps the eval host identifier in the eval data folder.
+const authLayer = ChatGPTAuth.layerAt(dataDir).pipe(
+  Layer.provide([
+    SecretVault.layerHelper({ command: [desktop] }),
+    HttpClient.layer,
+    NodeCrypto.layerDigest,
+    NodeCrypto.layerSecureRandom,
+    NodeCrypto.layerSignature,
+  ]),
+  Layer.provide(NodeServices.layer),
+);
 await Effect.runPromise(
   Effect.gen(function* () {
     if (command !== 'sign-in' && command !== 'serve') {
@@ -113,37 +126,23 @@ await Effect.runPromise(
     }
     // The native vault keeps secrets under WISP_DATA_DIR, apart from the app's.
     process.env.WISP_DATA_DIR = dataDir;
-    // ChatGPTAuth still takes a Promise vault.
-    const secretVault = yield* SecretVault.SecretVault;
-    const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
-    const vault: SecretVault.PromiseSecretVault = {
-      read: (key) => runPromise(secretVault.read(key).pipe(Effect.map(Redacted.value))),
-      write: (key, value) => runPromise(secretVault.write(key, Redacted.make(value))),
-    };
-    const auth = yield* ChatGPTAuth.make(dataDir, vault);
-    yield* Effect.tryPromise({
-      try: async () => {
-        await mkdir(dataDir, { recursive: true });
-        await auth.load();
-      },
-      catch: (error) => error,
-    });
-    if (command === 'sign-in') {
-      return yield* Effect.tryPromise({ try: () => signIn(auth), catch: (error) => error });
-    }
-    const proxyModel = yield* createModelProxy(auth);
-    return yield* Effect.tryPromise({
-      try: () => serve(auth, proxyModel),
-      catch: (error) => error,
-    });
-  }).pipe(
-    Effect.provide(
-      Layer.merge(
-        SecretVault.layerHelper({ command: [desktop] }).pipe(Layer.provide(NodeServices.layer)),
-        bridgeLogging,
-      ),
-    ),
-  ),
+    return yield* Effect.gen(function* () {
+      const auth = promiseChatGPTAuth(
+        yield* ChatGPTAuth.ChatGPTAuth,
+        yield* Effect.context<never>(),
+      );
+      if (command === 'sign-in') {
+        return yield* Effect.tryPromise({ try: () => signIn(auth), catch: (error) => error });
+      }
+      const proxyModel = yield* createModelProxy(auth);
+      yield* Effect.tryPromise({
+        try: () => serve(auth, proxyModel),
+        catch: (error) => error,
+      });
+      // ChatGPTAuth lives as long as its layer: keep it until SIGTERM exits the process.
+      return yield* Effect.never;
+    }).pipe(Effect.provide(authLayer));
+  }).pipe(Effect.provide(bridgeLogging)),
 ).catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

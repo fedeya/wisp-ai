@@ -1,4 +1,4 @@
-import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../../auth/index.ts';
 import { readCompletedResponse } from '../../models/response-stream.ts';
 import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
 
@@ -77,7 +77,7 @@ export function verifiedWowheadResult(response: SearchResponse, query: string) {
 
 export async function searchWowhead(
   query: string,
-  auth: ChatGPTAuth,
+  auth: PromiseChatGPTAuth,
   model: string,
   signal?: AbortSignal,
 ) {

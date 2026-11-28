@@ -12,7 +12,7 @@ import type { Status } from '@wisp/protocol/desktop';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { CapabilitySettings } from '../integrations/capabilities.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
@@ -26,7 +26,7 @@ export const wowTransportInput = z.discriminatedUnion('action', [
   z.object({ action: z.literal('resume'), wow: z.string().min(1).optional() }),
 ]);
 interface DesktopDependencies {
-  auth: ChatGPTAuth;
+  auth: PromiseChatGPTAuth;
   connections: ModelConnections;
   webSearch: WebSearch;
   capabilitySettings: CapabilitySettings;

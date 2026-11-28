@@ -23,7 +23,9 @@ simulation adapters). Effect code calls it directly.
    types and schemas from the contract module (`@wisp/agent/contract/...`,
    `@wisp/protocol/...`). A migrated file starts with `// @effect-migrated`,
    and `tests/effect-migrated.test.ts` fails while it still has a scoreboard
-   pattern.
+   pattern. A migrated file has no unchecked casts, `any`, non-null
+   assertions, `@ts-ignore` comments or `JSON.parse`: fix the type, or decode
+   with `Schema` (the same test runs oxlint's type-aware rules on it).
 2. **Leaves before the root.** Migrate platform adapters, then domain services,
    then HTTP, then `apps/server/src/runtime.ts`. Until the root is migrated,
    `makeServer` declares the migrated services in its requirements and
@@ -322,6 +324,9 @@ with a link to itself.
 - [ ] TheWoWDB: decode responses into typed schemas instead of checking unknown
       JSON with `Schema.is`; the record the agent receives may then lose the
       source's key order ([#316](https://github.com/fedeya/wisp-ai/pull/316)).
+- [ ] ChatGPT sign-in: bound the id token's length before verifying it, as
+      `effect/jose` advises, and decode the model catalog strictly instead of
+      dropping fields of the wrong type ([#329](https://github.com/fedeya/wisp-ai/pull/329)).
 - [ ] Repositories, with phase 3 (proposed in [#307](https://github.com/fedeya/wisp-ai/pull/307)):
   - [ ] Transactions take `BEGIN IMMEDIATE`, including the startup read of
         chats.

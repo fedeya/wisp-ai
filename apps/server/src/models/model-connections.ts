@@ -19,7 +19,7 @@ import { modelReasoningEfforts } from '@wisp/agent/reasoning';
 import { modelToolSupport } from '@wisp/agent/tool-support';
 import { modelContextWindow } from '@wisp/agent/context-windows';
 import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import { readCompletedResponse } from './response-stream.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
 import type { PromiseSecretVault as SecretVault } from '../platform/secret-vault.ts';
@@ -101,12 +101,12 @@ export class ModelConnections implements ModelCatalog {
   private keys = new Set<string>();
   private file: string;
   private vault: SecretVault;
-  private chatgpt: ChatGPTAuth;
+  private chatgpt: PromiseChatGPTAuth;
   private fetcher: typeof fetch;
   constructor(
     file: string,
     vault: SecretVault,
-    chatgpt: ChatGPTAuth,
+    chatgpt: PromiseChatGPTAuth,
     fetcher: typeof fetch = fetch,
   ) {
     this.file = file;

@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { readCompletedResponse } from './response-stream.ts';
-import type { ChatGPTAuth } from '../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../auth/index.ts';
 import type { ModelConnections } from './model-connections.ts';
 import { modelTiming } from './model-timing.ts';
 import { Effect } from 'effect';
@@ -75,7 +75,7 @@ export async function proxyConnectionModel(
   );
 }
 export const createModelProxy = Effect.fnUntraced(function* (
-  auth: ChatGPTAuth,
+  auth: PromiseChatGPTAuth,
   failures?: ModelFailures,
 ) {
   const runSync = Effect.runSyncWith(yield* Effect.context<never>());
@@ -141,7 +141,11 @@ async function recordBodyFailure(
     throw error;
   }
 }
-async function sendChatGPTRequest(req: IncomingMessage, auth: ChatGPTAuth, signal: AbortSignal) {
+async function sendChatGPTRequest(
+  req: IncomingMessage,
+  auth: PromiseChatGPTAuth,
+  signal: AbortSignal,
+) {
   req.setEncoding('utf8');
   let raw = '';
   for await (const chunk of req) {

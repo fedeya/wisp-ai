@@ -116,6 +116,7 @@ export default defineConfig({
     },
     {
       files: [
+        'apps/server/src/auth/**',
         'apps/server/src/memory/**',
         'packages/releases/src/**',
         'packages/wow-bridge/src/**',

@@ -19,9 +19,13 @@ export function newerNightly(candidate: string, previous: string): boolean {
   const parts = (version: string) => version.replace('-nightly.', '.').split('.').map(Number);
   const next = parts(candidate),
     last = parts(previous);
-  for (let index = 0; index < next.length; index++) {
-    if (next[index] !== last[index]) {
-      return next[index] > last[index];
+  for (const [index, part] of next.entries()) {
+    const previousPart = last[index];
+    if (previousPart === undefined) {
+      return false;
+    }
+    if (part !== previousPart) {
+      return part > previousPart;
     }
   }
   return false;

@@ -5,7 +5,7 @@ import {
   verifiedWowheadResult,
   searchWowhead,
 } from '../src/integrations/search/wowhead-search.ts';
-import type { ChatGPTAuth } from '../src/auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../src/auth/index.ts';
 
 const url = 'https://www.wowhead.com/forever/spell=122/frost-nova';
 function response(citation = url, source = url) {
@@ -69,7 +69,7 @@ test('fallback search fixes the site scope and domain filter before invoking the
         'data: ' + JSON.stringify({ type: 'response.completed', response: response() }) + '\n\n',
       );
     },
-  } as unknown as ChatGPTAuth;
+  } as unknown as PromiseChatGPTAuth;
   const result = await searchWowhead('Frost Nova', auth, 'gpt-test');
   assert.equal(result.status, 'available');
   assert.equal(body.store, false);
@@ -99,7 +99,7 @@ test('mixed search results are reread in isolation using only Forever URLs', asy
         'data: ' + JSON.stringify({ type: 'response.completed', response: data }) + '\n\n',
       );
     },
-  } as unknown as ChatGPTAuth;
+  } as unknown as PromiseChatGPTAuth;
   const result = await searchWowhead('Frost Nova', auth, 'gpt-test');
   assert.equal(result.status, 'available');
   assert.equal(bodies.length, 2);
@@ -122,7 +122,7 @@ test('opening another version invalidates a summary even when its citations clai
 test('provider failure stays unavailable instead of falling back to another version', async () => {
   const auth = {
     authorized: async () => Response.json({ detail: 'Search unavailable' }, { status: 503 }),
-  } as unknown as ChatGPTAuth;
+  } as unknown as PromiseChatGPTAuth;
   const result = await searchWowhead('Missing', auth, 'gpt-test');
   assert.equal(result.status, 'unavailable');
   assert.equal(result.version, 'forever');

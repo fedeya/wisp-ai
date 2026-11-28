@@ -1,6 +1,6 @@
 import type { IncomingHttpHeaders } from 'node:http';
 import { MODEL_SESSION_HEADER } from '@wisp/agent/contract/agent-rpc';
-import { ChatGPTAuthError } from '../auth/chatgpt-auth.ts';
+import { ChatGPTAuthError } from '../auth/index.ts';
 
 /**
  * Why a model request failed, as a fixed category.
