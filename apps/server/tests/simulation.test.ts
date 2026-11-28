@@ -8,7 +8,7 @@ import * as NodePath from '@effect/platform-node/NodePath';
 import { ConfigProvider, Effect, FileSystem, Layer, Path, Schema } from 'effect';
 import { ChildProcessSpawner } from 'effect/process';
 import { TestClock } from 'effect/testing';
-import * as AppConfig from '../src/app-config.ts';
+import * as AppConfig from '#/platform/config';
 import * as Simulation from '../src/integrations/simulation/simulator.ts';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import { ClassMetadata } from '../src/integrations/simulation/adapters/types.ts';
