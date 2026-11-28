@@ -1,38 +1,34 @@
+// @effect-migrated allow=jsonParse,typescript/consistent-type-assertions,typescript/no-unsafe-type-assertion: read as before until the phase 9 item "MCP manager: decode the saved MCP configuration and its env secret with Schema (#336)"
+import type { Capability } from '@wisp/protocol/capabilities';
+import { mcpDefinition, mcpName, mcpSetup } from '@wisp/protocol/mcp-setup';
 import {
   Cause,
-  Deferred,
+  Context,
   Duration,
   Effect,
   Exit,
   Fiber,
+  Layer,
   Option,
+  Predicate,
   Redacted,
+  Ref,
   Schema,
   Scope,
+  ScopedCache,
   Semaphore,
 } from 'effect';
-import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
-import type { Capability } from '@wisp/protocol/capabilities';
-import * as McpConnection from './mcp-connection.ts';
-import { McpConnectionError, type McpSession, type McpTool } from './mcp-connection.ts';
 import * as Environment from '../host/environment.ts';
-export { mcpDefinition, mcpSetup };
-export type MCPDefinition = typeof mcpDefinition.Type & {
-  tools?: { name: string; description?: string }[];
-  hasToken?: boolean;
-  envKeys?: string[];
-};
-type Setup = typeof mcpSetup.Type;
-const decodeName = Schema.decodeUnknownSync(name);
-const decodeSetup = Schema.decodeUnknownSync(mcpSetup);
-const decodeDefinition = Schema.decodeUnknownSync(mcpDefinition);
+import * as McpStorage from '../host/mcp-storage.ts';
+import type { SavedServer } from '../host/mcp-storage.ts';
+import * as McpConnection from './mcp-connection.ts';
+import { McpConnectionError } from './mcp-connection.ts';
+import type { McpCallResult, McpSession, McpTool } from './mcp-connection.ts';
 
-export interface McpStorage {
-  readConfig(): Promise<string | undefined>;
-  writeConfig(servers: Record<string, MCPDefinition>): Promise<void>;
-  readSecret(key: string): Promise<string>;
-  writeSecret(key: string, value: string): Promise<void>;
-}
+type Setup = typeof mcpSetup.Type;
+const decodeName = Schema.decodeUnknownEffect(mcpName);
+const decodeSetup = Schema.decodeUnknownEffect(mcpSetup);
+const decodeDefinition = Schema.decodeUnknownEffect(mcpDefinition);
 
 export interface McpToolGroup {
   namespace: string;
@@ -42,7 +38,7 @@ export interface McpToolGroup {
 }
 
 export interface BundledMcp {
-  definition: MCPDefinition;
+  definition: SavedServer;
   capabilities: readonly Capability[];
   redirect?: RequestRedirect;
   toolsTtl?: Duration.Input;
@@ -52,79 +48,106 @@ export interface BundledMcp {
   toolGroups: readonly (McpToolGroup & { allow: readonly string[] })[];
 }
 
-class McpConfigurationError extends Error {
-  readonly _tag = 'McpConfigurationError';
-}
+/** A setup or switch is invalid, a tool may not be called, or the configuration did not save. */
+export class McpConfigurationError extends Schema.TaggedError<McpConfigurationError>()(
+  'McpConfigurationError',
+  { message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
+) {}
 
-class McpVaultError extends Error {
-  readonly _tag = 'McpVaultError';
-}
+/** A server's saved credentials could not be read or written. */
+export class McpVaultError extends Schema.TaggedError<McpVaultError>()('McpVaultError', {
+  message: Schema.String,
+  cause: Schema.optionalKey(Schema.Defect()),
+}) {}
 
-const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
-const configurationError = (cause: unknown) => new McpConfigurationError(message(cause), { cause });
-const vaultError = (cause: unknown) => new McpVaultError(message(cause), { cause });
+/**
+ * The failure's own message. A storage failure already carries the text the
+ * host shows the player, such as Node's for a file or the vault's own.
+ */
+const messageOf = (cause: unknown) => (Predicate.isError(cause) ? cause.message : String(cause));
+const configurationError = (cause: unknown) =>
+  new McpConfigurationError({ message: messageOf(cause), cause });
+const vaultError = (cause: unknown) => new McpVaultError({ message: messageOf(cause), cause });
+const unavailable = () =>
+  new McpConnectionError({ reason: 'Closed', message: 'MCP connection is unavailable' });
 
-/** An open session with the tools it listed on opening and its cached tool list. */
+/** A connection evicted or closed before it opened reads as unavailable. */
+const whenClosed = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.catchCause(effect, (cause): Effect.Effect<never, E | McpConnectionError> =>
+    Cause.hasInterruptsOnly(cause) ? Effect.fail(unavailable()) : Effect.failCause(cause),
+  );
+
+/** An open session, the tools it listed on opening and its cached tool list. */
 interface Connected {
   readonly session: McpSession;
   readonly tools: readonly McpTool[];
   readonly listTools: Effect.Effect<readonly McpTool[], McpConnectionError>;
 }
 
-interface Connection<E> {
-  readonly start: Effect.Effect<void>;
-  readonly awaitReady: Effect.Effect<Connected, E | McpConnectionError>;
-  readonly close: Effect.Effect<void>;
+/** What testing a setup found. */
+export interface Probe {
+  readonly tools: { name: string; description?: string | undefined }[];
+  readonly count: number;
 }
 
-function connection<E>(input: {
-  scope: Scope.Scope;
-  open: Effect.Effect<Connected, E, Scope.Scope>;
-  onClosed: () => void;
-}): Connection<E> {
-  const ready = Deferred.makeUnsafe<Connected, E | McpConnectionError>();
-  let lifetime: Fiber.Fiber<never, E> | undefined;
-
-  const start = Effect.gen(function* () {
-    if (lifetime) {
-      return;
-    }
-    // The same fiber opens the client and owns its scope until the connection closes.
-    const use = Effect.scoped(
-      input.open.pipe(
-        Effect.tap((connected) => Deferred.succeed(ready, connected)),
-        Effect.andThen(Effect.never),
-      ),
-    ).pipe(
-      Effect.onExit((exit) =>
-        Effect.sync(input.onClosed).pipe(
-          Effect.ensuring(
-            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
-              ? Deferred.fail(
-                  ready,
-                  new McpConnectionError({
-                    reason: 'Closed',
-                    message: 'MCP connection is unavailable',
-                  }),
-                )
-              : Deferred.done(ready, exit),
-          ),
-        ),
-      ),
-    );
-    lifetime = yield* Effect.forkIn(use, input.scope, { startImmediately: true });
-  });
-
-  const close = Effect.suspend(() => (lifetime ? Fiber.interrupt(lifetime) : Effect.void));
-  return { start, awaitReady: Deferred.await(ready), close };
+export interface Interface {
+  /** The servers Wisp ships, which are not saved and cannot be removed. */
+  readonly bundled: readonly BundledMcp[];
+  /** The custom servers, as saved. */
+  readonly list: () => Effect.Effect<SavedServer[]>;
+  /** Reads the saved servers, adding them to the ones already known. */
+  readonly load: () => Effect.Effect<void, McpConfigurationError>;
+  /** Connects to a setup and lists its tools, saving nothing. */
+  readonly test: (
+    setup: Setup,
+  ) => Effect.Effect<Probe, McpConfigurationError | McpConnectionError | McpVaultError>;
+  /** Tests a setup, then saves it and its credentials, replacing its open connection. */
+  readonly save: (
+    setup: Setup,
+  ) => Effect.Effect<Probe, McpConfigurationError | McpConnectionError | McpVaultError>;
+  /** Switches a custom server on or off; switching it off closes its connection. */
+  readonly setEnabled: (
+    key: string,
+    enabled: boolean,
+  ) => Effect.Effect<void, McpConfigurationError>;
+  /** Removes a custom server, its connection and its credentials. */
+  readonly remove: (key: string) => Effect.Effect<void, McpConfigurationError | McpVaultError>;
+  /** The tools of an enabled server, connecting to it if needed. */
+  readonly discover: (
+    key: string,
+  ) => Effect.Effect<readonly McpTool[], McpConnectionError | McpVaultError>;
+  /**
+   * Calls one of a server's tools. `refuse` sees the tool as the server lists
+   * it now and returns why the call may not run, or `undefined` to run it.
+   * `timeout` defaults to the bundled server's own, or 60 seconds.
+   */
+  readonly call: (
+    key: string,
+    toolName: string,
+    input: Readonly<Record<string, unknown>>,
+    refuse: (tool: McpTool) => string | undefined,
+    timeout?: Duration.Input,
+  ) => Effect.Effect<McpCallResult, McpConfigurationError | McpConnectionError | McpVaultError>;
+  /** Closes a server's connection; the next use opens a new one. */
+  readonly disconnect: (key: string) => Effect.Effect<void>;
 }
 
-const make = Effect.fnUntraced(function* (
-  root = '.',
-  storage?: McpStorage,
-  bundled: readonly BundledMcp[] = [],
-) {
-  const mcpConnection = yield* McpConnection.Service;
+/**
+ * The MCP servers: the bundled ones and the custom ones the host saves, and
+ * one shared connection to each enabled server. Connections close with the
+ * layer's scope.
+ */
+export class Service extends Context.Service<Service, Interface>()('@wisp/agent/McpManager') {}
+
+export interface Options {
+  /** Wisp's root, where stdio servers run; the working directory by default. */
+  readonly root?: string;
+  readonly bundled?: readonly BundledMcp[];
+}
+
+const make = Effect.fnUntraced(function* ({ root = '.', bundled = [] }: Options) {
+  const connection = yield* McpConnection.Service;
+  const storage = yield* McpStorage.Service;
   const builtIns = new Map(bundled.map((profile) => [profile.definition.name, profile]));
   const reservedNames = new Set(
     bundled.flatMap(({ definition, toolGroups }) => [
@@ -132,82 +155,78 @@ const make = Effect.fnUntraced(function* (
       ...toolGroups.map(({ namespace }) => namespace.replace(/-/g, '_')),
     ]),
   );
-  function customName(key: string) {
-    const parsed = decodeName(key);
-    if (reservedNames.has(parsed)) throw Error('MCP name is reserved: ' + parsed);
-    return parsed;
-  }
-  function parseSetup(input: Setup) {
-    const setup = decodeSetup(input);
-    customName(setup.server.name);
-    return setup;
-  }
-  let servers: Record<string, MCPDefinition> = {};
-  let closed = false;
-  const connectionScope = Scope.makeUnsafe('parallel');
-  const cacheUpdates = Semaphore.makeUnsafe(1);
-  const updates = Semaphore.makeUnsafe(1);
+  const servers = yield* Ref.make<Readonly<Record<string, SavedServer>>>({});
+  const updates = yield* Semaphore.make(1);
 
-  function exclusive<A, E>(effect: Effect.Effect<A, E>) {
-    // A caller can cancel while waiting, but a started write must finish updating in-memory state.
-    return updates.withPermit(Effect.uninterruptible(effect));
-  }
+  /** Saved changes run one at a time; a caller can cancel while waiting, but a started write finishes. */
+  const exclusive = <A, E>(effect: Effect.Effect<A, E>) =>
+    updates.withPermit(Effect.uninterruptible(effect));
+
+  const customName = Effect.fnUntraced(function* (key: string) {
+    const parsed = yield* decodeName(key).pipe(Effect.mapError(configurationError));
+    if (reservedNames.has(parsed)) {
+      return yield* new McpConfigurationError({ message: 'MCP name is reserved: ' + parsed });
+    }
+    return parsed;
+  });
+
+  const parseSetup = Effect.fnUntraced(function* (input: Setup) {
+    const setup = yield* decodeSetup(input).pipe(Effect.mapError(configurationError));
+    yield* customName(setup.server.name);
+    return setup;
+  });
+
+  const readSecret = (key: string) => storage.readSecret(key).pipe(Effect.mapError(vaultError));
+  const writeSecret = (key: string, value: string) =>
+    storage.writeSecret(key, Redacted.make(value)).pipe(Effect.mapError(vaultError));
 
   const load = Effect.fn('McpManager.load')(function* () {
-    if (!storage) return;
-    const text = yield* Effect.tryPromise({
-      try: () => storage.readConfig(),
-      catch: configurationError,
-    });
+    const text = yield* storage.readConfig.pipe(Effect.mapError(configurationError));
     if (text === undefined) {
       return;
     }
-    const loaded = yield* Effect.try({
-      try: () => {
-        const raw = JSON.parse(text) as { servers?: Record<string, Record<string, unknown>> };
-        return Object.fromEntries(
-          Object.entries(raw.servers || {}).map(([key, s]) => [
-            key,
-            {
-              ...decodeDefinition({ ...s, name: customName(key) }),
-              tools: Array.isArray(s.tools) ? (s.tools as MCPDefinition['tools']) : [],
-              hasToken: s.hasToken === true,
-              envKeys: Array.isArray(s.envKeys) ? (s.envKeys as string[]) : [],
-            },
-          ]),
-        );
-      },
+    const entries = yield* Effect.try({
+      try: () =>
+        Object.entries(
+          (JSON.parse(text) as { servers?: Record<string, Record<string, unknown>> }).servers || {},
+        ),
       catch: configurationError,
     });
-    Object.assign(servers, loaded);
+    const loaded = yield* Effect.forEach(entries, ([key, saved]) =>
+      Effect.gen(function* () {
+        const name = yield* customName(key);
+        const definition = yield* decodeDefinition({ ...saved, name }).pipe(
+          Effect.mapError(configurationError),
+        );
+        const found = yield* Effect.try({
+          try: () => ({
+            tools: Array.isArray(saved.tools) ? (saved.tools as SavedServer['tools']) : [],
+            hasToken: saved.hasToken === true,
+            envKeys: Array.isArray(saved.envKeys) ? (saved.envKeys as string[]) : [],
+          }),
+          catch: configurationError,
+        });
+        return [key, { ...definition, ...found }] as const;
+      }),
+    );
+    yield* Ref.update(servers, (current) => ({ ...current, ...Object.fromEntries(loaded) }));
   }, exclusive);
 
-  function list() {
-    return Object.values(servers).map((s) => ({ ...s, args: [...s.args] }));
-  }
+  const list = Effect.fn('McpManager.list')(function* () {
+    return Object.values(yield* Ref.get(servers)).map((s) => ({ ...s, args: [...s.args] }));
+  });
 
-  function readSecret(key: string) {
-    return Effect.tryPromise({
-      try: async () => (await storage?.readSecret(key)) ?? '',
-      catch: vaultError,
-    });
-  }
-
-  function writeSecret(key: string, value: string) {
-    if (!storage) return Effect.fail(new McpVaultError('MCP credential storage is unavailable'));
-    return Effect.tryPromise({ try: () => storage.writeSecret(key, value), catch: vaultError });
-  }
-
+  /** The bearer token and environment a server connects with. */
   const credentialsFor = Effect.fn('McpManager.credentialsFor')(function* (
-    server: MCPDefinition,
+    server: SavedServer,
     token?: string,
-    providedEnv?: Record<string, string>,
+    providedEnv?: Readonly<Record<string, string>>,
   ) {
     const secret =
       token !== undefined
         ? Redacted.make(token)
         : server.hasToken
-          ? Redacted.make(yield* readSecret('mcp:' + server.name + ':token'))
+          ? yield* readSecret('mcp:' + server.name + ':token')
           : server.tokenEnv
             ? Option.getOrUndefined(
                 yield* Environment.secret(server.tokenEnv).pipe(Effect.mapError(vaultError)),
@@ -215,7 +234,7 @@ const make = Effect.fnUntraced(function* (
             : undefined;
     let env = providedEnv;
     if (env === undefined && server.envKeys?.length) {
-      const stored = yield* readSecret('mcp:' + server.name + ':env');
+      const stored = Redacted.value(yield* readSecret('mcp:' + server.name + ':env'));
       env = yield* Effect.try({
         try: () => JSON.parse(stored || '{}') as Record<string, string>,
         catch: vaultError,
@@ -225,39 +244,94 @@ const make = Effect.fnUntraced(function* (
   });
 
   /** Opens a session and lists its tools, both within 15 seconds. */
-  const openSession = Effect.fnUntraced(function* (
-    server: MCPDefinition,
-    credentials: Effect.Success<ReturnType<typeof credentialsFor>>,
-    redirect?: RequestRedirect,
-    toolsTtl?: Duration.Input,
-  ) {
-    const session = yield* mcpConnection.open(server, credentials.secret, credentials.env, {
-      root,
-      redirect,
-    });
-    const listTools =
-      toolsTtl !== undefined
-        ? yield* Effect.cachedWithTTL(session.tools, (exit) =>
-            Exit.isSuccess(exit) ? toolsTtl : Duration.zero,
-          )
-        : yield* Effect.cached(session.tools);
-    const tools = yield* listTools;
-    return { session, tools, listTools } satisfies Connected;
-  }, Effect.timeout('15 seconds'));
+  const openSession = Effect.fnUntraced(
+    function* (
+      server: SavedServer,
+      credentials: Effect.Success<ReturnType<typeof credentialsFor>>,
+      redirect?: RequestRedirect,
+      toolsTtl?: Duration.Input,
+    ) {
+      const session = yield* connection.open(server, credentials.secret, credentials.env, {
+        root,
+        redirect,
+      });
+      const listTools =
+        toolsTtl !== undefined
+          ? yield* Effect.cachedWithTTL(session.tools, (exit) =>
+              Exit.isSuccess(exit) ? toolsTtl : Duration.zero,
+            )
+          : yield* Effect.cached(session.tools);
+      const tools = yield* listTools;
+      return { session, tools, listTools } satisfies Connected;
+    },
+    Effect.timeout('15 seconds'),
+    Effect.catchTag('TimeoutError', (cause) =>
+      Effect.fail(new McpConnectionError({ reason: 'Timeout', message: cause.message, cause })),
+    ),
+  );
 
-  const open = Effect.fn('McpManager.open')(function* (
-    server: MCPDefinition,
-    profile?: BundledMcp,
-  ) {
+  /** A bundled server, or an enabled custom one, by key. */
+  const enabledServer = Effect.fnUntraced(function* (key: string) {
+    const profile = builtIns.get(key);
+    const server = profile?.definition ?? (yield* Ref.get(servers))[key];
+    if (!server?.enabled) {
+      return yield* unavailable();
+    }
+    return { server, profile };
+  });
+
+  const open = Effect.fn('McpManager.open')(function* (key: string) {
+    const { server, profile } = yield* enabledServer(key);
     const credentials = yield* credentialsFor(server);
     return yield* openSession(server, credentials, profile?.redirect, profile?.toolsTtl);
   });
 
-  const connections = new Map<string, Connection<Effect.Error<ReturnType<typeof open>>>>();
+  // One connection per key. Callers of the same key share an open in flight;
+  // a failed open is not kept, so the next caller tries again.
+  const connections = yield* ScopedCache.makeWith<
+    string,
+    Connected,
+    McpConnectionError | McpVaultError
+  >({
+    capacity: Number.POSITIVE_INFINITY,
+    lookup: (key: string) =>
+      Effect.gen(function* () {
+        const entry = yield* Scope.Scope;
+        // What the open acquires lives in its own scope, released as soon as opening fails.
+        const resources = yield* Scope.fork(entry, 'sequential');
+        // Evicting the entry interrupts an open in flight, then releases what it acquired.
+        const opening = yield* open(key).pipe(
+          Scope.provide(resources),
+          Effect.onError((cause) => Scope.close(resources, Exit.failCause(cause))),
+          Effect.forkIn(entry),
+        );
+        return yield* Fiber.join(opening);
+      }),
+    timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
+  });
 
-  const probe = Effect.fn('McpManager.probe')(function* (input: Setup) {
-    const server = { ...servers[input.server.name], ...input.server };
-    const credentials = yield* credentialsFor(server, input.token, input.env);
+  const connected = Effect.fnUntraced(function* (key: string) {
+    yield* enabledServer(key);
+    return yield* whenClosed(ScopedCache.get(connections, key));
+  });
+
+  /** Closes `entry` if it is still the key's connection; a newer one stays. */
+  const evict = (key: string, entry: Connected) =>
+    ScopedCache.invalidateWhen(connections, key, (current) => current === entry).pipe(
+      Effect.asVoid,
+    );
+
+  /** Closes the key's connection and waits for it to close; a closed manager has none. */
+  const disconnectConnection = (key: string) =>
+    ScopedCache.invalidate(connections, key).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Effect.void : Effect.failCause(cause),
+      ),
+    );
+
+  const probe = Effect.fn('McpManager.probe')(function* (setup: Setup) {
+    const server = { ...(yield* Ref.get(servers))[setup.server.name], ...setup.server };
+    const credentials = yield* credentialsFor(server, setup.token, setup.env);
     const { tools } = yield* Effect.scoped(openSession(server, credentials));
     return {
       tools: tools.map((t) => ({ name: t.name, description: t.description })),
@@ -265,27 +339,16 @@ const make = Effect.fnUntraced(function* (
     };
   });
 
-  const test = Effect.fn('McpManager.test')(function* (input: Setup) {
-    const parsed = yield* Effect.try({
-      try: () => parseSetup(input),
-      catch: configurationError,
-    });
-    return yield* probe(parsed);
-  });
-
-  const save = Effect.fn('McpManager.save')(function* (input: Setup) {
-    const parsed = yield* Effect.try({
-      try: () => parseSetup(input),
-      catch: configurationError,
-    });
-    const tested = yield* probe(parsed);
-    yield* saveTestedSetup(parsed, tested.tools);
-    return tested;
+  const persist = Effect.fn('McpManager.persist')(function* (
+    next: Readonly<Record<string, SavedServer>>,
+  ) {
+    yield* storage.writeConfig(next).pipe(Effect.mapError(configurationError));
+    yield* Ref.set(servers, next);
   });
 
   const saveTestedSetup = Effect.fn('McpManager.saveTestedSetup')(function* (
     setup: Setup,
-    tools: MCPDefinition['tools'],
+    tools: SavedServer['tools'],
   ) {
     const key = setup.server.name;
     if (setup.token !== undefined) {
@@ -294,39 +357,41 @@ const make = Effect.fnUntraced(function* (
     if (setup.env !== undefined) {
       yield* writeSecret('mcp:' + key + ':env', JSON.stringify(setup.env));
     }
-    const old = servers[key];
+    const current = yield* Ref.get(servers);
+    const old = current[key];
     const definition = {
       ...setup.server,
       tools,
       hasToken: setup.token !== undefined ? !!setup.token : old?.hasToken,
       envKeys: setup.env !== undefined ? Object.keys(setup.env) : old?.envKeys,
     };
-    yield* persist({ ...servers, [key]: definition });
+    yield* persist({ ...current, [key]: definition });
     yield* disconnectConnection(key);
   }, exclusive);
 
-  const persist = Effect.fn('McpManager.persist')(function* (next: Record<string, MCPDefinition>) {
-    yield* Effect.tryPromise({
-      try: () => {
-        if (!storage) throw Error('MCP configuration storage is unavailable');
-        return storage.writeConfig(next);
-      },
-      catch: configurationError,
-    });
-    servers = next;
+  const test = Effect.fn('McpManager.test')(function* (input: Setup) {
+    return yield* probe(yield* parseSetup(input));
+  });
+
+  const save = Effect.fn('McpManager.save')(function* (input: Setup) {
+    const setup = yield* parseSetup(input);
+    const tested = yield* probe(setup);
+    yield* saveTestedSetup(setup, tested.tools);
+    return tested;
   });
 
   const setEnabled = Effect.fn('McpManager.setEnabled')(function* (key: string, enabled: boolean) {
-    yield* Effect.try({ try: () => customName(key), catch: configurationError });
-    if (typeof enabled !== 'boolean') {
-      return yield* Effect.fail(new McpConfigurationError('Invalid MCP switch'));
+    yield* customName(key);
+    if (!Predicate.isBoolean(enabled)) {
+      return yield* new McpConfigurationError({ message: 'Invalid MCP switch' });
     }
-    const server = servers[key];
+    const current = yield* Ref.get(servers);
+    const server = current[key];
     if (!server) {
-      return yield* Effect.fail(new McpConfigurationError('Unknown MCP connection'));
+      return yield* new McpConfigurationError({ message: 'Unknown MCP connection' });
     }
     if (server.enabled !== enabled) {
-      yield* persist({ ...servers, [key]: { ...server, enabled } });
+      yield* persist({ ...current, [key]: { ...server, enabled } });
       if (!enabled) {
         yield* disconnectConnection(key);
       }
@@ -334,128 +399,64 @@ const make = Effect.fnUntraced(function* (
   }, exclusive);
 
   const remove = Effect.fn('McpManager.remove')(function* (key: string) {
-    yield* Effect.try({ try: () => customName(key), catch: configurationError });
-    const next = { ...servers };
-    delete next[key];
+    yield* customName(key);
+    const next = Object.fromEntries(
+      Object.entries(yield* Ref.get(servers)).filter(([name]) => name !== key),
+    );
     yield* persist(next);
     yield* disconnectConnection(key);
     yield* writeSecret('mcp:' + key + ':token', '');
     yield* writeSecret('mcp:' + key + ':env', '');
   }, exclusive);
 
-  const getConnection = Effect.fn('McpManager.getConnection')(
-    function* (key: string) {
-      const profile = builtIns.get(key);
-      const server = profile?.definition ?? servers[key];
-      if (closed || !server?.enabled) {
-        return yield* new McpConnectionError({
-          reason: 'Closed',
-          message: 'MCP connection is unavailable',
-        });
-      }
-      const existing = connections.get(key);
-      if (existing) {
-        return existing;
-      }
-      const entry = connection({
-        scope: connectionScope,
-        open: open(server, profile),
-        onClosed: () => {
-          if (connections.get(key) === entry) {
-            connections.delete(key);
-          }
-        },
-      });
-      connections.set(key, entry);
-      yield* entry.start;
-      return entry;
-    },
-    (effect) => cacheUpdates.withPermit(Effect.uninterruptible(effect)),
-  );
-
-  function connect(key: string) {
-    return getConnection(key).pipe(Effect.flatMap((connection) => connection.awaitReady));
-  }
-
   const discover = Effect.fn('McpManager.discover')(function* (key: string) {
-    const entry = yield* getConnection(key);
-    const connected = yield* entry.awaitReady;
-    return yield* connected.listTools.pipe(Effect.tapError(() => disconnectConnection(key, entry)));
+    const entry = yield* connected(key);
+    return yield* entry.listTools.pipe(Effect.tapError(() => evict(key, entry)));
   });
 
   const call = Effect.fn('McpManager.call')(function* (
     key: string,
     toolName: string,
-    input: Record<string, unknown>,
-    check: (tool: McpTool) => void,
-    timeout = builtIns.get(key)?.callTimeoutMs ?? 60_000,
+    input: Readonly<Record<string, unknown>>,
+    refuse: (tool: McpTool) => string | undefined,
+    timeout?: Duration.Input,
   ) {
-    const entry = yield* getConnection(key);
-    const { session, listTools } = yield* entry.awaitReady;
-    const tools = yield* listTools.pipe(Effect.tapError(() => disconnectConnection(key, entry)));
-    yield* Effect.try({
-      try: () => {
-        if (connections.get(key) !== entry) throw Error('MCP connection is unavailable');
-        const tool = tools.find((tool) => tool.name === toolName);
-        if (!tool) throw Error('Unknown MCP tool');
-        check(tool);
-      },
-      catch: configurationError,
-    });
-    return yield* session
-      .callTool(toolName, input, timeout)
-      .pipe(Effect.tapError(() => disconnectConnection(key, entry)));
+    const entry = yield* connected(key);
+    const tools = yield* entry.listTools.pipe(Effect.tapError(() => evict(key, entry)));
+    const current = yield* ScopedCache.getSuccess(connections, key);
+    if (Option.getOrUndefined(current) !== entry) {
+      return yield* new McpConfigurationError({ message: 'MCP connection is unavailable' });
+    }
+    const tool = tools.find((tool) => tool.name === toolName);
+    if (!tool) {
+      return yield* new McpConfigurationError({ message: 'Unknown MCP tool' });
+    }
+    const refusal = refuse(tool);
+    if (refusal !== undefined) {
+      return yield* new McpConfigurationError({ message: refusal });
+    }
+    return yield* entry.session
+      .callTool(toolName, input, timeout ?? builtIns.get(key)?.callTimeoutMs ?? 60_000)
+      .pipe(Effect.tapError(() => evict(key, entry)));
   });
 
-  const disconnectConnection = Effect.fn('McpManager.disconnect')(function* (
-    key: string,
-    expected?: Connection<Effect.Error<ReturnType<typeof open>>>,
-  ) {
-    const connection = yield* cacheUpdates.withPermit(
-      Effect.sync(() => {
-        const connection = connections.get(key);
-        if (!connection || (expected && expected !== connection)) return;
-        connections.delete(key);
-        return connection;
-      }),
-    );
-    if (connection) {
-      yield* connection.close;
-    }
-  }, Effect.uninterruptible);
+  const disconnect = Effect.fn('McpManager.disconnect')(function* (key: string) {
+    yield* exclusive(disconnectConnection(key));
+  });
 
-  function disconnect(key: string) {
-    return exclusive(disconnectConnection(key));
-  }
-
-  const close = Effect.fn('McpManager.close')(function* () {
-    yield* cacheUpdates.withPermit(
-      Effect.sync(() => {
-        closed = true;
-        connections.clear();
-      }),
-    );
-    yield* Scope.close(connectionScope, Exit.void);
-  }, exclusive);
-
-  return {
-    get servers() {
-      return servers;
-    },
-    list,
+  return Service.of({
     bundled,
+    list,
     load,
     test,
     save,
     setEnabled,
     remove,
-    connect,
     discover,
     call,
     disconnect,
-    close,
-  };
+  });
 });
 
-export type McpManager = Effect.Success<ReturnType<typeof make>>;
-export const McpManager = { make };
+/** Needs the host's `McpStorage` and an `McpConnection` to open servers with. */
+export const layer = (options: Options = {}) => Layer.effect(Service, make(options));

@@ -8,7 +8,7 @@ import {
   type DesktopRouteReply,
 } from '@wisp/protocol/desktop-routes';
 import type { Status } from '@wisp/protocol/desktop';
-import type { McpManager } from '@wisp/agent/mcp-manager';
+import type * as McpManager from '@wisp/agent/mcp-manager';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
@@ -32,7 +32,7 @@ interface DesktopDependencies {
   connections: ModelConnections;
   webSearch: WebSearch;
   capabilitySettings: CapabilitySettings;
-  mcpManager: McpManager;
+  mcpManager: McpManager.Interface;
   panelStore: PanelStore;
   routineStore: RoutineStore;
   accountOperation: <T>(operation: () => Promise<T>) => Promise<T>;
@@ -47,7 +47,7 @@ interface DesktopDependencies {
   setWowTransport: (input: typeof wowTransportInput.Type) => Effect.Effect<void, unknown>;
   setAppUpdate: (version: string | null) => void;
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
-  refreshMcpCatalog: () => void;
+  refreshMcpCatalog: () => Effect.Effect<void>;
   requestStop: () => void;
   changed: () => void;
 }
@@ -142,7 +142,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       const result = await runPromise(
         Effect.gen(function* () {
           const tested = yield* mcpManager.save(setup);
-          deps.refreshMcpCatalog();
+          yield* deps.refreshMcpCatalog();
           yield* Effect.tryPromise({
             try: () => capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled),
             catch: (error) => error,
@@ -158,7 +158,7 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await runPromise(
         Effect.gen(function* () {
           yield* mcpManager.remove(name);
-          deps.refreshMcpCatalog();
+          yield* deps.refreshMcpCatalog();
           yield* Effect.tryPromise({
             try: () => capabilitySettings.publish(),
             catch: (error) => error,

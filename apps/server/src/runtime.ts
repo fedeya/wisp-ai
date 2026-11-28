@@ -28,7 +28,7 @@ import { readCharacterNames } from './chat/character-keys.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
-import { readJson, writeJson } from './json-file.ts';
+import { readJson } from './json-file.ts';
 import { createAgentHandler } from './agent/agent-server.ts';
 import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
@@ -54,9 +54,8 @@ import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
-import * as McpConnection from '@wisp/agent/mcp-connection';
-import { McpManager } from '@wisp/agent/mcp-manager';
-import * as Everloot from '@wisp/agent/everloot';
+import * as McpManager from '@wisp/agent/mcp-manager';
+import * as ServerMcp from './integrations/mcp/manager.ts';
 import * as SecretVault from './platform/secret-vault.ts';
 import { startDesktopServer } from './api/desktop-server.ts';
 import { listenOnLoopback } from './loopback-server.ts';
@@ -87,6 +86,9 @@ import { AgentHistory } from './agent/agent-history.ts';
 
 const packageMetadata = Schema.Struct({ version: Schema.String.check(Schema.isMinLength(1)) });
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
+const settingsLayer = Settings.layer.pipe(
+  Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom]),
+);
 
 /**
  * The migrated services `makeServer` receives from its caller, on the
@@ -96,7 +98,15 @@ const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 export const ServerServices = Layer.mergeAll(
   AppConfig.layer,
   AgentConfig.layer,
-  McpConnection.layer.pipe(Layer.provide(AgentConfig.layer)),
+  ServerMcp.layer.pipe(
+    Layer.provide([
+      AppConfig.layer,
+      AgentConfig.layer,
+      settingsLayer,
+      wowPlatform,
+      NodeCrypto.layerSecureRandom,
+    ]),
+  ),
   wowPlatform,
   Simulation.layer.pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),
@@ -113,7 +123,7 @@ export const ServerServices = Layer.mergeAll(
       NodeCrypto.layerSignature,
     ]),
   ),
-  Settings.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom])),
+  settingsLayer,
 );
 
 /** The migrated services; `main.ts` and `startServer` provide it. */
@@ -202,7 +212,7 @@ export const makeServer = Effect.fn('Server.make')(
     const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
     const auth = promiseChatGPTAuth(chatgpt, context);
     // End of adapters.
-    const { features: featureOverrides, mcpConfig } = yield* settings.get;
+    const { features: featureOverrides } = yield* settings.get;
     const features = yield* startup(() =>
       Features.start({
         channel: featureChannel(bridgeVersion, appConfig.releaseBuild),
@@ -211,31 +221,13 @@ export const makeServer = Effect.fn('Server.make')(
         onChange: () => featuresChanged(),
       }),
     );
-    const mcpFile = mcpConfig
-      ? path.resolve(paths.dataRoot, mcpConfig)
-      : path.join(runtime, 'mcp.json');
-    const mcpManager = yield* McpManager.make(
-      ROOT,
-      {
-        async readConfig() {
-          try {
-            return await readFile(mcpFile, 'utf8');
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-            return undefined;
-          }
-        },
-        writeConfig: (servers) => writeJson(mcpFile, { servers }),
-        readSecret: (key) => vault.read(key),
-        writeSecret: (key, value) => vault.write(key, value),
-      },
-      [Everloot.profile],
-    );
-    yield* Effect.addFinalizer(() => mcpManager.close());
+    // Migrated: its connections close with `ServerLayer`, after everything here.
+    const mcpManager = yield* McpManager.Service;
     yield* mcpManager.load();
     const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
       release: appConfig.telemetryRelease,
-      isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
+      isCustomMcpConnection: (name) =>
+        runSync(mcpManager.list()).some((server) => server.name === name.replace(/-/g, '_')),
       enabledFeatures: () => features.enabledNames(),
     });
     yield* releaseRuntimeResource(() => telemetry.close());
@@ -284,7 +276,7 @@ export const makeServer = Effect.fn('Server.make')(
       reason: 'Experimental local mage engine, levels 1–60.',
     });
     const mcpCapabilities = createMcpCapabilities(mcpManager, capabilitySettings);
-    mcpCapabilities.refreshCatalog();
+    yield* mcpCapabilities.refreshCatalog();
     yield* mcpCapabilities.applySavedSettings();
     yield* startup(() => capabilitySettings.publish());
     const chatStore = new ChatStore(applicationDatabase, (error) =>
@@ -368,7 +360,7 @@ export const makeServer = Effect.fn('Server.make')(
       origin: () => agentOrigin,
       token,
     });
-    const agentMcp = AgentMcp.layerFromManager(mcpManager, {
+    const agentMcp = AgentMcp.layerWithPolicy({
       allowed: (server, tool) =>
         capabilitySettings.enabled('mcp:' + server) &&
         (!tool || capabilitySettings.enabled('mcp_tool:' + server + ':' + tool)),
@@ -379,6 +371,7 @@ export const makeServer = Effect.fn('Server.make')(
     });
     const agentLayer = Agent.layer.pipe(
       Layer.provide(agentMcp),
+      Layer.provide(Layer.succeed(McpManager.Service, mcpManager)),
       Layer.provide(Capabilities.layerFromFile(() => capabilitySettings.agentFile)),
       Layer.provide(NodeFileSystem.layer),
       Layer.provide(Agent.SessionHistory.layer(agentHistory)),
@@ -587,7 +580,7 @@ export const makeServer = Effect.fn('Server.make')(
         model: defaultModel(),
         activeTurns: state.chats.filter((c) => c.status === 'working').length,
         integrations: capabilitySettings.snapshot(),
-        mcps: mcpManager.list().map((s) => ({
+        mcps: runSync(mcpManager.list()).map((s) => ({
           ...s,
           enabled: s.enabled && capabilitySettings.enabled('mcp:' + s.name),
         })),

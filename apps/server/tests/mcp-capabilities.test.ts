@@ -63,7 +63,7 @@ test('a capability write failure restores the MCP server switch and preserves th
   const switches: boolean[] = [];
   const manager = {
     bundled: [],
-    list: () => [{ ...server, args: [...server.args], enabled: serverEnabled }],
+    list: () => Effect.sync(() => [{ ...server, args: [...server.args], enabled: serverEnabled }]),
     disconnect: () => Effect.void,
     setEnabled: (_key: string, enabled: boolean) =>
       Effect.sync(() => {

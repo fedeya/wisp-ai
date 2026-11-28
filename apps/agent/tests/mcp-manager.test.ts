@@ -1,102 +1,236 @@
-import { test, vi } from 'vitest';
-import { ConfigProvider, Effect, Layer, Schema } from 'effect';
-import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { McpManager, mcpSetup, type McpStorage } from '../src/integrations/mcp-manager.ts';
-import * as Mcp from '../src/integrations/mcp-tools.ts';
-import * as Everloot from '../src/integrations/everloot.ts';
-import * as Capabilities from '../src/host/capabilities.ts';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { createServer } from 'node:http';
+import { assert, describe, it, layer } from '@effect/vitest';
+import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { mcpSetup } from '@wisp/protocol/mcp-setup';
+import {
+  ConfigProvider,
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  FileSystem,
+  Layer,
+  Path,
+  Predicate,
+  Redacted,
+  Ref,
+  Schema,
+  Scope,
+} from 'effect';
+import { createServer } from 'node:http';
+import { delimiter, dirname, join } from 'node:path';
 import * as AgentConfig from '../src/host/agent-config.ts';
+import * as Capabilities from '../src/host/capabilities.ts';
+import * as McpStorage from '../src/host/mcp-storage.ts';
+import * as Everloot from '../src/integrations/everloot.ts';
 import * as McpConnection from '../src/integrations/mcp-connection.ts';
-
-/** A source checkout's settings: none of the agent's variables are set. */
-const sourceConfig = AgentConfig.layer.pipe(
-  Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
-);
-const build = (manager: ReturnType<typeof McpManager.make>) =>
-  Effect.runPromise(
-    manager.pipe(Effect.provide(McpConnection.layer.pipe(Layer.provide(sourceConfig)))),
-  );
-
-function makeManager(
-  file: string,
-  root: string,
-  vault: Pick<McpStorage, 'readSecret' | 'writeSecret'>,
-) {
-  return build(
-    McpManager.make(root, {
-      ...vault,
-      async readConfig() {
-        try {
-          return await readFile(file, 'utf8');
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-          return undefined;
-        }
-      },
-      writeConfig: (servers) => writeFile(file, JSON.stringify({ servers })),
-    }),
-  );
-}
+import * as McpManager from '../src/integrations/mcp-manager.ts';
+import * as Mcp from '../src/integrations/mcp-tools.ts';
 
 const parseSetup = Schema.decodeUnknownSync(mcpSetup);
-const capabilities = { enabled: () => true, disabledMcpTools: () => [] };
 
-function listTools(
-  manager: McpManager,
-  allowed: (name: string, tool?: string) => boolean,
-  readOnly: (session: string) => boolean = () => false,
-) {
-  const layer = Mcp.layerFromManager(manager, { allowed, readOnly }).pipe(
-    Layer.provide(
-      Layer.succeed(Capabilities.Service, {
-        read: Effect.succeed(capabilities),
-        featureEnabled: () => Effect.succeed(false),
-      }),
-    ),
-  );
-  return (session: string) =>
-    Effect.runPromise(
-      Effect.flatMap(Mcp.Mcp, (mcp) => mcp.tools(session, capabilities)).pipe(
-        Effect.provide(layer),
-      ),
-    );
+/** The SDK adapter in a source checkout: none of the agent's variables are set. */
+const sdkConnection = McpConnection.layer.pipe(
+  Layer.provide(AgentConfig.layer),
+  Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({}))),
+);
+
+/** What a host saved, kept in memory. */
+interface Saved {
+  readonly config: Ref.Ref<string | undefined>;
+  readonly secrets: Ref.Ref<ReadonlyMap<string, string>>;
 }
 
-test(
-  'stdio MCP settings and agent tools share one manager and enforce live, session-specific policy',
-  { timeout: 30000 },
-  async () => {
-    const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-    const secrets = new Map<string, string>();
-    const vault = {
-      readSecret: async (k: string) => secrets.get(k) || '',
-      writeSecret: async (k: string, v: string) => {
-        secrets.set(k, v);
-      },
-    };
-    const file = path.join(root, 'mcp.json');
-    const manager = await makeManager(file, root, vault);
-    await Effect.runPromise(manager.load());
-    const script = path.join(root, 'server.mjs');
-    const echoSchema = {
-      type: 'object',
-      properties: { value: { anyOf: [{ type: 'string' }, { type: 'number' }] } },
-    };
-    await writeFile(
-      script,
-      `
-import { Server } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/index.js'))};
-import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/stdio.js'))};
-import { ListToolsRequestSchema, CallToolRequestSchema } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/types.js'))};
+const makeSaved = (config?: string) =>
+  Effect.all({
+    config: Ref.make(config),
+    secrets: Ref.make<ReadonlyMap<string, string>>(new Map()),
+  });
 
+/** Saves like the host: the servers as `{ servers }` JSON, the secrets by key. */
+const memoryStorage = (saved: Saved) =>
+  Layer.succeed(
+    McpStorage.Service,
+    McpStorage.Service.of({
+      readConfig: Ref.get(saved.config),
+      writeConfig: (servers) => Ref.set(saved.config, JSON.stringify({ servers })),
+      readSecret: (key) =>
+        Ref.get(saved.secrets).pipe(Effect.map((secrets) => Redacted.make(secrets.get(key) ?? ''))),
+      writeSecret: (key, value) =>
+        Ref.update(saved.secrets, (secrets) => new Map(secrets).set(key, Redacted.value(value))),
+    }),
+  );
+
+const savedServers = (...names: string[]) =>
+  JSON.stringify({
+    servers: Object.fromEntries(
+      names.map((name) => [name, { name, url: 'https://example.com/mcp', args: [] }]),
+    ),
+  });
+
+type Attempt = 'open' | 'fail' | 'hang';
+
+interface FakeOptions {
+  /** How each open goes, in order; the ones past the list open. */
+  readonly attempts?: readonly Attempt[];
+  readonly tools?: readonly McpConnection.McpTool[];
+  /** Runs when a session is released, before it reads as released. */
+  readonly release?: Effect.Effect<void>;
+  /** Calls wait for this, then fail. */
+  readonly failCallsAfter?: Deferred.Deferred<void>;
+}
+
+/** An `McpConnection` that opens numbered sessions and logs what happens to them. */
+const fakeConnection = Effect.fnUntraced(function* (options: FakeOptions = {}) {
+  const log = yield* Ref.make<readonly string[]>([]);
+  const calls = yield* Ref.make<readonly { session: number; params: unknown; timeout: number }[]>(
+    [],
+  );
+  const hanging = yield* Deferred.make<void>();
+  const calling = yield* Deferred.make<void>();
+  const opens = yield* Ref.make(0);
+  const record = (event: string) => Ref.update(log, (events) => [...events, event]);
+  const layer = Layer.succeed(
+    McpConnection.Service,
+    McpConnection.Service.of({
+      open: () =>
+        Effect.gen(function* () {
+          const session = yield* Ref.updateAndGet(opens, (count) => count + 1);
+          yield* Effect.acquireRelease(record(`open ${session}`), () =>
+            (options.release ?? Effect.void).pipe(Effect.andThen(record(`release ${session}`))),
+          );
+          const attempt = options.attempts?.[session - 1] ?? 'open';
+          if (attempt === 'fail') {
+            return yield* new McpConnection.McpConnectionError({
+              reason: 'Protocol',
+              message: 'Handshake failed',
+            });
+          }
+          if (attempt === 'hang') {
+            yield* Deferred.succeed(hanging, undefined);
+            return yield* Effect.never.pipe(
+              Effect.onInterrupt(() => record(`interrupt ${session}`)),
+            );
+          }
+          return {
+            tools: record(`list ${session}`).pipe(Effect.as(options.tools ?? [])),
+            callTool: (name, args, timeout) =>
+              Effect.gen(function* () {
+                yield* Ref.update(calls, (all) => [
+                  ...all,
+                  {
+                    session,
+                    params: { name, arguments: args },
+                    timeout: Duration.toMillis(timeout),
+                  },
+                ]);
+                if (options.failCallsAfter) {
+                  yield* Deferred.succeed(calling, undefined);
+                  yield* Deferred.await(options.failCallsAfter);
+                  return yield* new McpConnection.McpConnectionError({
+                    reason: 'Transport',
+                    message: 'Call failed',
+                  });
+                }
+                return { content: [], structuredContent: { items: [] } };
+              }),
+          } satisfies McpConnection.McpSession;
+        }),
+    }),
+  );
+  return { layer, log: Ref.get(log), calls: Ref.get(calls), hanging, calling };
+});
+
+const managerOn = <E1, E2>(
+  connection: Layer.Layer<McpConnection.Service, E1>,
+  storage: Layer.Layer<McpStorage.Service, E2>,
+  options?: McpManager.Options,
+) => McpManager.layer(options).pipe(Layer.provide([connection, storage]));
+
+const capabilities = { enabled: () => true, disabledMcpTools: () => [] };
+const capabilitiesLayer = Layer.succeed(
+  Capabilities.Service,
+  Capabilities.Service.of({
+    read: Effect.succeed(capabilities),
+    featureEnabled: () => Effect.succeed(false),
+  }),
+);
+
+/** The model's MCP tools for a session, under a host policy, from the manager in context. */
+const modelTools = (policy: Mcp.McpPolicy) => (session: string) =>
+  Effect.flatMap(Mcp.Mcp, (mcp) => mcp.tools(session, capabilities)).pipe(
+    Effect.provide(Mcp.layerWithPolicy(policy).pipe(Layer.provide(capabilitiesLayer))),
+  );
+
+const failureMessage = (cause: unknown) => (Predicate.isError(cause) ? cause.message : undefined);
+
+/** A Streamable HTTP MCP server on a local port with one tool, closed with the scope. */
+const httpServer = Effect.fnUntraced(function* () {
+  const authorizations: (string | undefined)[] = [];
+  const http = createServer((req, res) => {
+    authorizations.push(req.headers.authorization);
+    const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
+    server.setRequestHandler(ListToolsRequestSchema, () => ({
+      tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
+    }));
+    server.setRequestHandler(CallToolRequestSchema, () => ({
+      content: [{ type: 'text', text: 'found' }],
+    }));
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+    void server.connect(transport).then(() => transport.handleRequest(req, res));
+  });
+  yield* Effect.acquireRelease(
+    Effect.callback<void>((resume) => {
+      http.listen(0, '127.0.0.1', () => resume(Effect.void));
+    }),
+    () =>
+      Effect.callback<void>((resume) => {
+        http.closeAllConnections();
+        http.close(() => resume(Effect.void));
+      }),
+  );
+  const address = http.address();
+  assert.ok(address && typeof address === 'object');
+  return { url: `http://127.0.0.1:${address.port}/upstream`, authorizations };
+});
+
+/** An SDK module's URL, for a server script to import. */
+const sdk = (module: string) =>
+  JSON.stringify(import.meta.resolve(`@modelcontextprotocol/sdk/${module}`));
+
+/** Writes a stdio MCP server script into a temporary folder that goes with the scope. */
+const stdioScript = Effect.fnUntraced(function* (body: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: 'wow-mcp-' });
+  const script = path.join(root, 'server.mjs');
+  yield* fs.writeFileString(
+    script,
+    `
+import { Server } from ${sdk('server/index.js')};
+import { StdioServerTransport } from ${sdk('server/stdio.js')};
+import { ListToolsRequestSchema, CallToolRequestSchema } from ${sdk('types.js')};
+${body}
+await server.connect(new StdioServerTransport());
+`,
+  );
+  return { root, script };
+});
+
+layer(NodeServices.layer)('McpManager with the SDK', (it) => {
+  it.effect(
+    'stdio MCP settings and agent tools share one manager and enforce live, session-specific policy',
+    () =>
+      Effect.gen(function* () {
+        const echoSchema = {
+          type: 'object',
+          properties: { value: { anyOf: [{ type: 'string' }, { type: 'number' }] } },
+        };
+        const { root, script } = yield* stdioScript(`
 const server = new Server({ name: 'Test', version: '1' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -113,471 +247,146 @@ server.setRequestHandler(CallToolRequestSchema, async () => ({
     }),
   }],
 }));
-await server.connect(new StdioServerTransport());
-`,
-    );
-    const input = parseSetup({
-      server: { name: 'test_server', transport: 'stdio', command: 'node', args: [script] },
-      env: { TEST_SECRET: 'private-test-value' },
-    });
-    let serverAllowed = true;
-    let toolsAllowed = true;
-    let readOnlySession = 'automatic';
-    const list = listTools(
-      manager,
-      (name, tool) =>
-        name === 'test_server' && serverAllowed && (tool === undefined || toolsAllowed),
-      (session) => session === readOnlySession,
-    );
-    try {
-      assert.equal((await Effect.runPromise(manager.save(input))).count, 2);
-      assert.ok(!(await readFile(file, 'utf8')).includes('private-test-value'));
-      assert.ok(secrets.size > 0);
-      const tools = await list('manual');
-      assert.deepEqual(
-        tools.map((tool) => tool.name),
-        ['test-server__echo', 'test-server__write'],
-      );
-      const [echo, write] = tools;
-      assert.ok(echo && write);
-      assert.deepEqual(echo.inputSchema, echoSchema);
-      assert.deepEqual(
-        (await list('automatic')).map((tool) => tool.name),
-        ['test-server__echo'],
-      );
-      assert.deepEqual(await Effect.runPromise(echo.call({})), {
-        content: [{ type: 'text', text: JSON.stringify({ ok: true, bridgeTokenLeaked: false }) }],
-      });
-      // A different automatic session must not block a manual write.
-      await Effect.runPromise(write.call({}));
-      readOnlySession = 'manual';
-      await assert.rejects(
-        Effect.runPromise(write.call({})),
-        (error: Error) =>
-          error.cause instanceof Error &&
-          error.cause.message ===
+`);
+        const saved = yield* makeSaved();
+        yield* Effect.gen(function* () {
+          const manager = yield* McpManager.Service;
+          yield* manager.load();
+          const input = parseSetup({
+            server: { name: 'test_server', transport: 'stdio', command: 'node', args: [script] },
+            env: { TEST_SECRET: 'private-test-value' },
+          });
+          let serverAllowed = true;
+          let toolsAllowed = true;
+          let readOnlySession = 'automatic';
+          const list = modelTools({
+            allowed: (name, tool) =>
+              name === 'test_server' && serverAllowed && (tool === undefined || toolsAllowed),
+            readOnly: (session) => session === readOnlySession,
+          });
+          assert.strictEqual((yield* manager.save(input)).count, 2);
+          assert.ok(!(yield* Ref.get(saved.config))?.includes('private-test-value'));
+          assert.ok((yield* Ref.get(saved.secrets)).size > 0);
+          const tools = yield* list('manual');
+          assert.deepStrictEqual(
+            tools.map((tool) => tool.name),
+            ['test-server__echo', 'test-server__write'],
+          );
+          const [echo, write] = tools;
+          assert.ok(echo && write);
+          assert.deepStrictEqual(echo.inputSchema, echoSchema);
+          assert.deepStrictEqual(
+            (yield* list('automatic')).map((tool) => tool.name),
+            ['test-server__echo'],
+          );
+          assert.deepStrictEqual(yield* echo.call({}), {
+            content: [
+              { type: 'text', text: JSON.stringify({ ok: true, bridgeTokenLeaked: false }) },
+            ],
+          });
+          // A different automatic session must not block a manual write.
+          yield* write.call({});
+          readOnlySession = 'manual';
+          assert.strictEqual(
+            failureMessage((yield* Effect.flip(write.call({}))).cause),
             'Only explicitly read-only MCP tools are available during automatic advice',
-      );
-      toolsAllowed = false;
-      assert.deepEqual(await list('manual'), []);
-      await assert.rejects(
-        Effect.runPromise(echo.call({})),
-        (error: Error) =>
-          error.cause instanceof Error && error.cause.message === 'MCP tool disabled',
-      );
-      serverAllowed = false;
-      assert.deepEqual(await list('manual'), []);
-      const savedServer = () => {
-        const [server] = manager.list();
-        assert.ok(server, 'test_server is saved');
-        return server;
-      };
-      await Effect.runPromise(manager.setEnabled('test_server', false));
-      assert.equal(savedServer().enabled, false);
-      await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
-      const savedTools = savedServer().tools;
-      await Effect.runPromise(manager.setEnabled('test_server', true));
-      assert.deepEqual(savedServer().tools, savedTools, 'switching preserves discovery');
-      assert.equal(secrets.get('mcp:test_server:env'), JSON.stringify(input.env));
-      const reopened = await Effect.runPromise(manager.connect('test_server'));
-      assert.equal(reopened.tools[0]?.name, 'echo');
-      await Effect.runPromise(manager.remove('test_server'));
-      assert.equal(manager.list().length, 0);
-      assert.equal(secrets.get('mcp:test_server:env'), '');
-    } finally {
-      await Effect.runPromise(manager.close());
-      await rm(root, { recursive: true, force: true });
-    }
-  },
-);
-
-test('Everloot model tools and game lookups share one connection and keep Forever arguments fixed', async () => {
-  const manager = await build(McpManager.make('.', undefined, [Everloot.profile]));
-  using connect = vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
-  using discover = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({
-    tools: [
-      'item_categories',
-      'auction_history',
-      'market_value',
-      'search_knowledge',
-      'recent_changes',
-      'get_by_name',
-    ].map((name) => ({
-      name,
-      inputSchema: {
-        type: 'object',
-        properties: { version: { type: 'string' }, query: { type: 'string' } },
-        required: ['version', 'query'],
-      },
-    })),
-  });
-  using call = vi.spyOn(Client.prototype, 'callTool').mockResolvedValue({
-    content: [],
-    structuredContent: { items: [] },
-  });
-  const list = listTools(
-    manager,
-    (_server, tool) => tool !== 'market_value',
-    () => true,
+          );
+          toolsAllowed = false;
+          assert.deepStrictEqual(yield* list('manual'), []);
+          assert.strictEqual(
+            failureMessage((yield* Effect.flip(echo.call({}))).cause),
+            'MCP tool disabled',
+          );
+          serverAllowed = false;
+          assert.deepStrictEqual(yield* list('manual'), []);
+          const savedServer = Effect.gen(function* () {
+            const [server] = yield* manager.list();
+            assert.ok(server, 'test_server is saved');
+            return server;
+          });
+          yield* manager.setEnabled('test_server', false);
+          assert.strictEqual((yield* savedServer).enabled, false);
+          assert.match(
+            (yield* Effect.flip(manager.discover('test_server'))).message,
+            /unavailable/,
+          );
+          const savedTools = (yield* savedServer).tools;
+          yield* manager.setEnabled('test_server', true);
+          assert.deepStrictEqual(
+            (yield* savedServer).tools,
+            savedTools,
+            'switching preserves discovery',
+          );
+          assert.strictEqual(
+            (yield* Ref.get(saved.secrets)).get('mcp:test_server:env'),
+            JSON.stringify(input.env),
+          );
+          assert.strictEqual((yield* manager.discover('test_server'))[0]?.name, 'echo');
+          yield* manager.remove('test_server');
+          assert.strictEqual((yield* manager.list()).length, 0);
+          assert.strictEqual((yield* Ref.get(saved.secrets)).get('mcp:test_server:env'), '');
+        }).pipe(Effect.provide(managerOn(sdkConnection, memoryStorage(saved), { root })));
+      }).pipe(Effect.scoped),
+    30_000,
   );
-  try {
-    const [tools, data] = await Promise.all([
-      list('manual'),
-      Effect.runPromise(Everloot.read(manager, 'item_categories', { quality: 'rare' }, () => true)),
-    ]);
-    assert.deepEqual(data, { items: [] });
-    assert.deepEqual(
-      tools.map((tool) => tool.name),
-      [
-        'everloot__item_categories',
-        'everloot__auction_history',
-        'everloot-search__search_knowledge',
-        'everloot-changes__recent_changes',
-      ],
-    );
-    const search = tools[2]!;
-    assert.deepEqual(search.inputSchema, {
-      type: 'object',
-      properties: { query: { type: 'string' } },
-      required: ['query'],
-    });
-    await Effect.runPromise(search.call({ version: 'retail', query: 'mage' }));
-    await Effect.runPromise(tools[3]!.call({ game: 'classic' }));
-    assert.equal(connect.mock.calls.length, 1);
-    assert.equal(discover.mock.calls.length, 1);
-    assert.equal(
-      call.mock.contexts.every((client) => client === connect.mock.contexts[0]),
-      true,
-    );
-    assert.deepEqual(
-      call.mock.calls.map(([, , options]) => options?.timeout),
-      [15_000, 120_000, 120_000],
-    );
-    assert.deepEqual(
-      call.mock.calls.map(([params]) => params),
-      [
-        { name: 'item_categories', arguments: { quality: 'rare' } },
-        { name: 'search_knowledge', arguments: { version: 'forever', query: 'mage' } },
-        { name: 'recent_changes', arguments: { game: 'forever' } },
-      ],
-    );
-  } finally {
-    await Effect.runPromise(manager.close());
-  }
-});
 
-test('configured HTTP servers are called directly using the saved token', async () => {
-  const requests: (string | undefined)[] = [];
-  const http = createServer(async (req, res) => {
-    requests.push(req.headers.authorization);
-    const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
-    }));
-    server.setRequestHandler(CallToolRequestSchema, async () => ({
-      content: [{ type: 'text', text: 'found' }],
-    }));
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    await transport.handleRequest(req, res);
-  });
-  const secrets = new Map<string, string>();
-  const manager = await build(
-    McpManager.make('.', {
-      readConfig: async () => undefined,
-      writeConfig: async () => {},
-      readSecret: async (key) => secrets.get(key) ?? '',
-      writeSecret: async (key, value) => {
-        secrets.set(key, value);
-      },
-    }),
-  );
-  try {
-    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
-    const address = http.address();
-    assert.ok(address && typeof address === 'object');
-    await Effect.runPromise(
-      manager.save(
-        parseSetup({
-          server: { name: 'http_test', url: `http://127.0.0.1:${address.port}/upstream` },
-          token: 'private-test-token',
-        }),
-      ),
-    );
-    const tools = await listTools(manager, (name) => name === 'http_test')('manual');
-    assert.deepEqual(
-      tools.map((tool) => tool.name),
-      ['http-test__lookup'],
-    );
-    assert.deepEqual(await Effect.runPromise(tools[0]!.call({})), {
-      content: [{ type: 'text', text: 'found' }],
-    });
-    assert.deepEqual([...new Set(requests)], ['Bearer private-test-token']);
-  } finally {
-    await Effect.runPromise(manager.close());
-    http.close();
-  }
-});
-
-test('an HTTP server without a saved token sends the variable its configuration names', async () => {
-  const requests: (string | undefined)[] = [];
-  const http = createServer(async (req, res) => {
-    requests.push(req.headers.authorization);
-    const server = new Server({ name: 'test', version: '1' }, { capabilities: { tools: {} } });
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
-    }));
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
-    await transport.handleRequest(req, res);
-  });
-  const manager = await build(McpManager.make());
-  const tokenEnv = 'WISP_TEST_MCP_TOKEN';
-  let port = 0;
-  const probe = (environment: Record<string, string>) =>
-    Effect.runPromise(
-      manager
-        .test(
+  it.effect('configured HTTP servers are called directly using the saved token', () =>
+    Effect.gen(function* () {
+      const http = yield* httpServer();
+      const saved = yield* makeSaved();
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.save(
           parseSetup({
-            server: { name: 'env_test', url: `http://127.0.0.1:${port}/upstream`, tokenEnv },
+            server: { name: 'http_test', url: http.url },
+            token: 'private-test-token',
           }),
-        )
-        .pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(environment)))),
-    );
-  try {
-    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
-    const address = http.address();
-    assert.ok(address && typeof address === 'object');
-    port = address.port;
-    assert.equal((await probe({ [tokenEnv]: 'env-test-token' })).count, 1);
-    assert.deepEqual([...new Set(requests)], ['Bearer env-test-token']);
-    // An empty or unset variable sends no credentials.
-    requests.length = 0;
-    await probe({ [tokenEnv]: '' });
-    await probe({});
-    assert.deepEqual([...new Set(requests)], [undefined]);
-  } finally {
-    await Effect.runPromise(manager.close());
-    http.close();
-  }
-});
-
-test('disabling MCP cancels an opening connection and a later enable opens a fresh client', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const manager = await makeManager(path.join(root, 'mcp.json'), root, {
-    readSecret: async () => '',
-    writeSecret: async () => {},
-  });
-  let onOpening!: (signal: AbortSignal | undefined) => void;
-  const opening = new Promise<AbortSignal | undefined>((resolve) => {
-    onOpening = resolve;
-  });
-  let finishHandshake!: () => void;
-  const handshake = new Promise<void>((resolve) => {
-    finishHandshake = resolve;
-  });
-  using connect = vi
-    .spyOn(Client.prototype, 'connect')
-    .mockImplementationOnce((_transport, options) => {
-      onOpening(options?.signal);
-      return handshake;
-    })
-    .mockResolvedValue(undefined);
-  using close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
-  using listTools = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
-  manager.servers.test_server = parseSetup({
-    server: { name: 'test_server', url: 'https://example.com/mcp' },
-  }).server;
-  try {
-    const cancelled = assert.rejects(Effect.runPromise(manager.connect('test_server')));
-    const signal = await opening;
-    assert.ok(signal);
-    const alsoCancelled = assert.rejects(Effect.runPromise(manager.connect('test_server')));
-    await Effect.runPromise(manager.setEnabled('test_server', false));
-    await Promise.all([cancelled, alsoCancelled]);
-    assert.equal(signal.aborted, true);
-    assert.equal(connect.mock.calls.length, 1);
-    assert.deepEqual(close.mock.contexts, [connect.mock.contexts[0]]);
-    await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
-
-    await Effect.runPromise(manager.setEnabled('test_server', true));
-    const { session } = await Effect.runPromise(manager.connect('test_server'));
-    const [cancelledClient, client] = connect.mock.contexts;
-    assert.notEqual(client, cancelledClient);
-    finishHandshake();
-    await handshake;
-    assert.equal((await Effect.runPromise(manager.connect('test_server'))).session, session);
-    assert.equal(connect.mock.calls.length, 2);
-    assert.deepEqual(listTools.mock.contexts, [client]);
-  } finally {
-    finishHandshake();
-    await Effect.runPromise(manager.close());
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test('a failed MCP opening releases the client and allows a fresh attempt', async () => {
-  const manager = await build(McpManager.make());
-  using connect = vi
-    .spyOn(Client.prototype, 'connect')
-    .mockRejectedValueOnce(Error('Handshake failed'))
-    .mockResolvedValue(undefined);
-  using close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
-  using listTools = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
-  manager.servers.test_server = parseSetup({
-    server: { name: 'test_server', url: 'https://example.com/mcp' },
-  }).server;
-  try {
-    await assert.rejects(Effect.runPromise(manager.connect('test_server')), {
-      message: 'Handshake failed',
-    });
-    assert.deepEqual(close.mock.contexts, [connect.mock.contexts[0]]);
-    await Effect.runPromise(manager.connect('test_server'));
-    const [failedClient, client] = connect.mock.contexts;
-    assert.notEqual(client, failedClient);
-    assert.deepEqual(listTools.mock.contexts, [client]);
-  } finally {
-    await Effect.runPromise(manager.close());
-  }
-});
-
-test('concurrent MCP updates preserve both changes after an earlier update fails', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const vault = { readSecret: async () => '', writeSecret: async () => {} };
-  const file = path.join(root, 'mcp.json');
-  const manager = await makeManager(file, root, vault);
-  try {
-    for (const name of ['first', 'second']) {
-      manager.servers[name] = parseSetup({
-        server: { name, url: 'https://example.com/mcp' },
-      }).server;
-    }
-    await Promise.all([
-      assert.rejects(
-        Effect.runPromise(manager.setEnabled('missing', false)),
-        /Unknown MCP connection/,
-      ),
-      Effect.runPromise(manager.setEnabled('first', false)),
-      Effect.runPromise(manager.setEnabled('second', false)),
-    ]);
-    const restored = await makeManager(file, root, vault);
-    await Effect.runPromise(restored.load());
-    assert.deepEqual(
-      restored.list().map(({ name, enabled }) => [name, enabled]),
-      [
-        ['first', false],
-        ['second', false],
-      ],
-    );
-    await Effect.runPromise(restored.close());
-  } finally {
-    await Effect.runPromise(manager.close());
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test('a missing MCP config loads no custom servers and malformed JSON fails', async () => {
-  let config: string | undefined;
-  const manager = await build(
-    McpManager.make('.', {
-      readConfig: async () => config,
-      writeConfig: async () => {},
-      readSecret: async () => '',
-      writeSecret: async () => {},
-    }),
+        );
+        const tools = yield* modelTools({
+          allowed: (name) => name === 'http_test',
+          readOnly: () => false,
+        })('manual');
+        assert.deepStrictEqual(
+          tools.map((tool) => tool.name),
+          ['http-test__lookup'],
+        );
+        const [lookup] = tools;
+        assert.ok(lookup);
+        assert.deepStrictEqual(yield* lookup.call({}), {
+          content: [{ type: 'text', text: 'found' }],
+        });
+        assert.deepStrictEqual([...new Set(http.authorizations)], ['Bearer private-test-token']);
+      }).pipe(Effect.provide(managerOn(sdkConnection, memoryStorage(saved))));
+    }).pipe(Effect.scoped),
   );
-  try {
-    await Effect.runPromise(manager.load());
-    assert.deepEqual(manager.list(), []);
-    config = 'invalid JSON';
-    await assert.rejects(
-      Effect.runPromise(manager.load()),
-      (error: Error) => error.cause instanceof SyntaxError,
-    );
-  } finally {
-    await Effect.runPromise(manager.close());
-  }
-});
 
-test('MCP shutdown waits for client cleanup and rejects new connections', async () => {
-  const manager = await build(McpManager.make());
-  let onClosing!: () => void;
-  const closing = new Promise<void>((resolve) => {
-    onClosing = resolve;
-  });
-  let finishClose!: () => void;
-  const release = new Promise<void>((resolve) => {
-    finishClose = resolve;
-  });
-  using connect = vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
-  using listTools = vi.spyOn(Client.prototype, 'listTools').mockResolvedValue({ tools: [] });
-  using close = vi.spyOn(Client.prototype, 'close').mockImplementation(async () => {
-    onClosing();
-    await release;
-  });
-  manager.servers.test_server = parseSetup({
-    server: { name: 'test_server', url: 'https://example.com/mcp' },
-  }).server;
-  try {
-    await Effect.runPromise(manager.connect('test_server'));
-    const [client] = connect.mock.contexts;
-    let stopped = false;
-    const shutdown = Effect.runPromise(manager.close()).then(() => {
-      stopped = true;
-    });
-    await closing;
-    await assert.rejects(Effect.runPromise(manager.connect('test_server')), /unavailable/);
-    assert.equal(stopped, false);
-    assert.equal(connect.mock.calls.length, 1);
-    assert.deepEqual(listTools.mock.contexts, [client]);
-    assert.deepEqual(close.mock.contexts, [client]);
-    finishClose();
-    await shutdown;
-  } finally {
-    finishClose();
-    await Effect.runPromise(manager.close());
-  }
-});
-
-test('MCP setup rejects embedded URL credentials and keeps command arguments structured', () => {
-  assert.throws(() =>
-    parseSetup({ server: { name: 'test', url: 'https://user:secret@example.com/mcp' } }),
+  it.effect('an HTTP server without a saved token sends the variable its configuration names', () =>
+    Effect.gen(function* () {
+      const http = yield* httpServer();
+      const tokenEnv = 'WISP_TEST_MCP_TOKEN';
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        const probe = (environment: Record<string, string>) =>
+          manager
+            .test(parseSetup({ server: { name: 'env_test', url: http.url, tokenEnv } }))
+            .pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(environment))));
+        assert.strictEqual((yield* probe({ [tokenEnv]: 'env-test-token' })).count, 1);
+        assert.deepStrictEqual([...new Set(http.authorizations)], ['Bearer env-test-token']);
+        // An empty or unset variable sends no credentials.
+        http.authorizations.length = 0;
+        yield* probe({ [tokenEnv]: '' });
+        yield* probe({});
+        assert.deepStrictEqual([...new Set(http.authorizations)], [undefined]);
+      }).pipe(Effect.provide(managerOn(sdkConnection, McpStorage.layerNone)));
+    }).pipe(Effect.scoped),
   );
-  for (const name of ['wow', 'questie', 'wisp']) {
-    assert.throws(() => parseSetup({ server: { name, url: 'https://example.com/mcp' } }));
-  }
-  assert.equal(
-    parseSetup({
-      server: { name: 'test', transport: 'stdio', command: 'node', args: ['literal; not a shell'] },
-    }).server.args[0],
-    'literal; not a shell',
-  );
-});
 
-test('the manager reserves bundled MCP names and their model namespaces', async () => {
-  const manager = await build(McpManager.make('.', undefined, [Everloot.profile]));
-  try {
-    for (const name of ['everloot', 'everloot_search', 'everloot_changes']) {
-      const input = parseSetup({ server: { name, url: 'https://example.com/mcp' } });
-      await assert.rejects(Effect.runPromise(manager.test(input)), /MCP name is reserved/);
-      await assert.rejects(Effect.runPromise(manager.save(input)), /MCP name is reserved/);
-    }
-  } finally {
-    await Effect.runPromise(manager.close());
-  }
-});
-
-test('a stdio server inherits the set variables, with the bundled runtimes first on PATH', async () => {
-  const root = await mkdtemp(path.join(tmpdir(), 'wow-mcp-'));
-  const script = path.join(root, 'server.mjs');
-  // The server reports what it inherited as its only tool's description.
-  await writeFile(
-    script,
-    `
-import { Server } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/index.js'))};
-import { StdioServerTransport } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/server/stdio.js'))};
-import { ListToolsRequestSchema } from ${JSON.stringify(import.meta.resolve('@modelcontextprotocol/sdk/types.js'))};
-
+  it.effect(
+    'a stdio server inherits the set variables, with the bundled runtimes first on PATH',
+    () =>
+      Effect.gen(function* () {
+        // The server reports what it inherited as its only tool's description.
+        const { root, script } = yield* stdioScript(`
 const inherited = {
   PATH: process.env.PATH,
   ComSpec: process.env.ComSpec ?? null,
@@ -588,36 +397,344 @@ const server = new Server({ name: 'Test', version: '1' }, { capabilities: { tool
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [{ name: 'env', description: JSON.stringify(inherited), inputSchema: { type: 'object' } }],
 }));
-await server.connect(new StdioServerTransport());
-`,
+`);
+        const environment = ConfigProvider.fromUnknown({
+          PATH: 'inherited-path',
+          ComSpec: 'inherited-shell',
+          PATHEXT: '',
+          WOW_BRIDGE_TOKEN: 'not-inherited',
+        });
+        const { tools } = yield* Effect.flatMap(McpManager.Service, (manager) =>
+          manager
+            .test(
+              parseSetup({
+                server: { name: 'env_test', transport: 'stdio', command: 'node', args: [script] },
+              }),
+            )
+            .pipe(Effect.provide(ConfigProvider.layer(environment))),
+        ).pipe(Effect.provide(managerOn(sdkConnection, McpStorage.layerNone, { root })));
+        assert.deepStrictEqual(
+          yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+            tools[0]?.description ?? '',
+          ),
+          {
+            PATH: [join(root, 'runtime'), dirname(process.execPath), 'inherited-path'].join(
+              delimiter,
+            ),
+            ComSpec: 'inherited-shell',
+            PATHEXT: null,
+            WOW_BRIDGE_TOKEN: null,
+          },
+        );
+      }).pipe(Effect.scoped),
+    30_000,
   );
-  const manager = await build(McpManager.make(root));
-  const environment = ConfigProvider.fromUnknown({
-    PATH: 'inherited-path',
-    ComSpec: 'inherited-shell',
-    PATHEXT: '',
-    WOW_BRIDGE_TOKEN: 'not-inherited',
-  });
-  try {
-    const { tools } = await Effect.runPromise(
-      manager
-        .test(
-          parseSetup({
-            server: { name: 'env_test', transport: 'stdio', command: 'node', args: [script] },
-          }),
-        )
-        .pipe(Effect.provide(ConfigProvider.layer(environment))),
+});
+
+describe('McpManager connections', () => {
+  it.effect(
+    'Everloot model tools and game lookups share one connection and keep Forever arguments fixed',
+    () =>
+      Effect.gen(function* () {
+        const connection = yield* fakeConnection({
+          tools: [
+            'item_categories',
+            'auction_history',
+            'market_value',
+            'search_knowledge',
+            'recent_changes',
+            'get_by_name',
+          ].map((name) => ({
+            name,
+            inputSchema: {
+              type: 'object',
+              properties: { version: { type: 'string' }, query: { type: 'string' } },
+              required: ['version', 'query'],
+            },
+          })),
+        });
+        yield* Effect.gen(function* () {
+          const manager = yield* McpManager.Service;
+          const [tools, data] = yield* Effect.all(
+            [
+              modelTools({
+                allowed: (_server, tool) => tool !== 'market_value',
+                readOnly: () => true,
+              })('manual'),
+              Everloot.read(manager, 'item_categories', { quality: 'rare' }, () => true),
+            ],
+            { concurrency: 'unbounded' },
+          );
+          assert.deepStrictEqual(data, { items: [] });
+          assert.deepStrictEqual(
+            tools.map((tool) => tool.name),
+            [
+              'everloot__item_categories',
+              'everloot__auction_history',
+              'everloot-search__search_knowledge',
+              'everloot-changes__recent_changes',
+            ],
+          );
+          const [, , search, changes] = tools;
+          assert.ok(search && changes);
+          assert.deepStrictEqual(search.inputSchema, {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+            required: ['query'],
+          });
+          yield* search.call({ version: 'retail', query: 'mage' });
+          yield* changes.call({ game: 'classic' });
+          assert.deepStrictEqual(yield* connection.log, ['open 1', 'list 1']);
+          assert.deepStrictEqual(yield* connection.calls, [
+            {
+              session: 1,
+              params: { name: 'item_categories', arguments: { quality: 'rare' } },
+              timeout: 15_000,
+            },
+            {
+              session: 1,
+              params: {
+                name: 'search_knowledge',
+                arguments: { version: 'forever', query: 'mage' },
+              },
+              timeout: 120_000,
+            },
+            {
+              session: 1,
+              params: { name: 'recent_changes', arguments: { game: 'forever' } },
+              timeout: 120_000,
+            },
+          ]);
+        }).pipe(
+          Effect.provide(
+            managerOn(connection.layer, McpStorage.layerNone, { bundled: [Everloot.profile] }),
+          ),
+        );
+      }),
+  );
+
+  it.effect(
+    'disabling MCP cancels an opening connection and a later enable opens a fresh one',
+    () =>
+      Effect.gen(function* () {
+        const connection = yield* fakeConnection({ attempts: ['hang'] });
+        const saved = yield* makeSaved(savedServers('test_server'));
+        yield* Effect.gen(function* () {
+          const manager = yield* McpManager.Service;
+          yield* manager.load();
+          const first = yield* Effect.forkChild(Effect.flip(manager.discover('test_server')));
+          const second = yield* Effect.forkChild(Effect.flip(manager.discover('test_server')));
+          yield* Deferred.await(connection.hanging);
+          yield* manager.setEnabled('test_server', false);
+          for (const waiting of [first, second]) {
+            assert.strictEqual(
+              (yield* Fiber.join(waiting)).message,
+              'MCP connection is unavailable',
+            );
+          }
+          assert.deepStrictEqual(yield* connection.log, ['open 1', 'interrupt 1', 'release 1']);
+          assert.match(
+            (yield* Effect.flip(manager.discover('test_server'))).message,
+            /unavailable/,
+          );
+
+          yield* manager.setEnabled('test_server', true);
+          yield* manager.discover('test_server');
+          yield* manager.discover('test_server');
+          assert.deepStrictEqual(yield* connection.log, [
+            'open 1',
+            'interrupt 1',
+            'release 1',
+            'open 2',
+            'list 2',
+          ]);
+        }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+      }),
+  );
+
+  it.effect('a failed MCP opening releases what it opened and allows a fresh attempt', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection({ attempts: ['fail'] });
+      const saved = yield* makeSaved(savedServers('test_server'));
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        assert.strictEqual(
+          (yield* Effect.flip(manager.discover('test_server'))).message,
+          'Handshake failed',
+        );
+        assert.deepStrictEqual(yield* connection.log, ['open 1', 'release 1']);
+        yield* manager.discover('test_server');
+        assert.deepStrictEqual(yield* connection.log, ['open 1', 'release 1', 'open 2', 'list 2']);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('a caller that stops waiting cancels an open nobody else waits for', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection({ attempts: ['hang'] });
+      const saved = yield* makeSaved(savedServers('test_server'));
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        const waiting = yield* Effect.forkChild(manager.discover('test_server'));
+        yield* Deferred.await(connection.hanging);
+        yield* Fiber.interrupt(waiting);
+        assert.deepStrictEqual(yield* connection.log, ['open 1', 'interrupt 1', 'release 1']);
+        yield* manager.discover('test_server');
+        assert.deepStrictEqual((yield* connection.log).slice(3), ['open 2', 'list 2']);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('a failed call closes only the connection it ran on', () =>
+    Effect.gen(function* () {
+      const failCalls = yield* Deferred.make<void>();
+      const connection = yield* fakeConnection({
+        tools: [{ name: 'lookup', inputSchema: { type: 'object' } }],
+        failCallsAfter: failCalls,
+      });
+      const saved = yield* makeSaved(savedServers('test_server'));
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        const call = yield* Effect.forkChild(
+          Effect.flip(manager.call('test_server', 'lookup', {}, () => undefined)),
+        );
+        yield* Deferred.await(connection.calling);
+        yield* manager.disconnect('test_server');
+        yield* manager.discover('test_server');
+        yield* Deferred.succeed(failCalls, undefined);
+        assert.strictEqual((yield* Fiber.join(call)).message, 'Call failed');
+        yield* manager.discover('test_server');
+        assert.deepStrictEqual(yield* connection.log, [
+          'open 1',
+          'list 1',
+          'release 1',
+          'open 2',
+          'list 2',
+        ]);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('MCP shutdown waits for client cleanup and rejects new connections', () =>
+    Effect.gen(function* () {
+      const closing = yield* Deferred.make<void>();
+      const finishClose = yield* Deferred.make<void>();
+      const connection = yield* fakeConnection({
+        release: Deferred.succeed(closing, undefined).pipe(
+          Effect.andThen(Deferred.await(finishClose)),
+        ),
+      });
+      const saved = yield* makeSaved(savedServers('test_server'));
+      const scope = yield* Scope.make();
+      const manager = Context.get(
+        yield* Layer.buildWithScope(managerOn(connection.layer, memoryStorage(saved)), scope),
+        McpManager.Service,
+      );
+      yield* manager.load();
+      yield* manager.discover('test_server');
+      const stopped = yield* Ref.make(false);
+      const shutdown = yield* Effect.forkChild(
+        Scope.close(scope, Exit.void).pipe(Effect.andThen(Ref.set(stopped, true))),
+      );
+      yield* Deferred.await(closing);
+      assert.match((yield* Effect.flip(manager.discover('test_server'))).message, /unavailable/);
+      assert.strictEqual(yield* Ref.get(stopped), false);
+      assert.deepStrictEqual(yield* connection.log, ['open 1', 'list 1']);
+      yield* Deferred.succeed(finishClose, undefined);
+      yield* Fiber.join(shutdown);
+      assert.deepStrictEqual(yield* connection.log, ['open 1', 'list 1', 'release 1']);
+    }),
+  );
+});
+
+describe('McpManager settings', () => {
+  it.effect('concurrent MCP updates preserve both changes after an earlier update fails', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const saved = yield* makeSaved(savedServers('first', 'second'));
+      const manager = managerOn(connection.layer, memoryStorage(saved));
+      yield* Effect.gen(function* () {
+        const servers = yield* McpManager.Service;
+        yield* servers.load();
+        const [missing] = yield* Effect.all(
+          [
+            Effect.flip(servers.setEnabled('missing', false)),
+            servers.setEnabled('first', false),
+            servers.setEnabled('second', false),
+          ],
+          { concurrency: 'unbounded' },
+        );
+        assert.match(missing.message, /Unknown MCP connection/);
+      }).pipe(Effect.provide(manager));
+      const restored = yield* Effect.gen(function* () {
+        const servers = yield* McpManager.Service;
+        yield* servers.load();
+        return yield* servers.list();
+      }).pipe(Effect.provide(manager));
+      assert.deepStrictEqual(
+        restored.map(({ name, enabled }) => [name, enabled]),
+        [
+          ['first', false],
+          ['second', false],
+        ],
+      );
+    }),
+  );
+
+  it.effect('a missing MCP config loads no custom servers and malformed JSON fails', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      const saved = yield* makeSaved();
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        yield* manager.load();
+        assert.deepStrictEqual(yield* manager.list(), []);
+        yield* Ref.set(saved.config, 'invalid JSON');
+        const error = yield* Effect.flip(manager.load());
+        assert.ok(error.cause instanceof SyntaxError);
+      }).pipe(Effect.provide(managerOn(connection.layer, memoryStorage(saved))));
+    }),
+  );
+
+  it.effect('the manager reserves bundled MCP names and their model namespaces', () =>
+    Effect.gen(function* () {
+      const connection = yield* fakeConnection();
+      yield* Effect.gen(function* () {
+        const manager = yield* McpManager.Service;
+        for (const name of ['everloot', 'everloot_search', 'everloot_changes']) {
+          const input = parseSetup({ server: { name, url: 'https://example.com/mcp' } });
+          assert.match((yield* Effect.flip(manager.test(input))).message, /MCP name is reserved/);
+          assert.match((yield* Effect.flip(manager.save(input))).message, /MCP name is reserved/);
+        }
+        assert.deepStrictEqual(yield* connection.log, []);
+      }).pipe(
+        Effect.provide(
+          managerOn(connection.layer, McpStorage.layerNone, { bundled: [Everloot.profile] }),
+        ),
+      );
+    }),
+  );
+
+  it('MCP setup rejects embedded URL credentials and keeps command arguments structured', () => {
+    assert.throws(() =>
+      parseSetup({ server: { name: 'test', url: 'https://user:secret@example.com/mcp' } }),
     );
-    assert.deepEqual(JSON.parse(tools[0]?.description ?? ''), {
-      PATH: [path.join(root, 'runtime'), path.dirname(process.execPath), 'inherited-path'].join(
-        path.delimiter,
-      ),
-      ComSpec: 'inherited-shell',
-      PATHEXT: null,
-      WOW_BRIDGE_TOKEN: null,
-    });
-  } finally {
-    await Effect.runPromise(manager.close());
-    await rm(root, { recursive: true, force: true });
-  }
-}, 30000);
+    for (const name of ['wow', 'questie', 'wisp']) {
+      assert.throws(() => parseSetup({ server: { name, url: 'https://example.com/mcp' } }));
+    }
+    assert.strictEqual(
+      parseSetup({
+        server: {
+          name: 'test',
+          transport: 'stdio',
+          command: 'node',
+          args: ['literal; not a shell'],
+        },
+      }).server.args[0],
+      'literal; not a shell',
+    );
+  });
+});
