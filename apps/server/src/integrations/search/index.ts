@@ -1,9 +1,10 @@
 // @effect-migrated
-import { Context, Effect, FileSystem, Layer, Path, Predicate, Redacted, Ref, Schema } from 'effect';
+import { Context, Effect, FileSystem, Layer, Path, Redacted, Ref } from 'effect';
 import { SecureRandom } from 'effect/crypto';
 import { HttpClient } from 'effect/http';
 import { parseConnectionModel } from '@wisp/protocol/providers';
-import { resolveWebSearch } from '@wisp/protocol/search';
+import { resolveWebSearch, searchBudget } from '@wisp/protocol/search';
+import type { InvalidWebSearchQuery } from '@wisp/protocol/search';
 import type { searchSetup, searchState, WebSearchInput } from '@wisp/protocol/search';
 import { AppConfig } from '#/platform/config';
 import { ChatGPTAuth } from '#/auth';
@@ -21,7 +22,7 @@ export type SearchState = typeof searchState.Type;
 export type SearchSetup = typeof searchSetup.Type;
 /** Who answers a model's web searches. */
 export type WebSearchProvider = 'ChatGPT' | 'Exa';
-type Budget = ReturnType<typeof resolveWebSearch>;
+type Budget = ReturnType<typeof searchBudget>;
 
 /** A search that returned nothing the agent can use, and why. */
 interface Unavailable {
@@ -55,12 +56,6 @@ export type WebSearchResult =
       readonly sources: readonly { readonly url: string; readonly title?: string | undefined }[];
       readonly provider: 'ChatGPT';
     } & PublicWebResult);
-
-/** The query broke the search contract, so nothing was sent. */
-export class InvalidWebSearchQuery extends Schema.TaggedError<InvalidWebSearchQuery>()(
-  'InvalidWebSearchQuery',
-  { message: Schema.String },
-) {}
 
 export { ExaSearchError } from './exa.ts';
 export { SearchSettingsError } from './settings.ts';
@@ -195,13 +190,7 @@ const make = Effect.fnUntraced(function* (file: string) {
     input: WebSearchInput,
     model: string,
   ): Effect.fn.Return<WebSearchResult, InvalidWebSearchQuery> {
-    const budget = yield* Effect.try({
-      try: () => resolveWebSearch(input),
-      catch: (cause) =>
-        new InvalidWebSearchQuery({
-          message: Predicate.isError(cause) ? cause.message : 'Invalid web search query',
-        }),
-    });
+    const budget = yield* resolveWebSearch(input);
     const { query } = budget;
     const { config } = yield* Ref.get(settings);
     const chosen = yield* route(config, model);
@@ -264,7 +253,8 @@ const make = Effect.fnUntraced(function* (file: string) {
     const key = input.apiKey ? Redacted.make(input.apiKey) : yield* vault.read(SECRET_KEY);
     // The same bounded, global request used by chats checks authentication and
     // search access. Empty results still prove the API accepted the request.
-    yield* searchExa('Frost Nova', key, resolveWebSearch('Frost Nova')).pipe(
+    const budget = searchBudget({ query: 'Frost Nova', depth: 'standard', queries: [] });
+    yield* searchExa(budget.query, key, budget).pipe(
       Effect.provide(services),
       Effect.catchTag('ExaUnavailable', () =>
         Effect.fail(
