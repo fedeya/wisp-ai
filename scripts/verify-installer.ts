@@ -6,7 +6,7 @@ import path from 'node:path';
 import { installerBuildVersion } from './installer-version.ts';
 import { addonVersionFromToc } from '../apps/server/src/game/addon-version.ts';
 import * as NodeServices from '@effect/platform-node/NodeServices';
-import { Effect } from 'effect';
+import { Effect, Result } from 'effect';
 import { addonReleaseVersion } from './addon-release-version.ts';
 const exec = promisify(execFile);
 if (!process.env.CI || !process.env.APPDATA) {
@@ -20,10 +20,14 @@ const addonVersion = await Effect.runPromise(
 const installer = path.resolve(
   process.argv[2] || `dist/WispAI-${sourceVersion}-windows-x64-setup.exe`,
 );
-const version = installerBuildVersion(
+const checked = installerBuildVersion(
   installer,
   JSON.parse(await readFile(path.join(path.dirname(installer), 'latest.json'), 'utf8')),
 );
+if (Result.isFailure(checked)) {
+  throw checked.failure;
+}
+const version = checked.success;
 const temporary = await mkdtemp(path.join(tmpdir(), 'wisp-installer-'));
 if (!temporary.startsWith(path.resolve(tmpdir()) + path.sep)) {
   throw Error('Unsafe test directory.');
