@@ -26,6 +26,22 @@ layer(NodeServices.layer)('SecretVault', (it) => {
     }),
   );
 
+  it.effect('runs the helper with the variables it is given on top of this environment', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const store = yield* fs.makeTempDirectoryScoped({ prefix: 'wisp-secrets-' });
+      const vault = yield* SecretVault.SecretVault.useSync((vault) => vault).pipe(
+        Effect.provide(
+          SecretVault.layerHelper({
+            command: [process.execPath, helper, store],
+            env: { WISP_DATA_DIR: 'eval-data' },
+          }),
+        ),
+      );
+      assert.strictEqual(Redacted.value(yield* vault.read('data-dir')), 'eval-data');
+    }),
+  );
+
   it.effect('fails a call whose helper exits with an error', () =>
     Effect.gen(function* () {
       const vault = yield* fixtureVault;
