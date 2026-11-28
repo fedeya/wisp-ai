@@ -7,7 +7,7 @@ import {
 import { parseConnectionModel } from '@wisp/protocol/providers';
 import type { z } from 'zod';
 import type { PromiseSecretVault as SecretVault } from '../../platform/secret-vault.ts';
-import type { ChatGPTAuth } from '../../auth/chatgpt-auth.ts';
+import type { PromiseChatGPTAuth } from '../../auth/index.ts';
 import { readJson, writeJson } from '../../json-file.ts';
 import { isPublicSourceUrl, searchPublicWeb } from './public-web-search.ts';
 
@@ -49,9 +49,14 @@ export class WebSearch implements WowheadSearch {
   private hasKey = false;
   private file: string;
   private vault: SecretVault;
-  private auth: ChatGPTAuth;
+  private auth: PromiseChatGPTAuth;
   private fetcher: typeof fetch;
-  constructor(file: string, vault: SecretVault, auth: ChatGPTAuth, fetcher: typeof fetch = fetch) {
+  constructor(
+    file: string,
+    vault: SecretVault,
+    auth: PromiseChatGPTAuth,
+    fetcher: typeof fetch = fetch,
+  ) {
     this.file = file;
     this.vault = vault;
     this.auth = auth;

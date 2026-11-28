@@ -15,7 +15,7 @@
     "./agent-session": "./src/agent/agent-session.ts",
     "./capabilities": "./src/integrations/capabilities.ts",
     "./chat-model": "./src/chat/chat-model.ts",
-    "./chatgpt-auth": "./src/auth/chatgpt-auth.ts",
+    "./auth": "./src/auth/index.ts",
     "./context": "./src/chat/context.ts",
     "./desktop-migration": "./src/migrations/desktop.ts",
     "./desktop-server": "./src/api/desktop-server.ts",
@@ -73,7 +73,6 @@
     "drizzle-orm": "1.0.0-rc.5",
     "effect": "4.1.3",
     "hono": "4.13.15",
-    "jose": "6.2.15",
     "posthog-node": "5.68.2",
     "uuid": "14.0.3",
     "zod": "4.6.7"

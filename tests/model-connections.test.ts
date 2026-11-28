@@ -6,7 +6,7 @@ import { ModelConnections } from '@wisp/server/model-connections';
 import { connectionModel } from '@wisp/agent/connection-model';
 import { providerDefinitions, connectionModelSlug } from '@wisp/protocol/providers';
 import { desktopRoutes } from '@wisp/protocol/desktop-routes';
-import type { ChatGPTAuth } from '@wisp/server/chatgpt-auth';
+import type { PromiseChatGPTAuth } from '@wisp/server/auth';
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -33,7 +33,12 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
     models: vi.fn(async () => []),
   };
   const file = path.join(directory, 'connections.json');
-  const manager = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth, fetcher);
+  const manager = new ModelConnections(
+    file,
+    vault,
+    chatgpt as unknown as PromiseChatGPTAuth,
+    fetcher,
+  );
   await manager.load();
   return { manager, secrets, vault, chatgpt, file };
 }
@@ -56,7 +61,7 @@ test('connections persist metadata separately from secrets and work without Chat
   expect(await manager.models()).toEqual([
     { slug, displayName: 'claude-test', efforts: [], contextWindow: 200000 },
   ]);
-  const restored = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth);
+  const restored = new ModelConnections(file, vault, chatgpt as unknown as PromiseChatGPTAuth);
   await restored.load();
   expect(restored.list()[0]?.hasKey).toBe(true);
   await restored.save({ ...setup, id, name: 'Renamed', apiKey: undefined });
@@ -102,7 +107,7 @@ test('saved API models expose reasoning choices while keeping the existing defau
     ...setup,
     models: [{ id: 'claude-sonnet-4-6', contextWindow: 200000 }],
   });
-  const restored = new ModelConnections(file, vault, chatgpt as unknown as ChatGPTAuth);
+  const restored = new ModelConnections(file, vault, chatgpt as unknown as PromiseChatGPTAuth);
   await restored.load();
   expect((await restored.models())[0]).toMatchObject({
     slug: connectionModelSlug(id, 'claude-sonnet-4-6'),

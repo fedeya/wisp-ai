@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSearch } from '@wisp/server/web-search';
-import type { ChatGPTAuth } from '@wisp/server/chatgpt-auth';
+import type { PromiseChatGPTAuth } from '@wisp/server/auth';
 import { connectionModel } from '@wisp/agent/connection-model';
 
 const apiModel = 'connection:35302f8c-128a-48fb-98a1-9eb03bb71f72:claude-test';
@@ -51,7 +51,7 @@ async function fixture(fetcher: typeof fetch = vi.fn()) {
     ),
   };
   const file = path.join(directory, 'search.json');
-  const search = new WebSearch(file, vault, auth as unknown as ChatGPTAuth, fetcher);
+  const search = new WebSearch(file, vault, auth as unknown as PromiseChatGPTAuth, fetcher);
   await search.load();
   return {
     search,
@@ -72,7 +72,7 @@ test('Exa credentials are separate from language models, protected, persistent, 
   expect(await readFile(f.file, 'utf8')).not.toContain('exa-secret');
   expect(JSON.stringify(f.search.state())).not.toContain('exa-secret');
   expect(f.search.available(apiModel)).toBe(true);
-  const restored = new WebSearch(f.file, f.vault, f.auth as unknown as ChatGPTAuth);
+  const restored = new WebSearch(f.file, f.vault, f.auth as unknown as PromiseChatGPTAuth);
   await restored.load();
   expect(restored.state()).toEqual({ provider: 'auto', hasExaKey: true });
   await restored.save({ provider: 'exa' });

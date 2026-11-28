@@ -1,6 +1,8 @@
-import type { ServerResponse } from 'node:http';
+// @effect-migrated
+import { HttpServerResponse } from 'effect/http';
 
-type CallbackResult = 'connected' | 'permission-required' | 'error';
+/** How a sign-in ended, as the browser tab reports it. */
+export type CallbackResult = 'connected' | 'permission-required' | 'error';
 
 const resultCopy = {
   connected: {
@@ -31,24 +33,39 @@ const resultCopy = {
 const wispIcon =
   'data:image/png;base64,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';
 
-export function sendChatGPTCallbackPage(
-  res: ServerResponse,
-  result: CallbackResult,
-  message?: string,
-) {
+/** The page the browser shows after the sign-in redirect; `message` replaces the default detail. */
+export function callbackPage(result: CallbackResult, message?: string) {
   const { title, detail, nextStep, icon } = resultCopy[result];
   const description = (message ?? detail)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
 
-  res.writeHead(result === 'error' ? 400 : 200, {
-    'content-type': 'text/html; charset=utf-8',
-    'content-security-policy':
-      "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
-    'x-content-type-options': 'nosniff',
+  return HttpServerResponse.text(page({ result, title, description, nextStep, icon }), {
+    status: result === 'error' ? 400 : 200,
+    contentType: 'text/html; charset=utf-8',
+    headers: {
+      'content-security-policy':
+        "default-src 'none'; img-src data:; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+      'x-content-type-options': 'nosniff',
+    },
   });
-  res.end(`<!doctype html>
+}
+
+function page({
+  result,
+  title,
+  description,
+  nextStep,
+  icon,
+}: {
+  result: CallbackResult;
+  title: string;
+  description: string;
+  nextStep: string;
+  icon: string;
+}) {
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -170,5 +187,5 @@ export function sendChatGPTCallbackPage(
     </div>
   </main>
 </body>
-</html>`);
+</html>`;
 }
