@@ -114,10 +114,9 @@ export class LegacyReplyStream {
         if (index < 0 && this.ui.length >= 48) {
           throw new Error('UI node limit');
         }
-        if (
-          index >= 0 &&
-          (this.ui[index].kind !== node.kind || this.ui[index].parent !== node.parent)
-        ) {
+        // `index` is -1 for a new node, which finds no existing node.
+        const existing = this.ui[index];
+        if (existing && (existing.kind !== node.kind || existing.parent !== node.parent)) {
           throw new Error('UI identity changed');
         }
         validateNode(node, this.ui);
@@ -189,6 +188,10 @@ export class LegacyReplyStream {
     let end = 0;
     while (end < raw.length) {
       const char = raw[end];
+      if (char === undefined) {
+        // Unreachable: `end < raw.length` holds inside the loop.
+        break;
+      }
       if (char === '"') {
         break;
       }
