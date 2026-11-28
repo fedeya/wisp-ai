@@ -1,0 +1,318 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the model sees the same web__web_search input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "depth": {
+      "default": "standard",
+      "description": "Choose quick for a simple fact, standard for normal research, deep for conflicting evidence, missing acquisition routes or broad comparisons.",
+      "type": "string",
+      "enum": [
+        "quick",
+        "standard",
+        "deep"
+      ]
+    },
+    "maxResults": {
+      "description": "Maximum returned findings/sources. Overrides the depth default.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "maxQueries": {
+      "description": "Query budget including the primary query. Guidance for ChatGPT; bounds explicit query variants on Exa.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6
+    },
+    "timeoutSeconds": {
+      "description": "Total time budget for this tool call, not per query.",
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 180
+    },
+    "excerptCharacters": {
+      "description": "Maximum Exa excerpt length per source.",
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 12000
+    },
+    "queries": {
+      "default": [],
+      "description": "Optional additional focused query variants. Exa executes these within maxQueries; ChatGPT can use them as research directions.",
+      "maxItems": 5,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wisp__manage_routine input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "catalog"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "list"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "get"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "save"
+        },
+        "routine": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "instruction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6000
+            },
+            "triggers": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "event"
+                      },
+                      "event": {
+                        "type": "string",
+                        "enum": [
+                          "level_up",
+                          "equipment_changed",
+                          "money_changed",
+                          "bags_changed",
+                          "quests_changed",
+                          "spells_changed",
+                          "talents_changed",
+                          "zone_changed"
+                        ]
+                      },
+                      "filters": {
+                        "default": [],
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "op": {
+                              "type": "string",
+                              "enum": [
+                                "eq",
+                                "ne",
+                                "gte",
+                                "lte",
+                                "contains",
+                                "multiple_of"
+                              ]
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "op",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "event"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "interval"
+                      },
+                      "seconds": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 2592000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "seconds"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            },
+            "cooldownSeconds": {
+              "default": 600,
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400
+            },
+            "once": {
+              "default": false,
+              "description": "Pause after the first successful non-silent result. Silent checks and failures keep watching.",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "instruction",
+            "triggers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "operation",
+        "routine"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "pause"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "resume"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "const": "remove"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}"
+`;
