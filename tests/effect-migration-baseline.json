@@ -24,7 +24,7 @@
     "newPromise": 2,
     "asyncFunctions": 44,
     "effectRuns": 4,
-    "effectPromises": 11,
+    "effectPromises": 13,
     "throwStatements": 53,
     "tryBlocks": 9,
     "jsonParse": 2
