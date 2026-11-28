@@ -44,20 +44,33 @@ export function newerStable(candidate: string, previous: string) {
   }
   const next = candidate.split('.').map(Number),
     last = previous.split('.').map(Number);
-  for (let index = 0; index < 3; index++) {
-    if (next[index] !== last[index]) {
-      return next[index] > last[index];
+  for (const [index, part] of next.entries()) {
+    const previousPart = last[index];
+    if (previousPart === undefined) {
+      return false;
+    }
+    if (part !== previousPart) {
+      return part > previousPart;
     }
   }
   return false;
 }
 export function nightlyBuildVersion(stable: string, run: string, attempt: string) {
-  if (!/^\d+\.\d+\.\d+$/.test(stable) || !/^\d+$/.test(run) || !/^\d+$/.test(attempt)) {
+  const [major, minor, patch] = stable.split('.').map(Number);
+  if (
+    !/^\d+\.\d+\.\d+$/.test(stable) ||
+    patch === undefined ||
+    !/^\d+$/.test(run) ||
+    !/^\d+$/.test(attempt)
+  ) {
     throw Error('Invalid nightly build identity.');
   }
-  const [major, minor, patch] = stable.split('.').map(Number);
   return `${major}.${minor}.${patch + 1}-nightly.${run}.${attempt}`;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  await syncVersion(process.argv[2]);
+  const version = process.argv[2];
+  if (version === undefined) {
+    throw new Error('Usage: node scripts/release-version.ts <version>');
+  }
+  await syncVersion(version);
 }

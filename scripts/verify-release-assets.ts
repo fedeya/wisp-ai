@@ -8,19 +8,21 @@ import { pathToFileURL } from 'node:url';
 
 const ed25519Spki = Buffer.from('302a300506032b6570032100', 'hex');
 
+/** The lines of a minisign file, and its base64 payload on the line after the untrusted comment. */
 function minisignLines(encoded: string, what: string) {
   const lines = Buffer.from(encoded.trim(), 'base64').toString('utf8').split(/\r?\n/);
-  if (!lines[0]?.startsWith('untrusted comment:') || !lines[1]) {
+  const [comment, payload] = lines;
+  if (!comment?.startsWith('untrusted comment:') || !payload) {
     throw Error(`The ${what} is not a minisign ${what}.`);
   }
-  return lines;
+  return { lines, payload };
 }
 
 /** Verifies a Tauri updater signature (base64 minisign) of `data` against a Tauri public key. */
 export function verifyUpdaterSignature(data: Buffer, signature: string, publicKey: string) {
-  const key = Buffer.from(minisignLines(publicKey, 'public key')[1], 'base64');
-  const lines = minisignLines(signature, 'signature');
-  const sig = Buffer.from(lines[1], 'base64');
+  const key = Buffer.from(minisignLines(publicKey, 'public key').payload, 'base64');
+  const { lines, payload } = minisignLines(signature, 'signature');
+  const sig = Buffer.from(payload, 'base64');
   if (key.length !== 42 || sig.length !== 74 || key.subarray(0, 2).toString() !== 'Ed') {
     throw Error('Unexpected minisign key or signature length.');
   }

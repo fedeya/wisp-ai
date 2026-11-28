@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { adapters } from '../../apps/server/src/integrations/simulation/adapters/index.ts';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const source = path.resolve(process.argv[2]);
+const sourceArgument = process.argv[2];
+if (sourceArgument === undefined) {
+  throw new Error('Usage: node scripts/simulator/metadata.ts <wowsims source folder>');
+}
+const source = path.resolve(sourceArgument);
 const output = path.join(root, 'simulator');
 const manifest = JSON.parse(await readFile(path.join(output, 'manifest.json'), 'utf8'));
 const spells = await readFile(path.join(source, 'sim/core/spelldata/spells_auto_gen.go'), 'utf8');
@@ -36,13 +40,13 @@ for (const adapter of Object.values(adapters)) {
   const ranks: Record<string, unknown[]> = {};
   const triggerParents: Record<number, number> = {};
   for (const family of adapter.families) {
-    const match = generated.match(
+    const rankIds = generated.match(
       new RegExp('\\b' + family + ':\\s+spelldata\\.Ranked\\(([^)]+)\\)'),
-    );
-    if (!match) {
+    )?.[1];
+    if (rankIds === undefined) {
       throw Error('Missing engine spell family: ' + name + '/' + family);
     }
-    ranks[family] = match[1].split(',').map((v) => {
+    ranks[family] = rankIds.split(',').map((v) => {
       const id = Number(v.trim());
       const row = rows.get(id);
       if (!row) {
