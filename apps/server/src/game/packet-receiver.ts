@@ -9,8 +9,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { MemoryView, SessionState } from '../session-state.ts';
 import type { Chat } from '../chat/events.ts';
-import type { IntegrationState } from '../integrations/integration-state.ts';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
+import type { CapabilitySettings, IntegrationState } from '#/capabilities';
 import type { ModelCatalog } from '../models/model-connections.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { PanelStore } from '../panels/panel-store.ts';
@@ -37,8 +36,8 @@ interface ReceiverDependencies {
   state: SessionState;
   engine: Pick<AgentEngine, 'end'>;
   request: Connection['request'];
-  integrationState: IntegrationState;
-  capabilitySettings: CapabilitySettings;
+  integrationState: IntegrationState['Service'];
+  capabilitySettings: CapabilitySettings['Service'];
   models: Pick<ModelCatalog, 'models'>;
   routineStore: RoutineStore;
   panelStore: PanelStore;
@@ -99,7 +98,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       return;
     }
     // The bridge has already selected the window that owns the connection.
-    const beforeIntegrations = JSON.stringify(capabilitySettings.snapshot());
+    const beforeIntegrations = JSON.stringify(yield* capabilitySettings.snapshot);
     const newTransport = establishesSession && state.activeTransport !== packet.session;
     if (newTransport) {
       runFork(
@@ -126,7 +125,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       state.panelCommand = undefined;
       state.routineCommand = undefined;
       state.routinePresence = undefined;
-      integrationState.reset();
+      yield* integrationState.reset;
       state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
       state.memoryView = undefined;
       void refreshModelCatalog();
@@ -134,16 +133,13 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     packet = { ...packet, context: contextCache.resolve(packet.context) };
     state.questRevision = contextCache.revision;
     state.characterRevision = contextCache.characterRevision;
-    if (
-      integrationState.receive(packet.integrations) &&
-      integrationState.report &&
-      deps.telemetry
-    ) {
-      yield* deps.telemetry.game(integrationState.report.version);
+    if ((yield* integrationState.receive(packet.integrations)) && deps.telemetry) {
+      const report = yield* integrationState.report;
+      if (Option.isSome(report)) yield* deps.telemetry.game(report.value.version);
     }
-    if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
-      void capabilitySettings.publish().catch((error) =>
-        runFork(
+    if (JSON.stringify(yield* capabilitySettings.snapshot) !== beforeIntegrations) {
+      yield* capabilitySettings.publish.pipe(
+        Effect.catch((error) =>
           Effect.logWarning('Integration update failed').pipe(
             Effect.annotateLogs({
               event: 'integration.update_failed',
@@ -151,6 +147,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
             }),
           ),
         ),
+        Effect.forkDetach,
       );
       changed();
     }
@@ -283,7 +280,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         at: Date.now(),
         session: packet.session,
       };
-      if (packet.type === 'routine_event' && capabilitySettings.enabled('tool:manage_routine')) {
+      if (
+        packet.type === 'routine_event' &&
+        (yield* capabilitySettings.enabled('tool:manage_routine'))
+      ) {
         const event = decodeRoutineEvent({ event: data?.event, values: data?.values });
         if (Option.isSome(event)) {
           void routineStore
@@ -391,7 +391,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         } else {
           const undo = node.action.kind === 'undo_settings',
             tool = undo ? 'undo_settings' : 'update_settings';
-          if (!capabilitySettings.enabled('tool:' + tool)) {
+          if (!(await runPromise(capabilitySettings.enabled('tool:' + tool)))) {
             throw new Error('This tool is disabled in Settings');
           }
           const identity = characterIdentity(packet.context);

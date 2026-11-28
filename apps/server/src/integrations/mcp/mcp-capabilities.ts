@@ -1,6 +1,6 @@
 import { defaultCapabilities, type Capability } from '@wisp/protocol/capabilities';
 import { Effect, Result } from 'effect';
-import type { CapabilitySettings } from '../capabilities.ts';
+import type { CapabilitySettings } from '#/capabilities';
 import type { McpManager } from '@wisp/agent/mcp-manager';
 
 type McpServerView = ReturnType<McpManager['list']>[number];
@@ -50,19 +50,19 @@ export function mcpCapabilityCatalog(
 /** Keeps capability settings and the MCP servers they switch on and off in step. */
 export function createMcpCapabilities(
   mcpManager: Pick<McpManager, 'list' | 'setEnabled' | 'disconnect' | 'bundled'>,
-  capabilitySettings: CapabilitySettings,
+  capabilitySettings: Pick<CapabilitySettings['Service'], 'configured' | 'set' | 'setCatalog'>,
 ) {
   return {
     /** Rebuild the capability catalog after the MCP server list changed. */
-    refreshCatalog() {
-      capabilitySettings.catalog = mcpCapabilityCatalog(mcpManager.list(), mcpManager.bundled);
-    },
+    refreshCatalog: Effect.suspend(() =>
+      capabilitySettings.setCatalog(mcpCapabilityCatalog(mcpManager.list(), mcpManager.bundled)),
+    ),
     /** Start or stop each MCP server as its saved capability setting says. */
     applySavedSettings: Effect.fn('McpCapabilities.applySavedSettings')(function* () {
       for (const server of mcpManager.list()) {
         yield* mcpManager.setEnabled(
           server.name,
-          capabilitySettings.configured('mcp:' + server.name),
+          yield* capabilitySettings.configured('mcp:' + server.name),
         );
       }
     }),
@@ -77,12 +77,7 @@ export function createMcpCapabilities(
       if (server) {
         yield* mcpManager.setEnabled(server.name, enabled);
       }
-      const result = yield* Effect.result(
-        Effect.tryPromise({
-          try: () => capabilitySettings.set(id, enabled),
-          catch: (error) => error,
-        }),
-      );
+      const result = yield* Effect.result(capabilitySettings.set(id, enabled));
       if (Result.isFailure(result)) {
         if (server) {
           yield* mcpManager.setEnabled(server.name, server.enabled);

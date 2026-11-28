@@ -1,15 +1,14 @@
 import { Effect, Exit, FileSystem, Path, Scope, Semaphore, Stream } from 'effect';
 import type { Connection, GameCall, GameEvent, WowBridge } from '@wisp/wow-bridge';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
+import type { CapabilitySettings, IntegrationState } from '#/capabilities';
 import { errorMessage } from '../errors.ts';
-import type { IntegrationState } from '../integrations/integration-state.ts';
 import type { SessionState } from '../session-state.ts';
 
 export interface TransportConnectionDependencies {
   state: SessionState;
   bridge: WowBridge['Service'];
-  integrationState: Pick<IntegrationState, 'reset'>;
-  capabilitySettings: Pick<CapabilitySettings, 'publish'>;
+  integrationState: Pick<IntegrationState['Service'], 'reset'>;
+  capabilitySettings: Pick<CapabilitySettings['Service'], 'publish'>;
   /** Packets from the current transport only; a replaced one is ignored. */
   receive: (event: GameEvent) => Effect.Effect<void>;
   /** Persist a WoW folder the user picked once its transport has started. */
@@ -68,13 +67,12 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     state.currentCharacterKey = undefined;
     state.routinePresence = undefined;
     state.memoryViewRequest = undefined;
-    integrationState.reset();
+    yield* integrationState.reset;
     changed();
     if (previous) yield* Scope.close(previous, Exit.void);
-    yield* Effect.tryPromise({
-      try: () => capabilitySettings.publish(),
-      catch: (error) => error,
-    }).pipe(Effect.catch((error) => Effect.sync(() => logError(error))));
+    yield* capabilitySettings.publish.pipe(
+      Effect.catch((error) => Effect.sync(() => logError(error))),
+    );
   });
 
   const connect = Effect.fnUntraced(function* (wow: string | undefined, save = false) {

@@ -115,7 +115,7 @@ export const make = Effect.fn('Features.make')(function* (registry: FeatureRegis
         description: definition.description,
         enabled: current[id] === true,
         channelDefault: channelDefault(definition, channel),
-        override: Object.hasOwn(overrides, id) ? overrides[id] : null,
+        override: Object.hasOwn(overrides, id) ? (overrides[id] ?? null) : null,
       })),
     }),
   );

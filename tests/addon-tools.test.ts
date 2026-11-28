@@ -1,13 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
-import path from 'node:path';
-import { tmpdir } from 'node:os';
+import { layer } from '@effect/vitest';
 import { Effect, Exit, Schema } from 'effect';
-import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
-import * as Capabilities from '@wisp/agent/capabilities';
-import { CapabilitySettings } from '@wisp/server/capabilities';
-import { IntegrationState } from '../apps/server/src/integrations/integration-state.ts';
 import { toolOffered } from '@wisp/agent/enabled-tool';
 import flightPaths from '../apps/agent/src/wisp/tools/wow__inspect_flight_paths.ts';
 import quest from '../apps/agent/src/wisp/tools/questie__get_quest.ts';
@@ -31,6 +25,7 @@ import {
 import type { GameInspection } from '@wisp/agent/game-access';
 import { integrationContext } from '@wisp/protocol/capabilities';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
+import { agentReads, capabilitiesIn, capabilityFiles, platform } from './capability-fixture.ts';
 
 // Inputs decode as their tools decode them; strict ones reject unknown keys.
 const accepts = (schema: Schema.Top & Schema.Decoder<unknown>, input: unknown) =>
@@ -54,92 +49,83 @@ test('item and spell references can opt into cooldown readings', () => {
   }
 });
 
-test('actual tool definitions follow per-API readiness, parent switches and expiration', async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), 'wisp-addon-tools-'));
-  const previous = process.env.WOW_CAPABILITIES_FILE;
-  try {
-    const settings = new CapabilitySettings(path.join(directory, 'choices.json'));
-    settings.agentFile = path.join(directory, 'agent.json');
-    process.env.WOW_CAPABILITIES_FILE = settings.agentFile;
-    const state = new IntegrationState(settings);
-    const readCapabilities = Effect.flatMap(Capabilities.Service, (settings) => settings.read).pipe(
-      Effect.provide(Capabilities.layerFromFile()),
-      Effect.provide(NodeFileSystem.layer),
-    );
-    // A tool as the agent offers it this turn, or null while its capability is off.
-    const resolve = async <T extends { capability?: string }>(definition: T) =>
-      toolOffered(definition, await Effect.runPromise(readCapabilities)) ? definition : null;
-    const report = {
-      version: '1.60',
-      questie: {
-        status: 'partial',
-        npcs: true,
-        quests: true,
-        objects: false,
-        trainers: false,
-        services: false,
-      },
-      syndicator: { status: 'ready' },
-      auctionator: { status: 'partial' },
-      polestar: { status: 'ready', guides: true },
-    };
-    await settings.publish();
-    assert.equal(await resolve(hearthstone), null);
-    assert.equal(await resolve(combat), null);
-    for (const definition of [quest, chain, object, stored, prices, guideStep, createGuide]) {
-      assert.equal(await resolve(definition), null);
-    }
-    assert.equal(await resolve(flightPaths), null);
-    assert.ok(state.receive(report));
-    await settings.publish();
-    assert.ok(await resolve(hearthstone));
-    assert.ok(await resolve(combat));
-    for (const definition of [quest, chain, stored, prices, guideStep, createGuide]) {
-      assert.ok(await resolve(definition));
-    }
-    assert.ok(await resolve(flightPaths));
-    assert.equal(
-      await resolve(object),
-      null,
-      'Questie NPC/quest readiness does not invent object readiness',
-    );
-    const context = integrationContext(settings.snapshot());
-    assert.ok(
-      context
-        .find((entry) => entry.id === 'integration:questie')
-        ?.unavailableTools.includes('questie__find_object_locations'),
-    );
-    await settings.set('tool:get_quest', false);
-    assert.equal(await resolve(quest), null);
-    assert.ok(await resolve(chain));
-    await settings.set('integration:syndicator', false);
-    assert.equal(await resolve(stored), null);
-    await settings.set('integration:syndicator', true);
-    assert.ok(await resolve(stored));
-    state.receive({
-      ...report,
-      syndicator: { status: 'waiting' },
-      auctionator: { status: 'missing' },
-      polestar: { status: 'partial', guides: false },
-    });
-    await settings.publish();
-    assert.equal(await resolve(stored), null);
-    assert.equal(await resolve(prices), null);
-    assert.ok(await resolve(guideStep), 'Reading the step does not need the guide API');
-    assert.equal(await resolve(createGuide), null);
-    state.reset();
-    await settings.publish();
-    assert.equal(await resolve(hearthstone), null);
-    assert.equal(await resolve(chain), null);
-    assert.equal(await resolve(flightPaths), null);
-  } finally {
-    if (previous === undefined) {
-      delete process.env.WOW_CAPABILITIES_FILE;
-    } else {
-      process.env.WOW_CAPABILITIES_FILE = previous;
-    }
-    await rm(directory, { recursive: true, force: true });
-  }
+layer(platform)('addon tools', (it) => {
+  it.effect(
+    'actual tool definitions follow per-API readiness, parent switches and expiration',
+    () =>
+      Effect.gen(function* () {
+        const files = yield* capabilityFiles;
+        const { settings, integrations: state } = yield* capabilitiesIn(files);
+        // A tool as the agent offers it this turn, or null while its capability is off.
+        const resolve = <T extends { capability?: string }>(definition: T) =>
+          Effect.map(agentReads(files.agentFile), (capabilities) =>
+            toolOffered(definition, capabilities) ? definition : null,
+          );
+        const report = {
+          version: '1.60',
+          questie: {
+            status: 'partial',
+            npcs: true,
+            quests: true,
+            objects: false,
+            trainers: false,
+            services: false,
+          },
+          syndicator: { status: 'ready' },
+          auctionator: { status: 'partial' },
+          polestar: { status: 'ready', guides: true },
+        };
+        yield* settings.publish;
+        assert.equal(yield* resolve(hearthstone), null);
+        assert.equal(yield* resolve(combat), null);
+        for (const definition of [quest, chain, object, stored, prices, guideStep, createGuide]) {
+          assert.equal(yield* resolve(definition), null);
+        }
+        assert.equal(yield* resolve(flightPaths), null);
+        assert.ok(yield* state.receive(report));
+        yield* settings.publish;
+        assert.ok(yield* resolve(hearthstone));
+        assert.ok(yield* resolve(combat));
+        for (const definition of [quest, chain, stored, prices, guideStep, createGuide]) {
+          assert.ok(yield* resolve(definition));
+        }
+        assert.ok(yield* resolve(flightPaths));
+        assert.equal(
+          yield* resolve(object),
+          null,
+          'Questie NPC/quest readiness does not invent object readiness',
+        );
+        const context = integrationContext(yield* settings.snapshot);
+        assert.ok(
+          context
+            .find((entry) => entry.id === 'integration:questie')
+            ?.unavailableTools.includes('questie__find_object_locations'),
+        );
+        yield* settings.set('tool:get_quest', false);
+        assert.equal(yield* resolve(quest), null);
+        assert.ok(yield* resolve(chain));
+        yield* settings.set('integration:syndicator', false);
+        assert.equal(yield* resolve(stored), null);
+        yield* settings.set('integration:syndicator', true);
+        assert.ok(yield* resolve(stored));
+        yield* state.receive({
+          ...report,
+          syndicator: { status: 'waiting' },
+          auctionator: { status: 'missing' },
+          polestar: { status: 'partial', guides: false },
+        });
+        yield* settings.publish;
+        assert.equal(yield* resolve(stored), null);
+        assert.equal(yield* resolve(prices), null);
+        assert.ok(yield* resolve(guideStep), 'Reading the step does not need the guide API');
+        assert.equal(yield* resolve(createGuide), null);
+        yield* state.reset;
+        yield* settings.publish;
+        assert.equal(yield* resolve(hearthstone), null);
+        assert.equal(yield* resolve(chain), null);
+        assert.equal(yield* resolve(flightPaths), null);
+      }),
+  );
 });
 test('new inspection inputs bound work and reject executable or cross-version arguments', () => {
   assert.equal(accepts(questChainInput, { questId: 1, limit: 1000 }), false);

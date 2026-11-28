@@ -12,7 +12,7 @@ import type { McpManager } from '@wisp/agent/mcp-manager';
 import type { ModelConnections } from '../models/model-connections.ts';
 import type { WebSearch } from '../integrations/search/web-search.ts';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
-import type { CapabilitySettings } from '../integrations/capabilities.ts';
+import type { CapabilitySettings } from '#/capabilities';
 import type { PanelStore } from '../panels/panel-store.ts';
 import type { RoutineStore } from '../routines/routine-store.ts';
 import type { Chat } from '../chat/events.ts';
@@ -31,7 +31,7 @@ interface DesktopDependencies {
   auth: PromiseChatGPTAuth;
   connections: ModelConnections;
   webSearch: WebSearch;
-  capabilitySettings: CapabilitySettings;
+  capabilitySettings: Pick<CapabilitySettings['Service'], 'set' | 'publish'>;
   mcpManager: McpManager;
   panelStore: PanelStore;
   routineStore: RoutineStore;
@@ -47,7 +47,7 @@ interface DesktopDependencies {
   setWowTransport: (input: typeof wowTransportInput.Type) => Effect.Effect<void, unknown>;
   setAppUpdate: (version: string | null) => void;
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
-  refreshMcpCatalog: () => void;
+  refreshMcpCatalog: Effect.Effect<void>;
   requestStop: () => void;
   changed: () => void;
 }
@@ -142,11 +142,8 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       const result = await runPromise(
         Effect.gen(function* () {
           const tested = yield* mcpManager.save(setup);
-          deps.refreshMcpCatalog();
-          yield* Effect.tryPromise({
-            try: () => capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled),
-            catch: (error) => error,
-          });
+          yield* deps.refreshMcpCatalog;
+          yield* capabilitySettings.set('mcp:' + setup.server.name, setup.server.enabled);
           deps.changed();
           return tested;
         }),
@@ -158,11 +155,8 @@ export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDepend
       await runPromise(
         Effect.gen(function* () {
           yield* mcpManager.remove(name);
-          deps.refreshMcpCatalog();
-          yield* Effect.tryPromise({
-            try: () => capabilitySettings.publish(),
-            catch: (error) => error,
-          });
+          yield* deps.refreshMcpCatalog;
+          yield* capabilitySettings.publish;
           deps.changed();
         }),
       );

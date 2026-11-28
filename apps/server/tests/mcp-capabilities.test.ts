@@ -1,8 +1,8 @@
-import { test, vi } from 'vitest';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
 import { Effect, Schema } from 'effect';
-import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { CapabilityFileError } from '#/capabilities';
 import {
   createMcpCapabilities,
   mcpCapabilityCatalog,
@@ -72,15 +72,26 @@ test('a capability write failure restores the MCP server switch and preserves th
         return undefined;
       }),
   };
-  const settings = new CapabilitySettings('unused');
-  const failure = Error('Capability write failed');
-  using set = vi.spyOn(settings, 'set').mockRejectedValue(failure);
-  const { setCapability } = createMcpCapabilities(manager, settings);
+  const failure = new CapabilityFileError({
+    file: 'capabilities.json',
+    message: 'Capability write failed',
+    cause: null,
+  });
+  const saves: [string, boolean][] = [];
+  const { setCapability } = createMcpCapabilities(manager, {
+    configured: () => Effect.succeed(true),
+    setCatalog: () => Effect.void,
+    set: (id, enabled) =>
+      Effect.suspend(() => {
+        saves.push([id, enabled]);
+        return Effect.fail(failure);
+      }),
+  });
 
   await assert.rejects(Effect.runPromise(setCapability('mcp:notes', false)), (error) => {
     assert.equal(error, failure);
     return true;
   });
   assert.deepEqual(switches, [false, true]);
-  assert.deepEqual(set.mock.calls, [['mcp:notes', false]]);
+  assert.deepEqual(saves, [['mcp:notes', false]]);
 });
