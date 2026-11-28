@@ -31,7 +31,12 @@ export const rpcRequests = {
   }),
   panels: z.object({ ...session, input: panelInput }),
   routines: protocolRequest(Schema.Struct({ agentSession, input: routineInput })),
-  simulate: simulationInput.extend(session),
+  // zod's `extend` kept the checks, which read only the simulation's own fields.
+  simulate: protocolRequest(
+    simulationInput.mapFields((fields) => ({ ...fields, agentSession }), {
+      unsafePreserveChecks: true,
+    }),
+  ),
   database: z.discriminatedUnion('operation', [
     databaseRequest.options[0].extend(session),
     databaseRequest.options[1].extend(session),

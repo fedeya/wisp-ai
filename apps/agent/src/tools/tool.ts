@@ -97,6 +97,7 @@ const zodKeywordOrder = [
   'items',
   'properties',
   'required',
+  'propertyNames',
   'additionalProperties',
 ];
 const zodRank = (keyword: string) => {
@@ -123,14 +124,28 @@ const zodLayoutAll = (schemas: unknown) =>
 
 const isSingleValue = Schema.is(Schema.Tuple([Schema.Unknown]));
 
+/** A record as zod wrote it: its string keys, and the schema of every value. */
+const zodRecord = ({
+  [zodJsonSchemaKey]: _form,
+  ...schema
+}: JsonSchema.JsonSchema): JsonSchema.JsonSchema => ({
+  ...schema,
+  propertyNames: { type: 'string' },
+  additionalProperties: Predicate.isObject(schema.additionalProperties)
+    ? schema.additionalProperties
+    : {},
+});
+
 /**
  * A JSON Schema written as zod wrote it: keywords in zod's order, `properties`
  * on every object, open objects without `additionalProperties: true`, and the
  * forms the `zodJsonSchemaKey` annotation names (`const` for a literal, `oneOf`
- * for a discriminated union).
+ * for a discriminated union, `propertyNames` and `additionalProperties` for a
+ * record).
  */
 function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
   const form = schema[zodJsonSchemaKey];
+  if (form === 'record') return zodLayoutObject(zodRecord(schema));
   const entries = Object.entries(schema).flatMap(([keyword, value]): [string, unknown][] => {
     if (keyword === zodJsonSchemaKey) return [];
     if (keyword === 'additionalProperties' && value === true) return [];

@@ -16,6 +16,7 @@ import {
   NoArgs,
   NoArgsStrict,
   NumberBetween,
+  StringRecord,
   zodJsonSchemaKey,
 } from '../../src/contract/tool-inputs.ts';
 import { effectToolInput } from '../../src/tools/tool.ts';
@@ -136,6 +137,51 @@ describe('a discriminated union', () => {
     const json = JSON.stringify(modelSchema('effect'));
     expect(json).toContain('"anyOf"');
     expect(json).toContain('"enum":["preview"]');
+    expect(json).not.toContain(zodJsonSchemaKey);
+  });
+});
+
+describe('a string record', () => {
+  const modelSchema = (value: Schema.Codec<unknown>, layout: 'effect' | 'zod') =>
+    effectToolInput(Schema.Struct({ request: StringRecord(value) }), {
+      parseOptions: rejectUnknownKeys,
+      layout,
+    })['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
+
+  it('takes any object of its values, and nothing else, as zod’s z.record(z.string(), …)', () => {
+    const decode = Schema.decodeUnknownExit(StringRecord(Schema.Unknown));
+    for (const input of [{}, { raid: { parties: [] } }, { '': null }]) {
+      expect(decoded(decode(input, rejectUnknownKeys))).toEqual(input);
+    }
+    for (const input of [[], [{ raid: {} }], null, 'raid', 1]) {
+      expect(Exit.isFailure(decode(input)), JSON.stringify(input)).toBe(true);
+    }
+    expect(Exit.isFailure(Schema.decodeUnknownExit(StringRecord(Schema.Finite))({ a: '1' }))).toBe(
+      true,
+    );
+  });
+
+  it('shows the model propertyNames and additionalProperties, as zod wrote them', () => {
+    const record = (additionalProperties: object) => ({
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      properties: {
+        request: { type: 'object', propertyNames: { type: 'string' }, additionalProperties },
+      },
+      required: ['request'],
+      additionalProperties: false,
+    });
+    expect(modelSchema(Schema.Unknown, 'zod')).toEqual(record({}));
+    expect(modelSchema(Schema.Boolean, 'zod')).toEqual(record({ type: 'boolean' }));
+    // The keywords keep zod's order: type, propertyNames, additionalProperties.
+    expect(JSON.stringify(modelSchema(Schema.Unknown, 'zod'))).toContain(
+      '"request":{"type":"object","propertyNames":{"type":"string"},"additionalProperties":{}}',
+    );
+  });
+
+  it('leaves Effect’s own layout as Effect writes it', () => {
+    const json = JSON.stringify(modelSchema(Schema.Unknown, 'effect'));
+    expect(json).toContain('"request":{"type":"object"}');
     expect(json).not.toContain(zodJsonSchemaKey);
   });
 });

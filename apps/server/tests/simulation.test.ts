@@ -5,12 +5,14 @@ import * as NodeChildProcessSpawner from '@effect/platform-node/NodeChildProcess
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
-import { ConfigProvider, Effect, FileSystem, Layer, Path, Schema } from 'effect';
+import { ConfigProvider, Effect, Exit, FileSystem, Layer, Path, Schema } from 'effect';
 import { ChildProcessSpawner } from 'effect/process';
 import { TestClock } from 'effect/testing';
 import * as AppConfig from '#/platform/config';
 import * as Simulation from '../src/integrations/simulation/simulator.ts';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
+import type { SimulationInput } from '@wisp/agent/contract/simulation';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { ClassMetadata } from '../src/integrations/simulation/adapters/types.ts';
 import { adapters } from '../src/integrations/simulation/adapters/index.ts';
 import { replaceEquipment, type CatalogItem } from '../src/integrations/simulation/equipment.ts';
@@ -142,6 +144,13 @@ function classFixture(token: string, level: number) {
 const rejects = <A, R>(effect: Effect.Effect<A, Simulation.SimulationError, R>) =>
   Effect.flip(effect).pipe(Effect.map((error) => assert.equal(error._tag, 'SimulationError')));
 
+/** Whether the agent's tool accepts `input` as a simulation request. */
+const accepts = (input: unknown) =>
+  Exit.isSuccess(Schema.decodeUnknownExit(simulationInput)(input, rejectUnknownKeys));
+/** Whether `input`, once decoded, reads the live character or its equipment. */
+const needsLiveState = (input: SimulationInput) =>
+  simulationNeedsLiveState(Schema.decodeSync(simulationInput)(input, rejectUnknownKeys));
+
 it.effect('fails with a SimulationError naming a malformed pinned data file', () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -186,12 +195,9 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
           talents: [{ id: 11070, rank: 5 }],
         })),
       };
-      assert.equal(simulationNeedsLiveState(hypothetical), false);
-      assert.equal(
-        simulationNeedsLiveState({ ...hypothetical, includeCurrentEquipment: true }),
-        true,
-      );
-      assert.equal(simulationNeedsLiveState({ nativeRequest: { raid: {} } }), false);
+      assert.equal(needsLiveState(hypothetical), false);
+      assert.equal(needsLiveState({ ...hypothetical, includeCurrentEquipment: true }), true);
+      assert.equal(needsLiveState({ nativeRequest: { raid: {} } }), false);
       const prepared = yield* simulator.prepare(undefined, hypothetical, [], 'empty');
       assert.equal(prepared.character.name, 'Hypothetical');
       assert.equal(prepared.scenario.talentPoints, 5);
@@ -298,7 +304,7 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
           { action: { castSpell: { spellId: { spellId: 205 } } } },
         ]);
         for (const input of [{ level: 60 }, { rotation: 'arbitrary' }, { targetLevel: 63 }]) {
-          assert.equal(simulationInput.safeParse(input).success, false);
+          assert.equal(accepts(input), false);
         }
       }),
   );
@@ -593,10 +599,7 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
       assert.deepEqual(snapshot, original);
       const naked = yield* simulator.prepare(snapshot, input, [], 'empty');
       assert.equal(naked.scenario.equippedItems, 0);
-      assert.equal(
-        simulationInput.safeParse({ ...input, includeCurrentEquipment: false }).success,
-        false,
-      );
+      assert.equal(accepts({ ...input, includeCurrentEquipment: false }), false);
     }),
   );
 
@@ -746,7 +749,7 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
           yield* rejects(simulator.prepare(mageSnapshot(), input, replacements));
         }
         assert.equal(
-          simulationInput.safeParse({
+          accepts({
             ...input,
             equipmentSets: [
               {
@@ -754,16 +757,16 @@ layer(simulatorWith(NodeChildProcessSpawner.layer))('Simulator', (it) => {
                 replacements: [{ slot: 11, itemId: 1449, stats: { spellPower: 999 } }],
               },
             ],
-          }).success,
+          }),
           false,
         );
         assert.equal(
-          simulationInput.safeParse({
+          accepts({
             ...input,
             equipmentSets: [
               { label: 'Enchanted', replacements: [{ slot: 11, itemId: 1449, enchant: 123 }] },
             ],
-          }).success,
+          }),
           false,
         );
       }),
