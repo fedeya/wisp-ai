@@ -1,13 +1,13 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { z } from 'zod';
+import { Schema } from 'effect';
 
-export async function readJson<T>(
+export async function readJson<S extends Schema.ConstraintDecoder<unknown>>(
   file: string,
-  schema: z.ZodType<T>,
-  fallback: () => T,
-): Promise<T> {
+  schema: S,
+  fallback: () => S['Type'],
+): Promise<S['Type']> {
   let text: string;
   try {
     text = await readFile(file, 'utf8');
@@ -18,7 +18,7 @@ export async function readJson<T>(
     throw error;
   }
   try {
-    return schema.parse(JSON.parse(text));
+    return Schema.decodeUnknownSync(Schema.fromJsonString(schema))(text);
   } catch (cause) {
     throw new Error(`Cannot load ${path.basename(file)}; the original file was preserved.`, {
       cause,

@@ -10,7 +10,7 @@ import {
   initialAddonPayload,
 } from '@wisp/protocol/addon-helpers';
 import { migrateGameSaves, retireLegacyAddons } from '../src/migrations/addon-rename.ts';
-import * as AppConfig from '../src/app-config.ts';
+import * as AppConfig from '#/platform/config';
 import { addonVersionFromToc } from '../src/game/addon-version.ts';
 const { paths } = await Effect.runPromise(
   AppConfig.AppConfig.useSync((config) => config).pipe(Effect.provide(AppConfig.layer)),

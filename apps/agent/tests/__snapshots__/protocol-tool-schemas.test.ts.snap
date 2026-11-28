@@ -1,0 +1,336 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the model sees the same web__web_search input schema 1`] = `
+"{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "depth": {
+      "type": "string",
+      "enum": [
+        "quick",
+        "standard",
+        "deep"
+      ],
+      "description": "Choose quick for a simple fact, standard for normal research, deep for conflicting evidence, missing acquisition routes or broad comparisons.",
+      "default": "standard"
+    },
+    "maxResults": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12,
+      "description": "Maximum returned findings/sources. Overrides the depth default."
+    },
+    "maxQueries": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 6,
+      "description": "Query budget including the primary query. Guidance for ChatGPT; bounds explicit query variants on Exa."
+    },
+    "timeoutSeconds": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 180,
+      "description": "Total time budget for this tool call, not per query."
+    },
+    "excerptCharacters": {
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 12000,
+      "description": "Maximum Exa excerpt length per source."
+    },
+    "queries": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Optional additional focused query variants. Exa executes these within maxQueries; ChatGPT can use them as research directions.",
+      "default": [],
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    }
+  },
+  "required": [
+    "query"
+  ],
+  "additionalProperties": false
+}"
+`;
+
+exports[`the model sees the same wisp__manage_routine input schema 1`] = `
+"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "catalog"
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "list"
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "get"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "save"
+          ]
+        },
+        "routine": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]{0,63}$"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "instruction": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 6000
+            },
+            "triggers": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "event"
+                        ]
+                      },
+                      "event": {
+                        "type": "string",
+                        "enum": [
+                          "level_up",
+                          "equipment_changed",
+                          "money_changed",
+                          "bags_changed",
+                          "quests_changed",
+                          "spells_changed",
+                          "talents_changed",
+                          "zone_changed"
+                        ]
+                      },
+                      "filters": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "op": {
+                              "type": "string",
+                              "enum": [
+                                "eq",
+                                "ne",
+                                "gte",
+                                "lte",
+                                "contains",
+                                "multiple_of"
+                              ]
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "maxLength": 300
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "op",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "maxItems": 8,
+                        "default": []
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "event"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "interval"
+                        ]
+                      },
+                      "seconds": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 2592000
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "seconds"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "minItems": 1,
+              "maxItems": 8
+            },
+            "cooldownSeconds": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 86400,
+              "default": 600
+            },
+            "once": {
+              "type": "boolean",
+              "description": "Pause after the first successful non-silent result. Silent checks and failures keep watching.",
+              "default": false
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "instruction",
+            "triggers"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "operation",
+        "routine"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "pause"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "resume"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "remove"
+          ]
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}"
+`;

@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import { defaultCapabilities } from '@wisp/protocol/capabilities';
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
 import {
   createMcpCapabilities,
@@ -55,16 +55,20 @@ test('adds MCP servers and tools after the built-in capabilities without URL sec
 });
 
 test('a capability write failure restores the MCP server switch and preserves the error', async () => {
-  const server = mcpDefinition.parse({ name: 'notes', url: 'https://example.com/mcp' });
+  const server = Schema.decodeUnknownSync(mcpDefinition)({
+    name: 'notes',
+    url: 'https://example.com/mcp',
+  });
+  let serverEnabled = server.enabled;
   const switches: boolean[] = [];
   const manager = {
     bundled: [],
-    list: () => [{ ...server }],
+    list: () => [{ ...server, args: [...server.args], enabled: serverEnabled }],
     disconnect: () => Effect.void,
     setEnabled: (_key: string, enabled: boolean) =>
       Effect.sync(() => {
         switches.push(enabled);
-        server.enabled = enabled;
+        serverEnabled = enabled;
         return undefined;
       }),
   };

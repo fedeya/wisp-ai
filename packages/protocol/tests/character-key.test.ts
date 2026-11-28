@@ -1,5 +1,6 @@
-import { test } from 'vitest';
-import assert from 'node:assert/strict';
+// @effect-migrated
+import { expect, it } from '@effect/vitest';
+import { Option } from 'effect';
 import {
   adoptableKeys,
   characterLabel,
@@ -11,50 +12,47 @@ const guidKey = JSON.stringify(['WoW Forever', 'Player-1-00A']);
 const legacy = (realm: string, name: string, game = 'WoW Forever') =>
   JSON.stringify([game, realm, name]);
 
-test('GUID keys and pre-GUID keys both parse, and nothing else does', () => {
-  assert.deepEqual(parseCharacterKey(guidKey), {
-    kind: 'guid',
-    game: 'WoW Forever',
-    guid: 'Player-1-00A',
-  });
-  assert.deepEqual(parseCharacterKey(legacy('', 'Fedrath')), {
-    kind: 'legacy',
-    game: 'WoW Forever',
-    realm: '',
-    name: 'Fedrath',
-  });
-  assert.throws(() => parseCharacterKey(legacy('Realm', '')));
-  assert.throws(() => parseCharacterKey(JSON.stringify(['WoW Forever', ''])));
+it('GUID keys and pre-GUID keys both parse, and nothing else does', () => {
+  expect(parseCharacterKey(guidKey)).toStrictEqual(
+    Option.some({ kind: 'guid', game: 'WoW Forever', guid: 'Player-1-00A' }),
+  );
+  expect(parseCharacterKey(legacy('', 'Fedrath'))).toStrictEqual(
+    Option.some({ kind: 'legacy', game: 'WoW Forever', realm: '', name: 'Fedrath' }),
+  );
+  expect(parseCharacterKey(legacy('Realm', ''))).toStrictEqual(Option.none());
+  expect(parseCharacterKey(JSON.stringify(['WoW Forever', '']))).toStrictEqual(Option.none());
+  expect(parseCharacterKey(JSON.stringify(['WoW Forever', 'a', 'b', 'c']))).toStrictEqual(
+    Option.none(),
+  );
+  expect(parseCharacterKey('not json')).toStrictEqual(Option.none());
 });
 
-test('labels come from saved names, or from the pre-GUID key itself', () => {
-  assert.equal(characterLabel(guidKey, { [guidKey]: { name: 'Fedrath', realm: '' } }), 'Fedrath');
-  assert.equal(characterLabel(guidKey), 'Unknown character');
-  assert.equal(characterLabel(legacy('', 'Fedrath')), 'Fedrath');
-  assert.equal(characterLabel(legacy('Realm', 'Mage'), {}, ' - '), 'Mage - Realm');
-  assert.equal(characterLabel('not json'), 'not json');
+it('labels come from saved names, or from the pre-GUID key itself', () => {
+  expect(characterLabel(guidKey, { [guidKey]: { name: 'Fedrath', realm: '' } })).toBe('Fedrath');
+  expect(characterLabel(guidKey)).toBe('Unknown character');
+  expect(characterLabel(legacy('', 'Fedrath'))).toBe('Fedrath');
+  expect(characterLabel(legacy('Realm', 'Mage'), {}, ' - ')).toBe('Mage - Realm');
+  expect(characterLabel('not json')).toBe('not json');
 });
 
-test('expected characters use the GUID when the key has one', () => {
-  assert.deepEqual(expectedCharacter(guidKey), { guid: 'Player-1-00A' });
-  assert.deepEqual(expectedCharacter(legacy('', 'Fedrath')), { realm: '', name: 'Fedrath' });
-  assert.equal(expectedCharacter(undefined), undefined);
-  assert.equal(expectedCharacter('not json'), undefined);
+it('expected characters use the GUID when the key has one', () => {
+  expect(expectedCharacter(guidKey)).toStrictEqual({ guid: 'Player-1-00A' });
+  expect(expectedCharacter(legacy('', 'Fedrath'))).toStrictEqual({ realm: '', name: 'Fedrath' });
+  expect(expectedCharacter(undefined)).toBeUndefined();
+  expect(expectedCharacter('not json')).toBeUndefined();
 });
 
-test('pre-GUID keys are adopted by name unless the name was saved on several realms', () => {
+it('pre-GUID keys are adopted by name unless the name was saved on several realms', () => {
   const fedrath = { game: 'WoW Forever', name: 'Fedrath' };
   const pvp = legacy('Realm 2 PvP', 'Fedrath'),
     pve = legacy('Realm 1 PvE', 'Fedrath'),
     noRealm = legacy('', 'Fedrath');
-  assert.deepEqual(
-    adoptableKeys([pvp, noRealm, null, guidKey], fedrath).sort(),
+  expect(adoptableKeys([pvp, noRealm, null, guidKey], fedrath).sort()).toStrictEqual(
     [noRealm, pvp].sort(),
   );
-  assert.deepEqual(adoptableKeys([pvp, pve, noRealm], fedrath), [noRealm]);
-  assert.deepEqual(
+  expect(adoptableKeys([pvp, pve, noRealm], fedrath)).toStrictEqual([noRealm]);
+  expect(
     adoptableKeys([legacy('', 'Mage'), legacy('', 'Fedrath', 'Retail')], fedrath),
-    [],
-  );
-  assert.deepEqual(adoptableKeys(['not json'], fedrath), []);
+  ).toStrictEqual([]);
+  expect(adoptableKeys(['not json'], fedrath)).toStrictEqual([]);
 });

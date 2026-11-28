@@ -1,3 +1,4 @@
+import { Schema } from 'effect';
 import { providerDefinitions, providerId, type ProviderId } from '@wisp/protocol/providers';
 import Icon from '../ui/Icon';
 
@@ -15,6 +16,7 @@ const featured = {
 
 export const featuredProviders = Object.keys(featured) as (keyof typeof featured)[];
 
+const isProviderId = Schema.is(providerId);
 const modelProviderAliases = new Map<string, ProviderId>([
   ['mistralai', 'mistral'],
   ['moonshot', 'moonshotai'],
@@ -32,7 +34,7 @@ export function modelProvider(provider: ProviderId, modelId: string): ProviderId
   if (separator === -1) return provider;
   const namespace = modelId.slice(0, separator).toLowerCase();
   return (
-    modelProviderAliases.get(namespace) ?? providerId.safeParse(namespace).data ?? 'compatible'
+    modelProviderAliases.get(namespace) ?? (isProviderId(namespace) ? namespace : 'compatible')
   );
 }
 

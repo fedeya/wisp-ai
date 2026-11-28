@@ -1,6 +1,7 @@
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { Connection, GameEvent } from '@wisp/wow-bridge';
 import { selectionValues } from '@wisp/agent/contract/ui-schema';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { routineInput, routineEvent } from '@wisp/protocol/routines';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -27,7 +28,10 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/c
 import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
-import { Effect } from 'effect';
+import { Effect, Option, Schema } from 'effect';
+// The addon's routine packets are strict, like the protocol schemas.
+const decodeRoutineEvent = Schema.decodeUnknownOption(routineEvent, rejectUnknownKeys);
+const decodeRoutineAction = Schema.decodeUnknownOption(routineInput, rejectUnknownKeys);
 interface ReceiverDependencies {
   telemetry?: Pick<UsageTelemetry, 'game'>;
   state: SessionState;
@@ -276,10 +280,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         session: packet.session,
       };
       if (packet.type === 'routine_event' && capabilitySettings.enabled('tool:manage_routine')) {
-        const event = routineEvent.safeParse({ event: data?.event, values: data?.values });
-        if (event.success) {
+        const event = decodeRoutineEvent({ event: data?.event, values: data?.values });
+        if (Option.isSome(event)) {
           void routineStore
-            .observe(identity, event.data)
+            .observe(identity, event.value)
             .then(changed)
             .catch((error) =>
               runFork(
@@ -297,14 +301,14 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     }
     if (packet.type === 'routine_action') {
       const identity = characterIdentity(packet.context);
-      const input = routineInput.safeParse(packet.data);
+      const input = decodeRoutineAction(packet.data);
       if (
         identity &&
-        input.success &&
-        ['pause', 'resume', 'remove'].includes(input.data.operation)
+        Option.isSome(input) &&
+        ['pause', 'resume', 'remove'].includes(input.value.operation)
       ) {
         void routineStore
-          .mutate(identity, input.data)
+          .mutate(identity, input.value)
           .then(changed)
           .catch((error) =>
             runFork(

@@ -1,25 +1,28 @@
-import { z } from 'zod';
+// @effect-migrated
+import { Option, Schema } from 'effect';
 // A character key is [game, guid]: the GUID never changes for a character, so
 // data stored under it survives realm and name changes. Keys saved before the
 // addon sent GUIDs are [game, realm, name]; the realm is empty in WoW Forever.
-const guidKey = z.tuple([z.string().min(1), z.string().min(1)]);
-const legacyKey = z.tuple([z.string().min(1), z.string(), z.string().min(1)]);
+const filled = Schema.String.check(Schema.isMinLength(1));
+const guidKey = Schema.Tuple([filled, filled]);
+const legacyKey = Schema.Tuple([filled, Schema.String, filled]);
+const storedKey = Schema.fromJsonString(Schema.Union([guidKey, legacyKey]));
+const decodeStoredKey = Schema.decodeOption(storedKey);
 export type CharacterKey =
   | { kind: 'guid'; game: string; guid: string }
   | { kind: 'legacy'; game: string; realm: string; name: string };
-export function parseCharacterKey(key: string): CharacterKey {
-  const value: unknown = JSON.parse(key);
-  const guid = guidKey.safeParse(value);
-  if (guid.success) return { kind: 'guid', game: guid.data[0], guid: guid.data[1] };
-  const [game, realm, name] = legacyKey.parse(value);
-  return { kind: 'legacy', game, realm, name };
+/** The character a stored key names, or none when the key is not one. */
+export function parseCharacterKey(key: string): Option.Option<CharacterKey> {
+  return decodeStoredKey(key).pipe(
+    Option.map((parts): CharacterKey =>
+      parts.length === 2
+        ? { kind: 'guid', game: parts[0], guid: parts[1] }
+        : { kind: 'legacy', game: parts[0], realm: parts[1], name: parts[2] },
+    ),
+  );
 }
 function tryParse(key: string): CharacterKey | undefined {
-  try {
-    return parseCharacterKey(key);
-  } catch {
-    return undefined;
-  }
+  return Option.getOrUndefined(parseCharacterKey(key));
 }
 /**
  * The pre-GUID keys whose data belongs to a character with this game and
@@ -33,10 +36,11 @@ export function adoptableKeys(
 ): string[] {
   const candidates = [...new Set(stored)].flatMap((key) => {
     const parsed = key ? tryParse(key) : undefined;
-    return parsed?.kind === 'legacy' &&
+    return key &&
+      parsed?.kind === 'legacy' &&
       parsed.game === character.game &&
       parsed.name === character.name
-      ? [{ key: key!, realm: parsed.realm }]
+      ? [{ key, realm: parsed.realm }]
       : [];
   });
   const realms = new Set(candidates.flatMap((c) => (c.realm ? [c.realm] : [])));
@@ -55,12 +59,12 @@ export function expectedCharacter(key: string | undefined): ExpectedCharacter | 
     ? { guid: parsed.guid }
     : { realm: parsed.realm, name: parsed.name };
 }
-export const characterName = z.object({ name: z.string().min(1), realm: z.string() });
-export type CharacterName = z.infer<typeof characterName>;
+export const characterName = Schema.Struct({ name: filled, realm: Schema.String });
+export type CharacterName = typeof characterName.Type;
 /** A readable name: from `names` (saved by the bridge) or a pre-GUID key itself. */
 export function characterLabel(
   key: string,
-  names: Record<string, CharacterName> = {},
+  names: Readonly<Record<string, CharacterName>> = {},
   separator = ' · ',
 ): string {
   const parsed = tryParse(key);

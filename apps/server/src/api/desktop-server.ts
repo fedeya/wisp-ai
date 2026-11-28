@@ -23,6 +23,7 @@ export async function startDesktopServer(
         return c.text('Browser origins are not allowed', 403);
       }
       await next();
+      return undefined;
     })
     .use(
       bodyLimit({

@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest';
-import { Effect, ManagedRuntime } from 'effect';
+import { Effect, ManagedRuntime, Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { SqlDatabase, layer as sqlLayer } from '@wisp/db/sql-database';
 import type { SqlOrm } from '@wisp/db/sql-database';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -16,6 +17,8 @@ import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 
+const decodeSavedRoutine = Schema.decodeUnknownSync(savedRoutine, rejectUnknownKeys);
+
 const key = (...parts: string[]) => JSON.stringify(['WoW Forever', ...parts]);
 const oldRealm = key('CAMWOW US2 Realm 2 PvP', 'Fedrath');
 const noRealm = key('', 'Fedrath');
@@ -31,7 +34,7 @@ const fedrath = {
 };
 
 const routine = (id: string, characterKey: string) =>
-  savedRoutine.parse({
+  decodeSavedRoutine({
     id,
     title: id,
     instruction: 'Check',
