@@ -213,7 +213,10 @@ function lootInstances(
       ...(instanceMapId !== undefined ? { instanceMapId } : {}),
       kind,
       ...(content.startsWith('Forever') ? { forever: true as const } : {}),
-      ...(max ? { levels: { min, recommended, max } } : {}),
+      // `list` is dense, so a range with a maximum also has its first two levels.
+      ...(min !== undefined && recommended !== undefined && max
+        ? { levels: { min, recommended, max } }
+        : {}),
       bosses,
     });
   }
