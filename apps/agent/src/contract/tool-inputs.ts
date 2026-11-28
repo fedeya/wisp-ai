@@ -13,6 +13,10 @@ export const PositiveInt = Schema.Int.check(Schema.isGreaterThan(0));
 export const IntBetween = (minimum: number, maximum: number) =>
   Schema.Int.check(Schema.isBetween({ minimum, maximum }));
 
+/** zod's `z.number().min(minimum).max(maximum)`: finite, as zod's numbers are. */
+export const NumberBetween = (minimum: number, maximum: number) =>
+  Schema.Finite.check(Schema.isBetween({ minimum, maximum }));
+
 /** zod's `z.string().min(minLength).max(maxLength)`, without trimming. */
 export const LimitedString = (minLength: number, maxLength: number) =>
   Schema.String.check(Schema.isMinLength(minLength), Schema.isMaxLength(maxLength));
@@ -30,6 +34,29 @@ export const withDefault = <S extends Schema.Top & { readonly Rebuild: S }>(
 /** zod's `.refine(holds, message)`: fails with `message` unless `holds`. */
 export const refine = <T>(holds: (input: T) => boolean, message: string) =>
   Schema.makeFilter<T>((input) => holds(input) || message);
+
+/**
+ * The annotation that tells `effectToolInput`'s zod layout how zod wrote a
+ * schema's JSON Schema where Effect writes it another way. Only that layout
+ * reads it, and it leaves it out of the JSON Schema.
+ */
+export const zodJsonSchemaKey = 'wisp/zodJsonSchema';
+type ZodJsonSchema = 'const' | 'oneOf';
+const zodJsonSchema = (form: ZodJsonSchema) => ({ [zodJsonSchemaKey]: form });
+
+/** zod's `z.literal(value)`, shown to the model as `const` where Effect writes a one-value `enum`. */
+export const Const = <const L extends string>(value: L) =>
+  Schema.Literal(value).annotate(zodJsonSchema('const'));
+
+/**
+ * zod's `z.discriminatedUnion`: `members` tell themselves apart by a literal
+ * key, so at most one matches, and the model sees `oneOf`. Effect writes
+ * `anyOf` once a member's JSON Schema is looser than its decoding, as a string
+ * length is; the literal key keeps the members apart either way.
+ */
+export const DiscriminatedUnion = <const Members extends readonly Schema.Constraint[]>(
+  members: Members,
+) => Schema.Union(members, { mode: 'oneOf' }).annotate(zodJsonSchema('oneOf'));
 
 /** zod's `z.object({})`: any object, read as no arguments. */
 export const NoArgs = Schema.Record(Schema.String, Schema.Unknown).pipe(

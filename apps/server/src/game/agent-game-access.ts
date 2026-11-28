@@ -13,7 +13,7 @@ import {
   type GameInspection,
 } from '@wisp/agent/game-access';
 import * as Game from '@wisp/agent/game-access';
-import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
+import { actionParseOptions, actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { expectedCharacter } from '@wisp/protocol/character-key';
 import type { McpManager } from '@wisp/agent/mcp-manager';
@@ -72,6 +72,7 @@ const decodeInspection = Schema.decodeUnknownEffect(inspectionSchema);
 const decodeGearSearch = Schema.decodeUnknownEffect(gearSearchInspectionSchema);
 const decodeSections = Schema.decodeUnknownEffect(characterSections);
 const decodeItemSources = Schema.decodeUnknownEffect(itemSourcesInput);
+const decodeAction = Schema.decodeUnknownEffect(actionSchema);
 
 export function make(deps: Dependencies) {
   const { capabilitySettings } = deps;
@@ -243,7 +244,7 @@ export function make(deps: Dependencies) {
     readMap: inspectionMethod('map', inspectionResults.map),
     readHearthstone: inspectionMethod('hearthstone', inspectionResults.hearthstone),
     runGameAction: Effect.fn('GameAccess.runGameAction')(function* (session, input) {
-      const action = yield* Effect.try({ try: () => actionSchema.parse(input), catch: asError });
+      const action = yield* decodeAction(input, actionParseOptions(input.kind));
       const { character, request } = yield* authorize(session, actionTools[action.kind], true);
       return yield* request({
         kind: 'act',

@@ -1,4 +1,7 @@
-import { defineTool } from '@wisp/agent/tool';
+// @effect-migrated
+import { Predicate } from 'effect';
+import { defineTool, effectToolInput } from '@wisp/agent/tool';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { runGameAction } from '../../tools/game-tool.ts';
 import { guideInput } from '../../contract/game-actions.ts';
@@ -8,14 +11,14 @@ export default enabledTool(
     deferred: true,
     description:
       'Build a step-by-step guide and open it in the player’s Polestar guide window, which tracks each goal from the game and leads its arrow there. Use when the player asks for a route, plan or checklist to follow (a quest chain, gathering a material, an errand run). Each step’s goals are open together and the step completes when they are done. Every quest, NPC, object and item ID and name must come from a verified read in this conversation (questie__get_quest, questie__find_npc_locations, questie__find_object_locations, the quest log, TheWoWDB); coordinates are 0–100 on a verified UI map ID, as for wow__set_map_waypoint. Never invent IDs or coordinates; leave a point out rather than guess. Prefer a short accurate guide; the whole guide must stay under 24 KB of JSON, so split long routes into several guides. To change a guide this tool made, call it again with the returned id and the full new steps: the player keeps their progress on steps that stay. Does not accept, complete or hand in anything itself.',
-    inputSchema: guideInput,
+    inputSchema: effectToolInput(guideInput, { parseOptions: rejectUnknownKeys, layout: 'zod' }),
     label: {
       start: () => 'Building Polestar guide',
       complete: (_, output) =>
-        (output as { status?: unknown } | undefined)?.status === 'completed'
+        Predicate.hasProperty(output, 'status') && output.status === 'completed'
           ? 'Opened Polestar guide'
           : 'Tried to build a Polestar guide',
     },
-    execute: async (args, ctx) => runGameAction(ctx, { kind: 'polestar_guide', args }),
+    execute: (args, ctx) => runGameAction(ctx, { kind: 'polestar_guide', args }),
   }),
 );

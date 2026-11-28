@@ -1,4 +1,6 @@
-import { defineTool } from '@wisp/agent/tool';
+// @effect-migrated
+import { Predicate } from 'effect';
+import { defineTool, effectToolInput } from '@wisp/agent/tool';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { runGameAction } from '../../tools/game-tool.ts';
 import { settingsUpdate } from '../../contract/settings.ts';
@@ -8,12 +10,12 @@ export default enabledTool(
     deferred: true,
     description:
       'Preview a bounded settings proposal using exact IDs and typed values obtained from wow__get_settings. Returns before/after values and a transactionId; nothing is applied during preview. Apply an existing transaction only when requested by the user. The UI can offer an Apply button. Changes are checked for stale values, applied through APIs/setters and verified; failed changes attempt rollback. Never edits addon source code. No execute/reset/delete/profile operations.',
-    inputSchema: settingsUpdate,
+    inputSchema: effectToolInput(settingsUpdate, { layout: 'zod' }),
     label: {
       start: ({ operation }) =>
         operation === 'preview' ? 'Previewing settings changes' : 'Updating settings',
       complete: ({ operation }, output) => {
-        const completed = (output as { status?: unknown } | undefined)?.status === 'completed';
+        const completed = Predicate.hasProperty(output, 'status') && output.status === 'completed';
         if (operation === 'preview') {
           return completed ? 'Previewed settings changes' : 'Tried to preview settings changes';
         }
