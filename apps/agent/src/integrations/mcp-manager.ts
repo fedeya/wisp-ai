@@ -1,10 +1,20 @@
-import { Effect, Exit, Option, Redacted, Schema, Scope, Semaphore, type Duration } from 'effect';
+import {
+  Cause,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Fiber,
+  Option,
+  Redacted,
+  Schema,
+  Scope,
+  Semaphore,
+} from 'effect';
 import { mcpName as name, mcpDefinition, mcpSetup } from '@wisp/protocol/mcp-setup';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { Capability } from '@wisp/protocol/capabilities';
-import { McpConnection, McpConnectionError } from './mcp-connection.ts';
-import type { Connection } from './mcp-connection.ts';
-import { AgentConfig } from '../host/agent-config.ts';
+import * as McpConnection from './mcp-connection.ts';
+import { McpConnectionError, type McpSession, type McpTool } from './mcp-connection.ts';
 import * as Environment from '../host/environment.ts';
 export { mcpDefinition, mcpSetup };
 export type MCPDefinition = typeof mcpDefinition.Type & {
@@ -54,12 +64,67 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 const configurationError = (cause: unknown) => new McpConfigurationError(message(cause), { cause });
 const vaultError = (cause: unknown) => new McpVaultError(message(cause), { cause });
 
+/** An open session with the tools it listed on opening and its cached tool list. */
+interface Connected {
+  readonly session: McpSession;
+  readonly tools: readonly McpTool[];
+  readonly listTools: Effect.Effect<readonly McpTool[], McpConnectionError>;
+}
+
+interface Connection<E> {
+  readonly start: Effect.Effect<void>;
+  readonly awaitReady: Effect.Effect<Connected, E | McpConnectionError>;
+  readonly close: Effect.Effect<void>;
+}
+
+function connection<E>(input: {
+  scope: Scope.Scope;
+  open: Effect.Effect<Connected, E, Scope.Scope>;
+  onClosed: () => void;
+}): Connection<E> {
+  const ready = Deferred.makeUnsafe<Connected, E | McpConnectionError>();
+  let lifetime: Fiber.Fiber<never, E> | undefined;
+
+  const start = Effect.gen(function* () {
+    if (lifetime) {
+      return;
+    }
+    // The same fiber opens the client and owns its scope until the connection closes.
+    const use = Effect.scoped(
+      input.open.pipe(
+        Effect.tap((connected) => Deferred.succeed(ready, connected)),
+        Effect.andThen(Effect.never),
+      ),
+    ).pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(input.onClosed).pipe(
+          Effect.ensuring(
+            Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+              ? Deferred.fail(
+                  ready,
+                  new McpConnectionError({
+                    reason: 'Closed',
+                    message: 'MCP connection is unavailable',
+                  }),
+                )
+              : Deferred.done(ready, exit),
+          ),
+        ),
+      ),
+    );
+    lifetime = yield* Effect.forkIn(use, input.scope, { startImmediately: true });
+  });
+
+  const close = Effect.suspend(() => (lifetime ? Fiber.interrupt(lifetime) : Effect.void));
+  return { start, awaitReady: Deferred.await(ready), close };
+}
+
 const make = Effect.fnUntraced(function* (
   root = '.',
   storage?: McpStorage,
   bundled: readonly BundledMcp[] = [],
 ) {
-  const { packagedEngine } = yield* AgentConfig;
+  const mcpConnection = yield* McpConnection.Service;
   const builtIns = new Map(bundled.map((profile) => [profile.definition.name, profile]));
   const reservedNames = new Set(
     bundled.flatMap(({ definition, toolGroups }) => [
@@ -133,11 +198,10 @@ const make = Effect.fnUntraced(function* (
     return Effect.tryPromise({ try: () => storage.writeSecret(key, value), catch: vaultError });
   }
 
-  const transportFor = Effect.fn('McpManager.transportFor')(function* (
+  const credentialsFor = Effect.fn('McpManager.credentialsFor')(function* (
     server: MCPDefinition,
     token?: string,
     providedEnv?: Record<string, string>,
-    redirect?: RequestRedirect,
   ) {
     const secret =
       token !== undefined
@@ -157,22 +221,44 @@ const make = Effect.fnUntraced(function* (
         catch: vaultError,
       });
     }
-    return yield* McpConnection.makeTransport({
-      root,
-      server,
-      secret,
-      env: env ?? {},
-      packagedEngine,
-      redirect,
-    });
+    return { secret, env: env ?? {} };
   });
 
-  const connections = new Map<string, Connection<Effect.Error<ReturnType<typeof transportFor>>>>();
+  /** Opens a session and lists its tools, both within 15 seconds. */
+  const openSession = Effect.fnUntraced(function* (
+    server: MCPDefinition,
+    credentials: Effect.Success<ReturnType<typeof credentialsFor>>,
+    redirect?: RequestRedirect,
+    toolsTtl?: Duration.Input,
+  ) {
+    const session = yield* mcpConnection.open(server, credentials.secret, credentials.env, {
+      root,
+      redirect,
+    });
+    const listTools =
+      toolsTtl !== undefined
+        ? yield* Effect.cachedWithTTL(session.tools, (exit) =>
+            Exit.isSuccess(exit) ? toolsTtl : Duration.zero,
+          )
+        : yield* Effect.cached(session.tools);
+    const tools = yield* listTools;
+    return { session, tools, listTools } satisfies Connected;
+  }, Effect.timeout('15 seconds'));
+
+  const open = Effect.fn('McpManager.open')(function* (
+    server: MCPDefinition,
+    profile?: BundledMcp,
+  ) {
+    const credentials = yield* credentialsFor(server);
+    return yield* openSession(server, credentials, profile?.redirect, profile?.toolsTtl);
+  });
+
+  const connections = new Map<string, Connection<Effect.Error<ReturnType<typeof open>>>>();
 
   const probe = Effect.fn('McpManager.probe')(function* (input: Setup) {
-    const tools = yield* McpConnection.probe(
-      transportFor({ ...servers[input.server.name], ...input.server }, input.token, input.env),
-    );
+    const server = { ...servers[input.server.name], ...input.server };
+    const credentials = yield* credentialsFor(server, input.token, input.env);
+    const { tools } = yield* Effect.scoped(openSession(server, credentials));
     return {
       tools: tools.map((t) => ({ name: t.name, description: t.description })),
       count: tools.length,
@@ -262,25 +348,27 @@ const make = Effect.fnUntraced(function* (
       const profile = builtIns.get(key);
       const server = profile?.definition ?? servers[key];
       if (closed || !server?.enabled) {
-        return yield* Effect.fail(new McpConnectionError('MCP connection is unavailable'));
+        return yield* new McpConnectionError({
+          reason: 'Closed',
+          message: 'MCP connection is unavailable',
+        });
       }
       const existing = connections.get(key);
       if (existing) {
         return existing;
       }
-      const connection = McpConnection.make({
+      const entry = connection({
         scope: connectionScope,
-        transport: transportFor(server, undefined, undefined, profile?.redirect),
-        toolsTtl: profile?.toolsTtl,
+        open: open(server, profile),
         onClosed: () => {
-          if (connections.get(key) === connection) {
+          if (connections.get(key) === entry) {
             connections.delete(key);
           }
         },
       });
-      connections.set(key, connection);
-      yield* connection.start;
-      return connection;
+      connections.set(key, entry);
+      yield* entry.start;
+      return entry;
     },
     (effect) => cacheUpdates.withPermit(Effect.uninterruptible(effect)),
   );
@@ -299,11 +387,11 @@ const make = Effect.fnUntraced(function* (
     key: string,
     toolName: string,
     input: Record<string, unknown>,
-    check: (tool: Tool) => void,
+    check: (tool: McpTool) => void,
     timeout = builtIns.get(key)?.callTimeoutMs ?? 60_000,
   ) {
     const entry = yield* getConnection(key);
-    const { client, listTools } = yield* entry.awaitReady;
+    const { session, listTools } = yield* entry.awaitReady;
     const tools = yield* listTools.pipe(Effect.tapError(() => disconnectConnection(key, entry)));
     yield* Effect.try({
       try: () => {
@@ -314,16 +402,14 @@ const make = Effect.fnUntraced(function* (
       },
       catch: configurationError,
     });
-    return yield* Effect.tryPromise({
-      try: (signal) =>
-        client.callTool({ name: toolName, arguments: input }, undefined, { signal, timeout }),
-      catch: (cause) => new McpConnectionError(message(cause), { cause }),
-    }).pipe(Effect.tapError(() => disconnectConnection(key, entry)));
+    return yield* session
+      .callTool(toolName, input, timeout)
+      .pipe(Effect.tapError(() => disconnectConnection(key, entry)));
   });
 
   const disconnectConnection = Effect.fn('McpManager.disconnect')(function* (
     key: string,
-    expected?: Connection<Effect.Error<ReturnType<typeof transportFor>>>,
+    expected?: Connection<Effect.Error<ReturnType<typeof open>>>,
   ) {
     const connection = yield* cacheUpdates.withPermit(
       Effect.sync(() => {

@@ -2,6 +2,7 @@ import { Context, Effect, Layer } from 'effect';
 import { HostError } from '../execution/engine-errors.ts';
 import * as Capabilities from '../host/capabilities.ts';
 import type { CapabilitySnapshot } from '../host/capabilities.ts';
+import * as McpConnection from './mcp-connection.ts';
 import { McpManager, type BundledMcp, type McpToolGroup } from './mcp-manager.ts';
 
 export interface McpTool {
@@ -78,7 +79,7 @@ interface McpPolicy {
 export const layer = (bundled: readonly BundledMcp[] = []) =>
   layerWithManager(
     Effect.acquireRelease(McpManager.make('.', undefined, bundled), (manager) => manager.close()),
-  );
+  ).pipe(Layer.provide(McpConnection.layer));
 
 export const layerFromManager = (manager: McpManager, policy: McpPolicy) =>
   layerWithManager(Effect.succeed(manager), policy);

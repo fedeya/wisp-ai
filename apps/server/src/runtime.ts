@@ -54,6 +54,7 @@ import { PUBLISH_MIN_INTERVAL_MS } from './game/publish-scheduler.ts';
 import { createSnapshotPublisher } from './game/snapshot-publisher.ts';
 import type { SnapshotPublisher } from './game/snapshot-publisher.ts';
 import { PanelStore } from './panels/panel-store.ts';
+import * as McpConnection from '@wisp/agent/mcp-connection';
 import { McpManager } from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
 import * as SecretVault from './platform/secret-vault.ts';
@@ -95,6 +96,7 @@ const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 export const ServerServices = Layer.mergeAll(
   AppConfig.layer,
   AgentConfig.layer,
+  McpConnection.layer.pipe(Layer.provide(AgentConfig.layer)),
   wowPlatform,
   Simulation.layer.pipe(
     Layer.provide(NodeChildProcessSpawner.layer.pipe(Layer.provide(wowPlatform))),

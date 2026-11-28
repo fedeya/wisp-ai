@@ -26,9 +26,10 @@ description: Use when writing, refactoring, reviewing, or testing Effect v4 code
 - **SDK callback:** the [turn toolbox](../../../apps/agent/src/tools/turn-toolbox.ts)
   captures the Effect context before running MCP operations from Promise-based
   tool callbacks.
-- **Resource lifetime:** [`McpConnection.make`](../../../apps/agent/src/integrations/mcp-connection.ts)
-  runs the client in an owned scope. Closing interrupts the connection fiber;
-  the scope releases the client.
+- **Resource lifetime:** [`McpConnection.Service.open`](../../../apps/agent/src/integrations/mcp-connection.ts)
+  registers the SDK client's release in the caller's scope before connecting,
+  and passes the fiber's `AbortSignal` to each SDK call, so interrupting the
+  open or a call aborts it and closing the scope closes the client.
 
 ## Verify the change
 
