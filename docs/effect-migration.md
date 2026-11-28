@@ -227,30 +227,40 @@ merges.
       between folders, or a new file at the `src/` root. It covers the migrated
       domains and grows with them ([#325](https://github.com/fedeya/wisp-ai/pull/325)).
 - [ ] Stricter compiler, one workspace at a time: `noUncheckedIndexedAccess` is
-      on in `protocol`, `db` and `releases` ([#327](https://github.com/fedeya/wisp-ai/pull/327)), `apps/agent` ([#328](https://github.com/fedeya/wisp-ai/pull/328)) and
-      `scripts` ([#332](https://github.com/fedeya/wisp-ai/pull/332)); left are `game-data` (1 error), `tests` (22 of its own),
-      `wow-bridge` (52) and `apps/server` (390, 346 of them in its tests).
+      on in `protocol`, `db` and `releases` ([#327](https://github.com/fedeya/wisp-ai/pull/327)), `apps/agent` ([#328](https://github.com/fedeya/wisp-ai/pull/328)), `scripts` ([#332](https://github.com/fedeya/wisp-ai/pull/332)),
+      `wow-bridge` ([#337](https://github.com/fedeya/wisp-ai/pull/337)), `game-data` ([#338](https://github.com/fedeya/wisp-ai/pull/338)), `tests` ([#342](https://github.com/fedeya/wisp-ai/pull/342)) and `apps/desktop` ([#344](https://github.com/fedeya/wisp-ai/pull/344));
+      left is `apps/server` (383 errors, 348 of them in its tests).
 - [ ] `noImplicitOverride`, `noImplicitReturns` and `noFallthroughCasesInSwitch`
-      in `tsconfig.base.json` (about 10 errors across workspaces, one in `runtime.ts`).
+      are on in every workspace's own tsconfig ([#339](https://github.com/fedeya/wisp-ai/pull/339), [#337](https://github.com/fedeya/wisp-ai/pull/337), [#338](https://github.com/fedeya/wisp-ai/pull/338),
+      [#344](https://github.com/fedeya/wisp-ai/pull/344)); left is moving them into `tsconfig.base.json` and dropping the
+      copies. `apps/desktop/src/tsconfig.json` does not extend the base, so it
+      keeps its own.
 - [ ] The type-aware lint rules (`no-unsafe-*`, `no-unsafe-type-assertion`,
       `consistent-type-assertions`, `no-non-null-assertion`, `no-explicit-any`) go
       from `warn` to `error` repo-wide once their counts reach zero.
 
 ### 1. Schema
 
-- [ ] `@wisp/protocol`, in one PR: every file feeds the Desktop API contract
-      through `desktop.ts` and `desktop-routes.ts`. Desktop gains `effect`.
+- [x] `@wisp/protocol`, in one PR: every file feeds the Desktop API contract
+      through `desktop.ts` and `desktop-routes.ts`. Desktop gains `effect` ([#336](https://github.com/fedeya/wisp-ai/pull/336)).
 - [ ] `apps/agent/src/contract`, one PR per tool family (inspection, actions,
-      presentation and UI, panels, routines and simulation). Snapshot each
-      tool's JSON Schema before and after: the model must see the same schemas.
+      presentation and UI, panels, routines and simulation). The model must see
+      the same schemas: `apps/agent/tests/tool-schemas.test.ts` snapshots every
+      tool's JSON Schema, and a family's PR leaves that snapshot unchanged.
+      Inspection is done ([#346](https://github.com/fedeya/wisp-ai/pull/346)), with the shared building blocks in
+      `contract/tool-inputs.ts`; left are actions (with the settings update and
+      undo), presentation and UI, panels, and routines and simulation.
 - [ ] The remaining `zod` in `apps/server` and `apps/agent`; drop the
       dependency.
 
 ### 2. Platform adapters
 
 - [x] App configuration on `Config` (`WISP_*` variables, app paths).
-- [ ] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
-      the same file formats.
+- [x] `json-file.ts` and the bridge config on `FileSystem` and `Schema`, with
+      the same file formats: `platform/json-file.ts` and the `Settings` service
+      for `config.local.json` ([#341](https://github.com/fedeya/wisp-ai/pull/341)). The root `json-file.ts` stays for the
+      consumers that have not migrated (capabilities, model connections, the
+      desktop server, `runtime.ts`) and goes with the last of them.
 - [x] `SecretVault` on `ChildProcess`, secrets as `Redacted`.
 - [x] `Simulator` on `ChildProcess` and `Stream`.
 - [ ] One `HttpClient` layer; TheWoWDB, web search (Exa, public, Wowhead) and
@@ -329,8 +339,8 @@ Independent of the other phases; these PRs can run in parallel.
 
 Changes a migration PR found worth making but left out to stay a pure
 migration. Each lands in its own PR after its module is migrated, with a release
-note when players can notice it. A migration PR that leaves one out adds it here
-with a link to itself.
+note when players can notice it. A migration PR that leaves one out lists it in
+its description; it is added here, with a link to that PR, after the PR merges.
 
 - [x] Simulator: decode the pinned data files (`classes.json`, `items.json`,
       `manifest.json`) and the CLI's `output.json` with `Schema` instead of
@@ -352,6 +362,19 @@ with a link to itself.
 - [ ] MCP manager: decode the saved MCP configuration and its env secret with
       `Schema` instead of `JSON.parse` with casts; a malformed entry may then
       fail where it is accepted today ([#336](https://github.com/fedeya/wisp-ai/pull/336)).
+- [ ] Settings: write `config.local.json` encoded with its own schema instead of
+      the saved object through `Record(String, Unknown)`; its keys then follow
+      the schema's field order instead of the order they were first saved in
+      ([#341](https://github.com/fedeya/wisp-ai/pull/341)).
+- [ ] JSON settings files: accept a UTF-8 byte order mark. They are read like
+      Node's `readFile(file, 'utf8')`, which keeps it, so the file fails to
+      parse ([#341](https://github.com/fedeya/wisp-ai/pull/341)).
+- [ ] Tool schemas: drop `effectToolInput`'s `layout: 'zod'` once every family
+      is on `Schema`, and send the model Effect's own JSON Schema. The shim
+      rewrites it as zod wrote it: zod's keyword order, `properties: {}` on every
+      object without properties, and no `additionalProperties: true`. One
+      deliberate snapshot update, checked against the evals; the zod wording in
+      `contract/tool-inputs.ts` goes with it ([#346](https://github.com/fedeya/wisp-ai/pull/346)).
 - [ ] Repositories, with phase 3 (proposed in [#307](https://github.com/fedeya/wisp-ai/pull/307)):
   - [ ] Transactions take `BEGIN IMMEDIATE`, including the startup read of
         chats.
@@ -375,11 +398,15 @@ with a link to itself.
 
 ## Working in parallel
 
-Migration PRs run in parallel only when their files don't overlap. PRs that
-touch `apps/server/src/runtime.ts`, `main.ts` or `ServerLayer` go one at a
-time. The scoreboard test fails only when a count rises above the baseline, so
-PRs don't edit the baseline; it is lowered with
-`pnpm --filter @wisp/tests effect:baseline` after they merge.
+Migration PRs run in parallel when they rewrite different files. A few lines of
+overlap in `apps/server/src/runtime.ts` (a layer added to `ServerServices`, an
+adapter) are fine: the PR that merges second merges `main` and resolves them.
+Only rewrites of the composition root itself (phase 5) go one at a time. The
+scoreboard test fails only when a count rises above the baseline, so PRs don't
+lower the baseline; it is lowered with `pnpm --filter @wisp/tests effect:baseline`
+after they merge. A PR that has to raise a count honestly (an adapter's
+`Effect.run*`, a new `throw` the code needs) raises it in its own diff and says
+why.
 
 ## Writing a migration PR
 
@@ -396,6 +423,7 @@ PRs don't edit the baseline; it is lowered with
    `// @effect-migrated allow=effectPromises: adapter around the MCP SDK`.
    Check files with `pnpm --filter @wisp/tests effect:audit <files...>`, and
    extend the restricted-imports rule to the folder if it is clean now.
-5. Leave `tests/effect-migration-baseline.json` and the checkboxes above alone:
-   both are updated after the PR merges.
-6. If you left a behavior change out, add it to [phase 9](#9-deferred-behavior-changes).
+5. Leave the checkboxes above alone, and don't lower
+   `tests/effect-migration-baseline.json`: both are updated after the PR merges.
+6. If you left a behavior change out, list it in the PR description; it is
+   added to [phase 9](#9-deferred-behavior-changes) after the PR merges.
