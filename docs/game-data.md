@@ -14,11 +14,14 @@ them. `@wisp/game-data` (`packages/game-data`) does the generation.
   `WispAI.toc`; it loads in game, so keep it small) or JSON for the bridge (for
   data the agent uses directly or that is too large for the game's memory).
   `render()` adds a header naming the dataset, build and tables.
-- Read columns with `num()` and `str()` from `src/rows.ts`, which fail on a
-  missing or malformed column instead of writing `NaN`.
+- Read a table with a row schema naming the columns the dataset uses
+  (`tables.read('Map', MapRow)`, `Schema.Int` or `Schema.Finite` for numbers,
+  `Schema.String` for text). `src/wago.ts` parses the CSV with `effect/encoding`'s
+  `Csv` and decodes each record, so a stray quote, a missing column or a
+  malformed cell fails the generation instead of writing `NaN`.
 - `curated/` holds the few facts the tables lack, each with its source.
 - Tables come from [wago.tools](https://wago.tools), in English unless a
-  dataset asks for a locale (`tables.read('Map', 'esMX')`), and are cached in
+  dataset asks for a locale (`tables.read('Map', MapRow, 'esMX')`), and are cached in
   `packages/game-data/.cache/<build>/<locale>/` (not committed), so a
   regeneration can be repeated offline.
 
@@ -77,4 +80,4 @@ facts only the client tables hold. Server-side facts (loot, drop rates,
 trainers) are not in the client tables; take them only from a pinned,
 licence-compatible source, as `dungeon-loot` does. Write the module in
 `src/datasets/`, add it to `datasets` in `src/index.ts`, and test it with
-`layerMemory` (from `src/wago.ts`) fixtures copied from real rows.
+`layerMemory` (from `src/wago.ts`) fixtures: CSV text copied from real rows.

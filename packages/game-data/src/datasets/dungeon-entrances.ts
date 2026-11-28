@@ -1,11 +1,9 @@
 // @effect-migrated
 import { Effect, Schema } from 'effect';
 import type { FileSystem, Path } from 'effect';
-import { zonesAt } from '../coordinates.ts';
-import type { Row } from '../csv.ts';
-import { Curated, DatasetError, fromRows, readPackageJson, type Dataset } from '../dataset.ts';
+import { UiMapAssignmentRow, UiMapRow, zonesAt } from '../coordinates.ts';
+import { Curated, DatasetError, readPackageJson, type Dataset } from '../dataset.ts';
 import type { LuaTable } from '../lua.ts';
-import { num, str } from '../rows.ts';
 import { GameTables } from '../wago.ts';
 
 // An entrance: UI map ID, x, y.
@@ -22,7 +20,21 @@ const EntranceCuration = Schema.Struct({
 });
 export type EntranceCuration = typeof EntranceCuration.Type;
 
-const INSTANCE = new Set(['1', '2']); // Map.InstanceType: dungeon, raid
+// Map.db2's columns this dataset reads: Corpse_0/Corpse_1 on CorpseMapID's
+// continent is where a ghost returns, the entrance.
+const MapRow = Schema.Struct({
+  ID: Schema.Int,
+  MapName_lang: Schema.String,
+  InstanceType: Schema.Int,
+  CorpseMapID: Schema.Int,
+  Corpse_0: Schema.Finite,
+  Corpse_1: Schema.Finite,
+  MaxPlayers: Schema.Int,
+});
+type MapRow = typeof MapRow.Type;
+
+const DUNGEON = 1; // Map.InstanceType
+const RAID = 2;
 
 export const readCuration: Effect.Effect<
   EntranceCuration,
@@ -33,21 +45,21 @@ export const readCuration: Effect.Effect<
 // Each instance's entrances, and what the curation must fix before they can be written.
 function placeEntrances(
   { zones, entrances, skip }: EntranceCuration,
-  maps: Row[],
-  uiMaps: Row[],
-  assignments: Row[],
+  maps: readonly MapRow[],
+  uiMaps: readonly UiMapRow[],
+  assignments: readonly UiMapAssignmentRow[],
 ): { value: LuaTable; problems: string[] } {
   const value: LuaTable = {};
   const used = new Set<string>();
   const problems: string[] = [];
   for (const map of maps) {
-    const id = str(map, 'ID');
-    if (!INSTANCE.has(str(map, 'InstanceType')) || skip[id]) {
+    const id = String(map.ID);
+    const name = map.MapName_lang;
+    if ((map.InstanceType !== DUNGEON && map.InstanceType !== RAID) || skip[id]) {
       continue;
     }
     const points: Point[] = [];
-    const continent = num(map, 'CorpseMapID');
-    const [worldX, worldY] = [num(map, 'Corpse_0'), num(map, 'Corpse_1')];
+    const { CorpseMapID: continent, Corpse_0: worldX, Corpse_1: worldY } = map;
     if (continent >= 0 && (worldX !== 0 || worldY !== 0)) {
       const candidates = zonesAt(assignments, uiMaps, continent, worldX, worldY);
       const [only] = candidates;
@@ -56,15 +68,13 @@ function placeEntrances(
         used.add(id);
         if (candidates.length === 1) {
           problems.push(
-            `${str(map, 'MapName_lang')} (${id}): only one zone contains its entrance; remove it from the curated zones`,
+            `${name} (${id}): only one zone contains its entrance; remove it from the curated zones`,
           );
         }
         for (const zone of chosen) {
           const match = candidates.find((candidate) => candidate.mapId === zone);
           if (!match) {
-            problems.push(
-              `${str(map, 'MapName_lang')} (${id}): zone ${zone} does not contain its entrance`,
-            );
+            problems.push(`${name} (${id}): zone ${zone} does not contain its entrance`);
           } else {
             points.push([match.mapId, match.x, match.y]);
           }
@@ -73,7 +83,7 @@ function placeEntrances(
         points.push([only.mapId, only.x, only.y]);
       } else if (candidates.length > 1) {
         problems.push(
-          `${str(map, 'MapName_lang')} (${id}): choose its zone in curated/dungeon-entrances.json from ` +
+          `${name} (${id}): choose its zone in curated/dungeon-entrances.json from ` +
             candidates
               .map(
                 (candidate) =>
@@ -91,16 +101,16 @@ function placeEntrances(
     if (!points.length) {
       continue;
     }
-    const raid = str(map, 'InstanceType') === '2';
+    const raid = map.InstanceType === RAID;
     value[id] = {
-      name: str(map, 'MapName_lang'),
+      name,
       raid,
-      players: raid ? num(map, 'MaxPlayers') : undefined,
+      players: raid ? map.MaxPlayers : undefined,
       entrances: points,
     };
   }
   for (const id of [...Object.keys(zones), ...Object.keys(entrances), ...Object.keys(skip)]) {
-    if (skip[id] && maps.some((map) => str(map, 'ID') === id)) {
+    if (skip[id] && maps.some((map) => String(map.ID) === id)) {
       continue;
     }
     if (!used.has(id)) {
@@ -129,12 +139,14 @@ export function dungeonEntrances(
       const tables = yield* GameTables;
       const chosen = curation ?? (yield* readCuration);
       const [maps, uiMaps, assignments] = yield* Effect.all(
-        [tables.read('Map'), tables.read('UiMap'), tables.read('UiMapAssignment')],
+        [
+          tables.read('Map', MapRow),
+          tables.read('UiMap', UiMapRow),
+          tables.read('UiMapAssignment', UiMapAssignmentRow),
+        ],
         { concurrency: 'unbounded' },
       );
-      const { value, problems } = yield* fromRows(() =>
-        placeEntrances(chosen, maps, uiMaps, assignments),
-      );
+      const { value, problems } = placeEntrances(chosen, maps, uiMaps, assignments);
       if (problems.length) {
         return yield* new DatasetError({ message: problems.join('\n') });
       }

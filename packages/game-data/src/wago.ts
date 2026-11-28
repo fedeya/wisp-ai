@@ -1,8 +1,8 @@
 // @effect-migrated
-import { Context, Effect, FileSystem, Layer, Option, Path, Schedule, Schema } from 'effect';
+import { Context, Effect, FileSystem, Layer, Option, Path, Schedule, Schema, Stream } from 'effect';
+import { Csv } from 'effect/encoding';
 import { HttpClient, HttpClientRequest } from 'effect/http';
 import type { HttpClientResponse } from 'effect/http';
-import { parseCsv, type Row } from './csv.ts';
 
 // Client languages wago.tools serves; enUS is the default.
 export type Locale =
@@ -28,11 +28,44 @@ export class BuildListError extends Schema.TaggedError<BuildListError>()('BuildL
   message: Schema.String,
 }) {}
 
+// The columns a dataset reads from a table, as a struct decoded from the CSV's
+// string cells (Schema.Int or Schema.Finite for numbers, Schema.String for
+// text). It names only those columns, so the others may change freely.
+export type RowSchema = Schema.ConstraintDecoder<unknown>;
+
 /** Where datasets read the DB2 tables of one game build. */
 export class GameTables extends Context.Service<
   GameTables,
-  { readonly read: (name: string, locale?: Locale) => Effect.Effect<Row[], TableReadError> }
+  {
+    readonly read: <S extends RowSchema>(
+      name: string,
+      row: S,
+      locale?: Locale,
+    ) => Effect.Effect<readonly S['Type'][], TableReadError>;
+  }
 >()('@wisp/game-data/GameTables') {}
+
+// Decodes a wago.tools DB2 CSV export: a header row naming the columns, then
+// one record per line, cells quoted when they hold commas, quotes or line
+// breaks. A leading byte order mark is stripped and blank lines are skipped; a
+// stray quote, an unterminated one or a record wider or narrower than the
+// header fails, and so does a cell row cannot decode, such as an empty or
+// non-numeric cell in a number column.
+export const decodeTable = <S extends RowSchema>(text: string, row: S) =>
+  Stream.make(text).pipe(
+    Stream.pipeThroughChannel(
+      Csv.decodeSchemaString(row)({ headers: true, ignoreEmptyLines: true }),
+    ),
+    Stream.runCollect,
+  );
+
+const tableFailed = (what: string) => (cause: Csv.CsvError | Schema.SchemaError) =>
+  new TableReadError({
+    message:
+      cause._tag === 'CsvError'
+        ? `${what}: line ${cause.line}: ${cause.message}`
+        : `${what}: ${cause.message}`,
+  });
 
 const BASE = 'https://wago.tools';
 const USER_AGENT = 'wisp-game-data';
@@ -59,14 +92,16 @@ export const layer = (options: { build: string; cacheDir: string; refresh: boole
       const client = yield* wagoClient;
       const { build, cacheDir, refresh } = options;
 
+      const what = (name: string, locale: Locale) =>
+        `wago.tools ${name} (${locale}) for build ${build}`;
+
       const download = Effect.fn('GameTables.download')(function* (
         name: string,
         locale: Locale,
         file: string,
       ) {
-        const what = `wago.tools ${name} (${locale}) for build ${build}`;
         const failed = (cause: { readonly message: string }) =>
-          new TableReadError({ message: `${what}: ${cause.message}` });
+          new TableReadError({ message: `${what(name, locale)}: ${cause.message}` });
         const query = new URLSearchParams({ build });
         if (locale !== 'enUS') {
           query.set('locale', locale);
@@ -75,7 +110,9 @@ export const layer = (options: { build: string; cacheDir: string; refresh: boole
           .get(`${BASE}/db2/${encodeURIComponent(name)}/csv?${query}`)
           .pipe(Effect.mapError(failed));
         if (!isOk(response)) {
-          return yield* new TableReadError({ message: `${what}: HTTP ${response.status}` });
+          return yield* new TableReadError({
+            message: `${what(name, locale)}: HTTP ${response.status}`,
+          });
         }
         const text = yield* response.text.pipe(Effect.mapError(failed));
         yield* fs
@@ -85,34 +122,42 @@ export const layer = (options: { build: string; cacheDir: string; refresh: boole
         return text;
       });
 
-      const read = Effect.fn('GameTables.read')(function* (name: string, locale: Locale = 'enUS') {
+      const read = Effect.fn('GameTables.read')(function* <S extends RowSchema>(
+        name: string,
+        row: S,
+        locale: Locale = 'enUS',
+      ) {
         const file = path.join(cacheDir, build, locale, `${name}.csv`);
-        if (!refresh) {
-          // A missing or unreadable cache entry is downloaded again.
-          const cached = yield* fs.readFileString(file).pipe(Effect.option);
-          if (Option.isSome(cached)) {
-            return parseCsv(cached.value);
-          }
-        }
-        return parseCsv(yield* download(name, locale, file));
+        // A missing or unreadable cache entry is downloaded again; one that
+        // does not decode fails, and --refresh replaces it.
+        const cached = refresh
+          ? Option.none<string>()
+          : yield* fs.readFileString(file).pipe(Effect.option);
+        const text = Option.isSome(cached) ? cached.value : yield* download(name, locale, file);
+        return yield* decodeTable(text, row).pipe(Effect.mapError(tableFailed(what(name, locale))));
       });
 
       return GameTables.of({ read });
     }),
   );
 
-// Tables given inline, for tests; a locale other than enUS reads "<name>:<locale>".
-export const layerMemory = (tables: Record<string, Row[]>) =>
+// Tables given inline as CSV text, for tests; a locale other than enUS reads
+// "<name>:<locale>".
+export const layerMemory = (tables: Record<string, string>) =>
   Layer.succeed(
     GameTables,
     GameTables.of({
-      read: Effect.fn('GameTables.read')(function* (name: string, locale: Locale = 'enUS') {
+      read: Effect.fn('GameTables.read')(function* <S extends RowSchema>(
+        name: string,
+        row: S,
+        locale: Locale = 'enUS',
+      ) {
         const key = locale === 'enUS' ? name : `${name}:${locale}`;
-        const rows = tables[key];
-        if (!rows) {
+        const text = tables[key];
+        if (text === undefined) {
           return yield* new TableReadError({ message: `Missing table ${key}` });
         }
-        return rows;
+        return yield* decodeTable(text, row).pipe(Effect.mapError(tableFailed(`Table ${key}`)));
       }),
     }),
   );

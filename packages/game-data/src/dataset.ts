@@ -39,10 +39,6 @@ export const Curated = <S extends Schema.Top>(value: S) =>
 const failure = (cause: unknown) =>
   new DatasetError({ message: Predicate.isError(cause) ? cause.message : String(cause) });
 
-// Runs a dataset's plain transform, whose row reads (num, str) throw on a
-// missing or malformed column.
-export const fromRows = <A>(transform: () => A) => Effect.try({ try: transform, catch: failure });
-
 // Reads and decodes a JSON file of this package, such as build.json or
 // curated/<name>.json.
 export const readPackageJson = Effect.fnUntraced(function* <S extends Schema.Decoder<unknown>>(

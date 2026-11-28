@@ -9,8 +9,13 @@ import { groupFinderNames } from './datasets/group-finder-names.ts';
 import { itemProficiencies } from './datasets/item-proficiencies.ts';
 import type { GameTables } from './wago.ts';
 
-export { parseCsv, type Row } from './csv.ts';
-export { mapPosition, zonesAt, type MapPoint } from './coordinates.ts';
+export {
+  mapPosition,
+  UiMapAssignmentRow,
+  UiMapRow,
+  zonesAt,
+  type MapPoint,
+} from './coordinates.ts';
 export {
   Curated,
   DatasetError,
@@ -20,8 +25,15 @@ export {
   type Output,
 } from './dataset.ts';
 export { luaModule, luaString, luaValue, type LuaTable, type LuaValue } from './lua.ts';
-export { byId, num, str } from './rows.ts';
-export { BuildListError, GameTables, TableReadError, latestBuild, type Locale } from './wago.ts';
+export {
+  BuildListError,
+  decodeTable,
+  GameTables,
+  TableReadError,
+  latestBuild,
+  type Locale,
+  type RowSchema,
+} from './wago.ts';
 
 export {
   AtlasLoot,
