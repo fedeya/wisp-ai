@@ -6,9 +6,10 @@ import path from 'node:path';
 import { ApplicationDatabase } from '../src/application-database.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession, SessionState, type Session } from '#/session';
+import { current, sessionState } from './session-fixture.ts';
 import { unsavedCapabilities } from './capabilities/fixture.ts';
-import { Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { routineDefinition } from '@wisp/protocol/routines';
 
 const decodeDefinition = Schema.decodeUnknownSync(routineDefinition);
@@ -52,18 +53,25 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
       await releaseClaim.promise;
       return result;
     });
-    const state = createSessionState();
-    state.activeTransport = 'session';
-    state.currentCharacterKey = 'mage';
-    state.routinePresence = {
-      identity: 'mage',
-      session: 'session',
-      ready: true,
-      at: start,
-      context: { character: 'mage' },
-    };
     const settled = signal();
-    const run = vi.fn(async (chat: (typeof state.chats)[number]) => {
+    // The scheduler commits once a dispatch settles.
+    const session = sessionState(
+      {
+        ...initialSession(),
+        activeTransport: 'session',
+        currentCharacterKey: 'mage',
+        routinePresence: {
+          identity: 'mage',
+          session: 'session',
+          ready: true,
+          at: start,
+          context: { character: 'mage' },
+        },
+      },
+      () => settled.resolve(),
+    );
+    const state = () => current(session);
+    const run = vi.fn(async (chat: Session['chats'][number]) => {
       chat.status = 'done';
     });
     const logs = captureLogs();
@@ -72,14 +80,13 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     vi.setSystemTime(start - 3000);
     stop = runBridgeEffect(
       startRoutineScheduler({
-        state,
+        session: state,
         routineStore: store,
         capabilitySettings: unsavedCapabilities().reads,
         isStopping: () => false,
         isReady: () => true,
-        changed: () => settled.resolve(),
         run,
-      }),
+      }).pipe(Effect.provideService(SessionState, session)),
     );
     await vi.advanceTimersByTimeAsync(3000);
     await claimed.promise;
@@ -90,7 +97,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     releaseClaim.resolve();
     await settled.promise;
     expect(run).not.toHaveBeenCalled();
-    expect(state.chats).toEqual([]);
+    expect(state().chats).toEqual([]);
     expect(store.history()).toEqual([]);
     expect(store.list('mage')[0].enabled).toBe(false);
     expect(logs('routine.dispatch_failed')).toEqual([]);
@@ -99,7 +106,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     await vi.advanceTimersByTimeAsync(3000);
     expect(run).not.toHaveBeenCalled();
     expect(store.history()).toEqual([]);
-    expect(state.chats).toEqual([]);
+    expect(state().chats).toEqual([]);
     expect(store.list('mage')[0].enabled).toBe(false);
 
     await store.mutate('mage', { operation: 'resume', id: 'review' });
@@ -107,7 +114,7 @@ test('pausing while claim awaits dispatch blocks a run even with the same update
     await vi.advanceTimersByTimeAsync(3000);
     await stop();
     expect(run).toHaveBeenCalledTimes(1);
-    expect(state.chats).toHaveLength(1);
+    expect(state().chats).toHaveLength(1);
     expect(store.history()).toHaveLength(1);
     expect(store.history()[0].status).toBe('done');
     expect(store.list('mage')[0].enabled).toBe(true);
@@ -144,11 +151,8 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
         }),
       });
     }
-    const state = createSessionState();
-    state.activeTransport = 'session';
-    state.currentCharacterKey = 'mage';
     vi.setSystemTime(start + 57000);
-    state.routinePresence = {
+    const presence = {
       identity: 'mage',
       session: 'session',
       ready: true,
@@ -158,18 +162,27 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     const startedA = signal();
     const startedB = signal();
     const settledA = signal();
+    // The scheduler commits once a dispatch settles.
+    const session = sessionState(
+      {
+        ...initialSession(),
+        activeTransport: 'session',
+        currentCharacterKey: 'mage',
+        routinePresence: presence,
+      },
+      () => settledA.resolve(),
+    );
     const selected: string[] = [];
     let active = 0;
     let maxActive = 0;
     const logs = captureLogs();
     stop = runBridgeEffect(
       startRoutineScheduler({
-        state,
+        session: () => current(session),
         routineStore: store,
         capabilitySettings: unsavedCapabilities().reads,
         isStopping: () => false,
         isReady: () => true,
-        changed: () => settledA.resolve(),
         run: async (chat) => {
           selected.push(chat.routineId!);
           active++;
@@ -185,7 +198,7 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
           chat.status = 'done';
           active--;
         },
-      }),
+      }).pipe(Effect.provideService(SessionState, session)),
     );
     await vi.advanceTimersByTimeAsync(3000);
     await startedA.promise;
@@ -196,7 +209,8 @@ test('a 65-second automatic turn yields to the next routine without overlapping 
     expect(selected).toEqual(['a']);
     expect(active).toBe(1);
     // Refresh the same valid character/session presence so staleness cannot block B.
-    state.routinePresence = { ...state.routinePresence, at: Date.now() };
+    const at = Date.now();
+    Effect.runSync(session.stage((state) => ({ ...state, routinePresence: { ...presence, at } })));
     releaseA.resolve();
     await settledA.promise;
     expect(store.history()[0].finishedAt).toBe(start + 125000);

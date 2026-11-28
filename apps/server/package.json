@@ -47,7 +47,6 @@
     "./db/application-database": "./src/application-database.ts",
     "./chat-lifecycle": "./src/chat/chat-lifecycle.ts",
     "./chat-projection": "./src/chat/chat-projection.ts",
-    "./session-state": "./src/session-state.ts",
     "./packet-receiver": "./src/game/packet-receiver.ts",
     "./routine-scheduler": "./src/routines/routine-scheduler.ts",
     "./turn-runner": "./src/agent/turn-runner.ts",

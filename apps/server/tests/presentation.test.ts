@@ -10,7 +10,7 @@ import { ReplyProjection } from '../src/reply/reply-stream.ts';
 import { rebuildHistory } from '../src/chat/history.ts';
 import { replyContent } from '../src/reply/reply-content.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession } from '#/session';
 
 const panel = {
   nodes: [
@@ -112,8 +112,7 @@ test('text, a validated presentation and subsequent text form one ordered assist
 test('a comparison has live progress after prose without persisting a tool row', async () => {
   const f = fixture();
   f.chat.status = 'working';
-  const state = createSessionState([f.chat]);
-  state.activeChat = f.chat.id;
+  const state = { ...initialSession([f.chat]), activeChat: f.chat.id };
   const rows = () => projectChats(state).chats[0].messages!;
   f.text('before', 'I will compare the two setups.');
   f.emit('call.input', { callId: 'comparison', name: PRESENT_UI_TOOL, delta: '{"no' });
@@ -147,8 +146,7 @@ test('a comparison has live progress after prose without persisting a tool row',
 test('reference registration stays out of presentation progress', () => {
   const f = fixture();
   f.chat.status = 'working';
-  const state = createSessionState([f.chat]);
-  state.activeChat = f.chat.id;
+  const state = { ...initialSession([f.chat]), activeChat: f.chat.id };
   f.text('before', 'Preparing the reply.');
   f.emit('call.input', { callId: 'refs', name: PRESENT_UI_TOOL, delta: '{"nodes":[],' });
   f.emit('call.requested', {
@@ -162,8 +160,7 @@ test('reference registration stays out of presentation progress', () => {
 test('a comparison starts showing progress after a streamed references field', () => {
   const f = fixture();
   f.chat.status = 'working';
-  const state = createSessionState([f.chat]);
-  state.activeChat = f.chat.id;
+  const state = { ...initialSession([f.chat]), activeChat: f.chat.id };
   f.text('before', 'I will compare the two setups.');
   const references = Object.fromEntries(
     Array.from({ length: 45 }, (_, index) => [

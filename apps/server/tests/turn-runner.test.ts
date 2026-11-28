@@ -10,7 +10,9 @@ import { ChatGPTAuthError } from '../src/auth/index.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/chat/context.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession, SessionState } from '#/session';
+import { Effect } from 'effect';
+import { sessionState } from './session-fixture.ts';
 import { SnapshotGate } from '@wisp/wow-bridge/snapshots';
 import { PRESENT_UI_TOOL } from '@wisp/agent/contract/reply-presentation';
 import { ModelFailures, httpFailureKind } from '../src/models/model-failures.ts';
@@ -74,28 +76,32 @@ function fixture(
   const flushSnapshot = vi.fn();
   const changed = vi.fn();
   const run = runBridgeEffect(
-    createTurnRunner({
-      telemetry,
-      engine,
-      models: { models, prepare, complete },
-      capabilitySettings: {
-        publish: async () => {},
-        enabled: () => titlesEnabled,
-        snapshot: () => [],
-      },
-      currentTransport: () => transport,
-      activeChat: () => 'chat',
-      defaultModel: () => defaultModel,
-      isReady,
-      isStopping: () => false,
-      accountBusy,
-      hasProvider,
-      isCurrent: () => current,
-      changed,
-      flushSnapshot,
-      idleTimeoutMs,
-      ...extra,
-    }),
+    Effect.provideService(
+      createTurnRunner({
+        telemetry,
+        engine,
+        models: { models, prepare, complete },
+        capabilitySettings: {
+          publish: async () => {},
+          enabled: () => titlesEnabled,
+          snapshot: () => [],
+        },
+        currentTransport: () => transport,
+        activeChat: () => 'chat',
+        defaultModel: () => defaultModel,
+        isReady,
+        isStopping: () => false,
+        accountBusy,
+        hasProvider,
+        isCurrent: () => current,
+        snapshot: { flush: Effect.sync(() => void flushSnapshot()) },
+        idleTimeoutMs,
+        ...extra,
+      }),
+      SessionState,
+      // Each commit is a change the publisher and chat persistence hear about.
+      sessionState(initialSession([chat]), () => void changed()),
+    ),
   );
   return {
     chat,
@@ -149,8 +155,7 @@ test('a chat starts on the first available model when no default is known yet', 
 
 test('a streamed comparison requests publication before the tool settles', async () => {
   const f = fixture();
-  const state = createSessionState([f.chat]);
-  state.activeChat = f.chat.id;
+  const state = { ...initialSession([f.chat]), activeChat: f.chat.id };
   const previews: string[] = [];
   f.flushSnapshot.mockImplementation(() => {
     const row = projectChats(state).chats[0].messages?.at(-1);
@@ -404,8 +409,7 @@ test.each([
     try {
       // Titles would publish mid-stream; this test measures reply previews only.
       const f = fixture(false);
-      const state = createSessionState([f.chat]);
-      state.activeChat = f.chat.id;
+      const state = { ...initialSession([f.chat]), activeChat: f.chat.id };
       const gate = new SnapshotGate();
       let publications = 0,
         previews = 0,

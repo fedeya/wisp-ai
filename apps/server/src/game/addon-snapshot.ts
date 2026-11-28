@@ -8,7 +8,7 @@ import {
   type RoutineRun,
 } from '@wisp/protocol/routines';
 import { projectChats } from '../chat/chat-projection.ts';
-import type { SessionState } from '../session-state.ts';
+import type { Session } from '#/session';
 
 /** Longest routine trigger text shown on the addon's Routines page. */
 export const ROUTINE_TRIGGER_MAX_LENGTH = 160;
@@ -16,7 +16,7 @@ export const ROUTINE_TRIGGER_MAX_LENGTH = 160;
 export const ROUTINE_INSTRUCTION_MAX_LENGTH = 280;
 
 export interface AddonSnapshotInputs {
-  state: SessionState;
+  state: Session;
   /** Whether the agent is ready to answer. */
   connected: boolean;
   bridgeVersion: string;

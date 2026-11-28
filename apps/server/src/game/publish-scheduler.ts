@@ -1,4 +1,8 @@
-/** Trailing window that coalesces a burst of `changed()` calls into one snapshot. */
+// @effect-migrated
+import { Clock, Effect, Ref } from 'effect';
+import type { Scope } from 'effect';
+
+/** Trailing window that coalesces a burst of changes into one snapshot. */
 export const PUBLISH_COALESCE_MS = 50;
 /**
  * Minimum spacing between snapshot publishes. This was the old fixed poll
@@ -9,38 +13,46 @@ export const PUBLISH_COALESCE_MS = 50;
 export const PUBLISH_MIN_INTERVAL_MS = 400;
 
 export interface PublishScheduler {
-  /** Request a publish; repeated calls before it fires coalesce into one. */
-  schedule(): void;
-  /** Cancel any pending publish and ignore later requests. */
-  stop(): void;
+  /** Requests a publish; requests made before it runs coalesce into one. */
+  readonly schedule: Effect.Effect<void>;
 }
 
-export function createPublishScheduler(
-  publish: () => void,
+export interface PublishSchedulerOptions {
+  readonly coalesceMs?: number;
+  readonly minIntervalMs?: number;
+}
+
+/**
+ * Runs `publish` once for each burst of requests: the coalescing window after
+ * the first one, and no sooner than the minimum interval after the previous
+ * run. A pending run is interrupted when the scope closes.
+ */
+export const make = Effect.fnUntraced(function* (
+  publish: Effect.Effect<void>,
   {
     coalesceMs = PUBLISH_COALESCE_MS,
     minIntervalMs = PUBLISH_MIN_INTERVAL_MS,
-    now = Date.now,
-  }: { coalesceMs?: number; minIntervalMs?: number; now?: () => number } = {},
-): PublishScheduler {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let lastPublishAt = -Infinity;
-  let stopped = false;
-  function run() {
-    timer = undefined;
-    lastPublishAt = now();
-    publish();
-  }
+  }: PublishSchedulerOptions = {},
+): Effect.fn.Return<PublishScheduler, never, Scope.Scope> {
+  const scope = yield* Effect.scope;
+  const pending = yield* Ref.make(false);
+  const lastRunAt = yield* Ref.make(Number.NEGATIVE_INFINITY);
+  const run = Effect.gen(function* () {
+    yield* Ref.set(pending, false);
+    yield* Ref.set(lastRunAt, yield* Clock.currentTimeMillis);
+    yield* publish;
+  });
   return {
-    schedule() {
-      if (stopped || timer) return;
-      const wait = Math.max(coalesceMs, lastPublishAt + minIntervalMs - now());
-      timer = setTimeout(run, wait);
-    },
-    stop() {
-      stopped = true;
-      clearTimeout(timer);
-      timer = undefined;
-    },
+    schedule: Effect.gen(function* () {
+      if (yield* Ref.getAndSet(pending, true)) return;
+      const wait = Math.max(
+        coalesceMs,
+        (yield* Ref.get(lastRunAt)) + minIntervalMs - (yield* Clock.currentTimeMillis),
+      );
+      yield* Effect.sleep(wait).pipe(
+        Effect.andThen(run),
+        Effect.forkIn(scope, { startImmediately: true }),
+      );
+    }),
   };
-}
+});

@@ -1,6 +1,8 @@
 import { test, expect, vi } from 'vitest';
 import { Effect } from 'effect';
 import { createDesktopApp } from '../src/api/desktop-handler.ts';
+import { initialSession, SessionState } from '#/session';
+import { current, sessionState } from './session-fixture.ts';
 import type { Status } from '@wisp/protocol/desktop';
 const authState = { status: 'signed_out', revision: 1, profiles: [] };
 const status: Status = {
@@ -21,6 +23,8 @@ const status: Status = {
 };
 function setup() {
   const queue: string[] = [];
+  const session = sessionState({ ...initialSession(), currentCharacterKey: 'mage' });
+  const invalidate = vi.fn();
   const deps = {
     auth: {
       beginSignIn: vi.fn(async () => ({ authorizationUrl: 'https://auth.example/authorize' })),
@@ -41,23 +45,22 @@ function setup() {
     }),
     updateModel: vi.fn(async () => {}),
     getStatus: () => status,
-    getChats: () => [],
-    currentCharacterKey: () => 'mage',
-    sendPanelCommand: vi.fn(),
     setCapability: vi.fn(() => Effect.void),
     setWowTransport: vi.fn(() => Effect.void),
     setAppUpdate: vi.fn(),
     setFeature: vi.fn(async () => {}),
-    changed: vi.fn(),
+    snapshot: { invalidate: Effect.sync(invalidate) },
   };
-  const app = Effect.runSync(createDesktopApp(deps as never));
+  const app = Effect.runSync(
+    createDesktopApp(deps as never).pipe(Effect.provideService(SessionState, session)),
+  );
   const post = (route: string, body: unknown) =>
     app.request(route, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: typeof body === 'string' ? body : JSON.stringify(body),
     });
-  return { app, deps, post, queue };
+  return { app, deps, post, queue, session, invalidate };
 }
 test('status is served uncached', async () => {
   const { app } = setup();
@@ -94,7 +97,7 @@ test('model changes only accept available models', async () => {
   expect(deps.updateModel).toHaveBeenCalledWith('luna');
 });
 test('panel commands require the logged-in character', async () => {
-  const { post, deps } = setup();
+  const { post, session } = setup();
   const other = await post('/panels/action', {
     characterKey: 'warrior',
     id: 'materials',
@@ -107,10 +110,9 @@ test('panel commands require the logged-in character', async () => {
     action: 'show',
   });
   expect(await shown.json()).toEqual({ ok: true });
-  expect(deps.sendPanelCommand).toHaveBeenCalledWith(
+  expect(current(session).panelCommand).toEqual(
     expect.objectContaining({ id: 'materials', characterKey: 'mage', action: 'show' }),
   );
-  expect(deps.changed).toHaveBeenCalledOnce();
 });
 test('the addon installer can pause and resume the WoW transport', async () => {
   const { post, deps } = setup();
@@ -119,10 +121,10 @@ test('the addon installer can pause and resume the WoW transport', async () => {
   expect((await post('/addon/transport', { action: 'install' })).status).toBe(400);
 });
 test('the desktop reports the app update the game announces', async () => {
-  const { post, deps } = setup();
+  const { post, deps, invalidate } = setup();
   expect(await (await post('/app-update', { version: '0.0.9' })).json()).toEqual({ ok: true });
   expect(deps.setAppUpdate).toHaveBeenCalledWith('0.0.9');
-  expect(deps.changed).toHaveBeenCalledOnce();
+  expect(invalidate).toHaveBeenCalledOnce();
   expect((await post('/app-update', { version: null })).status).toBe(200);
   expect(deps.setAppUpdate).toHaveBeenLastCalledWith(null);
   expect((await post('/app-update', { version: '' })).status).toBe(400);

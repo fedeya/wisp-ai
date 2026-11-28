@@ -7,8 +7,9 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { MemoryView, SessionState } from '../session-state.ts';
+import { SessionState, type MemoryView, type Session } from '#/session';
 import type { Chat } from '../chat/events.ts';
+import type { AccountModel } from '../chat/chat-model.ts';
 import type { CapabilitySettings, IntegrationState } from '#/capabilities';
 import type { ModelCatalog } from '../models/catalog.ts';
 import type { ModelConnections } from '../models/connections.ts';
@@ -28,13 +29,13 @@ import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/c
 import { errorMessage } from '../errors.ts';
 import type { UsageTelemetry } from '#/telemetry';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
+import type { SnapshotPublisher } from './snapshot-publisher.ts';
 import { Effect, Option, Schema } from 'effect';
 // The addon's routine packets are strict, like the protocol schemas.
 const decodeRoutineEvent = Schema.decodeUnknownOption(routineEvent, rejectUnknownKeys);
 const decodeRoutineAction = Schema.decodeUnknownOption(routineInput, rejectUnknownKeys);
 interface ReceiverDependencies {
   telemetry?: UsageTelemetry['Service'];
-  state: SessionState;
   engine: Pick<AgentEngine, 'end'>;
   request: Connection['request'];
   integrationState: IntegrationState['Service'];
@@ -51,17 +52,23 @@ interface ReceiverDependencies {
   /** Stops a turn the player cancelled. */
   cancel?: (chat: Chat) => void;
   runtime: string;
-  changed: () => void;
+  /** Told when routines or capabilities the snapshot shows change. */
+  snapshot: Pick<SnapshotPublisher['Service'], 'invalidate'>;
   /** Records a character's name and moves its pre-GUID data before the packet is handled. */
   adoptCharacter?: (character: CharacterProfile) => Effect.Effect<void>;
   now?: () => number;
 }
+/**
+ * Handles the addon's packets on `SessionState`. A packet's bookkeeping is
+ * staged and told to the subscribers with the update that ends it, so one
+ * packet still makes one change.
+ */
 export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverDependencies) {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
+  const session = yield* SessionState;
   const {
-    state,
     engine,
     request,
     integrationState,
@@ -76,64 +83,83 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     run,
     interrupt,
     runtime,
-    changed,
+    snapshot,
   } = deps;
-  const chatFor = (id: string | undefined) => state.chats.find((chat) => chat.id === id);
+  const chatFor = (state: Session, id: string | undefined) =>
+    state.chats.find((chat) => chat.id === id);
   let contextCache = new TurnContextCache();
   let lastDelivery = '';
   const now = deps.now ?? Date.now;
   let activeSeenAt = 0;
-  const createChat = (id: string) => {
-    const chat = newChat(id, state.activeTransport);
-    state.chats.push(chat);
+  // Staged: the packet that asks for the chat tells the subscribers.
+  const createChat = Effect.fnUntraced(function* (id: string) {
+    const chat = newChat(id, (yield* session.get).activeTransport);
+    yield* session.stage((state) => ({ ...state, chats: [...state.chats, chat] }));
     return chat;
-  };
+  });
   return Effect.fnUntraced(function* receive(packet: GameEvent) {
     const receivedAt = now();
-    if (state.activeTransport && packet.session === state.activeTransport) {
+    const before = yield* session.get;
+    if (before.activeTransport && packet.session === before.activeTransport) {
       activeSeenAt = receivedAt;
     }
     const establishesSession =
-      packet.type === 'hello' || (!state.activeTransport && packet.type === 'poll');
-    if (!establishesSession && packet.session !== state.activeTransport) {
+      packet.type === 'hello' || (!before.activeTransport && packet.type === 'poll');
+    if (!establishesSession && packet.session !== before.activeTransport) {
       return;
     }
     // The bridge has already selected the window that owns the connection.
     const beforeIntegrations = JSON.stringify(yield* capabilitySettings.snapshot);
-    const newTransport = establishesSession && state.activeTransport !== packet.session;
+    const newTransport = establishesSession && before.activeTransport !== packet.session;
     if (newTransport) {
       runFork(
         Effect.logInfo('Game window connected').pipe(
           Effect.annotateLogs({
             event: 'transport.session_changed',
             reason: packet.takeover ? 'takeover' : packet.heartbeat ? 'heartbeat' : packet.type,
-            previousIdleMs: state.activeTransport ? receivedAt - activeSeenAt : undefined,
+            previousIdleMs: before.activeTransport ? receivedAt - activeSeenAt : undefined,
           }),
         ),
       );
       activeSeenAt = receivedAt;
       contextCache = new TurnContextCache();
       lastDelivery = '';
-      for (const chat of state.chats.filter(
-        (chat) => chat.owner === state.activeTransport && isWorking(chat),
+      for (const chat of before.chats.filter(
+        (chat) => chat.owner === before.activeTransport && isWorking(chat),
       )) {
         interrupt(chat);
         settleTurn(chat, 'interrupted');
       }
-      state.activeTransport = packet.session;
-      state.currentCharacterKey = undefined;
-      state.inlineChat = '';
-      state.panelCommand = undefined;
-      state.routineCommand = undefined;
-      state.routinePresence = undefined;
+      const transportSession = packet.session;
+      yield* session.stage((state) => ({
+        ...state,
+        activeTransport: transportSession,
+        currentCharacterKey: undefined,
+        inlineChat: '',
+        panelCommand: undefined,
+        routineCommand: undefined,
+        routinePresence: undefined,
+      }));
       yield* integrationState.reset;
-      state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
-      state.memoryView = undefined;
+      const requestedChat = packet.chat;
+      yield* session.stage((state) => ({
+        ...state,
+        activeChat: resumeChat(state.chats, requestedChat)?.id || '',
+        memoryView: undefined,
+      }));
       yield* Effect.forkDetach(catalog.refresh);
     }
     packet = { ...packet, context: contextCache.resolve(packet.context) };
-    state.questRevision = contextCache.revision;
-    state.characterRevision = contextCache.characterRevision;
+    const questRevision = contextCache.revision;
+    const characterRevision = contextCache.characterRevision;
+    const revisions = yield* session.get;
+    // The addon reads the revisions back with the next snapshot; they need none of their own.
+    if (
+      revisions.questRevision !== questRevision ||
+      revisions.characterRevision !== characterRevision
+    ) {
+      yield* session.stage((state) => ({ ...state, questRevision, characterRevision }));
+    }
     if ((yield* integrationState.receive(packet.integrations)) && deps.telemetry) {
       const report = yield* integrationState.report;
       if (Option.isSome(report)) yield* deps.telemetry.game(report.value.version);
@@ -150,7 +176,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         ),
         Effect.forkDetach,
       );
-      changed();
+      yield* snapshot.invalidate;
     }
     if (packet.heartbeat && !newTransport) {
       return;
@@ -169,10 +195,12 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       return;
     }
     if (packet.type === 'chat_model_set') {
+      const current = yield* session.get;
+      const existing = chatFor(current, packet.chat);
       const chat =
-        chatFor(packet.chat) ||
-        (packet.data.inline && !state.deletedChatIds.has(packet.chat)
-          ? createChat(packet.chat)
+        existing ??
+        (packet.data.inline && !current.deletedChatIds.has(packet.chat)
+          ? yield* createChat(packet.chat)
           : undefined);
       if (!chat) {
         return;
@@ -181,30 +209,32 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         chat.inline = true;
         chat.title = 'Quick question';
         chat.titleGenerated = true;
-        state.inlineChat = chat.id;
+        yield* session.stage((state) => ({ ...state, inlineChat: chat.id }));
       }
       const requestId = packet.requestId;
+      const input = packet.data;
       void (async () => {
+        let available: readonly AccountModel[] | undefined;
         try {
           if (isWorking(chat)) {
             throw Error('Wait for this reply before changing model settings.');
           }
-          const input = packet.data;
-          const available = await runPromise(models.models);
+          const loaded = await runPromise(models.models);
           if (isWorking(chat)) {
             throw Error('Wait for this reply before changing model settings.');
           }
-          const selected = chooseChatModel(available, input.model, input.effort);
+          const selected = chooseChatModel(loaded, input.model, input.effort);
           // The chat keeps its agent session: the agent replays each message's
           // provider-native data only to the model that wrote it.
           chat.modelSettings = selected;
           chat.modelError = undefined;
-          state.modelCatalog = available;
+          available = loaded;
         } catch (error) {
           chat.modelError = errorMessage(error);
         } finally {
           chat.modelRequestId = requestId;
-          changed();
+          const modelCatalog = available;
+          runFork(session.update((state) => (modelCatalog ? { ...state, modelCatalog } : state)));
         }
       })();
       return;
@@ -231,7 +261,7 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
             ),
           );
         }
-        changed();
+        yield* session.commit;
         return;
       }
       const status = {
@@ -256,16 +286,18 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           ),
         ),
       );
-      changed();
+      yield* session.commit;
       return;
     }
     if (packet.context) {
       const character = characterProfile(packet.context);
       if (character) {
         if (deps.adoptCharacter) yield* deps.adoptCharacter(character);
-        const previous = state.currentCharacterKey;
-        state.currentCharacterKey = character.key;
-        if (packet.type === 'poll' && previous !== character.key) changed();
+        if ((yield* session.get).currentCharacterKey !== character.key) {
+          // A poll has no update at its end, so it tells the subscribers here.
+          const store = packet.type === 'poll' ? session.update : session.stage;
+          yield* store((state) => ({ ...state, currentCharacterKey: character.key }));
+        }
       }
     }
     if (packet.type === 'routine_tick' || packet.type === 'routine_event') {
@@ -274,13 +306,15 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       if (!identity || Math.abs(Date.now() - packet.at * 1000) > 90000) {
         return;
       }
-      state.routinePresence = {
+      const routinePresence = {
         identity,
         context: packet.context,
         ready: data?.ready === true,
         at: Date.now(),
         session: packet.session,
       };
+      // For the routine scheduler; the snapshot does not show it.
+      yield* session.stage((state) => ({ ...state, routinePresence }));
       if (
         packet.type === 'routine_event' &&
         (yield* capabilitySettings.enabled('tool:manage_routine'))
@@ -289,7 +323,9 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         if (Option.isSome(event)) {
           void routineStore
             .observe(identity, event.value)
-            .then(changed)
+            .then(() => {
+              runFork(snapshot.invalidate);
+            })
             .catch((error) =>
               runFork(
                 Effect.logWarning('Routine event failed').pipe(
@@ -314,7 +350,9 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       ) {
         void routineStore
           .mutate(identity, input.value)
-          .then(changed)
+          .then(() => {
+            runFork(snapshot.invalidate);
+          })
           .catch((error) =>
             runFork(
               Effect.logWarning('Routine action failed').pipe(
@@ -326,10 +364,10 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       return;
     }
     if (packet.type === 'dismiss_tip' && packet.chat) {
-      const chat = chatFor(packet.chat);
+      const chat = chatFor(yield* session.get, packet.chat);
       if (chat?.proactive) {
         chat.dismissed = true;
-        changed();
+        yield* session.commit;
       }
       return;
     }
@@ -347,14 +385,15 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         return;
       }
       const id = packet.chat || 'panel-' + randomUUID();
-      let chat = chatFor(id);
+      let chat = chatFor(yield* session.get, id);
       if (!chat) {
-        chat = createChat(id);
+        chat = yield* createChat(id);
         chat.inline = true;
         chat.title = panel.title;
         chat.titleGenerated = true;
       }
-      state.inlineChat = id;
+      // Told before the turn starts, which tells them again in the same go.
+      yield* session.update((state) => ({ ...state, inlineChat: id }));
       void run(
         chat,
         node.action.prompt +
@@ -365,16 +404,16 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
         packet.messageId,
         packet.context,
       );
-      changed();
       return;
     }
     if (packet.type === 'ui_action') {
-      const chat = chatFor(packet.chat),
+      const current = yield* session.get;
+      const chat = chatFor(current, packet.chat),
         message = chat?.messages.find((m) => m.id === packet.messageId);
       const node = message?.ui?.find((n) => n.id === packet.nodeId);
       if (
         !chat ||
-        chat.owner !== state.activeTransport ||
+        chat.owner !== current.activeTransport ||
         chat.status === 'working' ||
         node?.kind !== 'button'
       ) {
@@ -408,14 +447,18 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
             expectedCharacter: expectedCharacter(identity ?? chat.characterKey),
           };
           chat.status = 'working';
-          changed();
+          runFork(session.commit);
           try {
             const result = await runPromise(
-              request({
-                chat: chat.id,
-                session: state.activeTransport,
-                operation: { kind: 'act', action },
-              }),
+              session.get.pipe(
+                Effect.flatMap((state) =>
+                  request({
+                    chat: chat.id,
+                    session: state.activeTransport,
+                    operation: { kind: 'act', action },
+                  }),
+                ),
+              ),
             );
             chat.lastUIResult = result;
             const value = result as {
@@ -450,12 +493,12 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
             }
           } finally {
             chat.status = 'done';
-            changed();
+            runFork(session.commit);
           }
         }
       })().catch((error) => {
         chat.messages.push({ role: 'system', text: error.message });
-        changed();
+        runFork(session.commit);
       });
       return;
     }
@@ -464,11 +507,11 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       packet.chat &&
       typeof packet.text === 'string' &&
       packet.text.length <= 16000 &&
-      !state.deletedChatIds.has(packet.chat)
+      !(yield* session.get).deletedChatIds.has(packet.chat)
     ) {
-      let chat = chatFor(packet.chat);
+      let chat = chatFor(yield* session.get, packet.chat);
       if (!chat) {
-        chat = createChat(packet.chat);
+        chat = yield* createChat(packet.chat);
         chat.inline = true;
         chat.title = 'Quick question';
         chat.titleGenerated = true;
@@ -476,46 +519,63 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       if (!chat.inline) {
         return;
       }
-      state.inlineChat = chat.id;
+      const id = chat.id;
+      // Told before the turn starts, which tells them again in the same go.
+      yield* session.update((state) => ({ ...state, inlineChat: id }));
       void run(chat, packet.text, packet.messageId, packet.context);
-      changed();
       return;
     }
     if (packet.type === 'promote_inline' && packet.chat) {
-      const chat = chatFor(packet.chat);
+      const chat = chatFor(yield* session.get, packet.chat);
       if (chat?.inline) {
         promoteChat(chat);
-        state.activeChat = chat.id;
-        state.inlineChat = '';
-        changed();
+        yield* session.update((state) => ({ ...state, activeChat: chat.id, inlineChat: '' }));
       }
       return;
     }
     if (packet.type === 'capability_set') {
-      const transportSession = state.activeTransport;
+      const transportSession = (yield* session.get).activeTransport;
+      const requestId = packet.requestId;
+      const sameTransport = (state: Session) => state.activeTransport === transportSession;
+      const { key, enabled } = packet;
       void (async () => {
-        if (typeof packet.key !== 'string' || typeof packet.enabled !== 'boolean') {
+        if (typeof key !== 'string' || typeof enabled !== 'boolean') {
           throw new Error('Invalid capability setting');
         }
-        await runPromise(setCapability(packet.key, packet.enabled));
-        if (state.activeTransport === transportSession) {
-          state.capabilityAcks[packet.key] = packet.requestId || '';
-          state.capabilityError = undefined;
-        }
-      })()
-        .catch((error) => {
-          if (state.activeTransport === transportSession) {
-            state.capabilityError = { requestId: packet.requestId, message: error.message };
-          }
-        })
-        .finally(changed);
-      changed();
+        await runPromise(setCapability(key, enabled));
+        runFork(
+          session.update((state) =>
+            sameTransport(state)
+              ? {
+                  ...state,
+                  capabilityAcks: { ...state.capabilityAcks, [key]: requestId || '' },
+                  capabilityError: undefined,
+                }
+              : state,
+          ),
+        );
+      })().catch((error) => {
+        runFork(
+          session.update((state) =>
+            sameTransport(state)
+              ? { ...state, capabilityError: { requestId, message: error.message } }
+              : state,
+          ),
+        );
+      });
+      // What this packet staged shows now; the setting shows once it is saved.
+      yield* session.commit;
       return;
     }
     if (['memory_list', 'memory_save', 'memory_remove'].includes(packet.type)) {
       const identity = characterIdentity(packet.context),
-        transportSession = state.activeTransport;
-      state.memoryViewRequest = packet.requestId;
+        transportSession = (yield* session.get).activeTransport;
+      const requestId = packet.requestId;
+      // A view is stored for the request it answers, on the transport that asked.
+      const awaited = (state: Session) =>
+        state.activeTransport === transportSession && state.memoryViewRequest === requestId;
+      // Told before the request runs; its view is told when it arrives.
+      yield* session.update((state) => ({ ...state, memoryViewRequest: requestId }));
       void (async () => {
         let readSnapshot = memorySnapshot(identity);
         if (packet.type !== 'memory_list') {
@@ -537,77 +597,93 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
           }
           readSnapshot = Effect.andThen(memoryRepository.update(scope, edit), readSnapshot);
         }
-        const snapshot = await runPromise(readSnapshot);
-        if (
-          state.activeTransport === transportSession &&
-          state.memoryViewRequest === packet.requestId
-        ) {
-          state.memoryView = { ...snapshot, requestId: packet.requestId };
-        }
-      })()
-        .catch((error: unknown) => {
-          if (
-            state.activeTransport === transportSession &&
-            state.memoryViewRequest === packet.requestId
-          ) {
-            state.memoryView = {
-              status: 'unavailable',
-              error: errorMessage(error),
-              requestId: packet.requestId,
-            };
-          }
-        })
-        .finally(changed);
-      changed();
+        const view = await runPromise(readSnapshot);
+        runFork(
+          session.update((state) =>
+            awaited(state) ? { ...state, memoryView: { ...view, requestId } } : state,
+          ),
+        );
+      })().catch((error: unknown) => {
+        runFork(
+          session.update((state) =>
+            awaited(state)
+              ? {
+                  ...state,
+                  memoryView: { status: 'unavailable', error: errorMessage(error), requestId },
+                }
+              : state,
+          ),
+        );
+      });
       return;
     }
     if (packet.type === 'delete' && packet.chat) {
-      const removed = chatFor(packet.chat);
+      const deleted = packet.chat;
+      const removed = chatFor(yield* session.get, deleted);
       if (removed) {
         interrupt(removed);
       }
-      state.deletedChatIds.add(packet.chat);
-      state.chats = state.chats.filter((c) => c.id !== packet.chat);
+      const nextChat = packet.nextChat;
+      yield* session.update((state) => {
+        const chats = state.chats.filter((c) => c.id !== deleted);
+        return {
+          ...state,
+          deletedChatIds: new Set([...state.deletedChatIds, deleted]),
+          chats,
+          activeChat: resumeChat(chats, nextChat)?.id || '',
+        };
+      });
       endSession(engine, removed?.agentSession);
-      state.activeChat = resumeChat(state.chats, packet.nextChat)?.id || '';
-      changed();
       return;
     }
-    if (packet.chat && state.deletedChatIds.has(packet.chat) && packet.type !== 'hello') {
-      changed();
+    if (
+      packet.chat &&
+      (yield* session.get).deletedChatIds.has(packet.chat) &&
+      packet.type !== 'hello'
+    ) {
+      yield* session.commit;
       return;
     }
+    const chatId = packet.chat;
     if (packet.type === 'hello') {
-      state.activeChat = resumeChat(state.chats, packet.chat)?.id || '';
-    } else if (packet.chat && ['new', 'say', 'select'].includes(packet.type)) {
-      state.chats = state.chats.filter((chat) => chat.id === packet.chat || !isEmptyDraft(chat));
-      state.activeChat = packet.chat;
+      yield* session.stage((state) => ({
+        ...state,
+        activeChat: resumeChat(state.chats, chatId)?.id || '',
+      }));
+    } else if (chatId && ['new', 'say', 'select'].includes(packet.type)) {
+      yield* session.stage((state) => ({
+        ...state,
+        chats: state.chats.filter((chat) => chat.id === chatId || !isEmptyDraft(chat)),
+        activeChat: chatId,
+      }));
     }
-    if (['new', 'say'].includes(packet.type) && packet.chat && !chatFor(packet.chat)) {
-      createChat(packet.chat);
+    if (['new', 'say'].includes(packet.type) && chatId && !chatFor(yield* session.get, chatId)) {
+      yield* createChat(chatId);
     }
     if (
       packet.type === 'say' &&
-      packet.chat &&
+      chatId &&
       typeof packet.text === 'string' &&
       packet.text.length <= 16000
     ) {
-      const chat = chatFor(packet.chat)!;
-      if (chat.routineId && chat.status !== 'working') {
-        chat.proactive = false;
-        chat.dismissed = true;
+      const chat = chatFor(yield* session.get, chatId);
+      if (chat) {
+        if (chat.routineId && chat.status !== 'working') {
+          chat.proactive = false;
+          chat.dismissed = true;
+        }
+        void run(chat, packet.text, packet.messageId, packet.context);
       }
-      void run(chat, packet.text, packet.messageId, packet.context);
     }
     if (packet.type === 'retry') {
-      const chat = chatFor(packet.chat);
+      const chat = chatFor(yield* session.get, chatId);
       const message = chat?.messages.findLast((entry) => entry.role === 'user');
       if (chat?.status === 'error' && message?.id) {
         void run(chat, message.text, message.id, packet.context);
       }
     }
     if (packet.type === 'select') {
-      const chat = chatFor(packet.chat);
+      const chat = chatFor(yield* session.get, chatId);
       if (chat) {
         if (chat.status !== 'working') {
           openChat(chat);
@@ -615,13 +691,14 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
       }
     }
     if (packet.type === 'cancel') {
-      const chat = chatFor(packet.chat);
+      const chat = chatFor(yield* session.get, chatId);
       if (chat) {
         (deps.cancel ?? interrupt)(chat);
       }
     }
+    // Tells the subscribers what this packet staged and edited in its chats.
     if (packet.type !== 'poll') {
-      changed();
+      yield* session.commit;
     }
   });
 });

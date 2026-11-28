@@ -5,17 +5,13 @@ import { MemoryEntries } from '@wisp/agent/contract/memory';
 import type { MemorySlot } from '@wisp/agent/contract/memory';
 import type { Chat } from '../chat/chat.ts';
 import type { CapabilitySettings } from '#/capabilities';
-import type { MemoryView } from '../session-state.ts';
+import { SessionState, type MemoryView } from '#/session';
 import type { MemoryRepository } from './repository.ts';
 
 interface Dependencies {
   repository: MemoryRepository['Service'];
-  chats: () => readonly Chat[];
-  currentTransport: () => string;
   capabilities: Pick<CapabilitySettings['Service'], 'enabled'>;
   snapshot: (identity: string | undefined) => Effect.Effect<MemoryView, Error>;
-  setView: (view: MemoryView) => void;
-  changed: () => void;
 }
 
 class MemoryAccessDenied extends Schema.TaggedError<MemoryAccessDenied>()('MemoryAccessDenied', {
@@ -24,12 +20,16 @@ class MemoryAccessDenied extends Schema.TaggedError<MemoryAccessDenied>()('Memor
 
 const publicEntries = Schema.decodeUnknownEffect(MemoryEntries);
 
-export function make(deps: Dependencies) {
-  const authorize = Effect.fnUntraced(function* (session: string) {
-    const owner = deps.currentTransport();
-    const chat = deps
-      .chats()
-      .find((chat) => chat.agentSession === session && chat.status === 'working');
+/** The agent's memory, for the working chat of the session that asks, on `SessionState`. */
+export const make = Effect.fnUntraced(function* (deps: Dependencies) {
+  const session = yield* SessionState;
+
+  const authorize = Effect.fnUntraced(function* (agentSession: string) {
+    const state = yield* session.get;
+    const owner = state.activeTransport;
+    const chat = state.chats.find(
+      (chat) => chat.agentSession === agentSession && chat.status === 'working',
+    );
     if (!owner || !chat || chat.owner !== owner) {
       return yield* new MemoryAccessDenied({ message: 'No active connection for this character' });
     }
@@ -52,16 +52,16 @@ export function make(deps: Dependencies) {
   });
 
   return Memory.Service.of({
-    characterKey: Effect.fn('Memory.characterKey')(function* (session) {
-      return (yield* authorize(session)).characterKey || null;
+    characterKey: Effect.fn('Memory.characterKey')(function* (agentSession) {
+      return (yield* authorize(agentSession)).characterKey || null;
     }),
-    read: Effect.fn('Memory.read')(function* (session, slot) {
-      const chat = yield* authorize(session);
+    read: Effect.fn('Memory.read')(function* (agentSession, slot) {
+      const chat = yield* authorize(agentSession);
       const memoryScope = yield* scope(chat, slot);
       return yield* deps.repository.read(memoryScope).pipe(Effect.flatMap(publicEntries));
     }),
-    update: Effect.fn('Memory.update')(function* (session, slot, edit) {
-      const chat = yield* authorize(session);
+    update: Effect.fn('Memory.update')(function* (agentSession, slot, edit) {
+      const chat = yield* authorize(agentSession);
       if (chat.proactive) {
         return yield* new MemoryAccessDenied({
           message:
@@ -70,10 +70,12 @@ export function make(deps: Dependencies) {
       }
       const memoryScope = yield* scope(chat, slot);
       const entries = yield* deps.repository.update(memoryScope, edit);
-      const snapshot = yield* deps.snapshot(chat.characterKey);
-      if (chat.owner === deps.currentTransport()) deps.setView(snapshot);
-      deps.changed();
+      const memoryView = yield* deps.snapshot(chat.characterKey);
+      // The addon's memory page shows the change when this chat's window is the one connected.
+      yield* session.update((state) =>
+        chat.owner === state.activeTransport ? { ...state, memoryView } : state,
+      );
       return yield* publicEntries(entries);
     }),
   });
-}
+});

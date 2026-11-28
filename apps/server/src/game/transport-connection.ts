@@ -2,10 +2,9 @@ import { Effect, Exit, FileSystem, Path, Scope, Semaphore, Stream } from 'effect
 import type { Connection, GameCall, GameEvent, WowBridge } from '@wisp/wow-bridge';
 import type { CapabilitySettings, IntegrationState } from '#/capabilities';
 import { errorMessage } from '../errors.ts';
-import type { SessionState } from '../session-state.ts';
+import { SessionState } from '#/session';
 
 export interface TransportConnectionDependencies {
-  state: SessionState;
   bridge: WowBridge['Service'];
   integrationState: Pick<IntegrationState['Service'], 'reset'>;
   capabilitySettings: Pick<CapabilitySettings['Service'], 'publish'>;
@@ -13,7 +12,6 @@ export interface TransportConnectionDependencies {
   receive: (event: GameEvent) => Effect.Effect<void>;
   /** Persist a WoW folder the user picked once its transport has started. */
   saveWow: (wow: string) => Promise<void>;
-  changed: () => void;
   isStopping: () => boolean;
 }
 
@@ -32,19 +30,20 @@ export interface TransportConnection {
   /** Stop the transport and forget the game session; call inside `serialize`. */
   disconnect: Effect.Effect<void>;
   /** Whether the addon has acknowledged a snapshot published while the agent was ready. */
-  gameConnected(): boolean;
+  gameConnected: Effect.Effect<boolean>;
   logError(error: unknown): void;
 }
 
 /** Owns the addon's disk transport: connecting, replacing and disconnecting it. */
 export const createTransportConnection = Effect.fnUntraced(function* (
   deps: TransportConnectionDependencies,
-): Effect.fn.Return<TransportConnection, never, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<TransportConnection, never, FileSystem.FileSystem | Path.Path | SessionState> {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const session = yield* SessionState;
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
-  const { state, bridge, integrationState, capabilitySettings, changed } = deps;
+  const { bridge, integrationState, capabilitySettings } = deps;
   let transport: Connection | undefined;
   let wowDirectory: string | undefined;
   let connectionScope: Scope.Closeable | undefined;
@@ -63,12 +62,15 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     connectionScope = undefined;
     transport = undefined;
     wowDirectory = undefined;
-    state.activeTransport = '';
-    state.currentCharacterKey = undefined;
-    state.routinePresence = undefined;
-    state.memoryViewRequest = undefined;
+    yield* session.stage((state) => ({
+      ...state,
+      activeTransport: '',
+      currentCharacterKey: undefined,
+      routinePresence: undefined,
+      memoryViewRequest: undefined,
+    }));
     yield* integrationState.reset;
-    changed();
+    yield* session.commit;
     if (previous) yield* Scope.close(previous, Exit.void);
     yield* capabilitySettings.publish.pipe(
       Effect.catch((error) => Effect.sync(() => logError(error))),
@@ -117,10 +119,10 @@ export const createTransportConnection = Effect.fnUntraced(function* (
     serialize: (work) => transportLock.withPermit(Effect.uninterruptible(work)),
     connect,
     disconnect,
-    gameConnected: () => {
+    gameConnected: Effect.map(session.get, (state) => {
       const status = transport?.status();
       return Boolean(status?.ready && status.session === state.activeTransport);
-    },
+    }),
     logError,
   };
 });

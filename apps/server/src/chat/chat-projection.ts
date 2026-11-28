@@ -1,7 +1,7 @@
-import type { SessionState } from '../session-state.ts';
+import type { Session } from '#/session';
 import { PRESENT_UI_TOOL } from '@wisp/agent/contract/reply-presentation';
 import { replyContent, replyPresentationProgress } from '../reply/reply-content.ts';
-export function projectChats(state: SessionState, now = Date.now()) {
+export function projectChats(state: Session, now = Date.now()) {
   let ordinaryCount = 0;
   let otherCount = 0;
   return {

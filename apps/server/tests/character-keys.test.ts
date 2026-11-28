@@ -14,6 +14,8 @@ import { readPanels, savePanels } from '../src/panels/panel-record.ts';
 import { encodeRoutine, encodeRun } from '../src/routines/routine-record.ts';
 import { chats, metadata, routineRuns, routines } from '@wisp/db/schema';
 import { createCharacterAdoption } from '../src/chat/character-adoption.ts';
+import { initialSession, SessionState } from '#/session';
+import { sessionState } from './session-fixture.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { PanelStore } from '../src/panels/panel-store.ts';
 
@@ -230,12 +232,11 @@ test('a failed memory move rolls back character adoption across domains', async 
       CREATE TRIGGER reject_adoption BEFORE DELETE ON memory_scopes
       BEGIN SELECT RAISE(ABORT, 'memory move rejected'); END
     `);
-    const adopt = createCharacterAdoption({
-      db: sql,
-      panelStore: { refresh: () => {} },
-      chats: () => [],
-      changed: () => {},
-    });
+    const adopt = Effect.runSync(
+      createCharacterAdoption({ db: sql, panelStore: { refresh: () => {} } }).pipe(
+        Effect.provideService(SessionState, sessionState()),
+      ),
+    );
     await Effect.runPromise(adopt(fedrath));
     expect(readCharacterNames(database.orm)).toEqual({});
     expect(readPanels(database.orm).map((entry) => entry.characterKey)).toEqual([oldRealm]);
@@ -255,12 +256,14 @@ test('adoption saves the name, moves in-memory chats and runs once per character
     const other = { ...newChat('other', 'addon'), characterKey: someoneElse };
     let refreshes = 0,
       changes = 0;
-    const adopt = createCharacterAdoption({
-      db: sql,
-      panelStore: { refresh: () => void refreshes++ },
-      chats: () => [chat, other],
-      changed: () => void changes++,
-    });
+    // The chats are edited in place, then committed.
+    const session = sessionState(initialSession([chat, other]), () => void changes++);
+    const adopt = Effect.runSync(
+      createCharacterAdoption({
+        db: sql,
+        panelStore: { refresh: () => void refreshes++ },
+      }).pipe(Effect.provideService(SessionState, session)),
+    );
     await Effect.runPromise(adopt({ ...fedrath, key: oldRealm, guid: undefined }));
     expect([refreshes, changes]).toEqual([0, 0]);
     await Effect.runPromise(adopt(fedrath));

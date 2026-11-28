@@ -5,7 +5,7 @@ import { ReplyProjection } from '../src/reply/reply-stream.ts';
 import { applyEvent, type Chat } from '../src/chat/events.ts';
 import { migrateReplies } from '../src/migrations/replies.ts';
 import { projectChats } from '../src/chat/chat-projection.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession } from '#/session';
 const record = (value: unknown) => JSON.stringify(value) + '\n';
 const text = (value: string) => record({ type: 'text_delta', text: value });
 const chat = (): Chat => ({
@@ -19,8 +19,7 @@ const chat = (): Chat => ({
 function display(reply: ReplyStream) {
   const c = chat();
   c.messages.push({ role: 'assistant', ...reply.view() });
-  const state = createSessionState([c]);
-  state.activeChat = c.id;
+  const state = { ...initialSession([c]), activeChat: c.id };
   return projectChats(state).chats[0].messages![0];
 }
 test('one long text event becomes visible before its JSON string closes, with no duplicate at commit', () => {
@@ -170,8 +169,7 @@ test('Markdown tables remain source text in live and completed addon messages', 
 test('unfinished Markdown cells reach the addon after many partial updates without rewriting history', () => {
   const c = chat(),
     projection = new ReplyProjection(),
-    state = createSessionState([c]);
-  state.activeChat = c.id;
+    state = { ...initialSession([c]), activeChat: c.id };
   let now = 0;
   const feed = (chunk: string) => {
     projection.text(c, 'answer', chunk, true);

@@ -7,9 +7,10 @@ import { ApplicationDatabase } from '../src/application-database.ts';
 import { RoutineStore } from '../src/routines/routine-store.ts';
 import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createRoutineGate, routineFingerprint } from '../src/routines/routine-gate.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession, SessionState, type Session } from '#/session';
+import { current, sessionState } from './session-fixture.ts';
 import { unsavedCapabilities } from './capabilities/fixture.ts';
-import { Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { routineDefinition } from '@wisp/protocol/routines';
 
 const decodeDefinition = Schema.decodeUnknownSync(routineDefinition);
@@ -91,30 +92,35 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
         cooldownSeconds: 60,
       }),
     });
-    const state = createSessionState();
-    state.activeTransport = 'session';
-    state.currentCharacterKey = 'mage';
-    state.questRevision = 1;
+    const session = sessionState({
+      ...initialSession(),
+      activeTransport: 'session',
+      currentCharacterKey: 'mage',
+      questRevision: 1,
+    });
+    const stage = (f: (state: Session) => Session) => Effect.runSync(session.stage(f));
     const present = (xp: number) => {
-      state.routinePresence = {
+      const routinePresence = {
         identity: 'mage',
         session: 'session',
         ready: true,
         at: Date.now(),
         context: context(xp),
       };
+      stage((state) => ({ ...state, routinePresence }));
     };
+    const nextQuests = () =>
+      stage((state) => ({ ...state, questRevision: (state.questRevision ?? 0) + 1 }));
     const outcomes: Array<'quiet' | 'limit'> = ['quiet', 'quiet', 'quiet', 'limit'];
     const limited = new Set<unknown>();
     let runs = 0;
     stop = runBridgeEffect(
       startRoutineScheduler({
-        state,
+        session: () => current(session),
         routineStore: store,
         capabilitySettings: unsavedCapabilities().reads,
         isStopping: () => false,
         isReady: () => true,
-        changed: () => {},
         // The turn runner classifies limits from error codes; the text may not say so.
         usageLimited: (chat) => limited.has(chat),
         run: async (chat) => {
@@ -128,7 +134,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
             chat.tipSkipped = true;
           }
         },
-      }),
+      }).pipe(Effect.provideService(SessionState, session)),
     );
     const minute = async (xp = 100) => {
       vi.setSystemTime(Date.now() + 60_000);
@@ -165,7 +171,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     expect(runs).toBe(3);
 
     // Quests changed, then the turn fails on a usage limit.
-    state.questRevision = 2;
+    nextQuests();
     vi.setSystemTime(Date.now() + 60_000);
     present(400);
     await vi.advanceTimersByTimeAsync(3000);
@@ -174,7 +180,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
 
     // Further intervals wait out the 30-minute pause.
     for (let i = 0; i < 5; i++) {
-      state.questRevision++;
+      nextQuests();
       await minute();
     }
     expect(runs).toBe(4);

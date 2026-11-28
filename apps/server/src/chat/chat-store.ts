@@ -239,7 +239,7 @@ export class ChatStore {
     }
   }
 
-  schedule(snapshot: () => Chat[]) {
+  schedule(snapshot: () => readonly Chat[]) {
     if (!this.timer && this.writable) {
       this.timer = setTimeout(() => {
         this.timer = undefined;
@@ -248,7 +248,7 @@ export class ChatStore {
     }
   }
 
-  async flush(chats: Chat[]) {
+  async flush(chats: readonly Chat[]) {
     if (!this.writable) {
       throw Error('Load conversations successfully before saving them.');
     }

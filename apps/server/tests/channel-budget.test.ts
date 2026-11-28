@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { applyEvent, type Chat } from '../src/chat/events.ts';
 import { SnapshotGate } from '@wisp/wow-bridge/snapshots';
 import { projectChats } from '../src/chat/chat-projection.ts';
-import { createSessionState } from '../src/session-state.ts';
+import { initialSession } from '#/session';
 
 test('invisible stream events and unchanged snapshots do not spend revisions', () => {
   const chat: Chat = {
@@ -85,8 +85,7 @@ test.each([
         activity: [],
         messages: [],
       };
-      const state = createSessionState([chat]);
-      state.activeChat = chat.id;
+      const state = { ...initialSession([chat]), activeChat: chat.id };
       const projection = new ReplyProjection(),
         gate = new SnapshotGate();
       const delta = 'a';
@@ -136,8 +135,7 @@ test('long replies keep publishing partial previews beyond eight updates', () =>
       activity: [],
       messages: [],
     };
-    const state = createSessionState([chat]);
-    state.activeChat = chat.id;
+    const state = { ...initialSession([chat]), activeChat: chat.id };
     const projection = new ReplyProjection();
     const gate = new SnapshotGate();
     for (let index = 0; index < 20; index++) {

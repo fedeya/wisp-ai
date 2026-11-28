@@ -21,6 +21,8 @@ import type { TheWoWDB } from '../integrations/thewowdb/index.ts';
 import type { Simulator } from '../integrations/simulation/simulator.ts';
 import type { PromiseModelConnections } from '../models/connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
+import { SessionState } from '#/session';
+import type { SnapshotPublisher } from '../game/snapshot-publisher.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
@@ -41,11 +43,12 @@ interface AgentDependencies {
   panelStore: PanelStore;
   database: TheWoWDB['Service'];
   simulator: Simulator['Service'];
-  getChats: () => Chat[];
+  getChats: () => readonly Chat[];
   currentTransport: () => string;
   defaultModel: () => string;
   readSimulationCharacter: (chat?: string) => Promise<unknown>;
-  changed: () => void;
+  /** Told when the agent changes routines or panels the snapshot shows. */
+  snapshot: Pick<SnapshotPublisher['Service'], 'invalidate'>;
   presentReply: (
     chat: Chat,
     callId: string,
@@ -72,6 +75,7 @@ function abortOnHangUp(c: AgentContext) {
 export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependencies) {
   // Runs migrated services from the Hono handlers; a hang-up interrupts the run.
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
+  const session = yield* SessionState;
   const proxyChatGPT = yield* createModelProxy(deps.auth, deps.modelFailures);
   const {
     token,
@@ -86,7 +90,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     currentTransport,
     defaultModel,
     readSimulationCharacter,
-    changed,
+    snapshot,
   } = deps;
   const expected = Buffer.from('Bearer ' + token);
   const app = new Hono<{ Bindings: HttpBindings }>();
@@ -305,7 +309,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     const routines = ['save', 'pause', 'resume', 'remove'].includes(input.operation)
       ? await routineStore.mutate(chat.characterKey, input, chat.id)
       : routineStore.list(chat.characterKey);
-    changed();
+    await runPromise(snapshot.invalidate);
     return input.operation === 'catalog'
       ? {
           events: routineEvents,
@@ -339,7 +343,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       input.operation === 'save' || input.operation === 'remove'
         ? await panelStore.mutate(chat.characterKey, input)
         : panelStore.list(chat.characterKey);
-    changed();
+    await runPromise(snapshot.invalidate);
     return input.operation === 'get'
       ? { panel: panels.find((p) => p.id === input.id) || null }
       : input.operation === 'list'
@@ -365,7 +369,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     }
     chat.title = title;
     chat.titleGenerated = true;
-    changed();
+    await runPromise(session.commit);
     return { title };
   });
 

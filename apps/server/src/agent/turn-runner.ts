@@ -13,6 +13,8 @@ import { Effect } from 'effect';
 import type { CapabilityView } from '@wisp/protocol/capabilities';
 import type { PromiseModelConnections } from '../models/connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
+import { SessionState } from '#/session';
+import type { SnapshotPublisher } from '../game/snapshot-publisher.ts';
 import type { ChatErrorCode, ChatMode, ChatOutcome, TurnUsage } from '#/telemetry';
 
 /**
@@ -114,13 +116,14 @@ interface TurnDependencies {
   /** Whether any provider could answer. Omitted means yes. */
   hasProvider?: () => boolean;
   isCurrent: (chat: Chat) => boolean;
-  changed: () => void;
-  flushSnapshot?: () => void;
+  /** Publishes the first text and presentation progress without the coalescing window. */
+  snapshot?: Pick<SnapshotPublisher['Service'], 'flush'>;
   /** How long an admitted turn may go without engine activity; defaults to `TURN_IDLE_TIMEOUT_MS`. */
   idleTimeoutMs?: number;
 }
 export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependencies) {
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
+  const session = yield* SessionState;
   const {
     engine,
     models,
@@ -132,8 +135,11 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
     isStopping,
     accountBusy,
     isCurrent,
-    changed,
   } = deps;
+  // A turn edits its chat in place; this tells the session's subscribers.
+  const commit = () => {
+    runFork(session.commit);
+  };
   const idleTimeoutMs = deps.idleTimeoutMs ?? TURN_IDLE_TIMEOUT_MS;
   const generations = new WeakMap<Chat, symbol>();
   const running = new Set<Promise<void>>();
@@ -164,7 +170,7 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
           }
           chat.title = title;
           chat.titleGenerated = true;
-          changed();
+          commit();
         },
         (error) => {
           runFork(
@@ -230,7 +236,7 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
       }, idleTimeoutMs);
       idle.unref?.();
     };
-    changed();
+    commit();
     const parts = new ReplyProjection();
     projections.set(chat, { parts, assertCurrent, signal: controller.signal, touch });
     const streaming = setInterval(() => {
@@ -241,7 +247,7 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
         parts.flush(chat) &&
         !chat.proactive
       ) {
-        changed();
+        commit();
       }
     }, 400);
     try {
@@ -292,7 +298,7 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
       agentSession = chat.agentSession;
       assertCurrent();
       admittedMs = Math.round(performance.now() - started);
-      changed();
+      commit();
       touch();
       for await (const event of response.events) {
         // The engine prepares the turn before its first event.
@@ -304,6 +310,7 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
         const visibleChanged = applyEvent(chat, event, parts);
         observeTool?.(event);
         turnUsage?.observe(event);
+        let flush = false;
         if (visibleChanged && !chat.proactive) {
           const firstText =
             firstTextMs === undefined &&
@@ -311,16 +318,18 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
           if (firstText) {
             firstTextMs = Math.round(performance.now() - started);
           }
-          if (firstText || progressRevision !== parts.presentationProgressRevision) {
-            deps.flushSnapshot?.();
-          }
+          flush = firstText || progressRevision !== parts.presentationProgressRevision;
         }
         if (visibleChanged || parts.sourceRevision !== sourceRevision) {
           if (visibleChanged) {
             chat.lastActivityAt = Date.now();
           }
           // Source-only deltas need persistence without changing the published view.
-          changed();
+          commit();
+        }
+        // After the commit, so the flushed snapshot shows this event.
+        if (flush && deps.snapshot) {
+          runFork(deps.snapshot.flush);
         }
       }
       failureCode = 'turn_result_failed';
@@ -458,7 +467,7 @@ export const createTurnRunner = Effect.fnUntraced(function* (deps: TurnDependenc
             (m) => m.role === 'assistant' && (m.text.trim() || m.ui?.length),
           );
         }
-        changed();
+        commit();
       }
     }
   }

@@ -3,6 +3,8 @@ import { Effect } from 'effect';
 import type { GameCall } from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
 import { createAgentHandler } from '../src/agent/agent-server.ts';
+import { initialSession, layer as SessionStateLayer, SessionState } from '#/session';
+import { sessionState } from './session-fixture.ts';
 import { make as makeGameAccess } from '../src/game/agent-game-access.ts';
 import { make as makeMemoryAccess } from '../src/memory/agent-access.ts';
 import { runBridgeEffect } from './capture-logs.ts';
@@ -15,9 +17,11 @@ async function serve(deps: Partial<Parameters<typeof createAgentHandler>[0]>) {
         token: 'test',
         currentTransport: () => 'addon',
         capabilitySettings: { enabled: () => true },
-        changed: () => {},
+        snapshot: { invalidate: Effect.void },
         ...deps,
-      } as unknown as Parameters<typeof createAgentHandler>[0]),
+      } as unknown as Parameters<typeof createAgentHandler>[0]).pipe(
+        Effect.provide(SessionStateLayer),
+      ),
     ),
   );
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -81,18 +85,21 @@ test('memory access refuses changes from automatic suggestions and rejects unkno
   const chat = workingChat(true);
   const update = vi.fn(() => Effect.succeed([]));
   const entry = { key: 'plan', text: 'Remember this', updatedAt: '2026-11-09' };
-  const memoryAccess = makeMemoryAccess({
-    repository: {
-      read: () => Effect.succeed([{ ...entry, extension: { source: 'legacy' } }]),
-      update,
-    },
-    chats: () => [chat],
-    currentTransport: () => 'addon',
-    capabilities: { enabled: () => Effect.succeed(true) },
-    snapshot: () => Effect.succeed({ status: 'available', entries: [] }),
-    setView: () => {},
-    changed: () => {},
-  });
+  const memoryAccess = Effect.runSync(
+    makeMemoryAccess({
+      repository: {
+        read: () => Effect.succeed([{ ...entry, extension: { source: 'legacy' } }]),
+        update,
+      },
+      capabilities: { enabled: () => Effect.succeed(true) },
+      snapshot: () => Effect.succeed({ status: 'available', entries: [] }),
+    }).pipe(
+      Effect.provideService(
+        SessionState,
+        sessionState({ ...initialSession([chat]), activeTransport: 'addon' }),
+      ),
+    ),
+  );
   await expect(
     Effect.runPromise(
       memoryAccess.update('eve', 'character', { operation: 'save', key: 'k', text: 't' }),
