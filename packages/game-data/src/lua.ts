@@ -1,6 +1,13 @@
 // Writes plain data as a Lua 5.1 table literal with sorted keys, so a
 // regeneration only changes the lines whose game data changed.
-export type LuaValue = string | number | boolean | null | undefined | LuaValue[] | LuaTable;
+export type LuaValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | readonly LuaValue[]
+  | LuaTable;
 export interface LuaTable {
   [key: string]: LuaValue;
 }
@@ -29,10 +36,7 @@ export function luaString(value: string): string {
   );
 }
 
-function scalar(value: LuaValue): string | undefined {
-  if (value === null || value === undefined) {
-    return undefined;
-  }
+function scalar(value: string | number | boolean): string {
   if (typeof value === 'string') {
     return luaString(value);
   }
@@ -42,28 +46,28 @@ function scalar(value: LuaValue): string | undefined {
     }
     return String(value);
   }
-  if (typeof value === 'boolean') {
-    return String(value);
-  }
-  return undefined;
+  return String(value);
+}
+
+// Array.isArray does not narrow a readonly array out of a union.
+export function isList(value: LuaValue): value is readonly LuaValue[] {
+  return Array.isArray(value);
 }
 
 // Tables that fit in the line (StyLua's 100 columns, counting what precedes
 // the value and a trailing comma) stay on one line; others put one entry per line.
 export function luaValue(value: LuaValue, indent = '', before = indent.length): string {
-  const simple = scalar(value);
-  if (simple !== undefined) {
-    return simple;
-  }
   if (value === null || value === undefined) {
     return 'nil';
   }
+  if (typeof value !== 'object') {
+    return scalar(value);
+  }
   const inner = indent + '    ';
-  const table = value as LuaTable;
-  const entries = Array.isArray(value)
+  const entries = isList(value)
     ? value.map((item) => luaValue(item, inner))
-    : Object.keys(table)
-        .filter((name) => table[name] !== undefined && table[name] !== null)
+    : Object.keys(value)
+        .filter((name) => value[name] !== undefined && value[name] !== null)
         .sort((a, b) => {
           const na = Number(a);
           const nb = Number(b);
@@ -77,7 +81,7 @@ export function luaValue(value: LuaValue, indent = '', before = indent.length): 
         })
         .map(
           (name) =>
-            `${key(name)} = ${luaValue(table[name], inner, inner.length + key(name).length + 3)}`,
+            `${key(name)} = ${luaValue(value[name], inner, inner.length + key(name).length + 3)}`,
         );
   const line = `{ ${entries.join(', ')} }`;
   if (!entries.length) {

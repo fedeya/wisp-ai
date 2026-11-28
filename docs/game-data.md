@@ -9,7 +9,7 @@ them. `@wisp/game-data` (`packages/game-data`) does the generation.
   from (`wowf` is wago.tools' product name for Forever), and the AtlasLoot
   release the loot tables come from.
 - `src/datasets/` holds one module per generated file: the tables it reads,
-  its output and a `build()` that returns plain data. Output is either Lua for
+  its output and a `build` Effect that returns plain data. Output is either Lua for
   the addon (`addon/WispAI/Data/<Name>.lua` as `ns.Data.<Name>`, listed in
   `WispAI.toc`; it loads in game, so keep it small) or JSON for the bridge (for
   data the agent uses directly or that is too large for the game's memory).
@@ -76,5 +76,5 @@ Prefer a live game API when one exists: it is always current. Add a dataset for
 facts only the client tables hold. Server-side facts (loot, drop rates,
 trainers) are not in the client tables; take them only from a pinned,
 licence-compatible source, as `dungeon-loot` does. Write the module in
-`src/datasets/`, add it to `datasets()` in `src/index.ts`, and test it with
-`memoryTables` fixtures copied from real rows.
+`src/datasets/`, add it to `datasets` in `src/index.ts`, and test it with
+`layerMemory` (from `src/wago.ts`) fixtures copied from real rows.

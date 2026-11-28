@@ -1,7 +1,18 @@
-import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import path from 'node:path';
+// @effect-migrated
+import {
+  Context,
+  Effect,
+  FileSystem,
+  Layer,
+  Option,
+  Path,
+  Predicate,
+  Schedule,
+  Schema,
+} from 'effect';
+import { Digest } from 'effect/crypto';
+import { HttpClient } from 'effect/http';
+import { lauxlib, lua, lualib, to_jsstring, to_luastring } from 'fengari';
 import { unzip } from './zip.ts';
 
 // The pinned AtlasLoot Classic Forever release (CurseForge project 1422985,
@@ -9,53 +20,59 @@ import { unzip } from './zip.ts';
 // including Forever's own instances and the drops Forever added to classic
 // bosses, plus per-NPC drop rates. Wisp keeps facts only (IDs, names, levels,
 // rates), not AtlasLoot's code. Bump file, name and sha256 together.
-export interface AtlasLootPin {
-  project: number;
-  file: number;
-  name: string;
-  sha256: string;
-}
+export const AtlasLootPin = Schema.Struct({
+  project: Schema.Int,
+  file: Schema.Int,
+  name: Schema.String,
+  sha256: Schema.String,
+});
+export type AtlasLootPin = typeof AtlasLootPin.Type;
 
 export function atlasLootUrl(pin: AtlasLootPin) {
   const id = String(pin.file);
   return `https://mediafilez.forgecdn.net/files/${id.slice(0, -3)}/${Number(id.slice(-3))}/${pin.name}`;
 }
 
-// Downloads the pinned archive once into cacheDir and checks its hash.
-export async function readAtlasLoot(
-  pin: AtlasLootPin,
-  cacheDir: string,
-  refresh = false,
-  fetcher: typeof fetch = fetch,
-): Promise<Map<string, Buffer>> {
-  const file = path.join(cacheDir, 'atlasloot', pin.name);
-  let archive: Buffer | undefined;
-  if (!refresh) {
-    archive = await readFile(file).catch(() => undefined);
-  }
-  if (!archive) {
-    const response = await fetcher(atlasLootUrl(pin), { redirect: 'follow' });
-    if (!response.ok) {
-      throw new Error(`AtlasLoot ${pin.name}: HTTP ${response.status}`);
-    }
-    archive = Buffer.from(await response.arrayBuffer());
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, archive);
-  }
-  const hash = createHash('sha256').update(archive).digest('hex');
-  if (hash !== pin.sha256) {
-    throw new Error(`AtlasLoot ${pin.name}: sha256 ${hash} does not match the pin ${pin.sha256}`);
-  }
-  return unzip(archive);
+// A Lua value as WISP_RESULT writes it: a table becomes an object keyed by
+// tostring(key), without its functions and stubs; nil becomes null.
+export type LuaJson = string | number | boolean | null | LuaObject;
+export interface LuaObject {
+  readonly [key: string]: LuaJson;
 }
+const LuaObject: Schema.Codec<LuaObject> = Schema.Record(
+  Schema.String,
+  Schema.suspend((): Schema.Codec<LuaJson> => LuaJson),
+);
+const LuaJson: Schema.Codec<LuaJson> = Schema.Union([
+  Schema.String,
+  Schema.Finite,
+  Schema.Boolean,
+  Schema.Null,
+  LuaObject,
+]);
 
 // What running AtlasLoot's loot modules leaves behind: each loot table by
 // key (tables keyed by Lua's own keys, as strings) and drop rates
 // (npc ID -> item ID -> percent).
-export interface AtlasLootData {
-  tables: Record<string, Record<string, unknown>>;
-  droprates: Record<string, Record<string, number>>;
-}
+const AtlasLootData = Schema.Struct({
+  tables: Schema.Record(Schema.String, LuaObject),
+  droprates: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Finite)),
+});
+export type AtlasLootData = typeof AtlasLootData.Type;
+const decodeResult = Schema.decodeEffect(Schema.fromJsonString(AtlasLootData));
+
+/** The pinned AtlasLoot release could not be downloaded, verified or run. */
+export class AtlasLootError extends Schema.TaggedError<AtlasLootError>()('AtlasLootError', {
+  message: Schema.String,
+}) {}
+
+/** AtlasLoot's loot tables, read for the AreaTable names its data files look up. */
+export class AtlasLoot extends Context.Service<
+  AtlasLoot,
+  {
+    readonly load: (areas: Map<number, string>) => Effect.Effect<AtlasLootData, AtlasLootError>;
+  }
+>()('@wisp/game-data/AtlasLoot') {}
 
 // Stubs for the WoW and AtlasLoot APIs the data files call while loading, as
 // a Classic-family client with every content phase out. Anything else they
@@ -129,41 +146,110 @@ function WISP_RESULT()
 end
 `;
 
+const MODULE = 'AtlasLootClassic_DungeonsAndRaids';
+
+const failure = (cause: unknown) =>
+  new AtlasLootError({ message: Predicate.isError(cause) ? cause.message : String(cause) });
+
 // Runs the Forever TOC's loot files (data.lua and droprate.lua) of the
 // Dungeons and Raids module in a Lua VM. areas names AreaTable IDs, which
 // data.lua resolves through C_Map.GetAreaInfo.
-export function runAtlasLoot(
+export const runAtlasLoot = Effect.fnUntraced(function* (
   files: Map<string, Buffer>,
   areas: Map<number, string>,
-): AtlasLootData {
-  const require = createRequire(import.meta.url);
-  const { lua, lauxlib, lualib, to_luastring, to_jsstring } = require('fengari');
+) {
   const L = lauxlib.luaL_newstate();
   lualib.luaL_openlibs(L);
-  const check = (status: number, what: string) => {
-    if (status !== lua.LUA_OK) {
-      throw new Error(`${what}: ${to_jsstring(lua.lua_tolstring(L, -1))}`);
-    }
+  // The string on top of the stack; undefined when it is no string or number.
+  const top = () => {
+    const value = lua.lua_tolstring(L, -1);
+    return value === null ? undefined : to_jsstring(value);
   };
+  const check = (status: number, what: string) =>
+    status === lua.LUA_OK
+      ? Effect.void
+      : Effect.fail(
+          new AtlasLootError({ message: `${what}: ${top() ?? 'error is not a string'}` }),
+        );
   lua.lua_createtable(L, 0, areas.size);
   for (const [id, name] of areas) {
     lua.lua_pushstring(L, to_luastring(name));
     lua.lua_rawseti(L, -2, id);
   }
   lua.lua_setglobal(L, to_luastring('WISP_AREAS'));
-  check(lauxlib.luaL_loadstring(L, to_luastring(PRELUDE)), 'AtlasLoot prelude');
-  check(lua.lua_pcall(L, 0, 0, 0), 'AtlasLoot prelude');
-  const module = 'AtlasLootClassic_DungeonsAndRaids';
+  yield* check(lauxlib.luaL_loadstring(L, to_luastring(PRELUDE)), 'AtlasLoot prelude');
+  yield* check(lua.lua_pcall(L, 0, 0, 0), 'AtlasLoot prelude');
   for (const name of ['data.lua', 'droprate.lua']) {
-    const source = files.get(`${module}/${name}`);
+    const source = files.get(`${MODULE}/${name}`);
     if (!source) {
-      throw new Error(`AtlasLoot archive has no ${module}/${name}`);
+      return yield* new AtlasLootError({ message: `AtlasLoot archive has no ${MODULE}/${name}` });
     }
-    check(lauxlib.luaL_loadstring(L, to_luastring(source.toString('utf8'))), name);
-    lua.lua_pushstring(L, to_luastring(module));
-    check(lua.lua_pcall(L, 1, 0, 0), name);
+    yield* check(lauxlib.luaL_loadstring(L, to_luastring(source.toString('utf8'))), name);
+    lua.lua_pushstring(L, to_luastring(MODULE));
+    yield* check(lua.lua_pcall(L, 1, 0, 0), name);
   }
   lua.lua_getglobal(L, to_luastring('WISP_RESULT'));
-  check(lua.lua_pcall(L, 0, 1, 0), 'AtlasLoot result');
-  return JSON.parse(to_jsstring(lua.lua_tolstring(L, -1)));
-}
+  yield* check(lua.lua_pcall(L, 0, 1, 0), 'AtlasLoot result');
+  const result = top();
+  if (result === undefined) {
+    return yield* new AtlasLootError({ message: 'AtlasLoot result: not a string' });
+  }
+  return yield* decodeResult(result).pipe(Effect.mapError(failure));
+});
+
+// AtlasLoot from the given archive files, for tests.
+export const layerFromFiles = (files: Map<string, Buffer>) =>
+  Layer.succeed(AtlasLoot, AtlasLoot.of({ load: (areas) => runAtlasLoot(files, areas) }));
+
+// Downloads the pinned archive once into cacheDir, checks its hash and runs
+// its loot files. Nothing is read until a dataset loads it.
+export const layer = (options: { pin: AtlasLootPin; cacheDir: string; refresh: boolean }) =>
+  Layer.effect(
+    AtlasLoot,
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const digest = yield* Digest.Digest;
+      // The archive is a GET of a fixed file, so a transient failure is safe to repeat.
+      const client = (yield* HttpClient.HttpClient).pipe(
+        HttpClient.retryTransient({ schedule: Schedule.exponential('500 millis'), times: 3 }),
+      );
+      const { pin, cacheDir, refresh } = options;
+      const file = path.join(cacheDir, 'atlasloot', pin.name);
+      const failed = (cause: { readonly message: string }) =>
+        new AtlasLootError({ message: `AtlasLoot ${pin.name}: ${cause.message}` });
+
+      const download = Effect.fn('AtlasLoot.download')(function* () {
+        const response = yield* client.get(atlasLootUrl(pin)).pipe(Effect.mapError(failed));
+        if (response.status < 200 || response.status >= 300) {
+          return yield* new AtlasLootError({
+            message: `AtlasLoot ${pin.name}: HTTP ${response.status}`,
+          });
+        }
+        const archive = new Uint8Array(yield* response.arrayBuffer.pipe(Effect.mapError(failed)));
+        yield* fs
+          .makeDirectory(path.dirname(file), { recursive: true })
+          .pipe(Effect.mapError(failed));
+        yield* fs.writeFile(file, archive).pipe(Effect.mapError(failed));
+        return archive;
+      });
+
+      const load = Effect.fn('AtlasLoot.load')(function* (areas: Map<number, string>) {
+        const cached = refresh ? Option.none() : yield* fs.readFile(file).pipe(Effect.option);
+        const archive = Option.isSome(cached) ? cached.value : yield* download();
+        const hash = yield* digest.digestHex(Digest.sha256, archive);
+        if (hash !== pin.sha256) {
+          return yield* new AtlasLootError({
+            message: `AtlasLoot ${pin.name}: sha256 ${hash} does not match the pin ${pin.sha256}`,
+          });
+        }
+        const files = yield* Effect.try({
+          try: () => unzip(Buffer.from(archive.buffer, archive.byteOffset, archive.byteLength)),
+          catch: failure,
+        });
+        return yield* runAtlasLoot(files, areas);
+      });
+
+      return AtlasLoot.of({ load });
+    }),
+  );
