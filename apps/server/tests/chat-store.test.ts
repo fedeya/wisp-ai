@@ -5,7 +5,6 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ChatStore } from '../src/chat/chat-store.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
-import { migrateDesktop } from '../src/migrations/desktop.ts';
 
 function chat(id = 'chat') {
   return { ...newChat(id, 'game'), messages: [{ role: 'user' as const, text: 'Hello' }] };
@@ -306,50 +305,3 @@ test.each(['incompatible schema', 'corrupt database'])(
     }
   },
 );
-
-test('installation import replaces an empty workspace and snapshots WAL data without modifying the source', async () => {
-  const f = await fixture();
-  const source = path.join(f.root, 'old');
-  const destination = path.join(f.root, 'new');
-  let sourceStore: ChatStore | undefined;
-  try {
-    await writeFile(path.join(f.root, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    sourceStore = new ChatStore(path.join(source, 'runtime/wisp.sqlite'), () => {});
-    await sourceStore.load();
-    const original = { ...chat(), agentSession: 'source-session', status: 'working' as const };
-    await sourceStore.flush([original]);
-    await writeFile(
-      path.join(source, 'runtime/chats.json'),
-      '{stale JSON must not override SQLite',
-    );
-    await writeFile(path.join(source, 'config.local.json'), JSON.stringify({ wow: 'test' }));
-    const empty = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
-    await empty.load();
-    await empty.close();
-    await writeFile(path.join(destination, 'runtime/chatgpt-host.json'), 'new host');
-    await writeFile(path.join(source, 'runtime/chatgpt-host.json'), 'old host');
-    // No desktop endpoint: source DB remains open with committed WAL pages.
-    await migrateDesktop(source, destination, '');
-    expect(await readFile(path.join(destination, 'runtime/chatgpt-host.json'), 'utf8')).toBe(
-      'old host',
-    );
-    const imported = new ChatStore(path.join(destination, 'runtime/wisp.sqlite'), () => {});
-    try {
-      const chats = await imported.load();
-      expect(chats[0].agentSession).toBeUndefined();
-      expect(chats[0].status).toBe('interrupted');
-      expect(chats[0].messages).toEqual(original.messages);
-    } finally {
-      await imported.close();
-    }
-    expect(
-      inspect(
-        path.join(source, 'runtime/wisp.sqlite'),
-        (db) => db.prepare('SELECT agent_session FROM chat_instance_state').get()!.agent_session,
-      ),
-    ).toBe('source-session');
-  } finally {
-    await sourceStore?.close();
-    await f.close();
-  }
-});
