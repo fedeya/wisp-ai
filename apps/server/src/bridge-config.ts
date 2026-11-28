@@ -1,16 +1,22 @@
-import { z } from 'zod';
+import { Effect, Option, Schema, SchemaGetter } from 'effect';
 import { featureOverrides } from '@wisp/protocol/features';
 import { readJson, writeJson } from './json-file.ts';
 
-export const bridgeConfigSchema = z.object({
-  wow: z.string().min(1).optional(),
+const filled = Schema.String.check(Schema.isMinLength(1));
+export const bridgeConfigSchema = Schema.Struct({
+  wow: Schema.optional(filled),
   // Earlier installers saved an empty string before model selection.
-  model: z.preprocess((value) => (value === '' ? undefined : value), z.string().min(1).optional()),
-  mcpConfig: z.string().min(1).optional(),
+  model: Schema.optional(Schema.String).pipe(
+    Schema.decodeTo(Schema.optional(filled), {
+      decode: SchemaGetter.transformOptional(Option.filter((model) => model !== '')),
+      encode: SchemaGetter.passthrough(),
+    }),
+  ),
+  mcpConfig: Schema.optional(filled),
   // A bad entry drops the saved feature choices instead of the whole file.
-  features: featureOverrides.optional().catch(undefined),
+  features: Schema.optional(featureOverrides).pipe(Schema.catchDecoding(() => Effect.succeedNone)),
 });
-export type BridgeConfigValues = z.infer<typeof bridgeConfigSchema>;
+export type BridgeConfigValues = typeof bridgeConfigSchema.Type;
 
 export interface BridgeConfig {
   /** The last successfully written configuration. */
@@ -23,7 +29,7 @@ export interface BridgeConfig {
 }
 
 export async function loadBridgeConfig(file: string): Promise<BridgeConfig> {
-  let config = await readJson<BridgeConfigValues>(file, bridgeConfigSchema, () => ({}));
+  let config = await readJson(file, bridgeConfigSchema, () => ({}));
   let configWrite = Promise.resolve();
   return {
     get: () => config,

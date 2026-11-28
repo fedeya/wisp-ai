@@ -9,7 +9,10 @@ import { startRoutineScheduler } from '../src/routines/routine-scheduler.ts';
 import { createRoutineGate, routineFingerprint } from '../src/routines/routine-gate.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { CapabilitySettings } from '../src/integrations/capabilities.ts';
+import { Schema } from 'effect';
 import { routineDefinition } from '@wisp/protocol/routines';
+
+const decodeDefinition = Schema.decodeUnknownSync(routineDefinition);
 
 function context(xp: number, x = 0.5) {
   return {
@@ -80,7 +83,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     const store = new RoutineStore(database);
     await store.mutate('mage', {
       operation: 'save',
-      routine: routineDefinition.parse({
+      routine: decodeDefinition({
         id: 'xp',
         title: 'XP',
         instruction: 'Tell me when I can level up.',
@@ -144,7 +147,7 @@ test('the scheduler skips unchanged quiet intervals and stops after a usage limi
     // Editing the routine evaluates the new instruction even with the same state.
     await store.mutate('mage', {
       operation: 'save',
-      routine: routineDefinition.parse({
+      routine: decodeDefinition({
         id: 'xp',
         title: 'XP',
         instruction: 'Tell me when I am close to leveling up.',

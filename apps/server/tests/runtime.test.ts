@@ -1,5 +1,5 @@
 import { test, expect, vi } from 'vitest';
-import { ConfigProvider, Effect, Layer, Redacted } from 'effect';
+import { ConfigProvider, Effect, Exit, Layer, Redacted, Schema } from 'effect';
 import { mkdir, mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,8 @@ import { UPLINK_KIND, encodeMessage, replaceUplink } from '@wisp/wow-bridge/mail
 import { statusSchema } from '@wisp/protocol/desktop';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { agentHost } from '@wisp/agent/agent-host';
+
+const decodeStatus = Schema.decodeUnknownSync(statusSchema);
 
 async function fixture(configured = true, env: Record<string, string> = {}) {
   const dataDirectory = await mkdtemp(path.join(tmpdir(), 'wisp-runtime-'));
@@ -142,7 +144,7 @@ test('a fresh addon installation starts before a default model is selected', asy
       headers: { authorization: 'Bearer ' + identity.token },
     });
     expect(response.ok).toBe(true);
-    expect(statusSchema.parse(await response.json())).toMatchObject({
+    expect(decodeStatus(await response.json())).toMatchObject({
       auth: { status: 'signed_out' },
       gameConnected: false,
       modelConnected: false,
@@ -282,7 +284,7 @@ test('the assembled runtime serves validated status, receives packets, persists 
     const response = await fetch(`http://127.0.0.1:${identity.port}/status`, {
       headers: { authorization: 'Bearer ' + identity.token },
     });
-    expect(statusSchema.parse(await response.json()).auth.status).toBe('signed_out');
+    expect(decodeStatus(await response.json()).auth.status).toBe('signed_out');
     bridge.receive(gameEvent({ type: 'hello', session: 'test', seq: 1, at: 1 }));
     bridge.receive(gameEvent({ type: 'new', session: 'test', chat: 'chat', seq: 2, at: 2 }));
     bridge.state.chats
@@ -334,7 +336,9 @@ test('occupied bridge ports fall back to free ones that the clients can reach', 
       headers: { authorization: 'Bearer ' + desktop.token },
     });
     expect(desktopResponse.status).toBe(200);
-    expect(statusSchema.safeParse(await desktopResponse.json()).success).toBe(true);
+    expect(
+      Exit.isSuccess(Schema.decodeUnknownExit(statusSchema)(await desktopResponse.json())),
+    ).toBe(true);
   } finally {
     await bridge?.stop();
     await new Promise<void>((resolve) => occupied.close(() => resolve()));
@@ -381,7 +385,7 @@ test('desktop API saves a provider and model without WoW', async () => {
     const { models } = await request('/auth/models');
     expect(models).toMatchObject([{ slug: `connection:${id}:local-test`, efforts: [] }]);
     await request('/auth/model', { model: models[0].slug });
-    const status = statusSchema.parse(await request('/status'));
+    const status = decodeStatus(await request('/status'));
     expect(status).toMatchObject({ ready: true, gameConnected: false, modelConnected: true });
     expect(status.auth.status).toBe('signed_out');
     expect(

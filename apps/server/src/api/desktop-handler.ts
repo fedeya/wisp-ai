@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
-import { zValidator } from '@hono/zod-validator';
-import { Effect } from 'effect';
-import { z } from 'zod';
+import { validator } from 'hono/validator';
+import { Effect, Schema } from 'effect';
 import {
   desktopRoutes as routes,
   type DesktopRoute,
@@ -21,9 +20,12 @@ import { openChat, isWorking } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
 import type { PanelCommand } from '../session-state.ts';
 // Called by the Rust host around addon installs; not part of the webview contract.
-export const wowTransportInput = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('pause') }),
-  z.object({ action: z.literal('resume'), wow: z.string().min(1).optional() }),
+export const wowTransportInput = Schema.Union([
+  Schema.Struct({ action: Schema.Literal('pause') }),
+  Schema.Struct({
+    action: Schema.Literal('resume'),
+    wow: Schema.optional(Schema.String.check(Schema.isMinLength(1))),
+  }),
 ]);
 interface DesktopDependencies {
   auth: PromiseChatGPTAuth;
@@ -42,20 +44,19 @@ interface DesktopDependencies {
   openRoutine: (id: string) => void;
   readSimulationCharacter: () => Promise<unknown>;
   setCapability: (id: string, enabled: boolean) => Effect.Effect<void, unknown>;
-  setWowTransport: (input: z.infer<typeof wowTransportInput>) => Effect.Effect<void, unknown>;
+  setWowTransport: (input: typeof wowTransportInput.Type) => Effect.Effect<void, unknown>;
   setAppUpdate: (version: string | null) => void;
   setFeature: (id: string, enabled: boolean | null) => Promise<void>;
   refreshMcpCatalog: () => void;
   requestStop: () => void;
   changed: () => void;
 }
-// Validation failures throw so onError reports them like any other failure.
-const json = <T extends z.ZodType>(schema: T) =>
-  zValidator('json', schema, (result) => {
-    if (!result.success) {
-      throw result.error;
-    }
-  });
+// Decodes the JSON body. A failure throws, so onError answers 400 with its
+// message like any other failure.
+const json = <S extends Schema.Codec<unknown, unknown>>(schema: S) => {
+  const decode = Schema.decodeUnknownSync(schema);
+  return validator('json', (body): S['Type'] => decode(body));
+};
 const ok = { ok: true } as const;
 export const createDesktopApp = Effect.fnUntraced(function* (deps: DesktopDependencies) {
   const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());

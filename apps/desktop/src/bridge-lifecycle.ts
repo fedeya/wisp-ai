@@ -36,7 +36,7 @@ export function startBridgeLifecycle({
       onError(String(error));
     }
     if (disposed) return;
-    const info = await desktop<DesktopInfo>('desktop_info');
+    const info = await desktop('desktop_info');
     if (disposed) return;
     onDesktopInfo(info);
     if (info.addonUpdatePending) onAddonUpdating(true);

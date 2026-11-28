@@ -4,6 +4,7 @@ import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { Effect, Schema } from 'effect';
 import { z } from 'zod';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { savedRoutine, routineRun } from '@wisp/protocol/routines';
 import { panelContent } from '@wisp/agent/contract/panels';
 import { MemorySlot } from '@wisp/agent/contract/memory';
@@ -36,6 +37,12 @@ const LegacyMemory = Schema.StructWithRest(
   [Schema.Record(Schema.String, Schema.Unknown)],
 );
 const decodeLegacyMemory = Schema.decodeUnknownSync(LegacyMemory);
+// Saved routines are strict and runs are not, so each list decodes on its own.
+const decodeLegacyRoutines = Schema.decodeUnknownSync(
+  Schema.Struct({ routines: Schema.Array(Schema.Unknown), runs: Schema.Array(Schema.Unknown) }),
+);
+const decodeSavedRoutines = Schema.decodeUnknownSync(Schema.Array(savedRoutine), rejectUnknownKeys);
+const decodeRuns = Schema.decodeUnknownSync(Schema.Array(routineRun));
 
 class ProductImportError extends Schema.TaggedError<ProductImportError>()('ProductImportError', {
   message: Schema.String,
@@ -57,12 +64,13 @@ async function readProductFiles(file: string) {
   };
   const root = path.dirname(file);
   const rawRoutines = await read(path.join(root, 'routines.json'));
-  const routineData = z
-    .object({ routines: z.array(savedRoutine), runs: z.array(routineRun) })
-    .parse(rawRoutines === undefined ? { routines: [], runs: [] } : rawRoutines);
-  if (rawRoutines) {
-    routineData.runs = routineData.runs.map((run, i) => ({ ...rawRoutines.runs[i], ...run }));
-  }
+  const legacyRoutines = decodeLegacyRoutines(
+    rawRoutines === undefined ? { routines: [], runs: [] } : rawRoutines,
+  );
+  const routineData = {
+    routines: decodeSavedRoutines(legacyRoutines.routines),
+    runs: decodeRuns(legacyRoutines.runs).map((run, i) => ({ ...rawRoutines?.runs[i], ...run })),
+  };
   const rawPanels = await read(path.join(root, 'panels.json'));
   const panelData = rawPanels === undefined ? [] : rawPanels;
   const validatedPanels = z.array(savedPanel).parse(panelData);

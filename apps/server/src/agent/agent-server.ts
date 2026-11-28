@@ -5,11 +5,13 @@ import { bodyLimit } from 'hono/body-limit';
 import { getRequestListener, type HttpBindings } from '@hono/node-server';
 import { RESPONSE_ALREADY_SENT } from '@hono/node-server/utils/response';
 import { rpcRequests } from '@wisp/agent/contract/agent-rpc';
-import { routineInput, routineEvents } from '@wisp/protocol/routines';
+import { Effect, Schema } from 'effect';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
+import { routineEvents } from '@wisp/protocol/routines';
 import { panelInput } from '@wisp/agent/contract/panels';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import { databaseRequest } from '@wisp/agent/contract/database';
-import { wowheadQuery } from '@wisp/protocol/search';
+import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
 import type { PromiseChatGPTAuth } from '../auth/index.ts';
@@ -22,7 +24,6 @@ import type { ModelConnections } from '../models/model-connections.ts';
 import type { ModelFailures } from '../models/model-failures.ts';
 import { proxyConnectionModel } from '../models/model-proxy.ts';
 import { createModelProxy } from '../models/model-proxy.ts';
-import { Effect } from 'effect';
 import type { WowheadSearch } from '../integrations/search/web-search.ts';
 import type { UsageTelemetry } from '../telemetry.ts';
 import { chooseChatModel } from '../chat/chat-model.ts';
@@ -53,6 +54,8 @@ interface AgentDependencies {
   ) => Promise<ReplyPresentation>;
 }
 type AgentContext = Context<{ Bindings: HttpBindings }>;
+// Web search requests are strict, like the protocol schema they use.
+const decodeWebSearch = Schema.decodeUnknownSync(wowheadQuery, rejectUnknownKeys);
 // The agent shows these messages to the model, so they are passed through unsanitized.
 const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
 // Aborts the game, simulator or search work when the agent hangs up before the reply is written.
@@ -257,17 +260,13 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
         ? // Hanging up interrupts the lookup, which cancels its request.
           runPromise(database.query(databaseRequest.parse(args)), { signal: abort })
         : measuredWebSearch(
-            wowheadQuery.parse(args),
+            decodeWebSearch(args),
             chat.modelSettings?.model || defaultModel(),
             abort,
           );
     });
   // Web search is the slowest tool, so record its budget and outcome to tune depth defaults.
-  async function measuredWebSearch(
-    query: z.output<typeof wowheadQuery>,
-    model: string,
-    abort: AbortSignal,
-  ) {
+  async function measuredWebSearch(query: WebSearchQuery, model: string, abort: AbortSignal) {
     const started = performance.now();
     try {
       const result = await webSearch.search(query, model, abort);
@@ -301,7 +300,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
     if (!chat.characterKey) {
       throw Error('A fresh character identity is required');
     }
-    const input = routineInput.parse(data.input);
+    const { input } = data;
     const routines = ['save', 'pause', 'resume', 'remove'].includes(input.operation)
       ? await routineStore.mutate(chat.characterKey, input, chat.id)
       : routineStore.list(chat.characterKey);

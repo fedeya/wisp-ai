@@ -66,10 +66,11 @@ export function searchTools(tools: DeferredTool[], query: string, limit = 8) {
     }));
 }
 
+// What tool_search shows for a deferred tool, in the draft zod's schemas use.
 function jsonSchema(schema: ToolDefinition['inputSchema']) {
   return 'safeParse' in schema
     ? z.toJSONSchema(schema, { unrepresentable: 'any', io: 'input' })
-    : schema['~standard'].jsonSchema.input({ target: 'draft-07' });
+    : schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' });
 }
 
 async function parseInput(name: string, schema: ToolDefinition['inputSchema'], input: unknown) {

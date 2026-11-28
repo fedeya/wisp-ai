@@ -1,3 +1,4 @@
+import { Schema } from 'effect';
 import {
   connectionModel,
   type ConnectionModel,
@@ -17,7 +18,10 @@ const snapshotSuffix = /-(?:\d{4}-\d{2}-\d{2}|\d{8})$/;
  * also listed (gpt-4o-2024-08-06 next to gpt-4o). Snapshots without an alias,
  * like most Anthropic IDs, stay.
  */
-export function suggestedModels(models: DiscoveredConnectionModel[]): ConnectionModel[] {
+const decodeModel = Schema.decodeUnknownSync(connectionModel);
+export function suggestedModels(
+  models: ReadonlyArray<DiscoveredConnectionModel>,
+): ConnectionModel[] {
   const usable = models.filter(({ supportsTools }) => supportsTools === true);
   const ids = new Set(usable.map(({ id }) => id));
   return usable
@@ -25,5 +29,5 @@ export function suggestedModels(models: DiscoveredConnectionModel[]): Connection
       const alias = id.replace(snapshotSuffix, '');
       return alias === id || !ids.has(alias);
     })
-    .map((model) => connectionModel.parse(model));
+    .map((model) => decodeModel(model));
 }

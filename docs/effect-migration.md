@@ -346,6 +346,12 @@ with a link to itself.
 - [ ] ChatGPT sign-in: bound the id token's length before verifying it, as
       `effect/jose` advises, and decode the model catalog strictly instead of
       dropping fields of the wrong type ([#329](https://github.com/fedeya/wisp-ai/pull/329)).
+- [ ] Desktop IPC: decode each native command's reply with a schema; `desktop()`
+      decodes `desktop_info` only and trusts the caller's type for the rest
+      ([#336](https://github.com/fedeya/wisp-ai/pull/336)).
+- [ ] MCP manager: decode the saved MCP configuration and its env secret with
+      `Schema` instead of `JSON.parse` with casts; a malformed entry may then
+      fail where it is accepted today ([#336](https://github.com/fedeya/wisp-ai/pull/336)).
 - [ ] Repositories, with phase 3 (proposed in [#307](https://github.com/fedeya/wisp-ai/pull/307)):
   - [ ] Transactions take `BEGIN IMMEDIATE`, including the startup read of
         chats.

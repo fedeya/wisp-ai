@@ -1,6 +1,8 @@
 import { useForm, useSelector } from '@tanstack/react-form';
+import { Option, Schema } from 'effect';
 import {
   connectionModel,
+  contextWindow,
   maxConnectionModels,
   providerDefinitions,
   type ConnectionModel,
@@ -38,11 +40,12 @@ type ConnectionFields = {
   contextWindow: number | undefined;
 };
 
-const contextWindowSchema = connectionModel.shape.contextWindow;
+const isContextWindow = Schema.is(contextWindow);
+const decodeModel = Schema.decodeUnknownOption(connectionModel);
 
 // Empty means automatic: the bridge fills in the model's known context window.
 function validContextWindow(value: number | undefined) {
-  return value === undefined || contextWindowSchema.safeParse(value).success;
+  return value === undefined || isContextWindow(value);
 }
 
 function validateContextWindow({ value }: { value: number | undefined }) {
@@ -91,7 +94,7 @@ export default function ConnectionEditor({
     name: connection?.name || '',
     apiKey: '',
     baseURL: connection?.baseURL || '',
-    models: connection?.models || [],
+    models: [...(connection?.models ?? [])],
     modelId: '',
     contextWindow: undefined,
   };
@@ -152,8 +155,8 @@ export default function ConnectionEditor({
             json: connectionDetails(provider, connection?.id, form.state.values),
           }),
         );
-        found = result.models;
-        setDiscovered(result.models);
+        found = [...result.models];
+        setDiscovered([...result.models]);
       },
       null,
       'connection-editor',
@@ -180,14 +183,14 @@ export default function ConnectionEditor({
       return false;
     }
     const found = discovered.find((model) => model.id === id);
-    const model = connectionModel.safeParse({
+    const model = decodeModel({
       name: found?.name,
       reasoningEfforts: found?.reasoningEfforts,
       id,
       contextWindow: contextWindow ?? found?.contextWindow,
     });
-    if (!model.success) return false;
-    void form.pushFieldValue('models', model.data);
+    if (Option.isNone(model)) return false;
+    void form.pushFieldValue('models', model.value);
     return true;
   }
 
