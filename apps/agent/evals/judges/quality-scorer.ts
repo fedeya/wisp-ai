@@ -4,8 +4,10 @@ import { generateText, Output, wrapLanguageModel } from 'ai';
 import { inject } from 'vitest';
 import { createHarness, createJudge } from 'vitest-evals';
 import type { JudgeHarnessInput, ToolCall } from 'vitest-evals';
-import { z } from 'zod';
+import { Record, Schema } from 'effect';
+import { IntBetween } from '../../src/contract/tool-inputs.ts';
 import { connectionModel } from '../../src/models/connection-model.ts';
+import { effectToolInput } from '../../src/tools/tool.ts';
 import type { WispInput } from '../runtime/harness.ts';
 import { criteria, scenarios } from './quality-rubric.ts';
 
@@ -29,14 +31,12 @@ function toolResults(calls: ToolCall[]) {
   return text.length > RESULT_CHARS ? text.slice(0, RESULT_CHARS) + '…(truncated)' : text;
 }
 
-const keys = Object.keys(criteria) as Array<keyof typeof criteria>;
-const grades = z.object({
-  ...(Object.fromEntries(keys.map((key) => [key, z.number().int().min(0).max(2)])) as Record<
-    keyof typeof criteria,
-    z.ZodNumber
-  >),
-  notes: z.string(),
-});
+const keys = Record.keys(criteria);
+const score = IntBetween(0, 2);
+const grades = Schema.Struct({ ...Record.map(criteria, () => score), notes: Schema.String });
+// The judge's structured output, with the JSON Schema zod wrote for it.
+const gradesOutput = effectToolInput(grades, { layout: 'zod' });
+const decodeGrades = Schema.decodeUnknownSync(grades);
 
 /** The judge: the eval model through the eval bridge, at the grading effort. */
 export function judgeModel(origin: string, token: string, model: string) {
@@ -84,11 +84,11 @@ export async function gradeAnswer(
     abortSignal: signal,
     instructions: GRADER,
     prompt,
-    output: Output.object({ schema: grades }),
+    output: Output.object({ schema: gradesOutput }),
   });
 }
 
-const qualityModel = createHarness<JudgeHarnessInput, z.infer<typeof grades>>({
+const qualityModel = createHarness<JudgeHarnessInput, typeof grades.Type>({
   name: 'wisp-answer-quality-model',
   async run({ input: { prompt }, signal }) {
     const { origin, token, model } = inject('evalBridge');
@@ -122,7 +122,7 @@ export function qualityJudges(name: string) {
           throw new Error('Missing answer-quality judge harness');
         }
         const prompt = qualityPrompt(name, input.question, output.reply, toolCalls);
-        const { notes, ...scores } = grades.parse(await runJudge({ prompt }));
+        const { notes, ...scores } = decodeGrades(await runJudge({ prompt }));
         return {
           score: keys.reduce((sum, key) => sum + scores[key], 0) / (keys.length * 2),
           metadata: { rationale: notes, output: scores },

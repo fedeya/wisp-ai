@@ -1,4 +1,6 @@
-import { defineTool } from '@wisp/agent/tool';
+// @effect-migrated
+import { defineTool, effectToolInput } from '@wisp/agent/tool';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { databaseEntity } from '../../contract/database.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
@@ -9,7 +11,10 @@ export default enabledTool(
     deferred: false,
     description:
       'Get a verified Forever item, spell, quest, NPC or zone from the primary TheWoWDB catalog. Use IDs verified by search or user/game references. Returns structured facts, source links, attribution and build. Does not prove the character owns/knows/completed anything. Resolve native map IDs separately with wow__inspect_map.',
-    inputSchema: databaseEntity,
+    inputSchema: effectToolInput(databaseEntity, {
+      parseOptions: rejectUnknownKeys,
+      layout: 'zod',
+    }),
     label: {
       start: ({ kind }) => 'Reading Forever ' + kind + ' data',
       complete: ({ kind }) => 'Read Forever ' + kind + ' data',

@@ -1,4 +1,6 @@
-import { defineTool } from '@wisp/agent/tool';
+// @effect-migrated
+import { defineTool, effectToolInput } from '@wisp/agent/tool';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { databaseSearch } from '../../contract/database.ts';
 import { enabledTool } from '@wisp/agent/enabled-tool';
 import { agentRPC } from '@wisp/agent/agent-rpc';
@@ -9,7 +11,10 @@ export default enabledTool(
     deferred: false,
     description:
       'Primary external catalog: search TheWoWDB for Forever items, spells, quests, NPCs or zones by name. Version is fixed to Forever by Wisp. Search first to resolve IDs, then thewowdb__get_database_entity for details. Preserve attribution, source links and build; missing results are missing coverage, not proof of absence.',
-    inputSchema: databaseSearch,
+    inputSchema: effectToolInput(databaseSearch, {
+      parseOptions: rejectUnknownKeys,
+      layout: 'zod',
+    }),
     label: {
       start: ({ kind }) => 'Searching Forever ' + kind + ' database',
       complete: ({ kind }) => 'Searched Forever ' + kind + ' database',

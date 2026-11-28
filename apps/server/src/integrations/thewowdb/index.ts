@@ -2,6 +2,7 @@
 import { Context, DateTime, Effect, Layer, Predicate, Ref, Schema } from 'effect';
 import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http';
 import type { HttpClientError } from 'effect/http';
+import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { databaseRequest } from '@wisp/agent/contract/database';
 import type { DatabaseRequest, DatabaseRequestInput } from '@wisp/agent/contract/database';
 
@@ -82,6 +83,10 @@ export class TheWoWDB extends Context.Service<
     ) => Effect.Effect<DatabaseResult, InvalidDatabaseRequest>;
   }
 >()('@wisp/server/integrations/TheWoWDB') {}
+
+// Strict, as the database contract is.
+const decodeRequest = (input: DatabaseRequestInput) =>
+  Schema.decodeEffect(databaseRequest)(input, rejectUnknownKeys);
 
 function requestUrl(request: DatabaseRequest) {
   const url = new URL(request.kind + '/', API);
@@ -219,11 +224,9 @@ export const layer = Layer.effect(
     });
 
     const query = Effect.fn('TheWoWDB.query')(function* (input: DatabaseRequestInput) {
-      const parsed = databaseRequest.safeParse(input);
-      if (!parsed.success) {
-        return yield* new InvalidDatabaseRequest({ message: parsed.error.message });
-      }
-      const request = parsed.data;
+      const request = yield* decodeRequest(input).pipe(
+        Effect.mapError((error) => new InvalidDatabaseRequest({ message: error.message })),
+      );
       const url = requestUrl(request);
       const source: Source = { name: 'TheWoWDB', version: 'forever', apiUrl: url.href };
       const cached = (yield* Ref.get(cache)).get(url.href);

@@ -1,6 +1,10 @@
 import { hasToolCall, isStepCount, tool, type StopCondition, type ToolSet } from 'ai';
+import { Schema } from 'effect';
+// For an authored tool whose schema is still zod, `ToolDefinition`'s zod branch; it goes with that branch.
 import { z } from 'zod';
+import { KeyedRecord, withDefault } from '../contract/tool-inputs.ts';
 import type { AuthoredSkill } from '../wisp/content.ts';
+import { effectToolInput } from './tool.ts';
 import type { ToolDefinition } from './tool.ts';
 
 export type ToolStubOutcome = { response: unknown } | { throw: { message: string } };
@@ -22,6 +26,9 @@ export const SKILL = 'skill';
 /** Agent tools that are not player-facing activity. */
 export const CONTROL_TOOLS = new Set([TOOL_SEARCH, SKILL]);
 export const MAX_STEPS = 40;
+
+// zod's `z.string().min(1)`, for the inputs of the fixed tools.
+const NonEmpty = Schema.String.check(Schema.isMinLength(1));
 
 /** A tool reached through tool_call: an authored deferred tool or an MCP tool. */
 export interface DeferredTool {
@@ -153,7 +160,7 @@ export function assembleTools(options: {
   if (skills.length) {
     tools[SKILL] = tool({
       description: "Load one of Wisp's authored skills by name and follow its instructions.",
-      inputSchema: z.object({ name: z.string().min(1) }),
+      inputSchema: effectToolInput(Schema.Struct({ name: NonEmpty }), { layout: 'zod' }),
       execute: async ({ name }) => {
         const skill = skills.find((entry) => entry.name === name);
         // An answer, not a failure: the model picks another skill from the list.
@@ -174,7 +181,7 @@ export function assembleTools(options: {
     tools[TOOL_SEARCH] = tool({
       description:
         'Find deferred tools (local game, catalog and integration tools, and external MCP connections) by keywords. Returns names, descriptions and input schemas. Discovery performs no game action.',
-      inputSchema: z.object({ query: z.string().min(1) }),
+      inputSchema: effectToolInput(Schema.Struct({ query: NonEmpty }), { layout: 'zod' }),
       execute: async ({ query }) => {
         const results = searchTools(options.deferred, query);
         return results.length
@@ -185,10 +192,13 @@ export function assembleTools(options: {
     tools[TOOL_CALL] = tool({
       description:
         'Run a deferred tool found with tool_search. Pass its exact name and an input object matching its schema.',
-      inputSchema: z.object({
-        name: z.string().min(1),
-        input: z.record(z.string(), z.unknown()).default({}),
-      }),
+      inputSchema: effectToolInput(
+        Schema.Struct({
+          name: NonEmpty,
+          input: withDefault(KeyedRecord(Schema.String, Schema.Unknown), () => ({})),
+        }),
+        { layout: 'zod' },
+      ),
       execute: async ({ name, input }, context) => {
         const target = callable.get(name);
         if (!target) {

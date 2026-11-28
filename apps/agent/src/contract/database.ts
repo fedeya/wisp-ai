@@ -1,18 +1,24 @@
-import { z } from 'zod';
-export const databaseKind = z.enum(['item', 'spell', 'quest', 'npc', 'zone']);
-export const databaseSearch = z.strictObject({
+// @effect-migrated
+import { Schema } from 'effect';
+import { TrimmedString } from '@wisp/protocol/checks';
+import { IntBetween, PositiveInt, withDefault } from './tool-inputs.ts';
+
+// Every object here is strict: decode it with `rejectUnknownKeys`.
+
+export const databaseKind = Schema.Literals(['item', 'spell', 'quest', 'npc', 'zone']);
+const searchFields = {
   kind: databaseKind,
-  query: z.string().trim().min(1).max(64),
-  page: z.number().int().min(1).max(200).default(1),
-  limit: z.number().int().min(1).max(20).default(10),
-});
-export const databaseEntity = z.strictObject({
-  kind: databaseKind,
-  id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-});
-export const databaseRequest = z.discriminatedUnion('operation', [
-  databaseSearch.extend({ operation: z.literal('search') }),
-  databaseEntity.extend({ operation: z.literal('get') }),
+  query: TrimmedString({ minLength: 1, maxLength: 64 }),
+  page: withDefault(IntBetween(1, 200), () => 1),
+  limit: withDefault(IntBetween(1, 20), () => 10),
+};
+// `Int` is a safe integer, so it stops at `Number.MAX_SAFE_INTEGER` as zod's `max` did.
+const entityFields = { kind: databaseKind, id: PositiveInt };
+export const databaseSearch = Schema.Struct(searchFields);
+export const databaseEntity = Schema.Struct(entityFields);
+export const databaseRequest = Schema.Union([
+  Schema.Struct({ ...searchFields, operation: Schema.Literal('search') }),
+  Schema.Struct({ ...entityFields, operation: Schema.Literal('get') }),
 ]);
-export type DatabaseRequestInput = z.input<typeof databaseRequest>;
-export type DatabaseRequest = z.output<typeof databaseRequest>;
+export type DatabaseRequestInput = typeof databaseRequest.Encoded;
+export type DatabaseRequest = typeof databaseRequest.Type;

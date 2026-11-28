@@ -2,7 +2,6 @@ import { expect, test } from 'vitest';
 import { APICallError, RetryError, simulateReadableStream } from 'ai';
 import { MockLanguageModelV4 } from 'ai/test';
 import { Effect, Layer, Stream } from 'effect';
-import { z } from 'zod';
 import {
   AgentEngine,
   EngineConfig,
@@ -13,7 +12,8 @@ import {
 } from '../src/engine.ts';
 import { modelError } from '../src/execution/engine-errors.ts';
 import { MemoryHistory } from '../src/session/memory-history.ts';
-import { defineTool, type ToolDefinition } from '../src/tools/tool.ts';
+import { NoArgs } from '../src/contract/tool-inputs.ts';
+import { defineTool, effectToolInput, type ToolDefinition } from '../src/tools/tool.ts';
 import type { DeferredTool } from '../src/tools/turn-tools.ts';
 
 const apiError = (statusCode: number) =>
@@ -154,7 +154,7 @@ test('an endsTurn tool run through tool_call ends the turn', async () => {
   });
   const skipTip = defineTool({
     description: 'Skip the tip.',
-    inputSchema: z.object({}),
+    inputSchema: effectToolInput(NoArgs),
     endsTurn: true,
     execute: () => ({ skipped: true }),
   });

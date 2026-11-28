@@ -10,6 +10,7 @@ import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { routineEvents } from '@wisp/protocol/routines';
 import { simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import { databaseRequest } from '@wisp/agent/contract/database';
+import { KeyedRecord } from '@wisp/agent/contract/tool-inputs';
 import { wowheadQuery, type WebSearchQuery } from '@wisp/protocol/search';
 import type { Chat } from '../chat/events.ts';
 import type { ReplyPresentation } from '@wisp/agent/contract/reply-presentation';
@@ -55,6 +56,15 @@ interface AgentDependencies {
 type AgentContext = Context<{ Bindings: HttpBindings }>;
 // Web search requests are strict, like the protocol schema they use.
 const decodeWebSearch = Schema.decodeUnknownSync(wowheadQuery, rejectUnknownKeys);
+// Database requests are strict, like their contract.
+const decodeDatabase = Schema.decodeUnknownSync(databaseRequest, rejectUnknownKeys);
+// A knowledge request: its operation, if any, and every other key as sent but an
+// own `__proto__`, which zod's `passthrough` dropped.
+const decodeKnowledge = Schema.decodeUnknownSync(
+  Schema.StructWithRest(Schema.Struct({ operation: Schema.optionalKey(Schema.String) }), [
+    KeyedRecord(Schema.String, Schema.Unknown),
+  ]),
+);
 // The agent shows these messages to the model, so they are passed through unsanitized.
 const failure = (error: unknown) => (error instanceof Error ? error.message : String(error));
 // Aborts the game, simulator or search work when the agent hangs up before the reply is written.
@@ -244,7 +254,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
 
   const knowledge = (route: '/database' | '/wowhead') =>
     tool(route, async ({ raw, chat, signal }) => {
-      const data = z.object({ operation: z.string().optional() }).passthrough().parse(raw);
+      const data = decodeKnowledge(raw);
       const name =
         route === '/wowhead'
           ? 'web_search'
@@ -258,7 +268,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       const { agentSession: _session, ...args } = data;
       return route === '/database'
         ? // Hanging up interrupts the lookup, which cancels its request.
-          runPromise(database.query(databaseRequest.parse(args)), { signal: abort })
+          runPromise(database.query(decodeDatabase(args)), { signal: abort })
         : measuredWebSearch(
             decodeWebSearch(args),
             chat.modelSettings?.model || defaultModel(),

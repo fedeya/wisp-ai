@@ -27,7 +27,7 @@ test('strict domain schemas accept their RPC session envelope without accepting 
       plans: [{ label: 'Test', priority: [{ spellId: 116 }] }],
     }).iterations,
   ).toBe(500);
-  expect(rpcRequests.database.safeParse({ ...search, arbitraryCode: 'bad' }).success).toBe(false);
+  expect(() => rpcRequests.database.parse({ ...search, arbitraryCode: 'bad' })).toThrow();
 });
 
 test('RPC validates requests and responses instead of trusting JSON casts', async () => {
