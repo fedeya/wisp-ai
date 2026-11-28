@@ -50,7 +50,7 @@ import { ReplyProjection } from '../reply/reply-stream.ts';
  * 120 s) and long reasoning still streams, so silence this long means
  * the engine or its provider stopped answering without closing the stream.
  */
-export const TURN_IDLE_TIMEOUT = Duration.minutes(10);
+const TURN_IDLE_TIMEOUT = Duration.minutes(10);
 
 /** How often a running turn publishes the reply previews it coalesced. */
 const STREAM_FLUSH_INTERVAL = Duration.millis(400);
