@@ -21,9 +21,9 @@ export function estimateTokens(value: unknown) {
 export function compactionSplit<M extends { type: string }>(history: readonly M[], keepTurns = 4) {
   let turns = 0;
   for (let index = history.length - 1; index > 0; index--) {
-    if (history[index]!.type === 'user' && ++turns === keepTurns) {
+    if (history[index].type === 'user' && ++turns === keepTurns) {
       let start = index;
-      while (start > 0 && history[start - 1]!.type === 'synthetic') start--;
+      while (start > 0 && history[start - 1].type === 'synthetic') start--;
       return { older: history.slice(0, start), recent: history.slice(start) };
     }
   }
@@ -114,7 +114,7 @@ const summarize = Effect.fn('AgentEngine.summarize')(function* (
   // Without a summary the turn stays answerable by reading only the recent part.
   const compaction: Compaction = {
     type: 'compaction',
-    keptFrom: loaded.messages[older.length]!.seq,
+    keptFrom: loaded.messages[older.length].seq,
   };
   yield* history.append(
     session,

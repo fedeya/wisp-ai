@@ -1,5 +1,5 @@
 // @effect-migrated
-import { Effect } from 'effect';
+import { Effect, Predicate, Schema } from 'effect';
 import type { AddonFiles } from './addon-files.ts';
 import { logTransportError } from './logging.ts';
 import { prepareDownlink } from './wire/downlink.ts';
@@ -41,6 +41,8 @@ interface Snapshot {
   json: string;
   value: unknown;
 }
+
+const parseJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 interface Frame {
   generation: number;
@@ -343,11 +345,14 @@ export function makeDelivery(options: DeliveryOptions) {
   const publish = Effect.fnUntraced(function* (version: number, value: unknown) {
     const json = JSON.stringify(value);
     if (json === publishedJson) return;
-    const revision = (value as { rev?: number } | null)?.rev;
+    const revision = Predicate.hasProperty(value, 'rev') ? value.rev : undefined;
     const hasRevision =
       typeof revision === 'number' && Number.isSafeInteger(revision) && revision > 0;
     if (peer.reusable && hasRevision) {
-      latest = { revision, json, value: JSON.parse(json) };
+      // A copy of the value as the addon will read it; json came from
+      // JSON.stringify, so it always parses.
+      const copy = yield* Effect.orDie(parseJson(json));
+      latest = { revision, json, value: copy };
       yield* startLatest(version);
     } else {
       const written = yield* files.writePayload(json, () => version === epoch);
