@@ -5,7 +5,7 @@ import type { PlatformError } from 'effect/PlatformError';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
 import { simulationInput, simulationNeedsLiveState } from '@wisp/agent/contract/simulation';
 import type { RotationAction, SimulationInput } from '@wisp/agent/contract/simulation';
-import { AppConfig } from '../../app-config.ts';
+import { AppConfig } from '#/platform/config';
 import { adapters } from './adapters/index.ts';
 import { ClassMetadata } from './adapters/types.ts';
 import { CatalogItem, equipmentSlots, replaceEquipment } from './equipment.ts';

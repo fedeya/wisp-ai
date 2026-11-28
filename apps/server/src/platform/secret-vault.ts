@@ -2,7 +2,7 @@
 import { Context, Effect, Layer, Redacted, Schema, Stream } from 'effect';
 import type { Duration } from 'effect';
 import { ChildProcess, ChildProcessSpawner } from 'effect/process';
-import { AppConfig } from '../app-config.ts';
+import { AppConfig } from '#/platform/config';
 
 /** The most output a helper may print before the call fails, in decoded characters. */
 const MAX_OUTPUT = 1024 * 1024;
