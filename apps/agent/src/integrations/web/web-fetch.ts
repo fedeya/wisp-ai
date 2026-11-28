@@ -1,5 +1,6 @@
 // @effect-migrated
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
+import * as NodeDns from '@effect/platform-node/NodeDns';
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 import { Context, Effect, Layer, Option, Schema, SchemaGetter, Stream } from 'effect';
@@ -230,14 +231,10 @@ export const make = Effect.gen(function* () {
   return Service.of({ fetch });
 });
 
-/** Fetches through impit and the public web tunnel, with the system resolver. */
+/** Fetches through impit and the public web tunnel, with the system DNS. */
 export const layer = Layer.effect(Service, make).pipe(
   Layer.provide(
-    Layer.mergeAll(
-      Pages.layer,
-      Tunnel.layer.pipe(Layer.provide(Tunnel.resolverLayer)),
-      Impit.layer,
-    ),
+    Layer.mergeAll(Pages.layer, Tunnel.layer.pipe(Layer.provide(NodeDns.layer)), Impit.layer),
   ),
   Layer.provide(NodeCrypto.layerSecureRandom),
 );
