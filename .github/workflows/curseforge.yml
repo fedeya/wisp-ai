@@ -65,9 +65,9 @@ jobs:
           git show "${ref}:NOTICE" | Set-Content -LiteralPath "$addon/NOTICE" -Encoding utf8
           $addonVersion = $version
           if (git ls-tree "$ref" scripts/addon-release-version.ts) {
-            $addonVersion = node --input-type=module -e 'import { addonReleaseVersion } from "./scripts/addon-release-version.ts"; console.log(addonReleaseVersion(process.cwd(), process.argv[1]));' $ref
+            $addonVersion = node scripts/addon-release-version.ts version $ref
           }
-          node --input-type=module -e 'import { stampAddonReleaseVersion } from "./scripts/addon-release-version.ts"; await stampAddonReleaseVersion(process.argv[1], process.argv[2]);' (Join-Path $addon 'WispAI.toc') $addonVersion
+          node scripts/addon-release-version.ts stamp (Join-Path $addon 'WispAI.toc') $addonVersion
           $zip = Join-Path $env:RUNNER_TEMP "WispAI-$version.zip"
           Compress-Archive -LiteralPath $addon -DestinationPath $zip
           Set-Content -LiteralPath "$stage/changelog.md" -Value $release.body -Encoding utf8
