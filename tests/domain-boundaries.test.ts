@@ -19,7 +19,6 @@ const sourceFolder = 'apps/server/src';
 const rootFiles = new Set([
   'account-operations.ts',
   'application-database.ts',
-  'bridge-config.ts',
   'errors.ts',
   'features.ts',
   'json-file.ts',

@@ -9,6 +9,11 @@ import { bridgeLogging } from './logger.ts';
 const CRASH_SHUTDOWN_MS = 5000;
 let crashing = false;
 
+const startupFailed = (error: unknown) =>
+  Effect.logError('Bridge startup failed').pipe(
+    Effect.annotateLogs({ event: 'bridge.startup_failed', error: errorMessage(error) }),
+  );
+
 const program = Effect.gen(function* () {
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
@@ -55,11 +60,7 @@ const program = Effect.gen(function* () {
         Deferred.doneUnsafe(stopRequested, Effect.void);
       }).pipe(
         Scope.provide(scope),
-        Effect.tapError((error) =>
-          Effect.logError('Bridge startup failed').pipe(
-            Effect.annotateLogs({ event: 'bridge.startup_failed', error: errorMessage(error) }),
-          ),
-        ),
+        Effect.tapError(startupFailed),
         Effect.andThen(Deferred.await(stopRequested)),
       ),
     (scope, exit) =>
@@ -71,7 +72,19 @@ const program = Effect.gen(function* () {
         ),
       ),
   );
-}).pipe(Effect.scoped, Effect.provide(Layer.merge(ServerLayer, bridgeLogging)));
+}).pipe(
+  Effect.scoped,
+  Effect.provide(
+    Layer.merge(
+      // Startup can also fail while the services load, before `makeServer`
+      // runs (an unreadable config.local.json): log that the same way.
+      ServerLayer.pipe(
+        Layer.tapError((error) => startupFailed(error).pipe(Effect.provide(bridgeLogging))),
+      ),
+      bridgeLogging,
+    ),
+  ),
+);
 
 runMain(program, {
   disableErrorReporting: true,
