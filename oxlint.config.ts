@@ -62,7 +62,7 @@ export default defineConfig({
     // Every `as` (but `as const`) skips a check the compiler would make; type
     // or decode the value instead. A warning, so files marked
     // // @effect-migrated fail on it (tests/effect-migrated.test.ts).
-    'typescript/consistent-type-assertions': ['warn', { assertionStyle: 'never' }], // 362
+    'typescript/consistent-type-assertions': ['warn', { assertionStyle: 'never' }], // 347
     'vitest/no-standalone-expect': [
       'error',
       { additionalTestBlockFunctions: effectTestBlockFunctions },

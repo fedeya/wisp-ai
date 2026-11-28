@@ -1,4 +1,4 @@
-// @effect-migrated allow=jsonParse,typescript/consistent-type-assertions,typescript/no-explicit-any,typescript/no-unsafe-argument,typescript/no-unsafe-assignment,typescript/no-unsafe-call,typescript/no-unsafe-member-access,typescript/no-unsafe-return: the simulator's JSON files are read with JSON.parse until refactor/simulator-decode decodes them with Schema
+// @effect-migrated allow=jsonParse,typescript/consistent-type-assertions,typescript/no-explicit-any,typescript/no-unsafe-argument,typescript/no-unsafe-assignment,typescript/no-unsafe-call,typescript/no-unsafe-member-access,typescript/no-unsafe-return: the simulator's JSON files are read with JSON.parse until #333 decodes them with Schema
 import { Clock, Context, Effect, FileSystem, Layer, Option, Path, Schema, Stream } from 'effect';
 import { Digest } from 'effect/crypto';
 import type { PlatformError } from 'effect/PlatformError';
