@@ -1,6 +1,4 @@
 // @effect-migrated allow=nodeIoImports: Node's HTTP server parses the CONNECT requests; Effect's HTTP server has no CONNECT hook
-import { lookup } from 'node:dns';
-import type { LookupAddress } from 'node:dns';
 import { createServer, type IncomingMessage } from 'node:http';
 import { connect } from 'node:net';
 import type { Duplex } from 'node:stream';
@@ -9,6 +7,7 @@ import { Array as Arr, Context, Effect, Layer, Option, Queue, Redacted, Ref, Sch
 import type { Scope } from 'effect';
 import { SecureRandom } from 'effect/crypto';
 import { Base64, Hex } from 'effect/encoding';
+import { Dns } from 'effect/net';
 
 /** A URL or address that is not public HTTPS, or a destination the tunnel did not approve. */
 export class UnsafeWebDestination extends Schema.TaggedError<UnsafeWebDestination>()(
@@ -16,7 +15,7 @@ export class UnsafeWebDestination extends Schema.TaggedError<UnsafeWebDestinatio
   { message: Schema.String },
 ) {}
 
-/** The host name of a URL did not resolve. `message` is the resolver's. */
+/** The host name of a URL did not resolve. `message` is the DNS module's. */
 export class WebLookupFailed extends Schema.TaggedError<WebLookupFailed>()('WebLookupFailed', {
   hostname: Schema.String,
   message: Schema.String,
@@ -60,41 +59,25 @@ export const publicWebUrl = Effect.fnUntraced(function* (value: string) {
   return url;
 });
 
-/** Resolves host names the way the operating system does, as Node's `dns.lookup`. */
-export class Resolver extends Context.Service<
-  Resolver,
-  {
-    readonly lookup: (host: string) => Effect.Effect<readonly LookupAddress[], WebLookupFailed>;
-  }
->()('@wisp/agent/PublicWebResolver') {}
-
-/** The system resolver. */
-export const resolverLayer = Layer.succeed(
-  Resolver,
-  Resolver.of({
-    lookup: Effect.fn('PublicWebResolver.lookup')((host: string) =>
-      Effect.callback<readonly LookupAddress[], WebLookupFailed>((resume) => {
-        lookup(host, { all: true }, (error, addresses) =>
-          resume(
-            error
-              ? Effect.fail(
-                  new WebLookupFailed({ hostname: host, message: error.message, cause: error }),
-                )
-              : Effect.succeed(addresses),
-          ),
-        );
-      }),
-    ),
-  }),
-);
-
-/** The addresses `host` resolves to, when every one of them is public. */
+/**
+ * The addresses `host` resolves to, when every one of them is public. An IP
+ * literal is its own address; every other name goes through `Dns`.
+ */
 export const publicWebAddresses = Effect.fn('PublicWebTunnel.addresses')(function* (host: string) {
-  const addresses = yield* (yield* Resolver).lookup(bareHost(host));
-  if (
-    !Arr.isReadonlyArrayNonEmpty(addresses) ||
-    !addresses.every(({ address }) => isPublicAddress(address))
-  ) {
+  const name = bareHost(host);
+  const addresses = ipaddr.isValid(name)
+    ? Arr.of(name)
+    : Arr.map(
+        yield* (yield* Dns.Dns)
+          .lookup(name)
+          .pipe(
+            Effect.mapError(
+              (cause) => new WebLookupFailed({ hostname: name, message: cause.message, cause }),
+            ),
+          ),
+        (address) => address.toString(),
+      );
+  if (!addresses.every(isPublicAddress)) {
     return yield* new UnsafeWebDestination({
       message: 'URL must not resolve to private, localhost or reserved addresses.',
     });
@@ -133,7 +116,7 @@ interface ConnectRequest {
 
 export const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
-  const resolver = yield* Resolver;
+  const dns = yield* Dns.Dns;
 
   const open = Effect.gen(function* () {
     const token = Hex.encode(yield* random.randomBytes(24));
@@ -183,8 +166,8 @@ export const make = Effect.gen(function* () {
           return yield* new UnsafeWebDestination({ message: 'Unapproved web destination.' });
         }
         const url = yield* publicWebUrl('https://' + approved);
-        const [{ address }] = yield* publicWebAddresses(url.hostname).pipe(
-          Effect.provideService(Resolver, resolver),
+        const [address] = yield* publicWebAddresses(url.hostname).pipe(
+          Effect.provideService(Dns.Dns, dns),
         );
         if (downstream.destroyed) {
           return;
@@ -234,5 +217,5 @@ export const make = Effect.gen(function* () {
   return Service.of({ open });
 });
 
-/** Tunnels through the resolver it is given. */
+/** Tunnels through the `Dns` it is given. */
 export const layer = Layer.effect(Service, make);

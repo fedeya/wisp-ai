@@ -1,4 +1,5 @@
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
+import * as NodeDns from '@effect/platform-node/NodeDns';
 import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import { describe, expect, it } from '@effect/vitest';
 import { defaultCapabilities, publicToolName } from '@wisp/protocol/capabilities';
@@ -14,8 +15,8 @@ import {
   Ref,
   Schema,
 } from 'effect';
+import { Dns, NetAddress } from 'effect/net';
 import { TestClock } from 'effect/testing';
-import type { LookupAddress } from 'node:dns';
 import { request } from 'node:http';
 import { connect } from 'node:net';
 import path from 'node:path';
@@ -71,24 +72,28 @@ const impitTest = Layer.effectContext(
   }),
 );
 
-/** The resolver answered by the test; it records the hosts it is asked for. */
+/** The `Dns` answered by the test; it records the hosts it is asked for. */
 class ResolverTest extends Context.Service<
   ResolverTest,
   {
-    readonly answer: (addresses: readonly LookupAddress[]) => Effect.Effect<void>;
+    /** The addresses every later lookup answers with; none fails it as not found. */
+    readonly answer: (addresses: readonly string[]) => Effect.Effect<void>;
     readonly hosts: Effect.Effect<readonly string[]>;
   }
 >()('test/ResolverTest') {}
 
 const resolverTest = Layer.effectContext(
   Effect.gen(function* () {
-    const answer = yield* Ref.make<readonly LookupAddress[]>([]);
+    const answer = yield* Ref.make<readonly string[]>([]);
     const hosts = yield* Ref.make<readonly string[]>([]);
-    const resolver = Tunnel.Resolver.of({
+    const dns = Dns.make({
       lookup: (host) =>
-        Ref.update(hosts, (all) => [...all, host]).pipe(Effect.andThen(Ref.get(answer))),
+        Ref.update(hosts, (all) => [...all, host]).pipe(
+          Effect.andThen(Ref.get(answer)),
+          Effect.map((addresses) => addresses.map(NetAddress.ipFromStringUnsafe)),
+        ),
     });
-    return Context.make(Tunnel.Resolver, resolver).pipe(
+    return Context.make(Dns.Dns, dns).pipe(
       Context.add(
         ResolverTest,
         ResolverTest.of({
@@ -371,17 +376,36 @@ describe('web_fetch', () => {
         Effect.flip(Tunnel.publicWebAddresses('example.com')),
         (error) => error.message,
       );
-      yield* resolver.answer([
-        { address: '93.184.216.34', family: 4 },
-        { address: '10.0.0.1', family: 4 },
-      ]);
+      yield* resolver.answer(['93.184.216.34', '10.0.0.1']);
       expect(yield* failure).toMatch(/private/i);
-      yield* resolver.answer([{ address: '::ffff:127.0.0.1', family: 6 }]);
+      yield* resolver.answer(['::ffff:127.0.0.1']);
       expect(yield* failure).toMatch(/private/i);
+      yield* resolver.answer(['93.184.216.34']);
+      expect(yield* Tunnel.publicWebAddresses('example.com')).toEqual(['93.184.216.34']);
+    }).pipe(Effect.provide(resolverTest)),
+  );
+
+  it.effect('a name that does not resolve fails as a lookup failure with the DNS text', () =>
+    Effect.gen(function* () {
+      const resolver = yield* ResolverTest;
       yield* resolver.answer([]);
-      expect(yield* failure).toMatch(/private/i);
-      yield* resolver.answer([{ address: '93.184.216.34', family: 4 }]);
-      expect(yield* Tunnel.publicWebAddresses('example.com')).toHaveLength(1);
+      expect(yield* Effect.flip(Tunnel.publicWebAddresses('example.com'))).toMatchObject({
+        _tag: 'WebLookupFailed',
+        hostname: 'example.com',
+        message: 'NotFound: Dns.lookup (example.com)',
+      });
+    }).pipe(Effect.provide(resolverTest)),
+  );
+
+  it.effect('an IP literal is checked without a lookup', () =>
+    Effect.gen(function* () {
+      const resolver = yield* ResolverTest;
+      expect(yield* Tunnel.publicWebAddresses('93.184.216.34')).toEqual(['93.184.216.34']);
+      expect(yield* Tunnel.publicWebAddresses('[2606:4700::1111]')).toEqual(['2606:4700::1111']);
+      expect(yield* Effect.flip(Tunnel.publicWebAddresses('10.0.0.1'))).toMatchObject({
+        _tag: 'UnsafeWebDestination',
+      });
+      expect(yield* resolver.hosts).toEqual([]);
     }).pipe(Effect.provide(resolverTest)),
   );
 
@@ -421,7 +445,7 @@ describe('web_fetch', () => {
         expect(yield* tunnel.failure).toMatchObject({
           value: { message: 'Unapproved web destination.' },
         });
-        yield* resolver.answer([{ address: '127.0.0.1', family: 4 }]);
+        yield* resolver.answer(['127.0.0.1']);
         expect(yield* connectStatus(true)).toBe(403);
         expect(yield* resolver.hosts).toEqual(['example.com']);
         expect(yield* tunnel.failure).toMatchObject({
@@ -520,7 +544,7 @@ describe('web_fetch', () => {
     () =>
       Effect.gen(function* () {
         const resolver = yield* ResolverTest;
-        yield* resolver.answer([{ address: '127.0.0.1', family: 4 }]);
+        yield* resolver.answer(['127.0.0.1']);
         expect(yield* Effect.flip(fetchPage({ url: 'https://example.com/guide' }))).toMatchObject({
           _tag: 'UnsafeWebDestination',
           message: 'URL must not resolve to private, localhost or reserved addresses.',
@@ -540,14 +564,11 @@ describe('web_fetch', () => {
       ),
   );
 
-  it.effect('the system resolver answers for localhost, which is not public', () =>
+  it.effect('the system DNS answers for localhost, which is not public', () =>
     Effect.gen(function* () {
-      expect(
-        yield* Effect.flatMap(Tunnel.Resolver, (resolver) => resolver.lookup('localhost')),
-      ).not.toEqual([]);
       expect(yield* Effect.flip(Tunnel.publicWebAddresses('localhost'))).toMatchObject({
         _tag: 'UnsafeWebDestination',
       });
-    }).pipe(Effect.provide(Tunnel.resolverLayer)),
+    }).pipe(Effect.provide(NodeDns.layer)),
   );
 });
