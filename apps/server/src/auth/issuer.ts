@@ -46,6 +46,14 @@ const TokenResponse = Schema.Struct({
 
 const IdTokenField = Schema.Struct({ id_token: lenient(Schema.String) });
 
+/**
+ * The longest id token Wisp verifies, in characters. effect/jose verifies in
+ * memory and leaves the bound to the application; OpenAI's id tokens are a few
+ * kilobytes, so 16 KiB (Node's default limit for all of a request's headers)
+ * leaves room for more claims while refusing an unreasonable one unparsed.
+ */
+export const MAX_ID_TOKEN_LENGTH = 16 * 1024;
+
 /** The id token claims Wisp reads. */
 const IdentityClaims = Schema.Struct({
   sub: Schema.String,
@@ -186,7 +194,8 @@ export const makeIssuer = Effect.fnUntraced(function* (client: HttpClient.HttpCl
 
   /**
    * Verifies an id token against the issuer's keys and returns its claims.
-   * With a `nonce`, the token must carry it.
+   * With a `nonce`, the token must carry it. A token longer than
+   * MAX_ID_TOKEN_LENGTH fails before it is parsed.
    */
   const identity = Effect.fn('ChatGPTIssuer.identity')(function* (
     token: Option.Option<string>,
@@ -197,6 +206,12 @@ export const makeIssuer = Effect.fnUntraced(function* (client: HttpClient.HttpCl
       return yield* new ChatGPTAuthError({
         message: 'ChatGPT did not return a verifiable identity.',
       });
+    }
+    if (token.value.length > MAX_ID_TOKEN_LENGTH) {
+      yield* Effect.logWarning('ChatGPT returned an id token too long to verify').pipe(
+        Effect.annotateLogs({ event: 'auth.id_token_too_long', length: token.value.length }),
+      );
+      return yield* new ChatGPTAuthError({ message: 'ChatGPT identity validation failed.' });
     }
     const jwks = yield* keySet;
     const { claims } = yield* Jwt.verifyWithKeySet(IdentityClaims, token.value, {
