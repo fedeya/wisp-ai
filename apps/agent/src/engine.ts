@@ -17,6 +17,7 @@ import type { TurnInput } from './execution/turn-input.ts';
 import * as SessionHistory from './session/session-history.ts';
 import type { HistoryError } from './session/session-history.ts';
 import { TurnToolbox } from './tools/turn-toolbox.ts';
+import * as WebFetch from './integrations/web/web-fetch.ts';
 import * as Wisp from './wisp/wisp-agent.ts';
 
 export type { ModelMessage } from 'ai';
@@ -133,7 +134,13 @@ const aborted = (signal: AbortSignal) =>
 
 /** Internal agent services. The caller supplies the host implementations. */
 export const layer = AgentEngine.layer.pipe(
-  Layer.provide(Layer.mergeAll(Wisp.layer, SessionModels.layer, TurnToolbox.layer)),
+  Layer.provide(
+    Layer.mergeAll(
+      Wisp.layer,
+      SessionModels.layer,
+      TurnToolbox.layer.pipe(Layer.provide(WebFetch.layer)),
+    ),
+  ),
 );
 
 /** Adapts a composed engine layer to the Promise and async-iterator API. */

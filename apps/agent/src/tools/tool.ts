@@ -4,6 +4,7 @@ import type { SchemaAST } from 'effect';
 import type { Effect } from 'effect';
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from 'effect/StandardSchema';
 import type * as Game from '../host/game-access.ts';
+import type * as WebFetch from '../integrations/web/web-fetch.ts';
 
 /** What a tool receives besides its input. */
 export interface ToolContext {
@@ -13,6 +14,7 @@ export interface ToolContext {
   /** The model's id for this call. */
   callId: string;
   gameAccess?: Game.Service['Service'];
+  webFetch?: WebFetch.Service['Service'];
   runEffect?: <A>(effect: Effect.Effect<A, Error>, options: { signal: AbortSignal }) => Promise<A>;
 }
 
@@ -115,21 +117,30 @@ const schemaKeywords = new Set([
 ]);
 const schemaMapKeywords = new Set(['properties', 'patternProperties', '$defs', 'definitions']);
 
-const zodLayout = (schema: unknown) =>
-  Predicate.isObject(schema) ? zodLayoutObject(schema) : schema;
+const zodLayout = (schema: unknown, ownDescription = false) =>
+  Predicate.isObject(schema) ? zodLayoutObject(schema, ownDescription) : schema;
 const zodLayoutAll = (schemas: unknown) =>
-  Array.isArray(schemas) ? schemas.map(zodLayout) : zodLayout(schemas);
+  Array.isArray(schemas) ? schemas.map((schema) => zodLayout(schema)) : zodLayout(schemas);
 
 /**
  * A JSON Schema written as zod wrote it: keywords in zod's order, `properties`
  * on every object, and open objects without `additionalProperties: true`.
+ * zod writes an optional property's `.describe()` on its `.optional()` wrapper,
+ * so first, but a required property's own description after its keywords.
  */
-function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
+function zodLayoutObject(
+  schema: JsonSchema.JsonSchema,
+  ownDescription: boolean,
+): JsonSchema.JsonSchema {
+  const required = Array.isArray(schema.required) ? schema.required : [];
   const entries = Object.entries(schema).flatMap(([keyword, value]): [string, unknown][] => {
     if (keyword === 'additionalProperties' && value === true) return [];
     if (schemaKeywords.has(keyword)) return [[keyword, zodLayoutAll(value)]];
     if (schemaMapKeywords.has(keyword) && Predicate.isObject(value)) {
-      const schemas = Object.entries(value).map(([name, entry]) => [name, zodLayout(entry)]);
+      const schemas = Object.entries(value).map(([name, entry]) => [
+        name,
+        zodLayout(entry, keyword === 'properties' && required.includes(name)),
+      ]);
       return [[keyword, Object.fromEntries(schemas)]];
     }
     return [[keyword, value]];
@@ -139,7 +150,9 @@ function zodLayoutObject(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
     entries.push(['properties', {}]);
   }
   // Array sorts are stable: keywords zod does not write keep Effect's order, last.
-  entries.sort(([a], [b]) => zodRank(a) - zodRank(b));
+  const rank = (keyword: string) =>
+    ownDescription && keyword === 'description' ? Number.POSITIVE_INFINITY : zodRank(keyword);
+  entries.sort(([a], [b]) => rank(a) - rank(b));
   return Object.fromEntries(entries);
 }
 
@@ -166,7 +179,8 @@ export function effectToolInput<S extends Schema.ConstraintDecoder<unknown>>(
   // Effect's own converter answers any other target, or rejects it.
   const converter = Schema.toStandardJSONSchemaV1(schema)['~standard'].jsonSchema;
   const options = { onExcessProperty: parseOptions?.onExcessProperty };
-  const shape = (json: JsonSchema.JsonSchema) => (layout === 'zod' ? zodLayoutObject(json) : json);
+  const shape = (json: JsonSchema.JsonSchema) =>
+    layout === 'zod' ? zodLayoutObject(json, false) : json;
   const convert = (side: Schema.Constraint, { target }: StandardJSONSchemaV1.Options) =>
     isDraft(target)
       ? shape(jsonSchemaFor(Schema.toJsonSchemaDocument(side, options), target))

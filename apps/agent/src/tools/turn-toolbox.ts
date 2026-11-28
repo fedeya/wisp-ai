@@ -7,6 +7,7 @@ import * as Game from '../host/game-access.ts';
 import * as Memory from '../host/memory.ts';
 import type { HostError } from '../execution/engine-errors.ts';
 import { Mcp } from '../integrations/mcp-tools.ts';
+import * as WebFetch from '../integrations/web/web-fetch.ts';
 import type { ToolDefinition } from './tool.ts';
 import { authoredTools } from '../wisp/tool-registry.ts';
 import { authored, stubbed } from './turn-tools.ts';
@@ -38,6 +39,7 @@ export class TurnToolbox extends Context.Service<
       const mcp = yield* Mcp;
       const gameAccess = yield* Game.Service;
       const memoryAccess = yield* Memory.Service;
+      const webFetch = yield* WebFetch.Service;
 
       const tools = Effect.fn('TurnToolbox.tools')(function* (session: string) {
         const capabilities = yield* settings.read;
@@ -50,7 +52,7 @@ export class TurnToolbox extends Context.Service<
           const bound: ToolDefinition = {
             ...tool,
             execute: (input, ctx) =>
-              tool.execute(input, { ...ctx, gameAccess, runEffect: runPromise }),
+              tool.execute(input, { ...ctx, gameAccess, webFetch, runEffect: runPromise }),
           };
           if (tool.deferred) deferred.push(authored(name, bound, stub));
           else direct[name] = bound;
