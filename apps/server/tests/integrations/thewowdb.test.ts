@@ -158,6 +158,75 @@ it.effect('source errors and rate limits stay distinct from empty searches', () 
   }),
 );
 
+it.effect('records list the checked fields first, then the rest in the order TheWoWDB sent', () => {
+  // TheWoWDB sorts its keys, as in these shortened real answers.
+  const entity = {
+    attribution: spell.attribution,
+    build: 'beta-build',
+    id: 122,
+    kind: 'spell',
+    name: 'Frost Nova',
+    version: 'forever',
+  };
+  const page = {
+    attribution: spell.attribution,
+    has_more: false,
+    kind: 'spell',
+    page: 1,
+    results: [
+      { id: 122, kind: 'spell', links: spell.links, name: 'Frost Nova', version: 'forever' },
+    ],
+    version: 'forever',
+  };
+  const { layer } = database(({ url }) => Response.json(url.search ? page : entity));
+  return Effect.gen(function* () {
+    const got = yield* query(get);
+    assert.deepStrictEqual(Object.keys('data' in got ? got.data : {}), [
+      'id',
+      'kind',
+      'version',
+      'attribution',
+      'build',
+      'name',
+    ]);
+    const search = yield* query({ operation: 'search', kind: 'spell', query: 'Nova' });
+    const data = 'data' in search ? search.data : {};
+    assert.deepStrictEqual(Object.keys(data), [
+      'kind',
+      'version',
+      'results',
+      'attribution',
+      'has_more',
+      'page',
+    ]);
+    assert.deepStrictEqual(
+      Object.keys('results' in data && Array.isArray(data.results) ? data.results[0] : {}),
+      ['kind', 'version', 'id', 'links', 'name'],
+    );
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect(
+  'a search without a list of rows is withheld, and an entity is never an empty search',
+  () =>
+    Effect.gen(function* () {
+      const search = yield* query({ operation: 'search', kind: 'spell', query: 'Nova' }).pipe(
+        Effect.provide(
+          database(() => Response.json({ version: 'forever', kind: 'spell', results: 'none' }))
+            .layer,
+        ),
+      );
+      assert.deepInclude(search, {
+        status: 'unavailable',
+        error: 'Database search contained unverified or other-version records',
+      });
+      const entity = yield* query(get).pipe(
+        Effect.provide(database(() => Response.json({ ...spell, results: [] })).layer),
+      );
+      assert.strictEqual(entity.status, 'available');
+    }),
+);
+
 it.effect('a source that does not answer within 20 seconds is reported unavailable', () =>
   Effect.gen(function* () {
     const pending = yield* Effect.forkChild(query(get));
