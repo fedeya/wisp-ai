@@ -4,9 +4,9 @@ import { Context, Effect, Layer, Redacted, Schema } from 'effect';
 
 /** A custom MCP server as it is saved, with what its last test found. */
 export type SavedServer = typeof mcpDefinition.Type & {
-  tools?: { name: string; description?: string | undefined }[];
+  tools?: readonly { readonly name: string; readonly description?: string | undefined }[];
   hasToken?: boolean | undefined;
-  envKeys?: string[] | undefined;
+  envKeys?: readonly string[] | undefined;
 };
 
 /** The host could not read or write what it keeps for MCP servers. */
