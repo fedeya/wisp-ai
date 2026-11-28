@@ -85,9 +85,9 @@ simulation adapters). Effect code calls it directly.
   ships providers for OpenAI, Anthropic, OpenRouter, Amazon Bedrock and
   OpenAI-compatible APIs; Wisp uses 19 AI SDK provider packages plus
   OpenRouter, and Google has no v4 package.
-- **`@modelcontextprotocol/sdk`**, unless the spike in phase 6 shows that
-  `effect/ai`'s `McpClient` covers stdio, streamable HTTP and the auth flows
-  Wisp uses.
+- **`@modelcontextprotocol/sdk`**, behind a thin Effect adapter in
+  `apps/agent/src/integrations/mcp-connection.ts`; see the phase 6 spike for
+  why `effect/ai`'s `McpClient` does not replace it yet, and when to look again.
 - **Drizzle** as the query builder on `@effect/sql-sqlite-node`
   (`drizzle-orm/effect-sqlite-node`), with drizzle-kit migrations.
 - **Libraries without an Effect equivalent** (PostHog, OpenFeature, impit,
@@ -315,8 +315,27 @@ merges.
       `WISP_ENGINE_EXECUTABLE`).
 - [ ] Web fetch (impit, linkedom, turndown) and the public web tunnel as scoped
       services.
-- [ ] Spike: `effect/ai`'s `McpClient` against `@modelcontextprotocol/sdk`;
-      record the decision here.
+- [x] Spike: `effect/ai`'s `McpClient` against `@modelcontextprotocol/sdk`;
+      record the decision here. **Decision (2026-11-28): keep the SDK behind a
+      thin Effect adapter.** Effect 4.1.3's client (`effect/ai`, experimental)
+      handles Streamable HTTP with a bearer header, session ids, paginated
+      tool lists, structured results, per-call timeouts and cancellation, and
+      it passes a tool's JSON Schema through unchanged. Prototypes on Windows
+      also showed five blockers:
+  - It speaks only protocol 2025-11-25 and 2026-07-28, with no fallback, so it
+    refuses servers on 2025-06-18 or older; the SDK accepts five versions.
+  - It has no legacy SSE transport, which Wisp offers as a server setting.
+  - It spawns stdio servers without cross-spawn, so `npx.cmd` and other
+    `.cmd`/`.bat` commands fail with `spawn EINVAL`.
+  - A non-JSON line on a stdio server's stdout closes the connection; the SDK
+    skips it.
+  - Its API is still marked experimental.
+
+  The adapter wraps only the SDK calls (connect, list, call, close) in
+  `Effect.tryPromise` with the fiber's signal, decodes tools and results into
+  Wisp-owned schemas, and fails with a tagged `McpConnectionError`; the manager
+  owns the connection cache. Look again when Effect's client negotiates down to
+  2025-06-18 and either ships SSE or Wisp drops it (a phase 9 decision).
 
 ### 7. Scripts and game data
 
@@ -332,8 +351,19 @@ Independent of the other phases; these PRs can run in parallel.
 
 ### 8. Desktop UI (optional)
 
-- [ ] Spike `@effect/atom-react` with `AtomHttpApi` on the Routines page, then
+- [x] Spike `@effect/atom-react` with `AtomHttpApi` on the Routines page, then
       decide whether it replaces Zustand and the `useEffect` loaders.
+      **Decision (2026-11-28): defer until phase 4's `HttpApi` lands.**
+      `@effect/atom-react` 4.1.3 matches the effect pin, and the atom core ships
+      in `effect/reactivity` (`Atom`, `AsyncResult`, `AtomHttpApi`). But the
+      Routines page loads nothing of its own: it reads the global status that
+      `desktop-controller.ts` polls every 3 seconds. `AtomHttpApi` needs the
+      Desktop API's `HttpApi`, and a prototype added 19 kB gzip and made
+      `App.test.tsx` need asynchronous queries and a per-test registry. Until
+      then React and Zustand stay; the bridge calls, `work()` and the status
+      poll move onto Effect at the store's boundary, with the poll as a
+      scheduled fiber the store owns. After phase 4, spike again with the real
+      `AtomHttpApi`, starting with a per-test `RegistryProvider` helper.
 
 ### 9. Deferred behavior changes
 
