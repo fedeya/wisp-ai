@@ -1,8 +1,8 @@
 // @effect-migrated
 // Stages the desktop app's payload (apps/desktop/src-tauri/resources/payload):
 // the server or the packaged engine, the addon, the simulator and the Node runtime.
-import { Console, Effect, FileSystem, Layer, Option, Path, Schema } from 'effect';
-import { FetchHttpClient, HttpClient } from 'effect/http';
+import { Console, Effect, FileSystem, Option, Path, Schema } from 'effect';
+import { HttpClient } from 'effect/http';
 import { addonReleaseVersion, stampAddonReleaseVersion } from './addon-release-version.ts';
 import { inherit, output } from './child-process.ts';
 import { environmentVariable } from './environment.ts';
@@ -48,14 +48,6 @@ const nodeLicense = Effect.gen(function* () {
   }
   return yield* response.text.pipe(Effect.mapError(unavailable));
 });
-
-/**
- * Node's fetch without trace headers, for the one request staging makes. Each
- * entry point that stages provides it.
- */
-export const stagingHttpClient: Layer.Layer<HttpClient.HttpClient> = FetchHttpClient.layer.pipe(
-  Layer.provide(Layer.succeed(HttpClient.TracerPropagationEnabled, false)),
-);
 
 /**
  * Stages everything but the engine. A packaged payload gets the addon's release

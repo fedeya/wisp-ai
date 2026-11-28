@@ -194,13 +194,21 @@ jobs:
           RELEASE_VERSION: ${{ needs.windows.outputs.version }}
       # A promoted Nightly may predate the verifier, so it comes from this workflow's
       # revision; it still reads the version and trusted key from the built source.
+      # The verifier runs on Effect, so the scripts' dependencies are installed from
+      # this revision's lockfile, beside it (every package.json keeps the workspace whole).
       - uses: actions/checkout@v7
         with:
           path: .release-tools
           sparse-checkout: |
-            scripts/package.json
-            scripts/verify-release-assets.ts
+            /package.json
+            /pnpm-lock.yaml
+            /pnpm-workspace.yaml
+            package.json
+            /scripts/
           sparse-checkout-cone-mode: false
+      - name: Install the release tools
+        working-directory: .release-tools
+        run: pnpm install --frozen-lockfile --ignore-scripts --filter @wisp/scripts
       # The artifact download can stop early without failing and leave a truncated
       # installer; nothing is published unless it matches its checksum and signature.
       - name: Verify the downloaded release assets

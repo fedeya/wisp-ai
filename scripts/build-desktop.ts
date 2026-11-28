@@ -11,6 +11,7 @@ import { inherit } from './child-process.ts';
 import { buildEngine } from './engine/build.ts';
 import { resolveModule } from './engine/node-runtime.ts';
 import { environmentVariable } from './environment.ts';
+import { fetchHttpClient } from './http-client.ts';
 import {
   nativeBuildContext,
   nativeBuildKey,
@@ -18,7 +19,7 @@ import {
   saveNativeBinary,
 } from './native-cache.ts';
 import { runScript } from './run-script.ts';
-import { stageEngine, stageTauri, stagingHttpClient } from './stage-tauri.ts';
+import { stageEngine, stageTauri } from './stage-tauri.ts';
 import { writeUpdateManifest } from './update-manifest.ts';
 
 export class DesktopBuildFailed extends Schema.TaggedError<DesktopBuildFailed>()(
@@ -151,7 +152,7 @@ if (import.meta.main) {
   Command.make('build-desktop', {}, () => buildDesktop).pipe(
     Command.withDescription('Build the Windows installer into dist/'),
     Command.run({ version: '1.0.0' }),
-    Effect.provide(stagingHttpClient),
+    Effect.provide(fetchHttpClient),
     runScript,
   );
 }

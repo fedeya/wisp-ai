@@ -1,22 +1,18 @@
 import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
-import { mkdtemp, rm, unlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { Effect } from 'effect';
-import { afterEach, expect, test } from 'vitest';
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import { expect, layer } from '@effect/vitest';
+import { Effect, FileSystem } from 'effect';
 import { updateManifest } from '../update-manifest.ts';
 import { verifyReleaseAssets, verifyUpdaterSignature } from '../verify-release-assets.ts';
+import { temporaryDirectory } from './fixtures.ts';
 
 const version = '0.3.3-nightly.217.1';
 const name = `WispAI-${version}-windows-x64-setup.exe`;
-const folders: string[] = [];
-// This file's tests are not on Effect yet; they run the manifest it would publish.
-const nightlyManifest = (manifestVersion: string, signature: string) =>
-  Effect.runSync(updateManifest(manifestVersion, signature, '', 'nightly'));
 
-afterEach(async () => {
-  await Promise.all(folders.splice(0).map((folder) => rm(folder, { recursive: true })));
-});
+const nightlyManifest = (manifestVersion: string, signature: string) =>
+  Effect.map(updateManifest(manifestVersion, signature, '', 'nightly'), (manifest) =>
+    JSON.stringify(manifest),
+  );
 
 function minisignKey(keyId = Buffer.from('0862f6324cc0450a', 'hex')) {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
@@ -43,83 +39,99 @@ function tauriSignature(data: Buffer, privateKey: KeyObject, keyId: Buffer) {
   ).toString('base64');
 }
 
-async function releaseFolder() {
-  const folder = await mkdtemp(path.join(tmpdir(), 'wisp-release-assets-'));
-  folders.push(folder);
+const sha256 = (data: Buffer) => createHash('sha256').update(data).digest('hex');
+
+const releaseFolder = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const folder = yield* temporaryDirectory('wisp-release-assets-');
   const key = minisignKey();
   const installer = Buffer.from('installer payload '.repeat(1000));
   const signature = tauriSignature(installer, key.privateKey, key.keyId);
-  const file = path.join(folder, name);
-  await writeFile(file, installer);
-  await writeFile(file + '.sig', signature);
-  await writeFile(
-    file + '.sha256',
-    `${createHash('sha256').update(installer).digest('hex')}  ${name}\n`,
-  );
-  await writeFile(
-    path.join(folder, 'latest.json'),
-    JSON.stringify(nightlyManifest(version, signature)),
-  );
+  const file = `${folder}/${name}`;
+  yield* fs.writeFile(file, installer);
+  yield* fs.writeFileString(file + '.sig', signature);
+  yield* fs.writeFileString(file + '.sha256', `${sha256(installer)}  ${name}\n`);
+  yield* fs.writeFileString(`${folder}/latest.json`, yield* nightlyManifest(version, signature));
   return { folder, file, installer, signature, key };
-}
-
-test('complete, signed release assets pass', async () => {
-  const { folder, key } = await releaseFolder();
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).resolves.toBeUndefined();
 });
 
-test('a truncated installer is rejected before it is published', async () => {
-  const { folder, file, installer, key } = await releaseFolder();
-  await writeFile(file, installer.subarray(0, installer.length / 4));
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow('SHA-256');
-});
+const failure = <R>(effect: Effect.Effect<unknown, { readonly message: string }, R>) =>
+  Effect.map(Effect.flip(effect), (error) => error.message);
 
-test('missing signature or checksum files are rejected', async () => {
-  const { folder, file, key } = await releaseFolder();
-  await unlink(file + '.sig');
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
-    `Missing release asset ${name}.sig`,
+layer(NodeServices.layer)((it) => {
+  it.effect('complete, signed release assets pass', () =>
+    Effect.gen(function* () {
+      const { folder, key } = yield* releaseFolder;
+      yield* verifyReleaseAssets(folder, version, key.publicKey);
+    }),
   );
-  await unlink(file + '.sha256');
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
-    `Missing release asset ${name}.sha256`,
-  );
-});
 
-test('an installer signed by another key is rejected', async () => {
-  const { installer, signature } = await releaseFolder();
-  const other = minisignKey();
-  expect(() => verifyUpdaterSignature(installer, signature, other.publicKey)).toThrow(
-    'does not match',
+  it.effect('a truncated installer is rejected before it is published', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { folder, file, installer, key } = yield* releaseFolder;
+      yield* fs.writeFile(file, installer.subarray(0, installer.length / 4));
+      expect(yield* failure(verifyReleaseAssets(folder, version, key.publicKey))).toContain(
+        'SHA-256',
+      );
+    }),
   );
-  const otherId = minisignKey(Buffer.from('0102030405060708', 'hex'));
-  expect(() => verifyUpdaterSignature(installer, signature, otherId.publicKey)).toThrow(
-    'different key',
-  );
-});
 
-test('an installer whose checksum was rewritten still fails its signature', async () => {
-  const { folder, file, installer, key } = await releaseFolder();
-  const changed = Buffer.concat([installer, Buffer.from('x')]);
-  await writeFile(file, changed);
-  await writeFile(
-    file + '.sha256',
-    `${createHash('sha256').update(changed).digest('hex')}  ${name}\n`,
+  it.effect('missing signature or checksum files are rejected', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { folder, file, key } = yield* releaseFolder;
+      yield* fs.remove(file + '.sig');
+      expect(yield* failure(verifyReleaseAssets(folder, version, key.publicKey))).toBe(
+        `Missing release asset ${name}.sig.`,
+      );
+      yield* fs.remove(file + '.sha256');
+      expect(yield* failure(verifyReleaseAssets(folder, version, key.publicKey))).toBe(
+        `Missing release asset ${name}.sha256.`,
+      );
+    }),
   );
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
-    'updater signature',
-  );
-});
 
-test('a manifest with another signature or version is rejected', async () => {
-  const { folder, key, signature } = await releaseFolder();
-  const manifest = path.join(folder, 'latest.json');
-  await writeFile(manifest, JSON.stringify(nightlyManifest(version, signature + 'x')));
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
-    'different signature',
+  it.effect('an installer signed by another key is rejected', () =>
+    Effect.gen(function* () {
+      const { installer, signature } = yield* releaseFolder;
+      const other = minisignKey();
+      expect(
+        yield* failure(verifyUpdaterSignature(installer, signature, other.publicKey)),
+      ).toContain('does not match');
+      const otherId = minisignKey(Buffer.from('0102030405060708', 'hex'));
+      expect(
+        yield* failure(verifyUpdaterSignature(installer, signature, otherId.publicKey)),
+      ).toContain('different key');
+    }),
   );
-  await writeFile(manifest, JSON.stringify(nightlyManifest('0.3.3-nightly.218.1', signature)));
-  await expect(verifyReleaseAssets(folder, version, key.publicKey)).rejects.toThrow(
-    'different version',
+
+  it.effect('an installer whose checksum was rewritten still fails its signature', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { folder, file, installer, key } = yield* releaseFolder;
+      const changed = Buffer.concat([installer, Buffer.from('x')]);
+      yield* fs.writeFile(file, changed);
+      yield* fs.writeFileString(file + '.sha256', `${sha256(changed)}  ${name}\n`);
+      expect(yield* failure(verifyReleaseAssets(folder, version, key.publicKey))).toContain(
+        'updater signature',
+      );
+    }),
+  );
+
+  it.effect('a manifest with another signature or version is rejected', () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { folder, key, signature } = yield* releaseFolder;
+      const manifest = `${folder}/latest.json`;
+      yield* fs.writeFileString(manifest, yield* nightlyManifest(version, signature + 'x'));
+      expect(yield* failure(verifyReleaseAssets(folder, version, key.publicKey))).toContain(
+        'different signature',
+      );
+      yield* fs.writeFileString(manifest, yield* nightlyManifest('0.3.3-nightly.218.1', signature));
+      expect(yield* failure(verifyReleaseAssets(folder, version, key.publicKey))).toContain(
+        'different version',
+      );
+    }),
   );
 });
