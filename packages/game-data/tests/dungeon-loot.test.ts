@@ -3,7 +3,7 @@ import * as NodeServices from '@effect/platform-node/NodeServices';
 import { describe, expect, it } from '@effect/vitest';
 import { Effect, FileSystem, Layer, Path, Schema } from 'effect';
 import { Digest } from 'effect/crypto';
-import { atlasLootUrl, parseCsv, unzip, type AtlasLootPin } from '../src/index.ts';
+import { atlasLootUrl, unzip, type AtlasLootPin } from '../src/index.ts';
 import * as AtlasLoot from '../src/atlasloot.ts';
 import { DungeonLoot, dungeonLoot } from '../src/datasets/dungeon-loot.ts';
 import * as Wago from '../src/wago.ts';
@@ -72,10 +72,8 @@ const FILES = new Map([
 ]);
 // Real Forever 1.60.1.71037 rows.
 const TABLES = Wago.layerMemory({
-  AreaTable: parseCsv('ID,AreaName_lang\n2437,"Ragefire Chasm"'),
-  Map: parseCsv(
-    'ID,MapName_lang,InstanceType\n389,"Ragefire Chasm",1\n409,"Molten Core",2\n2994,"Alcaz Prison",1\n1,Kalimdor,0',
-  ),
+  AreaTable: 'ID,AreaName_lang\n2437,"Ragefire Chasm"',
+  Map: 'ID,MapName_lang,InstanceType\n389,"Ragefire Chasm",1\n409,"Molten Core",2\n2994,"Alcaz Prison",1\n1,Kalimdor,0',
 });
 
 function build(files = FILES, instanceMapIds = {}) {

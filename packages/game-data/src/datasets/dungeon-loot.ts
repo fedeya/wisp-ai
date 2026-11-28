@@ -2,15 +2,21 @@
 import { Effect, Schema } from 'effect';
 import type { FileSystem, Path } from 'effect';
 import { AtlasLoot, type AtlasLootData, type LuaJson, type LuaObject } from '../atlasloot.ts';
-import type { Row } from '../csv.ts';
-import { Curated, DatasetError, fromRows, readPackageJson, type Dataset } from '../dataset.ts';
-import { num, str } from '../rows.ts';
+import { Curated, DatasetError, readPackageJson, type Dataset } from '../dataset.ts';
 import { GameTables } from '../wago.ts';
 
 // AtlasLoot's difficulties in the order a boss's list is read: dungeons use
 // NORMAL, raids their size, and a few lists split by faction.
 const DIFFICULTIES = ['NORMAL', '40RAID', '20RAID', 'horde', 'alliance'];
-const INSTANCE_TYPES = new Set(['1', '2']); // Map.InstanceType: dungeon, raid
+const INSTANCE_TYPES = new Set([1, 2]); // Map.InstanceType: dungeon, raid
+// The columns this dataset reads from AreaTable.db2 and Map.db2.
+const AreaRow = Schema.Struct({ ID: Schema.Int, AreaName_lang: Schema.String });
+const MapRow = Schema.Struct({
+  ID: Schema.Int,
+  MapName_lang: Schema.String,
+  InstanceType: Schema.Int,
+});
+type MapRow = typeof MapRow.Type;
 // AtlasLoot pages hold 30 slots in two columns of 15; a header names the
 // items below it in its own column.
 const COLUMN = 15;
@@ -142,13 +148,13 @@ export const readLootCuration: Effect.Effect<
 > = readPackageJson('curated/dungeon-loot.json', LootCuration);
 
 // Map.db2's dungeons and raids by folded name, and their names by ID.
-function instanceMaps(maps: Row[]) {
+function instanceMaps(maps: readonly MapRow[]) {
   const instanceIds = new Map<string, number>();
   const mapNames = new Map<number, string>();
   for (const map of maps) {
-    if (INSTANCE_TYPES.has(str(map, 'InstanceType'))) {
-      instanceIds.set(fold(str(map, 'MapName_lang')), num(map, 'ID'));
-      mapNames.set(num(map, 'ID'), str(map, 'MapName_lang'));
+    if (INSTANCE_TYPES.has(map.InstanceType)) {
+      instanceIds.set(fold(map.MapName_lang), map.ID);
+      mapNames.set(map.ID, map.MapName_lang);
     }
   }
   return { instanceIds, mapNames };
@@ -241,13 +247,12 @@ export function dungeonLoot(
     output: { format: 'json', path: 'apps/agent/src/wisp/dungeon-loot.json' },
     build: Effect.gen(function* () {
       const tables = yield* GameTables;
-      const [areaRows, maps] = yield* Effect.all([tables.read('AreaTable'), tables.read('Map')], {
-        concurrency: 'unbounded',
-      });
-      const { areas, instances } = yield* fromRows(() => ({
-        areas: new Map(areaRows.map((row) => [num(row, 'ID'), str(row, 'AreaName_lang')])),
-        instances: instanceMaps(maps),
-      }));
+      const [areaRows, maps] = yield* Effect.all(
+        [tables.read('AreaTable', AreaRow), tables.read('Map', MapRow)],
+        { concurrency: 'unbounded' },
+      );
+      const areas = new Map(areaRows.map((row) => [row.ID, row.AreaName_lang]));
+      const instances = instanceMaps(maps);
       const { instanceMapIds } = curation ?? (yield* readLootCuration);
       const atlas = yield* AtlasLoot.use((source) => source.load(areas));
       const loot = lootInstances(atlas, instances, instanceMapIds);
