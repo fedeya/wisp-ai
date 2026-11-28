@@ -9,7 +9,7 @@ import { countFile, lintFindings, presentPatterns, repositoryRoot } from './effe
 
 /** The audit has already printed why it failed, so only the exit code is left. */
 class AuditFailed extends Schema.TaggedError<AuditFailed>()('AuditFailed', {}) {
-  readonly [Runtime.errorReported] = false;
+  override readonly [Runtime.errorReported] = false;
 }
 
 const audit = Command.make(

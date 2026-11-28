@@ -31,6 +31,7 @@ export async function findApplicationDatabase(runtime: string) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
       throw error;
     }
+    return undefined;
   }
 }
 export async function copyDatabaseSnapshot(source: string, destination: string) {
