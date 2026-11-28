@@ -22,7 +22,7 @@ function newer(a: string, b: string): boolean {
 
 /** The check has already said the pin is behind, so only the exit code is left. */
 class PinBehind extends Schema.TaggedError<PinBehind>()('PinBehind', {}) {
-  readonly [Runtime.errorReported] = false;
+  override readonly [Runtime.errorReported] = false;
 }
 
 const check = Command.make(
