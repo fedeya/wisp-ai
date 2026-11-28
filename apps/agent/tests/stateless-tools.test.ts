@@ -61,15 +61,17 @@ test('a stateless tool round trip resends encrypted reasoning instead of referen
   assert.equal(toolCalls, 1);
   assert.equal(requests.length, 2);
   assert.ok(requests.every((request) => request.store === false));
-  assert.ok(requests[0].include?.includes('reasoning.encrypted_content'));
-  assert.ok(!requests[1].input.some((item) => item.type === 'item_reference'));
+  const [first, second] = requests;
+  assert.ok(first && second);
+  assert.ok(first.include?.includes('reasoning.encrypted_content'));
+  assert.ok(!second.input.some((item) => item.type === 'item_reference'));
   assert.ok(
-    requests[1].input.some(
+    second.input.some(
       (item) => item.type === 'reasoning' && item.encrypted_content === 'opaque-test',
     ),
   );
   assert.ok(
-    requests[1].input.some(
+    second.input.some(
       (item) => item.type === 'function_call_output' && item.call_id === 'call-test',
     ),
   );

@@ -35,9 +35,9 @@ export async function buildEngine() {
   const impitNative = path.dirname(
     createRequire(path.join(impit, 'package.json')).resolve('impit-win32-x64-msvc/package.json'),
   );
-  for (const [source, name] of [
-    [impit, 'impit'],
-    [impitNative, 'impit-win32-x64-msvc'],
+  for (const { source, name } of [
+    { source: impit, name: 'impit' },
+    { source: impitNative, name: 'impit-win32-x64-msvc' },
   ]) {
     await cp(source, path.join(directory, 'node_modules', name), {
       recursive: true,

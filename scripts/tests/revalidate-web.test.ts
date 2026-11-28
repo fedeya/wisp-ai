@@ -1,24 +1,28 @@
-import { expect, test, vi } from 'vitest';
+import { assert, expect, test, vi } from 'vitest';
 import { revalidateWeb } from '../revalidate-web.ts';
 
 test('publication only sends the invalidation POST without requesting public pages', async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json({ revalidated: true }));
   await revalidateWeb('https://wisp.test', 'secret', undefined, fetch);
   expect(fetch).toHaveBeenCalledTimes(1);
-  expect(fetch.mock.calls[0][0].href).toBe('https://wisp.test/api/revalidate');
-  expect(fetch.mock.calls[0][1]).toMatchObject({
+  const [call] = fetch.mock.calls;
+  assert.isDefined(call);
+  expect(call[0].href).toBe('https://wisp.test/api/revalidate');
+  expect(call[1]).toMatchObject({
     method: 'POST',
     headers: { Authorization: 'Bearer secret' },
     redirect: 'error',
   });
-  expect(fetch.mock.calls[0][1].headers).not.toHaveProperty('x-vercel-protection-bypass');
+  expect(call[1].headers).not.toHaveProperty('x-vercel-protection-bypass');
 });
 
 test('configured Vercel automation bypass is sent together with application authorization', async () => {
   const fetch = vi.fn().mockResolvedValue(Response.json({ revalidated: true }));
   await revalidateWeb('https://wisp.test', 'app-secret', 'vercel-secret', fetch);
   expect(fetch).toHaveBeenCalledTimes(1);
-  expect(fetch.mock.calls[0][1].headers).toEqual({
+  const [call] = fetch.mock.calls;
+  assert.isDefined(call);
+  expect(call[1].headers).toEqual({
     Authorization: 'Bearer app-secret',
     'x-vercel-protection-bypass': 'vercel-secret',
   });
