@@ -4,8 +4,8 @@ import type { FileSystem, Path } from 'effect';
 import type { PlatformError } from 'effect/PlatformError';
 import type { SecureRandom } from 'effect/crypto';
 import { featureOverrides } from '@wisp/protocol/features';
+import { AppConfig } from '#/platform/config';
 import * as JsonFile from '#/platform/json-file';
-import { AppConfig } from '../app-config.ts';
 
 const Filled = Schema.String.check(Schema.isMinLength(1));
 
