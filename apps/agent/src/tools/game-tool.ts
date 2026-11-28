@@ -1,3 +1,4 @@
+// @effect-migrated
 import { Effect } from 'effect';
 import type { CharacterSections, GameAction, ItemSourcesInput } from '../host/game-access.ts';
 import type { ToolContext } from './tool.ts';
@@ -11,13 +12,19 @@ export const readItemSources = (ctx: ToolContext, input: ItemSourcesInput) =>
 export const runGameAction = (ctx: ToolContext, action: GameAction) =>
   runGame(ctx, (game) => game.runGameAction(ctx.session.id, action));
 
+/**
+ * Runs a game call for a tool's `execute`, with the session's game access and
+ * runner. A tool run outside a turn has neither, and its call rejects.
+ */
 export function runGame<A>(
   ctx: ToolContext,
   call: (game: NonNullable<ToolContext['gameAccess']>) => Effect.Effect<A, Error>,
   timeout = 35_000,
-) {
+): Promise<A> {
   const { gameAccess, runEffect } = ctx;
-  if (!gameAccess || !runEffect) throw Error('No active connection for this character');
+  if (!gameAccess || !runEffect) {
+    return Promise.reject(new Error('No active connection for this character'));
+  }
   return runEffect(
     Effect.suspend(() => call(gameAccess)),
     {

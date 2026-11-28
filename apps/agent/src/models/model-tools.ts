@@ -1,3 +1,4 @@
+// @effect-migrated
 import type { createOpenAI } from '@ai-sdk/openai';
 type CallOptions = Parameters<
   ReturnType<ReturnType<typeof createOpenAI>['responses']>['doStream']
@@ -26,12 +27,13 @@ export function filterWebSearch(options: CallOptions, enabled: boolean): CallOpt
   );
   const names = new Set(blocked.map((tool) => tool.name));
   // Filtering preserves the input model's tool version (v2/v3/v4).
+  const toolChoice: CallOptions['toolChoice'] =
+    options.toolChoice?.type === 'tool' && names.has(options.toolChoice.toolName)
+      ? { type: 'auto' }
+      : options.toolChoice;
   return {
     ...options,
     tools: options.tools?.filter((tool) => !names.has(tool.name)),
-    toolChoice:
-      options.toolChoice?.type === 'tool' && names.has(options.toolChoice.toolName)
-        ? { type: 'auto' }
-        : options.toolChoice,
-  } as CallOptions;
+    toolChoice,
+  };
 }

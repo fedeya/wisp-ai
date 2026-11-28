@@ -2,7 +2,7 @@ import type { PromiseChatGPTAuth } from '../../auth/index.ts';
 import { readCompletedResponse } from '../../models/response-stream.ts';
 import { normalizeModelError, safeErrorMessage } from '@wisp/agent/contract/model-errors';
 
-import { Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { wowheadQuery } from '@wisp/protocol/search';
 
 export function isForeverWowheadUrl(value: string): boolean {
@@ -104,7 +104,7 @@ export async function searchWowhead(
         signal: requestSignal,
       });
       if (!response.ok) {
-        const error = await normalizeModelError(response);
+        const error = await Effect.runPromise(normalizeModelError(response));
         const body = (await error.json().catch(() => null)) as {
           error?: { message?: string };
         } | null;

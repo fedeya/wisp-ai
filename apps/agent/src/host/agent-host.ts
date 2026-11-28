@@ -1,3 +1,6 @@
+// @effect-migrated
+import { Predicate, Schema } from 'effect';
+
 /**
  * Where agent code reaches the bridge. The bridge runs the agent in process and
  * registers its loopback endpoint here instead of exporting a token into the
@@ -7,17 +10,23 @@
  * Kept on `globalThis` because the bridge and a packaged engine copy can load
  * this file from two paths, which would otherwise be two module instances.
  */
-export interface AgentHost {
-  origin: string;
-  token: string;
-  capabilitiesFile?: string;
-}
+export const AgentHost = Schema.Struct({
+  origin: Schema.String,
+  token: Schema.String,
+  capabilitiesFile: Schema.optional(Schema.String),
+});
+export type AgentHost = typeof AgentHost.Type;
+
 const key = Symbol.for('wisp.agent-host');
+// The other module instance wrote the slot, so its value is checked, not trusted.
+const isAgentHost = Schema.is(AgentHost);
 
 export function setAgentHost(host: AgentHost | undefined) {
-  (globalThis as Record<symbol, unknown>)[key] = host;
+  Object.assign(globalThis, { [key]: host });
 }
 
 export function agentHost(): AgentHost | undefined {
-  return (globalThis as Record<symbol, unknown>)[key] as AgentHost | undefined;
+  const global: object = globalThis;
+  const host = Predicate.hasProperty(global, key) ? global[key] : undefined;
+  return isAgentHost(host) ? host : undefined;
 }

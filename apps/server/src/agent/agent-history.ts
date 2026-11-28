@@ -1,10 +1,12 @@
 import { and, asc, desc, eq, gte, isNotNull, max, ne, notInArray, sql } from 'drizzle-orm';
+import { Effect, Layer } from 'effect';
 import { FORMAT as SESSION_FORMAT, type Entry } from '@wisp/agent/session-message';
-import type {
+import {
+  HistoryError,
   HistoryStore,
-  SessionStart,
-  StoredRow,
-  TokenUsage,
+  type SessionStart,
+  type StoredRow,
+  type TokenUsage,
 } from '@wisp/agent/session-history';
 import { v7 as uuidv7 } from 'uuid';
 import { z } from 'zod';
@@ -25,7 +27,7 @@ type Transaction = Parameters<Parameters<ApplicationDatabase['transaction']>[0]>
  * for the life of the session: a compaction is a log entry saying where the
  * model's reading starts and what summarizes the messages before it.
  */
-export class AgentHistory implements HistoryStore {
+export class AgentHistory {
   readonly database: ApplicationDatabase;
   private readonly wispVersion: string;
   private readonly now: () => number;
@@ -168,3 +170,22 @@ export class AgentHistory implements HistoryStore {
     return last?.seq === null || last?.seq === undefined ? 0 : last.seq + 1;
   }
 }
+
+// Adapter for the agent: its `HistoryStore` over this Promise-based log. Remove
+// it when the log moves to `SqlDatabase` with the other repositories.
+const call = <A>(operation: HistoryError['operation'], run: () => Promise<A>) =>
+  Effect.tryPromise({ try: run, catch: (cause) => new HistoryError({ operation, cause }) });
+
+/** The agent's `HistoryStore` over `history`; a rejected call fails with a `HistoryError`. */
+export const historyStoreLayer = (history: AgentHistory) =>
+  Layer.succeed(
+    HistoryStore,
+    HistoryStore.of({
+      begin: (session, start) => call('begin', () => history.begin(session, start)),
+      load: (session) => call('load', () => history.load(session)),
+      append: (session, entries, model) =>
+        call('append', () => history.append(session, entries, model)),
+      addUsage: (session, usage) => call('addUsage', () => history.addUsage(session, usage)),
+      delete: (session) => call('delete', () => history.delete(session)),
+    }),
+  );

@@ -12,7 +12,7 @@ export const capabilitySchema = Schema.Struct({
   defaultEnabled: Schema.optional(Schema.Boolean),
 });
 export type Capability = typeof capabilitySchema.Type;
-export const toolDescriptions: Record<string, [string, string]> = {
+export const toolDescriptions = {
   manage_routine: [
     'Routines',
     'Create and manage character routines triggered by game events or intervals.',
@@ -136,7 +136,9 @@ export const toolDescriptions: Record<string, [string, string]> = {
   ],
   web_fetch: ['Read web pages', 'Open a public HTTPS URL and read its content without a browser.'],
   set_conversation_title: ['Conversation titles', 'Name conversations based on what you discuss.'],
-};
+} satisfies Record<string, [string, string]>;
+/** The name of a tool Wisp registers, as `toolDescriptions` lists it. */
+export type ToolName = keyof typeof toolDescriptions;
 
 export const coreCapabilities: Capability[] = [
   {

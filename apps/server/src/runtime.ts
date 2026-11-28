@@ -81,7 +81,7 @@ import * as AgentMcp from '@wisp/agent/mcp-tools';
 import * as Game from '@wisp/agent/game-access';
 import * as Memory from '@wisp/agent/memory';
 import * as AgentGameAccess from './game/agent-game-access.ts';
-import { AgentHistory } from './agent/agent-history.ts';
+import { AgentHistory, historyStoreLayer } from './agent/agent-history.ts';
 
 const packageMetadata = Schema.Struct({ version: Schema.String.check(Schema.isMinLength(1)) });
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
@@ -377,7 +377,9 @@ export const makeServer = Effect.fn('Server.make')(
       Layer.provide(agentMcp),
       Layer.provide(Capabilities.layerFromFile(() => capabilitySettings.agentFile)),
       Layer.provide(NodeFileSystem.layer),
-      Layer.provide(Agent.SessionHistory.layer(agentHistory)),
+      Layer.provide(
+        Agent.SessionHistory.layer.pipe(Layer.provide(historyStoreLayer(agentHistory))),
+      ),
       Layer.provide(Layer.succeed(Agent.EngineConfig, agentConfig)),
       Layer.provide(Layer.succeed(Game.Service, gameAccess)),
       Layer.provide(Layer.succeed(Memory.Service, memoryAccess)),

@@ -17,13 +17,14 @@ import {
   make,
   layer as agentLayer,
   EngineConfig,
+  HistoryError,
   SessionHistory,
   searchTools,
   type EngineEvent,
   type Entry,
   type TurnInput,
 } from '../src/engine.ts';
-import { MemoryHistory } from '../src/session/memory-history.ts';
+import * as MemoryHistory from '../src/session/memory-history.ts';
 import { gate } from './gate.ts';
 
 afterEach(() => setAgentHost(undefined));
@@ -152,13 +153,28 @@ async function fixture(
   const origin = 'http://127.0.0.1:' + (server.address() as { port: number }).port;
   setAgentHost({ origin, token: 'offline-token', capabilitiesFile: flags });
   // An in-memory log with the bridge store's rules: entries stay, compactions are entries.
-  const history = new (class extends MemoryHistory {
-    override async append(session: string, entries: readonly Entry[], model: string) {
-      if (options.appendFails?.(++appends)) throw Error('The disk is full.');
-      if (options.beforeAppend) await options.beforeAppend(entries);
-      return super.append(session, entries, model);
-    }
-  })();
+  const memory = Effect.runSync(MemoryHistory.make);
+  const store = SessionHistory.HistoryStore.of({
+    ...memory,
+    append: (session, entries, model) =>
+      Effect.gen(function* () {
+        if (options.appendFails?.(++appends)) {
+          return yield* new HistoryError({
+            operation: 'append',
+            cause: Error('The disk is full.'),
+          });
+        }
+        const beforeAppend = options.beforeAppend;
+        if (beforeAppend) yield* Effect.promise(() => beforeAppend(entries));
+        yield* memory.append(session, entries, model);
+      }),
+  });
+  const history = {
+    append: (session: string, entries: readonly Entry[], model: string) =>
+      Effect.runPromise(store.append(session, entries, model)),
+    entries: (session: string) => Effect.runSync(memory.entries(session)),
+    has: (session: string) => Effect.runSync(memory.has(session)),
+  };
   const messagesOf = (session: string) =>
     history.entries(session).filter(({ entry }) => entry.type !== 'compaction');
   const compactionsOf = (session: string) =>
@@ -177,7 +193,9 @@ async function fixture(
   });
   const engine = make(
     agentLayer.pipe(
-      Layer.provide(SessionHistory.layer(history)),
+      Layer.provide(
+        SessionHistory.layer.pipe(Layer.provide(Layer.succeed(SessionHistory.HistoryStore, store))),
+      ),
       Layer.provide(Layer.succeed(Game.Service, gameAccess)),
       Layer.provide(
         Layer.succeed(Memory.Service, {
@@ -220,7 +238,7 @@ async function fixture(
     history,
     messagesOf,
     compactionsOf,
-    sessions: history.sessions,
+    session: (session: string) => Effect.runSync(memory.session(session)),
     close: async () => {
       server.close();
       await engine.close();
@@ -302,7 +320,7 @@ test(
       });
       expect(first.events.filter((event) => event.type === 'usage.recorded')).toHaveLength(4);
       // The session belongs to its chat, and each model step's tokens add to its totals.
-      expect(f.sessions.get(session)).toMatchObject({
+      expect(f.session(session)).toMatchObject({
         chatId: 'chat',
         inputTokens: 80,
         outputTokens: 40,
