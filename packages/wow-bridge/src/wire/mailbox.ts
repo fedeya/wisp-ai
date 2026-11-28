@@ -112,10 +112,11 @@ export function decodeFrame(input: Uint8Array): MailboxFrame | null {
     return null;
   }
   const kind = bytes[2];
+  const flags = bytes.readUInt8(3);
   const length = bytes.readUInt16BE(10);
   if (
     bytes.length !== frameBytes(kind) ||
-    (bytes[3] & (kind === COMPACT_ACK_KIND ? ~3 : ~7)) !== 0 ||
+    (flags & (kind === COMPACT_ACK_KIND ? ~3 : ~7)) !== 0 ||
     bytes.readUInt32BE(4) === 0 ||
     length > payloadBytes(kind) ||
     bytes.readUInt32BE(bytes.length - CRC_BYTES) !== crc32(bytes.subarray(0, -CRC_BYTES))
@@ -130,7 +131,7 @@ export function decodeFrame(input: Uint8Array): MailboxFrame | null {
   }
   return {
     kind,
-    flags: bytes[3],
+    flags,
     generation: bytes.readUInt32BE(4),
     sequence: bytes.readUInt16BE(8),
     payload: bytes.subarray(HEADER_BYTES, HEADER_BYTES + length),
@@ -142,18 +143,19 @@ function readLane(text: string, indices: ReadonlyMap<string, number>): Buffer | 
   // state has never been explicitly changed from that default.
   const bytes = Buffer.alloc(indices.size / 8, 255);
   const seen = new Set<number>();
-  for (const match of text.matchAll(/^([^:\r\n]+):([^\r\n]*)/gm)) {
-    const index = indices.get(match[1]);
-    if (index === undefined) {
+  for (const [, name, value] of text.matchAll(/^([^:\r\n]+):([^\r\n]*)/gm)) {
+    // Both groups take part in every match; only an unknown helper name is skipped.
+    const index = name === undefined ? undefined : indices.get(name);
+    if (index === undefined || value === undefined) {
       continue;
     }
-    const state = match[2].trim();
+    const state = value.trim();
     if (seen.has(index) || (state !== 'enabled' && state !== 'disabled')) {
       return null;
     }
     seen.add(index);
     if (state === 'disabled') {
-      bytes[index >> 3] &= ~(1 << (index % 8));
+      bytes.writeUInt8(bytes.readUInt8(index >> 3) & ~(1 << (index % 8)), index >> 3);
     }
   }
   return bytes;
@@ -166,6 +168,10 @@ function replaceLane(text: string, frame: Uint8Array, indices: ReadonlyMap<strin
   if (frame.length !== indices.size / 8) {
     throw Error('Wrong Wisp mailbox frame size');
   }
+  // The size check puts every helper's byte inside the frame.
+  const bytes = Buffer.from(frame.buffer, frame.byteOffset, frame.byteLength);
+  const helperState = (index: number) =>
+    bytes.readUInt8(index >> 3) & (1 << (index % 8)) ? 'enabled' : 'disabled';
   const seen = new Set<number>();
   let result = text.replace(/^([^:\r\n]+):[^\r\n]*/gm, (line, name: string) => {
     const index = indices.get(name);
@@ -176,7 +182,7 @@ function replaceLane(text: string, frame: Uint8Array, indices: ReadonlyMap<strin
       throw Error('Duplicate Wisp mailbox helper');
     }
     seen.add(index);
-    return `${name}: ${frame[index >> 3] & (1 << (index % 8)) ? 'enabled' : 'disabled'}`;
+    return `${name}: ${helperState(index)}`;
   });
   const newline = text.includes('\r\n') ? '\r\n' : '\n';
   for (const [name, index] of indices) {
@@ -184,7 +190,7 @@ function replaceLane(text: string, frame: Uint8Array, indices: ReadonlyMap<strin
       if (result && !result.endsWith('\n')) {
         result += newline;
       }
-      result += `${name}: ${frame[index >> 3] & (1 << (index % 8)) ? 'enabled' : 'disabled'}${newline}`;
+      result += `${name}: ${helperState(index)}${newline}`;
     }
   }
   return result;
@@ -201,7 +207,7 @@ export function encodeMessage(
   generation: number,
   firstSequence = 0,
   compressed = false,
-) {
+): [Buffer<ArrayBuffer>, ...Buffer<ArrayBuffer>[]] {
   if (kind === COMPACT_ACK_KIND) {
     throw Error('Compact acknowledgements are individual frames');
   }
@@ -215,7 +221,7 @@ export function encodeMessage(
   }
   const capacity = payloadBytes(kind);
   const count = Math.max(1, Math.ceil(body.length / capacity));
-  return Array.from({ length: count }, (_, index) =>
+  const frame = (index: number) =>
     encodeFrame({
       kind,
       generation,
@@ -225,8 +231,9 @@ export function encodeMessage(
         (index === count - 1 ? LAST : 0) |
         (compressed ? COMPRESSED : 0),
       payload: body.subarray(index * capacity, (index + 1) * capacity),
-    }),
-  );
+    });
+  // Even an empty body takes one frame, so a message always has a first frame.
+  return [frame(0), ...Array.from({ length: count - 1 }, (_, index) => frame(index + 1))];
 }
 
 /** Reassembles one message at a time; packet/application ACK semantics live above it. */
