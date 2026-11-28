@@ -409,7 +409,7 @@ test(
         { type: 'ui', id: 'comparison' },
         { type: 'text', text: '\n\nDespués de la comparación.' },
       ]);
-      expect(reply.ui?.[0].kind).toBe('comparison');
+      expect(reply.ui?.[0]?.kind).toBe('comparison');
       expect(replyContent(reply)?.text).toContain('~~~text\n[[ref:example]]\n~~~');
       expect(reply.references).toMatchObject({ nova: { id: 122 }, frostbolt: { id: 116 } });
       expect(chat.activity.some((entry) => entry.name === 'wisp__present_ui')).toBe(false);

@@ -31,7 +31,7 @@ function transportHarness() {
     });
     lua.lua_getglobal(L, to_luastring('disk'));
     for (const [index, name] of DOWNLINK_HELPERS.entries()) {
-      lua.lua_pushboolean(L, Boolean(frame[index >> 3] & (1 << (index % 8))));
+      lua.lua_pushboolean(L, Boolean(frame.readUInt8(index >> 3) & (1 << (index % 8))));
       lua.lua_setfield(L, -2, to_luastring(name));
     }
     lua.lua_pop(L, 1);

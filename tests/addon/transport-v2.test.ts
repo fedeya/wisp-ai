@@ -95,7 +95,8 @@ ns.Core.Log=function(text)logs[#logs+1]=tostring(text)end
       run(
         `decodeMap[${JSON.stringify(payload)}]=${revision};` +
           DOWNLINK_HELPERS.map(
-            (name, index) => `disk['${name}']=${Boolean(frame[index >> 3] & (1 << (index % 8)))}`,
+            (name, index) =>
+              `disk['${name}']=${Boolean(frame.readUInt8(index >> 3) & (1 << (index % 8)))}`,
           ).join(';'),
       );
     },
@@ -187,7 +188,7 @@ test('missing, corrupt, zero-generation and noncanonical readiness consume no bu
   h.run("ns.Transport.Send({type='hello'});timers[.04]()");
   h.run('for i=1,100 do now=now+.1;timers[.1]()end;assert(loads==0 and resets>50 and #logs==0)');
   h.control(1, 17, (frame) => {
-    frame[15] ^= 1;
+    frame.writeUInt8(frame.readUInt8(15) ^ 1, 15);
   });
   h.run('now=now+1;timers[.1]();assert(loads==0)');
   h.control(1, 17, (frame) => {

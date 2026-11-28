@@ -115,7 +115,7 @@ test.runIf(Boolean(process.env.WISP_TEST_ENGINE_EXECUTABLE))(
         expect(db.prepare('SELECT count(*) AS n FROM __drizzle_migrations').get()!.n).toBe(
           (await readdir(migrationsFolder)).length,
         );
-        expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0].text);
+        expect(db.prepare('SELECT text FROM messages').get()!.text).toBe(chat.messages[0]?.text);
         expect(
           db
             .prepare('SELECT agent_session FROM chat_instance_state WHERE instance_id = ?')

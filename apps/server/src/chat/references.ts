@@ -57,56 +57,78 @@ export function linkedReferences(text: string): LinkedReference[] {
     );
     references.push(reference);
   };
-  for (const match of text.matchAll(/\|Hunit:([A-Za-z]+-[A-Za-z0-9-]+)\|h([\s\S]*?)\|h/g)) {
-    add({
-      kind: 'unit',
-      guid: match[1],
-      name: cleanLabel(match[2]),
-      nativeLink: match[0],
-      source: 'user_link',
-    });
+  // Every capture group in the patterns below is mandatory, so it takes part in
+  // each match; the `undefined` checks only narrow the types.
+  for (const [nativeLink, guid, label] of text.matchAll(
+    /\|Hunit:([A-Za-z]+-[A-Za-z0-9-]+)\|h([\s\S]*?)\|h/g,
+  )) {
+    if (guid === undefined || label === undefined) {
+      continue;
+    }
+    add({ kind: 'unit', guid, name: cleanLabel(label), nativeLink, source: 'user_link' });
   }
-  for (const match of text.matchAll(/\[([^\]]+)\]\(macro:([\da-f]+)\)/gi)) {
-    const name = Buffer.from(match[2], 'hex').toString('utf8');
+  for (const [, , hex] of text.matchAll(/\[([^\]]+)\]\(macro:([\da-f]+)\)/gi)) {
+    if (hex === undefined) {
+      continue;
+    }
+    const name = Buffer.from(hex, 'hex').toString('utf8');
     // oxlint-disable-next-line no-control-regex -- Strip or reject control bytes in game/UI text.
     if (name && Buffer.byteLength(name) <= 16 && !/[|\x00-\x1f]/.test(name)) {
       add({ kind: 'macro', name, source: 'user_link' });
     }
   }
-  for (const match of text.matchAll(/\|H(item|spell|quest):(\d+)[^|]*\|h([\s\S]*?)\|h/g)) {
-    const id = Number(match[2]),
-      name = cleanLabel(match[3]);
+  for (const [nativeLink, kind, rawId, label] of text.matchAll(
+    /\|H(item|spell|quest):(\d+)[^|]*\|h([\s\S]*?)\|h/g,
+  )) {
+    if (kind === undefined || rawId === undefined || label === undefined) {
+      continue;
+    }
+    const id = Number(rawId),
+      name = cleanLabel(label);
     if (Number.isSafeInteger(id) && id > 0) {
       add({
-        kind: match[1] as 'item' | 'spell' | 'quest',
+        kind: kind as 'item' | 'spell' | 'quest',
         id,
         name,
-        nativeLink: match[0],
+        nativeLink,
         source: 'user_link',
       });
     }
   }
-  for (const match of text.matchAll(/\[([^\]]+)\]\((item|spell|quest):(\d+)\)/g)) {
-    const id = Number(match[3]),
-      name = cleanLabel(match[1]);
+  for (const [, label, kind, rawId] of text.matchAll(/\[([^\]]+)\]\((item|spell|quest):(\d+)\)/g)) {
+    if (label === undefined || kind === undefined || rawId === undefined) {
+      continue;
+    }
+    const id = Number(rawId),
+      name = cleanLabel(label);
     if (Number.isSafeInteger(id) && id > 0) {
-      add({ kind: match[2] as 'item' | 'spell' | 'quest', id, name, source: 'user_link' });
+      add({ kind: kind as 'item' | 'spell' | 'quest', id, name, source: 'user_link' });
     }
   }
-  for (const match of text.matchAll(/\|Hworldmap:(\d+):(\d+):(\d+)[^|]*\|h([\s\S]*?)\|h/g)) {
-    const mapId = Number(match[1]),
-      x = Number(match[2]) / 100,
-      y = Number(match[3]) / 100,
-      name = cleanLabel(match[4]) || 'Map location';
+  for (const [nativeLink, rawMapId, rawX, rawY, label] of text.matchAll(
+    /\|Hworldmap:(\d+):(\d+):(\d+)[^|]*\|h([\s\S]*?)\|h/g,
+  )) {
+    if (rawMapId === undefined || rawX === undefined || rawY === undefined || label === undefined) {
+      continue;
+    }
+    const mapId = Number(rawMapId),
+      x = Number(rawX) / 100,
+      y = Number(rawY) / 100,
+      name = cleanLabel(label) || 'Map location';
     if (Number.isSafeInteger(mapId) && mapId > 0 && x <= 100 && y <= 100) {
-      add({ kind: 'map', mapId, x, y, name, nativeLink: match[0], source: 'user_link' });
+      add({ kind: 'map', mapId, x, y, name, nativeLink, source: 'user_link' });
     }
   }
-  for (const match of text.matchAll(/\[([^\]]+)\]\(map:(\d+):([\d.]+):([\d.]+)\)/g)) {
-    const mapId = Number(match[2]),
-      x = Number(match[3]),
-      y = Number(match[4]),
-      name = cleanLabel(match[1]);
+  for (const [, label, rawMapId, rawX, rawY] of text.matchAll(
+    /\[([^\]]+)\]\(map:(\d+):([\d.]+):([\d.]+)\)/g,
+  )) {
+    if (label === undefined || rawMapId === undefined || rawX === undefined || rawY === undefined) {
+      continue;
+    }
+    const mapId = Number(rawMapId),
+      x = Number(rawX),
+      y = Number(rawY),
+      name = cleanLabel(label);
     if (
       Number.isSafeInteger(mapId) &&
       mapId > 0 &&
@@ -120,9 +142,12 @@ export function linkedReferences(text: string): LinkedReference[] {
       add({ kind: 'map', mapId, x, y, name, source: 'user_link' });
     }
   }
-  for (const match of text.matchAll(/\[([^\]]+)\]\(map:(\d+)\)/g)) {
-    const mapId = Number(match[2]),
-      name = cleanLabel(match[1]);
+  for (const [, label, rawMapId] of text.matchAll(/\[([^\]]+)\]\(map:(\d+)\)/g)) {
+    if (label === undefined || rawMapId === undefined) {
+      continue;
+    }
+    const mapId = Number(rawMapId),
+      name = cleanLabel(label);
     if (Number.isSafeInteger(mapId) && mapId > 0) {
       add({ kind: 'map', mapId, name, source: 'user_link' });
     }
