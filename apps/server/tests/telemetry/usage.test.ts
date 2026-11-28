@@ -12,11 +12,13 @@ import {
   Option,
   Ref,
   Scope,
+  Stream,
 } from 'effect';
 import * as PlatformError from 'effect/PlatformError';
 import { TestClock } from 'effect/testing';
 import * as AppConfig from '#/platform/config';
 import { AppVersion } from '#/platform/app-version';
+import { Features } from '#/features';
 import { PostHogClient, PostHogError } from '../../src/telemetry/posthog.ts';
 import type { CaptureMessage, Properties } from '../../src/telemetry/posthog.ts';
 import { make, UsageTelemetry } from '../../src/telemetry/usage.ts';
@@ -50,6 +52,8 @@ class Harness extends Context.Service<
     /** The next capture fails, as an offline network would make it. */
     readonly failNext: Ref.Ref<boolean>;
     readonly optedOut: Deferred.Deferred<void>;
+    /** The flags `Features` reports as on. */
+    readonly features: Ref.Ref<readonly string[]>;
   }
 >()('@wisp/server/tests/telemetry/Harness') {}
 
@@ -62,6 +66,7 @@ const harness = Layer.effectContext(
     const hold = yield* Ref.make(Option.none<Deferred.Deferred<void>>());
     const failNext = yield* Ref.make(false);
     const optedOut = yield* Deferred.make<void>();
+    const features = yield* Ref.make<readonly string[]>([]);
     const fs = FileSystem.makeNoop({
       readFile: (file) =>
         Effect.gen(function* () {
@@ -104,15 +109,26 @@ const harness = Layer.effectContext(
       hold,
       failNext,
       optedOut,
+      features,
     }).pipe(Context.add(FileSystem.FileSystem, fs), Context.add(PostHogClient, client));
   }),
 );
 
+/** Features with only the flag names the harness says are on. */
+const features = Layer.unwrap(
+  Effect.gen(function* () {
+    const h = yield* Harness;
+    return Layer.mock(Features, {
+      channel: 'development',
+      changes: Stream.empty,
+      enabledNames: Ref.get(h.features),
+    });
+  }),
+);
+
 /** The harness, with `version` as the running Wisp and release reporting on unless `release` is false. */
-const environment = ({ version = '0.1.0', release = true } = {}) =>
-  Layer.mergeAll(
-    harness,
-    NodePath.layer,
+const environment = ({ version = '0.1.0', release = true } = {}) => {
+  const app = Layer.merge(
     Layer.succeed(AppVersion, AppVersion.of({ version })),
     AppConfig.layer.pipe(
       Layer.provide(
@@ -125,6 +141,8 @@ const environment = ({ version = '0.1.0', release = true } = {}) =>
       ),
     ),
   );
+  return Layer.mergeAll(NodePath.layer, app, features.pipe(Layer.provideMerge(harness)));
+};
 
 const telemetryLayer = Layer.effect(UsageTelemetry, make);
 
@@ -260,7 +278,7 @@ describe('UsageTelemetry', () => {
       yield* withTelemetry((telemetry) =>
         Effect.gen(function* () {
           yield* telemetry.chat({ mode: 'chat', outcome: 'completed', duration: 10 });
-          yield* telemetry.setFeatures(['new_panel', 'tips']);
+          yield* Effect.flatMap(Harness, (h) => Ref.set(h.features, ['new_panel', 'tips']));
           yield* telemetry.chat({ mode: 'chat', outcome: 'completed', duration: 20 });
         }),
       );

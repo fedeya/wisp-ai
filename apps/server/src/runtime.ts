@@ -73,8 +73,7 @@ import * as Simulation from './integrations/simulation/simulator.ts';
 import * as AppConfig from './platform/config.ts';
 import * as AppVersion from './platform/app-version.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
-import { Features } from './features.ts';
-import { featureChannel } from '@wisp/protocol/features';
+import * as Features from './features/index.ts';
 import { setAgentHost } from '@wisp/agent/agent-host';
 import * as Agent from '@wisp/agent/engine';
 import * as Capabilities from '@wisp/agent/capabilities';
@@ -86,6 +85,13 @@ import { AgentHistory } from './agent/agent-history.ts';
 
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
 const appVersion = AppVersion.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform]));
+// One Settings for the server and the services that save to it.
+const settingsLayer = Settings.layer.pipe(
+  Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom]),
+);
+const featuresLayer = Features.layer.pipe(
+  Layer.provide([AppConfig.layer, appVersion, settingsLayer, NodeCrypto.layerSecureRandom]),
+);
 
 /**
  * The migrated services `makeServer` receives from its caller, on the
@@ -110,9 +116,12 @@ export const ServerServices = Layer.mergeAll(
       NodeCrypto.layerSignature,
     ]),
   ),
-  Settings.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom])),
+  settingsLayer,
   appVersion,
-  UsageTelemetry.layer.pipe(Layer.provide([AppConfig.layer, appVersion, wowPlatform])),
+  featuresLayer,
+  UsageTelemetry.layer.pipe(
+    Layer.provide([AppConfig.layer, appVersion, wowPlatform, featuresLayer]),
+  ),
 );
 
 /** The migrated services; `main.ts` and `startServer` provide it. */
@@ -221,17 +230,16 @@ export const makeServer = Effect.fn('Server.make')(
         };
       },
     });
+    const features = yield* Features.Features;
+    // Rejects as `saveSettings` does when the override cannot be saved.
+    const setFeature = (id: string, enabled: boolean | null) =>
+      runPromise(
+        features
+          .set(id, enabled)
+          .pipe(Effect.catchTag('PlatformError', (error) => Effect.fail(error.cause ?? error))),
+      );
     // End of adapters.
-    const { features: featureOverrides, mcpConfig } = yield* settings.get;
-    const features = yield* startup(() =>
-      Features.start({
-        channel: featureChannel(bridgeVersion, appConfig.releaseBuild),
-        overrides: featureOverrides ?? {},
-        saveOverrides: (overrides) => saveSettings({ features: overrides }),
-        onChange: () => featuresChanged(),
-      }),
-    );
-    yield* telemetry.setFeatures(features.enabledNames());
+    const { mcpConfig } = yield* settings.get;
     const mcpFile = mcpConfig
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
@@ -290,7 +298,7 @@ export const makeServer = Effect.fn('Server.make')(
     const capabilitySettings = new CapabilitySettings(path.join(runtime, 'capabilities.json'));
     yield* startup(() => capabilitySettings.load());
     capabilitySettings.agentFile = path.join(runtime, 'agent-capabilities.json');
-    capabilitySettings.features = features.values();
+    capabilitySettings.features = runSync(features.values);
     const integrationState = new IntegrationState(capabilitySettings);
     const simulatorAvailable = yield* simulator.available;
     capabilitySettings.availability.set('integration:wowsims', {
@@ -348,7 +356,7 @@ export const makeServer = Effect.fn('Server.make')(
             : [],
           routinesAllowed: !!character && capabilitySettings.enabled('tool:manage_routine'),
           capabilities: capabilitySettings.snapshot(),
-          features: features.values(),
+          features: runSync(features.values),
         };
       },
     });
@@ -423,9 +431,8 @@ export const makeServer = Effect.fn('Server.make')(
     }
     // A saved override changed a flag: the agent reads it on its next turn, the
     // addon on its next snapshot and the desktop on its next status poll.
-    function featuresChanged() {
-      runSync(telemetry.setFeatures(features.enabledNames()));
-      capabilitySettings.features = features.values();
+    function featuresChanged(values: Features.FeatureValues) {
+      capabilitySettings.features = values;
       void capabilitySettings
         .publish()
         .catch((error) =>
@@ -437,6 +444,11 @@ export const makeServer = Effect.fn('Server.make')(
         );
       changed();
     }
+    // Subscribed before this returns, so no saved override is missed.
+    yield* features.changes.pipe(
+      Stream.runForEach((values) => Effect.sync(() => featuresChanged(values))),
+      Effect.forkScoped({ startImmediately: true }),
+    );
     const run = yield* createTurnRunner({
       // Tools of the MCP connections the player added stay generic.
       telemetry: turnTelemetry((name) =>
@@ -617,7 +629,7 @@ export const makeServer = Effect.fn('Server.make')(
         routineRuns: routineStore.history({ includeSilent: false, limit: 200 }),
         characters,
         appUpdate: appUpdateVersion,
-        features: features.state(),
+        features: runSync(features.state),
       };
     }
     let desktopStopTimer: ReturnType<typeof setTimeout> | undefined;
@@ -653,7 +665,7 @@ export const makeServer = Effect.fn('Server.make')(
             }
           }),
         ),
-      setFeature: (id, enabled) => features.set(id, enabled),
+      setFeature,
       setAppUpdate: (version) => {
         appUpdateVersion = version;
       },

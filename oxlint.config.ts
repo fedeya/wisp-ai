@@ -127,6 +127,7 @@ export default defineConfig({
     {
       files: [
         'apps/server/src/auth/**',
+        'apps/server/src/features/**',
         'apps/server/src/memory/**',
         'apps/server/src/platform/**',
         'apps/server/src/settings/**',

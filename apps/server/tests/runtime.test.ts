@@ -392,14 +392,20 @@ test('desktop API saves a provider and model without WoW', async () => {
     ]);
     // Without a saved model the default is the first; the saved one wins as soon as it is saved.
     expect(decodeStatus(await request('/status')).model).toBe(models[0].slug);
+    // A flag override and the model are saved to the same config.local.json.
+    await request('/features/set', { id: 'ask_wisp_moments', enabled: false });
     await request('/auth/model', { model: models[1].slug });
     const status = decodeStatus(await request('/status'));
     expect(status.model).toBe(models[1].slug);
     expect(status).toMatchObject({ ready: true, gameConnected: false, modelConnected: true });
     expect(status.auth.status).toBe('signed_out');
+    expect(status.features.flags).toContainEqual(
+      expect.objectContaining({ id: 'ask_wisp_moments', enabled: false, override: false }),
+    );
     expect(
       JSON.parse(await readFile(path.join(f.dataDirectory, 'config.local.json'), 'utf8')),
     ).toEqual({
+      features: { ask_wisp_moments: false },
       model: models[1].slug,
     });
     expect(status.connections[0]?.models[0]?.contextWindow).toBe(64000);
