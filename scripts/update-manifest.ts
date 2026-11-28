@@ -1,13 +1,9 @@
 // @effect-migrated
 // The updater manifest (dist/latest.json) of a signed Windows installer.
-//   node scripts/update-manifest.ts <version> <installer>
-// reads <installer>.sig and dist/release-notes.md, if there is one.
 import type { ReleaseChannel } from '@wisp/releases';
 import { DateTime, Effect, FileSystem, Path, Schema } from 'effect';
-import { Argument, Command } from 'effect/cli';
 import { releaseChannelOf } from './release-version.ts';
 import type { ReleaseVersionError } from './release-version.ts';
-import { runScript } from './run-script.ts';
 
 export class UpdateManifestError extends Schema.TaggedError<UpdateManifestError>()(
   'UpdateManifestError',
@@ -74,21 +70,3 @@ export const writeUpdateManifest = Effect.fnUntraced(function* (
     JSON.stringify(manifest, null, 2) + '\n',
   );
 });
-
-const write = Command.make(
-  'update-manifest',
-  {
-    version: Argument.String('version').pipe(Argument.withDescription('The installer version')),
-    installer: Argument.String('installer').pipe(
-      Argument.withDescription('The signed installer, next to its .sig file'),
-    ),
-  },
-  Effect.fn(function* ({ version, installer }) {
-    const path = yield* Path.Path;
-    yield* writeUpdateManifest(version, installer, path.resolve());
-  }),
-).pipe(Command.withDescription('Write the updater manifest of a signed installer'));
-
-if (import.meta.main) {
-  write.pipe(Command.run({ version: '1.0.0' }), runScript);
-}
