@@ -207,6 +207,7 @@ export const makeServer = Effect.fn('Server.make')(
             return await readFile(mcpFile, 'utf8');
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            return undefined;
           }
         },
         writeConfig: (servers) => writeJson(mcpFile, { servers }),

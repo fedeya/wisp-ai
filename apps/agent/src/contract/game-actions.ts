@@ -10,6 +10,7 @@ export function macroBodyError(body: string): string | undefined {
   ) {
     return 'Macro bodies must contain 1–255 UTF-8 bytes of macro text';
   }
+  return undefined;
 }
 export const waypointInput = z.object({
   mapId: z.number().int().positive(),
