@@ -171,6 +171,6 @@ export function connectionModelSlug(connection: string, model: string) {
   return `connection:${connection}:${model}`;
 }
 export function parseConnectionModel(slug: string) {
-  const match = /^connection:([0-9a-f-]{36}):(.+)$/i.exec(slug);
-  return match ? { connection: match[1], model: match[2] } : undefined;
+  const [, connection, model] = /^connection:([0-9a-f-]{36}):(.+)$/i.exec(slug) ?? [];
+  return connection && model ? { connection, model } : undefined;
 }
