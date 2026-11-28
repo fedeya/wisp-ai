@@ -1,6 +1,8 @@
+// @effect-migrated
 import { Effect, Schema } from 'effect';
 import type { Capability } from '@wisp/protocol/capabilities';
-import type { BundledMcp, McpManager } from './mcp-manager.ts';
+import type * as McpManager from './mcp-manager.ts';
+import type { BundledMcp } from './mcp-manager.ts';
 
 export const name = 'everloot';
 const description = 'Look up Forever drops, vendors, professions and market history.';
@@ -90,27 +92,28 @@ export type Lookup = (
   args: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
 
-const isStructuredContent = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
+/** Everloot is switched off, or did not answer a lookup with data. */
+export class EverlootError extends Schema.TaggedError<EverlootError>()('EverlootError', {
+  message: Schema.String,
+}) {}
 
 /** The game catalog uses the same connection as the model tools. */
 export const read = Effect.fn('Everloot.read')(function* (
-  manager: Pick<McpManager, 'call'>,
+  manager: Pick<McpManager.Interface, 'call'>,
   tool: LookupTool,
   args: Record<string, unknown>,
   allowed: () => boolean,
 ) {
-  if (!allowed()) return yield* Effect.fail(Error('MCP tool disabled'));
+  if (!allowed()) return yield* new EverlootError({ message: 'MCP tool disabled' });
   const result = yield* manager.call(
     name,
     tool,
     args,
-    () => {
-      if (!allowed()) throw Error('MCP tool disabled');
-    },
+    () => (allowed() ? undefined : 'MCP tool disabled'),
     15_000,
   );
-  if (result.isError || !isStructuredContent(result.structuredContent)) {
-    return yield* Effect.fail(Error('Everloot could not answer ' + tool));
+  if (result.isError || result.structuredContent === undefined) {
+    return yield* new EverlootError({ message: 'Everloot could not answer ' + tool });
   }
   return result.structuredContent;
 });

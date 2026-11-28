@@ -1,9 +1,12 @@
-import { Context, Effect, Layer } from 'effect';
+// @effect-migrated
+import { Context, Effect, Layer, Schema } from 'effect';
 import { HostError } from '../execution/engine-errors.ts';
 import * as Capabilities from '../host/capabilities.ts';
 import type { CapabilitySnapshot } from '../host/capabilities.ts';
+import * as McpStorage from '../host/mcp-storage.ts';
 import * as McpConnection from './mcp-connection.ts';
-import { McpManager, type BundledMcp, type McpToolGroup } from './mcp-manager.ts';
+import * as McpManager from './mcp-manager.ts';
+import type { BundledMcp, McpToolGroup } from './mcp-manager.ts';
 
 export interface McpTool {
   name: string;
@@ -15,11 +18,12 @@ export interface McpTool {
 interface ToolSource {
   server: string;
   toolGroups: readonly McpToolGroup[];
-  trustedReadOnly?: boolean;
+  trustedReadOnly?: boolean | undefined;
 }
 
-function toolSources(manager: McpManager): ToolSource[] {
-  return [
+const toolSources = Effect.fnUntraced(function* (manager: McpManager.Interface) {
+  const custom = yield* manager.list();
+  const sources: ToolSource[] = [
     ...manager.bundled
       .filter(({ definition }) => definition.enabled)
       .map((profile) => ({
@@ -27,8 +31,7 @@ function toolSources(manager: McpManager): ToolSource[] {
         toolGroups: profile.toolGroups,
         trustedReadOnly: profile.trustedReadOnly,
       })),
-    ...manager
-      .list()
+    ...custom
       .filter((server) => server.enabled)
       .map((server) => ({
         server: server.name,
@@ -40,7 +43,8 @@ function toolSources(manager: McpManager): ToolSource[] {
         ],
       })),
   ];
-}
+  return sources;
+});
 
 function allowedBy(capabilities: CapabilitySnapshot) {
   return (server: string, tool?: string) =>
@@ -48,15 +52,23 @@ function allowedBy(capabilities: CapabilitySnapshot) {
     (tool === undefined || !capabilities.disabledMcpTools(server).includes(tool));
 }
 
-function withoutProvided(schema: unknown, provided?: Record<string, unknown>) {
-  if (!provided || !schema || typeof schema !== 'object') return schema;
-  const value = schema as { properties?: Record<string, unknown>; required?: string[] };
+const isProperties = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
+const isRequired = Schema.is(Schema.Array(Schema.String));
+
+/** The tool's input schema without the arguments Wisp fixes. */
+function withoutProvided(
+  schema: Readonly<Record<string, unknown>>,
+  provided?: Readonly<Record<string, unknown>>,
+) {
+  if (!provided) return schema;
+  const properties = isProperties(schema.properties) ? schema.properties : {};
+  const required = isRequired(schema.required) ? schema.required : [];
   return {
-    ...value,
+    ...schema,
     properties: Object.fromEntries(
-      Object.entries(value.properties || {}).filter(([key]) => !(key in provided)),
+      Object.entries(properties).filter(([key]) => !(key in provided)),
     ),
-    required: (value.required || []).filter((key) => !(key in provided)),
+    required: required.filter((key) => !(key in provided)),
   };
 }
 
@@ -71,25 +83,18 @@ export class Mcp extends Context.Service<
   }
 >()('@wisp/agent/Mcp') {}
 
-interface McpPolicy {
+/** The host's rules for the current turn. */
+export interface McpPolicy {
   readonly allowed: (server: string, tool?: string) => boolean;
   readonly readOnly: (session: string) => boolean;
 }
 
-export const layer = (bundled: readonly BundledMcp[] = []) =>
-  layerWithManager(
-    Effect.acquireRelease(McpManager.make('.', undefined, bundled), (manager) => manager.close()),
-  ).pipe(Layer.provide(McpConnection.layer));
-
-export const layerFromManager = (manager: McpManager, policy: McpPolicy) =>
-  layerWithManager(Effect.succeed(manager), policy);
-
-const layerWithManager = <R>(acquire: Effect.Effect<McpManager, never, R>, policy?: McpPolicy) =>
+const make = (policy?: McpPolicy) =>
   Layer.effect(
     Mcp,
     Effect.gen(function* () {
       const settings = yield* Capabilities.Service;
-      const manager = yield* acquire;
+      const manager = yield* McpManager.Service;
 
       const tools = Effect.fn('Mcp.tools')(function* (
         session: string,
@@ -97,7 +102,7 @@ const layerWithManager = <R>(acquire: Effect.Effect<McpManager, never, R>, polic
       ) {
         const allowed = policy?.allowed ?? allowedBy(capabilities);
         const result: McpTool[] = [];
-        for (const { server, toolGroups, trustedReadOnly } of toolSources(manager)) {
+        for (const { server, toolGroups, trustedReadOnly } of yield* toolSources(manager)) {
           const enabledSources = toolGroups.filter(
             ({ allow }) => !allow || allow.some((name) => allowed(server, name)),
           );
@@ -136,16 +141,15 @@ const layerWithManager = <R>(acquire: Effect.Effect<McpManager, never, R>, polic
                   }
                   return yield* manager
                     .call(server, tool.name, { ...input, ...provided }, (current) => {
-                      if (!mayCall(server, tool.name)) throw Error('MCP tool disabled');
+                      if (!mayCall(server, tool.name)) return 'MCP tool disabled';
                       if (
                         !trustedReadOnly &&
                         policy?.readOnly(session) &&
                         current.annotations?.readOnlyHint !== true
                       ) {
-                        throw Error(
-                          'Only explicitly read-only MCP tools are available during automatic advice',
-                        );
+                        return 'Only explicitly read-only MCP tools are available during automatic advice';
                       }
+                      return undefined;
                     })
                     .pipe(Effect.mapError((cause) => new HostError({ cause })));
                 }),
@@ -158,3 +162,16 @@ const layerWithManager = <R>(acquire: Effect.Effect<McpManager, never, R>, polic
       return Mcp.of({ tools });
     }),
   );
+
+/**
+ * The agent's own MCP servers, switched by its capability settings, with
+ * nothing saved: for the agent without a host, such as the evals.
+ */
+export const layer = (bundled: readonly BundledMcp[] = []) =>
+  make().pipe(
+    Layer.provide(McpManager.layer({ bundled })),
+    Layer.provide([McpConnection.layer, McpStorage.layerNone]),
+  );
+
+/** The host's MCP manager, under the host's policy. */
+export const layerWithPolicy = (policy: McpPolicy) => make(policy);

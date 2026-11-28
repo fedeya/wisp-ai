@@ -16,7 +16,7 @@ import * as Game from '@wisp/agent/game-access';
 import { actionSchema, actionTools } from '@wisp/agent/contract/game-actions';
 import { rejectUnknownKeys } from '@wisp/protocol/checks';
 import { expectedCharacter } from '@wisp/protocol/character-key';
-import type { McpManager } from '@wisp/agent/mcp-manager';
+import type * as McpManager from '@wisp/agent/mcp-manager';
 import * as Everloot from '@wisp/agent/everloot';
 import type { Connection, GameCall } from '@wisp/wow-bridge';
 import type { Chat } from '../chat/events.ts';
@@ -62,7 +62,7 @@ interface Dependencies {
   currentTransport: () => string;
   requestGame: Connection['request'];
   capabilitySettings: Pick<CapabilitySettings, 'enabled'>;
-  mcpManager: Pick<McpManager, 'call'>;
+  mcpManager: Pick<McpManager.Interface, 'call'>;
 }
 
 const asError = (cause: unknown) =>

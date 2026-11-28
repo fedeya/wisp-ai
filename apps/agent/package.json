@@ -34,6 +34,7 @@
     "./mcp-tools": "./src/integrations/mcp-tools.ts",
     "./mcp-connection": "./src/integrations/mcp-connection.ts",
     "./mcp-manager": "./src/integrations/mcp-manager.ts",
+    "./mcp-storage": "./src/host/mcp-storage.ts",
     "./everloot": "./src/integrations/everloot.ts",
     "./contract/*": "./src/contract/*.ts"
   },
