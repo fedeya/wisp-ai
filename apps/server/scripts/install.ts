@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, cp, access, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import * as NodeServices from '@effect/platform-node/NodeServices';
 import { Effect } from 'effect';
 import {
   SLOT_COUNT,
@@ -24,7 +25,7 @@ if (!wow) {
 await access(path.join(wow, 'Wow.exe'));
 const addons = path.join(wow, 'Interface', 'AddOns');
 await mkdir(addons, { recursive: true });
-await migrateGameSaves(wow);
+await Effect.runPromise(migrateGameSaves(wow).pipe(Effect.provide(NodeServices.layer)));
 const source = path.join(root, 'addon', 'WispAI');
 const toc = await readFile(path.join(source, 'WispAI.toc'), 'utf8');
 const addonVersion = addonVersionFromToc(toc);
@@ -64,7 +65,9 @@ if (!process.argv.slice(3).includes('--skip-config')) {
   } catch {}
   await writeFile(paths.config, JSON.stringify(config, null, 2) + '\n');
 }
-const retired = await retireLegacyAddons(wow);
+const retired = await Effect.runPromise(
+  retireLegacyAddons(wow).pipe(Effect.provide(NodeServices.layer)),
+);
 if (retired.count) {
   console.log('Previous addon installation backed up to ' + retired.backup);
 }
