@@ -9,7 +9,6 @@ import {
   Layer,
   Option,
   Redacted,
-  Schema,
   Scope,
   Stream,
 } from 'effect';
@@ -19,7 +18,7 @@ import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
 import * as NodeCrypto from '@effect/platform-node/NodeCrypto';
 import { releaseRuntimeResource, RuntimeResources } from './runtime-resources.ts';
-import { UsageTelemetry } from './telemetry.ts';
+import * as UsageTelemetry from './telemetry/index.ts';
 import { ModelFailures } from './models/model-failures.ts';
 import { startRoutineScheduler } from './routines/routine-scheduler.ts';
 import { createPacketReceiver } from './game/packet-receiver.ts';
@@ -28,7 +27,7 @@ import { readCharacterNames } from './chat/character-keys.ts';
 import { createSessionState } from './session-state.ts';
 import { createDesktopApp } from './api/desktop-handler.ts';
 import type { Status } from '@wisp/protocol/desktop';
-import { readJson, writeJson } from './json-file.ts';
+import { writeJson } from './json-file.ts';
 import { createAgentHandler } from './agent/agent-server.ts';
 import * as WowBridge from '@wisp/wow-bridge';
 import { createServer } from 'node:http';
@@ -41,6 +40,7 @@ import { ChatStore } from './chat/chat-store.ts';
 import { applicationDatabaseFile } from '@wisp/db/application-file';
 import { ApplicationDatabase } from './application-database.ts';
 import { createTurnRunner } from './agent/turn-runner.ts';
+import type { TurnTelemetry } from './agent/turn-runner.ts';
 import { errorMessage } from './errors.ts';
 import { bridgeLogging } from './logger.ts';
 import * as MemoryRepository from './memory/repository.ts';
@@ -71,6 +71,7 @@ import * as TheWoWDB from './integrations/thewowdb/index.ts';
 import * as HttpClient from './platform/http-client.ts';
 import * as Simulation from './integrations/simulation/simulator.ts';
 import * as AppConfig from './platform/config.ts';
+import * as AppVersion from './platform/app-version.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
@@ -83,8 +84,8 @@ import * as Memory from '@wisp/agent/memory';
 import * as AgentGameAccess from './game/agent-game-access.ts';
 import { AgentHistory } from './agent/agent-history.ts';
 
-const packageMetadata = Schema.Struct({ version: Schema.String.check(Schema.isMinLength(1)) });
 const wowPlatform = Layer.merge(NodeFileSystem.layer, NodePath.layer);
+const appVersion = AppVersion.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform]));
 
 /**
  * The migrated services `makeServer` receives from its caller, on the
@@ -110,6 +111,8 @@ export const ServerServices = Layer.mergeAll(
     ]),
   ),
   Settings.layer.pipe(Layer.provide([AppConfig.layer, wowPlatform, NodeCrypto.layerSecureRandom])),
+  appVersion,
+  UsageTelemetry.layer.pipe(Layer.provide([AppConfig.layer, appVersion, wowPlatform])),
 );
 
 /** The migrated services; `main.ts` and `startServer` provide it. */
@@ -158,18 +161,12 @@ export const makeServer = Effect.fn('Server.make')(
     const appConfig = yield* AppConfig.AppConfig;
     const { paths } = appConfig;
     const ROOT = paths.root;
-    const [bridgeVersion, expectedAddonVersion] = yield* startup(() =>
-      Promise.all([
-        readJson(path.join(ROOT, 'package.json'), packageMetadata, () => ({
-          version: 'unknown',
-        }))
-          .then((metadata) => metadata.version)
-          .catch(() => 'unknown'),
-        readFile(path.join(ROOT, 'addon/WispAI/WispAI.toc'), 'utf8').then(
-          addonVersionFromToc,
-          () => undefined,
-        ),
-      ]),
+    const { version: bridgeVersion } = yield* AppVersion.AppVersion;
+    const expectedAddonVersion = yield* startup(() =>
+      readFile(path.join(ROOT, 'addon/WispAI/WispAI.toc'), 'utf8').then(
+        addonVersionFromToc,
+        () => undefined,
+      ),
     );
     const runtime = paths.runtime;
     const simulator = yield* Simulation.Simulator;
@@ -197,6 +194,33 @@ export const makeServer = Effect.fn('Server.make')(
     };
     const chatgpt = yield* ChatGPTAuth.ChatGPTAuth;
     const auth = promiseChatGPTAuth(chatgpt, context);
+    const telemetry = yield* UsageTelemetry.UsageTelemetry;
+    const searchTelemetry = {
+      webSearch: (search: UsageTelemetry.WebSearchTelemetry) => {
+        runFork(telemetry.webSearch(search));
+      },
+    };
+    // The turn runner observes stream events synchronously.
+    const turnTelemetry = (
+      isCustomMcpConnection: (connection: string) => boolean,
+    ): TurnTelemetry => ({
+      chat: (mode, outcome, duration, errorCode, firstTextMs, usage, details = {}) => {
+        runFork(
+          telemetry.chat({ mode, outcome, duration, errorCode, firstTextMs, usage, ...details }),
+        );
+      },
+      toolObserver: () => {
+        const observer = runSync(telemetry.toolObserver(isCustomMcpConnection));
+        return (event) => runSync(observer.observe(event));
+      },
+      usageObserver: () => {
+        const observer = runSync(telemetry.usageObserver);
+        return {
+          observe: (event) => runSync(observer.observe(event)),
+          usage: () => runSync(observer.usage),
+        };
+      },
+    });
     // End of adapters.
     const { features: featureOverrides, mcpConfig } = yield* settings.get;
     const features = yield* startup(() =>
@@ -207,6 +231,7 @@ export const makeServer = Effect.fn('Server.make')(
         onChange: () => featuresChanged(),
       }),
     );
+    yield* telemetry.setFeatures(features.enabledNames());
     const mcpFile = mcpConfig
       ? path.resolve(paths.dataRoot, mcpConfig)
       : path.join(runtime, 'mcp.json');
@@ -229,12 +254,6 @@ export const makeServer = Effect.fn('Server.make')(
     );
     yield* Effect.addFinalizer(() => mcpManager.close());
     yield* mcpManager.load();
-    const telemetry = new UsageTelemetry(paths.dataRoot, bridgeVersion, {
-      release: appConfig.telemetryRelease,
-      isCustomMcpConnection: (name) => Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
-      enabledFeatures: () => features.enabledNames(),
-    });
-    yield* releaseRuntimeResource(() => telemetry.close());
     const connections = new ModelConnections(path.join(runtime, 'connections.json'), vault, auth);
     yield* startup(() => connections.load());
     const modelFailures = new ModelFailures();
@@ -405,6 +424,7 @@ export const makeServer = Effect.fn('Server.make')(
     // A saved override changed a flag: the agent reads it on its next turn, the
     // addon on its next snapshot and the desktop on its next status poll.
     function featuresChanged() {
+      runSync(telemetry.setFeatures(features.enabledNames()));
       capabilitySettings.features = features.values();
       void capabilitySettings
         .publish()
@@ -418,7 +438,10 @@ export const makeServer = Effect.fn('Server.make')(
       changed();
     }
     const run = yield* createTurnRunner({
-      telemetry,
+      // Tools of the MCP connections the player added stay generic.
+      telemetry: turnTelemetry((name) =>
+        Object.hasOwn(mcpManager.servers, name.replace(/-/g, '_')),
+      ),
       modelFailures,
       modelProvider: (model) => connections.provider(model),
       engine,
@@ -476,12 +499,18 @@ export const makeServer = Effect.fn('Server.make')(
       runtime,
       changed,
     });
+    const observeGameConnection = Effect.suspend(() =>
+      telemetry.gameConnectionProgress({
+        connected: transport.gameConnected(),
+        hasReadySnapshot: transport.current()?.status().readyPublished ?? false,
+      }),
+    );
     const receive = Effect.fnUntraced(function* (packet: Parameters<typeof receivePacket>[0]) {
       const previousSession = state.activeTransport;
-      observeGameConnection();
+      yield* observeGameConnection;
       yield* receivePacket(packet);
       if (state.activeTransport !== previousSession) {
-        telemetry.gameConnectionStarted();
+        yield* telemetry.gameConnectionStarted;
       }
     });
     const transport: TransportConnection = yield* createTransportConnection({
@@ -497,7 +526,7 @@ export const makeServer = Effect.fn('Server.make')(
     yield* Effect.addFinalizer(() => transport.serialize(transport.disconnect));
     const server = createServer(
       yield* createAgentHandler({
-        telemetry,
+        telemetry: searchTelemetry,
         modelFailures,
         token,
         auth,
@@ -564,12 +593,6 @@ export const makeServer = Effect.fn('Server.make')(
           ),
         ),
     );
-    function observeGameConnection() {
-      telemetry.gameConnectionProgress(
-        transport.gameConnected(),
-        transport.current()?.status().readyPublished ?? false,
-      );
-    }
     function desktopStatus(): Status {
       const characters = readCharacterNames(applicationDatabase.orm);
       return {
@@ -690,7 +713,7 @@ export const makeServer = Effect.fn('Server.make')(
     // the addon's acknowledged revision, and a publish that is still dirty
     // because the transport was missing or its last write failed.
     const publish = setInterval(() => {
-      observeGameConnection();
+      runFork(observeGameConnection);
       publisher.retry();
     }, PUBLISH_MIN_INTERVAL_MS);
     yield* Effect.logInfo('Wisp started').pipe(

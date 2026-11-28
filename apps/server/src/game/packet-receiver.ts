@@ -26,14 +26,14 @@ import { chooseChatModel } from '../chat/chat-model.ts';
 import { resumeChat, isEmptyDraft } from '../chat/sessions.ts';
 import { newChat, openChat, promoteChat, isWorking, settleTurn } from '../chat/chat-lifecycle.ts';
 import { errorMessage } from '../errors.ts';
-import type { UsageTelemetry } from '../telemetry.ts';
+import type { UsageTelemetry } from '#/telemetry';
 import { endSession, type AgentEngine } from '../agent/agent-session.ts';
 import { Effect, Option, Schema } from 'effect';
 // The addon's routine packets are strict, like the protocol schemas.
 const decodeRoutineEvent = Schema.decodeUnknownOption(routineEvent, rejectUnknownKeys);
 const decodeRoutineAction = Schema.decodeUnknownOption(routineInput, rejectUnknownKeys);
 interface ReceiverDependencies {
-  telemetry?: Pick<UsageTelemetry, 'game'>;
+  telemetry?: UsageTelemetry['Service'];
   state: SessionState;
   engine: Pick<AgentEngine, 'end'>;
   request: Connection['request'];
@@ -134,8 +134,12 @@ export const createPacketReceiver = Effect.fnUntraced(function* (deps: ReceiverD
     packet = { ...packet, context: contextCache.resolve(packet.context) };
     state.questRevision = contextCache.revision;
     state.characterRevision = contextCache.characterRevision;
-    if (integrationState.receive(packet.integrations) && integrationState.report) {
-      deps.telemetry?.game(integrationState.report.version);
+    if (
+      integrationState.receive(packet.integrations) &&
+      integrationState.report &&
+      deps.telemetry
+    ) {
+      yield* deps.telemetry.game(integrationState.report.version);
     }
     if (JSON.stringify(capabilitySettings.snapshot()) !== beforeIntegrations) {
       void capabilitySettings.publish().catch((error) =>

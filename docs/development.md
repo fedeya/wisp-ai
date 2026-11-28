@@ -236,7 +236,7 @@ The native host sets `WISP_TELEMETRY_RELEASE=1` only in release builds without
 `WISP_PAYLOAD_ROOT` or an external `DO_NOT_TRACK=1`. Source bridge runs default to
 disabled.
 
-`apps/server/src/telemetry.ts` reads the native preference before each send and
+`apps/server/src/telemetry/` reads the native preference before each send and
 reports `chat_completed`, `tool_executed`, `web_search_finished`, `game_connected`,
 `game_connection_finished` and daily `app_active`.
 Chat outcomes include `completed`, `needs_input`, `cancelled`, `failed` and

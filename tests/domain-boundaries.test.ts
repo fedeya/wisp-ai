@@ -28,7 +28,6 @@ const rootFiles = new Set([
   'runtime-resources.ts',
   'runtime.ts',
   'session-state.ts',
-  'telemetry.ts',
 ]);
 
 /** The composition root wires every domain's internals until phase 5 replaces it. */

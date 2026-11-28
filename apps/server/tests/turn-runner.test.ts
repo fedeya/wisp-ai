@@ -1,7 +1,11 @@
 import { test, expect, vi } from 'vitest';
 import { captureLogs, runBridgeEffect } from './capture-logs.ts';
 import type { TurnInput } from '@wisp/agent/engine';
-import { createTurnRunner, endedOnUsageLimit } from '../src/agent/turn-runner.ts';
+import {
+  createTurnRunner,
+  endedOnUsageLimit,
+  type TurnTelemetry,
+} from '../src/agent/turn-runner.ts';
 import { ChatGPTAuthError } from '../src/auth/index.ts';
 import { newChat } from '../src/chat/chat-lifecycle.ts';
 import { queryCharacterSections } from '../src/chat/context.ts';
@@ -9,7 +13,6 @@ import { projectChats } from '../src/chat/chat-projection.ts';
 import { createSessionState } from '../src/session-state.ts';
 import { SnapshotGate } from '@wisp/wow-bridge/snapshots';
 import { PRESENT_UI_TOOL } from '@wisp/agent/contract/reply-presentation';
-import type { UsageTelemetry } from '../src/telemetry.ts';
 import { ModelFailures, httpFailureKind } from '../src/models/model-failures.ts';
 
 const noUsage = { modelCalls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
@@ -17,7 +20,7 @@ const usageObserver = () => ({ observe: vi.fn(), usage: () => noUsage });
 
 function fixture(
   titlesEnabled = true,
-  telemetry?: Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>,
+  telemetry?: TurnTelemetry,
   idleTimeoutMs?: number,
   defaultModel = 'model',
   extra: Partial<Parameters<typeof createTurnRunner>[0]> = {},
@@ -778,7 +781,7 @@ test('a turn whose engine goes silent fails as a timeout and frees the engine se
       chat: (_mode, outcome) => chats.push({ chat: 'chat', outcome }),
       toolObserver: () => () => {},
       usageObserver,
-    } as Pick<UsageTelemetry, 'chat' | 'toolObserver' | 'usageObserver'>,
+    } satisfies TurnTelemetry,
     30,
   );
   f.send.mockResolvedValueOnce({
