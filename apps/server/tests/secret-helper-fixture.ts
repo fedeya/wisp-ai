@@ -12,6 +12,8 @@ if (key === 'hangs') setInterval(() => {}, 1000);
 else if (key === 'too-large') process.stdout.write('x'.repeat(1024 * 1024 + 1));
 // Exits before reading its input, so a large write hits a closed pipe.
 else if (key === 'exits-early') process.exit(2);
+// Reads back the data folder the helper was given.
+else if (key === 'data-dir') process.stdout.write(process.env.WISP_DATA_DIR ?? '');
 else if (operation === 'write') writeFileSync(file, readFileSync(0));
 else {
   try {

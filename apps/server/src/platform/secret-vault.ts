@@ -41,9 +41,11 @@ export interface HelperOptions {
   readonly command: readonly [executable: string, ...args: string[]];
   /** How long one call may run before the helper is stopped. */
   readonly timeout?: Duration.Input;
+  /** Variables set for the helper on top of this process's environment. */
+  readonly env?: Readonly<Record<string, string>>;
 }
 
-const make = Effect.fnUntraced(function* ({ command, timeout = '10 seconds' }: HelperOptions) {
+const make = Effect.fnUntraced(function* ({ command, timeout = '10 seconds', env }: HelperOptions) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const [executable, ...prefix] = command;
 
@@ -53,6 +55,8 @@ const make = Effect.fnUntraced(function* ({ command, timeout = '10 seconds' }: H
         ChildProcess.make(executable, [...prefix, '--secret', operation, key], {
           detached: false,
           stderr: 'ignore',
+          env,
+          extendEnv: true,
         }),
       );
       // A helper can exit without reading its input, which fails this write
