@@ -50,7 +50,8 @@ export const layer = Layer.effect(
       Effect.flatMap(
         Option.match({
           onSome: Effect.succeed,
-          onNone: () => path.fromFileUrl(new URL('../../../', import.meta.url)).pipe(Effect.orDie),
+          onNone: () =>
+            path.fromFileUrl(new URL('../../../../', import.meta.url)).pipe(Effect.orDie),
         }),
       ),
     );

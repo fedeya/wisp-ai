@@ -26,6 +26,7 @@ function makeManager(
         return await readFile(file, 'utf8');
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        return undefined;
       }
     },
     writeConfig: (servers) => writeFile(file, JSON.stringify({ servers })),

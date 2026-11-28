@@ -97,6 +97,7 @@ export const createAgentApp = Effect.fnUntraced(function* (deps: AgentDependenci
       return c.text('Forbidden', 403);
     }
     await next();
+    return undefined;
   });
 
   // Model proxies stream on the raw Node request and response.

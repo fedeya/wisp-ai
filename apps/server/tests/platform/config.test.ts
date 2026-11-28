@@ -3,8 +3,8 @@ import * as NodeFileSystem from '@effect/platform-node/NodeFileSystem';
 import * as NodePath from '@effect/platform-node/NodePath';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ConfigProvider, Effect, FileSystem, Layer } from 'effect';
-import * as AppConfig from '../src/app-config.ts';
+import { ConfigProvider, Effect, FileSystem, Layer, Schema } from 'effect';
+import * as AppConfig from '#/platform/config';
 
 /** Reads `AppConfig` from `env` alone, as the native host would set it. */
 const readConfig = (env: Record<string, string>) =>
@@ -13,11 +13,23 @@ const readConfig = (env: Record<string, string>) =>
     Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromEnv({ env })),
   );
 
+const RootManifest = Schema.fromJsonString(Schema.Struct({ name: Schema.Literal('wisp-ai') }));
+
 describe('AppConfig', () => {
+  it.effect('defaults the resource root to the repository root', () =>
+    Effect.gen(function* () {
+      const { paths } = yield* readConfig({});
+      const fs = yield* FileSystem.FileSystem;
+      const manifest = yield* fs.readFileString(path.join(paths.root, 'package.json'));
+      yield* Schema.decodeUnknownEffect(RootManifest)(manifest);
+      assert.isTrue(yield* fs.exists(path.join(paths.root, 'simulator', 'classes.json')));
+    }).pipe(Effect.provide(NodeFileSystem.layer)),
+  );
+
   it.effect('defaults to the repository root and keeps data there', () =>
     Effect.gen(function* () {
       const { paths, releaseBuild, telemetryRelease, deferWowTransport } = yield* readConfig({});
-      const root = fileURLToPath(new URL('../../../', import.meta.url));
+      const root = fileURLToPath(new URL('../../../../', import.meta.url));
       assert.strictEqual(paths.root, root);
       assert.strictEqual(paths.dataRoot, root);
       assert.strictEqual(paths.runtime, path.join(root, 'runtime'));

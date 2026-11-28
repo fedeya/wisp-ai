@@ -211,6 +211,7 @@ export const readBaseline = Effect.gen(function* () {
  */
 export const lintRuleNames = [
   'typescript/ban-ts-comment',
+  'typescript/consistent-type-assertions',
   'typescript/no-explicit-any',
   'typescript/no-non-null-assertion',
   'typescript/no-unsafe-argument',

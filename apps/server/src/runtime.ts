@@ -70,7 +70,7 @@ import * as Settings from './settings/index.ts';
 import * as TheWoWDB from './integrations/thewowdb/index.ts';
 import * as HttpClient from './platform/http-client.ts';
 import * as Simulation from './integrations/simulation/simulator.ts';
-import * as AppConfig from './app-config.ts';
+import * as AppConfig from './platform/config.ts';
 import { addonVersionFromToc } from './game/addon-version.ts';
 import { Features } from './features.ts';
 import { featureChannel } from '@wisp/protocol/features';
@@ -224,6 +224,7 @@ export const makeServer = Effect.fn('Server.make')(
             return await readFile(mcpFile, 'utf8');
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            return undefined;
           }
         },
         writeConfig: (servers) => writeJson(mcpFile, { servers }),

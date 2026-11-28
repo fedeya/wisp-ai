@@ -18,7 +18,7 @@ type ToolResultOutput = Extract<
 >['output'];
 
 const nativeOf = (options: unknown): { native?: Native } =>
-  Predicate.isObject(options) && Object.keys(options).length ? { native: options as Native } : {};
+  Predicate.isObject(options) && Object.keys(options).length ? { native: options } : {};
 
 function settled(input: unknown, output: ToolResultOutput, options: unknown): ToolState {
   const native = nativeOf(options);
@@ -172,7 +172,7 @@ export class StepDraft {
         });
         return;
       case 'tool-result':
-        if (!(chunk as { preliminary?: boolean }).preliminary) {
+        if (!chunk.preliminary) {
           this.settle(chunk.toolCallId, (tool) => ({
             status: 'completed',
             input: tool.state.input,

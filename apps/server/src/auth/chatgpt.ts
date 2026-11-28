@@ -20,7 +20,7 @@ import { Digest, Mac, SecureRandom } from 'effect/crypto';
 import { Base64Url } from 'effect/encoding';
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpServerRequest } from 'effect/http';
 import type { HttpClientResponse } from 'effect/http';
-import { AppConfig } from '../app-config.ts';
+import { AppConfig } from '#/platform/config';
 import { accountModel } from '../chat/chat-model.ts';
 import type { AccountModel } from '../chat/chat-model.ts';
 import { errorMessage } from '../errors.ts';

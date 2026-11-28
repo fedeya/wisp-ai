@@ -18,7 +18,6 @@ const sourceFolder = 'apps/server/src';
 /** Today's files at the `src/` root. A file may leave this list, never join it. */
 const rootFiles = new Set([
   'account-operations.ts',
-  'app-config.ts',
   'application-database.ts',
   'errors.ts',
   'features.ts',
